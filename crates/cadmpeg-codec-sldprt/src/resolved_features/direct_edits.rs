@@ -489,11 +489,20 @@ mod tests {
         let mut histories = vec![move_face_history()];
         let lane = line_reference_lane(&[Vector3::new(0.0, -1.0, 0.0)], 1);
         enrich_history_move_face_translations(&mut histories, std::slice::from_ref(&lane));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("move-face lane fits service policy");
         crate::resolved_features::parameters::enrich_history_parameters(
+            &ctx,
             &mut histories,
             [&lane],
             true,
-        );
+        )
+        .expect("move-face parameter enrichment succeeds");
         assert_eq!(histories[0].features[0].parameters["D1"], "5mm");
         let projected = crate::history::project::project_features(&histories).unwrap();
         assert!(matches!(

@@ -4342,9 +4342,10 @@ fn project_design_history(
         lanes,
     );
     crate::history::configuration::enrich_history_parameters_values_only(
+        ctx,
         &mut parameter_projection,
         lanes,
-    );
+    )?;
     crate::resolved_features::holes::
         enrich_history_cosmetic_thread_diameters_without_hole_constructions(
             &mut parameter_projection,

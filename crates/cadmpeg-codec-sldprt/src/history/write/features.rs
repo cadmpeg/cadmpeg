@@ -202,7 +202,18 @@ pub(in crate::history) fn sync_neutral_features(
         .map(|feature| (feature.id.clone(), feature.parameters.clone()))
         .collect::<HashMap<_, _>>();
     let mut resolved_histories = native.feature_histories.clone();
-    enrich_history_parameters_semantic(&mut resolved_histories, &native.feature_input_lanes);
+    let lane_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane_bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    enrich_history_parameters_semantic(&ctx, &mut resolved_histories, &native.feature_input_lanes)?;
     let resolved_parameter_names = resolved_histories
         .iter()
         .flat_map(|history| &history.features)

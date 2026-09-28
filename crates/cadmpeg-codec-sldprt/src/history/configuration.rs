@@ -66,20 +66,22 @@ pub(crate) enum HistoryEnrichment {
 /// (the historical `true` argument): projects parameters together with their
 /// downstream semantic feature inputs.
 pub(crate) fn enrich_history_parameters_semantic(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     histories: &mut [FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
-) {
-    crate::resolved_features::parameters::enrich_history_parameters(histories, lanes, true);
+) -> Result<(), cadmpeg_core::CodecError> {
+    crate::resolved_features::parameters::enrich_history_parameters(ctx, histories, lanes, true)
 }
 
 /// Parameter-only mode of `resolved_features::parameters::enrich_history_parameters` (the
 /// historical `false` argument): projects parameter values without the semantic
 /// feature-input projection.
 pub(crate) fn enrich_history_parameters_values_only(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     histories: &mut [FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
-) {
-    crate::resolved_features::parameters::enrich_history_parameters(histories, lanes, false);
+) -> Result<(), cadmpeg_core::CodecError> {
+    crate::resolved_features::parameters::enrich_history_parameters(ctx, histories, lanes, false)
 }
 
 /// The shared native-lane enrichment prefix, declared once for both codec
@@ -104,7 +106,7 @@ pub(crate) fn enrich_history_semantic(
     crate::resolved_features::operations::enrich_history_split_lines(ctx, histories, lanes)?;
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(histories, lanes);
     crate::resolved_features::direct_edits::enrich_history_move_body_translations(histories, lanes);
-    enrich_history_parameters_semantic(histories, lanes);
+    enrich_history_parameters_semantic(ctx, histories, lanes)?;
     if matches!(mode, HistoryEnrichment::Read) {
         crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);
         crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(histories, lanes);
@@ -213,7 +215,7 @@ pub(crate) fn project_configuration_design_states(
             pmi_dimensions,
             &ir.model.features,
         )?;
-        enrich_history_parameters_semantic(&mut projection, scoped_lanes);
+        enrich_history_parameters_semantic(ctx, &mut projection, scoped_lanes)?;
         crate::resolved_features::holes::
             enrich_history_cosmetic_thread_diameters_without_hole_constructions(
                 &mut projection,

@@ -12,6 +12,114 @@ use crate::records::{
 };
 use std::collections::{BTreeMap, HashSet};
 
+fn parameter_limit_fixture() -> (Vec<FeatureHistory>, FeatureInputLane) {
+    let feature = crate::records::Feature {
+        id: "feature".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: None,
+        ordinal: 0,
+        name: "Sketch".into(),
+        kind: "Sketch".into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature],
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: vec![
+            FeatureInputName {
+                id: "feature-name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                object_id: None,
+                value: "Sketch".into(),
+            },
+            FeatureInputName {
+                id: "scalar-name".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 10,
+                object_id: None,
+                value: "D1".into(),
+            },
+        ],
+        scalars: vec![FeatureInputScalar {
+            id: "scalar".into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: 20,
+            object_id: 1,
+            name: "scalar-name".into(),
+            value: cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite test scalar"),
+            role: FeatureInputScalarRole::Driving,
+            operands: Vec::new(),
+        }],
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    (vec![history], lane)
+}
+
+fn parameter_limit_error(
+    limits: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
+) -> cadmpeg_core::CodecError {
+    let (mut histories, lane) = parameter_limit_fixture();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    limits(&mut policy.limits);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &policy,
+    )
+    .expect("empty lane fits root input limit");
+    enrich_history_parameters(&ctx, &mut histories, [&lane], true)
+        .expect_err("parameter projection must refuse the selected limit")
+}
+
+#[test]
+fn parameter_enrichment_refuses_collection_limit() {
+    let error = parameter_limit_error(|limits| limits.max_collection_items = 1);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn parameter_enrichment_refuses_retained_limit() {
+    let error = parameter_limit_error(|limits| limits.max_retained_bytes = 1);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn parameter_enrichment_refuses_work_limit() {
+    let error = parameter_limit_error(|limits| limits.max_work_units = 4);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
 #[test]
 fn native_scalar_must_match_an_existing_discrete_parameter() {
     let feature = crate::records::Feature {
@@ -269,7 +377,15 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    enrich_history_parameters(&mut histories, [&lane], true);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("parameter lane fits service policy");
+    enrich_history_parameters(&ctx, &mut histories, [&lane], true)
+        .expect("parameter enrichment succeeds");
     assert_eq!(
         histories[0].features[0].parameters["D1"],
         "<MOD-DIAM>7.1374"

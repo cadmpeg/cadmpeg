@@ -6,6 +6,8 @@ use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
     FeatureInputScalarRole,
 };
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,17 +29,50 @@ fn scalar_owned_by_feature(
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
 pub(crate) fn enrich_history_parameters<'a>(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
     replace_existing: bool,
-) {
+) -> Result<(), CodecError> {
     let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit)>>::new();
     for lane in lanes {
-        let names_by_id = lane
-            .names
-            .iter()
-            .map(|name| (name.id.as_str(), name))
-            .collect::<HashMap<_, _>>();
+        let feature_count = histories.iter().try_fold(0usize, |count, history| {
+            count.checked_add(history.features.len()).ok_or_else(|| {
+                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
+            })
+        })?;
+        let work = lane
+            .classes
+            .len()
+            .checked_add(lane.names.len())
+            .and_then(|count| count.checked_mul(lane.scalars.len()))
+            .and_then(|count| {
+                feature_count
+                    .checked_mul(lane.names.len().checked_add(lane.scalars.len())?)
+                    .and_then(|features| count.checked_add(features))
+            })
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
+            })?;
+        ctx.charge_work(
+            u64::try_from(work).map_err(|_| {
+                ctx.refuse_codec_limit("scan SLDPRT parameter candidates", u64::MAX - 1, u64::MAX)
+            })?,
+            "scan SLDPRT parameter candidates",
+        )?;
+        ctx.charge_collection_items(
+            u64::try_from(lane.names.len()).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT parameter names", u64::MAX - 1, u64::MAX)
+            })?,
+            "index SLDPRT parameter names",
+        )?;
+        let mut names_by_id = HashMap::new();
+        names_by_id.try_reserve(lane.names.len()).map_err(|_| {
+            ctx.refuse_codec_limit("index SLDPRT parameter names", u64::MAX - 1, u64::MAX)
+        })?;
+        for name in &lane.names {
+            names_by_id.insert(name.id.as_str(), name);
+        }
         let relation_unit = |family| match family {
             FeatureInputRelationFamily::Angle => ScalarUnit::Angle,
             FeatureInputRelationFamily::LineLineDistance
@@ -47,7 +82,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             | FeatureInputRelationFamily::PointPointVerticalDistance
             | FeatureInputRelationFamily::CircleDiameter => ScalarUnit::Length,
         };
-        let mut scalar_units = lane
+        let units = lane
             .scalars
             .iter()
             .filter_map(|scalar| {
@@ -73,11 +108,26 @@ pub(crate) fn enrich_history_parameters<'a>(
                 lane.relation_bindings
                     .iter()
                     .map(|binding| (binding.scalar_ref.as_str(), relation_unit(binding.family))),
-            )
-            .collect::<HashMap<_, _>>();
+            );
+        let mut scalar_units = HashMap::new();
+        for (scalar, unit) in units {
+            if !scalar_units.contains_key(scalar) {
+                ctx.charge_collection_items(1, "index SLDPRT scalar units")?;
+                scalar_units.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT scalar units", u64::MAX - 1, u64::MAX)
+                })?;
+            }
+            scalar_units.insert(scalar, unit);
+        }
         for relation in &lane.relation_instances {
             let unit = relation_unit(relation.family);
             for scalar in relation.scalar_refs() {
+                if !scalar_units.contains_key(scalar.as_str()) {
+                    ctx.charge_collection_items(1, "index SLDPRT scalar units")?;
+                    scalar_units.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("index SLDPRT scalar units", u64::MAX - 1, u64::MAX)
+                    })?;
+                }
                 scalar_units.insert(scalar.as_str(), unit);
             }
         }
@@ -87,6 +137,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                 let Some(name) = feature_object_name(feature, lane) else {
                     continue;
                 };
+                ctx.reserve_collection_vec(&mut starts, 1, "collect SLDPRT parameter feature starts")?;
                 starts.push((name.offset, history_index, feature_index));
             }
         }
@@ -103,19 +154,28 @@ pub(crate) fn enrich_history_parameters<'a>(
                 let Some(name) = names_by_id.get(scalar.name.as_str()) else {
                     continue;
                 };
-                owned.entry(&name.value).or_default().push(scalar);
+                if !owned.contains_key(name.value.as_str()) {
+                    ctx.charge_collection_items(1, "index SLDPRT owned scalar names")?;
+                    owned.insert(name.value.as_str(), Vec::new());
+                }
+                if let Some(group) = owned.get_mut(name.value.as_str()) {
+                    ctx.reserve_collection_vec(group, 1, "collect SLDPRT owned scalars")?;
+                    group.push(scalar);
+                }
             }
             for (name, scalars) in owned {
-                let driving = scalars
-                    .iter()
-                    .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
-                    .copied()
-                    .collect::<Vec<_>>();
+                let mut driving = Vec::new();
+                for scalar in scalars.iter().filter(|scalar| scalar.role == FeatureInputScalarRole::Driving) {
+                    ctx.reserve_collection_vec(&mut driving, 1, "collect SLDPRT driving scalars")?;
+                    driving.push(*scalar);
+                }
                 let candidates_for_name = if driving.is_empty() {
-                    scalars
-                        .into_iter()
-                        .filter(|scalar| scalar.role == FeatureInputScalarRole::Native)
-                        .collect::<Vec<_>>()
+                    let mut native = Vec::new();
+                    for scalar in scalars.into_iter().filter(|scalar| scalar.role == FeatureInputScalarRole::Native) {
+                        ctx.reserve_collection_vec(&mut native, 1, "collect SLDPRT native scalars")?;
+                        native.push(scalar);
+                    }
+                    native
                 } else {
                     driving
                 };
@@ -132,10 +192,24 @@ pub(crate) fn enrich_history_parameters<'a>(
                     if value_only {
                         continue;
                     }
-                    candidates
-                        .entry((history_index, feature_index, name.to_string()))
-                        .or_default()
-                        .push((scalar.value.get(), unit));
+                    let name = ctx.format_retained(
+                        format_args!("{name}"),
+                        "retain SLDPRT parameter candidate name",
+                    )?;
+                    let key = (history_index, feature_index, name);
+                    match candidates.entry(key) {
+                        std::collections::btree_map::Entry::Occupied(mut entry) => {
+                            ctx.reserve_collection_vec(entry.get_mut(), 1, "collect SLDPRT parameter candidates")?;
+                            entry.get_mut().push((scalar.value.get(), unit));
+                        }
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            ctx.charge_collection_items(1, "index SLDPRT parameter candidates")?;
+                            let mut values = Vec::new();
+                            ctx.reserve_collection_vec(&mut values, 1, "collect SLDPRT parameter candidates")?;
+                            values.push((scalar.value.get(), unit));
+                            entry.insert(values);
+                        }
+                    }
                 }
             }
         }
@@ -203,12 +277,16 @@ pub(crate) fn enrich_history_parameters<'a>(
         let Some(name) = cadmpeg_core::text::NonBlankString::new(name) else {
             continue;
         };
+        if !feature.parameters.contains_key(name.as_str()) {
+            ctx.charge_collection_items(1, "insert SLDPRT enriched parameter")?;
+        }
         if replace_existing {
             feature.parameters.insert(name, expression);
         } else {
             feature.parameters.entry(name).or_insert(expression);
         }
     }
+    Ok(())
 }
 
 /// Infer a length unit from the owning operation and its native display role.
