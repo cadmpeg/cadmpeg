@@ -8,7 +8,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::scalar::PositiveLength;
 use std::collections::{HashMap, HashSet};
@@ -293,8 +293,8 @@ fn sketch_arrangement_faces(
         }
         let range = geometric!(sketch_geometry_parameter_range(&entity.geometry));
         for point in [
-            geometric!(sketch_geometry_point(&entity.geometry, range[0])),
-            geometric!(sketch_geometry_point(&entity.geometry, range[1])),
+            geometric!(sketch_geometry_point(&entity.geometry, range[0], ctx)?),
+            geometric!(sketch_geometry_point(&entity.geometry, range[1], ctx)?),
         ] {
             arrangement_node(&mut nodes, point, tolerance, ctx)?;
         }
@@ -403,10 +403,17 @@ fn sketch_arrangement_faces(
         if edge.nodes[0] == edge.nodes[1] {
             return Ok(None);
         }
-        if edges.iter().any(|candidate| {
-            (candidate.nodes == edge.nodes || candidate.nodes == [edge.nodes[1], edge.nodes[0]])
-                && arrangement_edges_coincident(candidate, &edge, entities, tolerance)
-        }) {
+        let mut coincident = false;
+        for candidate in &edges {
+            if (candidate.nodes == edge.nodes
+                || candidate.nodes == [edge.nodes[1], edge.nodes[0]])
+                && arrangement_edges_coincident(candidate, &edge, entities, tolerance, ctx)?
+            {
+                coincident = true;
+                break;
+            }
+        }
+        if coincident {
             continue;
         }
         push_geometry_item(ctx, &mut edges, edge, "f3d arrangement edge")?;
@@ -1183,27 +1190,28 @@ fn arrangement_edges_coincident(
     right: &SketchArrangementEdge,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> bool {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if left.boundary.entity == right.boundary.entity
         && left.boundary.parameter_range.endpoints() == right.boundary.parameter_range.endpoints()
     {
-        return true;
+        return Ok(true);
     }
     let Some(left_entity) = entities
         .iter()
         .find(|entity| entity.id() == &left.boundary.entity)
     else {
-        return false;
+        return Ok(false);
     };
     let Some(right_entity) = entities
         .iter()
         .find(|entity| entity.id() == &right.boundary.entity)
     else {
-        return false;
+        return Ok(false);
     };
-    match (
+    Ok(match (
         left_entity.geometry.definition(),
         right_entity.geometry.definition(),
     ) {
@@ -1213,7 +1221,8 @@ fn arrangement_edges_coincident(
                 (left.boundary.parameter_range.endpoints()[0]
                     + left.boundary.parameter_range.endpoints()[1])
                     * 0.5,
-            );
+                ctx,
+            )?;
             left_midpoint
                 .zip(right.polyline.last().copied())
                 .is_some_and(|(point, end)| {
@@ -1255,17 +1264,19 @@ fn arrangement_edges_coincident(
                     (left.boundary.parameter_range.endpoints()[0]
                         + left.boundary.parameter_range.endpoints()[1])
                         * 0.5,
-                )
+                    ctx,
+                )?
                 .zip(sketch_geometry_point(
                     &right_entity.geometry,
                     (right.boundary.parameter_range.endpoints()[0]
                         + right.boundary.parameter_range.endpoints()[1])
                         * 0.5,
-                ))
+                    ctx,
+                )?)
                 .is_some_and(|(left, right)| point_distance(left, right) <= tolerance)
         }
         _ => false,
-    }
+    })
 }
 
 fn arrangement_edges_proven_disjoint(
@@ -1422,9 +1433,9 @@ fn profile_use_polyline(
         geometric!(cadmpeg_ir::math::interpolate(range[0], range[1], 0.5)).get()
     };
     let scale = [
-        geometric!(sketch_geometry_point(&entity.geometry, range[0])),
-        geometric!(sketch_geometry_point(&entity.geometry, range[1])),
-        geometric!(sketch_geometry_point(&entity.geometry, midpoint)),
+        geometric!(sketch_geometry_point(&entity.geometry, range[0], ctx)?),
+        geometric!(sketch_geometry_point(&entity.geometry, range[1], ctx)?),
+        geometric!(sketch_geometry_point(&entity.geometry, midpoint, ctx)?),
     ]
     .into_iter()
     .flat_map(|point| [point.u.abs(), point.v.abs()])
@@ -1453,7 +1464,7 @@ fn profile_use_polyline(
         } else {
             geometric!(cadmpeg_ir::math::interpolate(range[0], range[1], fraction)).get()
         };
-        let point = geometric!(sketch_geometry_point(&entity.geometry, parameter));
+        let point = geometric!(sketch_geometry_point(&entity.geometry, parameter, ctx)?);
         points.push(point);
     }
     if reversed {
@@ -1486,10 +1497,11 @@ fn sketch_geometry_speed_bound(
 fn sketch_geometry_point(
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
     parameter: f64,
-) -> Option<Point2> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Point2>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    match geometry.definition() {
+    Ok(match geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => Some(Point2::new(
             start.u + parameter * (end.u - start.u),
             start.v + parameter * (end.v - start.v),
@@ -1515,20 +1527,33 @@ fn sketch_geometry_point(
             ))
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let control_points = curve.pole_rows().raw_points();
-            let weights = curve.pole_rows().weights();
-            cadmpeg_ir::eval::nurbs_pcurve_uv(
+            let (control_points, weights) = nurbs_pcurve_evaluator_lanes(curve, ctx)?;
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
                 curve.degree(),
                 curve.knots(),
                 &control_points,
                 weights.as_deref(),
                 parameter,
-            )
-            .ok()
+            ))?
             .map(Point2::from)
         }
         _ => None,
+    })
+}
+
+fn nurbs_pcurve_evaluator_lanes(
+    curve: &PcurveNurbs,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(Vec<Point2>, Option<Vec<f64>>), CodecError> {
+    if let Some(ctx) = ctx {
+        let count = u64::try_from(curve.pole_rows().count())
+            .map_err(|_| ctx.refuse_codec_limit("f3d nurbs evaluator poles", 0, 1))?;
+        ctx.charge_collection_items(count, "f3d nurbs evaluator poles")?;
+        if matches!(curve.pole_rows(), PcurveNurbsPoles::Rational { .. }) {
+            ctx.charge_collection_items(count, "f3d nurbs evaluator weights")?;
+        }
     }
+    Ok((curve.pole_rows().try_raw_points()?, curve.pole_rows().try_weights()?))
 }
 
 fn point_on_profile_boundary_use(

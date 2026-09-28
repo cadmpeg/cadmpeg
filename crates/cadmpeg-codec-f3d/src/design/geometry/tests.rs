@@ -7,6 +7,8 @@ use super::{
     MAX_ARRANGEMENT_WALK_WORK,
 };
 
+mod evaluator_refusal;
+
 #[test]
 fn subdivision_count_requires_positive_target_error() {
     assert_eq!(super::subdivision_count(100.0, -1.0), None);
