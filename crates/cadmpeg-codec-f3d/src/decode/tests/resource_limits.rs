@@ -506,6 +506,37 @@ fn metadata_source_attributes_propagate_collection_limit() {
 }
 
 #[test]
+fn geometry_loss_collection_refuses_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let error = super::super::geometry_losses(&ctx, &crate::brep::Brep::default())
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D geometry losses"));
+}
+
+#[test]
+fn geometry_loss_text_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::geometry_losses(&ctx, &crate::brep::Brep::default())
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D geometry loss"));
+}
+
+#[test]
+fn geometry_kind_counts_keep_sorted_report_text() {
+    let counts = std::collections::BTreeMap::from([("plane".into(), 2), ("spline".into(), 3)]);
+    assert_eq!(
+        super::super::KindCounts(&counts).to_string(),
+        "plane=2, spline=3"
+    );
+}
+
+#[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();

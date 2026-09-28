@@ -2028,12 +2028,29 @@ fn push_decode_loss(
     collection_operation: &'static str,
     retained_operation: &'static str,
 ) -> Result<(), CodecError> {
+    push_loss_vec(
+        ctx,
+        &mut report.losses,
+        code,
+        args,
+        collection_operation,
+        retained_operation,
+    )
+}
+
+fn push_loss_vec(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    code: F3dLossCode,
+    args: std::fmt::Arguments<'_>,
+    collection_operation: &'static str,
+    retained_operation: &'static str,
+) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, collection_operation)?;
-    report
-        .losses
+    losses
         .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit(collection_operation, 0, 1))?;
-    report.losses.push(code.note(format_decode_string(
+    losses.push(code.note(format_decode_string(
         ctx,
         retained_operation,
         args,
@@ -2541,7 +2558,7 @@ impl<'a> F3dDecodeSession<'a> {
             ctx,
             scan,
             cadmpeg_ir::report::decode::DecodeTransfer::full(true),
-            geometry_losses(&brep),
+            geometry_losses(ctx, &brep)?,
         )?;
         if undecoded_candidates != 0 {
             push_decode_loss(
@@ -5662,41 +5679,50 @@ fn source_attributes_and_tolerances(
 }
 
 /// Loss report for a successful geometry decode.
-fn format_kind_counts(counts: &std::collections::BTreeMap<String, usize>) -> String {
-    counts
-        .iter()
-        .map(|(name, count)| format!("{name}={count}"))
-        .collect::<Vec<_>>()
-        .join(", ")
+struct KindCounts<'a>(&'a std::collections::BTreeMap<String, usize>);
+
+impl std::fmt::Display for KindCounts<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, (name, count)) in self.0.iter().enumerate() {
+            if index != 0 {
+                formatter.write_str(", ")?;
+            }
+            write!(formatter, "{name}={count}")?;
+        }
+        Ok(())
+    }
 }
 
-fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+fn geometry_losses(
+    ctx: &DecodeContext<'_>,
+    decoded: &Brep,
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let s = &decoded.asm.stats;
     let mut losses = Vec::new();
 
     if s.nurbs_surfaces > 0 {
-        losses.push(F3dLossCode::NurbsSurfaceCarrier.note(format!(
+        push_loss_vec(ctx, &mut losses, F3dLossCode::NurbsSurfaceCarrier, format_args!(
             "{} spline surface record(s) were decoded into NURBS carriers from their inline \
              cached B-spline block.",
             s.nurbs_surfaces
-        )));
+        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
     if s.nurbs_curves > 0 {
-        losses.push(F3dLossCode::NurbsCurveCarrier.note(format!(
+        push_loss_vec(ctx, &mut losses, F3dLossCode::NurbsCurveCarrier, format_args!(
             "{} procedural curve record(s) were decoded into NURBS carriers from their inline \
              cached 3D B-spline block.",
             s.nurbs_curves
-        )));
+        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
     if s.missing_face_surfaces() > 0 {
-        losses.push(F3dLossCode::FaceSurfaceReferenceDangling.note(format!(
+        push_loss_vec(ctx, &mut losses, F3dLossCode::FaceSurfaceReferenceDangling, format_args!(
             "{} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {}.",
             s.missing_face_surfaces(),
-            format_kind_counts(&s.missing_face_surface_kinds)
-        )));
+            KindCounts(&s.missing_face_surface_kinds)
+        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
     if s.unknown_surface_faces() > 0 {
-        losses.push(F3dLossCode::SurfaceShapeNotDecoded.note(format!(
+        push_loss_vec(ctx, &mut losses, F3dLossCode::SurfaceShapeNotDecoded, format_args!(
             "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into a \
              typed carrier (no inline cached B-spline block: the cache is reached through a \
              subtype reference, or the record is a procedural form this codec does not \
@@ -5704,55 +5730,58 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
              surface linking to the preserved record bytes. Topology is transferred; the \
              underlying surface shape is not. Native kinds: {}.",
             s.unknown_surface_faces(),
-            format_kind_counts(&s.unknown_surface_kinds)
-        )));
+            KindCounts(&s.unknown_surface_kinds)
+        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
     if s.mesh_surface_faces > 0 {
-        losses.push(F3dLossCode::MeshSurfaceSentinel.note(format!(
+        push_loss_vec(ctx, &mut losses, F3dLossCode::MeshSurfaceSentinel, format_args!(
             "{} face(s) use zero-payload mesh_surface sentinels. Their exact surfaces are absent by definition; the emitted unknown surface preserves that distinction from tessellation attributes.",
             s.mesh_surface_faces
-        )));
+        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
     if s.procedural_curve_edges() > 0 {
-        losses.push(F3dLossCode::ProceduralCurveUndecoded.note(format!(
+        push_loss_vec(ctx, &mut losses, F3dLossCode::ProceduralCurveUndecoded, format_args!(
             "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
              B-spline cache; the edge was emitted with its vertices and parameter range but no \
              attributed curve carrier. Native kinds: {}.",
             s.procedural_curve_edges(),
-            format_kind_counts(&s.procedural_curve_kinds)
-        )));
+            KindCounts(&s.procedural_curve_kinds)
+        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
     if s.undecoded_pcurve_refs() > 0 {
-        losses.push(F3dLossCode::PcurveUndecoded.note(format!(
+        push_loss_vec(ctx, &mut losses, F3dLossCode::PcurveUndecoded, format_args!(
             "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
              carrier on the face surface's parameterization; those coedges were emitted \
              without a pcurve. Native kinds: {}.",
             s.undecoded_pcurve_refs(),
-            format_kind_counts(&s.undecoded_pcurve_kinds)
-        )));
+            KindCounts(&s.undecoded_pcurve_kinds)
+        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
     if s.partial_procedural_supports > 0 {
-        losses.push(F3dLossCode::BlendSupportPartial.note(format!(
+        push_loss_vec(ctx, &mut losses, F3dLossCode::BlendSupportPartial, format_args!(
             "{} rolling-ball blend definition(s) retain their signed radius and solved cache, but only one of two native supports resolved.",
             s.partial_procedural_supports
-        )));
+        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
     if s.other_records() > 0 {
-        losses.push(F3dLossCode::SolvedRecordUntyped.note(format!(
+        push_loss_vec(ctx, &mut losses, F3dLossCode::SolvedRecordUntyped, format_args!(
             "{} solved-record application/refinement record(s) were not transferred: {}.",
             s.other_records(),
-            s.other_record_kinds
-                .iter()
-                .map(|(name, count)| format!("{name}={count}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )));
+            KindCounts(&s.other_record_kinds)
+        ), "collect F3D geometry losses", "retain F3D geometry loss")?;
     }
-    losses.push(F3dLossCode::MaterialNotTransferred.note(
-        "Materials/appearances (.protein assets, ACT/design assignments) were not \
-         transferred.",
-    ));
-    losses
+    push_loss_vec(
+        ctx,
+        &mut losses,
+        F3dLossCode::MaterialNotTransferred,
+        format_args!(
+            "Materials/appearances (.protein assets, ACT/design assignments) were not \
+         transferred."
+        ),
+        "collect F3D geometry losses",
+        "retain F3D geometry loss",
+    )?;
+    Ok(losses)
 }
 
 struct MetadataIr {
