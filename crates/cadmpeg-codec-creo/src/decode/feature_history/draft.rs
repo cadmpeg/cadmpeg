@@ -259,18 +259,19 @@ pub(super) fn linear_extrusion_extent_and_direction(
     };
     let section = definition.and_then(|definition| definition.section_3d.as_ref());
     if let (Some(Some(transform)), Some(definition)) = (unique_transform, definition) {
-        if let Some(extent) = generated_arc_cylinder_extent(
+        let mut extent = generated_arc_cylinder_extent(
             scan,
             ir,
             source_carriers,
             definition,
             transform,
-        )
-        .or_else(|| {
-            feature_plane_equations(scan, ir, source_carriers, feature_id).and_then(|planes| {
+        );
+        if extent.is_none() {
+            extent = feature_plane_equations(ctx, scan, ir, source_carriers, feature_id)?.and_then(|planes| {
                 extrusion_extent_and_direction(transform.origin(), transform.normal(), planes)
-            })
-        }) {
+            });
+        }
+        if let Some(extent) = extent {
             return Ok(Some(extent));
         }
     }

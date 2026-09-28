@@ -11,6 +11,8 @@ use crate::vecmath::unit_length;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 use super::super::uniqueness::exactly_one;
 
@@ -57,36 +59,46 @@ const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
 const EPS_SIGNED_LENGTH: f64 = 1.0e-9;
 
 pub(in super::super) fn feature_plane_equations(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Option<Vec<([f64; 3], [f64; 3])>> {
-    let ids = scan
+) -> Result<Option<Vec<([f64; 3], [f64; 3])>>, CodecError> {
+    let mut ids = BTreeSet::new();
+    for row in scan
         .surfaces
         .rows
         .iter()
         .filter(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
         })
-        .map(|row| row.id)
-        .collect::<BTreeSet<_>>();
+    {
+        if !ids.contains(&row.id) {
+            ctx.charge_collection_items(1, "creo feature plane ID nodes")?;
+            ids.insert(row.id);
+        }
+    }
     let mut local_planes = BTreeMap::new();
     for id in &ids {
         match feature_local_plane(scan, *id) {
             Ok(Some(plane)) => {
+                ctx.charge_collection_items(1, "creo feature local plane nodes")?;
                 local_planes.insert(*id, plane);
             }
             Ok(None) => {}
-            Err(()) => return None,
+            Err(()) => return Ok(None),
         }
     }
-    ids.into_iter()
-        .map(|id| {
-            let plane = reconciled_model_plane(&local_planes, ir, source_carriers, id)?;
-            Some((plane.origin, plane.normal))
-        })
-        .collect()
+    let mut equations = Vec::new();
+    for id in ids {
+        let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, id) else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut equations, 1, "creo feature plane equations")?;
+        equations.push((plane.origin, plane.normal));
+    }
+    Ok(Some(equations))
 }
 
 pub(in super::super) type FeatureOutlinePlane = (u32, [f64; 3], [f64; 3]);

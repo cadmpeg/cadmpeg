@@ -32,7 +32,7 @@ use crate::decode::surfaces::fc05_model_frame;
 use crate::decode::sweep::nurbs::{
     placed_tabulated_cylinder_directrix as checked_tabulated_cylinder_directrix, signed_unit_chart,
 };
-use crate::decode::sweep::planes::{feature_outline_planes, feature_plane_equations};
+use crate::decode::sweep::planes::feature_outline_planes;
 use crate::decode::sweep::surfaces::{
     extruded_section_line, revolved_section_circle, revolved_section_surface,
 };
@@ -56,6 +56,20 @@ use cadmpeg_ir::{
     scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+fn service_feature_plane_equations(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+) -> Option<Vec<([f64; 3], [f64; 3])>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::sweep::planes::feature_plane_equations(
+            ctx, scan, ir, source_carriers, feature_id,
+        )
+    })
+    .expect("service resources")
+}
 
 fn feature_edge_selection_with_service(
     scan: &crate::container::ContainerScan<'_>,
@@ -341,7 +355,7 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
     scan.surfaces.rows.extend([row(31), row(32)]);
     scan.planes.outlines.push(plane(31, 2.0));
 
-    assert!(feature_plane_equations(
+    assert!(service_feature_plane_equations(
         &scan,
         &CadIr::empty(),
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -351,7 +365,7 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
 
     scan.planes.outlines.push(plane(32, 8.0));
     assert_eq!(
-        feature_plane_equations(
+        service_feature_plane_equations(
             &scan,
             &CadIr::empty(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
