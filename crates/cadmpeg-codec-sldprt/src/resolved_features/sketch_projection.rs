@@ -13,6 +13,28 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::Exactness;
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+
+fn index_brep<'a, T, K: Eq + Hash, V>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    values: &'a [T],
+    mut entry: impl FnMut(&'a T) -> (K, V),
+) -> Result<HashMap<K, V>, cadmpeg_core::CodecError> {
+    let operation = "index SLDPRT sketch B-rep records";
+    let count = u64::try_from(values.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(count, operation)?;
+    ctx.charge_collection_items(count, operation)?;
+    let mut index = HashMap::new();
+    index
+        .try_reserve(values.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, count, count))?;
+    for value in values {
+        let (key, record) = entry(value);
+        index.insert(key, record);
+    }
+    Ok(index)
+}
 
 /// Sketches and their projected entities and constraints.
 pub(crate) struct ProjectedSketches {
@@ -90,41 +112,13 @@ fn project_brep(
     entities: &mut Vec<SketchEntity>,
     constraints: &mut Vec<SketchConstraint>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let surfaces = brep
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<HashMap<_, _>>();
-    let loops = brep
-        .loops
-        .iter()
-        .map(|loop_| (&loop_.id, loop_))
-        .collect::<HashMap<_, _>>();
-    let coedges = brep
-        .coedges
-        .iter()
-        .map(|coedge| (&coedge.id, coedge))
-        .collect::<HashMap<_, _>>();
-    let edges = brep
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge))
-        .collect::<HashMap<_, _>>();
-    let vertices = brep
-        .vertices
-        .iter()
-        .map(|vertex| (&vertex.id, &vertex.point))
-        .collect::<HashMap<_, _>>();
-    let points = brep
-        .points
-        .iter()
-        .map(|point| (&point.id, point.position().get()))
-        .collect::<HashMap<_, _>>();
-    let curves = brep
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<HashMap<_, _>>();
+    let surfaces = index_brep(ctx, &brep.surfaces, |surface| (&surface.id, &surface.geometry))?;
+    let loops = index_brep(ctx, &brep.loops, |loop_| (&loop_.id, loop_))?;
+    let coedges = index_brep(ctx, &brep.coedges, |coedge| (&coedge.id, coedge))?;
+    let edges = index_brep(ctx, &brep.edges, |edge| (&edge.id, edge))?;
+    let vertices = index_brep(ctx, &brep.vertices, |vertex| (&vertex.id, &vertex.point))?;
+    let points = index_brep(ctx, &brep.points, |point| (&point.id, point.position().get()))?;
+    let curves = index_brep(ctx, &brep.curves, |curve| (&curve.id, &curve.geometry))?;
 
     for (face_ordinal, face) in brep.faces.iter().enumerate() {
         let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))) =
@@ -231,7 +225,7 @@ fn project_brep(
                 }
             }
             if !profile.is_empty() {
-                orient_closed_profile_by_topology(&mut profile, &entities[first_entity..]);
+                orient_closed_profile_by_topology(ctx, &mut profile, &entities[first_entity..])?;
                 profiles.push(profile);
             }
         }
@@ -312,51 +306,52 @@ fn project_brep(
     Ok(())
 }
 
-fn orient_closed_profile_by_topology(profile: &mut [SketchEntityUse], entities: &[SketchEntity]) {
+fn orient_closed_profile_by_topology(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    profile: &mut [SketchEntityUse],
+    entities: &[SketchEntity],
+) -> Result<(), cadmpeg_core::CodecError> {
     if profile.len() < 2 {
-        return;
+        return Ok(());
     }
-    let entities = entities
-        .iter()
-        .map(|entity| (entity.id(), entity))
-        .collect::<HashMap<_, _>>();
-    let orientations = profile
-        .iter()
-        .enumerate()
-        .map(|(index, use_)| {
-            let current = entities.get(&use_.entity)?;
-            let next = entities.get(&profile[(index + 1) % profile.len()].entity)?;
-            let [start, end] = current.endpoint_refs.as_slice() else {
-                return None;
-            };
-            let shared = current
-                .endpoint_refs
-                .iter()
-                .filter(|endpoint| next.endpoint_refs.contains(endpoint))
-                .collect::<Vec<_>>();
-            let [shared] = shared.as_slice() else {
-                return None;
-            };
-            if *shared == end {
-                Some(false)
-            } else if *shared == start {
-                Some(true)
-            } else {
-                None
-            }
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(orientations) = orientations else {
-        return;
-    };
+    let entities = index_brep(ctx, entities, |entity| (entity.id(), entity))?;
+    let mut orientations = Vec::new();
+    ctx.reserve_collection_vec(&mut orientations, profile.len(), "collect SLDPRT sketch profile orientations")?;
+    for (index, use_) in profile.iter().enumerate() {
+        let Some(current) = entities.get(&use_.entity) else { return Ok(()) };
+        let Some(next) = entities.get(&profile[(index + 1) % profile.len()].entity) else { return Ok(()) };
+        let [start, end] = current.endpoint_refs.as_slice() else { return Ok(()) };
+        let operation = "compare SLDPRT profile endpoint incidence";
+        let comparisons = current.endpoint_refs.len().checked_mul(next.endpoint_refs.len())
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(
+            u64::try_from(comparisons)
+                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+            operation,
+        )?;
+        let mut shared = current
+            .endpoint_refs
+            .iter()
+            .filter(|endpoint| next.endpoint_refs.contains(endpoint));
+        let Some(first) = shared.next() else { return Ok(()) };
+        if shared.next().is_some() { return Ok(()) }
+        orientations.push(if first == end {
+            false
+        } else if first == start {
+            true
+        } else {
+            return Ok(());
+        });
+    }
     for (use_, reversed) in profile.iter_mut().zip(orientations) {
         use_.reversed = reversed;
     }
+    Ok(())
 }
 
 #[cfg(test)]
 mod projected_profile_orientation_tests {
-    use super::orient_closed_profile_by_topology;
+    use super::{index_brep, orient_closed_profile_by_topology};
     use cadmpeg_ir::{
         math::Point2,
         sketches::{
@@ -364,6 +359,36 @@ mod projected_profile_orientation_tests {
             SketchGeometryDefinition, SketchId,
         },
     };
+
+    fn orient_with_service(profile: &mut [SketchEntityUse], entities: &[SketchEntity]) {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("empty root fits service policy");
+        orient_closed_profile_by_topology(&ctx, profile, entities)
+            .expect("service policy admits profile orientation");
+    }
+
+    #[test]
+    fn sketch_projection_index_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits policy");
+        let error = index_brep(&ctx, &[1, 2], |value| (*value, *value))
+            .expect_err("two B-rep records exceed the collection limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+        ));
+    }
 
     fn line(id: &str, start_ref: &str, end_ref: &str) -> SketchEntity {
         SketchEntity::new(
@@ -393,7 +418,7 @@ mod projected_profile_orientation_tests {
             })
             .collect::<Vec<_>>();
 
-        orient_closed_profile_by_topology(&mut profile, &entities);
+        orient_with_service(&mut profile, &entities);
 
         assert_eq!(
             profile.iter().map(|use_| use_.reversed).collect::<Vec<_>>(),
@@ -416,7 +441,7 @@ mod projected_profile_orientation_tests {
             })
             .collect::<Vec<_>>();
 
-        orient_closed_profile_by_topology(&mut profile, &entities);
+        orient_with_service(&mut profile, &entities);
 
         assert!(profile.iter().all(|use_| use_.reversed));
     }
