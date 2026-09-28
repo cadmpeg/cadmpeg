@@ -1362,7 +1362,7 @@ fn parse_sketch(
             let native_kind = retained_string(ctx, native_kind, "fcstd sketch geometry kind")?;
             let attributes = sketch_attributes(ctx, carrier)?;
             let geometry_value = match carrier
-                .map(|carrier| sketch_nurbs(&native_kind, carrier))
+                .map(|carrier| sketch_nurbs(ctx, &native_kind, carrier))
                 .transpose()?
                 .flatten()
             {
@@ -1446,7 +1446,7 @@ fn parse_sketch(
             let native_kind = retained_string(ctx, native_kind, "fcstd external sketch geometry kind")?;
             let attributes = sketch_attributes(ctx, carrier)?;
             let geometry = match carrier
-                .map(|carrier| sketch_nurbs(&native_kind, carrier))
+                .map(|carrier| sketch_nurbs(ctx, &native_kind, carrier))
                 .transpose()?
                 .flatten()
             {
@@ -1655,12 +1655,19 @@ struct SketchNurbsLanes {
 /// Read a sketch B-spline record. `Ok(None)` states the record is not a
 /// B-spline; `Err` states a B-spline record whose lanes the carrier refuses.
 fn sketch_nurbs(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     node: roxmltree::Node<'_, '_>,
 ) -> Result<Option<SketchGeometry>, CodecError> {
-    let Some(lanes) = sketch_nurbs_lanes(kind, node) else {
+    let Some(lanes) = sketch_nurbs_lanes(ctx, kind, node)? else {
         return Ok(None);
     };
+    if lanes.weights.is_some() {
+        ctx.charge_collection_items(
+            lanes.control_points.len() as u64,
+            "fcstd sketch NURBS weighted pole pairs",
+        )?;
+    }
     Ok(Some(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
             lanes.degree,
@@ -1672,27 +1679,37 @@ fn sketch_nurbs(
     )))
 }
 
-fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchNurbsLanes> {
+fn sketch_nurbs_lanes(
+    ctx: &DecodeContext<'_>,
+    kind: &str,
+    node: roxmltree::Node<'_, '_>,
+) -> Result<Option<SketchNurbsLanes>, CodecError> {
     if !matches!(kind, "Part::GeomBSplineCurve" | "BSplineCurve")
         && !node.has_tag_name("BSplineCurve")
     {
-        return None;
+        return Ok(None);
     }
-    let degree = node.attribute("Degree")?.parse::<u32>().ok()?;
-    let periodic = matches!(node.attribute("IsPeriodic")?, "1" | "true" | "True");
-    let pole_count = node.attribute("PolesCount")?.parse::<usize>().ok()?;
-    let knot_count = node.attribute("KnotsCount")?.parse::<usize>().ok()?;
+    let Some((degree, periodic, pole_count, knot_count)) = (|| {
+        Some((
+            node.attribute("Degree")?.parse::<u32>().ok()?,
+            matches!(node.attribute("IsPeriodic")?, "1" | "true" | "True"),
+            node.attribute("PolesCount")?.parse::<usize>().ok()?,
+            node.attribute("KnotsCount")?.parse::<usize>().ok()?,
+        ))
+    })() else { return Ok(None); };
     if pole_count == 0
         || knot_count == 0
         || pole_count > MAX_SKETCH_RECORDS
         || knot_count > MAX_SKETCH_RECORDS
     {
-        return None;
+        return Ok(None);
     }
-    let poles = node
-        .children()
-        .filter(|child| child.has_tag_name("Pole"))
-        .map(|pole| {
+    if node.children().filter(|child| child.has_tag_name("Pole")).count() != pole_count {
+        return Ok(None);
+    }
+    let mut poles = collection_vec(ctx, pole_count, "fcstd sketch NURBS poles")?;
+    for pole in node.children().filter(|child| child.has_tag_name("Pole")) {
+        let Some(value) = (|| {
             let point = FinitePoint2::new(Point2::new(
                 pole.attribute("X")?.parse().ok()?,
                 pole.attribute("Y")?.parse().ok()?,
@@ -1703,18 +1720,22 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
             }
             let weight = PositiveReal::new(pole.attribute("Weight")?.parse::<f64>().ok()?)?;
             Some((point, weight))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let knots = node
-        .children()
-        .filter(|child| child.has_tag_name("Knot"))
-        .map(|knot| {
+        })() else { return Ok(None); };
+        poles.push(value);
+    }
+    if node.children().filter(|child| child.has_tag_name("Knot")).count() != knot_count {
+        return Ok(None);
+    }
+    let mut knots = collection_vec(ctx, knot_count, "fcstd sketch NURBS knots")?;
+    for knot in node.children().filter(|child| child.has_tag_name("Knot")) {
+        let Some(value) = (|| {
             Some((
                 FiniteReal::new(knot.attribute("Value")?.parse::<f64>().ok()?)?,
                 knot.attribute("Mult")?.parse::<usize>().ok()?,
             ))
-        })
-        .collect::<Option<Vec<_>>>()?;
+        })() else { return Ok(None); };
+        knots.push(value);
+    }
     if poles.len() != pole_count
         || knots.len() != knot_count
         || degree == 0
@@ -1728,38 +1749,42 @@ fn sketch_nurbs_lanes(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<Sketc
             .windows(2)
             .any(|pair| pair[0].0.get() >= pair[1].0.get())
     {
-        return None;
+        return Ok(None);
     }
-    let expanded_count = knots.iter().try_fold(0_usize, |count, (_, multiplicity)| {
+    let Some(expanded_count) = knots.iter().try_fold(0_usize, |count, (_, multiplicity)| {
         count.checked_add(*multiplicity)
-    })?;
+    }) else { return Ok(None); };
     if expanded_count > MAX_SKETCH_RECORDS {
-        return None;
+        return Ok(None);
     }
-    if !periodic
-        && expanded_count
-            != pole_count
-                .checked_add(usize::try_from(degree).ok()?)?
-                .checked_add(1)?
-    {
-        return None;
+    if !periodic {
+        let Some(expected) = usize::try_from(degree).ok()
+            .and_then(|degree| pole_count.checked_add(degree))
+            .and_then(|count| count.checked_add(1)) else { return Ok(None); };
+        if expanded_count != expected { return Ok(None); }
     }
-    let full_knots = knots
-        .iter()
-        .flat_map(|(value, multiplicity)| std::iter::repeat_n(*value, *multiplicity))
-        .collect::<Vec<_>>();
-    let control_points = poles.iter().map(|(point, _)| *point).collect();
-    let weights = poles.iter().map(|(_, weight)| *weight).collect::<Vec<_>>();
-    Some(SketchNurbsLanes {
+    let mut full_knots = collection_vec(ctx, expanded_count, "fcstd sketch NURBS expanded knots")?;
+    full_knots.extend(knots.iter().flat_map(|(value, multiplicity)| std::iter::repeat_n(*value, *multiplicity)));
+    let mut control_points = collection_vec(ctx, pole_count, "fcstd sketch NURBS control points")?;
+    control_points.extend(poles.iter().map(|(point, _)| *point));
+    let mut weights = collection_vec(ctx, pole_count, "fcstd sketch NURBS weights")?;
+    weights.extend(poles.iter().map(|(_, weight)| *weight));
+    let weights = if weights.iter().any(|weight| (weight.get() - 1.0).abs() > f64::EPSILON) {
+        let mut converted = collection_vec(ctx, pole_count, "fcstd sketch NURBS nonzero weights")?;
+        converted.extend(weights.into_iter().map(NonZeroReal::from));
+        Some(converted)
+    } else { None };
+    ctx.charge_collection_items(expanded_count as u64, "fcstd sketch NURBS knot conversion")?;
+    let Some(knots) = KnotVector::from_finite_lanes(full_knots).ok() else {
+        return Ok(None);
+    };
+    Ok(Some(SketchNurbsLanes {
         degree,
-        knots: KnotVector::from_finite_lanes(full_knots).ok()?,
+        knots,
         control_points,
-        weights: weights
-            .iter()
-            .any(|weight| (weight.get() - 1.0).abs() > f64::EPSILON)
-            .then(|| weights.into_iter().map(NonZeroReal::from).collect()),
+        weights,
         periodic,
-    })
+    }))
 }
 
 fn sketch_frame(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vector3), CodecError> {

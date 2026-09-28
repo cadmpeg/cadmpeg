@@ -12,6 +12,31 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn design_nurbs_lanes_refuse_at_each_collection_limit() {
+    let xml = roxmltree::Document::parse(
+        "<BSplineCurve PolesCount=\"3\" KnotsCount=\"2\" Degree=\"2\" IsPeriodic=\"0\"><Pole X=\"0\" Y=\"0\" Z=\"0\" Weight=\"1\"/><Pole X=\"1\" Y=\"2\" Z=\"0\" Weight=\"0.5\"/><Pole X=\"3\" Y=\"0\" Z=\"0\" Weight=\"1\"/><Knot Value=\"0\" Mult=\"3\"/><Knot Value=\"1\" Mult=\"3\"/></BSplineCurve>",
+    ).expect("valid XML");
+    for operation in [
+        "fcstd sketch NURBS poles",
+        "fcstd sketch NURBS knots",
+        "fcstd sketch NURBS expanded knots",
+        "fcstd sketch NURBS control points",
+        "fcstd sketch NURBS weights",
+        "fcstd sketch NURBS nonzero weights",
+        "fcstd sketch NURBS knot conversion",
+    ] {
+        crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
+            super::sketch_nurbs_lanes(ctx, "Part::GeomBSplineCurve", xml.root_element())
+        });
+    }
+    crate::test_support::assert_collection_refusal_at(
+        &[], "fcstd sketch NURBS weighted pole pairs", |ctx| {
+            super::sketch_nurbs(ctx, "Part::GeomBSplineCurve", xml.root_element())
+        },
+    );
+}
+
+#[test]
 fn design_constraint_parameter_admissions_refuse_at_matching_limits() {
     let object = crate::native::ObjectRecord {
         id: "fcstd:native:object#Sketch".into(),
