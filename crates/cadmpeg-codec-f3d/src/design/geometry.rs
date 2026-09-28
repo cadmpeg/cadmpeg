@@ -134,12 +134,38 @@ where
     T::try_from(value).map_err(CodecError::malformed)
 }
 
+fn copy_arrangement_boundary(
+    ctx: Option<&DecodeContext<'_>>,
+    boundary: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+) -> Result<cadmpeg_ir::features::SketchProfileBoundaryUse, CodecError> {
+    Ok(cadmpeg_ir::features::SketchProfileBoundaryUse {
+        entity: copy_geometry_id(ctx, boundary.entity.as_str(),
+            "f3d arrangement boundary entity id")?,
+        parameter_range: boundary.parameter_range,
+        reversed: boundary.reversed,
+    })
+}
+
+fn copy_arrangement_boundary_run(
+    ctx: Option<&DecodeContext<'_>>,
+    boundaries: &[cadmpeg_ir::features::SketchProfileBoundaryUse],
+) -> Result<Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>, CodecError> {
+    let mut copy = Vec::new();
+    for boundary in boundaries {
+        let boundary = copy_arrangement_boundary(ctx, boundary)?;
+        push_geometry_item(ctx, &mut copy, boundary,
+            "f3d arrangement selected boundary")?;
+    }
+    Ok(copy)
+}
+
 fn push_arrangement_outgoing(
     outgoing: &mut Vec<(usize, bool, f64)>,
     use_: (usize, bool, f64),
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(), CodecError> {
     if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, "f3d arrangement outgoing entry")?;
         outgoing.try_reserve(1).map_err(|_| {
             ctx.refuse_codec_limit("f3d arrangement outgoing allocation", 0, 1)
         })?;
@@ -187,9 +213,9 @@ pub(super) fn arrangement_region_containing_points(
         }
     }
     if boundary_count == 1 {
-        return Ok(boundary.and_then(|face| {
-            SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok()
-        }));
+        let face = geometric!(boundary);
+        let boundary = copy_arrangement_boundary_run(ctx, &face.boundary)?;
+        return Ok(SketchProfileRegion::trimmed(boundary, Vec::new()).ok());
     }
     let mut interior = None;
     let mut interior_count = 0;
@@ -219,8 +245,9 @@ pub(super) fn arrangement_region_containing_points(
     if interior_count != 1 {
         return Ok(None);
     }
-    Ok(interior
-        .and_then(|face| SketchProfileRegion::trimmed(face.boundary.clone(), Vec::new()).ok()))
+    let face = geometric!(interior);
+    let boundary = copy_arrangement_boundary_run(ctx, &face.boundary)?;
+    Ok(SketchProfileRegion::trimmed(boundary, Vec::new()).ok())
 }
 
 fn sketch_arrangement_faces(
@@ -236,32 +263,32 @@ fn sketch_arrangement_faces(
     let mut nodes = Vec::<Point2>::new();
     let mut pending = Vec::<SketchProfileBoundaryUse>::new();
     let mut circles = Vec::new();
-    let candidate_uses = if sketch.profiles.is_empty() {
-        entities
-            .iter()
+    let mut candidate_uses = Vec::new();
+    if sketch.profiles.is_empty() {
+        for entity in entities.iter()
             .filter(|entity| entity.sketch == sketch.id && !entity.construction)
-            .filter(|entity| {
-                matches!(
-                    entity.geometry.definition(),
-                    SketchGeometryDefinition::Circle { .. }
-                ) || sketch_geometry_parameter_range(&entity.geometry).is_some()
-            })
-            .map(|entity| SketchEntityUse {
-                entity: entity.id().clone(),
-                reversed: false,
-            })
-            .collect::<Vec<_>>()
+            .filter(|entity| matches!(entity.geometry.definition(), SketchGeometryDefinition::Circle { .. })
+                || sketch_geometry_parameter_range(&entity.geometry).is_some())
+        {
+            let entity = copy_geometry_id(ctx, entity.id().as_str(),
+                "f3d arrangement candidate entity id")?;
+            push_geometry_item(ctx, &mut candidate_uses,
+                SketchEntityUse { entity, reversed: false }, "f3d arrangement candidate use")?;
+        }
     } else {
-        sketch
-            .profiles
-            .iter()
-            .flat_map(|profile| profile.iter().cloned())
-            .collect::<Vec<_>>()
-    };
+        for use_ in sketch.profiles.iter().flat_map(|profile| profile.iter()) {
+            let entity = copy_geometry_id(ctx, use_.entity.as_str(),
+                "f3d arrangement candidate entity id")?;
+            push_geometry_item(ctx, &mut candidate_uses,
+                SketchEntityUse { entity, reversed: use_.reversed },
+                "f3d arrangement candidate use")?;
+        }
+    }
     for use_ in candidate_uses {
         let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
         if let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition() {
-            circles.push((use_, center.get(), radius));
+            push_geometry_item(ctx, &mut circles, (use_, center.get(), radius),
+                "f3d arrangement circle")?;
             continue;
         }
         let range = geometric!(sketch_geometry_parameter_range(&entity.geometry));
@@ -269,31 +296,23 @@ fn sketch_arrangement_faces(
             geometric!(sketch_geometry_point(&entity.geometry, range[0])),
             geometric!(sketch_geometry_point(&entity.geometry, range[1])),
         ] {
-            arrangement_node(&mut nodes, point, tolerance);
+            arrangement_node(&mut nodes, point, tolerance, ctx)?;
         }
-        pending.push(SketchProfileBoundaryUse {
-            entity: entity.id().clone(),
+        let id = copy_geometry_id(ctx, entity.id().as_str(),
+            "f3d arrangement pending entity id")?;
+        push_geometry_item(ctx, &mut pending, SketchProfileBoundaryUse {
+            entity: id,
             parameter_range: geometric!(
                 cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()
             ),
             reversed: use_.reversed,
-        });
+        }, "f3d arrangement pending boundary")?;
     }
     for (use_, center, radius) in circles {
         if radius.get() <= tolerance {
             return Ok(None);
         }
-        let mut angles = nodes
-            .iter()
-            .filter(|point| (point_distance(**point, center) - radius.get()).abs() <= tolerance)
-            .map(|point| {
-                (point.v - center.v)
-                    .atan2(point.u - center.u)
-                    .rem_euclid(std::f64::consts::TAU)
-            })
-            .collect::<Vec<_>>();
-        angles.sort_by(f64::total_cmp);
-        angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
+        let mut angles = arrangement_circle_angles(&nodes, center, radius, tolerance, ctx)?;
         if angles.len() < 2 {
             let additional = if angles.is_empty() {
                 vec![0.0, std::f64::consts::PI]
@@ -308,19 +327,10 @@ fn sketch_arrangement_faces(
                         center.v + radius.get() * angle.sin(),
                     ),
                     tolerance,
-                );
+                    ctx,
+                )?;
             }
-            angles = nodes
-                .iter()
-                .filter(|point| (point_distance(**point, center) - radius.get()).abs() <= tolerance)
-                .map(|point| {
-                    (point.v - center.v)
-                        .atan2(point.u - center.u)
-                        .rem_euclid(std::f64::consts::TAU)
-                })
-                .collect::<Vec<_>>();
-            angles.sort_by(f64::total_cmp);
-            angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
+            angles = arrangement_circle_angles(&nodes, center, radius, tolerance, ctx)?;
         }
         if angles.len() < 2 {
             return Ok(None);
@@ -332,14 +342,16 @@ fn sketch_arrangement_faces(
                 end += std::f64::consts::TAU;
             }
             let range = [start, end];
-            pending.push(SketchProfileBoundaryUse {
-                entity: use_.entity.clone(),
+            let id = copy_geometry_id(ctx, use_.entity.as_str(),
+                "f3d arrangement pending entity id")?;
+            push_geometry_item(ctx, &mut pending, SketchProfileBoundaryUse {
+                entity: id,
                 parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
                     range
                 )
                 .ok()),
                 reversed: use_.reversed,
-            });
+            }, "f3d arrangement pending boundary")?;
         }
     }
     let mut split_pending = Vec::new();
@@ -356,31 +368,34 @@ fn sketch_arrangement_faces(
         )?);
         for parameters in parameters.windows(2) {
             let range = [parameters[0], parameters[1]];
-            split_pending.push((
+            let id = copy_geometry_id(ctx, boundary.entity.as_str(),
+                "f3d arrangement split entity id")?;
+            let parameter_range = geometric!(
+                cadmpeg_ir::geometry::DirectedParameterRange::new(range).ok()
+            );
+            let polyline = geometric!(profile_use_polyline(
+                entity,
+                range,
+                boundary.reversed,
+                tolerance,
+                ctx,
+            )?);
+            push_geometry_item(ctx, &mut split_pending, (
                 SketchProfileBoundaryUse {
-                    entity: boundary.entity.clone(),
-                    parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
-                        range
-                    )
-                    .ok()),
+                    entity: id,
+                    parameter_range,
                     reversed: boundary.reversed,
                 },
-                geometric!(profile_use_polyline(
-                    entity,
-                    range,
-                    boundary.reversed,
-                    tolerance,
-                    ctx,
-                )?),
-            ));
+                polyline,
+            ), "f3d arrangement split boundary")?;
         }
     }
     let mut edges = Vec::<SketchArrangementEdge>::new();
     for (boundary, polyline) in split_pending {
         let edge = SketchArrangementEdge {
             nodes: [
-                arrangement_node(&mut nodes, *geometric!(polyline.first()), tolerance),
-                arrangement_node(&mut nodes, *geometric!(polyline.last()), tolerance),
+                arrangement_node(&mut nodes, *geometric!(polyline.first()), tolerance, ctx)?,
+                arrangement_node(&mut nodes, *geometric!(polyline.last()), tolerance, ctx)?,
             ],
             boundary,
             polyline,
@@ -394,7 +409,7 @@ fn sketch_arrangement_faces(
         }) {
             continue;
         }
-        edges.push(edge);
+        push_geometry_item(ctx, &mut edges, edge, "f3d arrangement edge")?;
     }
     arrangement_retain_cycle_edges(&mut edges, nodes.len(), budget, ctx)?;
     if budget.exhausted() {
@@ -408,16 +423,15 @@ fn sketch_arrangement_faces(
         let Some(tubes) = arrangement_edge_tubes(edge, entities, tolerance, ctx)? else {
             return Ok(None);
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "f3d arrangement edge tube set")?;
-        }
-        edge_tubes.push(tubes);
+        push_geometry_item(ctx, &mut edge_tubes, tubes,
+            "f3d arrangement edge tube set")?;
     }
-    let edge_bounds = edge_tubes
-        .iter()
-        .map(|tubes| certified_tube_bounds(tubes))
-        .collect::<Option<Vec<_>>>();
-    let edge_bounds = geometric!(edge_bounds);
+    let mut edge_bounds = Vec::new();
+    for tubes in &edge_tubes {
+        let bounds = geometric!(certified_tube_bounds(tubes));
+        push_geometry_item(ctx, &mut edge_bounds, bounds,
+            "f3d arrangement edge bounds")?;
+    }
     for left_index in 0..edges.len() {
         for right_index in left_index + 1..edges.len() {
             let left = &edges[left_index];
@@ -535,14 +549,23 @@ fn sketch_arrangement_faces(
                 }
                 visited[index][usize::from(reverse)] = true;
                 let edge = &edges[index];
-                let mut use_ = edge.boundary.clone();
-                let mut points = edge.polyline.clone();
+                let mut use_ = copy_arrangement_boundary(ctx, &edge.boundary)?;
                 if reverse {
                     use_.reversed = !use_.reversed;
-                    points.reverse();
                 }
-                boundary.push(use_);
-                polyline.extend(points.into_iter().take(edge.polyline.len() - 1));
+                push_geometry_item(ctx, &mut boundary, use_,
+                    "f3d arrangement face boundary")?;
+                if reverse {
+                    for point in edge.polyline.iter().rev().take(edge.polyline.len() - 1) {
+                        push_geometry_item(ctx, &mut polyline, *point,
+                            "f3d arrangement face point")?;
+                    }
+                } else {
+                    for point in edge.polyline.iter().take(edge.polyline.len() - 1) {
+                        push_geometry_item(ctx, &mut polyline, *point,
+                            "f3d arrangement face point")?;
+                    }
+                }
                 let destination = edge.nodes[usize::from(!reverse)];
                 let uses = &outgoing[destination];
                 let twin = geometric!(uses.iter().position(|(candidate, candidate_reverse, _)| {
@@ -552,7 +575,9 @@ fn sketch_arrangement_faces(
                 current = (next.0, next.1);
             }
             if polyline.len() >= 3 && signed_polygon_area(&polyline) > tolerance * tolerance {
-                faces.push(SketchArrangementFace { boundary, polyline });
+                push_geometry_item(ctx, &mut faces,
+                    SketchArrangementFace { boundary, polyline },
+                    "f3d arrangement face")?;
             }
         }
     }
@@ -1031,14 +1056,41 @@ fn arrangement_split_parameters(
     Ok((parameters.len() >= 2).then_some(parameters))
 }
 
-fn arrangement_node(nodes: &mut Vec<Point2>, point: Point2, tolerance: f64) -> usize {
-    nodes
+fn arrangement_circle_angles(
+    nodes: &[Point2],
+    center: Point2,
+    radius: PositiveLength,
+    tolerance: f64,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Vec<f64>, CodecError> {
+    let mut angles = Vec::new();
+    for point in nodes.iter()
+        .filter(|point| (point_distance(**point, center) - radius.get()).abs() <= tolerance)
+    {
+        let angle = (point.v - center.v)
+            .atan2(point.u - center.u)
+            .rem_euclid(std::f64::consts::TAU);
+        push_geometry_item(ctx, &mut angles, angle, "f3d arrangement circle angle")?;
+    }
+    angles.sort_by(f64::total_cmp);
+    angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
+    Ok(angles)
+}
+
+fn arrangement_node(
+    nodes: &mut Vec<Point2>,
+    point: Point2,
+    tolerance: f64,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<usize, CodecError> {
+    if let Some(index) = nodes
         .iter()
         .position(|candidate| point_distance(*candidate, point) <= tolerance)
-        .unwrap_or_else(|| {
-            nodes.push(point);
-            nodes.len() - 1
-        })
+    {
+        return Ok(index);
+    }
+    push_geometry_item(ctx, nodes, point, "f3d arrangement node")?;
+    Ok(nodes.len() - 1)
 }
 
 /// Remove curve fragments that cannot bound a planar face.
