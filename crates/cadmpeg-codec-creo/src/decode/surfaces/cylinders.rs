@@ -366,24 +366,31 @@ pub(in super::super) fn transfer_hole_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let hole_feature_ids = scan
+    let mut hole_feature_ids = BTreeSet::new();
+    for feature_id in scan
         .features
         .rows
         .iter()
         .filter(|row| row.root_schema_class == Some(SchemaClass::Hole))
         .map(|row| row.feature_id)
-        .collect::<BTreeSet<_>>();
+    {
+        if !hole_feature_ids.contains(&feature_id) {
+            ctx.charge_collection_items(1, "creo hole cylinder feature ID nodes")?;
+            hole_feature_ids.insert(feature_id);
+        }
+    }
     let mut transferred = 0;
     for feature_id in hole_feature_ids {
-        let cylinders = if let Some(hole) = simple_hole_geometry(ctx, scan, feature_id)? {
-            hole.cylinder_rows
-                .into_iter()
-                .map(|row| (row, hole.geometry))
-                .collect::<Vec<_>>()
+        let simple = simple_hole_geometry(ctx, scan, feature_id)?;
+        let counterbore = if simple.is_some() {
+            None
         } else {
-            counterbore_patch_geometries(scan, ir, feature_id).unwrap_or_default()
+            counterbore_patch_geometries(scan, ir, feature_id)
         };
-        for (row, geometry) in cylinders {
+        let simple_rows = simple.into_iter().flat_map(|hole| {
+            hole.cylinder_rows.into_iter().map(move |row| (row, hole.geometry))
+        });
+        for (row, geometry) in simple_rows.chain(counterbore.into_iter().flatten()) {
             let cylinder_id = row.id;
             let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, cylinder_id);
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
