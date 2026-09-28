@@ -2796,7 +2796,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_canvas_images,
             &mut self.ir.model.features,
         )?;
-        extend_unique_assets(&mut self.ir.model.assets, canvas_assets)?;
+        extend_unique_assets(ctx, &mut self.ir.model.assets, canvas_assets)?;
         let decal_assets = crate::design::decode::decal::project_decal_images(
             scan,
             &self.native.design_parameter_scopes,
@@ -2805,7 +2805,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_body_recipe_operands,
             &mut self.ir.model.features,
         )?;
-        extend_unique_assets(&mut self.ir.model.assets, decal_assets)?;
+        extend_unique_assets(ctx, &mut self.ir.model.assets, decal_assets)?;
         crate::design::configurations::bind_configuration_parameter_overrides(
             &mut self.ir.model.configurations,
             &self.ir.model.parameters,
@@ -3553,6 +3553,7 @@ struct MeshProjection {
 }
 
 fn extend_unique_assets(
+    ctx: &DecodeContext<'_>,
     assets: &mut Vec<cadmpeg_ir::assets::Asset>,
     incoming: Vec<cadmpeg_ir::assets::Asset>,
 ) -> Result<(), CodecError> {
@@ -3565,7 +3566,7 @@ fn extend_unique_assets(
                 )));
             }
             Some(_) => {}
-            None => assets.push(asset),
+            None => push_decode_item(ctx, assets, asset, "append F3D unique assets")?,
         }
     }
     Ok(())
@@ -3629,7 +3630,7 @@ fn project_mesh_bodies(
             .map_err(CodecError::Malformed)?,
         );
     }
-    extend_unique_assets(&mut ir.model.assets, texture_assets)?;
+    extend_unique_assets(ctx, &mut ir.model.assets, texture_assets)?;
     let mut texture_tables = std::collections::HashMap::new();
     for feature in &native.design_mesh_features {
         let texture_table = feature
