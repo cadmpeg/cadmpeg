@@ -5215,36 +5215,30 @@ pub(super) fn feature_datum_csys_payload_scalars(
 
 /// Decode the final three descriptor lanes of datum coordinate systems.
 pub(super) fn feature_datum_csys_descriptors(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     constructions: &[FeatureDatumCsysConstruction],
-) -> Vec<FeatureDatumCsysDescriptor> {
+) -> Result<Vec<FeatureDatumCsysDescriptor>, CodecError> {
     let blocks = offset_data_block_bytes(container);
-    constructions
-        .iter()
-        .flat_map(|construction| {
-            [
-                CsysDescriptorSlot::Five,
-                CsysDescriptorSlot::Six,
-                CsysDescriptorSlot::Seven,
-            ]
-            .into_iter()
-            .filter_map(|slot| {
-                let reference_ordinal = u8::from(slot);
-                let data_block = &construction.frame.members()[usize::from(reference_ordinal)].1;
-                let &(bytes, source_offset) = blocks.get(data_block)?;
-                let descriptor = crate::om::datum_csys_descriptor_block(bytes)?;
-                Some(FeatureDatumCsysDescriptor {
-                    id: format!("{}-descriptor-{reference_ordinal}", construction.id),
-                    operation_label: construction.operation_label.clone(),
-                    construction: construction.id.clone(),
-                    reference_ordinal: slot,
-                    data_block: data_block.clone(),
-                    descriptor: LocatedCsysDescriptor::new(descriptor, source_offset).ok()?,
-                })
-            })
-            .collect::<Vec<_>>()
-        })
-        .collect()
+    let mut descriptors = Vec::new();
+    for construction in constructions {
+        for slot in [CsysDescriptorSlot::Five, CsysDescriptorSlot::Six, CsysDescriptorSlot::Seven] {
+            let reference_ordinal = u8::from(slot);
+            let data_block = &construction.frame.members()[usize::from(reference_ordinal)].1;
+            let Some(&(bytes, source_offset)) = blocks.get(data_block) else { continue; };
+            let Some(descriptor) = crate::om::datum_csys_descriptor_block(ctx, bytes)? else { continue; };
+            let Some(descriptor) = LocatedCsysDescriptor::new(descriptor, source_offset).ok() else { continue; };
+            descriptors.push(FeatureDatumCsysDescriptor {
+                id: format!("{}-descriptor-{reference_ordinal}", construction.id),
+                operation_label: construction.operation_label.clone(),
+                construction: construction.id.clone(),
+                reference_ordinal: slot,
+                data_block: data_block.clone(),
+                descriptor,
+            });
+        }
+    }
+    Ok(descriptors)
 }
 
 /// Join equal typed descriptor identities across datum-plane and datum-CSYS history.
