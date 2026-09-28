@@ -181,6 +181,17 @@ fn gui_points_transform_diagnostic_refuses_at_matching_retained_limit() {
 }
 
 #[test]
+fn gui_techdraw_diagnostic_refuses_at_matching_retained_limit() {
+    crate::test_support::assert_retained_refusal_at(
+        &[], "FCStd GUI TechDraw diagnostic", |ctx| {
+            Err::<(), _>(super::super::gui_techdraw_error(
+                ctx, "CenterLines", "has an invalid field sequence",
+            ))
+        },
+    );
+}
+
+#[test]
 fn camera_tokens_refuse_at_matching_collection_limit() {
     crate::test_support::assert_collection_refusal_at(
         &[], "FCStd GUI camera tokens", |ctx| {
