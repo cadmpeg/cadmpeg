@@ -43,6 +43,44 @@ fn insert_constraint_index<K: Eq + Hash, V>(
     Ok(())
 }
 
+fn push_constraint_item<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut Vec<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    items.push(item);
+    Ok(())
+}
+
+fn copy_constraint_text(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    match ctx {
+        Some(ctx) => String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
+            .map_err(|_| CodecError::malformed("validated constraint text is not UTF-8")),
+        None => Ok(value.to_owned()),
+    }
+}
+
+fn copy_constraint_id<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &str,
+    operation: &'static str,
+) -> Result<T, CodecError>
+where
+    T: TryFrom<String>,
+    T::Error: std::fmt::Display,
+{
+    T::try_from(copy_constraint_text(ctx, value, operation)?).map_err(CodecError::malformed)
+}
+
 /// Project each native relation as an exact atomic constraint or an explicitly
 /// native aggregate when its semantic members do not prove neutral loci.
 pub(crate) fn project_sketch_constraints(
@@ -135,7 +173,7 @@ pub(crate) fn project_sketch_constraints(
     }
     let native_operand = |scope: &str,
                           field: cadmpeg_core::text::NonBlankString,
-                          record_index: u32| {
+                          record_index: u32| -> Result<SketchNativeOperand, CodecError> {
         let (family, native_ref) = if let Some(native_ref) =
             point_native_refs.get(&(scope, record_index)).copied()
         {
@@ -147,7 +185,7 @@ pub(crate) fn project_sketch_constraints(
         } else {
             (cadmpeg_core::nonblank_literal!("record"), None)
         };
-        SketchNativeOperand {
+        Ok(SketchNativeOperand {
             native_kind: family,
             field: Some(NativeOperandField {
                 name: field,
@@ -156,53 +194,40 @@ pub(crate) fn project_sketch_constraints(
             object_index: Some(record_index),
             native_ref: native_ref
                 .filter(|_| !projected.contains_key(&(scope, record_index)))
-                .map(str::to_owned),
-        }
+                .map(|value| copy_constraint_text(ctx, value,
+                    "f3d sketch constraint operand native reference"))
+                .transpose()?,
+        })
     };
 
     let project_relation = |relation: &SketchRelation| -> Result<Option<SketchConstraint>, CodecError> {
         let Some(scope) = native_stream(&relation.id) else { return Ok(None); };
-        let Some(sketch) = sketches.get(&(scope, relation.owner_reference)).cloned() else {
+        let Some(sketch) = sketches.get(&(scope, relation.owner_reference)) else {
             return Ok(None);
         };
-        let input_entities = relation
-            .members()
-            .iter()
-            .filter_map(|member| {
-                projected
-                    .get(&(scope, member.reference.record_index()))
-                    .copied()
-            })
-            .collect::<Vec<_>>();
+        let sketch = copy_constraint_id(ctx, sketch.as_str(),
+            "f3d sketch constraint sketch id")?;
+        let mut input_entities = Vec::new();
+        for member in relation.members().iter() {
+            if let Some(entity) = projected.get(&(scope, member.reference.record_index())) {
+                push_constraint_item(ctx, &mut input_entities, *entity,
+                    "f3d sketch constraint input entity")?;
+            }
+        }
         // The second reference run is the relation's semantic member order.
         // The interleaved first run is retained separately because
         // circular-pattern decoding verifies both reference sets before using
         // the semantic order.
-        let semantic_entities = relation
-            .return_members()
-            .iter()
-            .filter_map(|member| {
-                projected
-                    .get(&(scope, member.reference.record_index()))
-                    .copied()
-            })
-            .collect::<Vec<_>>();
+        let mut semantic_entities = Vec::new();
+        for member in relation.return_members().iter() {
+            if let Some(entity) = projected.get(&(scope, member.reference.record_index())) {
+                push_constraint_item(ctx, &mut semantic_entities, *entity,
+                    "f3d sketch constraint semantic entity")?;
+            }
+        }
         let sole_kind = relation
             .sole_constraint_kind()
             .filter(|_| semantic_entities.len() == relation.return_members().len());
-        let native_entities = || {
-            relation
-                .member_indices()
-                .into_iter()
-                .chain(relation.auxiliary_references().values().copied())
-                .chain(relation.return_member_indices())
-                .filter_map(|record_index| {
-                    projected
-                        .get(&(scope, record_index))
-                        .map(|entity| entity.id().clone())
-                })
-                .collect()
-        };
         let definition = (if let Some(kind) = sole_kind {
             let loci = if kind == SketchConstraintKind::Coincident {
                 exact_coincident_loci(&semantic_entities, ctx)?
@@ -224,53 +249,54 @@ pub(crate) fn project_sketch_constraints(
             )
         })
         .or_else(|| exact_offset_constraint(relation, scope, &projected))
-        .or_else(|| exact_text_relation(relation, scope, &projected))
-        .or_else(|| {
-            Some(Definition::Native {
-                native_kind: cadmpeg_core::text::NonBlankString::new(relation_kind_name(relation))?,
+        .or_else(|| exact_text_relation(relation, scope, &projected));
+        let definition = if let Some(definition) = definition {
+            definition
+        } else {
+            let Some(native_kind) = cadmpeg_core::text::NonBlankString::new(relation_kind_name(relation)) else {
+                return Ok(None);
+            };
+            let member_indices = relation.members().iter().map(|member| member.reference.record_index());
+            let auxiliary_indices = relation.auxiliary_references().values().copied();
+            let return_indices = relation.return_members().iter().map(|member| member.reference.record_index());
+            let mut native_entities = Vec::new();
+            for record_index in member_indices.chain(auxiliary_indices).chain(return_indices) {
+                if let Some(entity) = projected.get(&(scope, record_index)) {
+                    let id = copy_constraint_id(ctx, entity.id().as_str(),
+                        "f3d sketch constraint native entity id")?;
+                    push_constraint_item(ctx, &mut native_entities, id,
+                        "f3d sketch constraint native entity")?;
+                }
+            }
+            let mut operands = Vec::new();
+            for member in relation.members().iter() {
+                let operand = native_operand(scope, cadmpeg_core::nonblank_literal!("member"),
+                    member.reference.record_index())?;
+                push_constraint_item(ctx, &mut operands, operand,
+                    "f3d sketch constraint native operand")?;
+            }
+            for record_index in relation.auxiliary_references().values() {
+                let operand = native_operand(scope, cadmpeg_core::nonblank_literal!("auxiliary"),
+                    *record_index)?;
+                push_constraint_item(ctx, &mut operands, operand,
+                    "f3d sketch constraint native operand")?;
+            }
+            for member in relation.return_members().iter() {
+                let operand = native_operand(scope, cadmpeg_core::nonblank_literal!("return"),
+                    member.reference.record_index())?;
+                push_constraint_item(ctx, &mut operands, operand,
+                    "f3d sketch constraint native operand")?;
+            }
+            Definition::Native {
+                native_kind,
                 native_state: Some(relation.definition.state()),
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
-                entities: native_entities(),
+                entities: native_entities,
                 parameter: None,
-                operands: relation
-                    .member_indices()
-                    .into_iter()
-                    .map(|record_index| {
-                        native_operand(
-                            scope,
-                            cadmpeg_core::nonblank_literal!("member"),
-                            record_index,
-                        )
-                    })
-                    .chain(
-                        relation
-                            .auxiliary_references()
-                            .values()
-                            .map(|record_index| {
-                                native_operand(
-                                    scope,
-                                    cadmpeg_core::nonblank_literal!("auxiliary"),
-                                    *record_index,
-                                )
-                            }),
-                    )
-                    .chain(
-                        relation
-                            .return_member_indices()
-                            .into_iter()
-                            .map(|record_index| {
-                                native_operand(
-                                    scope,
-                                    cadmpeg_core::nonblank_literal!("return"),
-                                    record_index,
-                                )
-                            }),
-                    )
-                    .collect(),
-            })
-        });
-        let Some(definition) = definition else { return Ok(None); };
+                operands,
+            }
+        };
         let Some(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok() else {
             return Ok(None);
         };
@@ -287,19 +313,15 @@ pub(crate) fn project_sketch_constraints(
             label_distance: None,
             label_position: None,
             metadata: None,
-            native_ref: Some(relation.id.clone()),
+            native_ref: Some(copy_constraint_id(ctx, relation.id.as_str(),
+                "f3d sketch constraint native reference")?),
         }))
     };
     let mut constraints = Vec::new();
     for relation in relations {
         if let Some(constraint) = project_relation(relation)? {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "f3d projected sketch constraint")?;
-                constraints.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("f3d projected sketch constraint allocation", 0, 1)
-                })?;
-            }
-            constraints.push(constraint);
+            push_constraint_item(ctx, &mut constraints, constraint,
+                "f3d projected sketch constraint")?;
         }
     }
     constraints.sort_by(|a, b| a.id.cmp(&b.id));
@@ -1055,6 +1077,168 @@ mod tests {
             ));
             assert!(index.is_empty());
         }
+    }
+
+    fn projected_constraint_fixture() -> (
+        crate::records::sketch_placement::DesignSketchPlacement,
+        crate::records::sketch_geometry::SketchPoint,
+        crate::records::sketch_geometry::SketchPoint,
+        SketchRelation,
+        cadmpeg_ir::sketches::SketchEntity,
+    ) {
+        use crate::records::identity::DesignEntityId;
+        use crate::records::references::DesignClassTag;
+        use crate::records::sketch_geometry::{
+            SketchPointCompanion, SketchPointDraft, SketchPointRecordForm, SketchPointClosure,
+        };
+        use crate::records::sketch_placement::{
+            DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement,
+        };
+        use crate::records::sketch_relations::{SketchRelationDefinition, SketchRelationDraft};
+
+        let placement = DesignSketchPlacement {
+            frame: DesignSketchFrame::new(0, DesignSketchFrameForm::ScopeCompact).unwrap(),
+            id: "f3d:test:design-sketch-placement#0".to_owned(),
+            scope_record_index: Some(10),
+            entity_id: DesignEntityId::try_from("test_100".to_owned()).unwrap(),
+            visibility: None,
+            class_tag: DesignClassTag::try_from("356".to_owned()).unwrap(),
+            record_index: 11,
+            paired_class_tag: DesignClassTag::try_from("259".to_owned()).unwrap(),
+        };
+        let make_point = |id: &str, record_index| crate::records::sketch_geometry::SketchPoint::try_from(SketchPointDraft {
+            id: id.to_owned(),
+            record_index,
+            owner_reference: None,
+            class_tag: DesignClassTag::try_from("301".to_owned()).unwrap(),
+            byte_offset: 0,
+            coordinate_offset: 89,
+            companion: SketchPointCompanion { incident_curves: Vec::new() },
+            record_form: SketchPointRecordForm::version11(
+                u64::from(record_index), SketchPointClosure::Selector0State0, None, 0.0,
+            ),
+            paired_reference: 0,
+            coordinates: Point2::new(1.0, 2.0),
+        }).unwrap();
+        let point = make_point("f3d:test:sketch-point#0", 20);
+        let unprojected_point = make_point("f3d:test:sketch-point#1", 21);
+        let relation = SketchRelation::try_new(SketchRelationDraft {
+            id: "f3d:test:sketch-relation#30".to_owned(),
+            record_index: 30,
+            class_tag: DesignClassTag::try_from("302".to_owned()).unwrap(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 100,
+            owner_entity_id: None,
+            auxiliary_references: crate::records::identity::ReferenceRun::located(vec![
+                crate::records::identity::Located { value: 21, offset: 0 },
+            ]),
+            rectangular_counted_reference_count: None,
+            members: vec![SketchRelationMember::from_index(20)].try_into().unwrap(),
+            owner_reference_offset: 0,
+            definition: SketchRelationDefinition::new(0x1_0000_0040, None).unwrap(),
+            entity_genesis: None,
+            return_members: vec![SketchRelationReturnMember::from_index(20)].try_into().unwrap(),
+            raw_bytes: vec![0; 160],
+        }).unwrap();
+        let mut entity = cadmpeg_ir::sketches::SketchEntity::new(
+            SketchEntityId::mint("synthetic:test:id#projected-point").unwrap(),
+            crate::ids::neutral_sketch_id(&placement),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: Point2::new(1.0, 2.0),
+            }).unwrap(),
+        );
+        entity.native_ref = Some(point.id.clone());
+        (placement, point, unprojected_point, relation, entity)
+    }
+
+    fn assert_projected_constraint_refusal(operation: &'static str) {
+        let (placement, point, unprojected_point, relation, entity) = projected_constraint_fixture();
+        let placements = [placement];
+        let points = [point, unprojected_point];
+        let relations = [relation];
+        let entities = [entity];
+        for limit in 0..64 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match super::project_sketch_constraints(
+                Some(&ctx), &placements, &[], &points, &[], &[], &relations, &entities,
+            ) {
+                Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+                Err(CodecError::ResourceLimit(_)) => {}
+                other => panic!("expected collection refusal at {operation}: {other:?}"),
+            }
+        }
+        panic!("no refusal at {operation}");
+    }
+
+    fn assert_projected_constraint_retained_refusal(operation: &'static str) {
+        let (placement, point, unprojected_point, relation, entity) = projected_constraint_fixture();
+        let placements = [placement];
+        let points = [point, unprojected_point];
+        let relations = [relation];
+        let entities = [entity];
+        for limit in 0..512 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match super::project_sketch_constraints(
+                Some(&ctx), &placements, &[], &points, &[], &[], &relations, &entities,
+            ) {
+                Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+                Err(CodecError::ResourceLimit(_)) => {}
+                other => panic!("expected retained refusal at {operation}: {other:?}"),
+            }
+        }
+        panic!("no refusal at {operation}");
+    }
+
+    #[test]
+    fn projected_constraint_refuses_sketch_id_copy() {
+        assert_projected_constraint_retained_refusal("f3d sketch constraint sketch id");
+    }
+
+    #[test]
+    fn projected_constraint_refuses_native_entity_id_copy() {
+        assert_projected_constraint_retained_refusal("f3d sketch constraint native entity id");
+    }
+
+    #[test]
+    fn projected_constraint_refuses_operand_native_reference_copy() {
+        assert_projected_constraint_retained_refusal("f3d sketch constraint operand native reference");
+    }
+
+    #[test]
+    fn projected_constraint_refuses_relation_native_reference_copy() {
+        assert_projected_constraint_retained_refusal("f3d sketch constraint native reference");
+    }
+
+    #[test]
+    fn projected_constraint_refuses_input_entity_growth() {
+        assert_projected_constraint_refusal("f3d sketch constraint input entity");
+    }
+
+    #[test]
+    fn projected_constraint_refuses_semantic_entity_growth() {
+        assert_projected_constraint_refusal("f3d sketch constraint semantic entity");
+    }
+
+    #[test]
+    fn projected_constraint_refuses_native_entity_growth() {
+        assert_projected_constraint_refusal("f3d sketch constraint native entity");
+    }
+
+    #[test]
+    fn projected_constraint_refuses_native_operand_growth() {
+        assert_projected_constraint_refusal("f3d sketch constraint native operand");
+    }
+
+    #[test]
+    fn projected_constraint_refuses_output_growth() {
+        assert_projected_constraint_refusal("f3d projected sketch constraint");
     }
 
     #[test]
