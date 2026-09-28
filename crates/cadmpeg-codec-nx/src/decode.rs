@@ -150,6 +150,7 @@ fn report_untransferred_streams(
     let (control_count, classified_control_count) =
         offset_store_control_counts(ctx, &scan.container)?;
     if classified_control_count != control_count {
+        charge_loss_code(ctx, NxLossCode::OffsetStoreControlUntyped)?;
         push_loss(ctx, body, NxLossCode::OffsetStoreControlUntyped.note(render_retained_text(
             ctx,
             format_args!(
@@ -166,6 +167,7 @@ fn report_untransferred_streams(
                 && content == EntryContent::SaveToggleInfo
                 && crate::native::toggle::has_complete_saved_toggle_stream(&scan.container))
         {
+            charge_loss_code(ctx, NxLossCode::ContainerStreamOpaque)?;
             push_loss(ctx, body, NxLossCode::ContainerStreamOpaque.note(render_retained_text(
                 ctx,
                 format_args!(
@@ -179,6 +181,7 @@ fn report_untransferred_streams(
     }
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
+            charge_loss_code(ctx, NxLossCode::NonParasolidStreamOmitted)?;
             push_loss(ctx, body, NxLossCode::NonParasolidStreamOmitted.note(render_retained_text(
                 ctx,
                 format_args!(
@@ -190,6 +193,13 @@ fn report_untransferred_streams(
         }
     }
     Ok(())
+}
+
+fn charge_loss_code(ctx: &DecodeContext<'_>, code: NxLossCode) -> Result<(), CodecError> {
+    let bytes = "nx".len().checked_add(code.code().len()).ok_or_else(|| {
+        ctx.refuse_codec_limit("nx loss code text", 0, u64::MAX)
+    })?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "nx loss code text")
 }
 
 fn push_loss(
@@ -309,13 +319,25 @@ fn build_metadata_ir(
     let mut ir = CadIr::decoded(source_meta(ctx, scan, dialects)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
+    let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for (si, stream) in scan.streams.iter().enumerate() {
         if stream.kind().is_parasolid() {
             let unknown = unknown_stream(ctx, si, stream)?;
-            let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+            let note_bytes = unknown.id().as_str().len().checked_add(stream.kind().label().len())
+                .ok_or_else(|| ctx.refuse_codec_limit("nx metadata annotation text", 0, u64::MAX))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(note_bytes),
+                "nx metadata annotation text",
+            )?;
+            ctx.charge_collection_items(1, "nx metadata provenance annotation")?;
             annotations
                 .note(unknown.id(), &source_stream, stream.file_offset as u64)
                 .tag(stream.kind().label());
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(unknown.id().as_str().len()),
+                "nx metadata exactness identity",
+            )?;
+            ctx.charge_collection_items(1, "nx metadata exactness annotation")?;
             annotations.exactness(unknown.id(), Exactness::Derived);
             unknowns.push(unknown);
         }

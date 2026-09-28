@@ -43,3 +43,49 @@ fn metadata_unknown_stream_slots_refuse_at_collection_limit() {
                 && limit.operation == "nx metadata unknown streams"
     ));
 }
+
+#[test]
+fn untransferred_stream_report_refuses_loss_code_retained_limit() {
+    let scan = crate::decode::Scan {
+        container: crate::container::Container {
+            data: Vec::new().into(),
+            physical_size: 0,
+            layout: crate::container::test_modern_layout(0x06),
+            entries: Vec::new(),
+            fastload_table: None,
+            indexed_section_layouts: std::sync::OnceLock::new(),
+            om_section_cache: std::sync::OnceLock::new(),
+        },
+        streams: vec![crate::parasolid::Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: Vec::new(),
+            body: crate::parasolid::StreamBody::Preview,
+        }],
+    };
+    let mut body = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits policy");
+    let error = super::super::report_untransferred_streams(
+        &ctx,
+        &scan,
+        &mut body,
+        crate::native::TypedNative::Available,
+    )
+    .expect_err("loss code retained refusal");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "nx loss code text"
+    ));
+}
