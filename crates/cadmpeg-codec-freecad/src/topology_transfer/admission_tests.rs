@@ -205,6 +205,41 @@ fn pcurve_nested_basis_refuses_at_depth_limit() {
 }
 
 #[test]
+fn topology_occurrence_property_refuses_at_retained_limit() {
+    assert_codec_retained_refusal(&triangulated_face_archive(), "FreeCAD topology occurrence property");
+}
+
+#[test]
+fn polygonal_surface_identity_refuses_at_retained_limit() {
+    assert_codec_retained_refusal(&triangulated_face_archive(), "FreeCAD polygonal surface identity");
+}
+
+#[test]
+fn triangulated_surface_emitted_identity_refuses_at_retained_limit() {
+    assert_codec_retained_refusal(&triangulated_face_archive(), "FreeCAD emitted surface identity");
+}
+
+#[test]
+fn triangulated_surface_set_refuses_at_collection_limit() {
+    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD emitted surfaces");
+}
+
+#[test]
+fn emitted_triangulations_refuse_at_collection_limit() {
+    assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD emitted triangulations");
+}
+
+#[test]
+fn tessellation_key_refuses_at_retained_limit() {
+    assert_codec_retained_refusal(&triangulated_face_archive(), "FreeCAD tessellation key");
+}
+
+#[test]
+fn tessellation_body_identity_refuses_at_retained_limit() {
+    assert_codec_retained_refusal(&triangulated_face_archive(), "FreeCAD tessellation body identity");
+}
+
+#[test]
 fn topology_body_roots_refuse_at_collection_limit() {
     assert_codec_collection_refusal(&triangulated_face_archive(), "FreeCAD topology body roots");
 }
