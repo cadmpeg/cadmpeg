@@ -3,8 +3,8 @@
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
+use crate::design::decode::text::relaxed_guid_end;
 use crate::design::decode::text::lp_ascii_filtered_view;
-use crate::bytes::lp_utf16_bounded;
 use crate::bytes::{f64s_at, finite_reals_at};
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -343,11 +343,13 @@ fn translation_delta(
 }
 
 pub(super) fn exact_circular_pattern_construction_with_owners(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
-) -> Option<DesignCircularPatternConstruction> {
+) -> Result<Option<DesignCircularPatternConstruction>, CodecError> {
+    let parsed = (|| {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::CircularPattern) {
         return None;
     }
@@ -366,6 +368,12 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 *selection_record_index,
                 scope.record_index,
             ) {
+                if let Err(error) = ctx.charge_collection_items(1, "f3d circular pattern axis candidates") {
+                    return Some(Err(error));
+                }
+                if axis_candidates.try_reserve(1).is_err() {
+                    return Some(Err(ctx.refuse_codec_limit("f3d circular pattern axis candidates allocation", 0, 1)));
+                }
                 axis_candidates.push(CircularPatternAxisCandidate {
                     axis,
                     axis_record_index: *record_index,
@@ -384,6 +392,12 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 *record_index,
                 scope,
             ) {
+                if let Err(error) = ctx.charge_collection_items(1, "f3d circular pattern axis candidates") {
+                    return Some(Err(error));
+                }
+                if axis_candidates.try_reserve(1).is_err() {
+                    return Some(Err(ctx.refuse_codec_limit("f3d circular pattern axis candidates allocation", 0, 1)));
+                }
                 axis_candidates.push(CircularPatternAxisCandidate {
                     axis,
                     axis_record_index: *record_index,
@@ -413,17 +427,28 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             owner.evaluated_value_offset(),
         ))
     });
-    let mut count_candidates = owner_count_candidates.collect::<Vec<_>>();
+    let mut count_candidates = Vec::new();
+    for candidate in owner_count_candidates {
+        if let Err(error) = ctx.charge_collection_items(1, "f3d circular pattern count candidates") {
+            return Some(Err(error));
+        }
+        if count_candidates.try_reserve(1).is_err() {
+            return Some(Err(ctx.refuse_codec_limit("f3d circular pattern count candidates allocation", 0, 1)));
+        }
+        count_candidates.push(candidate);
+    }
     if count_candidates.is_empty() {
-        count_candidates.extend(
-            scope
-                .reference_members()
-                .values()
-                .filter_map(|record_index| {
-                    exact_fixed_pattern_count(bytes, records, *record_index, scope.record_index)
-                        .map(|(count, count_offset)| (count, *record_index, count_offset))
-                }),
-        );
+        for record_index in scope.reference_members().values() {
+            if let Some((count, count_offset)) = exact_fixed_pattern_count(bytes, records, *record_index, scope.record_index) {
+                if let Err(error) = ctx.charge_collection_items(1, "f3d circular pattern count candidates") {
+                    return Some(Err(error));
+                }
+                if count_candidates.try_reserve(1).is_err() {
+                    return Some(Err(ctx.refuse_codec_limit("f3d circular pattern count candidates allocation", 0, 1)));
+                }
+                count_candidates.push((count, *record_index, count_offset));
+            }
+        }
     }
     count_candidates.sort_unstable();
     count_candidates.dedup();
@@ -441,23 +466,35 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
             owner.evaluated_value_offset(),
         ))
     });
-    let mut angle_candidates = owner_angle_candidates.collect::<Vec<_>>();
+    let mut angle_candidates = Vec::new();
+    for candidate in owner_angle_candidates {
+        if let Err(error) = ctx.charge_collection_items(1, "f3d circular pattern angle candidates") {
+            return Some(Err(error));
+        }
+        if angle_candidates.try_reserve(1).is_err() {
+            return Some(Err(ctx.refuse_codec_limit("f3d circular pattern angle candidates allocation", 0, 1)));
+        }
+        angle_candidates.push(candidate);
+    }
     if angle_candidates.is_empty() {
-        angle_candidates.extend(
-            scope
-                .reference_members()
-                .values()
-                .filter_map(|record_index| {
-                    let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-                    (scalar.owner_record_index == Some(scope.record_index) && scalar.ordinal == 1)
-                        .then_some(())?;
-                    Some((
-                        cadmpeg_ir::scalar::PositiveAngle::new(scalar.value.get())?,
-                        *record_index,
-                        scalar.value_offset,
-                    ))
-                }),
-        );
+        for record_index in scope.reference_members().values() {
+            let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index) else {
+                continue;
+            };
+            if scalar.owner_record_index != Some(scope.record_index) || scalar.ordinal != 1 {
+                continue;
+            }
+            let Some(angle) = cadmpeg_ir::scalar::PositiveAngle::new(scalar.value.get()) else {
+                continue;
+            };
+            if let Err(error) = ctx.charge_collection_items(1, "f3d circular pattern angle candidates") {
+                return Some(Err(error));
+            }
+            if angle_candidates.try_reserve(1).is_err() {
+                return Some(Err(ctx.refuse_codec_limit("f3d circular pattern angle candidates allocation", 0, 1)));
+            }
+            angle_candidates.push((angle, *record_index, scalar.value_offset));
+        }
     }
     angle_candidates.sort_by(|left, right| {
         left.0
@@ -470,7 +507,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
     let [(angle, angle_record_index, angle_offset)] = angle_candidates.as_slice() else {
         return None;
     };
-    Some(DesignCircularPatternConstruction {
+    Some(Ok(DesignCircularPatternConstruction {
         count: *count,
         count_record_index: *count_record_index,
         count_offset: *count_offset,
@@ -480,7 +517,9 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         axis: axis.clone(),
         axis_record_index: *axis_record_index,
         selection_record_index: *selection_record_index,
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 /// Circular pattern axis with its carrier and selection record indices.
@@ -644,11 +683,9 @@ fn exact_pattern_identity_wrapper(
     {
         return None;
     }
-    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 29, 1..=256)?;
-    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
-    if !crate::bytes::is_guid_relaxed(&asset_id)
-        || !crate::bytes::is_guid_relaxed(&context_id)
-        || View::u32_le_at(bytes, after_context_id) != Some(2)
+    let after_asset_id = relaxed_guid_end(bytes, start + 29)?;
+    let after_context_id = relaxed_guid_end(bytes, after_asset_id)?;
+    if View::u32_le_at(bytes, after_context_id) != Some(2)
         || bytes.get(after_context_id + 4..after_context_id + 8) != Some(&[0; 4])
         || marked_record_reference(bytes, after_context_id + 8) != record_index.checked_add(1)
         || bytes.get(after_context_id + 13..after_context_id + 19) != Some(&[0; 6])

@@ -113,6 +113,21 @@ pub(in crate::design::decode) fn fixed_guid_end(bytes: &[u8], count_at: usize) -
     fixed_guid_ascii(bytes, count_at).map(|(_, end)| end)
 }
 
+/// Validate a counted relaxed GUID without allocating its text.
+pub(in crate::design::decode) fn relaxed_guid_end(bytes: &[u8], count_at: usize) -> Option<usize> {
+    let count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
+    if !(36..=38).contains(&count) {
+        return None;
+    }
+    let start = count_at.checked_add(4)?;
+    let end = start.checked_add(count.checked_mul(2)?)?;
+    bytes.get(start..end)?
+        .chunks_exact(2)
+        .all(|unit| unit[1] == 0
+            && (unit[0].is_ascii_alphanumeric() || matches!(unit[0], b'-' | b'_')))
+        .then_some(end)
+}
+
 /// Match an ASCII literal encoded as a counted UTF-16LE field without copying it.
 pub(in crate::design::decode) fn fixed_utf16_ascii_eq(
     bytes: &[u8],
@@ -236,7 +251,26 @@ pub(super) fn lp_utf16_bounded_scoped<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{class_tag_from_view, fixed_guid_ascii, fixed_utf16_ascii_eq, lp_ascii_filtered_view};
+    use super::{class_tag_from_view, fixed_guid_ascii, fixed_utf16_ascii_eq, lp_ascii_filtered_view, relaxed_guid_end};
+
+    #[test]
+    fn relaxed_guid_scan_matches_owned_validation_at_each_admitted_length() {
+        for value in [
+            "00000000-0000-0000-0000-000000000000",
+            "00000000-0000-0000-0000-000000000000A",
+            "00000000-0000-0000-0000-000000000000AB",
+            "00000000-0000-0000-0000-000000000000ABC",
+            "00000000-0000-0000-0000-00000000000!",
+        ] {
+            let mut bytes = u32::try_from(value.encode_utf16().count()).unwrap().to_le_bytes().to_vec();
+            for unit in value.encode_utf16() {
+                bytes.extend_from_slice(&unit.to_le_bytes());
+            }
+            let owned = crate::bytes::lp_utf16_bounded(&bytes, 0, 1..=256)
+                .and_then(|(value, end)| crate::bytes::is_guid_relaxed(&value).then_some(end));
+            assert_eq!(relaxed_guid_end(&bytes, 0), owned);
+        }
+    }
 
     #[test]
     fn fixed_guid_ascii_preserves_decoded_text() {

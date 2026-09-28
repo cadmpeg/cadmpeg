@@ -2,7 +2,6 @@
 use super::exact_pattern_identity_wrapper;
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
 use crate::design::decode::scopes::axial_assembly::bind_joint_origin_frames_from_assemblies;
-use crate::design::decode::scopes::pattern::exact_circular_pattern_construction_with_owners;
 use crate::design::decode::scopes::pattern::select_circular_pattern_axis;
 use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::records::feature::patterns::DesignCircularPatternConstruction;
@@ -11,6 +10,17 @@ use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use crate::test_support::push_marked_reference;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+fn tested_circular_pattern_construction_with_owners(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    parameter_owners: &[crate::records::parameters::DesignParameterOwner],
+) -> Option<DesignCircularPatternConstruction> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        super::exact_circular_pattern_construction_with_owners(ctx, bytes, records, scope, parameter_owners).unwrap()
+    })
+}
 
 fn tested_rectangular_pattern_construction(
     bytes: &[u8],
@@ -180,12 +190,42 @@ fn append_transform_record(bytes: &mut Vec<u8>, record_index: u32, translation: 
     }
 }
 
+#[test]
+fn pattern_constructions_require_exact_scalar_and_operand_frames() {
+    run_pattern_constructions_fixture(None);
+}
+
+#[test]
+fn circular_pattern_candidates_refuse_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let probe = |bytes: &[u8], scope: &DesignParameterScope| {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        for (limit, operation) in [
+            (0, "f3d circular pattern axis candidates"),
+            (1, "f3d circular pattern count candidates"),
+            (2, "f3d circular pattern angle candidates"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let error = super::exact_circular_pattern_construction_with_owners(
+                &ctx, bytes, &records, scope, &[],
+            ).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation));
+        }
+    };
+    run_pattern_constructions_fixture(Some(probe));
+}
+
 #[allow(
     clippy::large_stack_arrays,
     reason = "This pattern fixture keeps the decoded scope records inline for frame assertions."
 )]
-#[test]
-fn pattern_constructions_require_exact_scalar_and_operand_frames() {
+fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterScope)>) {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
     let scope_record_index = 10_u32;
@@ -314,8 +354,11 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .with_fixture_layout(),
     )
     .unwrap();
+    if let Some(probe) = probe {
+        probe(&bytes, &scope);
+    }
     assert_eq!(
-        exact_circular_pattern_construction_with_owners(
+        tested_circular_pattern_construction_with_owners(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -347,7 +390,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         bytes[axis_start + 49 + offset * 8..axis_start + 57 + offset * 8]
             .copy_from_slice(&value.to_le_bytes());
     }
-    let normalized = exact_circular_pattern_construction_with_owners(
+    let normalized = tested_circular_pattern_construction_with_owners(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -366,7 +409,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     let mut zero_displacement = bytes.clone();
     zero_displacement[axis_start + 49..axis_start + 73].fill(0);
-    assert!(exact_circular_pattern_construction_with_owners(
+    assert!(tested_circular_pattern_construction_with_owners(
         &zero_displacement,
         &crate::design::test_support::indexed_record_offsets_for_test(&zero_displacement),
         &scope,
@@ -401,7 +444,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         owner(count_record_index, 0, 25.0, 101),
         owner(angle_record_index, 1, std::f64::consts::TAU, 202),
     ];
-    let owner_backed = exact_circular_pattern_construction_with_owners(
+    let owner_backed = tested_circular_pattern_construction_with_owners(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -416,7 +459,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     bytes[angle_start + 4] = b'3';
 
     bytes[axis_start + 89..axis_start + 93].copy_from_slice(&6_u32.to_le_bytes());
-    assert!(exact_circular_pattern_construction_with_owners(
+    assert!(tested_circular_pattern_construction_with_owners(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -425,7 +468,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     .is_some());
     bytes[axis_start + 89..axis_start + 93].fill(0);
     assert_eq!(
-        exact_circular_pattern_construction_with_owners(
+        tested_circular_pattern_construction_with_owners(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -437,7 +480,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     bytes[axis_start + 57..axis_start + 65].copy_from_slice(&f64::NAN.to_le_bytes());
     assert_eq!(
-        exact_circular_pattern_construction_with_owners(
+        tested_circular_pattern_construction_with_owners(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -460,7 +503,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         })
         .unwrap();
     assert_eq!(
-        exact_circular_pattern_construction_with_owners(
+        tested_circular_pattern_construction_with_owners(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
