@@ -220,6 +220,28 @@ pub(super) fn om_record_areas(
     Ok(areas)
 }
 
+/// Build a retained identity with two ten-digit minimum ordinals.
+fn retained_om_padded_state_id(
+    ctx: &DecodeContext<'_>,
+    prefix: &'static str,
+    section_ordinal: usize,
+    ordinal: u32,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let section_digits = section_ordinal.checked_ilog10().map_or(1, |count| count as usize + 1).max(10);
+    let length = prefix.len().checked_add(section_digits)
+        .and_then(|length| length.checked_add(11))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
+    let mut id = String::new();
+    id.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    write!(&mut id, "{prefix}{section_ordinal:010}-{ordinal:010}")
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(id)
+}
+
 /// Decode complete rows from audit-trail record areas.
 pub(super) fn audit_trail_rows(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -232,6 +254,7 @@ pub(super) fn audit_trail_rows(
         .filter(|link| link.schema_role == OmSchemaRole::AuditTrail)
         .enumerate()
     {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sections.len()), "match NX audit section")?;
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()
@@ -246,18 +269,29 @@ pub(super) fn audit_trail_rows(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let section_key = format!("{section_ordinal:010}");
-        out.extend(rows.into_iter().filter_map(move |row| {
+        for row in rows {
             let record = row.record();
             let ordinal = record.ordinal.value();
-            OmAuditTrailRow::new(
-                format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
-                link.id.clone(),
+            let Some(source_offset) = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(row.offset())) else { continue; };
+            if source_offset.checked_add(cadmpeg_core::decode::u64_from_index(record.byte_len())).is_none() {
+                continue;
+            }
+            let id = retained_om_padded_state_id(ctx, "nx:audit-trail:row#", section_ordinal, ordinal, "NX audit trail row id")?;
+            let section_link = copy_om_retained_text(ctx, &link.id, "NX audit trail section link")?;
+            let source_entry = copy_om_retained_text(ctx, &entry.name, "NX audit trail source entry")?;
+            let Some(result) = OmAuditTrailRow::new(
+                id,
+                section_link,
                 record,
-                entry.name.clone(),
-                entry_offset.checked_add(row.offset() as u64)?,
-            )
-        }));
+                source_entry,
+                source_offset,
+            ) else { continue; };
+            ctx.charge_collection_items(1, "NX audit trail rows")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmAuditTrailRow>()), "retain NX audit trail row")?;
+            out.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX audit trail rows", 0, 1))?;
+            out.push(result);
+        }
     }
     Ok(out)
 }
