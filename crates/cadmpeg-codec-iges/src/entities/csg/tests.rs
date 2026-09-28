@@ -140,7 +140,7 @@ fn profile_closure_rejects_conflicting_edge_occurrences() {
         },
     ]);
 
-    assert_eq!(super::profile_closed(&ir, 1, EPS_PROFILE_CLOSURE, None).unwrap(), None);
+    assert_eq!(super::profile_closed(&ir, 1, EPS_PROFILE_CLOSURE), None);
 }
 
 #[test]
