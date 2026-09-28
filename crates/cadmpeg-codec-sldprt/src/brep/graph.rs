@@ -956,12 +956,21 @@ fn ensure_surface_support(
     result
 }
 
-fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
+fn walk_face(
+    ctx: &DecodeContext<'_>,
+    bridge: &topology::Bridge,
+    t: &topology::Tables,
+) -> Result<WalkedFace, cadmpeg_core::CodecError> {
     let surface_attr = bridge.refs[4];
     let mut loops = Vec::new();
     let mut loop_ref = bridge.refs[2];
     let mut loop_guard = HashSet::new();
-    while loop_ref != 0 && loop_guard.insert(loop_ref) {
+    while loop_ref != 0 {
+        ctx.charge_work(1, "walk Parasolid face loops")?;
+        reserve_graph_set_key(ctx, &mut loop_guard, &loop_ref, "walk Parasolid face loops")?;
+        if !loop_guard.insert(loop_ref) {
+            break;
+        }
         let Some(lp) = t.loops().get(&loop_ref) else {
             break;
         };
@@ -981,13 +990,19 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         let mut ce_ref = first;
         let mut ce_guard = HashSet::new();
         let mut ring_closed = false;
-        while ce_ref != 0 && ce_guard.insert(ce_ref) {
+        while ce_ref != 0 {
+            ctx.charge_work(1, "walk Parasolid face coedges")?;
+            reserve_graph_set_key(ctx, &mut ce_guard, &ce_ref, "walk Parasolid face coedges")?;
+            if !ce_guard.insert(ce_ref) {
+                break;
+            }
             let Some(ce) = t.coedges().get(&ce_ref) else {
                 break;
             };
             if ce.refs[1] != loop_ref {
                 break;
             }
+            ctx.reserve_collection_vec(&mut ring, 1, "walk Parasolid face coedges")?;
             ring.push(ce_ref);
             ce_ref = ce.refs[3];
             if ce_ref == first {
@@ -996,16 +1011,17 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             }
         }
         if ring_closed {
+            ctx.reserve_collection_vec(&mut loops, 1, "walk Parasolid face loops")?;
             loops.push((loop_ref, ring));
         }
         loop_ref = lp.refs[3];
     }
-    WalkedFace {
+    Ok(WalkedFace {
         bridge_attr: bridge.attr,
         surface_attr,
         sense: bridge.sense,
         loops,
-    }
+    })
 }
 
 fn edge_parameter_range(
@@ -1546,7 +1562,7 @@ fn decode_graph(
     let mut faces = Vec::new();
     let mut owned_faces = HashMap::<u16, Vec<(&topology::Bridge, WalkedFace)>>::new();
     for bridge in t.bridges().values() {
-        let face = walk_face(bridge, t);
+        let face = walk_face(ctx, bridge, t)?;
         if let Some(owner) = bridge.owner {
             owned_faces.entry(owner).or_default().push((bridge, face));
         } else {
@@ -6536,7 +6552,7 @@ mod tests {
         tables.insert_loop(&ctx, loop_record(20, [0, 40, 11, 0])).expect("loop");
         tables.insert_coedge(&ctx, coedge_record(40, [0, 0, 0, 40, 0, 0, 0, 0, 0])).expect("coedge");
 
-        let face = super::walk_face(&bridge, &tables);
+        let face = super::walk_face(&ctx, &bridge, &tables).expect("face walk");
 
         assert!(face.loops.is_empty());
     }
@@ -6552,9 +6568,39 @@ mod tests {
         tables.insert_loop(&ctx, loop_record(20, [0, 40, 10, 0])).expect("loop");
         tables.insert_coedge(&ctx, coedge_record(40, [0, 21, 0, 40, 0, 0, 0, 0, 0])).expect("coedge");
 
-        let face = super::walk_face(&bridge, &tables);
+        let face = super::walk_face(&ctx, &bridge, &tables).expect("face walk");
 
         assert!(face.loops.is_empty());
+    }
+
+    #[test]
+    fn face_walk_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
+        assert!(matches!(
+            super::walk_face(&ctx, &bridge, &Tables::default()),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+    }
+
+    #[test]
+    fn face_walk_refuses_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
+        assert!(matches!(
+            super::walk_face(&ctx, &bridge, &Tables::default()),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
     }
 
     fn face_color(
