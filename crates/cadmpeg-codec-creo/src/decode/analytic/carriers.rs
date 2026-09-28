@@ -867,13 +867,14 @@ pub(in crate::decode) fn ordered_face_loops<'a>(
 }
 
 pub(in crate::decode) fn rowless_round_face_orientations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     round_feature_ids: &BTreeSet<u32>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
     available_surfaces: &BTreeSet<u32>,
-) -> BTreeMap<u32, bool> {
+) -> Result<BTreeMap<u32, bool>, cadmpeg_core::CodecError> {
     let mut orientations = BTreeMap::new();
-    for (rowless_id, sibling_id, _) in rowless_round_cylinder_pairs(round_feature_ids, tables, rows)
+    for (rowless_id, sibling_id, _) in rowless_round_cylinder_pairs(ctx, round_feature_ids, tables, rows)?
     {
         if !available_surfaces.contains(&rowless_id) {
             continue;
@@ -883,61 +884,71 @@ pub(in crate::decode) fn rowless_round_face_orientations(
         else {
             continue;
         };
+        if !orientations.contains_key(&rowless_id) {
+            ctx.charge_collection_items(1, "creo rowless face orientation nodes")?;
+        }
         orientations.insert(rowless_id, reversed);
     }
-    orientations
+    Ok(orientations)
 }
 
 pub(in crate::decode) fn native_face_orientations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
-) -> BTreeMap<u32, bool> {
-    let mut orientations = scan
-        .surfaces
-        .rows
-        .iter()
-        .chain(&scan.surfaces.nonvisible_rows)
-        .map(|row| row.id)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter_map(|id| {
-            crate::decode::surfaces::unique_native_surface_row(scan, id)
-                .map(|row| (id, row.reversed))
-        })
-        .collect::<BTreeMap<_, _>>();
-    orientations.extend(
-        scan.planes
-            .datum_cylinders
-            .iter()
-            .map(|datum| (datum.id, datum.reversed)),
-    );
-    let round_feature_ids = scan
-        .features
-        .rows
-        .iter()
-        .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
-        .map(|row| row.feature_id)
-        .collect::<BTreeSet<_>>();
-    let available_surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .filter_map(|surface| {
-            surface
-                .id
-                .as_str()
-                .strip_prefix("creo:visibgeom:surface#")?
-                .parse()
-                .ok()
-        })
-        .collect::<BTreeSet<_>>();
-    orientations.extend(rowless_round_face_orientations(
+) -> Result<BTreeMap<u32, bool>, cadmpeg_core::CodecError> {
+    let mut source_ids = BTreeSet::new();
+    for row in scan.surfaces.rows.iter().chain(&scan.surfaces.nonvisible_rows) {
+        if !source_ids.contains(&row.id) {
+            ctx.charge_collection_items(1, "creo native face source ID nodes")?;
+            source_ids.insert(row.id);
+        }
+    }
+    let mut orientations = BTreeMap::new();
+    for id in source_ids {
+        if let Some(row) = crate::decode::surfaces::unique_native_surface_row(scan, id) {
+            ctx.charge_collection_items(1, "creo native face orientation nodes")?;
+            orientations.insert(id, row.reversed);
+        }
+    }
+    for datum in &scan.planes.datum_cylinders {
+        if !orientations.contains_key(&datum.id) {
+            ctx.charge_collection_items(1, "creo native face orientation nodes")?;
+        }
+        orientations.insert(datum.id, datum.reversed);
+    }
+    let mut round_feature_ids = BTreeSet::new();
+    for row in scan.features.rows.iter().filter(|row| row.root_schema_class == Some(SchemaClass::Round)) {
+        if !round_feature_ids.contains(&row.feature_id) {
+            ctx.charge_collection_items(1, "creo native round feature ID nodes")?;
+            round_feature_ids.insert(row.feature_id);
+        }
+    }
+    let mut available_surfaces = BTreeSet::new();
+    for surface in &ir.model.surfaces {
+        if let Some(id) = surface.id.as_str()
+            .strip_prefix("creo:visibgeom:surface#")
+            .and_then(|suffix| suffix.parse::<u32>().ok())
+        {
+            if !available_surfaces.contains(&id) {
+                ctx.charge_collection_items(1, "creo available surface ID nodes")?;
+                available_surfaces.insert(id);
+            }
+        }
+    }
+    for (id, reversed) in rowless_round_face_orientations(
+        ctx,
         &round_feature_ids,
         &scan.features.entity_tables,
         &scan.surfaces.rows,
         &available_surfaces,
-    ));
-    orientations
+    )? {
+        if !orientations.contains_key(&id) {
+            ctx.charge_collection_items(1, "creo native face orientation nodes")?;
+        }
+        orientations.insert(id, reversed);
+    }
+    Ok(orientations)
 }
 
 #[cfg(test)]
@@ -960,7 +971,10 @@ mod namespace_tests {
                 offset: 0,
             });
 
-        let orientations = native_face_orientations(&scan, &CadIr::empty());
+        let orientations = crate::decode::with_test_decode_ctx(|ctx| {
+            native_face_orientations(ctx, &scan, &CadIr::empty())
+        })
+        .expect("service native orientations admitted");
 
         assert_eq!(orientations.get(&17), Some(&true));
     }

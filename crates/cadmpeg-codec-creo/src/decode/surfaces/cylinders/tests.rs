@@ -1076,11 +1076,13 @@ fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
         row(13, crate::surface::SurfaceKind::Cylinder),
     ];
 
-    assert!(super::rowless_round_cylinder_pairs(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::rowless_round_cylinder_pairs(
+        ctx,
         &std::collections::BTreeSet::from([23]),
         &[table],
         &rows,
-    )
+    ))
+    .expect("service duplicate-row pair admitted")
     .is_empty());
 }
 
