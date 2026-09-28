@@ -56,6 +56,22 @@ fn copy_decode_string(
     Ok(copy)
 }
 
+fn append_decode_items<T>(
+    ctx: &DecodeContext<'_>,
+    target: &mut Vec<T>,
+    mut incoming: Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = u64::try_from(incoming.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)?;
+    target
+        .try_reserve(incoming.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    target.append(&mut incoming);
+    Ok(())
+}
+
 fn format_decode_string(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
@@ -2366,7 +2382,7 @@ impl<'a> F3dDecodeSession<'a> {
         let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
         ir.model.subds = subds;
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
-        report.losses.extend(subd_losses);
+        append_decode_items(ctx, &mut report.losses, subd_losses, "append F3D T-spline losses")?;
         native.body_visibilities = body_visibilities;
         native.design_body_bindings = design_body_bindings;
         ctx.admit_entities(
@@ -2903,18 +2919,25 @@ impl<'a> F3dDecodeSession<'a> {
                 self.ir.tolerances.linear.get(),
             )
         }?;
-        self.ir
-            .model
-            .sketch_constraints
-            .extend(dimension_constraints);
-        self.ir.model.spatial_sketch_constraints.extend(
+        append_decode_items(
+            self.ctx,
+            &mut self.ir.model.sketch_constraints,
+            dimension_constraints,
+            "append F3D dimension constraints",
+        )?;
+        let spatial_dimension_constraints =
             crate::design::dimensions::project_spatial_dimension_constraints(
                 &constraint_inputs,
                 &self.ir.model.spatial_sketches,
                 &self.ir.model.spatial_sketch_entities,
                 self.ir.tolerances.linear.get(),
-            )?,
-        );
+            )?;
+        append_decode_items(
+            self.ctx,
+            &mut self.ir.model.spatial_sketch_constraints,
+            spatial_dimension_constraints,
+            "append F3D spatial dimension constraints",
+        )?;
         crate::design::dimensions::bind_offset_dimension_parameters(
             &mut self.ir.model.sketch_constraints,
             &self.native.design_parameters,
@@ -2959,7 +2982,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     materials.untyped_distance_properties,
                 )?;
-                self.report.notes.extend(materials.notes);
+                append_decode_items(self.ctx, &mut self.report.notes, materials.notes, "append F3D material notes")?;
                 self.ir.model.appearances = materials.appearances;
                 self.ir.model.appearance_bindings = materials.bindings;
                 resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
@@ -3000,7 +3023,7 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     decoded_materials.untyped_distance_properties,
                 )?;
-                self.report.notes.extend(decoded_materials.notes);
+                append_decode_items(self.ctx, &mut self.report.notes, decoded_materials.notes, "append F3D material notes")?;
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
@@ -3036,8 +3059,8 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_parameter_scopes,
             &self.native.design_component_occurrences,
         )?;
-        self.ir.model.product_definitions.extend(components);
-        self.ir.model.occurrences.extend(occurrences);
+        append_decode_items(self.ctx, &mut self.ir.model.product_definitions, components, "append F3D local components")?;
+        append_decode_items(self.ctx, &mut self.ir.model.occurrences, occurrences, "append F3D local occurrences")?;
         crate::design::components::project_derived_instance_features(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -3048,10 +3071,12 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.native.design_parameter_scopes,
                 self.ir.model.occurrences.len(),
             )?;
-        self.ir
-            .model
-            .occurrences
-            .extend(unresolved_component_inserts);
+        append_decode_items(
+            self.ctx,
+            &mut self.ir.model.occurrences,
+            unresolved_component_inserts,
+            "append F3D unresolved occurrences",
+        )?;
         self.ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
             &self.native.design_parameter_scopes,
             &self.native.design_component_occurrences,

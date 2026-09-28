@@ -6,6 +6,35 @@ fn context<'a>(arena: &'a DecodeArena, max_collection_items: u64) -> DecodeConte
     DecodeContext::from_root_bytes(&[], arena, &policy).unwrap().0
 }
 
+macro_rules! append_refuses_collection_limit {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let arena = DecodeArena::new();
+            let ctx = context(&arena, 1);
+            let mut target = vec![1u32];
+            let error = super::super::append_decode_items(
+                &ctx,
+                &mut target,
+                vec![2u32, 3u32],
+                $operation,
+            )
+            .unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == $operation));
+            assert_eq!(target, [1]);
+        }
+    };
+}
+
+append_refuses_collection_limit!(subd_loss_append_refuses_collection_limit, "append F3D T-spline losses");
+append_refuses_collection_limit!(dimension_constraint_append_refuses_collection_limit, "append F3D dimension constraints");
+append_refuses_collection_limit!(spatial_dimension_constraint_append_refuses_collection_limit, "append F3D spatial dimension constraints");
+append_refuses_collection_limit!(material_note_append_refuses_collection_limit, "append F3D material notes");
+append_refuses_collection_limit!(local_component_append_refuses_collection_limit, "append F3D local components");
+append_refuses_collection_limit!(local_occurrence_append_refuses_collection_limit, "append F3D local occurrences");
+append_refuses_collection_limit!(unresolved_occurrence_append_refuses_collection_limit, "append F3D unresolved occurrences");
+
 #[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
