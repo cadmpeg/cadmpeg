@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::hash::sha256;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
@@ -26,6 +26,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use crate::container::ContainerScan;
 use crate::loss::{identity_statement, CatiaLossCode};
+use crate::resource::{self, HexBytes};
 
 pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
     cgm_source_key(kind, format!("{tag:06x}"))
@@ -377,96 +378,84 @@ pub(crate) struct GeometryReportCounts {
     pub(crate) admitted_standard_face_rows: usize,
 }
 
-pub(crate) fn source_meta(scan: &ContainerScan, matched: &DialectMatch) -> SourceMeta {
+pub(crate) fn source_meta(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    matched: &DialectMatch,
+) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("file_size"),
-        scan.data.len().to_string(),
-    );
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("outer_dir_offset"),
-        scan.outer_dir_offset.to_string(),
-    );
+    resource::source_attribute(ctx, &mut attributes,
+        format_args!("file_size"), format_args!("{}", scan.data.len()),
+        "catia_source_meta_attribute")?;
+    resource::source_attribute(ctx, &mut attributes,
+        format_args!("outer_dir_offset"), format_args!("{}", scan.outer_dir_offset),
+        "catia_source_meta_attribute")?;
     if let Some(dir) = &scan.inner {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("inner_offset"),
-            dir.inner.to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("stream_count"),
-            dir.descriptors.len().to_string(),
-        );
+        resource::source_attribute(ctx, &mut attributes,
+            format_args!("inner_offset"), format_args!("{}", dir.inner),
+            "catia_source_meta_attribute")?;
+        resource::source_attribute(ctx, &mut attributes,
+            format_args!("stream_count"), format_args!("{}", dir.descriptors.len()),
+            "catia_source_meta_attribute")?;
     }
     if let Some(brep) = &scan.brep {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("brep_stream_len"),
-            brep.len().to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("brep_stream_sha256"),
-            sha256_hex(brep),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("fbb_runs"),
-            scan.census.fbb_runs.to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("fbb_face_rows"),
-            scan.census.fbb_face_rows.to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("vertex_records"),
-            scan.census.vertex_markers.to_string(),
-        );
+        resource::source_attribute(ctx, &mut attributes,
+            format_args!("brep_stream_len"), format_args!("{}", brep.len()),
+            "catia_source_meta_attribute")?;
+        let digest = sha256(brep);
+        resource::source_attribute(ctx, &mut attributes,
+            format_args!("brep_stream_sha256"), format_args!("{}", HexBytes(&digest)),
+            "catia_source_meta_attribute")?;
+        resource::source_attribute(ctx, &mut attributes,
+            format_args!("fbb_runs"), format_args!("{}", scan.census.fbb_runs),
+            "catia_source_meta_attribute")?;
+        resource::source_attribute(ctx, &mut attributes,
+            format_args!("fbb_face_rows"), format_args!("{}", scan.census.fbb_face_rows),
+            "catia_source_meta_attribute")?;
+        resource::source_attribute(ctx, &mut attributes,
+            format_args!("vertex_records"), format_args!("{}", scan.census.vertex_markers),
+            "catia_source_meta_attribute")?;
     }
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("preview_count"),
-        scan.previews.len().to_string(),
-    );
+    resource::source_attribute(ctx, &mut attributes,
+        format_args!("preview_count"), format_args!("{}", scan.previews.len()),
+        "catia_source_meta_attribute")?;
     for (index, preview) in scan.previews.iter().enumerate() {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("preview_{index}_width"),
-            preview.width.to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("preview_{index}_height"),
-            preview.height.to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("preview_{index}_components"),
-            preview.components.to_string(),
-        );
+        resource::source_attribute(ctx, &mut attributes,
+            format_args!("preview_{index}_width"), format_args!("{}", preview.width),
+            "catia_source_meta_attribute")?;
+        resource::source_attribute(ctx, &mut attributes,
+            format_args!("preview_{index}_height"), format_args!("{}", preview.height),
+            "catia_source_meta_attribute")?;
+        resource::source_attribute(ctx, &mut attributes,
+            format_args!("preview_{index}_components"), format_args!("{}", preview.components),
+            "catia_source_meta_attribute")?;
     }
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("external_reference_count"),
-        scan.external_references.len().to_string(),
-    );
+    resource::source_attribute(ctx, &mut attributes,
+        format_args!("external_reference_count"), format_args!("{}", scan.external_references.len()),
+        "catia_source_meta_attribute")?;
     for (index, reference) in scan.external_references.iter().enumerate() {
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("external_reference_{index}"),
-            reference.target.clone(),
-        );
+        resource::source_attribute(ctx, &mut attributes,
+            format_args!("external_reference_{index}"), format_args!("{}", reference.target),
+            "catia_source_meta_attribute")?;
     }
-    attributes.insert(
-        cadmpeg_core::nonblank_literal!("finjpl_segment_count"),
-        scan.finjpl_segments.len().to_string(),
-    );
+    resource::source_attribute(ctx, &mut attributes,
+        format_args!("finjpl_segment_count"), format_args!("{}", scan.finjpl_segments.len()),
+        "catia_source_meta_attribute")?;
     for (index, segment) in scan.finjpl_segments.iter().enumerate() {
         if let Some(name) = &segment.name {
-            attributes.insert(
-                cadmpeg_core::nonblank_literal!("finjpl_segment_{index}_name"),
-                name.clone(),
-            );
+            resource::source_attribute(ctx, &mut attributes,
+                format_args!("finjpl_segment_{index}_name"), format_args!("{name}"),
+                "catia_source_meta_attribute")?;
         }
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("finjpl_segment_{index}_type"),
-            format!("0x{:08x}", segment.type_word),
-        );
+        resource::source_attribute(ctx, &mut attributes,
+            format_args!("finjpl_segment_{index}_type"),
+            format_args!("0x{:08x}", segment.type_word),
+            "catia_source_meta_attribute")?;
     }
-    SourceMeta::classified(
-        cadmpeg_core::dialect::DialectLayers::of(matched.clone()),
+    Ok(SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(crate::dialect::copy_match(ctx, matched)?),
         attributes,
-    )
+    ))
 }
 
 pub(crate) fn build_geometry_report(
@@ -819,7 +808,7 @@ pub(crate) fn quintic_jet_pcurve(
 mod route_tests {
     use crate::assemble::{
         circle_parameter_range_from_surface_branch, neutral_model_is_admissible,
-        rational_pcurve_arc, unresolved_carrier_counts,
+        rational_pcurve_arc, source_meta, unresolved_carrier_counts,
     };
 
     use cadmpeg_ir::document::CadIr;
@@ -834,6 +823,28 @@ mod route_tests {
     use cadmpeg_ir::units::FinitePoint2;
 
     use cadmpeg_ir::unknown::UnknownRecord;
+
+    #[test]
+    fn source_metadata_refuses_attribute_collection_limit() {
+        let scan = crate::test_support::with_service_context(|ctx| {
+            crate::container::scan_bytes(ctx, crate::test_support::test_container::standard_catpart())
+        })
+        .expect("service budget admits container scan");
+        let matched = crate::test_support::with_service_context(|ctx| {
+            crate::dialect::classify(ctx, &scan)
+        })
+        .expect("service budget admits dialect classification");
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            source_meta(ctx, &scan, &matched)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_source_meta_attribute"));
+        let source = crate::test_support::with_service_context(|ctx| {
+            source_meta(ctx, &scan, &matched)
+        })
+        .expect("service budget admits source metadata");
+        assert_eq!(source.attributes["file_size"], scan.data.len().to_string());
+    }
 
     #[test]
     fn rational_pcurve_arc_preserves_tiny_nonzero_sweep() {

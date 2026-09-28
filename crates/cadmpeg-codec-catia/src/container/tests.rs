@@ -22,6 +22,45 @@ use crate::test_support::test_e5::append_e5_record;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
+fn summarize_service(scan: &ContainerScan<'_>) -> cadmpeg_ir::ContainerSummary {
+    crate::test_support::with_service_context(|ctx| summarize(ctx, scan))
+        .expect("service budget admits container summary")
+}
+
+#[test]
+fn summary_attribute_refuses_collection_limit() {
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
+        .expect("service resource budget");
+    let limited = crate::test_support::with_collection_limit(0, |ctx| summarize(ctx, &scan));
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_summary_attribute"));
+    assert!(!summarize_service(&scan).entries.is_empty());
+}
+
+#[test]
+fn container_note_refuses_retained_limit() {
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
+        .expect("service resource budget");
+    let limited = crate::test_support::with_retained_limit(0, |ctx| super::notes(ctx, &scan));
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_container_note"));
+    let notes = crate::test_support::with_service_context(|ctx| super::notes(ctx, &scan))
+        .expect("service budget admits container notes");
+    assert!(!notes.is_empty());
+}
+
+#[test]
+fn container_notes_refuse_collection_limit() {
+    let scan = crate::test_support::with_service_context(|ctx| scan_bytes(ctx, standard_catpart()))
+        .expect("service resource budget");
+    let limited = crate::test_support::with_collection_limit(0, |ctx| super::notes(ctx, &scan));
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_container_notes"));
+    let notes = crate::test_support::with_service_context(|ctx| super::notes(ctx, &scan))
+        .expect("service budget admits container notes");
+    assert!(!notes.is_empty());
+}
+
 fn append_e5_test_record(bytes: &mut Vec<u8>, id: u32) {
     append_e5_test_record_with_payload(bytes, id, &[]);
 }
@@ -556,7 +595,7 @@ fn container_summary_exposes_extent_flags_in_logical_order() {
         census: Census::default(),
         variant: Variant::Unknown,
     };
-    let summary = summarize(&scan);
+    let summary = summarize_service(&scan);
     assert_eq!(
         summary.entries[0].attributes["extent_flags"],
         "0xa5010080,0x00000000"
@@ -663,7 +702,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
         census: Census::default(),
         variant: Variant::Unknown,
     };
-    let summary = summarize(&scan);
+    let summary = summarize_service(&scan);
     assert_eq!(
         summary.entries[1].attributes["container_class"],
         "CATPrtCont"
@@ -746,7 +785,7 @@ fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
         &bytes[previews[0].range.clone()][previews[0].range.len() - 2..],
         [0xff, 0xd9]
     );
-    let summary = crate::container::summarize(
+    let summary = summarize_service(
         &crate::test_support::with_service_context(|ctx| {
             crate::container::scan_bytes(ctx, outer_body_catpart(&bytes))
         })
@@ -808,7 +847,7 @@ fn storage_property_parser_enumerates_external_catia_documents() {
         crate::container::scan_bytes(ctx, outer_body_catpart(&bytes))
     })
     .expect("service resource budget");
-    let summary = crate::container::summarize(&scan);
+    let summary = summarize_service(&scan);
     assert_eq!(
         summary
             .entries
@@ -932,7 +971,7 @@ fn scan_parses_outer_directory_with_absolute_extents() {
         b"outer logical stream"
     );
 
-    let summary = crate::container::summarize(&scan);
+    let summary = summarize_service(&scan);
     let entry = summary
         .entries
         .iter()

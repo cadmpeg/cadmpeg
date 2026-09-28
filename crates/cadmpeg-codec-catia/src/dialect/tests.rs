@@ -80,6 +80,11 @@ fn fixture_bytes(name: &str) -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
 }
 
+fn classify_service(scan: &crate::container::ContainerScan<'_>) -> cadmpeg_core::dialect::DialectMatch {
+    crate::test_support::with_service_context(|ctx| classify(ctx, scan))
+        .expect("service budget admits CATIA dialect declaration")
+}
+
 #[test]
 fn every_registry_row_is_witnessed_by_the_fixture_it_cites() {
     let mut seen = BTreeSet::new();
@@ -89,7 +94,7 @@ fn every_registry_row_is_witnessed_by_the_fixture_it_cites() {
             container::scan_bytes(ctx, bytes.as_slice())
         })
         .expect("service resource budget");
-        let matched = classify(&scan);
+        let matched = classify_service(&scan);
 
         assert_eq!(matched.format(), FORMAT, "{}", witness.fixture);
         assert_eq!(
@@ -115,8 +120,10 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
             container::scan_bytes(ctx, bytes.as_slice())
         })
         .expect("service resource budget");
-        let matched = classify(&scan);
-        let charged = dialect_loss(&matched).is_some();
+        let matched = classify_service(&scan);
+        let charged = crate::test_support::with_service_context(|ctx| dialect_loss(ctx, &matched))
+            .expect("service budget admits dialect loss")
+            .is_some();
 
         assert_eq!(
             witness.admitted, !charged,
@@ -174,7 +181,7 @@ fn the_last_save_declaration_is_recorded_as_the_source_wrote_it() {
         container::scan_bytes(ctx, bytes.as_slice())
     })
     .expect("service resource budget");
-    let matched = classify(&scan);
+    let matched = classify_service(&scan);
 
     assert_eq!(matched.declared()[DECLARED_VERSION], "5");
     assert_eq!(matched.declared()[DECLARED_RELEASE], "27");
@@ -184,6 +191,31 @@ fn the_last_save_declaration_is_recorded_as_the_source_wrote_it() {
 
     assert_eq!(matched.dialect().as_str(), "catia:unknown");
     assert_eq!(matched.admission(), &Admission::Residual);
+}
+
+#[test]
+fn declared_version_refuses_retained_identity_limit() {
+    let bytes = outer_body_catpart(&summary_preview_segment());
+    let scan = crate::test_support::with_service_context(|ctx| {
+        container::scan_bytes(ctx, bytes.as_slice())
+    })
+    .expect("service budget admits version fixture");
+    let limited = crate::test_support::with_retained_limit(0, |ctx| classify(ctx, &scan));
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_dialect_declared"));
+    let matched = classify_service(&scan);
+    assert_eq!(matched.declared()[DECLARED_VERSION], "5");
+}
+
+#[test]
+fn residual_dialect_loss_refuses_retained_message_limit() {
+    let matched = matched(Variant::Unknown);
+    let limited = crate::test_support::with_retained_limit(0, |ctx| dialect_loss(ctx, &matched));
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_dialect_unverified_message"));
+    let loss = crate::test_support::with_service_context(|ctx| dialect_loss(ctx, &matched))
+        .expect("service budget admits residual loss");
+    assert!(loss.is_some());
 }
 
 /// The declaration is evidence, never identity: a file with no
@@ -196,7 +228,7 @@ fn an_absent_declaration_leaves_the_identity_intact() {
             container::scan_bytes(ctx, bytes.as_slice())
         })
         .expect("service resource budget");
-        let matched = classify(&scan);
+        let matched = classify_service(&scan);
         assert_eq!(
             matched.declared().is_empty(),
             scan.last_save_version.is_none(),

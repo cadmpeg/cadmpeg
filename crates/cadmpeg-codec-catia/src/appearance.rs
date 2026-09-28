@@ -1,7 +1,6 @@
 //! Transfer of byte-proven CATIA display colors to neutral appearance bindings.
 
 use std::collections::BTreeMap;
-use std::fmt;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId, FaceId};
@@ -11,6 +10,7 @@ use cadmpeg_ir::CadIr;
 use crate::families::standard::fbb::standard_face_colors;
 use crate::native::CatiaNative;
 use crate::resource;
+use crate::resource::HexBytes;
 use crate::value_block::ValueField;
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -45,17 +45,6 @@ enum Packet {
 struct SourcedPacket {
     packet: Packet,
     source_id: String,
-}
-
-struct HexBytes<'a>(&'a [u8]);
-
-impl fmt::Display for HexBytes<'_> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for byte in self.0 {
-            write!(formatter, "{byte:02x}")?;
-        }
-        Ok(())
-    }
 }
 
 impl SourcedPacket {

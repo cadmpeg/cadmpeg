@@ -27,6 +27,7 @@
 
 use crate::container::ContainerScan;
 use crate::loss::CatiaLossCode;
+use crate::resource;
 use crate::variant::Variant;
 use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
 use cadmpeg_ir::report::loss::LossNote;
@@ -115,18 +116,30 @@ fn matched(variant: Variant) -> DialectMatch {
 /// [`CatiaLossCode::TopologyGraphNotBuilt`], which state what was not
 /// transferred out of an identified layout. This one states that the layout was
 /// never identified.
-pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
+pub(crate) fn dialect_loss(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    matched: &DialectMatch,
+) -> Result<Option<LossNote>, cadmpeg_core::CodecError> {
     if !matches!(matched.admission(), Admission::Residual) {
-        return None;
+        return Ok(None);
     }
-    Some(CatiaLossCode::SourceDialectUnverified.note(format!(
-        "This container matched no CATIA V5 storage family's structural invariants, so it \
-         is `{}`. No decode route declares a grammar for that row, and no declared \
-         dialect grammar was substituted; the file was admitted under the metadata-IR \
-         fallback, which enumerates the container and retains the source bytes without applying \
-         any family's record grammar.",
-        matched.dialect()
-    )))
+    let message = resource::format_retained(
+        ctx,
+        format_args!(
+            "This container matched no CATIA V5 storage family's structural invariants, so it \
+             is `{}`. No decode route declares a grammar for that row, and no declared \
+             dialect grammar was substituted; the file was admitted under the metadata-IR \
+             fallback, which enumerates the container and retains the source bytes without applying \
+             any family's record grammar.",
+            matched.dialect()
+        ),
+        "catia_dialect_unverified_message",
+    )?;
+    Ok(Some(CatiaLossCode::SourceDialectUnverified.note_charged(
+        ctx,
+        message,
+        "catia_dialect_unverified_loss",
+    )?))
 }
 
 /// The `LastSaveVersion` tuple the summary-information record declared.
@@ -137,31 +150,29 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<LossNote> {
 /// is absent unless all four read — and `<BuildDate>` is carried through as the
 /// string it is. Nothing here branches on the tuple; it is provenance recorded
 /// as evidence.
-fn declared(scan: &ContainerScan) -> BTreeMap<cadmpeg_core::text::NonBlankString, String> {
+fn declared(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, cadmpeg_core::CodecError> {
     let mut declared = BTreeMap::new();
     if let Some(version) = &scan.last_save_version {
-        declared.insert(
-            cadmpeg_core::nonblank_const!(DECLARED_VERSION),
-            version.version.to_string(),
-        );
-        declared.insert(
-            cadmpeg_core::nonblank_const!(DECLARED_RELEASE),
-            version.release.to_string(),
-        );
-        declared.insert(
-            cadmpeg_core::nonblank_const!(DECLARED_SERVICE_PACK),
-            version.service_pack.to_string(),
-        );
-        declared.insert(
-            cadmpeg_core::nonblank_const!(DECLARED_HOT_FIX),
-            version.hot_fix.to_string(),
-        );
-        declared.insert(
-            cadmpeg_core::nonblank_const!(DECLARED_BUILD_DATE),
-            version.build_date.clone(),
-        );
+        resource::source_attribute(ctx, &mut declared,
+            format_args!("{DECLARED_VERSION}"), format_args!("{}", version.version),
+            "catia_dialect_declared")?;
+        resource::source_attribute(ctx, &mut declared,
+            format_args!("{DECLARED_RELEASE}"), format_args!("{}", version.release),
+            "catia_dialect_declared")?;
+        resource::source_attribute(ctx, &mut declared,
+            format_args!("{DECLARED_SERVICE_PACK}"), format_args!("{}", version.service_pack),
+            "catia_dialect_declared")?;
+        resource::source_attribute(ctx, &mut declared,
+            format_args!("{DECLARED_HOT_FIX}"), format_args!("{}", version.hot_fix),
+            "catia_dialect_declared")?;
+        resource::source_attribute(ctx, &mut declared,
+            format_args!("{DECLARED_BUILD_DATE}"), format_args!("{}", version.build_date),
+            "catia_dialect_declared")?;
     }
-    declared
+    Ok(declared)
 }
 
 /// Classifies one scanned container. The single construction path for a
@@ -170,8 +181,43 @@ fn declared(scan: &ContainerScan) -> BTreeMap<cadmpeg_core::text::NonBlankString
 ///
 /// Identity and admission both come from [`ContainerScan::variant`], the
 /// structural family the scan resolved, through [`matched`].
-pub(crate) fn classify(scan: &ContainerScan) -> DialectMatch {
-    matched(scan.variant).with_declared(declared(scan))
+pub(crate) fn classify(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<DialectMatch, cadmpeg_core::CodecError> {
+    Ok(matched(scan.variant).with_declared(declared(ctx, scan)?))
+}
+
+pub(crate) fn copy_match(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    original: &DialectMatch,
+) -> Result<DialectMatch, cadmpeg_core::CodecError> {
+    let mut copied = match original.admission() {
+        Admission::Admitted => DialectMatch::admitted(original.dialect().clone()),
+        Admission::Residual => DialectMatch::residual(original.dialect().clone()),
+        _ => return Err(cadmpeg_core::CodecError::malformed(
+            "CATIA dialect copy received an unsupported admission",
+        )),
+    };
+    let mut declared = BTreeMap::new();
+    for (key, value) in original.declared() {
+        resource::source_attribute(
+            ctx,
+            &mut declared,
+            format_args!("{}", key.as_str()),
+            format_args!("{value}"),
+            "catia_dialect_copy",
+        )?;
+    }
+    copied = copied.with_declared(declared);
+    if let Some(instance) = original.instance() {
+        copied = copied.with_instance(resource::copy_retained_str(
+            ctx,
+            instance,
+            "catia_dialect_instance",
+        )?);
+    }
+    Ok(copied)
 }
 
 #[cfg(test)]

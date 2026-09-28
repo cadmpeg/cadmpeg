@@ -12,8 +12,20 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::report::decode::{Coverage, CoverageKey};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_core::text::NonBlankString;
 
 use crate::loss::CatiaLossCode;
+
+pub(crate) struct HexBytes<'a>(pub(crate) &'a [u8]);
+
+impl std::fmt::Display for HexBytes<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for byte in self.0 {
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
 
 fn allocation_failed(
     used: usize,
@@ -373,6 +385,34 @@ pub(crate) fn record_coverage(
     coverage
         .record_owned(key, name, count)
         .map_err(CodecError::malformed)
+}
+
+pub(crate) fn source_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<NonBlankString, String>,
+    key: std::fmt::Arguments<'_>,
+    value: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let key = format_retained(ctx, key, operation)?;
+    let key = NonBlankString::new(key)
+        .ok_or_else(|| CodecError::malformed("CATIA source attribute key is blank"))?;
+    let value = format_retained(ctx, value, operation)?;
+    insert_btree_map(ctx, attributes, key, value, operation)?;
+    Ok(())
+}
+
+pub(crate) fn string_attribute(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut BTreeMap<String, String>,
+    key: &str,
+    value: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let key = copy_retained_str(ctx, key, operation)?;
+    let value = format_retained(ctx, value, operation)?;
+    insert_btree_map(ctx, attributes, key, value, operation)?;
+    Ok(())
 }
 
 pub(crate) fn push_loss(

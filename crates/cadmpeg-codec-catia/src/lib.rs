@@ -115,7 +115,7 @@ impl CodecBackend for CatiaCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan_bytes(ctx, root.window())?;
-        Ok(container::summarize(&scan))
+        container::summarize(ctx, &scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
