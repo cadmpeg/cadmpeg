@@ -325,20 +325,37 @@ pub(super) fn design_constraint_transfer_coverage(
         )
 }
 
-pub(super) fn constraint_kind_breakdown(
-    coverage: &cadmpeg_ir::report::decode::Coverage,
-    prefix: &str,
-) -> String {
-    coverage
-        .iter()
-        .filter_map(|(key, count)| {
-            let kind = key
-                .strip_prefix(prefix)?
-                .strip_suffix("_constraint_count")?;
-            (*count != 0).then_some(format!("type {kind}={count}"))
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
+pub(super) fn constraint_kind_breakdown<'a>(
+    coverage: &'a cadmpeg_ir::report::decode::Coverage,
+    prefix: &'a str,
+) -> impl std::fmt::Display + 'a {
+    struct Breakdown<'a> {
+        coverage: &'a cadmpeg_ir::report::decode::Coverage,
+        prefix: &'a str,
+    }
+    impl std::fmt::Display for Breakdown<'_> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            let mut first = true;
+            for (key, count) in self.coverage.iter() {
+                let Some(kind) = key
+                    .strip_prefix(self.prefix)
+                    .and_then(|name| name.strip_suffix("_constraint_count"))
+                else {
+                    continue;
+                };
+                if *count == 0 {
+                    continue;
+                }
+                if !first {
+                    f.write_str(", ")?;
+                }
+                write!(f, "type {kind}={count}")?;
+                first = false;
+            }
+            Ok(())
+        }
+    }
+    Breakdown { coverage, prefix }
 }
 
 pub(super) fn curve_transfer_coverage(

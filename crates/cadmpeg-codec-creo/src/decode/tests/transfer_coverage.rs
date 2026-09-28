@@ -243,7 +243,7 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
         4,
     );
     assert_eq!(
-        constraint_kind_breakdown(&report_coverage, "active_native_feature_relation_type_",),
+        constraint_kind_breakdown(&report_coverage, "active_native_feature_relation_type_",).to_string(),
         "type 1=2, type 9=1"
     );
 }
