@@ -35,6 +35,63 @@ fn pattern_scalar(name: &str, value: f64) -> PropertyRecord {
 }
 
 #[test]
+fn pattern_irregular_vectors_refuse_at_exact_collection_limits() {
+    let offset = super::scalar_property("pattern", "Offset", "2");
+    let spacings = float_list_property("Spacings", "pattern-spacings");
+    let entries = [float_list_entry("pattern-spacings", &[2.0, 7.0])];
+    let properties = [&offset, &spacings];
+    crate::test_support::assert_collection_refusal_at(&[], "freecad pattern intervals", |ctx| {
+        crate::design::pattern_locations(ctx, &properties, "", 3, 1, ("Length", "Offset"), &entries)
+    });
+    let properties_by_owner = std::collections::HashMap::new();
+    let sources = crate::design::PatternSources {
+        objects: &[], properties_by_owner: &properties_by_owner, entries: &entries,
+    };
+    crate::test_support::assert_collection_refusal_at(&[], "fcstd linear pattern offsets", |ctx| {
+        crate::design::linear_pattern_axis(ctx, &properties, "", 3, 1, sources)
+    });
+    let axis = super::vector_property("pattern", "Axis", 0.0, 0.0, 1.0);
+    let mode = PropertyRecord {
+        id: "pattern-mode".into(), owner: "pattern".into(), name: "Mode".into(),
+        type_name: "App::PropertyEnumeration".into(), family: PropertyFamily::Unknown,
+        status: None, body: PropertyBody::Transient, order: 0,
+        xml: RetainedXml::from_text("<Property><Integer value=\"1\"/></Property>".into(), 0)
+            .expect("valid XML span"),
+    };
+    crate::test_support::assert_collection_refusal_at(&[], "fcstd circular pattern angles", |ctx| {
+        crate::design::pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
+            ctx, "PartDesign::PolarPattern", &[&offset, &spacings, &axis, &mode], sources,
+        )
+    });
+}
+
+fn float_list_property(name: &str, file: &str) -> PropertyRecord {
+    PropertyRecord {
+        id: name.into(), owner: "pattern".into(), name: name.into(),
+        type_name: "App::PropertyFloatList".into(), family: PropertyFamily::Unknown,
+        status: None,
+        body: PropertyBody::Persisted {
+            values: Vec::new(), links: Vec::new(), side_entries: vec![file.into()], dynamic: None,
+        },
+        order: 0,
+        xml: RetainedXml::from_text(format!("<Property><FloatList file=\"{file}\"/></Property>"), 0)
+            .expect("valid XML span"),
+    }
+}
+
+fn float_list_entry(name: &str, values: &[f64]) -> crate::native::EntryRecord {
+    let mut data = (values.len() as u32).to_le_bytes().to_vec();
+    for value in values {
+        data.extend(value.to_le_bytes());
+    }
+    crate::native::EntryRecord {
+        id: name.into(), name: name.into(),
+        role: cadmpeg_core::container::ContainerRole::Auxiliary,
+        referenced_by: Vec::new(), data,
+    }
+}
+
+#[test]
 fn uniform_pattern_intervals_report_collection_limit() {
     let length = pattern_scalar("Length", 12.0);
     let properties = [&length];
