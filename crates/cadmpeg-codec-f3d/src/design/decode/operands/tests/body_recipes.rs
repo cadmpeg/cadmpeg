@@ -17,6 +17,30 @@ use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::FaceId;
 
 #[test]
+fn body_recipe_candidate_index_refuses_collection_limit() {
+    let recipe = ConstructionRecipe {
+        id: "f3d:Design/BulkStream.dat:construction-recipe#1".into(),
+        byte_offset: 1,
+        kind: ConstructionRecipeKind::Body,
+        design: None,
+        recipe_index: 0,
+        record_index: None,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::operands::bind_body_recipe_operand_candidates(
+            Some(&ctx), &mut [], std::slice::from_ref(&recipe), &[], &[],
+        ),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && failure.operation == "f3d body recipe candidate index"
+    ));
+}
+
+#[test]
 fn body_recipe_decode_indices_refuse_collection_limits() {
     let archive = crate::test_support::zip_test::f3d_with_smbh_and_protein(
         &crate::test_support::smbh_header_test::synthetic_smbh(),
@@ -261,10 +285,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                 && failure.operation == "f3d body recipe operand ID"
     ));
-    crate::design::decode::operands::bind_body_recipe_operand_candidates(
-        std::slice::from_mut(&mut operand),
-        std::slice::from_ref(&recipe),
-        &[
+    let candidate_tags = [
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
                 target: AttributeTarget::Face(
@@ -295,9 +316,32 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                 design_references: vec![2265],
                 ordinal: 0,
             },
-        ],
+        ];
+    for (collection_limit, retained_limit, operation) in [
+        (1, u64::MAX, "f3d operand face candidate"),
+        (u64::MAX, u64::try_from(operand.id.len() - 1).unwrap(), "f3d body recipe candidate operand ID"),
+        (u64::MAX, u64::try_from(operand.id.len() + "test:model:face#same-stream".len() - 1).unwrap(), "f3d operand face candidate ID"),
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut limited_operand = operand.clone();
+        assert!(matches!(
+            crate::design::decode::operands::bind_body_recipe_operand_candidates(
+                Some(&limited_ctx), std::slice::from_mut(&mut limited_operand), std::slice::from_ref(&recipe), &candidate_tags, std::slice::from_ref(&scope),
+            ),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure)) if failure.operation == operation
+        ));
+    }
+    crate::design::decode::operands::bind_body_recipe_operand_candidates(
+        Some(&ctx),
+        std::slice::from_mut(&mut operand),
+        std::slice::from_ref(&recipe),
+        &candidate_tags,
         std::slice::from_ref(&scope),
-    );
+    ).unwrap();
     assert_eq!(
         operand.references()[0].candidate_faces,
         [
@@ -357,6 +401,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         });
     let mut combine_operand = operand.clone();
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
+        Some(&ctx),
         std::slice::from_mut(&mut combine_operand),
         std::slice::from_ref(&combine_recipe),
         &[
@@ -382,7 +427,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
         ],
         std::slice::from_ref(&combine_scope),
-    );
+    ).unwrap();
     assert_eq!(
         combine_operand.references()[0].candidate_faces,
         [FaceId::mint("test:model:face#same-stream").expect("identity grammar")]
