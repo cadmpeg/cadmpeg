@@ -480,6 +480,10 @@ fn decode_sketch_visibilities_in_stream(
                 "F3D sketch container {entity_suffix} has an invalid visibility member"
             )));
         };
+        ctx.charge_collection_items(1, "f3d sketch visibility records")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d sketch visibility allocation", 0, 1)
+        })?;
         out.push((entity_suffix, visibility));
     }
     Ok(out)
