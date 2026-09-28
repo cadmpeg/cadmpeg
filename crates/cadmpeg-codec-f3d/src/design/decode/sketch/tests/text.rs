@@ -196,7 +196,11 @@ fn sketch_text_output_refuses_collection_limit() {
     ));
 }
 
-fn sketch_text_with_retained_limit(bytes: &[u8], maximum: u64) -> cadmpeg_core::CodecError {
+fn sketch_text_with_retained_limit(
+    bytes: &[u8],
+    class_version: u32,
+    maximum: u64,
+) -> cadmpeg_core::CodecError {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let arena = DecodeArena::new();
@@ -208,7 +212,7 @@ fn sketch_text_with_retained_limit(bytes: &[u8], maximum: u64) -> cadmpeg_core::
         bytes,
         "Design/BulkStream.dat",
         crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
-        3,
+        class_version,
         304,
         7,
     )
@@ -219,7 +223,12 @@ fn sketch_text_with_retained_limit(bytes: &[u8], maximum: u64) -> cadmpeg_core::
 fn sketch_text_identifier_refuses_retained_limit() {
     let bytes = indexed_sketch_text_record(1);
     let id_len = crate::ids::native_sketch_text_id("Design/BulkStream.dat", 7).len();
-    let error = sketch_text_with_retained_limit(&bytes, u64::try_from(id_len - 1).unwrap());
+    let text_len = "Arial".len() + "B6 Probe 47".len();
+    let error = sketch_text_with_retained_limit(
+        &bytes,
+        3,
+        u64::try_from(text_len + id_len - 1).unwrap(),
+    );
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -232,14 +241,58 @@ fn sketch_text_identifier_refuses_retained_limit() {
 fn sketch_text_raw_bytes_refuse_retained_limit() {
     let bytes = indexed_sketch_text_record(1);
     let id_len = crate::ids::native_sketch_text_id("Design/BulkStream.dat", 7).len();
-    let maximum = u64::try_from(id_len + bytes.len() - 1).unwrap();
-    let error = sketch_text_with_retained_limit(&bytes, maximum);
+    let text_len = "Arial".len() + "B6 Probe 47".len();
+    let maximum = u64::try_from(text_len + id_len + bytes.len() - 1).unwrap();
+    let error = sketch_text_with_retained_limit(&bytes, 3, maximum);
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                 && limit.operation == "f3d sketch text raw bytes"
     ));
+}
+
+fn assert_sketch_text_utf16_refusal(bytes: &[u8], version: u32, maximum: u64) {
+    let error = sketch_text_with_retained_limit(bytes, version, maximum);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "f3d Design UTF-16 text"
+    ));
+}
+
+#[test]
+fn legacy_sketch_text_font_refuses_retained_limit() {
+    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
+    assert_sketch_text_utf16_refusal(&bytes, 4, 4);
+}
+
+#[test]
+fn indexed_sketch_text_font_refuses_retained_limit() {
+    let bytes = indexed_sketch_text_record(1);
+    assert_sketch_text_utf16_refusal(&bytes, 3, 4);
+}
+
+#[test]
+fn legacy_sketch_text_content_refuses_retained_limit() {
+    let bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
+    let maximum = u64::try_from("Arial".len() + "path text".len() - 1).unwrap();
+    assert_sketch_text_utf16_refusal(&bytes, 4, maximum);
+}
+
+#[test]
+fn txt_tag_sketch_text_content_refuses_retained_limit() {
+    let bytes = txt_tag_sketch_text_record(&[("txt_tag", 115)], &[], &[], (0.0, 0.0));
+    let maximum = u64::try_from("Arial".len() + "sketch text".len() - 1).unwrap();
+    assert_sketch_text_utf16_refusal(&bytes, 4, maximum);
+}
+
+#[test]
+fn indexed_sketch_text_content_refuses_retained_limit() {
+    let bytes = indexed_sketch_text_record(1);
+    let maximum = u64::try_from("Arial".len() + "B6 Probe 47".len() - 1).unwrap();
+    assert_sketch_text_utf16_refusal(&bytes, 3, maximum);
 }
 
 #[test]

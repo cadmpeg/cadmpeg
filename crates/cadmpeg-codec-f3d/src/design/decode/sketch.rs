@@ -1754,6 +1754,20 @@ const SKETCH_TEXT_TYPE_GUIDS: [&str; 2] = [
     "F0B1AFA3-3BAF-42D0-B2F3-94B95662F2A9",
 ];
 
+fn sketch_utf16_text(
+    ctx: Option<&DecodeContext<'_>>,
+    payload: &[u8],
+    count_at: usize,
+    count: usize,
+) -> Result<Option<(String, usize)>, CodecError> {
+    match ctx {
+        Some(ctx) => lp_utf16_bounded_charged(ctx, payload, count_at, count..=count),
+        None => Ok(count_at
+            .checked_add(4)
+            .and_then(|offset| utf16le_at(payload, offset, count))),
+    }
+}
+
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
 fn decode_sketch_texts_from_stream(
@@ -1981,9 +1995,11 @@ fn read_sketch_text_leading_block(payload: &[u8], cursor: &mut usize) -> Option<
 
 /// Read the record prefix, property block, and the metrics up to the height.
 fn decode_sketch_text_head(
+    ctx: Option<&DecodeContext<'_>>,
     payload: &[u8],
     class_version: u32,
-) -> Option<(SketchTextHead, SketchTextIdentity)> {
+) -> Result<Option<(SketchTextHead, SketchTextIdentity)>, CodecError> {
+    (|| {
     // Record prefix: the LP-ASCII class tag, the u64 entity ID, and the
     // LP-ASCII record name.
     let (_, after_tag) = lp_ascii_filtered_view(payload, 0, 3..=3, u8::is_ascii_digit)?;
@@ -2035,7 +2051,11 @@ fn decode_sketch_text_head(
     if font_count == 0 || font_count > 1_024 {
         return None;
     }
-    let (font_family, after_font) = utf16le_at(payload, cursor + 4, font_count)?;
+    let (font_family, after_font) = match sketch_utf16_text(ctx, payload, cursor, font_count) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     cursor = after_font;
     if matches!(identity, SketchTextIdentity::TextexTag { .. }) {
         (payload.get(cursor)? == &0).then_some(())?;
@@ -2043,7 +2063,7 @@ fn decode_sketch_text_head(
     }
     let height = PositiveLength::new(View::f64_le_at(payload, cursor)? * 10.0)?;
     cursor = cursor.checked_add(8)?;
-    Some((
+    Some(Ok((
         SketchTextHead {
             entity_genesis: property("EntityGenesis"),
             persistent_id,
@@ -2054,7 +2074,8 @@ fn decode_sketch_text_head(
             cursor,
         },
         identity,
-    ))
+    )))
+    })().transpose()
 }
 
 /// Read the indexed Design form of a `textex_tag` record. It has no leading
@@ -2062,7 +2083,11 @@ fn decode_sketch_text_head(
 /// nine-byte zero entity lane and the ordinary property block. Its one-byte
 /// width prefix is zero, unlike the legacy class form's one-byte prefix of
 /// one; the f64 width factor and the remaining metrics have the same roles.
-fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<(SketchTextHead, NonNegativeReal)> {
+fn decode_indexed_sketch_text_head(
+    ctx: Option<&DecodeContext<'_>>,
+    payload: &[u8],
+) -> Result<Option<(SketchTextHead, NonNegativeReal)>, CodecError> {
+    (|| {
     let (_, after_tag) = lp_ascii_filtered_view(payload, 0, 3..=3, u8::is_ascii_digit)?;
     if after_tag != 7
         || View::u32_le_at(payload, after_tag).is_none()
@@ -2083,13 +2108,17 @@ fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<(SketchTextHead, No
     if font_count == 0 || font_count > 1_024 {
         return None;
     }
-    let (font_family, after_font) = utf16le_at(payload, cursor + 4, font_count)?;
+    let (font_family, after_font) = match sketch_utf16_text(ctx, payload, cursor, font_count) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     cursor = after_font;
     (payload.get(cursor)? == &0).then_some(())?;
     cursor += 1;
     let height = PositiveLength::new(View::f64_le_at(payload, cursor)? * 10.0)?;
     cursor = cursor.checked_add(8)?;
-    Some((
+    Some(Ok((
         SketchTextHead {
             entity_genesis: property("EntityGenesis"),
             persistent_id: Some(persistent_id),
@@ -2100,19 +2129,22 @@ fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<(SketchTextHead, No
             cursor,
         },
         width_factor,
-    ))
+    )))
+    })().transpose()
 }
 
 /// Read the alignment fields, text content, and class tail under one pair of
 /// slot forms, requiring the walk to end exactly on the owning-sketch
 /// reference.
 fn decode_sketch_text_tail(
+    ctx: Option<&DecodeContext<'_>>,
     payload: &[u8],
     mut cursor: usize,
     first_slot: TextReferenceSlot,
     second_slot: TextReferenceSlot,
     width_factor: NonNegativeReal,
-) -> Option<SketchTextTail> {
+) -> Result<Option<SketchTextTail>, CodecError> {
+    (|| {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
     // Horizontal alignment enum and three flag bytes.
     let horizontal_alignment = View::u32_le_at(payload, cursor)?;
@@ -2121,7 +2153,11 @@ fn decode_sketch_text_tail(
     if text_count == 0 || text_count > 1_048_576 {
         return None;
     }
-    let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
+    let (text, after_text) = match sketch_utf16_text(ctx, payload, cursor, text_count) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     cursor = after_text;
     let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
     // Vertical alignment enum, one flag byte, and the font weight.
@@ -2145,7 +2181,7 @@ fn decode_sketch_text_tail(
     cursor = cursor.checked_add(SKETCH_TEXT_TRAILING_RUN)?;
     let owner = take_reference(payload, &mut cursor)?;
     (cursor == payload.len()).then_some(())?;
-    Some(SketchTextTail {
+    Some(Ok(SketchTextTail {
         layout: SketchTextLayout::TextexTag {
             width_factor,
             alignment: Some(SketchTextAlignment {
@@ -2159,7 +2195,8 @@ fn decode_sketch_text_tail(
         text,
         font_weight,
         owner_reference: reference_index(&owner)?,
-    })
+    }))
+    })().transpose()
 }
 
 /// Read the `txt_tag` form's members from the height to the end of the record.
@@ -2170,11 +2207,13 @@ fn decode_sketch_text_tail(
 /// is followed by a counted reference run, fifteen bytes, and the trailing run
 /// and owning-sketch reference that close both forms.
 fn decode_txt_tag_sketch_text_tail(
+    ctx: Option<&DecodeContext<'_>>,
     payload: &[u8],
     mut cursor: usize,
     class_version: u32,
     rotation: Angle,
-) -> Option<SketchTextTail> {
+) -> Result<Option<SketchTextTail>, CodecError> {
+    (|| {
     cursor = cursor.checked_add(2)?;
     let anchor = Point2::new(
         View::f64_le_at(payload, cursor)? * 10.0,
@@ -2191,7 +2230,11 @@ fn decode_txt_tag_sketch_text_tail(
     if text_count == 0 || text_count > 1_048_576 {
         return None;
     }
-    let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
+    let (text, after_text) = match sketch_utf16_text(ctx, payload, cursor, text_count) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     cursor = after_text;
     let references = usize::try_from(View::u32_le_at(payload, cursor)?).ok()?;
     if references > MAX_RELATION_RUN {
@@ -2206,14 +2249,15 @@ fn decode_txt_tag_sketch_text_tail(
     cursor = cursor.checked_add(TXT_TAG_MEMBER_RUN + SKETCH_TEXT_TRAILING_RUN)?;
     let owner = take_reference(payload, &mut cursor)?;
     (cursor == payload.len()).then_some(())?;
-    Some(SketchTextTail {
+    Some(Ok(SketchTextTail {
         layout: SketchTextLayout::TxtTag {
             placement: TextPlacement { anchor, rotation },
         },
         text,
         font_weight,
         owner_reference: reference_index(&owner)?,
-    })
+    }))
+    })().transpose()
 }
 
 /// Read the indexed `textex_tag` tail. The member and alignment fields match
@@ -2224,12 +2268,14 @@ fn decode_txt_tag_sketch_text_tail(
 /// discriminators used by the legacy class tail. The indexed suffix carries no
 /// neutral anchor or rotation; the source record is retained in full.
 fn decode_indexed_sketch_text_tail(
+    ctx: Option<&DecodeContext<'_>>,
     payload: &[u8],
     mut cursor: usize,
     first_slot: TextReferenceSlot,
     second_slot: TextReferenceSlot,
     width_factor: NonNegativeReal,
-) -> Option<SketchTextTail> {
+) -> Result<Option<SketchTextTail>, CodecError> {
+    (|| {
     let first_reference = read_text_reference(payload, &mut cursor, first_slot)?;
     let horizontal_alignment = View::u32_le_at(payload, cursor)?;
     cursor = cursor.checked_add(7)?;
@@ -2237,7 +2283,11 @@ fn decode_indexed_sketch_text_tail(
     if text_count == 0 || text_count > 1_048_576 {
         return None;
     }
-    let (text, after_text) = utf16le_at(payload, cursor + 4, text_count)?;
+    let (text, after_text) = match sketch_utf16_text(ctx, payload, cursor, text_count) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     cursor = after_text;
     let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
     let vertical_alignment = View::u32_le_at(payload, cursor)?;
@@ -2271,7 +2321,7 @@ fn decode_indexed_sketch_text_tail(
     cursor = cursor.checked_add(35)?;
     let owner = take_reference(payload, &mut cursor)?;
     (cursor == payload.len()).then_some(())?;
-    Some(SketchTextTail {
+    Some(Ok(SketchTextTail {
         layout: SketchTextLayout::TextexTag {
             width_factor,
             alignment: Some(SketchTextAlignment {
@@ -2285,32 +2335,35 @@ fn decode_indexed_sketch_text_tail(
         text,
         font_weight,
         owner_reference: reference_index(&owner)?,
-    })
+    }))
+    })().transpose()
 }
 
 fn decode_indexed_sketch_text_record_tail(
+    ctx: Option<&DecodeContext<'_>>,
     payload: &[u8],
     cursor: usize,
     width_factor: NonNegativeReal,
-) -> Option<SketchTextTail> {
+) -> Result<Option<SketchTextTail>, CodecError> {
     let mut closed = None;
     for first_slot in TEXT_REFERENCE_SLOTS {
         for second_slot in TEXT_REFERENCE_SLOTS {
             let Some(tail) = decode_indexed_sketch_text_tail(
+                ctx,
                 payload,
                 cursor,
                 first_slot,
                 second_slot,
                 width_factor,
-            ) else {
+            )? else {
                 continue;
             };
             if closed.replace(tail).is_some() {
-                return None;
+                return Ok(None);
             }
         }
     }
-    closed
+    Ok(closed)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2372,20 +2425,29 @@ pub(crate) fn decode_sketch_text_record(
     byte_offset: usize,
 ) -> Result<Option<SketchText>, CodecError> {
     (|| {
-    if let Some((head, identity)) = decode_sketch_text_head(payload, class_version) {
+    let legacy_head = match decode_sketch_text_head(ctx, payload, class_version) {
+        Ok(head) => head,
+        Err(error) => return Some(Err(error)),
+    };
+    if let Some((head, identity)) = legacy_head {
         let tail = match identity {
             SketchTextIdentity::TextexTag { width_factor } => {
                 let mut closed = None;
                 let mut ambiguous = false;
                 'forms: for first_slot in TEXT_REFERENCE_SLOTS {
                     for second_slot in TEXT_REFERENCE_SLOTS {
-                        let Some(tail) = decode_sketch_text_tail(
+                        let tail = decode_sketch_text_tail(
+                            ctx,
                             payload,
                             head.cursor,
                             first_slot,
                             second_slot,
                             width_factor,
-                        ) else {
+                        );
+                        let Some(tail) = (match tail {
+                            Ok(tail) => tail,
+                            Err(error) => return Some(Err(error)),
+                        }) else {
                             continue;
                         };
                         // Two slot forms both ending on the owning-sketch reference
@@ -2402,9 +2464,16 @@ pub(crate) fn decode_sketch_text_record(
                     closed
                 }
             }
-            SketchTextIdentity::TxtTag { rotation } => {
-                decode_txt_tag_sketch_text_tail(payload, head.cursor, class_version, rotation)
-            }
+            SketchTextIdentity::TxtTag { rotation } => match decode_txt_tag_sketch_text_tail(
+                ctx,
+                payload,
+                head.cursor,
+                class_version,
+                rotation,
+            ) {
+                Ok(tail) => tail,
+                Err(error) => return Some(Err(error)),
+            },
         };
         if let Some(tail) = tail {
             return Some(assemble_sketch_text(
@@ -2420,8 +2489,19 @@ pub(crate) fn decode_sketch_text_record(
             ));
         }
     }
-    let (head, width_factor) = decode_indexed_sketch_text_head(payload)?;
-    let tail = decode_indexed_sketch_text_record_tail(payload, head.cursor, width_factor)?;
+    let (head, width_factor) = match decode_indexed_sketch_text_head(ctx, payload) {
+        Ok(head) => head?,
+        Err(error) => return Some(Err(error)),
+    };
+    let tail = match decode_indexed_sketch_text_record_tail(
+        ctx,
+        payload,
+        head.cursor,
+        width_factor,
+    ) {
+        Ok(tail) => tail?,
+        Err(error) => return Some(Err(error)),
+    };
     Some(assemble_sketch_text(
         ctx,
         payload,
