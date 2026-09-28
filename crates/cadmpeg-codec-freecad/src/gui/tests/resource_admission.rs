@@ -1507,3 +1507,115 @@ fn y4_2_gui_property_values_are_admitted_before_allocation() {
                 && limit.operation == "FCStd GUI property values"
     ));
 }
+
+fn topology_appearance_archive(material_count: u32, two_faces: bool) -> Vec<u8> {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1">
+<Property name="Shape" type="Part::PropertyPartShape">
+<Part ElementMap="1.0" file="Shape.brp"/>
+<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
+<ElementMap2 count="4">
+1 PostfixCount 0 MapCount 1
+ElementMap 1 1 3
+Face ChildCount 0 NameCount 2
+0
+;FaceStable.0.a 0
+Edge ChildCount 0 NameCount 3
+0
+;EdgeStable1.0.a 0
+;EdgeStable2.0.a 0
+Vertex ChildCount 0 NameCount 3
+0
+;VertexStable1.0.a 0
+;VertexStable2.0.a 0
+EndMap
+</ElementMap2>
+</Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 2
+1 0 0 1 0
+1 1 0 -1 0
+Curves 2
+1 0 0 0 1 0 0
+1 1 0 0 -1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 9
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +9 0 -8 0 *
+Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +8 0 -9 0 *
+Wi 1001000 +7 0 +6 0 *
+Fa 0 0.001 1 0 1001000 +5 0 *
+Sh 1001000 +4 0 *
+So 1001000 +3 0 *
+Co 1001000 +2 0 *
++1 0 *";
+    let document = if two_faces {
+        document.replace("Face ChildCount 0 NameCount 2\n0\n;FaceStable.0.a 0",
+            "Face ChildCount 0 NameCount 3\n0\n;FaceStable.0.a 0\n;FaceStable2.0.a 0")
+    } else { document.to_owned() };
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Shape"><Properties Count="5"><Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3435973632"/></Property><Property name="DiffuseColor" type="App::PropertyColorList"><ColorList file="DiffuseColor"/></Property><Property name="LineColorArray" type="App::PropertyColorList"><ColorList file="LineColorArray"/></Property><Property name="PointColorArray" type="App::PropertyColorList"><ColorList file="PointColorArray"/></Property><Property name="ShapeAppearance" type="App::PropertyMaterialList"><MaterialList file="ShapeAppearance" version="2"/></Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
+    let mut color_list = 1_u32.to_le_bytes().to_vec();
+    color_list.extend_from_slice(&0xff00_00ff_u32.to_le_bytes());
+    let mut materials = material_count.to_le_bytes().to_vec();
+    for _ in 0..material_count {
+        for packed in [0_u32, 0xff00_00ff, 0, 0] {
+            materials.extend_from_slice(&packed.to_le_bytes());
+        }
+        materials.extend_from_slice(&0_f32.to_le_bytes());
+        materials.extend_from_slice(&0_f32.to_le_bytes());
+    }
+    archive_entries(&[("Document.xml", document.as_bytes()), ("GuiDocument.xml", gui),
+        ("DiffuseColor", &color_list), ("LineColorArray", &color_list),
+        ("PointColorArray", &color_list), ("ShapeAppearance", &materials),
+        ("Shape.brp", brep)])
+}
+
+#[test]
+fn gui_material_loss_tag_refuses_at_matching_retained_limit() {
+    let bytes = topology_appearance_archive(0, false);
+    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "FCStd GUI material loss tag");
+}
+
+#[test]
+fn gui_binding_body_identity_refuses_at_matching_retained_limit() {
+    let bytes = topology_appearance_archive(1, false);
+    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "FCStd GUI binding body identity");
+}
+
+#[test]
+fn gui_material_face_set_refuses_at_matching_collection_limit() {
+    let bytes = topology_appearance_archive(2, true);
+    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FCStd GUI material face identities");
+}
+
+#[test]
+fn gui_material_face_identity_refuses_at_matching_retained_limit() {
+    let bytes = topology_appearance_archive(2, true);
+    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "FCStd GUI binding face identity");
+}
+
+#[test]
+fn gui_colored_topology_set_refuses_at_matching_collection_limit() {
+    let bytes = topology_appearance_archive(1, false);
+    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        "FCStd GUI colored topology identities");
+}
+
+#[test]
+fn gui_colored_topology_binding_refuses_at_matching_retained_limit() {
+    let bytes = topology_appearance_archive(1, false);
+    assert_gui_decode_limit_at(&bytes, cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        "FCStd GUI binding topology identity");
+}
