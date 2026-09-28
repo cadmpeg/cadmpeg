@@ -690,14 +690,21 @@ pub(in crate::native) fn feature_draft_construction_references(
 
 /// Decode exact counted compact-index lanes preceding draft construction graphs.
 pub(in crate::native) fn feature_draft_construction_index_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureDraftConstructionIndexLane> {
+) -> Result<Vec<FeatureDraftConstructionIndexLane>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections();
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::draft_leading::scan(record.payload_view()) else {
+            if failure.is_some() { return; }
+            let lane = match crate::om::draft_leading::scan(ctx, record.payload_view()) {
+                Ok(lane) => lane,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let Some(lane) = lane else {
                 return;
             };
             let section_ordinal = crate::om::draft_references::draft_feature_payload_references(
@@ -718,9 +725,14 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
             let indices = match section_ordinal {
                 None => FeatureDraftConstructionIndices::Unresolved(frame),
                 Some(section_ordinal) => {
-                    FeatureDraftConstructionIndices::Resolved(frame.resolve(|index| {
+                    let resolved = frame.resolve(ctx, |index| {
                         format!("nx:om-data-blocks-{section_ordinal}:block#{index}")
-                    }))
+                    });
+                    let frame = match resolved {
+                        Ok(frame) => frame,
+                        Err(error) => { failure = Some(error); return; }
+                    };
+                    FeatureDraftConstructionIndices::Resolved(frame)
                 }
             };
             lanes.push(FeatureDraftConstructionIndexLane {
@@ -734,7 +746,7 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
             });
         },
     );
-    lanes
+    if let Some(error) = failure { Err(error) } else { Ok(lanes) }
 }
 
 /// Reconstruct ordered logical payloads from resolved draft index lanes.

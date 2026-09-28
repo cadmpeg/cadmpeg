@@ -374,7 +374,8 @@ fn om_draft_feature_references_require_one_complete_graph() {
         field.references().map(|(_, offset)| offset),
         [230, 235, 273, 280]
     );
-    let lane = crate::om::draft_leading::scan(record).expect("complete index lane");
+    let lane = crate::test_support::with_decode_context(|ctx| crate::om::draft_leading::scan(ctx, record))
+        .unwrap().expect("complete index lane");
     assert_eq!(usize::from(lane.declared_count()), 3);
     assert_eq!(
         lane.indices()
@@ -418,14 +419,14 @@ fn om_draft_feature_references_require_one_complete_graph() {
     );
     let mut malformed_lane = payload.clone();
     malformed_lane[23] = 4;
-    assert!(crate::om::draft_leading::scan(
+    assert!(crate::test_support::with_decode_context(|ctx| crate::om::draft_leading::scan(ctx,
         crate::om::operation_record::OperationPayload::new(
             &malformed_lane,
             record.payload_offset(),
             record.name()
         )
         .unwrap()
-    )
+    )).unwrap()
     .is_none());
     let ambiguous = [prefix.as_slice(), graph.as_slice(), graph.as_slice()].concat();
     assert!(
