@@ -2133,12 +2133,17 @@ pub(super) fn parasolid_chart_records(
         let point_layout = subtype.chart_point_layout();
         for chart in crate::intersection::chart_source_records(ctx, &stream.inflated, point_layout)?
         {
+            ctx.charge_collection_items(1, "NX Parasolid chart records")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidChartRecord>()),
+                "NX Parasolid chart record",
+            )?;
+            records.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid chart records", 0, 1))?;
             records.push(ParasolidChartRecord {
-                id: format!(
-                    "nx:s{stream_ordinal}:chart-record#{}-{}",
-                    chart.xmt, chart.pos
-                ),
-                stream_ordinal: stream_ordinal as u32,
+                id: parasolid_offset_record_id(ctx, stream_ordinal, "chart-record", chart.xmt, chart.pos)?,
+                stream_ordinal: u32::try_from(stream_ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX Parasolid chart stream ordinal", 0, 1))?,
                 xmt: chart.xmt,
                 preamble: chart.preamble,
                 data: chart.data,
@@ -2147,6 +2152,9 @@ pub(super) fn parasolid_chart_records(
             });
         }
     }
+    let work = records.len().checked_mul(records.len().checked_ilog2().map_or(1, |digits| digits as usize + 1))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid chart record sort work", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX Parasolid chart record sort work")?;
     records.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(records)
 }
@@ -4511,6 +4519,53 @@ mod tests {
         super::parasolid_group_records(&ctx, &streams, &BTreeMap::new(), &[])
             .err()
             .expect("GROUP record limit refusal")
+    }
+
+    fn chart_record_route_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> CodecError {
+        let streams = [stream(
+            crate::parasolid::ParasolidSubtype::Partition,
+            "SCH_TEST",
+            crate::test_support::test_streams::charted_intersection_curve_topology_partition_stream(),
+        )];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &streams[0].inflated, &arena, &policy,
+        ).unwrap();
+        super::parasolid_chart_records(&ctx, &streams)
+            .err()
+            .expect("chart record route limit refusal")
+    }
+
+    #[test]
+    fn chart_record_route_refuses_collection_limit() {
+        let error = chart_record_route_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn chart_record_route_refuses_retained_limit() {
+        let error = chart_record_route_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn chart_record_route_refuses_scoped_limit() {
+        let error = chart_record_route_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn chart_record_route_refuses_work_limit() {
+        let error = chart_record_route_limit_error(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
 
     fn group_member_route_limit_error(
