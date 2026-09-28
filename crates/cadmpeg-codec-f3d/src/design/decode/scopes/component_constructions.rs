@@ -4,6 +4,7 @@
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::design::decode::text::{fixed_guid_end, fixed_utf16_ascii_eq};
 use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -538,14 +539,7 @@ fn exact_component_insert_carrier_334(
     {
         return None;
     }
-    let (component_identity, _) = lp_utf16_bounded(
-        bytes,
-        carrier_at + component_carrier_334::COMPONENT_IDENTITY,
-        36..=36,
-    )?;
-    if !crate::bytes::is_guid_relaxed(&component_identity) {
-        return None;
-    }
+    fixed_guid_end(bytes, carrier_at + component_carrier_334::COMPONENT_IDENTITY)?;
 
     let role_start = carrier_at + component_carrier_334::NEUTRON_ROLE;
     let (role, role_end) = direct_utf16_role_until_tail(bytes, role_start, relation_at)?;
@@ -559,9 +553,8 @@ fn exact_component_insert_carrier_334(
     {
         return None;
     }
-    let (following_identity, _) =
-        lp_utf16_bounded(bytes, role_end + COMPONENT_CARRIER_ROLE_TAIL_BYTES, 36..=36)?;
-    crate::bytes::is_guid_relaxed(&following_identity).then_some((role, role_start))
+    fixed_guid_end(bytes, role_end + COMPONENT_CARRIER_ROLE_TAIL_BYTES)?;
+    Some((role, role_start))
 }
 
 const COMPONENT_CARRIER_ROLE_TAIL_BYTES: usize = 10;
@@ -618,13 +611,12 @@ fn exact_component_insert_scope_283_262_257(
     {
         return None;
     }
-    let (null_guid, after_null_guid) = lp_utf16_bounded(
+    let after_null_guid = fixed_utf16_ascii_eq(
         bytes,
         start + component_scope_283_257::NULL_GUID_CODE_UNIT_COUNT,
-        36..=36,
+        NULL_COMPONENT_INSERT_GUID,
     )?;
-    if null_guid != NULL_COMPONENT_INSERT_GUID
-        || after_null_guid != start + component_scope_283_257::REFERENCE_COUNT - 3
+    if after_null_guid != start + component_scope_283_257::REFERENCE_COUNT - 3
         || View::u32_le_at(bytes, start + component_scope_283_257::REFERENCE_COUNT)? != 1
         || bytes.get(start + component_scope_283_257::REFERENCE_MARKER) != Some(&1)
         || View::u32_le_at(
@@ -671,13 +663,12 @@ fn exact_component_insert_scope_283_262_385(
     }
     let transform_at = start + component_scope_283_385::TRANSFORM;
     let transform = rigid_transform_at(bytes, transform_at)?;
-    let (null_guid, after_null_guid) = lp_utf16_bounded(
+    let after_null_guid = fixed_utf16_ascii_eq(
         bytes,
         start + component_scope_283_385::NULL_GUID_CODE_UNIT_COUNT,
-        36..=36,
+        NULL_COMPONENT_INSERT_GUID,
     )?;
-    if null_guid != NULL_COMPONENT_INSERT_GUID
-        || after_null_guid != start + component_scope_283_385::REFERENCE_COUNT - 3
+    if after_null_guid != start + component_scope_283_385::REFERENCE_COUNT - 3
         || View::u32_le_at(bytes, start + component_scope_283_385::REFERENCE_COUNT)? != 1
         || bytes.get(start + component_scope_283_385::REFERENCE_MARKER) != Some(&1)
         || View::u32_le_at(
@@ -727,13 +718,12 @@ fn exact_component_insert_identity_scope(
     {
         return None;
     }
-    let (opaque_guid, after_opaque_guid) = lp_utf16_bounded(
+    let after_opaque_guid = fixed_utf16_ascii_eq(
         bytes,
         start + component_identity_scope::OPAQUE_CODE_UNIT_COUNT,
-        36..=36,
+        NULL_GUID,
     )?;
-    if opaque_guid != NULL_GUID
-        || after_opaque_guid != start + component_identity_scope::OPAQUE_UTF16_PAYLOAD + 72
+    if after_opaque_guid != start + component_identity_scope::OPAQUE_UTF16_PAYLOAD + 72
     {
         return None;
     }
@@ -760,13 +750,12 @@ fn exact_component_insert_identity_scope_shifted(
     {
         return None;
     }
-    let (null_guid, after_null_guid) = lp_utf16_bounded(
+    let after_null_guid = fixed_utf16_ascii_eq(
         bytes,
         start + component_identity_shifted::NULL_GUID_CODE_UNIT_COUNT,
-        36..=36,
+        NULL_COMPONENT_INSERT_GUID,
     )?;
-    if null_guid != NULL_COMPONENT_INSERT_GUID
-        || after_null_guid != start + component_identity_shifted::LEN
+    if after_null_guid != start + component_identity_shifted::LEN
     {
         return None;
     }
@@ -801,13 +790,12 @@ fn exact_component_insert_scope_414_264_389(
     }
     let transform_at = start + component_matrix_414::TRANSFORM;
     let transform = rigid_transform_at(bytes, transform_at)?;
-    let (null_guid, after_null_guid) = lp_utf16_bounded(
+    let after_null_guid = fixed_utf16_ascii_eq(
         bytes,
         start + component_matrix_414::NULL_GUID_CODE_UNIT_COUNT,
-        36..=36,
+        NULL_COMPONENT_INSERT_GUID,
     )?;
-    if null_guid != NULL_COMPONENT_INSERT_GUID
-        || after_null_guid != start + component_matrix_414::LEN
+    if after_null_guid != start + component_matrix_414::LEN
     {
         return None;
     }
