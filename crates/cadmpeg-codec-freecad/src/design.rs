@@ -3280,17 +3280,23 @@ fn build_profiles(
     while let Some(first) = unused.pop_first() {
         ctx.charge_work(1, "FCStd profile chain construction")?;
         ctx.charge_collection_items(1, "FCStd profile uses")?;
-        let mut chain = VecDeque::from([SketchEntityUse {
-            entity: entities[first].id().clone(),
+        let mut chain = VecDeque::new();
+        chain.try_reserve(1).map_err(|_| collection_allocation_failed(
+            ctx, 1, "FCStd profile uses",
+        ))?;
+        chain.push_back(SketchEntityUse {
+            entity: SketchEntityId::mint(retained_string(
+                ctx, entities[first].id().as_str(), "FCStd profile use identity",
+            )?).map_err(CodecError::malformed)?,
             reversed: false,
-        }]);
+        });
         if ambiguous.contains(&first) {
-            ctx.charge_collection_items(1, "FCStd profile chains")?;
+            reserve_vec_items(ctx, &mut profiles, 1, "FCStd profile chains")?;
             profiles.push(chain.into());
             continue;
         }
         if endpoints(&entities[first]).is_none() {
-            ctx.charge_collection_items(1, "FCStd profile chains")?;
+            reserve_vec_items(ctx, &mut profiles, 1, "FCStd profile chains")?;
             profiles.push(chain.into());
             continue;
         }
@@ -3328,8 +3334,13 @@ fn build_profiles(
             };
             unused.remove(&candidate.entity);
             ctx.charge_collection_items(1, "FCStd profile uses")?;
+            chain.try_reserve(1).map_err(|_| collection_allocation_failed(
+                ctx, 1, "FCStd profile uses",
+            ))?;
             chain.push_back(SketchEntityUse {
-                entity: entities[candidate.entity].id().clone(),
+                entity: SketchEntityId::mint(retained_string(
+                    ctx, entities[candidate.entity].id().as_str(), "FCStd profile use identity",
+                )?).map_err(CodecError::malformed)?,
                 reversed,
             });
             tail = next_tail;
@@ -3360,13 +3371,18 @@ fn build_profiles(
             };
             unused.remove(&candidate.entity);
             ctx.charge_collection_items(1, "FCStd profile uses")?;
+            chain.try_reserve(1).map_err(|_| collection_allocation_failed(
+                ctx, 1, "FCStd profile uses",
+            ))?;
             chain.push_front(SketchEntityUse {
-                entity: entities[candidate.entity].id().clone(),
+                entity: SketchEntityId::mint(retained_string(
+                    ctx, entities[candidate.entity].id().as_str(), "FCStd profile use identity",
+                )?).map_err(CodecError::malformed)?,
                 reversed,
             });
             head = next_head;
         }
-        ctx.charge_collection_items(1, "FCStd profile chains")?;
+        reserve_vec_items(ctx, &mut profiles, 1, "FCStd profile chains")?;
         profiles.push(chain.into());
     }
     Ok(profiles)
@@ -7195,6 +7211,26 @@ mod profile_tests {
             SketchId::mint("test:test:sketch#curved").unwrap(),
             geometry,
         )
+    }
+
+    #[test]
+    fn profile_chain_refuses_before_use_growth_and_identity_copy() {
+        let entities = [entity(
+            "test:test:entity#profile-line",
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            }).expect("valid line"),
+        )];
+        crate::test_support::assert_collection_refusal_at(
+            &[], "FCStd profile uses", |ctx| super::build_profiles(ctx, &entities, &[]),
+        );
+        crate::test_support::assert_retained_refusal_at(
+            &[], "FCStd profile use identity", |ctx| super::build_profiles(ctx, &entities, &[]),
+        );
+        crate::test_support::assert_collection_refusal_at(
+            &[], "FCStd profile chains", |ctx| super::build_profiles(ctx, &entities, &[]),
+        );
     }
 
     #[test]
