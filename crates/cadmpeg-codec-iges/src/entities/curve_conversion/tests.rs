@@ -6,6 +6,41 @@ use super::{
 use cadmpeg_ir::eval::nurbs_curve_point_at;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+use super::CurveConversionError;
+
+#[test]
+fn analytic_arc_conversion_refuses_each_decode_lane() {
+    for (operation, cap, parabola) in [
+        ("iges analytic arc knots", 0, false),
+        ("iges analytic arc weighted poles", 6, false),
+        ("iges parabolic arc knots", 0, true),
+        ("iges parabolic arc poles", 6, true),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = if parabola {
+            parabolic_arc_nurbs(
+                Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0), PositiveLength::new(1.0).unwrap(),
+                [0.0, 1.0], Some(&ctx),
+            )
+        } else {
+            elliptical_arc_nurbs(
+                Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0), PositiveLength::new(2.0).unwrap(),
+                PositiveLength::new(1.0).unwrap(),
+                [0.0, std::f64::consts::FRAC_PI_2], Some(&ctx),
+            )
+        };
+        assert!(matches!(result, Err(CurveConversionError::Resource(CodecError::ResourceLimit(limit)))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == operation));
+    }
+}
 
 /// A sweep that is a whole number of quarter turns must not gain a span from
 /// last-place noise. Expectations come from the geometry: a quarter turn is
@@ -64,6 +99,7 @@ fn an_ellipse_arc_has_exact_rational_quadratic_points() {
         PositiveLength::new(4.0).expect("positive major radius"),
         PositiveLength::new(2.0).expect("positive minor radius"),
         [0.0, std::f64::consts::FRAC_PI_2],
+        None,
     )
     .expect("arc lanes pair")
     .expect("valid ellipse arc");
@@ -93,6 +129,7 @@ fn a_parabola_arc_has_exact_quadratic_points() {
         Vector3::new(1.0, 0.0, 0.0),
         PositiveLength::new(2.0).expect("positive focal distance"),
         [-1.0, 3.0],
+        None,
     )
     .expect("arc lanes pair")
     .expect("valid parabola arc");
@@ -117,6 +154,7 @@ fn parabola_arc_keeps_finite_poles_across_an_overflowing_parameter_span() {
         Vector3::new(1.0, 0.0, 0.0),
         PositiveLength::new(f64::from_bits(1)).expect("positive subnormal focal distance"),
         [-f64::MAX, f64::MAX],
+        None,
     )
     .expect("parabola arc conversion")
     .expect("finite parabola poles");
@@ -146,6 +184,7 @@ fn audit_regression_parabola_keeps_finite_scaled_coordinates() {
         Vector3::new(1., 0., 0.),
         PositiveLength::new(1e308).expect("positive focal distance"),
         [1e-100, 2e-100],
+        None,
     )
     .expect("valid quadratic NURBS")
     .expect("finite parabola interval");
