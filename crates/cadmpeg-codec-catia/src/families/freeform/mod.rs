@@ -107,7 +107,7 @@ pub(super) fn append_consolidated_revolutions(
             format!("circle:{}", profile.record_id),
             Exactness::ByteExact,
         );
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
             id: directrix.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(payload)),
@@ -173,7 +173,7 @@ pub(super) fn append_consolidated_revolutions(
             format!("profile-allocation:{}", revolution.profile_allocation_id),
             Exactness::ByteExact,
         );
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
             geometry: torus_geometry.clone().unwrap_or(SurfaceGeometry::Solved(
@@ -184,7 +184,7 @@ pub(super) fn append_consolidated_revolutions(
                 u32::from(revolution.profile_allocation_id),
             )),
         });
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             surface,
             ProceduralSurface::new(
@@ -638,7 +638,7 @@ pub(super) fn try_decode_freeform_surfaces(
                     &surface.source_tag,
                     Exactness::ByteExact,
                 );
-                if let Err(error) = admission.charge() {
+                if let Err(error) = admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces") {
                     return Some(Err(error));
                 }
                 ir.model.surfaces.push(Surface {
@@ -690,7 +690,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 format!("header_token:{:08x}", curve.header_token),
                 Exactness::ByteExact,
             );
-            if let Err(error) = admission.charge() {
+            if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves") {
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
@@ -717,7 +717,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 format!("header_token:{:08x}", curve.header_token),
                 Exactness::ByteExact,
             );
-            if let Err(error) = admission.charge() {
+            if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves") {
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
@@ -752,7 +752,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 ),
                 Exactness::ByteExact,
             );
-            if let Err(error) = admission.charge() {
+            if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves") {
                 return Some(Err(error));
             }
             ir.model.curves.push(Curve {
@@ -1143,14 +1143,14 @@ fn attach_standalone_wires(
                 Exactness::Derived,
             );
         }
-        admission.charge()?;
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.points, "catia_family_emit_points")?;
+        admission.reserve_entity(&mut ir.model.points, "catia_family_emit_points")?;
         ir.model.points.extend([
             Point::new(point_ids[1].clone(), end, None),
             Point::new(point_ids[0].clone(), start, None),
         ]);
-        admission.charge()?;
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.vertices, "catia_family_emit_vertices")?;
+        admission.reserve_entity(&mut ir.model.vertices, "catia_family_emit_vertices")?;
         ir.model.vertices.extend([
             Vertex {
                 id: vertex_ids[1].clone(),
@@ -1163,7 +1163,7 @@ fn attach_standalone_wires(
                 tolerance: None,
             },
         ]);
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.edges, "catia_family_emit_edges")?;
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
@@ -1172,7 +1172,7 @@ fn attach_standalone_wires(
             tolerance: None,
         });
     }
-    admission.charge()?;
+    admission.reserve_entity(&mut ir.model.bodies, "catia_family_emit_bodies")?;
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Wire,
@@ -1182,13 +1182,13 @@ fn attach_standalone_wires(
         color: None,
         visible: None,
     });
-    admission.charge()?;
+    admission.reserve_entity(&mut ir.model.regions, "catia_family_emit_regions")?;
     ir.model.regions.push(Region {
         id: region_id.clone(),
         body: body_id,
         shells: vec![shell_id.clone()],
     });
-    admission.charge()?;
+    admission.reserve_entity(&mut ir.model.shells, "catia_family_emit_shells")?;
     ir.model.shells.push(shell);
     Ok(true)
 }
@@ -1410,7 +1410,7 @@ fn append_consolidated_line_profiles(
             "line_profile_carrier",
             Exactness::ByteExact,
         );
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(profile.curve);
     }
     Ok(())
@@ -1452,7 +1452,7 @@ pub(super) fn append_freeform_surface_pools(
             source_tag,
             Exactness::ByteExact,
         );
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -1482,7 +1482,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("support_ref:{:08x}", offset.support_id),
             Exactness::Unknown,
         );
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
@@ -1501,7 +1501,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("support_ref:{:08x}", offset.support_id),
             Exactness::ByteExact,
         );
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
@@ -1599,7 +1599,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("header_token:{:08x}", guide.header_token),
             Exactness::Derived,
         );
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
         ir.model.curves.push(Curve {
             id,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
@@ -1635,7 +1635,7 @@ pub(super) fn append_freeform_surface_pools(
                 format!("limit_{}", side + 1),
                 Exactness::Derived,
             );
-            admission.charge()?;
+            admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves")?;
             ir.model.curves.push(Curve {
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
@@ -1672,7 +1672,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("header_token:{:08x}", jet.header_token),
             Exactness::Unknown,
         );
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Procedural {
@@ -1690,7 +1690,7 @@ pub(super) fn append_freeform_surface_pools(
             format!("header_token:{:08x}", jet.header_token),
             Exactness::ByteExact,
         );
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
             ProceduralSurfaceDefinition::RollingBallJet(
@@ -3665,7 +3665,7 @@ fn append_a8_rolling_ball_pools(
             format!("object_id:{:08x}", jet.object_id),
             Exactness::Unknown,
         );
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Procedural {
@@ -3687,7 +3687,7 @@ fn append_a8_rolling_ball_pools(
             ),
             Exactness::ByteExact,
         );
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
         ir.model
             .procedural_surfaces
             .push(ProceduralSurface::new(procedural_id, definition, None));

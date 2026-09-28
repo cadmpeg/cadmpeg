@@ -131,6 +131,40 @@ fn b5_transfer_propagates_ownership_collection_refusal() {
 }
 
 #[test]
+fn b5_emit_points_refuses_collection_limit_before_model_arena_growth() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    let graph = crate::test_support::with_service_context(|ctx| {
+        crate::families::b5::graph::parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("closed B5 triangle graph");
+    let payload = cadmpeg_ir::ids::UnknownId::mint("catia:payload:unknown#test".to_string())
+        .expect("identity grammar");
+    let plan = crate::test_support::with_service_context(|ctx| {
+        super::build_plan(ctx, &graph, &payload, &mut crate::nurbs::LaneRefusals::new())
+    })
+    .expect("service resource budget")
+    .expect("complete B5 plan");
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        super::vertices::emit_vertices(&mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph, &plan, &mut admission)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_emit_points"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        super::vertices::emit_vertices(&mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &graph, &plan, &mut admission)?;
+        Ok::<_, cadmpeg_core::CodecError>(ir.model.points.len())
+    })
+    .expect("service resource budget");
+    assert!(admitted > 0);
+}
+
+#[test]
 fn b5_ownership_refuses_face_id_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

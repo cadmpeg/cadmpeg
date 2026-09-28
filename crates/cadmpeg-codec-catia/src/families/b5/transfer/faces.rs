@@ -442,7 +442,7 @@ pub(super) fn emit_faces(
     {
         return Ok(false);
     }
-    admission.charge()?;
+    admission.reserve_entity(&mut ir.model.bodies, "catia_b5_emit_bodies")?;
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: ownership.body_kind,
@@ -472,7 +472,7 @@ pub(super) fn emit_faces(
         {
             return Ok(false);
         }
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.regions, "catia_b5_emit_regions")?;
         ir.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
@@ -492,7 +492,7 @@ pub(super) fn emit_faces(
         {
             return Ok(false);
         }
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.shells, "catia_b5_emit_shells")?;
         ir.model.shells.push(
             match Shell::new(
                 shell_id,
@@ -543,7 +543,7 @@ pub(super) fn emit_faces(
         {
             return Ok(false);
         }
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.faces, "catia_b5_emit_faces")?;
         ir.model.faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
@@ -614,7 +614,7 @@ pub(super) fn emit_faces(
             else {
                 return Ok(false);
             };
-            admission.charge()?;
+            admission.reserve_entity(&mut ir.model.loops, "catia_b5_emit_loops")?;
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
@@ -638,7 +638,7 @@ pub(super) fn emit_faces(
                 }
                 let arena_index = ir.model.coedges.len();
                 coedges_by_edge.entry(edge).or_default().push(arena_index);
-                admission.charge()?;
+                admission.reserve_entity(&mut ir.model.coedges, "catia_b5_emit_coedges")?;
                 ir.model.coedges.push(Coedge {
                     id: id.clone(),
                     owner_loop: loop_id.clone(),

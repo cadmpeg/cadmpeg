@@ -345,7 +345,7 @@ pub(super) fn emit_edges(
                 .derived(&curve_id, "geometry")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
@@ -401,7 +401,7 @@ pub(super) fn emit_edges(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
-            admission.charge()?;
+            admission.reserve_entity(&mut ir.model.procedural_curves, "catia_b5_emit_procedural_curves")?;
             let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
         }
         annotate(
@@ -427,7 +427,7 @@ pub(super) fn emit_edges(
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         edge_id_map.insert(edge_id, id.clone());
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.edges, "catia_b5_emit_edges")?;
         ir.model.edges.push(Edge {
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), edge_range)
