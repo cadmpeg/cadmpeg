@@ -290,9 +290,14 @@ pub(super) fn try_decode_freeform_surfaces(
         let selection_budget =
             ctx.work_budget(crate::families::b5::graph::MAX_OBJECT_STREAM_SELECTION_WORK as u64);
         let object_selection = crate::families::b5::graph::select_object_stream_population(
+            ctx,
             &logical_streams,
             Some(&selection_budget),
         );
+        let object_selection = match object_selection {
+            Ok(selection) => selection,
+            Err(error) => return Some(Err(error)),
+        };
         let (
             object_stream_run_count,
             selected_object_stream_run_count,
@@ -3313,10 +3318,11 @@ mod tests {
         unrelated.extend_from_slice(&99u32.to_le_bytes());
         unrelated.push(0x00);
 
-        let selection = crate::families::b5::graph::select_object_stream_population(
-            &[unrelated, topology.clone()],
-            None,
-        );
+        let selection = crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::select_object_stream_population(
+                ctx, &[unrelated, topology.clone()], None,
+            )
+        }).expect("service collection budget");
         assert_eq!(selection.run_count(), 2);
         assert!(selection.selected());
         assert_eq!(selection.source(), topology);
@@ -3325,10 +3331,11 @@ mod tests {
     #[test]
     fn object_stream_selection_refuses_multiple_topology_root_runs() {
         let topology = crate::test_support::test_b5::b5_closed_triangle_stream();
-        let selection = crate::families::b5::graph::select_object_stream_population(
-            &[topology.clone(), topology],
-            None,
-        );
+        let selection = crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::select_object_stream_population(
+                ctx, &[topology.clone(), topology], None,
+            )
+        }).expect("service collection budget");
 
         assert_eq!(selection.run_count(), 2);
         assert!(!selection.selected());
@@ -3340,8 +3347,11 @@ mod tests {
         let topology = crate::test_support::test_b5::b5_closed_triangle_stream();
         let budget = cadmpeg_core::decode::WorkBudget::new(1);
 
-        let selection =
-            crate::families::b5::graph::select_object_stream_population(&[topology], Some(&budget));
+        let selection = crate::test_support::with_service_context(|ctx| {
+            crate::families::b5::graph::select_object_stream_population(
+                ctx, &[topology], Some(&budget),
+            )
+        }).expect("service collection budget");
 
         assert_eq!(selection.run_count(), 1);
         assert!(!selection.selected());
