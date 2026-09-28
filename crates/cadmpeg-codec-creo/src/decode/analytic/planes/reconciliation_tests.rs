@@ -19,6 +19,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 
 #[test]
 fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
@@ -183,8 +185,60 @@ fn every_solved_boundary_vertex_must_lie_on_the_analytic_plane() {
         origin: [0.0, 0.0, 2.0],
         normal: [0.0, 0.0, 1.0],
     };
-    assert!(agreed_topology_bound_plane([[3.0, 4.0, 2.0]], [plane], []).is_some());
-    assert!(agreed_topology_bound_plane([[3.0, 4.0, 3.0]], [plane], []).is_none());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        agreed_topology_bound_plane(ctx, [[3.0, 4.0, 2.0]], [plane], [])
+    })
+    .expect("service boundary plane")
+    .is_some());
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        agreed_topology_bound_plane(ctx, [[3.0, 4.0, 3.0]], [plane], [])
+    })
+    .expect("service boundary plane")
+    .is_none());
+}
+
+fn boundary_plane_collection_error(limit: u64) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    match agreed_topology_bound_plane(
+        &ctx,
+        [[0.0, 0.0, 0.0]],
+        [PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+        }],
+        [BoundaryLine {
+            origin: [0.0, 0.0, 0.0],
+            direction: [1.0, 0.0, 0.0],
+        }],
+    ) {
+        Ok(_) => panic!("one boundary plane exceeds collection limit"),
+        Err(error) => error,
+    }
+}
+
+fn assert_boundary_plane_refusal(limit: u64, operation: &'static str) {
+    let error = boundary_plane_collection_error(limit);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn agreed_topology_plane_refuses_boundary_point_vector() {
+    assert_boundary_plane_refusal(0, "creo plane boundary points");
+}
+
+#[test]
+fn agreed_topology_plane_refuses_boundary_line_vector() {
+    assert_boundary_plane_refusal(1, "creo plane boundary lines");
+}
+
+#[test]
+fn agreed_topology_plane_refuses_candidate_vector() {
+    assert_boundary_plane_refusal(2, "creo plane boundary candidates");
 }
 
 #[test]

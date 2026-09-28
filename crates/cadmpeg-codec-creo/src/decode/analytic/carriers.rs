@@ -126,7 +126,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         let lines = boundary_curves
             .iter()
             .filter_map(|geometry| analytic_boundary_line(geometry));
-        let Some(plane) = agreed_topology_bound_plane(points, curve_planes, lines) else {
+        let Some(plane) = agreed_topology_bound_plane(ctx, points, curve_planes, lines)? else {
             continue;
         };
         let existing_count = ir
