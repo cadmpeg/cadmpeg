@@ -1160,7 +1160,7 @@ impl<'a> Section<'a> {
     ///
     /// The section-role check is intentional. The same byte patterns occur in
     /// ordinary model-store payloads, where they do not carry operation state.
-    pub(crate) fn operation_state_counter_map(&self) -> Option<StateCounterMap> {
+    pub(crate) fn operation_state_counter_map(&self, ctx: &DecodeContext<'_>) -> Result<Option<StateCounterMap>, CodecError> {
         let is_feature_history = self
             .types
             .iter()
@@ -1170,10 +1170,10 @@ impl<'a> Section<'a> {
                 .iter()
                 .any(|definition| definition.name == "m_rollForwardStates");
         if !is_feature_history {
-            return None;
+            return Ok(None);
         }
-        let (base_offset, bytes) = self.record_area_parts()?;
-        StateCounterMap::read(bytes, base_offset)
+        let Some((base_offset, bytes)) = self.record_area_parts() else { return Ok(None) };
+        StateCounterMap::read(ctx, bytes, base_offset)
     }
 
     /// Decode the field-declared `m_rollForwardStates` group table before the
@@ -1189,7 +1189,7 @@ impl<'a> Section<'a> {
         {
             return Ok(None);
         }
-        let Some(map) = self.operation_state_counter_map() else {
+        let Some(map) = self.operation_state_counter_map(ctx)? else {
             return Ok(None);
         };
         let Some((base_offset, bytes)) = self.record_area_parts() else {
@@ -1233,7 +1233,7 @@ impl<'a> Section<'a> {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<OperationStateBlock<'a>>, CodecError> {
-        let Some(map) = self.operation_state_counter_map() else {
+        let Some(map) = self.operation_state_counter_map(ctx)? else {
             return Ok(None);
         };
         let Some((base_offset, bytes)) = self.record_area_parts() else {

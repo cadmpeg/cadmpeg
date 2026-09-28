@@ -252,10 +252,9 @@ pub(super) fn audit_trail_rows(ctx: &cadmpeg_core::decode::DecodeContext<'_>, co
 pub(super) fn operation_state_counters(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<OmOperationStateCounter>, cadmpeg_core::CodecError>
 {
     let sections = container.om_sections(ctx)?;
-    Ok(crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, link)| {
+    let mut out = Vec::new();
+    for (section_ordinal, link) in crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
+        .into_iter().enumerate() {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
                     .file_span()
@@ -264,14 +263,14 @@ pub(super) fn operation_state_counters(ctx: &cadmpeg_core::decode::DecodeContext
                     })
                     == link.location.section_offset()
             }) else {
-                return Vec::new();
+                continue;
             };
-            let Some(map) = section.operation_state_counter_map() else {
-                return Vec::new();
+            let Some(map) = section.operation_state_counter_map(ctx)? else {
+                continue;
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            map.into_rows()
+            out.extend(map.into_rows()
                 .enumerate()
                 .filter_map(move |(ordinal, row)| {
                     let ordinal = u32::try_from(ordinal).ok()?;
@@ -284,10 +283,9 @@ pub(super) fn operation_state_counters(ctx: &cadmpeg_core::decode::DecodeContext
                         frame: row.into_absolute(entry_offset)?,
                         source_entry: entry.name.clone(),
                     })
-                })
-                .collect()
-        })
-        .collect())
+                }));
+    }
+    Ok(out)
 }
 
 /// Decode anchored state-journal groups from canonical feature-history areas.
