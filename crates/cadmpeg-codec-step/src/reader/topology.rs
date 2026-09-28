@@ -770,17 +770,19 @@ pub(super) fn decode(
         "MANIFOLD_SOLID_BREP",
         "BREP_WITH_VOIDS",
     ];
-    let distinct_root_count = exchange
-        .entities_any(&topology_root_types)
-        .filter_map(|(_, record)| root_key(record, exchange, &shells))
-        .collect::<BTreeSet<_>>()
-        .len();
+    let mut distinct_roots = BTreeSet::new();
+    for (_, record) in exchange.entities_any(&topology_root_types) {
+        if let Some(key) = root_key(record, exchange, &shells, ctx)? {
+            insert_topology_set(&mut distinct_roots, key, ctx, "step_distinct_topology_roots")?;
+        }
+    }
+    let distinct_root_count = distinct_roots.len();
     let scope_distinct_roots = distinct_root_count > 1;
     let mut built_roots = BTreeMap::<RootKey, RootBuilt>::new();
     let mut representation_cache = BTreeMap::new();
     let mut admissions: Vec<PcurveAdmission> = Vec::new();
     for (id, record) in exchange.entities_any(&topology_root_types) {
-        let Some(key) = root_key(record, exchange, &shells) else {
+        let Some(key) = root_key(record, exchange, &shells, ctx)? else {
             push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                 "STEP topology root #{id} does not resolve to a complete connected topology graph",
             )), ctx, "step_topology_losses")?;
@@ -2417,18 +2419,32 @@ fn root_shell_steps(
     root: &RawRecord,
     exchange: &Exchange,
     shell_definitions: &BTreeMap<u64, ShellDef>,
-) -> Option<Vec<u64>> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<u64>>, CodecError> {
+    let mut ids = Vec::new();
     if root.partial("SHELL_BASED_SURFACE_MODEL").is_some() {
-        return named_refs(root, "SHELL_BASED_SURFACE_MODEL", 1);
+        let Some(values) = named_reference_values(root, "SHELL_BASED_SURFACE_MODEL", 1) else {
+            return Ok(None);
+        };
+        for reference in values.iter().filter_map(ValueExt::reference) {
+            push_topology_vec(&mut ids, reference, ctx, "step_root_shell_steps")?;
+        }
+        return Ok(Some(ids));
     }
     if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {
-        let mut sets = Vec::new();
-        for set_step in named_refs(root, "FACE_BASED_SURFACE_MODEL", 1)? {
-            let set = exchange.records().get(&set_step)?;
-            connected_face_set_type(set)?;
-            sets.push(set_step);
+        let Some(values) = named_reference_values(root, "FACE_BASED_SURFACE_MODEL", 1) else {
+            return Ok(None);
+        };
+        for set_step in values.iter().filter_map(ValueExt::reference) {
+            let Some(set) = exchange.records().get(&set_step) else {
+                return Ok(None);
+            };
+            if connected_face_set_type(set).is_none() {
+                return Ok(None);
+            }
+            push_topology_vec(&mut ids, set_step, ctx, "step_root_shell_steps")?;
         }
-        return Some(sets);
+        return Ok(Some(ids));
     }
     if (root.partial("MANIFOLD_SOLID_BREP").is_some() || root.partial("FACETED_BREP").is_some())
         && root.partial("BREP_WITH_VOIDS").is_none()
@@ -2438,11 +2454,23 @@ fn root_shell_steps(
         } else {
             "FACETED_BREP"
         };
-        return Some(vec![named_reference(root, root_type, 1, 0)?]);
+        let Some(shell) = named_reference(root, root_type, 1, 0) else {
+            return Ok(None);
+        };
+        push_topology_vec(&mut ids, shell, ctx, "step_root_shell_steps")?;
+        return Ok(Some(ids));
     }
     if root.partial("BREP_WITH_VOIDS").is_some() {
-        let mut ids = vec![named_reference(root, "MANIFOLD_SOLID_BREP", 1, 0)?];
-        ids.extend(named_refs(root, "BREP_WITH_VOIDS", 2)?);
+        let Some(outer) = named_reference(root, "MANIFOLD_SOLID_BREP", 1, 0) else {
+            return Ok(None);
+        };
+        let Some(values) = named_reference_values(root, "BREP_WITH_VOIDS", 2) else {
+            return Ok(None);
+        };
+        push_topology_vec(&mut ids, outer, ctx, "step_root_shell_steps")?;
+        for reference in values.iter().filter_map(ValueExt::reference) {
+            push_topology_vec(&mut ids, reference, ctx, "step_root_shell_steps")?;
+        }
         // `voids` is a STEP SET. CADIR keeps the outer shell at index zero
         // and canonicalizes the void suffix by resolved shell identity.
         ids[1..].sort_unstable_by_key(|reference| {
@@ -2452,17 +2480,18 @@ fn root_shell_steps(
                     (definition.base, definition.forward, *reference)
                 })
         });
-        return Some(ids);
+        return Ok(Some(ids));
     }
-    None
+    Ok(None)
 }
 
 fn root_key(
     root: &RawRecord,
     exchange: &Exchange,
     shell_definitions: &BTreeMap<u64, ShellDef>,
-) -> Option<RootKey> {
-    let root_kind = most_specific(
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<RootKey>, CodecError> {
+    let Some(root_kind) = most_specific(
         root,
         &[
             "BREP_WITH_VOIDS",
@@ -2471,10 +2500,15 @@ fn root_key(
             "FACE_BASED_SURFACE_MODEL",
             "SHELL_BASED_SURFACE_MODEL",
         ],
-    )?;
+    ) else {
+        return Ok(None);
+    };
     let mut shell_keys = Vec::new();
     let mut resolved = 0;
-    for shell in root_shell_steps(root, exchange, shell_definitions)? {
+    let Some(shell_steps) = root_shell_steps(root, exchange, shell_definitions, ctx)? else {
+        return Ok(None);
+    };
+    for shell in shell_steps {
         let key = if root.partial("FACE_BASED_SURFACE_MODEL").is_some() {
             Some((shell, Some(true)))
         } else {
@@ -2486,16 +2520,19 @@ fn root_key(
         if key.as_ref().is_some_and(|(_, forward)| forward.is_some()) {
             resolved += 1;
         }
-        shell_keys.push(key?);
+        let Some(key) = key else {
+            return Ok(None);
+        };
+        push_topology_vec(&mut shell_keys, key, ctx, "step_root_shell_keys")?;
     }
     if resolved == 0 {
-        return None;
+        return Ok(None);
     }
     shell_keys.sort_unstable();
-    Some(RootKey {
+    Ok(Some(RootKey {
         root_kind,
         shell_keys,
-    })
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2514,7 +2551,7 @@ fn build(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<BuildOutcome, CodecError> {
-    let Some(shell_steps) = root_shell_steps(root, exchange, shell_definitions) else {
+    let Some(shell_steps) = root_shell_steps(root, exchange, shell_definitions, ctx)? else {
         return Ok(BuildOutcome::Partial {
             built: Vec::new(),
             failures: BuildFailures {
