@@ -1208,7 +1208,7 @@ pub(crate) fn decode_bodies(
         typed_streams.push(typed::scan(body, ctx)?);
     }
     for stream_typed_facts in &typed_streams {
-        typed_facts.merge_missing(stream_typed_facts.clone());
+        typed_facts.merge_missing(ctx, stream_typed_facts.try_clone(ctx)?)?;
     }
     let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
@@ -1227,7 +1227,6 @@ pub(crate) fn decode_bodies(
                     .map(|face| face.offset)
                     .collect::<HashSet<_>>()
             });
-        typed_facts.merge_missing(stream_typed_facts);
         carriers.merge_missing(ctx, scan_carriers(ctx, body)?)?;
         let curve_attrs = carriers.curve_attrs(ctx)?;
         let scanned_tables = if is_deltas {
