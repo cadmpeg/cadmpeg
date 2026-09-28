@@ -12,6 +12,50 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn part_face_source_selection_refuses_at_retained_limit() {
+    let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+        document: None,
+        document_attribute: None,
+        object: Some("source".into()),
+        subelements: Vec::new(),
+    }).expect("valid link");
+    let sources = crate::native::PropertyRecord {
+        id: "sources-property".into(),
+        owner: "face".into(),
+        name: "Sources".into(),
+        type_name: "App::PropertyLinkList".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Persisted {
+            values: Vec::new(), links: vec![link], side_entries: Vec::new(), dynamic: None,
+        },
+        order: 0,
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid XML span"),
+    };
+    let maker = crate::native::PropertyRecord {
+        id: "maker-property".into(),
+        owner: "face".into(),
+        name: "FaceMakerClass".into(),
+        type_name: "App::PropertyString".into(),
+        family: crate::native::PropertyFamily::Unknown,
+        status: None,
+        body: crate::native::PropertyBody::Transient,
+        order: 1,
+        xml: crate::native::RetainedXml::from_text(
+            "<Property><String value=\"Part::FaceMakerUnified\"/></Property>".into(), 0,
+        ).expect("valid XML span"),
+    };
+    crate::test_support::assert_retained_refusal_at(
+        &[], "fcstd face source selection", |ctx| {
+            super::part_construction_geometry_definition(
+                ctx, "Part::Face", &[&sources, &maker], &[],
+            )
+        },
+    );
+}
+
+#[test]
 fn singular_reference_link_keeps_one_selector_and_rejects_two() {
     let property = |subelements: Vec<String>| {
         let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
