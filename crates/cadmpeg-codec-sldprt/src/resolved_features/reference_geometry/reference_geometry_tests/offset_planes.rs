@@ -54,9 +54,9 @@ fn structured_offset_plane_source_requires_repeated_identities_and_terminator() 
     payload[116..120].copy_from_slice(&2600u32.to_le_bytes());
     payload[132..140].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
 
-    assert_eq!(structured_offset_plane_sources(&payload), [3]);
+    assert_eq!(structured_offset_plane_sources(&payload).collect::<Vec<_>>(), [3]);
     payload[80] ^= 1;
-    assert!(structured_offset_plane_sources(&payload).is_empty());
+    assert!(structured_offset_plane_sources(&payload).next().is_none());
 }
 
 #[test]
@@ -64,9 +64,9 @@ fn classed_offset_plane_source_requires_exact_length_delimited_type() {
     let mut payload = 4u32.to_le_bytes().to_vec();
     payload.extend(b"\xff\xff\x01\x00\x1b\x00moFromSktEnt3IntSurfIdRep_c\x00\x00");
 
-    assert_eq!(classed_offset_plane_sources(&payload), [4]);
+    assert_eq!(classed_offset_plane_sources(&payload).collect::<Vec<_>>(), [4]);
     payload[8] = 0;
-    assert!(classed_offset_plane_sources(&payload).is_empty());
+    assert!(classed_offset_plane_sources(&payload).next().is_none());
 }
 
 #[test]
