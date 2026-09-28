@@ -1899,7 +1899,7 @@ struct SketchBlockAssemblyFrame {
 
 struct SketchBlockInstancePlacement {
     feature_id: String,
-    block_source: String,
+    block_source: u32,
     transform: Transform,
 }
 
@@ -1913,7 +1913,7 @@ struct SketchBlockProfileInput<'a> {
     native_profile: &'a crate::records::Feature,
     native_ref: &'a str,
     configuration: Option<&'a str>,
-    block_sketches: &'a HashMap<String, SketchId>,
+    block_sketches: &'a HashMap<u32, SketchId>,
     instances: &'a [SketchBlockInstancePlacement],
     sketches: &'a [Sketch],
     sketch_entities: &'a [SketchEntity],
@@ -1936,17 +1936,18 @@ pub(crate) fn project_sketch_block_profiles(
 ) -> Result<(), CodecError> {
     for lane in lanes {
         for history in histories {
-            let mut objects = history
-                .features
-                .iter()
-                .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
-                .filter(|(_, feature)| {
-                    !crate::history::classify::is_history_metadata_record(
+            let mut objects = Vec::new();
+            for feature in &history.features {
+                if let Some(name) = feature_object_name(feature, lane) {
+                    if !crate::history::classify::is_history_metadata_record(
                         feature,
                         &history.features,
-                    )
-                })
-                .collect::<Vec<_>>();
+                    ) {
+                        ctx.reserve_collection_vec(&mut objects, 1, "collect SLDPRT sketch block history objects")?;
+                        objects.push((name.offset, feature));
+                    }
+                }
+            }
             objects.sort_by_key(|(offset, _)| *offset);
 
             for (profile_position, (_, native_profile)) in objects.iter().enumerate() {
@@ -1956,7 +1957,8 @@ pub(crate) fn project_sketch_block_profiles(
                 let explicit_children = native_profile
                     .properties
                     .get("DissectableChildren")
-                    .map(|value| dissectable_child_sources(value));
+                    .map(|value| dissectable_child_sources(ctx, value))
+                    .transpose()?;
                 if explicit_children.as_ref().is_some_and(Option::is_none) {
                     continue;
                 }
@@ -1973,17 +1975,27 @@ pub(crate) fn project_sketch_block_profiles(
                 ) {
                     continue;
                 }
-                let Some(children) = explicit_children.flatten().or_else(|| {
-                    let children = intervening
-                        .iter()
-                        .filter(|(_, feature)| {
-                            native_object_class(feature.input_class.as_deref().unwrap_or_default())
-                                == NativeClassKind::SketchBlockDefinition
-                        })
-                        .filter_map(|(_, feature)| feature.source_value())
-                        .collect::<HashSet<_>>();
+                let inferred_children = if explicit_children.is_none() {
+                    let mut children = HashSet::new();
+                    for (_, feature) in intervening.iter().filter(|(_, feature)| {
+                        native_object_class(feature.input_class.as_deref().unwrap_or_default())
+                            == NativeClassKind::SketchBlockDefinition
+                    }) {
+                        if let Some(source) = feature.source_value() {
+                            if !children.contains(&source) {
+                                ctx.charge_collection_items(1, "collect SLDPRT sketch block children")?;
+                                children.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                                    "collect SLDPRT sketch block children", u64::MAX - 1, u64::MAX,
+                                ))?;
+                            }
+                            children.insert(source);
+                        }
+                    }
                     (!children.is_empty()).then_some(children)
-                }) else {
+                } else {
+                    None
+                };
+                let Some(children) = explicit_children.flatten().or(inferred_children) else {
                     continue;
                 };
                 let Some(profile_index) = features.iter().position(|feature| {
@@ -2002,8 +2014,8 @@ pub(crate) fn project_sketch_block_profiles(
                     continue;
                 }
 
-                let mut block_sketches = HashMap::<String, SketchId>::new();
-                let mut block_feature_ids = HashMap::<String, String>::new();
+                let mut block_sketches = HashMap::<u32, SketchId>::new();
+                let mut block_feature_ids = HashMap::<u32, String>::new();
                 let mut definitions_complete = true;
                 for (_, native_definition) in intervening.iter().filter(|(_, feature)| {
                     native_object_class(feature.input_class.as_deref().unwrap_or_default())
@@ -2038,11 +2050,32 @@ pub(crate) fn project_sketch_block_profiles(
                         definitions_complete = false;
                         break;
                     }
-                    block_sketches.insert(source.to_string(), sketch_id.clone());
-                    block_feature_ids.insert(
-                        source.to_string(),
-                        features[definition_index].id.as_str().to_owned(),
-                    );
+                    let sketch_text = ctx.format_retained(
+                        format_args!("{}", sketch_id.as_str()),
+                        "copy SLDPRT sketch block definition identity",
+                    )?;
+                    let Ok(sketch_copy) = SketchId::mint(sketch_text) else {
+                        definitions_complete = false;
+                        break;
+                    };
+                    if !block_sketches.contains_key(&source) {
+                        ctx.charge_collection_items(1, "index SLDPRT sketch block definitions")?;
+                        block_sketches.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                            "index SLDPRT sketch block definitions", u64::MAX - 1, u64::MAX,
+                        ))?;
+                    }
+                    block_sketches.insert(source, sketch_copy);
+                    let feature_id = ctx.format_retained(
+                        format_args!("{}", features[definition_index].id.as_str()),
+                        "copy SLDPRT sketch block feature identity",
+                    )?;
+                    if !block_feature_ids.contains_key(&source) {
+                        ctx.charge_collection_items(1, "index SLDPRT sketch block feature identities")?;
+                        block_feature_ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                            "index SLDPRT sketch block feature identities", u64::MAX - 1, u64::MAX,
+                        ))?;
+                    }
+                    block_feature_ids.insert(source, feature_id);
                 }
                 if !definitions_complete || block_sketches.len() != children.len() {
                     continue;
@@ -2060,13 +2093,12 @@ pub(crate) fn project_sketch_block_profiles(
                         instances_complete = false;
                         break;
                     };
-                    let Some(block_source) = features[instance_index]
+                    let Some(block_source_number) = features[instance_index]
                         .source_properties
                         .get("BlockDefinition")
                         .or_else(|| native_instance.properties.get("BlockDefinition"))
                         .and_then(|source| source.parse::<u32>().ok())
                         .filter(|source| children.contains(source))
-                        .map(|source| source.to_string())
                     else {
                         instances_complete = false;
                         break;
@@ -2079,16 +2111,21 @@ pub(crate) fn project_sketch_block_profiles(
                         instances_complete = false;
                         break;
                     };
-                    if !block_sketches.contains_key(&block_source)
-                        || block_feature_ids.get(&block_source).map(String::as_str)
+                    if !block_sketches.contains_key(&block_source_number)
+                        || block_feature_ids.get(&block_source_number).map(String::as_str)
                             != Some(block.as_str())
                     {
                         instances_complete = false;
                         break;
                     }
+                    let feature_id = ctx.format_retained(
+                        format_args!("{}", features[instance_index].id.as_str()),
+                        "copy SLDPRT sketch block instance identity",
+                    )?;
+                    ctx.reserve_collection_vec(&mut instances, 1, "collect SLDPRT sketch block instances")?;
                     instances.push(SketchBlockInstancePlacement {
-                        feature_id: features[instance_index].id.as_str().to_owned(),
-                        block_source,
+                        feature_id,
+                        block_source: block_source_number,
                         transform: *transform,
                     });
                 }
@@ -2100,10 +2137,14 @@ pub(crate) fn project_sketch_block_profiles(
                     .id
                     .rsplit_once('#')
                     .map_or(lane.id.as_str(), |(_, key)| key);
-                let Ok(sketch_id) = SketchId::mint(format!(
-                    "sldprt:model:sketch#block-profile:{lane_key}:{}",
-                    native_profile.ordinal
-                )) else {
+                let sketch_text = ctx.format_retained(
+                    format_args!(
+                        "sldprt:model:sketch#block-profile:{lane_key}:{}",
+                        native_profile.ordinal
+                    ),
+                    "format SLDPRT sketch block profile identity",
+                )?;
+                let Ok(sketch_id) = SketchId::mint(sketch_text) else {
                     continue;
                 };
                 let Some(assembled) = assemble_sketch_block_profile(ctx, &SketchBlockProfileInput {
@@ -2119,33 +2160,45 @@ pub(crate) fn project_sketch_block_profiles(
                     continue;
                 };
                 if !sketches.iter().any(|sketch| sketch.id == sketch_id) {
+                    ctx.reserve_precharged_vec(
+                        sketch_entities,
+                        assembled.entities.len(),
+                        "append SLDPRT sketch block entities",
+                    )?;
                     sketch_entities.extend(assembled.entities);
+                    ctx.reserve_collection_vec(sketches, 1, "append SLDPRT assembled sketch block")?;
                     sketches.push(assembled.sketch);
-                }
-                let mut definition = features[profile_index].evaluation.definition().clone();
-                if let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) =
-                    &mut definition
-                {
-                    *sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
                 }
                 features[profile_index]
                     .evaluation
-                    .set_definition(definition);
+                    .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
+                        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
+                    }));
             }
         }
     }
     Ok(())
 }
 
-fn dissectable_child_sources(value: &str) -> Option<HashSet<u32>> {
-    let values = value
-        .split(',')
-        .map(str::trim)
-        .map(str::parse::<u32>)
-        .collect::<Result<HashSet<_>, _>>()
-        .ok()?;
-    (!values.is_empty() && !values.contains(&0) && values.len() == value.split(',').count())
-        .then_some(values)
+fn dissectable_child_sources(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+) -> Result<Option<HashSet<u32>>, CodecError> {
+    let mut values = HashSet::new();
+    for part in value.split(',') {
+        let Ok(source) = part.trim().parse::<u32>() else {
+            return Ok(None);
+        };
+        if !values.contains(&source) {
+            ctx.charge_collection_items(1, "collect SLDPRT dissectable child sources")?;
+            values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "collect SLDPRT dissectable child sources", u64::MAX - 1, u64::MAX,
+            ))?;
+        }
+        values.insert(source);
+    }
+    Ok((!values.is_empty() && !values.contains(&0) && values.len() == value.split(',').count())
+        .then_some(values))
 }
 
 fn is_sketch_block_object(feature: &crate::records::Feature) -> bool {
@@ -3033,7 +3086,7 @@ mod detached_legacy_sketch_tests {
     use super::super::bindings::bind_detached_legacy_sketch_objects;
     use super::{
         assemble_sketch_block_profile, legacy_config_collinear_sketch, legacy_config_hex_sketch,
-        project_marker_backed_sketches, sketch_block_assembly_frame,
+        project_marker_backed_sketches, project_sketch_block_profiles, sketch_block_assembly_frame,
         terminal_relation_display_carrier,
         SketchBlockInstancePlacement, SketchBlockProfileInput,
     };
@@ -3614,7 +3667,7 @@ mod detached_legacy_sketch_tests {
     fn sketch_block_rotations_refuse_collection_limit() {
         let instances = [SketchBlockInstancePlacement {
             feature_id: "sldprt:model:feature#instance".into(),
-            block_source: "23".into(),
+            block_source: 23,
             transform: Transform::identity(),
         }];
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -3628,6 +3681,60 @@ mod detached_legacy_sketch_tests {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && limit.operation == "collect SLDPRT sketch block rotations"));
+    }
+
+    #[test]
+    fn sketch_block_projection_refuses_collection_limit() {
+        let native_feature = feature();
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![native_feature],
+        };
+        let lane_id = "sldprt:feature-input:resolved-features#1";
+        let lane = FeatureInputLane {
+            id: lane_id.into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: vec![crate::records::FeatureInputName {
+                id: "name".into(),
+                parent: lane_id.into(),
+                ordinal: 0,
+                offset: 8,
+                object_id: ObjectId::from_value(30),
+                value: "profile".into(),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .unwrap();
+        let error = project_sketch_block_profiles(
+            &ctx,
+            &mut [],
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &[history],
+            &[lane],
+        )
+        .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "collect SLDPRT sketch block history objects"));
     }
 
     #[test]
@@ -3683,16 +3790,16 @@ mod detached_legacy_sketch_tests {
         ])
         .expect("affine transform");
         let assembled_id = SketchId::mint("sldprt:model:sketch#block-profile:test").unwrap();
-        let block_sketches = HashMap::from([("23".into(), block_sketch_id)]);
+        let block_sketches = HashMap::from([(23, block_sketch_id)]);
         let instances = [
             SketchBlockInstancePlacement {
                 feature_id: "sldprt:model:feature#instance-1".into(),
-                block_source: "23".into(),
+                block_source: 23,
                 transform: Transform::identity(),
             },
             SketchBlockInstancePlacement {
                 feature_id: "sldprt:model:feature#instance-2".into(),
-                block_source: "23".into(),
+                block_source: 23,
                 transform: quarter_turn,
             },
         ];
