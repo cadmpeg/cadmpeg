@@ -321,6 +321,7 @@ pub(crate) fn bind_mirror_constructions(
         let face_recipe = {
             let records = cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
             parse_face_operand(
+                ctx,
                 bytes,
                 records,
                 &scopes[index],
@@ -330,6 +331,7 @@ pub(crate) fn bind_mirror_constructions(
                 plane_header,
                 recipes,
             )
+            .transpose()?
             .is_some()
         };
         let (plane_scope_record_index, plane_selection_record_index) =

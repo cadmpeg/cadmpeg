@@ -432,6 +432,7 @@ fn exact_legacy_as_built_face_selection(
                 byte_offset: u64::try_from(byte_offset).ok()?,
             };
             let operand = parse_face_operand(
+                ctx,
                 bytes,
                 records,
                 scope,
@@ -441,6 +442,10 @@ fn exact_legacy_as_built_face_selection(
                 &header,
                 recipes,
             )?;
+            let operand = match operand {
+                Ok(operand) => operand,
+                Err(error) => return Some(Err(error)),
+            };
             let prefix = match parse_entity_selection_prefix(ctx, bytes, byte_offset, record_index)? {
                 Ok(prefix) => prefix,
                 Err(error) => return Some(Err(error)),
