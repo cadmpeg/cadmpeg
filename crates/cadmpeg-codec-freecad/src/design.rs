@@ -5687,8 +5687,9 @@ fn hole_definition(
     program_version: Option<&str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let profile = profile_ref(ctx, owner, properties, sketches)?;
+    let ProfileRef::Planar(planar_profile) = profile else { return Ok(None); };
     Ok((|| {
-    if matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(_))) {
+    if matches!(&planar_profile, PlanarProfileRef::Unresolved(_)) {
         return None;
     }
     let filter_bits = integer_selector(properties, "BaseProfileType", 6)?;
@@ -5856,7 +5857,7 @@ fn hole_definition(
     let direction = axis_reference(properties, "Profile", objects, properties_by_owner)
         .map(|(_, direction)| cadmpeg_ir::features::FeatureDirection3::from(direction));
     Some(FeatureDefinition::Operation(FeatureOperation::Hole {
-        profile: Some(profile.planar().cloned()?),
+        profile: Some(planar_profile),
         profile_filter: Some(profile_filter),
         face: None,
         direction,
@@ -5938,12 +5939,13 @@ fn helical_sweep_definition(
     Some((law, axis_origin, axis_direction))
     })() else { return Ok(None); };
     let profile = profile_ref(ctx, owner, properties, sketches)?;
+    let ProfileRef::Planar(planar_profile) = profile else { return Ok(None); };
     Ok((|| {
-    if matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(_))) {
+    if matches!(&planar_profile, PlanarProfileRef::Unresolved(_)) {
         return None;
     }
     let construction = HelicalSweepConstruction {
-        profile: profile.planar().cloned()?,
+        profile: planar_profile,
         axis_origin: cadmpeg_ir::features::FinitePoint3::new(axis_origin)?,
         axis_direction,
         law,
