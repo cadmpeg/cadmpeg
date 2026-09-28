@@ -2140,6 +2140,42 @@ fn copy_retained_string(
     Ok(copy)
 }
 
+fn conflicting_display_reference(
+    ctx: &DecodeContext<'_>,
+    stream: &str,
+    table_index: usize,
+    candidates: &BTreeSet<crate::brep::feature_source::FeatureSourceId>,
+) -> Result<String, CodecError> {
+    const OPERATION: &str = "retain SLDPRT conflicting display reference";
+    let index_text = table_index.to_string();
+    let mut bytes = stream.len();
+    for part in ["::DisplayFace[".len(), index_text.len(), "] (".len(), 1] {
+        bytes = bytes.checked_add(part).ok_or_else(|| {
+            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+        })?;
+    }
+    for (position, source) in candidates.iter().enumerate() {
+        let digits = source.value().ilog10() as usize + 1;
+        bytes = bytes.checked_add(digits + usize::from(position > 0) * 2).ok_or_else(|| {
+            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+        })?;
+    }
+    let mut message = String::new();
+    ctx.reserve_retained_string(&mut message, bytes, OPERATION)?;
+    message.push_str(stream);
+    message.push_str("::DisplayFace[");
+    message.push_str(&index_text);
+    message.push_str("] (");
+    for (position, source) in candidates.iter().enumerate() {
+        if position > 0 {
+            message.push_str(", ");
+        }
+        message.push_str(&source.value().to_string());
+    }
+    message.push(')');
+    Ok(message)
+}
+
 /// Collect the available Parasolid body streams, excluding auxiliary sites.
 fn active_body_streams<'a>(
     ctx: &DecodeContext<'_>,
@@ -3130,16 +3166,18 @@ fn build_geometry_ir(
                 "index SLDPRT display surface sources",
             )?;
             if candidates.len() > 1 {
-                conflicting_display_references.push(format!(
-                    "{}::DisplayFace[{}] ({})",
+                let message = conflicting_display_reference(
+                    ctx,
                     display_stream.as_str(),
                     table_index,
-                    candidates
-                        .iter()
-                        .map(|source| source.value().to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ));
+                    &candidates,
+                )?;
+                ctx.reserve_collection_vec(
+                    &mut conflicting_display_references,
+                    1,
+                    "collect SLDPRT conflicting display references",
+                )?;
+                conflicting_display_references.push(message);
             }
         }
         let resolved =
