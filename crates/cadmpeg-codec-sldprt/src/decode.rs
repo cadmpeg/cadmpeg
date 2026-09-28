@@ -15,7 +15,7 @@
 //! metadata-only IR and blocking loss notes. [`DecodeOptions::container_only`]
 //! requests the metadata-only path.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::collections::btree_map::Entry;
 use std::hash::Hash;
 
@@ -659,17 +659,25 @@ fn append_design_losses(
         )))?;
     }
 
-    let feature_names = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| {
-            feature
-                .name
-                .as_ref()
-                .map(|name| (feature.id.clone(), name.clone()))
-        })
-        .collect();
+    let mut feature_names = HashMap::new();
+    for feature in &ir.model.features {
+        let Some(name) = &feature.name else {
+            continue;
+        };
+        const OPERATION: &str = "index SLDPRT feature names";
+        ctx.charge_work(1, OPERATION)?;
+        if !feature_names.contains_key(&feature.id) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            feature_names.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        let bytes = feature.id.as_str().len().checked_add(name.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+        })?;
+        ctx.charge_retained(bytes as u64, OPERATION)?;
+        feature_names.insert(feature.id.clone(), name.clone());
+    }
     let global_parameter_owners =
         crate::history::parameters::global_parameter_owners(&ir.model.features);
     let incomplete_parameters = ir
