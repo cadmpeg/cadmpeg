@@ -1507,7 +1507,8 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let sweep_feature_ids = scan
+    let mut sweep_feature_ids = BTreeSet::new();
+    for feature_id in scan
         .features
         .rows
         .iter()
@@ -1520,10 +1521,15 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                 )
         })
         .map(|row| row.feature_id)
-        .collect::<BTreeSet<_>>();
+    {
+        if !sweep_feature_ids.contains(&feature_id) {
+            ctx.charge_collection_items(1, "creo circular sweep feature ID nodes")?;
+            sweep_feature_ids.insert(feature_id);
+        }
+    }
     let mut transferred = 0;
     for feature_id in sweep_feature_ids {
-        let Some(sweep) = circular_sweep_geometry(scan, feature_id) else {
+        let Some(sweep) = circular_sweep_geometry(ctx, scan, feature_id)? else {
             continue;
         };
         for row in &sweep.cylinder_rows {

@@ -636,7 +636,7 @@ pub(in super::super) fn schema_feature_definition(
         && !feature_section_sweep_semantics_conflict(scan, feature_id)
         && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
     {
-        if let Some(sweep) = circular_sweep_geometry(scan, feature_id) {
+        if let Some(sweep) = circular_sweep_geometry(ctx, scan, feature_id)? {
             let definition =
                 unique_owned_feature_definition(&scan.features.definitions, feature_id).filter(
                     |definition| {

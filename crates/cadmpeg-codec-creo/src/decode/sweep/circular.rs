@@ -69,13 +69,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             continue;
         };
         let Some((section_center, radius)) = resolved_circular_extrusion_profile(
+            ctx,
             scan,
             ir,
             source_carriers,
             transform,
             feature_id,
             &sketch_id,
-        ) else {
+        )? else {
             continue;
         };
         let Some(span) =
@@ -521,13 +522,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
 }
 
 fn resolved_circular_extrusion_profile(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     transform: &crate::placement::FeatureSectionTransform,
     feature_id: u32,
     sketch_id: &SketchId,
-) -> Option<([f64; 2], f64)> {
+) -> Result<Option<([f64; 2], f64)>, cadmpeg_core::CodecError> {
     if let Some(sketch) = exactly_one(
         ir.model
             .sketches
@@ -542,17 +544,21 @@ fn resolved_circular_extrusion_profile(
                     }))
                     .map(|entity| source_carriers.sketch_geometry(entity).definition())
                 {
-                    return Some(([center.u, center.v], radius.get()));
+                    return Ok(Some(([center.u, center.v], radius.get())));
                 }
             }
         }
     }
-    let sweep = circular_sweep_geometry(scan, feature_id)?;
-    sweep
+    let Some(sweep) = circular_sweep_geometry(ctx, scan, feature_id)? else {
+        return Ok(None);
+    };
+    if !sweep
         .section_definition_id
         .is_none_or(|definition_id| definition_id == transform.definition_id)
-        .then_some(())?;
-    circular_section_profile_from_cylinder(transform, &sweep.geometry)
+    {
+        return Ok(None);
+    }
+    Ok(circular_section_profile_from_cylinder(transform, &sweep.geometry))
 }
 
 pub(in super::super) fn circular_section_profile_from_cylinder(
@@ -635,9 +641,9 @@ mod tests {
         )
         .expect("section transform");
         assert_eq!(
-            super::resolved_circular_extrusion_profile(
-                &scan, &ir, &carriers, &transform, 1, &sketch_id,
-            ),
+            crate::decode::with_test_decode_ctx(|ctx| super::resolved_circular_extrusion_profile(
+                ctx, &scan, &ir, &carriers, &transform, 1, &sketch_id,
+            )).expect("service resources"),
             Some(([1.0, 0.0], 2.0))
         );
     }
