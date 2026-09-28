@@ -1304,7 +1304,7 @@ pub(super) fn try_decode_geometry(
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
     retain_live_unknown_links(&ir, &mut unknowns, &mut annotations)?;
     let mut annotations = annotations.build();
-    retain_live_annotations(&ir, &unknowns, &mut annotations);
+    retain_live_annotations(ctx, &ir, &unknowns, &mut annotations)?;
     let completion_budget = CompletionBudgetStatus {
         exact_boundary_exhausted: transfer_budget_exhausted(&exact_transfer_budget),
         transfer_exhausted: transfer_budget_exhausted(&transfer_budget),
@@ -1437,14 +1437,17 @@ fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
 }
 
 fn retain_live_annotations(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     unknowns: &[UnknownRecord],
     annotations: &mut cadmpeg_ir::Annotations,
-) {
+) -> Result<(), CodecError> {
     let mut ids = BTreeSet::new();
     macro_rules! add_ids {
         ($($arena:expr),+ $(,)?) => {
-            $(ids.extend($arena.iter().map(|entity| entity.id.to_string()));)+
+            $(for entity in &$arena {
+                insert_live_identity(ctx, &mut ids, entity.id.as_str())?;
+            })+
         };
     }
     add_ids!(
@@ -1464,11 +1467,37 @@ fn retain_live_annotations(
         ir.model.procedural_curves,
         ir.model.features,
     );
-    ids.extend(unknowns.iter().map(|unknown| unknown.id().to_string()));
+    for unknown in unknowns {
+        insert_live_identity(ctx, &mut ids, unknown.id().as_str())?;
+    }
     annotations.provenance.retain(|id, _| ids.contains(id));
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     builder.retain_exactness(|id| ids.contains(id));
     *annotations = builder.build();
+    Ok(())
+}
+
+fn insert_live_identity(
+    ctx: &DecodeContext<'_>,
+    ids: &mut BTreeSet<String>,
+    identity: &str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "nx live annotation identities")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(identity.len()),
+        "nx live annotation identity text",
+    )?;
+    let mut copy = String::new();
+    copy.try_reserve_exact(identity.len()).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "nx live annotation identity text",
+            0,
+            cadmpeg_core::decode::u64_from_index(identity.len()),
+        )
+    })?;
+    copy.push_str(identity);
+    ids.insert(copy);
+    Ok(())
 }
 
 fn retain_live_unknown_links(
