@@ -10,9 +10,34 @@ use crate::test_support::test_surface_fixtures::bounded_plane_entity_file;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use std::io::Cursor;
 
 const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
 const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+
+#[test]
+fn bounded_plane_refuses_boundary_edge_slot_before_draft() {
+    let bytes = bounded_plane_entity_file(GLOBAL_V5_0, 100, "100,0,0,0,1,0,1,0;");
+    let mut cap = 0_u64;
+    let mut reached = false;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        match crate::IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == "iges bounded plane boundary edges" {
+                    reached = true;
+                    break;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            _ => panic!("expected bounded plane boundary-edge refusal"),
+        }
+    }
+    assert!(reached, "bounded plane boundary-edge slot was not reached");
+}
 
 #[test]
 fn plane_nurbs_boundary_points_refuse_collection_limit() {
