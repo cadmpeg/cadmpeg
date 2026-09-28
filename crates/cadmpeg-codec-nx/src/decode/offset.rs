@@ -22,13 +22,13 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsSurface, pcurve::PcurveGeometry, IntcurveSupportSide, ProceduralSurfaceDefinition,
+    nurbs::{NurbsPoleGrid, NurbsSurface}, pcurve::PcurveGeometry, IntcurveSupportSide, ProceduralSurfaceDefinition,
     SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::solve::least_squares_step;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{NonNegativeLength, NonZeroReal, PositiveLength};
+use cadmpeg_ir::scalar::{NonNegativeLength, PositiveLength};
 use cadmpeg_ir::units::FinitePoint2;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -205,8 +205,8 @@ fn certified_offset_cache_fit_with_budget(
             && nurbs_active_domain(support)
                 .zip(nurbs_active_domain(candidate))
                 .is_some_and(|(support, candidate)| support == candidate)
-            && positive_weights(support.pole_weights())
-            && positive_weights(candidate.pole_weights());
+            && positive_weights(support)
+            && positive_weights(candidate);
         if !compatible_parameterization || !distance.is_finite() {
             return None;
         }
@@ -216,7 +216,7 @@ fn certified_offset_cache_fit_with_budget(
             && support.v_knots() == candidate.v_knots()
             && support.u_count() == candidate.u_count()
             && support.v_count() == candidate.v_count()
-            && support.weights() == candidate.weights();
+            && matching_weights(support, candidate);
         if same_basis {
             if let Some(normal) = translation_net_normal(support) {
                 let translation = Vector3::new(
@@ -224,22 +224,21 @@ fn certified_offset_cache_fit_with_budget(
                     distance * normal.y,
                     distance * normal.z,
                 );
-                let support_poles = support.poles();
-                let candidate_poles = candidate.poles();
-                let maximum_error = support_poles
-                    .iter()
-                    .zip(candidate_poles.iter())
-                    .map(|(support, candidate)| {
+                let mut maximum_error = 0.0_f64;
+                for u in 0..support.u_count() {
+                    for v in 0..support.v_count() {
+                        let support_point = support.pole(u, v)?;
+                        let candidate_point = candidate.pole(u, v)?;
                         let expected = Point3::new(
-                            support.x + translation.x,
-                            support.y + translation.y,
-                            support.z + translation.z,
+                            support_point.x + translation.x,
+                            support_point.y + translation.y,
+                            support_point.z + translation.z,
                         );
-                        Point3::distance(expected, candidate.get())
-                    })
-                    .try_fold(0.0_f64, |maximum, error| {
-                        error.is_finite().then(|| maximum.max(error))
-                    })?;
+                        let error = Point3::distance(expected, candidate_point.get());
+                        if !error.is_finite() { return None; }
+                        maximum_error = maximum_error.max(error);
+                    }
+                }
                 return (maximum_error <= tolerance).then_some(Ok(maximum_error));
             }
         }
@@ -378,15 +377,14 @@ impl HomogeneousSurfaceNet {
         let mut net = Self::from_components(support, |point, weight| {
             [point.x * weight, point.y * weight, point.z * weight, weight]
         })?;
-        for ((control, support), candidate) in net
-            .controls
-            .iter_mut()
-            .zip(support.poles())
-            .zip(candidate.poles())
-        {
-            control[0] = (candidate.x - support.x) * control[3];
-            control[1] = (candidate.y - support.y) * control[3];
-            control[2] = (candidate.z - support.z) * control[3];
+        for (index, control) in net.controls.iter_mut().enumerate() {
+            let u = index / net.v_count;
+            let v = index % net.v_count;
+            let support_point = support.pole(u, v)?;
+            let candidate_point = candidate.pole(u, v)?;
+            control[0] = (candidate_point.x - support_point.x) * control[3];
+            control[1] = (candidate_point.y - support_point.y) * control[3];
+            control[2] = (candidate_point.z - support_point.z) * control[3];
         }
         net.controls
             .iter()
@@ -403,23 +401,15 @@ impl HomogeneousSurfaceNet {
         let v_degree = usize::try_from(surface.v_degree()).ok()?;
         let u_count = surface.u_count();
         let v_count = surface.v_count();
-        let poles = surface.poles();
-        if !positive_weights(surface.pole_weights()) {
+        if !positive_weights(surface) {
             return None;
         }
-        let pole_weights = surface.pole_weights();
-        let controls = poles
-            .iter()
-            .enumerate()
-            .map(|(index, point)| {
-                components(
-                    point.get(),
-                    pole_weights
-                        .as_ref()
-                        .map_or(1.0, |weights| weights[index].get()),
-                )
-            })
-            .collect::<Vec<_>>();
+        let mut controls = Vec::new();
+        for u in 0..u_count {
+            for v in 0..v_count {
+                controls.push(components(surface.pole(u, v)?.get(), surface.weight(u, v).map_or(1.0, |weight| weight.get())));
+            }
+        }
         if controls
             .iter()
             .flatten()
@@ -899,10 +889,28 @@ fn oriented_nurbs_normal(surface: &NurbsSurface, normal: Vector3) -> Option<Vect
     })
 }
 
-fn positive_weights(weights: Option<Vec<NonZeroReal>>) -> bool {
-    weights.is_none_or(|weights| {
-        !weights.is_empty() && weights.iter().all(|weight| weight.get() > 0.0)
-    })
+fn positive_weights(surface: &NurbsSurface) -> bool {
+    match surface.pole_grid() {
+        NurbsPoleGrid::Polynomial { .. } => true,
+        NurbsPoleGrid::Rational { rows } => {
+            !rows.is_empty()
+                && rows.iter().all(|row| {
+                    !row.is_empty() && row.iter().all(|pole| pole.weight.get() > 0.0)
+                })
+        }
+    }
+}
+
+fn matching_weights(first: &NurbsSurface, second: &NurbsSurface) -> bool {
+    match (first.pole_grid(), second.pole_grid()) {
+        (NurbsPoleGrid::Polynomial { .. }, NurbsPoleGrid::Polynomial { .. }) => true,
+        (NurbsPoleGrid::Rational { rows: first }, NurbsPoleGrid::Rational { rows: second }) => {
+            first.iter().zip(second).all(|(first, second)| {
+                first.iter().zip(second).all(|(first, second)| first.weight == second.weight)
+            })
+        }
+        _ => false,
+    }
 }
 
 fn offset_support_control_hull_excludes_point(
@@ -920,10 +928,9 @@ fn offset_support_control_hull_excludes_point(
             .surfaces(surface.as_str())
             .is_some_and(|carrier| match &carrier.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
-                    if positive_weights(nurbs.pole_weights()) =>
+                    if positive_weights(nurbs) =>
                 {
-                    let poles = nurbs.poles();
-                    let (minimum, maximum) = poles.iter().fold(
+                    let (minimum, maximum) = (0..nurbs.u_count()).flat_map(|u| (0..nurbs.v_count()).filter_map(move |v| nurbs.pole(u, v))).fold(
                         (
                             Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
                             Point3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
