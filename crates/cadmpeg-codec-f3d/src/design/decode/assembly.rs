@@ -242,13 +242,15 @@ const EPS_LEGACY_AS_BUILT_DIRECTION: f64 = 1.0e-10;
 /// Decode the two ordered construction/face-selection pairs of a 421-byte
 /// `As-built` scope and derive their local frames from the stored solved frame.
 pub(super) fn exact_legacy_as_built_421_operands(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
     recipes: &[ConstructionRecipe],
     solved_frame: &DesignAssemblySolvedFrame,
-) -> Option<DesignAssemblyLegacyOperands> {
+) -> Result<Option<DesignAssemblyLegacyOperands>, cadmpeg_core::CodecError> {
+    (|| {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length(),
         scope.class_tag.as_str(),
@@ -269,7 +271,11 @@ pub(super) fn exact_legacy_as_built_421_operands(
     let first_selection_record_index = first_selection_reference.value;
     let hole_record_index = hole_reference.value;
     let second_selection_record_index = second_selection_reference.value;
-    let point = exact_point_data_construction(bytes, records, &[point_record_index], stream_types)?;
+    let point = match exact_point_data_construction(ctx, bytes, records, &[point_record_index], stream_types) {
+        Ok(Some(point)) => point,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     let mut hole_scope = scope.clone();
     hole_scope
         .try_edit(|draft| {
@@ -326,7 +332,7 @@ pub(super) fn exact_legacy_as_built_421_operands(
     )?;
     let point_class_tag = indexed_class_at(bytes, point.point_record_byte_offset)?;
     let hole_class_tag = indexed_class_at(bytes, hole.point_record_byte_offset)?;
-    Some(
+    Some(Ok(
         crate::records::feature::assembly::DesignAssemblyLegacyOperands::new(
             DesignAssemblyLegacyOperand {
                 construction_class_tag: point_class_tag.try_into().ok()?,
@@ -341,7 +347,8 @@ pub(super) fn exact_legacy_as_built_421_operands(
                 reference_offset: hole_reference.offset,
             },
         ),
-    )
+    ))
+    })().transpose()
 }
 
 fn point_rule_input_indices(rule: &DesignWorkPointRule) -> Vec<u32> {

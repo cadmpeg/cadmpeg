@@ -193,7 +193,7 @@ pub(super) fn fixed_kind_tail_operations(
         .unwrap();
     let scale_records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert_eq!(
-        exact_scale_operation(&bytes, &scale_records, &scale_scope, &HashMap::new()),
+        exact_scale_operation(&cadmpeg_test_support::service_decode_context(), &bytes, &scale_records, &scale_scope, &HashMap::new()).unwrap(),
         Some(DesignScaleOperation {
             body_group_record_index: 102,
             center_record_index: 105,

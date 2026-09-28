@@ -10,7 +10,8 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_geometry::DesignWorkPointConstruction;
 use crate::records::feature::work_geometry::DesignWorkPointInput;
 use crate::records::feature::work_geometry::DesignWorkPointRule;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
 
@@ -50,11 +51,13 @@ struct PointDataLevel {
 /// member order. The count is bounded by the frame before allocation and each
 /// marked reference must resolve to a record index.
 fn point_data_level(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     version: u32,
-) -> Option<PointDataLevel> {
+) -> Result<Option<PointDataLevel>, CodecError> {
+    (|| {
     let body = bytes.get(..end)?;
     let mut cursor = payload_prologue(bytes, start, end)?;
     if version >= 2 {
@@ -77,7 +80,16 @@ fn point_data_level(
     if arity == 0 || arity > end.checked_sub(cursor)? {
         return None;
     }
-    let mut inputs = Vec::with_capacity(arity);
+    if let Err(error) = ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(arity),
+        "f3d point-data inputs",
+    ) {
+        return Some(Err(error));
+    }
+    let mut inputs = Vec::new();
+    if inputs.try_reserve(arity).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d point-data inputs allocation", 0, 1)));
+    }
     for _ in 0..arity {
         let reference_offset = cursor.checked_add(1)?;
         let reference = take_reference(body, &mut cursor)?;
@@ -90,12 +102,13 @@ fn point_data_level(
             .ok()?,
         );
     }
-    Some(PointDataLevel {
+    Some(Ok(PointDataLevel {
         position_at,
         reference_type,
         reference_type_at,
         inputs,
-    })
+    }))
+    })().transpose()
 }
 
 /// The coordinate of a `WorkPoint`'s point-data record.
@@ -108,15 +121,17 @@ fn point_data_level(
 /// and every version whose member sequence fits the frame stays a candidate, so
 /// the frame is read only when they agree on the offset.
 pub(super) fn exact_work_point_construction(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
-) -> Option<DesignWorkPointConstruction> {
+) -> Result<Option<DesignWorkPointConstruction>, CodecError> {
     if scope.kind() != scope::DesignFeatureKind::WorkPoint {
-        return None;
+        return Ok(None);
     }
     exact_point_data_construction(
+        ctx,
         bytes,
         records,
         scope.reference_members().values(),
@@ -125,11 +140,13 @@ pub(super) fn exact_work_point_construction(
 }
 
 pub(in crate::design::decode) fn exact_point_data_construction<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     point_record_indices: impl IntoIterator<Item = &'a u32>,
     stream_types: &HashMap<u64, (&str, u32)>,
-) -> Option<DesignWorkPointConstruction> {
+) -> Result<Option<DesignWorkPointConstruction>, CodecError> {
+    (|| {
     let mut candidate = None;
     for record_index in point_record_indices {
         for (start, paired) in records.frames(*record_index) {
@@ -161,7 +178,11 @@ pub(in crate::design::decode) fn exact_point_data_construction<'a>(
             let mut unique_level = None;
             let mut ambiguous_level = false;
             for version in versions.into_iter().flatten() {
-                if let Some(level) = point_data_level(bytes, payload_at, paired, version) {
+                let level = match point_data_level(ctx, bytes, payload_at, paired, version) {
+                    Ok(level) => level,
+                    Err(error) => return Some(Err(error)),
+                };
+                if let Some(level) = level {
                     match &unique_level {
                         Some(previous) if previous != &level => {
                             ambiguous_level = true;
@@ -196,7 +217,8 @@ pub(in crate::design::decode) fn exact_point_data_construction<'a>(
             }
         }
     }
-    candidate
+    candidate.map(Ok)
+    })().transpose()
 }
 
 #[cfg(test)]
