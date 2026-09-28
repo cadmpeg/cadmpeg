@@ -5172,7 +5172,7 @@ fn construction_payload_frames<P, S, R>(ctx: &cadmpeg_core::decode::DecodeContex
     payloads: &[P],
     data_blocks: impl Fn(&P) -> &[FeaturePayloadBlock],
     scan: impl Fn(&[u8]) -> Result<Vec<S>, CodecError>,
-    build: impl Fn(&P, usize, S, &dyn Fn(usize) -> Option<u64>) -> Option<R>,
+    mut build: impl FnMut(&P, usize, S, &dyn Fn(usize) -> Option<u64>) -> Option<R>,
 ) -> Result<Vec<R>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
@@ -5827,7 +5827,8 @@ pub(super) fn feature_sketch_payload_scalar_lanes(ctx: &DecodeContext<'_>,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeatureSketchPayloadScalarLane>, CodecError>
 {
-    construction_payload_frames(ctx,
+    let mut failure = None;
+    let rows = construction_payload_frames(ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
@@ -5835,7 +5836,11 @@ pub(super) fn feature_sketch_payload_scalar_lanes(ctx: &DecodeContext<'_>,
         |payload, ordinal, lane, source_offset| {
             let header_source = source_offset(lane.offset() as usize)?;
             let terminator_source = source_offset(lane.end() as usize)?;
-            let lane = lane.try_map_locations(|offset, ()| source_offset(offset as usize))?;
+            let lane = match lane.try_map_locations(ctx, |offset, ()| source_offset(offset as usize)) {
+                Ok(Some(lane)) => lane,
+                Ok(None) => return None,
+                Err(error) => { failure = Some(error); return None; }
+            };
             Some(FeatureSketchPayloadScalarLane {
                 id: format!("{}-scalar-lane-{ordinal:010}", payload.id),
                 operation_label: payload.operation_label.clone(),
@@ -5846,7 +5851,8 @@ pub(super) fn feature_sketch_payload_scalar_lanes(ctx: &DecodeContext<'_>,
                 terminator_source_offset: terminator_source,
             })
         },
-    )
+    )?;
+    if let Some(error) = failure { Err(error) } else { Ok(rows) }
 }
 
 /// Decode exact compact-code name fields across reconstructed sketch payloads.

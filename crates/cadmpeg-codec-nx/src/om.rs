@@ -4306,14 +4306,14 @@ pub(crate) fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVer
 /// Decode the zero-prefixed offset-store control form as ordered 24-bit values.
 ///
 /// Each word is serialized `00, value:u24 LE`. The complete form is atomic.
-fn offset_store_control_values(bytes: &[u8]) -> Option<NonEmpty<ControlWord24>> {
-    bytes.len().is_multiple_of(4).then_some(())?;
-    NonEmpty::new(
+fn offset_store_control_values(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Option<NonEmpty<ControlWord24>>, CodecError> {
+    if !bytes.len().is_multiple_of(4) { return Ok(None) }
+    let Some(values) = NonEmpty::new_charged(ctx,
         bytes
             .chunks_exact(4)
             .map(|word| (word[0] == 0).then(|| ControlWord24::new([word[1], word[2], word[3]]))),
-    )?
-    .transpose()
+    )? else { return Ok(None) };
+    values.transpose_charged(ctx)
 }
 
 /// Decode the distinct leading class-registry identities in an offset-store
@@ -4414,10 +4414,12 @@ fn joined_control_u32_le(control: &[u8], first_record: &[u8], offset: usize) -> 
 }
 
 fn offset_store_product_anchored_form(
+    ctx: &DecodeContext<'_>,
     control: &[u8],
     first_record: &[u8],
-) -> Option<OffsetStoreControlForm> {
-    let product_offset = unique_candidate(
+) -> Result<Option<OffsetStoreControlForm>, CodecError> {
+    let Some((product_offset, leading_width, leading_value)) = (|| {
+        let product_offset = unique_candidate(
         (0..control.len())
             .filter(|offset| {
                 ProductRecord::read(&control[*offset..], ProductRecordForm::Modern).is_some()
@@ -4430,29 +4432,31 @@ fn offset_store_product_anchored_form(
                     })
                     .map(|offset| control.len() + offset),
             ),
-    )?;
-    let leading_width = product_offset % 4;
-    if product_offset >= control.len() {
-        let control_array_bytes = control.len().checked_sub(leading_width)?;
-        (!control_array_bytes.is_multiple_of(4)).then_some(())?;
-    }
-    let leading_value = if leading_width == 0 {
-        None
-    } else {
-        Some(ControlLeadingValue::read(
-            leading_width,
-            control.iter().chain(first_record).copied(),
-        )?)
-    };
-    let values = NonEmpty::new(
+        )?;
+        let leading_width = product_offset % 4;
+        if product_offset >= control.len() {
+            let control_array_bytes = control.len().checked_sub(leading_width)?;
+            (!control_array_bytes.is_multiple_of(4)).then_some(())?;
+        }
+        let leading_value = if leading_width == 0 {
+            None
+        } else {
+            Some(ControlLeadingValue::read(
+                leading_width,
+                control.iter().chain(first_record).copied(),
+            )?)
+        };
+        Some((product_offset, leading_width, leading_value))
+    })() else { return Ok(None) };
+    let Some(values) = NonEmpty::new_charged(ctx,
         (0..(product_offset - leading_width) / 4)
             .map(|index| joined_control_u32_le(control, first_record, leading_width + index * 4)),
-    )?
-    .transpose()?;
-    Some(OffsetStoreControlForm::ProductAnchored {
+    )? else { return Ok(None) };
+    let Some(values) = values.transpose_charged(ctx)? else { return Ok(None) };
+    Ok(Some(OffsetStoreControlForm::ProductAnchored {
         leading_value,
         values,
-    })
+    }))
 }
 
 /// One complete admitted offset-only store control-block form.
@@ -4479,15 +4483,16 @@ pub(crate) enum OffsetStoreControlForm {
 /// control block and the first column block. Exactly one admitted grammar must
 /// accept the complete control envelope.
 pub(crate) fn offset_store_control_form(
+    ctx: &DecodeContext<'_>,
     control: &[u8],
     first_record: Option<&[u8]>,
-) -> Option<OffsetStoreControlForm> {
-    let zero = offset_store_control_values(control);
-    let product = offset_store_product_anchored_form(control, first_record.unwrap_or_default());
+) -> Result<Option<OffsetStoreControlForm>, CodecError> {
+    let zero = offset_store_control_values(ctx, control)?;
+    let product = offset_store_product_anchored_form(ctx, control, first_record.unwrap_or_default())?;
     match (zero, product) {
-        (Some(values), None) => Some(OffsetStoreControlForm::ZeroPrefixed { values }),
-        (_, Some(form)) => Some(form),
-        (None, None) => None,
+        (Some(values), None) => Ok(Some(OffsetStoreControlForm::ZeroPrefixed { values })),
+        (_, Some(form)) => Ok(Some(form)),
+        (None, None) => Ok(None),
     }
 }
 
