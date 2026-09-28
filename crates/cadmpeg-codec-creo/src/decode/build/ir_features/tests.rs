@@ -229,6 +229,41 @@ fn native_row_feature_refuses_kind_retained_limit() {
 }
 
 #[test]
+fn native_row_feature_refuses_name_retained_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.rows.push(one_feature_row());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = ("Native Feature".len() + "featdefs_schema_state".len() + "absent".len()) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let error = emit_model_features(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::AnnotationBuilder::new(),
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("row name needs retained text after native kind");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo row Feature name"), "{error:?}");
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    crate::decode::with_test_decode_ctx(|ctx| {
+        emit_model_features(
+            ctx,
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service-profile row name");
+    assert_eq!(ir.model.features[0].name.as_deref(), Some("Native Feature id 40"));
+}
+
+#[test]
 fn stored_operation_feature_name_refuses_retained_limit() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.operations.push(crate::feature::operations::FeatureOperation {

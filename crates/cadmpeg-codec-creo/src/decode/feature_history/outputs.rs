@@ -697,7 +697,7 @@ pub(in super::super) fn schema_operation_kind(schema_class: SchemaClass) -> Opti
 pub(in super::super) fn feature_reference_name<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<Cow<'a, str>> {
+) -> Option<&'a [u8]> {
     let mut records = scan
         .features
         .reference_names
@@ -706,7 +706,19 @@ pub(in super::super) fn feature_reference_name<'a>(
     let record = records.next()?;
     records
         .all(|candidate| candidate.name_bytes.as_slice() == record.name_bytes.as_slice())
-        .then(|| record.name())
+        .then_some(record.name_bytes.as_slice())
+}
+
+pub(in super::super) fn decoded_feature_reference_name<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<Cow<'a, str>, CodecError> {
+    match std::str::from_utf8(bytes) {
+        Ok(name) => Ok(Cow::Borrowed(name)),
+        Err(_) => ctx
+            .copy_retained_lossy_utf8(bytes, "creo decoded feature reference name")
+            .map(Cow::Owned),
+    }
 }
 
 pub(in super::super) fn owned_section_feature_id(

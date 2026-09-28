@@ -2,9 +2,30 @@
 
 use super::{
     bodies_containing_edges, copy_body_id, evaluated_sweep_body_kind,
+    decoded_feature_reference_name,
     evaluated_sweep_output_bodies, feature_output_bodies, generated_edge_output_bodies,
     generated_input_output_bodies,
 };
+
+#[test]
+fn invalid_feature_reference_name_refuses_before_lossy_copy() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 3;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = decoded_feature_reference_name(&ctx, b"A\xff")
+        .expect_err("replacement needs four retained bytes");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo decoded feature reference name"));
+
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert_eq!(decoded_feature_reference_name(ctx, b"A\xff")?, "A\u{fffd}");
+        assert_eq!(decoded_feature_reference_name(ctx, b"ASCII")?, "ASCII");
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .expect("service-profile reference names");
+}
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     FaceSelection, Feature, FeatureDefinition, FeatureOperation, GeneratedEdgeRef, GeneratedFaceRef,

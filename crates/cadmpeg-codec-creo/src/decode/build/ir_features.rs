@@ -30,7 +30,7 @@ use super::super::feature_history::named::{
     retain_native_feature_parameters,
 };
 use super::super::feature_history::outputs::{
-    copy_body_id, feature_output_bodies, feature_parameters, feature_reference_name, feature_source_properties,
+    copy_body_id, decoded_feature_reference_name, feature_output_bodies, feature_parameters, feature_reference_name, feature_source_properties,
     insert_feature_source_property, schema_operation_kind, SchemaClassList,
 };
 use super::super::native::annotate;
@@ -481,7 +481,9 @@ pub(super) fn emit_model_features(
             continue;
         };
         ctx.charge_entities(1, "admit Creo model features")?;
-        let reference_name = feature_reference_name(scan, feature_id);
+        let reference_name = feature_reference_name(scan, feature_id)
+            .map(|bytes| decoded_feature_reference_name(ctx, bytes))
+            .transpose()?;
         let reference_name = reference_name.as_deref();
         let kind = reference_name.unwrap_or_else(|| {
             schema_class
@@ -535,9 +537,13 @@ pub(super) fn emit_model_features(
         let feature = Feature {
             id,
             ordinal: ir.model.features.len() as u64,
-            name: Some(
-                reference_name.map_or_else(|| format!("{kind} id {feature_id}"), str::to_string),
-            ),
+            name: Some(match reference_name {
+                Some(name) => ctx.copy_retained_text(name, "creo row Feature name")?,
+                None => ctx.format_retained(
+                    format_args!("{kind} id {feature_id}"),
+                    "creo row Feature name",
+                )?,
+            }),
             suppressed: Some(false),
             dependencies: DistinctMembers::try_from_reserved_vec(feature_dependencies(
                 ctx,
