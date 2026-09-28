@@ -10478,26 +10478,35 @@ fn build_standard_edge_curve(
         crate::families::standard::records::StandardCurveGeometry::Bspline
     ) {
         let sides = if let Some(native) = native_support {
-            let Some(pcurves) = oriented_native_support_pcurves.as_ref() else {
+            let Some([first_pcurve, second_pcurve]) = oriented_native_support_pcurves else {
                 return Ok((None, None));
             };
-            let mut surfaces = Vec::with_capacity(2);
-            for side in 0..2 {
-                surfaces.push(ensure_native_edge_support_surface(
+            let first_surface = ensure_native_edge_support_surface(
                     ir,
                     annotations,
-                    native.surface_object_ids[side],
-                    &native.carriers[side],
+                    native.surface_object_ids[0],
+                    &native.carriers[0],
                     admission,
-                )?);
-            }
-            std::array::from_fn(|side| IntcurveSupportSide {
-                surface: Some(surfaces[side].clone()),
-                pcurve: Some(SupportPcurve::new(
-                    pcurves[side].clone(),
-                    DirectedParameterRange::new(native.parameter_range).ok(),
-                )),
-            })
+                )?;
+            let second_surface = ensure_native_edge_support_surface(
+                ir, annotations, native.surface_object_ids[1], &native.carriers[1], admission,
+            )?;
+            [
+                IntcurveSupportSide {
+                    surface: Some(first_surface),
+                    pcurve: Some(SupportPcurve::new(
+                        first_pcurve,
+                        DirectedParameterRange::new(native.parameter_range).ok(),
+                    )),
+                },
+                IntcurveSupportSide {
+                    surface: Some(second_surface),
+                    pcurve: Some(SupportPcurve::new(
+                        second_pcurve,
+                        DirectedParameterRange::new(native.parameter_range).ok(),
+                    )),
+                },
+            ]
         } else {
             support.faces.map(|face| {
                 let surface = bindings
