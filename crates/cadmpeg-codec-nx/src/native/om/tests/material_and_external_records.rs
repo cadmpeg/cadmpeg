@@ -456,6 +456,75 @@ fn native_external_tail_route_refuses_work_limit() {
         if limit.dimension == ResourceDimension::WorkUnits), "{error:?}");
 }
 
+fn native_external_string_uses_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ExternalReferenceRecordStringUse>, CodecError> {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let (records, references) = crate::test_support::with_decode_context(|ctx| -> Result<_, CodecError> {
+        Ok((
+            super::super::external_reference_records(ctx, &container)?,
+            super::super::external_references(ctx, &container)?,
+        ))
+    })
+    .expect("native external-reference inputs");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    super::super::external_reference_record_string_uses(&ctx, &records, &references)
+}
+
+#[test]
+fn native_external_string_uses_route_preserves_slots() {
+    let uses = native_external_string_uses_result(|_| {}).expect("external string uses");
+    assert_eq!(uses.len(), 4);
+    assert_eq!(uses.iter().map(|use_| use_.string_index).collect::<Vec<_>>(), [0, 1, 2, 3]);
+}
+
+#[test]
+fn native_external_string_uses_route_refuses_collection_limit() {
+    let error = native_external_string_uses_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("slot index exceeds collection budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx external reference slot index"), "{error:?}");
+}
+
+#[test]
+fn native_external_string_uses_route_refuses_retained_limit() {
+    let error = native_external_string_uses_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("slot use exceeds retained budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx native external reference string uses"), "{error:?}");
+}
+
+#[test]
+fn native_external_string_uses_route_refuses_scoped_limit() {
+    let error = native_external_string_uses_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .expect_err("slot index exceeds scoped budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "nx external reference slot index"), "{error:?}");
+}
+
+#[test]
+fn native_external_string_uses_route_refuses_work_limit() {
+    let error = native_external_string_uses_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("slot index exceeds work budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "nx external reference slot index"), "{error:?}");
+}
+
 #[test]
 fn persistent_handle_identity_bridges_om_and_external_records() {
     let reference = super::super::ObjectReference {
@@ -978,6 +1047,10 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
         external_reference_record_children, external_reference_record_string_uses,
         ExternalReference, ExternalReferenceRecord,
     };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
 
     let references = (0..4)
         .map(|ordinal| ExternalReference {
@@ -998,7 +1071,8 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
         source_entry: "stream".into(),
         source_offset: 20,
     };
-    let uses = external_reference_record_string_uses(std::slice::from_ref(&record), &references);
+    let uses = external_reference_record_string_uses(&ctx, std::slice::from_ref(&record), &references)
+        .expect("complete string use lane");
     assert_eq!(uses.len(), 4);
     assert_eq!(uses[0].id, "nx:external-reference:record-string-use#7-0");
     assert_eq!(
@@ -1018,7 +1092,8 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     let mut child_references = references.clone();
     child_references[0].path = "child.prt".into();
     let child_uses =
-        external_reference_record_string_uses(std::slice::from_ref(&record), &child_references);
+        external_reference_record_string_uses(&ctx, std::slice::from_ref(&record), &child_references)
+            .expect("complete child string use lane");
     let children = external_reference_record_children(
         std::slice::from_ref(&record),
         &child_references,
@@ -1035,8 +1110,12 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
 
     let mut out_of_range = record.clone();
     out_of_range.id_slots[2] = 4;
-    assert!(external_reference_record_string_uses(&[out_of_range], &references).is_empty());
+    assert!(external_reference_record_string_uses(&ctx, &[out_of_range], &references)
+        .expect("unresolved slot")
+        .is_empty());
     let mut duplicate = references.clone();
     duplicate.push(references[0].clone());
-    assert!(external_reference_record_string_uses(&[record], &duplicate).is_empty());
+    assert!(external_reference_record_string_uses(&ctx, &[record], &duplicate)
+        .expect("duplicate slot")
+        .is_empty());
 }
