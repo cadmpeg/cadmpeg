@@ -688,6 +688,52 @@ fn gui_raw_material_list_refuses_at_caller_limit() {
         |ctx, view| super::super::parse_material_list(ctx, view, 2, "material", false).map(|_| ()));
 }
 
+fn material_list_property() -> crate::native::GuiPropertyRecord {
+    crate::native::GuiPropertyRecord {
+        id: "fcstd:gui:property#ShapeAppearance".into(),
+        owner: "fcstd:gui:view-provider#Provider".into(),
+        name: "ShapeAppearance".into(),
+        type_name: "App::PropertyMaterialList".into(),
+        status: None, order: 0, values: Vec::new(),
+        side_entries: vec!["materials.bin".into()],
+        xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+            .expect("valid property XML"),
+    }
+}
+
+#[test]
+fn gui_material_list_map_refuses_at_matching_collection_limit() {
+    let bytes = 0_u32.to_le_bytes();
+    let entries = std::collections::BTreeMap::from([(
+        "materials.bin".to_owned(), cadmpeg_core::decode::View::over_retained(&bytes),
+    )]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits policy");
+    let error = super::super::validate_gui_list_payloads(
+        &ctx, &[material_list_property()], &entries, false,
+    ).err().expect("material-list map must be admitted");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref limit)
+        if limit.operation == "FCStd GUI material lists"));
+}
+
+#[test]
+fn gui_material_list_property_identity_refuses_at_matching_retained_limit() {
+    let bytes = 0_u32.to_le_bytes();
+    let entries = std::collections::BTreeMap::from([(
+        "materials.bin".to_owned(), cadmpeg_core::decode::View::over_retained(&bytes),
+    )]);
+    crate::test_support::assert_retained_refusal_at(
+        &[], "FCStd GUI material list property identity", |ctx| {
+            super::super::validate_gui_list_payloads(
+                ctx, &[material_list_property()], &entries, false,
+            )
+        },
+    );
+}
+
 #[test]
 fn gui_material_list_refuses_at_caller_limit() {
     assert_gui_binary_list_refusal(24, 1, "FCStd GUI material entries",
