@@ -1188,20 +1188,32 @@ fn typed_browser_node_hidden_flags(
 ///
 /// The GUID is the stable join between browser presentation records; the
 /// adjacent entity suffix joins the node back to the Design body map.
-pub(crate) fn scanned_browser_node_entities(bytes: &[u8]) -> HashMap<String, u64> {
+pub(crate) fn scanned_browser_node_entities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<HashMap<String, u64>, cadmpeg_core::CodecError> {
     let mut entities = HashMap::new();
     let mut ambiguous = std::collections::HashSet::new();
-    for record in scan_browser_node_identities(bytes) {
+    for record in scan_browser_node_identities(ctx, bytes)? {
         let key = record.guid.to_ascii_lowercase();
-        if entities
-            .insert(key.clone(), record.entity_suffix)
-            .is_some_and(|previous| previous != record.entity_suffix)
-        {
-            ambiguous.insert(key);
+        if let Some(previous) = entities.get(&key) {
+            if *previous != record.entity_suffix && !ambiguous.contains(&key) {
+                ctx.charge_collection_items(1, "index F3D ambiguous browser nodes")?;
+                ambiguous.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index F3D ambiguous browser nodes", 0, 1)
+                })?;
+                ambiguous.insert(key);
+            }
+        } else {
+            ctx.charge_collection_items(1, "index F3D browser node entities")?;
+            entities.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index F3D browser node entities", 0, 1)
+            })?;
+            entities.insert(key, record.entity_suffix);
         }
     }
     entities.retain(|guid, _| !ambiguous.contains(guid));
-    entities
+    Ok(entities)
 }
 
 #[derive(Debug, Clone)]
@@ -1210,7 +1222,10 @@ struct ScannedBrowserNodeIdentity {
     entity_suffix: u64,
 }
 
-fn scan_browser_node_identities(bytes: &[u8]) -> Vec<ScannedBrowserNodeIdentity> {
+fn scan_browser_node_identities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<ScannedBrowserNodeIdentity>, cadmpeg_core::CodecError> {
     const GUID_CHARS: usize = 36;
     const GUID_BYTES: usize = GUID_CHARS * 2;
     let mut out = Vec::new();
@@ -1225,6 +1240,10 @@ fn scan_browser_node_identities(bytes: &[u8]) -> Vec<ScannedBrowserNodeIdentity>
         let flag_at = at + 4 + GUID_BYTES;
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
             if let (0 | 1, Some(member)) = (bytes[flag_at], View::u64_le_at(bytes, flag_at + 3)) {
+                ctx.charge_collection_items(1, "collect F3D browser node identities")?;
+                out.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("collect F3D browser node identities", 0, 1)
+                })?;
                 out.push(ScannedBrowserNodeIdentity {
                     guid: utf16_le_string(&bytes[at + 4..at + 4 + GUID_BYTES]),
                     entity_suffix: member,
@@ -1233,7 +1252,7 @@ fn scan_browser_node_identities(bytes: &[u8]) -> Vec<ScannedBrowserNodeIdentity>
         }
         at += 1;
     }
-    out
+    Ok(out)
 }
 
 fn utf16_le_string(bytes: &[u8]) -> String {
