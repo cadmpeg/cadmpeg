@@ -23,6 +23,8 @@ use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 struct AsBuiltAlignmentDraft {
     paths: [DesignAssemblyOperandPath; 2],
@@ -43,23 +45,35 @@ impl TryFrom<AsBuiltAlignmentDraft> for assembly::DesignAssemblyAlignmentForm {
 }
 
 pub(super) fn exact_assembly_alignment(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
-) -> Option<DesignAssemblyAlignment> {
+) -> Result<Option<DesignAssemblyAlignment>, CodecError> {
     use assembly::DesignAssemblyAlignmentForm;
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Assemble) {
-        return None;
+        return Ok(None);
     }
-    let stream = native_stream(&scope.id)?;
-    let mut lanes = parameter_owners
-        .iter()
-        .filter(|owner| {
-            native_stream(owner.id()) == Some(stream)
-                && owner.scope_record_index() == scope.record_index
-        })
-        .collect::<Vec<_>>();
+    let Some(stream) = native_stream(&scope.id) else {
+        return Ok(None);
+    };
+    let matching = |owner: &&DesignParameterOwner| {
+        native_stream(owner.id()) == Some(stream)
+            && owner.scope_record_index() == scope.record_index
+    };
+    let lane_count = parameter_owners.iter().filter(matching).count();
+    ctx.charge_collection_items(
+        u64::try_from(lane_count)
+            .map_err(|_| ctx.refuse_codec_limit("f3d assembly alignment lane count", 0, 1))?,
+        "f3d assembly alignment lanes",
+    )?;
+    let mut lanes = Vec::new();
+    lanes.try_reserve(lane_count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d assembly alignment lanes allocation", 0, 1)
+    })?;
+    lanes.extend(parameter_owners.iter().filter(matching));
+    Ok((|| {
     lanes.sort_by_key(|owner| owner.local_ordinal());
     if lanes
         .iter()
@@ -259,4 +273,8 @@ pub(super) fn exact_assembly_alignment(
         })
     };
     DesignAssemblyAlignment::try_new(angle, offset, owners, form).ok()
+    })())
 }
+
+#[cfg(test)]
+mod tests;

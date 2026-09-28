@@ -578,12 +578,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let alignment = exact_assembly_alignment(
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &rectangular_owners,
-    )
+    ).unwrap())
     .expect("exact assembly scalar lanes");
     assert_eq!(alignment.angle(), 3.0);
     assert_eq!(alignment.offset(), [1.0, 10.0, 0.0]);
@@ -623,12 +624,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(exact_assembly_alignment(
+    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &placement_and_alignment_owners,
-    )
+    ).unwrap())
     .is_none());
     scope
         .try_edit(|draft| {
@@ -637,12 +639,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let alignment = exact_assembly_alignment(
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &placement_and_alignment_owners,
-    )
+    ).unwrap())
     .expect("assembly alignment after four placement lanes");
     assert_eq!(alignment.angle(), 0.25);
     assert_eq!(alignment.offset(), [4.0, 5.0, 6.0]);
@@ -661,12 +664,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let datum_envelope_alignment = exact_assembly_alignment(
+    let datum_envelope_alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &placement_and_alignment_owners,
-    )
+    ).unwrap())
     .expect("JointOrigin datum-envelope alignment after four placement lanes");
     assert_eq!(datum_envelope_alignment.angle(), 0.25);
     assert_eq!(datum_envelope_alignment.offset(), [4.0, 5.0, 6.0]);
@@ -692,12 +696,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(exact_assembly_alignment(
+    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &short_axial_owners,
-    )
+    ).unwrap())
     .is_none());
     scope
         .try_edit(|draft| {
@@ -706,12 +711,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let short_axial_alignment = exact_assembly_alignment(
+    let short_axial_alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &short_axial_owners,
-    )
+    ).unwrap())
     .expect("six-owner alignment belongs to the 705-byte axial frame");
     assert_eq!(short_axial_alignment.angle(), 0.5);
     assert_eq!(short_axial_alignment.offset(), [0.0, 0.0, 2.0]);
@@ -729,12 +735,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(exact_assembly_alignment(
+    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &legacy_alignment_owners,
-    )
+    ).unwrap())
     .is_none());
     scope
         .try_edit(|draft| {
@@ -743,12 +750,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let alignment = exact_assembly_alignment(
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &legacy_alignment_owners,
-    )
+    ).unwrap())
     .expect("legacy assembly axial alignment lanes");
     assert_eq!(alignment.angle(), 0.5);
     assert_eq!(alignment.offset(), [0.0, 0.0, 2.0]);
@@ -789,12 +797,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap();
-    let frames = exact_assembly_alignment(
+    let frames = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &assembly_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&assembly_bytes),
         &scope,
         &rectangular_owners,
-    )
+    ).unwrap())
     .and_then(|alignment| alignment.operand_frames())
     .expect("exact assembly operand frames");
     assert_eq!(
@@ -839,12 +848,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .with_fixture_layout(),
     )
     .unwrap();
-    let legacy_frames = exact_assembly_alignment(
+    let legacy_frames = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &legacy_assembly_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&legacy_assembly_bytes),
         &legacy_assembly_scope,
         &rectangular_owners,
-    )
+    ).unwrap())
     .and_then(|alignment| alignment.operand_frames())
     .expect("compact assembly operand frames");
     assert_eq!(legacy_frames[0].reference_offset, 25);
@@ -863,12 +873,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .with_fixture_layout(),
     )
     .unwrap();
-    assert!(exact_assembly_alignment(
+    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &dynamic_standard_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&dynamic_standard_bytes),
         &dynamic_standard_scope,
         &rectangular_owners,
-    )
+    ).unwrap())
     .is_some_and(|alignment| alignment.operand_frames().is_some()));
 
     let mut dynamic_compact_bytes = legacy_assembly_bytes.clone();
@@ -884,12 +895,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .with_fixture_layout(),
     )
     .unwrap();
-    assert!(exact_assembly_alignment(
+    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &dynamic_compact_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&dynamic_compact_bytes),
         &dynamic_compact_scope,
         &rectangular_owners,
-    )
+    ).unwrap())
     .is_some_and(|alignment| alignment.operand_frames().is_some()));
 
     let mut axial_assembly_bytes = vec![0_u8; 772];
@@ -922,12 +934,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .with_fixture_layout(),
     )
     .unwrap();
-    let axial_alignment = exact_assembly_alignment(
+    let axial_alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &axial_assembly_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&axial_assembly_bytes),
         &axial_assembly_scope,
         &legacy_alignment_owners,
-    )
+    ).unwrap())
     .expect("legacy assembly alignment and operand frames");
     assert_eq!(axial_alignment.angle(), 0.5);
     assert_eq!(axial_alignment.offset(), [0.0, 0.0, 2.0]);
@@ -957,12 +970,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .with_fixture_layout(),
     )
     .unwrap();
-    let short_axial_alignment = exact_assembly_alignment(
+    let short_axial_alignment = crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &short_axial_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&short_axial_bytes),
         &short_axial_scope,
         &short_axial_owners,
-    )
+    ).unwrap())
     .expect("short axial assembly alignment and operand frames");
     assert_eq!(short_axial_alignment.angle(), 0.5);
     assert_eq!(short_axial_alignment.offset(), [0.0, 0.0, 2.0]);
@@ -1150,12 +1164,13 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .unwrap();
     compact_scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap();
-    assert!(exact_assembly_alignment(
+    assert!(crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+        ctx,
         &compact_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
         &compact_scope,
         &rectangular_owners,
-    )
+    ).unwrap())
     .is_some_and(|alignment| alignment.operand_frames().is_some()));
 }
 
