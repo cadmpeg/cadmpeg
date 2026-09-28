@@ -1489,15 +1489,16 @@ fn validate_gui_property(
         return Ok(());
     };
     let expected_tag = tag.as_str();
-    let roots = property
+    let mut roots = property
         .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let root = roots.first().copied().ok_or_else(|| {
+        .filter(roxmltree::Node::is_element);
+    let root = roots.next().ok_or_else(|| {
         CodecError::malformed(format_args!(
             "GUI property {property_name} requires one {expected_tag} value"
         ))
     })?;
+    let second_root = roots.next();
+    let has_more_roots = roots.next().is_some();
     if !root.has_tag_name(expected_tag) {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires a leading {expected_tag} value"
@@ -1528,7 +1529,7 @@ fn validate_gui_property(
                 validate_gui_constraint_attributes(root, property_name, true)?;
             }
             if type_name == "App::PropertyEnumeration" {
-                validate_gui_enumeration(&roots, property_name)?;
+                validate_gui_enumeration(root, second_root, has_more_roots, property_name)?;
                 return Ok(());
             }
         }
@@ -1563,7 +1564,9 @@ fn validate_gui_property(
                 return Err(gui_nested_value_error(property_name, expected_tag));
             }
             if type_name == "App::PropertyPersistentObject" {
-                if roots.len() != 2 || !roots[1].has_tag_name("PersistentObject") {
+                if has_more_roots
+                    || !second_root.is_some_and(|node| node.has_tag_name("PersistentObject"))
+                {
                     return Err(CodecError::malformed(format_args!(
                         "GUI property {property_name} has an invalid persistent-object envelope"
                     )));
@@ -1682,7 +1685,7 @@ fn validate_gui_property(
             }
         }
     }
-    if roots.len() != 1 {
+    if second_root.is_some() {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires exactly one {expected_tag} value"
         )));
@@ -1695,20 +1698,15 @@ fn validate_gui_string_list(
     property_name: &str,
 ) -> Result<(), CodecError> {
     let count = gui_list_count(root, property_name, "StringList")?;
-    let values = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if values.len() != count
-        || values
-            .iter()
+    if root.children().filter(roxmltree::Node::is_element).count() != count
+        || root.children().filter(roxmltree::Node::is_element)
             .any(|value| !value.has_tag_name("String") || value.attribute("value").is_none())
     {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} StringList count or value is invalid"
         )));
     }
-    if values.iter().any(|value| has_nested_gui_elements(*value)) {
+    if root.children().filter(roxmltree::Node::is_element).any(has_nested_gui_elements) {
         return Err(gui_nested_value_error(property_name, "StringList value"));
     }
     Ok(())
@@ -1725,20 +1723,17 @@ fn validate_gui_integer_list(
         "IntegerList"
     };
     let count = gui_list_count(root, property_name, tag)?;
-    let values = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if values.len() != count || values.iter().any(|value| !value.has_tag_name("I")) {
+    if root.children().filter(roxmltree::Node::is_element).count() != count
+        || root.children().filter(roxmltree::Node::is_element).any(|value| !value.has_tag_name("I")) {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} {tag} count or value is invalid"
         )));
     }
-    if values.iter().any(|value| has_nested_gui_elements(*value)) {
+    if root.children().filter(roxmltree::Node::is_element).any(has_nested_gui_elements) {
         return Err(gui_nested_value_error(property_name, tag));
     }
     let mut previous = None;
-    for value in values {
+    for value in root.children().filter(roxmltree::Node::is_element) {
         let number = value
             .attribute("v")
             .ok_or_else(|| {
@@ -1764,20 +1759,17 @@ fn validate_gui_integer_list(
 
 fn validate_gui_map(root: roxmltree::Node<'_, '_>, property_name: &str) -> Result<(), CodecError> {
     let count = gui_list_count(root, property_name, "Map")?;
-    let values = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if values.len() != count || values.iter().any(|value| !value.has_tag_name("Item")) {
+    if root.children().filter(roxmltree::Node::is_element).count() != count
+        || root.children().filter(roxmltree::Node::is_element).any(|value| !value.has_tag_name("Item")) {
         return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} Map count or item tag is invalid"
         )));
     }
-    if values.iter().any(|value| has_nested_gui_elements(*value)) {
+    if root.children().filter(roxmltree::Node::is_element).any(has_nested_gui_elements) {
         return Err(gui_nested_value_error(property_name, "Map item"));
     }
     let mut previous_key = None;
-    for value in values {
+    for value in root.children().filter(roxmltree::Node::is_element) {
         let key = value.attribute("key").ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "GUI property {property_name} Map item has no key"
@@ -1916,23 +1908,22 @@ fn validate_gui_placement(
 }
 
 fn validate_gui_enumeration(
-    roots: &[roxmltree::Node<'_, '_>],
+    integer: roxmltree::Node<'_, '_>,
+    custom_list: Option<roxmltree::Node<'_, '_>>,
+    has_more_roots: bool,
     property_name: &str,
 ) -> Result<(), CodecError> {
-    let custom = roots[0].attribute("CustomEnum").is_some();
-    if !custom && roots.len() == 1 {
+    let custom = integer.attribute("CustomEnum").is_some();
+    if !custom && custom_list.is_none() {
         return Ok(());
     }
-    if !custom || roots.len() != 2 || !roots[1].has_tag_name("CustomEnumList") {
-        return Err(CodecError::malformed(format_args!(
+    let custom_list = match custom_list {
+        Some(node) if custom && !has_more_roots && node.has_tag_name("CustomEnumList") => node,
+        _ => return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} has an invalid custom enumeration envelope"
-        )));
-    }
-    let values = roots[1]
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let count = roots[1]
+        ))),
+    };
+    let count = custom_list
         .attribute("count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
@@ -1940,9 +1931,8 @@ fn validate_gui_enumeration(
                 "GUI property {property_name} has an invalid custom enumeration count"
             ))
         })?;
-    if values.len() != count
-        || values
-            .iter()
+    if custom_list.children().filter(roxmltree::Node::is_element).count() != count
+        || custom_list.children().filter(roxmltree::Node::is_element)
             .any(|value| !value.has_tag_name("Enum") || value.attribute("value").is_none())
     {
         return Err(CodecError::malformed(format_args!(
@@ -2194,11 +2184,8 @@ fn validate_gui_geometry_value(
     property_name: &str,
     expected_tag: &str,
 ) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
+    let mut roots = property.children().filter(roxmltree::Node::is_element);
+    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
         let message =
             format!("GUI property {property_name} requires exactly one {expected_tag} value");
         return Err(CodecError::Malformed(message));
@@ -2209,7 +2196,7 @@ fn validate_gui_geometry_value(
         return Err(CodecError::Malformed(message));
     }
 
-    let side_references = property
+    let mut side_references = property
         .descendants()
         .filter(roxmltree::Node::is_element)
         .flat_map(|node| {
@@ -2218,13 +2205,14 @@ fn validate_gui_geometry_value(
                 .map(move |attribute| (node, attribute.value()))
         })
         .filter(|(_, value)| !value.is_empty())
-        .map(|(node, _)| node)
-        .collect::<Vec<_>>();
+        .map(|(node, _)| node);
+    let first_side_reference = side_references.next();
+    let has_more_side_references = side_references.next().is_some();
     let direct_file = root
         .attribute("file")
         .is_some_and(|value| !value.is_empty());
-    if side_references.len() != usize::from(direct_file)
-        || side_references.first().is_some_and(|node| *node != *root)
+    if first_side_reference.is_some() != direct_file || has_more_side_references
+        || first_side_reference.is_some_and(|node| node != root)
     {
         let message = format!(
             "GUI property {property_name} {expected_tag} has an unowned side-entry reference"
@@ -2232,7 +2220,7 @@ fn validate_gui_geometry_value(
         return Err(CodecError::Malformed(message));
     }
     if expected_tag == "Points" {
-        validate_gui_points_transform(*root, property_name)?;
+        validate_gui_points_transform(root, property_name)?;
     }
     Ok(())
 }
@@ -2244,16 +2232,16 @@ fn validate_gui_points_transform(
     let Some(text) = root.attribute("mtrx") else {
         return Ok(());
     };
-    let values = text
-        .split_whitespace()
-        .map(str::parse::<f64>)
-        .collect::<Result<Vec<_>, _>>();
-    let Ok(values) = values else {
-        let message =
-            format!("GUI property {property_name} Points transform has an invalid scalar");
-        return Err(CodecError::Malformed(message));
-    };
-    if values.len() != 16 || values.iter().any(|value| !value.is_finite()) {
+    let mut count = 0usize;
+    let mut finite = true;
+    for token in text.split_whitespace() {
+        let value = token.parse::<f64>().map_err(|_| CodecError::Malformed(
+            format!("GUI property {property_name} Points transform has an invalid scalar")
+        ))?;
+        finite &= value.is_finite();
+        count += 1;
+    }
+    if count != 16 || !finite {
         let message =
             format!("GUI property {property_name} Points transform must contain 16 finite scalars");
         return Err(CodecError::Malformed(message));
@@ -2268,11 +2256,8 @@ fn validate_gui_techdraw_list(
     record_tag: &str,
     mut validate: impl FnMut(roxmltree::Node<'_, '_>, &str) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
-    let roots = property
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    let [root] = roots.as_slice() else {
+    let mut roots = property.children().filter(roxmltree::Node::is_element);
+    let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
         return Err(gui_techdraw_error(
             property_name,
             &format!("requires exactly one {list_tag} value"),
@@ -2291,17 +2276,13 @@ fn validate_gui_techdraw_list(
         .map_err(|_| {
             gui_techdraw_error(property_name, &format!("{list_tag} has an invalid count"))
         })?;
-    let records = root
-        .children()
-        .filter(roxmltree::Node::is_element)
-        .collect::<Vec<_>>();
-    if records.len() != count {
+    if root.children().filter(roxmltree::Node::is_element).count() != count {
         return Err(gui_techdraw_error(
             property_name,
             &format!("{list_tag} count does not match its records"),
         ));
     }
-    for record in records {
+    for record in root.children().filter(roxmltree::Node::is_element) {
         if !record.has_tag_name(record_tag)
             || record.attribute("type") != Some(format!("TechDraw::{record_tag}").as_str())
         {
