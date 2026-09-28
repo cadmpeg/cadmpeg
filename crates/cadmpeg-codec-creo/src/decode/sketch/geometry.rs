@@ -864,28 +864,36 @@ pub(in crate::decode) fn saved_profile_chains(
     sketch: &SketchId,
     geometries: &[(u32, SketchGeometry)],
 ) -> Result<Vec<Vec<SketchEntityUse>>, cadmpeg_core::CodecError> {
-    let mut profiles = geometries
-        .iter()
-        .filter(|(_, geometry)| is_full_circle_geometry(geometry))
-        .filter_map(|(external_id, _)| {
-            Some({
-                vec![SketchEntityUse {
-                    entity: sketch_entity_id(sketch, external_id)?,
-                    reversed: false,
-                }]
-            })
-        })
-        .collect::<Vec<_>>();
-    let rows = geometries
-        .iter()
-        .filter_map(|(external_id, geometry)| {
-            Some((*external_id, saved_geometry_endpoints(geometry)?))
-        })
-        .collect::<Vec<_>>();
-    let mut mates = ctx.alloc_filled(rows.len(), [None; 2], "creo saved profile endpoint mates")?;
+    let mut profiles = Vec::new();
+    for (external_id, geometry) in geometries {
+        if !is_full_circle_geometry(geometry) {
+            continue;
+        }
+        let Some(entity) = sketch_entity_id(sketch, external_id) else {
+            continue;
+        };
+        let uses = crate::decode::collect_items(
+            ctx,
+            [SketchEntityUse { entity, reversed: false }],
+            "creo saved circular profile uses",
+        )?;
+        ctx.try_reserve_items(&mut profiles, 1, "creo saved profile rows")?;
+        profiles.push(uses);
+    }
+    let row_count = geometries.iter()
+        .filter(|(_, geometry)| saved_geometry_endpoints(geometry).is_some())
+        .count();
+    let mut mates = ctx.alloc_filled(row_count, [None; 2], "creo saved profile endpoint mates")?;
+    let mut rows = Vec::new();
+    for (external_id, geometry) in geometries {
+        if let Some(endpoints) = saved_geometry_endpoints(geometry) {
+            ctx.try_reserve_items(&mut rows, 1, "creo saved profile endpoint rows")?;
+            rows.push((*external_id, endpoints));
+        }
+    }
     for (row_index, (_, endpoints)) in rows.iter().enumerate() {
         for endpoint_index in 0..2 {
-            let matches = rows
+            let mut matches = rows
                 .iter()
                 .enumerate()
                 .flat_map(|(candidate_row, (_, candidate_endpoints))| {
@@ -900,14 +908,17 @@ pub(in crate::decode) fn saved_profile_chains(
                             candidate_endpoints[*candidate_endpoint],
                         )
                 })
-                .map(|(candidate_row, candidate_endpoint, _)| (candidate_row, candidate_endpoint))
-                .collect::<Vec<_>>();
-            if let [mate] = matches.as_slice() {
-                mates[row_index][endpoint_index] = Some(*mate);
+                .map(|(candidate_row, candidate_endpoint, _)| (candidate_row, candidate_endpoint));
+            if let (Some(mate), None) = (matches.next(), matches.next()) {
+                mates[row_index][endpoint_index] = Some(mate);
             }
         }
     }
-    let mut remaining = (0..rows.len()).collect::<BTreeSet<_>>();
+    let mut remaining = BTreeSet::new();
+    for index in 0..rows.len() {
+        ctx.charge_collection_items(1, "creo saved profile remaining nodes")?;
+        remaining.insert(index);
+    }
     while let Some(seed) = remaining
         .iter()
         .min_by_key(|index| rows[**index].0)
@@ -922,14 +933,17 @@ pub(in crate::decode) fn saved_profile_chains(
         let mut row = seed;
         let mut reversed = false;
         loop {
-            if !used.insert(row) {
+            if used.contains(&row) {
                 break;
             }
+            ctx.charge_collection_items(1, "creo saved profile visited nodes")?;
+            used.insert(row);
+            let Some(entity) = sketch_entity_id(sketch, rows[row].0) else {
+                continue;
+            };
+            ctx.try_reserve_items(&mut uses, 1, "creo saved profile uses")?;
             uses.push(SketchEntityUse {
-                entity: match sketch_entity_id(sketch, rows[row].0) {
-                    Some(id) => id,
-                    None => continue,
-                },
+                entity,
                 reversed,
             });
             let outgoing = usize::from(!reversed);
@@ -940,6 +954,7 @@ pub(in crate::decode) fn saved_profile_chains(
             reversed = next_endpoint == 1;
             if row == seed {
                 if !reversed {
+                    ctx.try_reserve_items(&mut profiles, 1, "creo saved profile rows")?;
                     profiles.push(uses);
                 }
                 break;
