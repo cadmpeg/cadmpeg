@@ -4099,10 +4099,17 @@ fn gsec3d_plane_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
     None
 }
 
-fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection3d> {
+fn section_3d(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureSection3d>, CodecError> {
     const GSEC3D: &[u8] = b"\xe0\x00gsec3d_ptr\0";
     const SAVED_RESULT: &[u8] = b"\xe0\x00p_saved_result\0";
-    let section = find_bytes(payload, GSEC3D, start, end)?;
+    let Some(section) = find_bytes(payload, GSEC3D, start, end) else {
+        return Ok(None);
+    };
     let record_end = find_bytes(payload, GSEC3D, section + GSEC3D.len(), end).unwrap_or(end);
     let placement_end =
         find_bytes(payload, SAVED_RESULT, section, record_end).unwrap_or(record_end);
@@ -4125,6 +4132,11 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
                 let Ok((entity_id, next)) = psb::reference_id(payload, cursor + 1) else {
                     break;
                 };
+                ctx.try_reserve_items(
+                    &mut reference_plane_entity_ids,
+                    1,
+                    "creo named section reference planes",
+                )?;
                 reference_plane_entity_ids.push(entity_id);
                 cursor = next;
             }
@@ -4162,12 +4174,13 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
                 let (Some(value), next) = segment_int(payload, cursor) else {
                     break;
                 };
+                ctx.try_reserve_items(&mut dimension_ids, 1, "creo section dimension IDs")?;
                 dimension_ids.push(value);
                 cursor = next;
             }
         }
     }
-    Some(FeatureSection3d {
+    Ok(Some(FeatureSection3d {
         sketch_plane_entity_id,
         sketch_plane_flip,
         reference_planes: ReferencePlanes::Named(reference_plane_entity_ids),
@@ -4175,11 +4188,16 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
         orientation,
         dimension_ids,
         offset: section,
-    })
+    }))
 }
 
-fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection3d> {
-    let (section, name_end) = payload[start..end]
+fn positional_section_3d(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureSection3d>, CodecError> {
+    let Some((section, name_end)) = payload[start..end]
         .windows(4)
         .enumerate()
         .filter(|(_, window)| *window == b"\x07S2D")
@@ -4191,7 +4209,9 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
                 + section
                 + 1;
             Some((section, name_end))
-        })?;
+        }) else {
+        return Ok(None);
+    };
     let mut result = FeatureSection3d {
         sketch_plane_entity_id: None,
         sketch_plane_flip: None,
@@ -4203,54 +4223,54 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
     };
     let mut cursor = name_end + 1;
     let Some(section_flip) = payload.get(cursor).copied() else {
-        return Some(result);
+        return Ok(Some(result));
     };
     result.orientation.section_flip = BinaryFlag::decode(section_flip);
     cursor += 1;
     for _ in 0..3 {
         let (_, next) = segment_int(payload, cursor);
         if next <= cursor {
-            return Some(result);
+            return Ok(Some(result));
         }
         cursor = next;
     }
     let (sketch_plane_entity_id, next) = segment_int(payload, cursor);
     if next <= cursor {
-        return Some(result);
+        return Ok(Some(result));
     }
     result.sketch_plane_entity_id = sketch_plane_entity_id;
     cursor = next;
     let Some(sketch_plane_flip) = payload.get(cursor).copied() else {
-        return Some(result);
+        return Ok(Some(result));
     };
     result.sketch_plane_flip = BinaryFlag::decode(sketch_plane_flip);
     cursor += 1;
     if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
-        return Some(result);
+        return Ok(Some(result));
     }
     let (reference_count, next) = psb::compact_int(payload, cursor + 1);
     if next <= cursor + 1 {
-        return Some(result);
+        return Ok(Some(result));
     }
     cursor = next;
     if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
-        return Some(result);
+        return Ok(Some(result));
     }
     let table_reference_start = cursor + 1;
     let Ok((_, next)) = psb::reference_id(payload, table_reference_start) else {
-        return Some(result);
+        return Ok(Some(result));
     };
     let table_reference = &payload[table_reference_start - 1..next];
     cursor = next;
     if payload.get(cursor..cursor + 2) != Some(&[0xfb, 0xe2]) {
-        return Some(result);
+        return Ok(Some(result));
     }
     cursor += 2;
     if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
-        return Some(result);
+        return Ok(Some(result));
     }
     let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
-        return Some(result);
+        return Ok(Some(result));
     };
     cursor = next;
 
@@ -4287,6 +4307,11 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
             break;
         }
         cursor = next;
+        ctx.try_reserve_items(
+            &mut reference_plane_rows,
+            1,
+            "creo positional section reference planes",
+        )?;
         reference_plane_rows.push(FeatureSectionReferencePlane {
             plane_entity_id: plane_id,
             reference_type,
@@ -4305,7 +4330,7 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
         }
     }
     result.reference_planes = ReferencePlanes::Positional(reference_plane_rows);
-    Some(result)
+    Ok(Some(result))
 }
 
 pub(super) fn dimension_unit(dimension_type: u32) -> DimensionUnit {
@@ -6994,11 +7019,11 @@ fn definitions_in_ranges(
         if !positional {
             replay_order_class = order_table.as_ref().and_then(|table| table.entity_ref);
         }
-        let section_3d = section_3d(payload, start, end).or_else(|| {
-            positional
-                .then(|| positional_section_3d(payload, start, end))
-                .flatten()
-        });
+        let section_3d = match section_3d(ctx, payload, start, end)? {
+            Some(section) => Some(section),
+            None if positional => positional_section_3d(ctx, payload, start, end)?,
+            None => None,
+        };
         let dimensions = if let Some(table) = dimension_table(ctx, payload, start, end, &cache)? {
             Some(table)
         } else if positional {

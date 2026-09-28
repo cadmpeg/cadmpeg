@@ -18,12 +18,13 @@ use crate::feature::definitions::positional_feature_skamps;
 use crate::feature::definitions::positional_order_table as parse_positional_order_table;
 use crate::feature::definitions::positional_relation_table;
 use crate::feature::definitions::positional_relation_triples;
-use crate::feature::definitions::positional_section_3d;
+use crate::feature::definitions::positional_section_3d as parse_positional_section_3d;
 use crate::feature::definitions::positional_trim_entity_table as parse_positional_trim_entity_table;
 use crate::feature::definitions::positional_trim_vertex_table as parse_positional_trim_vertex_table;
 use crate::feature::definitions::positional_variable_table as parse_positional_variable_table;
 use crate::feature::definitions::relation_table;
 use crate::feature::definitions::self_described_positional_dimension_table as parse_self_described_positional_dimension_table;
+use crate::feature::definitions::section_3d as parse_section_3d;
 use crate::feature::definitions::test_support::with_points;
 use crate::feature::definitions::trim_buckets as parse_trim_buckets;
 use crate::feature::definitions::trim_table_header;
@@ -255,6 +256,66 @@ fn self_described_positional_dimension_table(
         parse_self_described_positional_dimension_table(ctx, payload, start, end, cache)
     })
     .expect("self-described dimension table admitted")
+}
+
+fn positional_section_3d(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<crate::feature::definitions::FeatureSection3d> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_section_3d(ctx, payload, start, end)
+    })
+    .expect("positional section admitted")
+}
+
+const POSITIONAL_SECTION_LIMIT_INPUT: &[u8] = b"prefix\x07S2D0004\0\x01\xf6\xe1\xf6\x82\x01\xf6\
+    \xf8\x02\xf7\x39\xfb\xe2\xf7\x3a\
+    \x06\x05\xf6\x03\xf6\x00\xe3tail\xf2\xf7\x39\xe2\
+    \x07\x05\xf6\x04\xf6\x01";
+
+#[test]
+fn positional_section_reference_planes_refuse_before_each_row() {
+    let run = |limit| with_trim_limits(limit, u64::MAX, |ctx| {
+        parse_positional_section_3d(
+            ctx, POSITIONAL_SECTION_LIMIT_INPUT, 0, POSITIONAL_SECTION_LIMIT_INPUT.len(),
+        )
+    });
+    for limit in [0, 1] {
+        assert!(matches!(run(limit), Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo positional section reference planes"));
+    }
+    let section = run(2).expect("section admitted").expect("section present");
+    assert_eq!(section.reference_planes.entity_ids().collect::<Vec<_>>(), [6, 7]);
+}
+
+const NAMED_SECTION_LIMIT_INPUT: &[u8] = b"\xe0\x00gsec3d_ptr\0\
+    \xe0\x00ref_planes\0\xf8\x01\xf7\x01\xfb\xe2\
+    dim_id_tab\0\xf8\x01\x2a";
+
+#[test]
+fn named_section_reference_plane_refuses_before_vec_growth() {
+    let run = |limit| with_trim_limits(limit, u64::MAX, |ctx| {
+        parse_section_3d(ctx, NAMED_SECTION_LIMIT_INPUT, 0, NAMED_SECTION_LIMIT_INPUT.len())
+    });
+    assert!(matches!(run(0), Err(CodecError::ResourceLimit(refusal))
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "creo named section reference planes"));
+    assert_eq!(run(2).expect("section admitted").expect("section present")
+        .reference_planes.entity_ids().collect::<Vec<_>>(), [1]);
+}
+
+#[test]
+fn named_section_dimension_id_refuses_before_vec_growth() {
+    let run = |limit| with_trim_limits(limit, u64::MAX, |ctx| {
+        parse_section_3d(ctx, NAMED_SECTION_LIMIT_INPUT, 0, NAMED_SECTION_LIMIT_INPUT.len())
+    });
+    assert!(matches!(run(1), Err(CodecError::ResourceLimit(refusal))
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "creo section dimension IDs"));
+    assert_eq!(run(2).expect("section admitted").expect("section present")
+        .dimension_ids, [42]);
 }
 
 fn with_trim_limits<T>(
