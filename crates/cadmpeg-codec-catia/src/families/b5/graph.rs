@@ -938,7 +938,8 @@ pub(in crate::families) fn parse_from_records_budgeted(
             crate::resource::push(ctx, &mut object_stream_pcurve_candidates, candidate, "catia B5 object pcurve candidates")?;
         }
     }
-    Ok(parse_from_records_with_class21(
+    parse_from_records_with_class21(
+        ctx,
         bytes,
         records,
         frames,
@@ -950,7 +951,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
             object_stream_pcurve_candidates,
             by_id: &by_id,
         },
-    ))
+    )
 }
 
 struct PreparedB5Graph<'a, 'b> {
@@ -960,6 +961,7 @@ struct PreparedB5Graph<'a, 'b> {
 }
 
 fn parse_from_records_with_class21(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[B5Record],
     frames: &[ObjectFrame],
@@ -967,7 +969,7 @@ fn parse_from_records_with_class21(
     budget: Option<&WorkBudget<'_>>,
     refusal: &mut crate::nurbs::LaneRefusals,
     prepared: PreparedB5Graph<'_, '_>,
-) -> Option<B5Graph> {
+) -> Result<Option<B5Graph>, CodecError> {
     let PreparedB5Graph {
         class21_candidates,
         object_stream_pcurve_candidates: object_stream_candidates,
@@ -1049,15 +1051,15 @@ fn parse_from_records_with_class21(
             },
         );
     }
-    for surface in frames.iter().filter_map(|frame| {
-        crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
+    for frame in frames {
+        let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
+            ctx,
             bytes,
             frame.start,
             frame.end,
             frame.object_id,
             refusal,
-        )
-    }) {
+        )? else { continue };
         if let Some(object_id) = surface.object_id() {
             merge_surface_candidate(
                 &mut surfaces,
@@ -1111,7 +1113,7 @@ fn parse_from_records_with_class21(
     if has_extrusion_candidates {
         loop {
             if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
-                return None;
+                return Ok(None);
             }
             let mut changed = false;
             for record in records {
@@ -1154,7 +1156,7 @@ fn parse_from_records_with_class21(
     if has_surface_fixpoint_candidates {
         loop {
             if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
-                return None;
+                return Ok(None);
             }
             let mut changed =
                 resolve_surface_aliases(records, by_id, &mut surfaces, &mut conflicting_surfaces);
@@ -1372,7 +1374,7 @@ fn parse_from_records_with_class21(
         .filter_map(|record| parse_face(record, &loops, &surfaces, &surface_aliases))
         .collect();
     if require_topology && (faces.is_empty() || loops.is_empty()) {
-        return None;
+        return Ok(None);
     }
     let vertex_points = crate::families::consolidated::records::object_stream_vertices(bytes);
     let geometric_edge_vertices = bind_edge_vertices(&loops, &geometry, &vertex_points);
@@ -1427,7 +1429,10 @@ fn parse_from_records_with_class21(
                 }) && loop_chain_closes(loop_, &edge_vertices)
             })
         });
-    Some(B5Graph {
+    let Some(vertices) = B5Vertices::try_new(vertex_points, logical_vertices, edge_vertices).ok() else {
+        return Ok(None);
+    };
+    Ok(Some(B5Graph {
         complete,
         faces,
         face_records,
@@ -1443,11 +1448,11 @@ fn parse_from_records_with_class21(
         parameter_incidences,
         edges,
         vertex_incidence_links,
-        vertices: B5Vertices::try_new(vertex_points, logical_vertices, edge_vertices).ok()?,
+        vertices,
         edge_parameter_incidences,
         vertex_tolerances,
         profiles,
-    })
+    }))
 }
 
 fn merge_pcurve_candidate(
@@ -1871,21 +1876,22 @@ pub(in crate::families) fn edge_support_pcurve_references_from_frames(
 }
 
 pub(in crate::families) fn targeted_surfaces_from_frames(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     object_ids: &HashSet<u32>,
     frames: &[ObjectFrame],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> BTreeMap<u32, B5Surface> {
+) -> Result<BTreeMap<u32, B5Surface>, CodecError> {
     let mut resolved = HashMap::<u32, Option<B5Surface>>::new();
-    for surface in frames.iter().filter_map(|frame| {
-        crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
+    for frame in frames {
+        let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
+            ctx,
             bytes,
             frame.start,
             frame.end,
             frame.object_id,
             refusal,
-        )
-    }) {
+        )? else { continue };
         let Some(object_id) = surface.object_id() else {
             continue;
         };
@@ -1944,13 +1950,13 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
             },
         );
     }
-    object_ids
+    Ok(object_ids
         .iter()
         .filter_map(|&object_id| {
             resolve_targeted_surface(object_id, &records, &headers, &resolved, &rolling)
                 .map(|surface| (object_id, surface))
         })
-        .collect()
+        .collect())
 }
 
 /// Resolve the unique length-closed geometry construction frames independently

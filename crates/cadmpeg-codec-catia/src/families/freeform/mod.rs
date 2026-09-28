@@ -452,11 +452,10 @@ pub(super) fn try_decode_freeform_surfaces(
         let typed_vertex_incidence_roster_member_count =
             typed_vertex_incidence_rosters.values().map(Vec::len).sum();
         let mut fallback_surfaces = if b5_graph.is_none() {
-            Some(freeform_surface_carriers(
-                &scan.data,
-                &consolidated_records,
-                refusal,
-            ))
+            match freeform_surface_carriers(ctx, &scan.data, &consolidated_records, refusal) {
+                Ok(surfaces) => Some(surfaces),
+                Err(error) => return Some(Err(error)),
+            }
         } else {
             None
         };
@@ -563,7 +562,10 @@ pub(super) fn try_decode_freeform_surfaces(
         if !topology_transferred {
             let surfaces = match fallback_surfaces.take() {
                 Some(surfaces) => surfaces,
-                None => freeform_surface_carriers(&scan.data, &consolidated_records, refusal),
+                None => match freeform_surface_carriers(ctx, &scan.data, &consolidated_records, refusal) {
+                    Ok(surfaces) => surfaces,
+                    Err(error) => return Some(Err(error)),
+                },
             };
             for (index, surface) in surfaces.iter().enumerate() {
                 let id = SurfaceId::compose(
@@ -1134,11 +1136,12 @@ fn attach_standalone_wires(
 }
 
 fn freeform_surface_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<FreeformSurfaceCarrier> {
-    let resolved = crate::families::a5a8::records::resolved_a8_surfaces(data, refusal);
+) -> Result<Vec<FreeformSurfaceCarrier>, cadmpeg_core::CodecError> {
+    let resolved = crate::families::a5a8::records::resolved_a8_surfaces(ctx, data, refusal)?;
     let a5 = crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal);
     let mut surfaces = resolved
         .into_iter()
@@ -1203,7 +1206,7 @@ fn freeform_surface_carriers(
                 source_tag: format!("b2_03_2b:frame_offset:{:010}", surface.pos),
             }),
     );
-    surfaces
+    Ok(surfaces)
 }
 
 fn freeform_surface_source(
@@ -1348,7 +1351,7 @@ pub(super) fn append_freeform_surface_pools(
     refusal: &mut crate::nurbs::LaneRefusals,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
-    let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data, refusal);
+    let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(admission.context(), data, refusal)?;
     surfaces.extend(crate::families::a5a8::records::a5_surfaces_from_records(
         data, records, refusal,
     ));
@@ -3571,7 +3574,7 @@ mod tests {
 
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new());
+            crate::test_support::with_service_context(|ctx| freeform_surface_carriers(ctx, &bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("service decode"));
         assert_eq!(carriers.len(), 2);
         assert!(carriers[0].source_tag.starts_with("b2_03_28:"));
         assert!(carriers[1].source_tag.starts_with("b2_03_60:"));
@@ -4449,7 +4452,7 @@ mod tests {
         let bytes = crate::test_support::test_b2::b2_sphere_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new());
+            crate::test_support::with_service_context(|ctx| freeform_surface_carriers(ctx, &bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("service decode"));
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))
                 if {
@@ -4468,7 +4471,7 @@ mod tests {
         let bytes = crate::test_support::test_b2::b2_torus_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new());
+            crate::test_support::with_service_context(|ctx| freeform_surface_carriers(ctx, &bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("service decode"));
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface))
                 if {
@@ -4514,7 +4517,7 @@ mod tests {
         for bytes in [frame_witness, overflow_witness] {
             let records = crate::wire::records::consolidated_records(&bytes);
             let carriers =
-                freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new());
+                crate::test_support::with_service_context(|ctx| freeform_surface_carriers(ctx, &bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("service decode"));
             assert!(carriers.is_empty());
             assert!(
                 crate::families::b2::records::b2_cones_from_records(&bytes, &records).is_empty()
@@ -4629,7 +4632,7 @@ mod tests {
         let bytes = crate::test_support::test_b2::b2_range_origin_cylinder_stream();
         let records = crate::wire::records::consolidated_records(&bytes);
         let carriers =
-            freeform_surface_carriers(&bytes, &records, &mut crate::nurbs::LaneRefusals::new());
+            crate::test_support::with_service_context(|ctx| freeform_surface_carriers(ctx, &bytes, &records, &mut crate::nurbs::LaneRefusals::new()).expect("service decode"));
         assert!(matches!(carriers.as_slice(), [carrier]
                 if matches!(carrier.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
