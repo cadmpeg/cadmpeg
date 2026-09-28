@@ -3085,21 +3085,62 @@ pub(super) fn external_reference_indexed_records(
 
 /// Decode every exact six- or seven-byte empty indexed record.
 pub(super) fn external_reference_empty_records(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     indexed: &[ExternalReferenceIndexedRecord],
-) -> Vec<ExternalReferenceEmptyRecord> {
-    indexed
-        .iter()
-        .filter_map(|record| {
-            let bytes = container.bounded_entry_bytes(record.source_offset, record.byte_len)?;
-            let closing_marker = crate::container::parse_extref_empty_record(bytes)?;
-            Some(ExternalReferenceEmptyRecord {
-                id: record.id.replacen("indexed-record", "empty-record", 1),
-                indexed_record: record.id.clone(),
-                closing_marker,
-            })
-        })
-        .collect()
+) -> Result<Vec<ExternalReferenceEmptyRecord>, CodecError> {
+    let mut output = Vec::new();
+    for record in indexed {
+        let Some(bytes) = container.bounded_entry_bytes(record.source_offset, record.byte_len) else {
+            continue;
+        };
+        let Some(closing_marker) = crate::container::parse_extref_empty_record(bytes) else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "nx native external reference empty records")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ExternalReferenceEmptyRecord>()),
+            "nx native external reference empty records",
+        )?;
+        output.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("nx native external reference empty records", 0, 1)
+        })?;
+        let replacement = record.id.split_once("indexed-record");
+        let id_len = if let Some((before, after)) = replacement {
+            before
+                .len()
+                .checked_add("empty-record".len())
+                .and_then(|len| len.checked_add(after.len()))
+                .ok_or_else(|| ctx.refuse_codec_limit("nx native external reference empty record id", 0, 1))?
+        } else {
+            record.id.len()
+        };
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(id_len),
+            "nx native external reference empty record id",
+        )?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_len).map_err(|_| {
+            ctx.refuse_codec_limit("nx native external reference empty record id", 0, 1)
+        })?;
+        if let Some((before, after)) = replacement {
+            id.push_str(before);
+            id.push_str("empty-record");
+            id.push_str(after);
+        } else {
+            id.push_str(&record.id);
+        }
+        output.push(ExternalReferenceEmptyRecord {
+            id,
+            indexed_record: copy_om_retained_text(
+                ctx,
+                &record.id,
+                "nx native external reference empty record link",
+            )?,
+            closing_marker,
+        });
+    }
+    Ok(output)
 }
 
 /// Decode exact adjacent reference pairs from bounded handle-set tails.
