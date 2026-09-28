@@ -609,6 +609,10 @@ impl DesignConfiguration {
         crate::ids::configuration_entry_id(&self.entry_name, &self.identity_scope)
     }
 
+    pub(crate) fn id_charged(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
+        crate::ids::configuration_entry_id_charged(ctx, &self.entry_name, &self.identity_scope)
+    }
+
     pub(crate) fn entry_name(&self) -> &String {
         &self.entry_name
     }

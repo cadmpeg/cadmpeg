@@ -377,6 +377,24 @@ pub(crate) fn configuration_entry_id(
     )
 }
 
+pub(crate) fn configuration_entry_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entry_name: &str,
+    scope: &cadmpeg_ir::ids::IdentityComponent,
+) -> Result<String, cadmpeg_core::CodecError> {
+    struct EscapedEntry<'a>(&'a str);
+    impl std::fmt::Display for EscapedEntry<'_> {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write_escaped_identity_component(formatter, self.0)
+        }
+    }
+    crate::container::format_retained(
+        ctx,
+        "retain F3D configuration entry ID",
+        format_args!("f3d:{}:entry#{}", scope.as_str(), EscapedEntry(entry_name)),
+    )
+}
+
 /// The neutral configuration key for `variant_name` under `entry_name`, with
 /// both names length-prefixed into `#{len}:{key}{len}:{key}` segments.
 pub(crate) fn neutral_configuration_id(
