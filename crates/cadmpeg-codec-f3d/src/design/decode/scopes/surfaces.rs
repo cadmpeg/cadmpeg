@@ -170,7 +170,7 @@ fn exact_construction_operand_group(
     scope_reference_ordinal: u32,
     record_index: u32,
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandGroup> {
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for (start, _) in records.frames(record_index) {
         let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
         if after_tag != start + 7 {
@@ -184,13 +184,12 @@ fn exact_construction_operand_group(
         if let ConstructionOperandGroupParse::Complete(group) =
             parse_construction_operand_group(bytes, scope, scope_reference_ordinal, &header)
         {
-            candidates.push(*group);
+            if candidate.replace(*group).is_some() {
+                return None;
+            }
         }
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    candidate
 }
 
 #[derive(Clone)]
