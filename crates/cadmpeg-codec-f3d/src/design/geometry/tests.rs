@@ -1584,4 +1584,30 @@ fn numerical_0922b_wide_segment_incidence() {
     }
 }
 
+#[test]
+fn sketch_indexed_vectors_refuse_outer_and_inner_limits() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    for (index_operation, value_operation) in [
+        ("f3d sketch endpoint cell", "f3d sketch endpoint cell member"),
+        ("f3d sketch edge adjacency", "f3d sketch edge adjacency member"),
+    ] {
+        for (limit, operation) in [(0, index_operation), (1, value_operation)] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
+            assert!(matches!(
+                super::push_geometry_index(Some(&ctx), &mut index, 1, 2,
+                    index_operation, value_operation),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ), "operation {operation}");
+        }
+    }
+}
+
 mod predicates;
