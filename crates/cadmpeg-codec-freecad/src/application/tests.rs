@@ -39,7 +39,7 @@ fn application_identity_refuses_at_retained_limit() {
         type_name: "Vendor::Feature".into(),
         persistent_id: None,
         view_type: None,
-        attributes: Default::default(),
+        attributes: std::collections::BTreeMap::default(),
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
@@ -47,7 +47,8 @@ fn application_identity_refuses_at_retained_limit() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = crate::native::native_id("application", &object.name).len() as u64 - 1;
+    policy.limits.max_retained_bytes =
+        crate::native::native_id("application", &object.name).len() as u64 - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::wire_records(&ctx, &[object], &[], &[]),
@@ -63,7 +64,7 @@ fn application_property_identity_refuses_at_retained_limit() {
         type_name: "Vendor::Feature".into(),
         persistent_id: None,
         view_type: None,
-        attributes: Default::default(),
+        attributes: std::collections::BTreeMap::default(),
         dependencies: Vec::new(),
         dependency_allow_partial: None,
         order: 0,
@@ -83,13 +84,17 @@ fn application_property_identity_refuses_at_retained_limit() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = crate::native::native_child_id(
-        "application-property", &object.id, &property.name).len() as u64 - 1;
+    policy.limits.max_retained_bytes =
+        crate::native::native_child_id("application-property", &object.id, &property.name).len()
+            as u64
+            - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(super::wire_records(&ctx, &[object], &[property], &[]),
+    assert!(
+        matches!(super::wire_records(&ctx, &[object], &[property], &[]),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD native child identity"));
+            if limit.operation == "FreeCAD native child identity")
+    );
 }
 
 #[test]
@@ -190,11 +195,13 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
             &altered,
         )
         .unwrap();
-    assert!(crate::test_support::validate_native(&edited).iter().any(|finding| {
-        finding
-            .message
-            .contains("application preservation records do not match authoritative bytes")
-    }));
+    assert!(crate::test_support::validate_native(&edited)
+        .iter()
+        .any(|finding| {
+            finding
+                .message
+                .contains("application preservation records do not match authoritative bytes")
+        }));
 }
 
 #[test]
@@ -229,7 +236,14 @@ fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
     assert_eq!(records[0]["byte_end"], 0);
     assert_eq!(records[0]["byte_len"], 0);
     assert_eq!(records[0]["sha256"], cadmpeg_ir::hash::sha256_hex(&[]));
-    assert!(super::matches_native(&cadmpeg_test_support::service_decode_context(), &namespace, &objects, &[], &[]).unwrap());
+    assert!(super::matches_native(
+        &cadmpeg_test_support::service_decode_context(),
+        &namespace,
+        &objects,
+        &[],
+        &[]
+    )
+    .unwrap());
 }
 
 #[test]

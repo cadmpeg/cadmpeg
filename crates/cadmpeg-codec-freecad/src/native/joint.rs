@@ -46,8 +46,8 @@ fn parameter_kind(name: &str) -> ParameterKind {
     match name {
         "Angle" | "AngleMin" | "AngleMax" | "Distance" | "Distance2" | "LengthMin"
         | "LengthMax" => ParameterKind::Scalar,
-        "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax"
-        | "Detach1" | "Detach2" | "Suppressed" => ParameterKind::Boolean,
+        "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax" | "Detach1"
+        | "Detach2" | "Suppressed" => ParameterKind::Boolean,
         _ => ParameterKind::Native,
     }
 }
@@ -93,10 +93,19 @@ impl JointParameters {
         for (name, raw) in parameters {
             let parameter = match parameter_kind(&name) {
                 ParameterKind::Scalar => {
-                    let value = raw.parse::<f64>().ok().and_then(FiniteReal::new)
-                        .ok_or_else(|| crate::resource::malformed_charged(ctx, format_args!(
+                    let value = raw
+                        .parse::<f64>()
+                        .ok()
+                        .and_then(FiniteReal::new)
+                        .ok_or_else(|| {
+                            crate::resource::malformed_charged(
+                                ctx,
+                                format_args!(
                             "joint {joint_id}: joint parameter {name} has an invalid value {raw:?}"
-                        ), "fcstd joint checked parameter diagnostic"))?;
+                        ),
+                                "fcstd joint checked parameter diagnostic",
+                            )
+                        })?;
                     JointParameter::Scalar { raw, value }
                 }
                 ParameterKind::Boolean => JointParameter::Boolean {
@@ -228,8 +237,13 @@ impl JointRecord {
             JointBody::Grounded { .. } => None,
             JointBody::Pair { connectors, .. } => Some(connectors),
         };
-        grounded.into_iter().chain(paired.into_iter().flat_map(|connectors|
-            connectors.iter().filter_map(|connector| connector.reference.as_ref())))
+        grounded
+            .into_iter()
+            .chain(paired.into_iter().flat_map(|connectors| {
+                connectors
+                    .iter()
+                    .filter_map(|connector| connector.reference.as_ref())
+            }))
     }
 
     /// Connector-local coordinate frames in connector order.
@@ -430,29 +444,44 @@ mod tests {
             &ctx,
             "joint".into(),
             "object".into(),
-            JointBody::Grounded { reference: None, placement: Default::default() },
+            JointBody::Grounded {
+                reference: None,
+                placement: super::FiniteFrame::default(),
+            },
             BTreeMap::from([("Angle".into(), "1".into())]),
-        ).expect_err("checked parameter map must charge each entry");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        )
+        .expect_err("checked parameter map must charge each entry");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && failure.operation == "fcstd joint checked parameters"), "{error:?}");
+                && failure.operation == "fcstd joint checked parameters"),
+            "{error:?}"
+        );
     }
 
     #[test]
     fn checked_joint_parameter_diagnostic_refuses_at_retained_limit() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let service = cadmpeg_core::decode::DecodePolicy::service();
-        let (admitted, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &service)
-            .expect("empty root is within policy");
+        let (admitted, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &service)
+                .expect("empty root is within policy");
         let message = JointRecord::try_new(
             &admitted,
             "joint".into(),
             "object".into(),
-            JointBody::Grounded { reference: None, placement: Default::default() },
+            JointBody::Grounded {
+                reference: None,
+                placement: super::FiniteFrame::default(),
+            },
             BTreeMap::from([("Angle".into(), "NaN".into())]),
-        ).expect_err("nonfinite scalar is malformed").to_string();
-        assert_eq!(message,
-            "malformed container: joint joint: joint parameter Angle has an invalid value \"NaN\"");
+        )
+        .expect_err("nonfinite scalar is malformed")
+        .to_string();
+        assert_eq!(
+            message,
+            "malformed container: joint joint: joint parameter Angle has an invalid value \"NaN\""
+        );
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
@@ -461,12 +490,19 @@ mod tests {
             &ctx,
             "joint".into(),
             "object".into(),
-            JointBody::Grounded { reference: None, placement: Default::default() },
+            JointBody::Grounded {
+                reference: None,
+                placement: super::FiniteFrame::default(),
+            },
             BTreeMap::from([("Angle".into(), "NaN".into())]),
-        ).expect_err("checked parameter diagnostic must be admitted");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
+        )
+        .expect_err("checked parameter diagnostic must be admitted");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && failure.operation == "fcstd joint checked parameter diagnostic"), "{error:?}");
+                && failure.operation == "fcstd joint checked parameter diagnostic"),
+            "{error:?}"
+        );
     }
 
     #[test]

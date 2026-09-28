@@ -39,13 +39,22 @@ fn mirrored_pattern_plane_identity_refuses_at_retained_limit() {
     let plane = super::linked_property("mirror", "MirrorPlane", "mirror-plane-property");
     let properties_by_owner = std::collections::HashMap::new();
     let sources = crate::design::PatternSources {
-        objects: &[], properties_by_owner: &properties_by_owner, entries: &[],
+        objects: &[],
+        properties_by_owner: &properties_by_owner,
+        entries: &[],
     };
-    crate::test_support::assert_retained_refusal_at(&[], "fcstd mirrored pattern plane identity", |ctx| {
-        crate::design::pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
-            ctx, "PartDesign::Mirrored", &[&plane], sources,
-        )
-    });
+    crate::test_support::assert_retained_refusal_at(
+        &[],
+        "fcstd mirrored pattern plane identity",
+        |ctx| {
+            crate::design::pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
+                ctx,
+                "PartDesign::Mirrored",
+                &[&plane],
+                sources,
+            )
+        },
+    );
 }
 
 #[test]
@@ -53,70 +62,156 @@ fn pattern_seed_vectors_and_identities_refuse_at_matching_limits() {
     let originals = super::linked_property("pattern", "Originals", "original-seed");
     let factor = super::scalar_property("pattern", "Factor", "2");
     let mut features = std::collections::HashMap::new();
-    features.insert("base", cadmpeg_ir::features::FeatureId::mint("test:test:feature#pattern-seed").expect("valid feature id"));
+    features.insert(
+        "base",
+        cadmpeg_ir::features::FeatureId::mint("test:test:feature#pattern-seed")
+            .expect("valid feature id"),
+    );
     let properties_by_owner = std::collections::HashMap::new();
     let sources = crate::design::PatternSources {
-        objects: &[], properties_by_owner: &properties_by_owner, entries: &[],
+        objects: &[],
+        properties_by_owner: &properties_by_owner,
+        entries: &[],
     };
     for operation in ["fcstd pattern source seeds", "fcstd pattern seed variants"] {
         crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
-            crate::design::pattern_definition(ctx, "PartDesign::Scaled", "pattern", &[&originals, &factor], &features, sources)
+            crate::design::pattern_definition(
+                ctx,
+                "PartDesign::Scaled",
+                "pattern",
+                &[&originals, &factor],
+                &features,
+                sources,
+            )
         });
     }
     crate::test_support::assert_retained_refusal_at(&[], "fcstd pattern seed identity", |ctx| {
-        crate::design::pattern_definition(ctx, "PartDesign::Scaled", "pattern", &[&originals, &factor], &features, sources)
+        crate::design::pattern_definition(
+            ctx,
+            "PartDesign::Scaled",
+            "pattern",
+            &[&originals, &factor],
+            &features,
+            sources,
+        )
     });
 }
 
 #[test]
 fn multi_transform_seed_vector_and_identity_refuse_at_matching_limits() {
     let consumer = crate::native::ObjectRecord {
-        id: "consumer".into(), name: "consumer".into(), type_name: "PartDesign::MultiTransform".into(),
-        persistent_id: None, view_type: None, attributes: Default::default(),
-        dependencies: Vec::new(), dependency_allow_partial: None, order: 0, data: None,
+        id: "consumer".into(),
+        name: "consumer".into(),
+        type_name: "PartDesign::MultiTransform".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
     };
-    let transformations = super::linked_property_count_to("consumer", "Transformations", "stages", 1, "stage");
+    let transformations =
+        super::linked_property_count_to("consumer", "Transformations", "stages", 1, "stage");
     let originals = super::linked_property("consumer", "Originals", "originals");
     let properties = [&transformations, &originals];
     let properties_by_owner = std::collections::HashMap::from([("consumer", properties.to_vec())]);
     let mut features = std::collections::HashMap::new();
-    features.insert("base", cadmpeg_ir::features::FeatureId::mint("test:test:feature#multi-seed").expect("valid feature id"));
-    crate::test_support::assert_collection_refusal_at(&[], "fcstd multi-transform source seeds", |ctx| {
-        crate::design::multi_transform_stage_seeds(ctx, "stage", &features, std::slice::from_ref(&consumer), &properties_by_owner)
-    });
-    crate::test_support::assert_retained_refusal_at(&[], "fcstd multi-transform seed identity", |ctx| {
-        crate::design::multi_transform_stage_seeds(ctx, "stage", &features, std::slice::from_ref(&consumer), &properties_by_owner)
-    });
+    features.insert(
+        "base",
+        cadmpeg_ir::features::FeatureId::mint("test:test:feature#multi-seed")
+            .expect("valid feature id"),
+    );
+    crate::test_support::assert_collection_refusal_at(
+        &[],
+        "fcstd multi-transform source seeds",
+        |ctx| {
+            crate::design::multi_transform_stage_seeds(
+                ctx,
+                "stage",
+                &features,
+                std::slice::from_ref(&consumer),
+                &properties_by_owner,
+            )
+        },
+    );
+    crate::test_support::assert_retained_refusal_at(
+        &[],
+        "fcstd multi-transform seed identity",
+        |ctx| {
+            crate::design::multi_transform_stage_seeds(
+                ctx,
+                "stage",
+                &features,
+                std::slice::from_ref(&consumer),
+                &properties_by_owner,
+            )
+        },
+    );
 }
 
 #[test]
 fn implicit_pattern_seed_refuses_at_matching_limits() {
     let body = crate::native::ObjectRecord {
-        id: "body".into(), name: "body".into(), type_name: "PartDesign::Body".into(),
-        persistent_id: None, view_type: None, attributes: Default::default(),
-        dependencies: Vec::new(), dependency_allow_partial: None, order: 0, data: None,
+        id: "body".into(),
+        name: "body".into(),
+        type_name: "PartDesign::Body".into(),
+        persistent_id: None,
+        view_type: None,
+        attributes: std::collections::BTreeMap::default(),
+        dependencies: Vec::new(),
+        dependency_allow_partial: None,
+        order: 0,
+        data: None,
     };
     let mut group = super::linked_property_count_to("body", "Group", "body-members", 2, "base");
     group.type_name = "App::PropertyLinkList".into();
     if let PropertyBody::Persisted { links, .. } = &mut group.body {
         links[1] = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
-            document: None, document_attribute: None, object: Some("stage".into()),
+            document: None,
+            document_attribute: None,
+            object: Some("stage".into()),
             subelements: Vec::new(),
-        }).expect("valid link");
+        })
+        .expect("valid link");
     }
     let properties_by_owner = std::collections::HashMap::from([("body", vec![&group])]);
     let mut features = std::collections::HashMap::new();
-    features.insert("base", cadmpeg_ir::features::FeatureId::mint("test:test:feature#implicit-seed").expect("valid feature id"));
+    features.insert(
+        "base",
+        cadmpeg_ir::features::FeatureId::mint("test:test:feature#implicit-seed")
+            .expect("valid feature id"),
+    );
     let factor = super::scalar_property("stage", "Factor", "2");
     let sources = crate::design::PatternSources {
-        objects: std::slice::from_ref(&body), properties_by_owner: &properties_by_owner, entries: &[],
+        objects: std::slice::from_ref(&body),
+        properties_by_owner: &properties_by_owner,
+        entries: &[],
     };
     crate::test_support::assert_collection_refusal_at(&[], "fcstd implicit pattern seed", |ctx| {
-        crate::design::pattern_definition(ctx, "PartDesign::Scaled", "stage", &[&factor], &features, sources)
+        crate::design::pattern_definition(
+            ctx,
+            "PartDesign::Scaled",
+            "stage",
+            &[&factor],
+            &features,
+            sources,
+        )
     });
-    crate::test_support::assert_retained_refusal_at(&[], "fcstd implicit pattern seed identity", |ctx| {
-        crate::design::pattern_definition(ctx, "PartDesign::Scaled", "stage", &[&factor], &features, sources)
-    });
+    crate::test_support::assert_retained_refusal_at(
+        &[],
+        "fcstd implicit pattern seed identity",
+        |ctx| {
+            crate::design::pattern_definition(
+                ctx,
+                "PartDesign::Scaled",
+                "stage",
+                &[&factor],
+                &features,
+                sources,
+            )
+        },
+    );
 }
 
 #[test]
@@ -130,37 +225,60 @@ fn pattern_irregular_vectors_refuse_at_exact_collection_limits() {
     });
     let properties_by_owner = std::collections::HashMap::new();
     let sources = crate::design::PatternSources {
-        objects: &[], properties_by_owner: &properties_by_owner, entries: &entries,
+        objects: &[],
+        properties_by_owner: &properties_by_owner,
+        entries: &entries,
     };
     crate::test_support::assert_collection_refusal_at(&[], "fcstd linear pattern offsets", |ctx| {
         crate::design::linear_pattern_axis(ctx, &properties, "", 3, 1, sources)
     });
     let axis = super::vector_property("pattern", "Axis", 0.0, 0.0, 1.0);
     let mode = PropertyRecord {
-        id: "pattern-mode".into(), owner: "pattern".into(), name: "Mode".into(),
-        type_name: "App::PropertyEnumeration".into(), family: PropertyFamily::Unknown,
-        status: None, body: PropertyBody::Transient, order: 0,
+        id: "pattern-mode".into(),
+        owner: "pattern".into(),
+        name: "Mode".into(),
+        type_name: "App::PropertyEnumeration".into(),
+        family: PropertyFamily::Unknown,
+        status: None,
+        body: PropertyBody::Transient,
+        order: 0,
         xml: RetainedXml::from_text("<Property><Integer value=\"1\"/></Property>".into(), 0)
             .expect("valid XML span"),
     };
-    crate::test_support::assert_collection_refusal_at(&[], "fcstd circular pattern angles", |ctx| {
-        crate::design::pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
-            ctx, "PartDesign::PolarPattern", &[&offset, &spacings, &axis, &mode], sources,
-        )
-    });
+    crate::test_support::assert_collection_refusal_at(
+        &[],
+        "fcstd circular pattern angles",
+        |ctx| {
+            crate::design::pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
+                ctx,
+                "PartDesign::PolarPattern",
+                &[&offset, &spacings, &axis, &mode],
+                sources,
+            )
+        },
+    );
 }
 
 fn float_list_property(name: &str, file: &str) -> PropertyRecord {
     PropertyRecord {
-        id: name.into(), owner: "pattern".into(), name: name.into(),
-        type_name: "App::PropertyFloatList".into(), family: PropertyFamily::Unknown,
+        id: name.into(),
+        owner: "pattern".into(),
+        name: name.into(),
+        type_name: "App::PropertyFloatList".into(),
+        family: PropertyFamily::Unknown,
         status: None,
         body: PropertyBody::Persisted {
-            values: Vec::new(), links: Vec::new(), side_entries: vec![file.into()], dynamic: None,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec![file.into()],
+            dynamic: None,
         },
         order: 0,
-        xml: RetainedXml::from_text(format!("<Property><FloatList file=\"{file}\"/></Property>"), 0)
-            .expect("valid XML span"),
+        xml: RetainedXml::from_text(
+            format!("<Property><FloatList file=\"{file}\"/></Property>"),
+            0,
+        )
+        .expect("valid XML span"),
     }
 }
 
@@ -170,9 +288,11 @@ fn float_list_entry(name: &str, values: &[f64]) -> crate::native::EntryRecord {
         data.extend(value.to_le_bytes());
     }
     crate::native::EntryRecord {
-        id: name.into(), name: name.into(),
+        id: name.into(),
+        name: name.into(),
         role: cadmpeg_core::container::ContainerRole::Auxiliary,
-        referenced_by: Vec::new(), data,
+        referenced_by: Vec::new(),
+        data,
     }
 }
 

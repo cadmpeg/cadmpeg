@@ -19,11 +19,7 @@ pub(crate) fn install(
     entries: &[EntryRecord],
 ) -> Result<(), NativeConvertError> {
     let records = wire_records(ctx, objects, properties, entries)?;
-    namespace.set_arena(
-        ctx,
-        "applications",
-        &records,
-    )
+    namespace.set_arena(ctx, "applications", &records)
 }
 
 /// Check the persisted census against the same authoritative records used for writing.
@@ -108,7 +104,13 @@ fn wire_records<'a>(
         let owner = property.owner.as_str();
         if !by_owner.contains_key(owner) {
             ctx.charge_collection_items(1, "FreeCAD application owner lookup")?;
-            by_owner.try_reserve(1).map_err(|_| crate::resource::collection_allocation_failed(ctx, 1, "FreeCAD application owner lookup"))?;
+            by_owner.try_reserve(1).map_err(|_| {
+                crate::resource::collection_allocation_failed(
+                    ctx,
+                    1,
+                    "FreeCAD application owner lookup",
+                )
+            })?;
         }
         let owned = by_owner.entry(owner).or_default();
         reserve_vec_items(ctx, owned, 1, "FreeCAD application owner properties")?;
@@ -118,82 +120,107 @@ fn wire_records<'a>(
     for entry in entries {
         if !entry_index.contains_key(entry.name.as_str()) {
             ctx.charge_collection_items(1, "FreeCAD application entry lookup")?;
-            entry_index.try_reserve(1).map_err(|_| crate::resource::collection_allocation_failed(ctx, 1, "FreeCAD application entry lookup"))?;
+            entry_index.try_reserve(1).map_err(|_| {
+                crate::resource::collection_allocation_failed(
+                    ctx,
+                    1,
+                    "FreeCAD application entry lookup",
+                )
+            })?;
         }
         entry_index.insert(entry.name.as_str(), entry);
     }
     let mut records = collection_vec(ctx, objects.len(), "FreeCAD application records")?;
     for object in objects {
-            let mut owned = by_owner.remove(object.id.as_str()).unwrap_or_default();
-            owned.sort_by_key(|property| (property.xml.start(), property.xml.end()));
-            let data = object
-                .data
-                .as_ref()
-                .map_or(&[][..], |data| data.text().as_bytes());
-            let mut property_ids = collection_vec(ctx, owned.len(), "FreeCAD application property IDs")?;
-            property_ids.extend(owned.iter().map(|property| property.id.as_str()));
-            let side_entry_count = owned.iter().map(|property| property.side_entries().len()).sum();
-            let mut side_entries = collection_vec(ctx, side_entry_count, "FreeCAD application side entries")?;
-            side_entries.extend(owned.iter().flat_map(|property| property.side_entries().iter().map(String::as_str)));
-            let mut property_records = collection_vec(ctx, owned.len(), "FreeCAD application property records")?;
-            for property in owned {
-                let data = property.xml.text().as_bytes();
-                let payload_count = property.side_entries().iter().filter(|name| entry_index.contains_key(name.as_str())).count();
-                let mut payloads = collection_vec(ctx, payload_count, "FreeCAD application payloads")?;
-                for name in property.side_entries() {
-                    if let Some(entry) = entry_index.get(name.as_str()) {
-                        payloads.push(ApplicationPayloadWire {
-                            entry: &entry.id,
-                            name: &entry.name,
-                            byte_len: entry.byte_len(),
-                            sha256: entry.sha256(),
-                            data: &entry.data,
-                        });
-                    }
+        let mut owned = by_owner.remove(object.id.as_str()).unwrap_or_default();
+        owned.sort_by_key(|property| (property.xml.start(), property.xml.end()));
+        let data = object
+            .data
+            .as_ref()
+            .map_or(&[][..], |data| data.text().as_bytes());
+        let mut property_ids =
+            collection_vec(ctx, owned.len(), "FreeCAD application property IDs")?;
+        property_ids.extend(owned.iter().map(|property| property.id.as_str()));
+        let side_entry_count = owned
+            .iter()
+            .map(|property| property.side_entries().len())
+            .sum();
+        let mut side_entries =
+            collection_vec(ctx, side_entry_count, "FreeCAD application side entries")?;
+        side_entries.extend(
+            owned
+                .iter()
+                .flat_map(|property| property.side_entries().iter().map(String::as_str)),
+        );
+        let mut property_records =
+            collection_vec(ctx, owned.len(), "FreeCAD application property records")?;
+        for property in owned {
+            let data = property.xml.text().as_bytes();
+            let payload_count = property
+                .side_entries()
+                .iter()
+                .filter(|name| entry_index.contains_key(name.as_str()))
+                .count();
+            let mut payloads = collection_vec(ctx, payload_count, "FreeCAD application payloads")?;
+            for name in property.side_entries() {
+                if let Some(entry) = entry_index.get(name.as_str()) {
+                    payloads.push(ApplicationPayloadWire {
+                        entry: &entry.id,
+                        name: &entry.name,
+                        byte_len: entry.byte_len(),
+                        sha256: entry.sha256(),
+                        data: &entry.data,
+                    });
                 }
-                property_records.push(ApplicationPropertyWire {
-                    id: crate::native::native_child_id_charged(ctx, "application-property", &object.id, &property.name)?,
-                    object: &object.id,
-                    property: &property.id,
-                    type_name: &property.type_name,
-                    family: property.family,
-                    order: property.order,
-                    links: property.links(),
-                    byte_start: property.xml.start(),
-                    byte_end: property.xml.end(),
-                    byte_len: data.len() as u64,
-                    sha256: cadmpeg_ir::hash::sha256_hex(data),
-                    data,
-                    payloads,
-                    inert: is_inert(property),
-                });
             }
-            records.push(ApplicationRecordWire {
-                id: crate::native::native_id_charged(ctx, "application", &object.name)?,
+            property_records.push(ApplicationPropertyWire {
+                id: crate::native::native_child_id_charged(
+                    ctx,
+                    "application-property",
+                    &object.id,
+                    &property.name,
+                )?,
                 object: &object.id,
-                type_name: &object.type_name,
-                domain: object
-                    .type_name
-                    .split_once("::")
-                    .map_or("Unqualified", |(domain, _)| domain),
-                properties: property_ids,
-                dependencies: &object.dependencies,
-                side_entries,
-                inert_payload: property_records.iter().any(|property| property.inert),
-                order: object.order,
-                byte_start: object
-                    .data
-                    .as_ref()
-                    .map_or(0, crate::native::RetainedXml::start),
-                byte_end: object
-                    .data
-                    .as_ref()
-                    .map_or(0, crate::native::RetainedXml::end),
+                property: &property.id,
+                type_name: &property.type_name,
+                family: property.family,
+                order: property.order,
+                links: property.links(),
+                byte_start: property.xml.start(),
+                byte_end: property.xml.end(),
                 byte_len: data.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(data),
                 data,
-                property_records,
+                payloads,
+                inert: is_inert(property),
             });
+        }
+        records.push(ApplicationRecordWire {
+            id: crate::native::native_id_charged(ctx, "application", &object.name)?,
+            object: &object.id,
+            type_name: &object.type_name,
+            domain: object
+                .type_name
+                .split_once("::")
+                .map_or("Unqualified", |(domain, _)| domain),
+            properties: property_ids,
+            dependencies: &object.dependencies,
+            side_entries,
+            inert_payload: property_records.iter().any(|property| property.inert),
+            order: object.order,
+            byte_start: object
+                .data
+                .as_ref()
+                .map_or(0, crate::native::RetainedXml::start),
+            byte_end: object
+                .data
+                .as_ref()
+                .map_or(0, crate::native::RetainedXml::end),
+            byte_len: data.len() as u64,
+            sha256: cadmpeg_ir::hash::sha256_hex(data),
+            data,
+            property_records,
+        });
     }
     Ok(records)
 }

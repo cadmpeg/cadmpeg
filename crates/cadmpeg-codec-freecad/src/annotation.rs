@@ -15,7 +15,10 @@ use crate::native::{
     sole_named_property, AnnotationRuntimeType, DrawingRecord, ObjectRecord, PropertyRecord,
     SemanticAnnotationRecord,
 };
-use crate::resource::{collection_allocation_failed, collection_vec, reserve_vec_items, retained_string, retained_strings};
+use crate::resource::{
+    collection_allocation_failed, collection_vec, reserve_vec_items, retained_string,
+    retained_strings,
+};
 
 fn annotation_malformed(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
     crate::resource::malformed_charged(ctx, message, "fcstd annotation diagnostic")
@@ -30,7 +33,9 @@ pub(crate) fn transfer(
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
             ctx.charge_collection_items(1, "fcstd annotation owner index")?;
-            by_owner.try_reserve(1).map_err(|_| collection_allocation_failed(ctx, 1, "fcstd annotation owner index"))?;
+            by_owner.try_reserve(1).map_err(|_| {
+                collection_allocation_failed(ctx, 1, "fcstd annotation owner index")
+            })?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
@@ -42,8 +47,11 @@ pub(crate) fn transfer(
     for object in objects {
         if let Some(kind) = AnnotationRuntimeType::from_label(&object.type_name) {
             let schema = annotation_schema(kind);
-            let source = by_owner.get(object.id.as_str()).map(Vec::as_slice).unwrap_or(&[]);
-            let mut owned = collection_vec(ctx, source.len(), "fcstd annotation selected properties")?;
+            let source = by_owner
+                .get(object.id.as_str())
+                .map_or(&[][..], Vec::as_slice);
+            let mut owned =
+                collection_vec(ctx, source.len(), "fcstd annotation selected properties")?;
             owned.extend_from_slice(source);
             owned.sort_by_key(|property| (property.xml.start(), property.xml.end()));
             let mut references = BTreeMap::new();
@@ -52,24 +60,46 @@ pub(crate) fn transfer(
                 let name = retained_string(ctx, &property.name, "fcstd annotation property name")?;
                 ctx.charge_collection_items(1, "fcstd annotation property map")?;
                 if property.links().is_empty() {
-                    parameters.insert(name, retained_string(ctx, property.xml.text(), "fcstd annotation parameter XML")?);
+                    parameters.insert(
+                        name,
+                        retained_string(
+                            ctx,
+                            property.xml.text(),
+                            "fcstd annotation parameter XML",
+                        )?,
+                    );
                 } else {
-                    let mut links = collection_vec(ctx, property.links().len(), "fcstd annotation links")?;
+                    let mut links =
+                        collection_vec(ctx, property.links().len(), "fcstd annotation links")?;
                     for link in property.links() {
-                        links.push(link.as_ref().map(|link| link.clone_with_context(ctx)).transpose()?);
+                        links.push(
+                            link.as_ref()
+                                .map(|link| link.clone_with_context(ctx))
+                                .transpose()?,
+                        );
                     }
                     references.insert(name, links);
                 }
             }
             let mut text = Vec::new();
             if let Some(carrier) = schema.text {
-                for property in owned.iter().filter(|property| property.name == carrier.property) {
+                for property in owned
+                    .iter()
+                    .filter(|property| property.name == carrier.property)
+                {
                     match strict_text_values(ctx, property, carrier.type_name) {
                         Ok(values) => {
-                            reserve_vec_items(ctx, &mut text, values.len(), "fcstd annotation text")?;
+                            reserve_vec_items(
+                                ctx,
+                                &mut text,
+                                values.len(),
+                                "fcstd annotation text",
+                            )?;
                             text.extend(values);
                         }
-                        Err(CodecError::ResourceLimit(limit)) => return Err(CodecError::ResourceLimit(limit)),
+                        Err(CodecError::ResourceLimit(limit)) => {
+                            return Err(CodecError::ResourceLimit(limit))
+                        }
                         Err(_) => {}
                     }
                 }
@@ -104,15 +134,27 @@ pub(crate) fn transfer_neutral(
 ) -> Result<(), CodecError> {
     let mut drawing_ids = HashMap::new();
     ctx.charge_collection_items(drawings.len() as u64, "fcstd annotation drawing index")?;
-    drawing_ids.try_reserve(drawings.len()).map_err(|_| collection_allocation_failed(ctx, drawings.len() as u64, "fcstd annotation drawing index"))?;
+    drawing_ids.try_reserve(drawings.len()).map_err(|_| {
+        collection_allocation_failed(ctx, drawings.len() as u64, "fcstd annotation drawing index")
+    })?;
     for drawing in drawings {
-        drawing_ids.insert(drawing.object.as_str(), crate::native::model_id_charged(ctx, "drawing", &drawing.object, "entity")?);
+        drawing_ids.insert(
+            drawing.object.as_str(),
+            crate::native::model_id_charged(ctx, "drawing", &drawing.object, "entity")?,
+        );
     }
     for (order, record) in records.iter().enumerate() {
         let schema = annotation_schema(record.kind);
-        let count = properties.iter().filter(|property| property.owner == record.object).count();
+        let count = properties
+            .iter()
+            .filter(|property| property.owner == record.object)
+            .count();
         let mut owned = collection_vec(ctx, count, "fcstd neutral annotation properties")?;
-        owned.extend(properties.iter().filter(|property| property.owner == record.object));
+        owned.extend(
+            properties
+                .iter()
+                .filter(|property| property.owner == record.object),
+        );
         validate_text_carriers(ctx, &owned, &schema)?;
         let target = |link: &Option<crate::native::LinkTarget>| {
             let Some(link) = link.as_ref() else {
@@ -126,7 +168,7 @@ pub(crate) fn transfer_neutral(
                 (None, None) => ReferenceTarget::Null,
                 (None, Some(object)) => ReferenceTarget::Local(retained_string(
                     ctx,
-                    drawing_ids.get(object).map(String::as_str).unwrap_or(object),
+                    drawing_ids.get(object).map_or(object, String::as_str),
                     "fcstd annotation local reference",
                 )?),
                 _ => {
@@ -135,22 +177,37 @@ pub(crate) fn transfer_neutral(
                     ));
                 }
             };
-            Ok(ReferenceSelection::new(target, retained_strings(ctx, link.subelements(), "fcstd annotation subelements")?))
+            Ok(ReferenceSelection::new(
+                target,
+                retained_strings(ctx, link.subelements(), "fcstd annotation subelements")?,
+            ))
         };
         let mut references = BTreeMap::new();
         for (role, targets) in &record.references {
-            let mut selections = collection_vec(ctx, targets.len(), "fcstd annotation reference selections")?;
+            let mut selections =
+                collection_vec(ctx, targets.len(), "fcstd annotation reference selections")?;
             for link in targets {
                 selections.push(target(link)?);
             }
             ctx.charge_collection_items(1, "fcstd annotation reference roles")?;
-            references.insert(retained_string(ctx, role, "fcstd annotation reference role")?, selections);
+            references.insert(
+                retained_string(ctx, role, "fcstd annotation reference role")?,
+                selections,
+            );
         }
-        reserve_vec_items(ctx, &mut model.semantic_annotations, 1, "fcstd neutral annotations")?;
+        reserve_vec_items(
+            ctx,
+            &mut model.semantic_annotations,
+            1,
+            "fcstd neutral annotations",
+        )?;
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
             ctx.charge_collection_items(1, "fcstd annotation neutral parameters")?;
-            parameters.insert(retained_string(ctx, name, "fcstd annotation parameter name")?, retained_string(ctx, value, "fcstd annotation parameter value")?);
+            parameters.insert(
+                retained_string(ctx, name, "fcstd annotation parameter name")?,
+                retained_string(ctx, value, "fcstd annotation parameter value")?,
+            );
         }
         let mut assets = collection_vec(ctx, record.side_entries.len(), "fcstd annotation assets")?;
         for name in &record.side_entries {
@@ -158,14 +215,27 @@ pub(crate) fn transfer_neutral(
         }
         model.semantic_annotations.push(SemanticAnnotation {
             id: SemanticAnnotationId::mint(crate::native::model_id_charged(
-                ctx, "semantic-annotation", &record.object, "content",
-            )?).map_err(CodecError::malformed)?,
+                ctx,
+                "semantic-annotation",
+                &record.object,
+                "content",
+            )?)
+            .map_err(CodecError::malformed)?,
             object: retained_string(ctx, &record.object, "fcstd neutral annotation object")?,
             kind: schema.kind.clone(),
-            runtime_type: retained_string(ctx, record.kind.as_str(), "fcstd annotation runtime type")?,
+            runtime_type: retained_string(
+                ctx,
+                record.kind.as_str(),
+                "fcstd annotation runtime type",
+            )?,
             order: order as u32,
             text: retained_strings(ctx, &record.text, "fcstd annotation neutral text")?,
-            references: crate::resource::named_entries_charged(ctx, &record.object, references, "fcstd annotation keyed references")?,
+            references: crate::resource::named_entries_charged(
+                ctx,
+                &record.object,
+                references,
+                "fcstd annotation keyed references",
+            )?,
             value: None,
             format: match schema.text {
                 Some(carrier) if carrier.has_format_spec => {
@@ -175,7 +245,10 @@ pub(crate) fn transfer_neutral(
             },
             position: annotation_position(ctx, &owned, schema.position)?,
             parameters: crate::resource::named_entries_charged(
-                ctx, &record.object, parameters, "fcstd annotation keyed parameters",
+                ctx,
+                &record.object,
+                parameters,
+                "fcstd annotation keyed parameters",
             )?,
             assets,
             native_ref: retained_string(ctx, &record.id, "fcstd annotation native reference")?,
@@ -369,9 +442,10 @@ fn annotation_position(
                             "annotation position contains a non-finite coordinate".into(),
                         )
                     }),
-                _ => Err(annotation_malformed(ctx, format_args!(
-                    "annotation position requires both {x_name} and {y_name}"
-                ))),
+                _ => Err(annotation_malformed(
+                    ctx,
+                    format_args!("annotation position requires both {x_name} and {y_name}"),
+                )),
             }
         }
     }
@@ -391,10 +465,10 @@ fn optional_scalar_property(
         .get("value")
         .and_then(|value| value.parse::<f64>().ok())
         .ok_or_else(|| {
-            annotation_malformed(ctx, format_args!(
-                "annotation property {} is not a scalar",
-                property.id
-            ))
+            annotation_malformed(
+                ctx,
+                format_args!("annotation property {} is not a scalar", property.id),
+            )
         })?;
     Ok(Some(value))
 }
@@ -408,8 +482,12 @@ fn optional_vector_property(
     let Some(property) = typed_property(ctx, properties, name, type_names)? else {
         return Ok(None);
     };
-    let attributes =
-        direct_value_attributes(ctx, property, "PropertyVector", &["valueX", "valueY", "valueZ"])?;
+    let attributes = direct_value_attributes(
+        ctx,
+        property,
+        "PropertyVector",
+        &["valueX", "valueY", "valueZ"],
+    )?;
     let x = attributes
         .get("valueX")
         .and_then(|value| value.parse::<f64>().ok());
@@ -421,10 +499,10 @@ fn optional_vector_property(
         .and_then(|value| value.parse::<f64>().ok());
     match (x, y, z) {
         (Some(x), Some(y), Some(z)) => Ok(Some([x, y, z])),
-        _ => Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} is not a vector",
-            property.id
-        ))),
+        _ => Err(annotation_malformed(
+            ctx,
+            format_args!("annotation property {} is not a vector", property.id),
+        )),
     }
 }
 
@@ -438,12 +516,19 @@ fn string_property(
         return Ok(None);
     };
     let attributes = direct_value_attributes(ctx, property, "String", &["value"])?;
-    attributes.into_iter().find_map(|(name, value)| (name == "value").then_some(value)).map(Some).ok_or_else(|| {
-        annotation_malformed(ctx, format_args!(
-            "annotation property {} string value is missing value",
-            property.id
-        ))
-    })
+    attributes
+        .into_iter()
+        .find_map(|(name, value)| (name == "value").then_some(value))
+        .map(Some)
+        .ok_or_else(|| {
+            annotation_malformed(
+                ctx,
+                format_args!(
+                    "annotation property {} string value is missing value",
+                    property.id
+                ),
+            )
+        })
 }
 
 fn typed_property<'a>(
@@ -457,10 +542,13 @@ fn typed_property<'a>(
     };
     if !type_names.contains(&property.type_name.as_str()) {
         let expected = type_names.join(" or ");
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {name} has runtime type {}, expected {expected}",
-            property.type_name
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {name} has runtime type {}, expected {expected}",
+                property.type_name
+            ),
+        ));
     }
     Ok(Some(property))
 }
@@ -473,7 +561,8 @@ fn validate_text_carriers(
     let Some(carrier) = &schema.text else {
         return Ok(());
     };
-    if let Some(property) = typed_property(ctx, properties, carrier.property, &[carrier.type_name])? {
+    if let Some(property) = typed_property(ctx, properties, carrier.property, &[carrier.type_name])?
+    {
         strict_text_values(ctx, property, carrier.type_name)?;
     }
     Ok(())
@@ -486,37 +575,49 @@ fn direct_value_attributes(
     allowed_attributes: &[&str],
 ) -> Result<BTreeMap<String, String>, CodecError> {
     let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-        annotation_malformed(ctx, format_args!(
-            "annotation property {} has invalid XML: {error}",
-            property.id
-        ))
+        annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {} has invalid XML: {error}",
+                property.id
+            ),
+        )
     })?;
     let root = document.root_element();
     if has_non_whitespace_text(root) {
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} has unexpected text",
-            property.id
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!("annotation property {} has unexpected text", property.id),
+        ));
     }
     let mut values = root.children().filter(roxmltree::Node::is_element);
     let Some(value) = values.next() else {
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} requires one direct {expected_tag} value",
-            property.id
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {} requires one direct {expected_tag} value",
+                property.id
+            ),
+        ));
     };
     if values.next().is_some() {
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} requires one direct {expected_tag} value",
-            property.id
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {} requires one direct {expected_tag} value",
+                property.id
+            ),
+        ));
     }
     if !value.has_tag_name(expected_tag) {
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} has root {}, expected {expected_tag}",
-            property.id,
-            value.tag_name().name()
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {} has root {}, expected {expected_tag}",
+                property.id,
+                value.tag_name().name()
+            ),
+        ));
     }
     validate_leaf_value(ctx, value, property, allowed_attributes)?;
     let mut attributes = BTreeMap::new();
@@ -536,19 +637,28 @@ fn strict_text_values(
     expected_type: &str,
 ) -> Result<Vec<String>, CodecError> {
     if property.type_name != expected_type {
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} has runtime type {}, expected {expected_type}",
-            property.id, property.type_name
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {} has runtime type {}, expected {expected_type}",
+                property.id, property.type_name
+            ),
+        ));
     }
     if expected_type == "App::PropertyString" {
         let attributes = direct_value_attributes(ctx, property, "String", &["value"])?;
-        let value = attributes.into_iter().find_map(|(name, value)| (name == "value").then_some(value)).ok_or_else(|| {
-            annotation_malformed(ctx, format_args!(
-                "annotation property {} string value is missing value",
-                property.id
-            ))
-        })?;
+        let value = attributes
+            .into_iter()
+            .find_map(|(name, value)| (name == "value").then_some(value))
+            .ok_or_else(|| {
+                annotation_malformed(
+                    ctx,
+                    format_args!(
+                        "annotation property {} string value is missing value",
+                        property.id
+                    ),
+                )
+            })?;
         let mut values = Vec::new();
         if !value.trim().is_empty() {
             reserve_vec_items(ctx, &mut values, 1, "fcstd annotation single text")?;
@@ -557,55 +667,76 @@ fn strict_text_values(
         return Ok(values);
     }
     let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-        annotation_malformed(ctx, format_args!(
-            "annotation property {} has invalid XML: {error}",
-            property.id
-        ))
+        annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {} has invalid XML: {error}",
+                property.id
+            ),
+        )
     })?;
     let root = document.root_element();
     if has_non_whitespace_text(root) {
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} has unexpected text",
-            property.id
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!("annotation property {} has unexpected text", property.id),
+        ));
     }
     let mut values = root.children().filter(roxmltree::Node::is_element);
     let Some(string_list) = values.next() else {
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} requires one direct StringList value",
-            property.id
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {} requires one direct StringList value",
+                property.id
+            ),
+        ));
     };
     if values.next().is_some() {
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} requires one direct StringList value",
-            property.id
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {} requires one direct StringList value",
+                property.id
+            ),
+        ));
     }
     if !string_list.has_tag_name("StringList") {
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} has root {}, expected StringList",
-            property.id,
-            string_list.tag_name().name()
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {} has root {}, expected StringList",
+                property.id,
+                string_list.tag_name().name()
+            ),
+        ));
     }
     validate_attributes(ctx, string_list, property, &["count"])?;
     let count = string_list
         .attribute("count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            annotation_malformed(ctx, format_args!(
-                "annotation property {} StringList has an invalid count",
-                property.id
-            ))
+            annotation_malformed(
+                ctx,
+                format_args!(
+                    "annotation property {} StringList has an invalid count",
+                    property.id
+                ),
+            )
         })?;
     if has_non_whitespace_text(string_list) {
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} StringList has unexpected text",
-            property.id
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {} StringList has unexpected text",
+                property.id
+            ),
+        ));
     }
-    let found = string_list.children().filter(roxmltree::Node::is_element).count();
+    let found = string_list
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .count();
     if found != count {
         return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} StringList count={count} but {} direct String values were found",
@@ -615,23 +746,33 @@ fn strict_text_values(
     }
     let mut texts = collection_vec(ctx, count, "fcstd annotation StringList values")?;
     for string in string_list.children().filter(roxmltree::Node::is_element) {
-            if !string.has_tag_name("String") {
-                return Err(annotation_malformed(ctx, format_args!(
+        if !string.has_tag_name("String") {
+            return Err(annotation_malformed(
+                ctx,
+                format_args!(
                     "annotation property {} StringList has an unexpected child {}",
                     property.id,
                     string.tag_name().name()
-                )));
-            }
-            validate_leaf_value(ctx, string, property, &["value"])?;
-            let value = string.attribute("value").ok_or_else(|| {
-                annotation_malformed(ctx, format_args!(
+                ),
+            ));
+        }
+        validate_leaf_value(ctx, string, property, &["value"])?;
+        let value = string.attribute("value").ok_or_else(|| {
+            annotation_malformed(
+                ctx,
+                format_args!(
                     "annotation property {} String value is missing value",
                     property.id
-                ))
-            })?;
-            if !value.trim().is_empty() {
-                texts.push(retained_string(ctx, value, "fcstd annotation StringList text")?);
-            }
+                ),
+            )
+        })?;
+        if !value.trim().is_empty() {
+            texts.push(retained_string(
+                ctx,
+                value,
+                "fcstd annotation StringList text",
+            )?);
+        }
     }
     Ok(texts)
 }
@@ -644,11 +785,14 @@ fn validate_leaf_value(
 ) -> Result<(), CodecError> {
     validate_attributes(ctx, value, property, allowed_attributes)?;
     if value.children().any(|child| child.is_element()) || has_non_whitespace_text(value) {
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} value {} has nested content",
-            property.id,
-            value.tag_name().name()
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {} value {} has nested content",
+                property.id,
+                value.tag_name().name()
+            ),
+        ));
     }
     Ok(())
 }
@@ -663,11 +807,14 @@ fn validate_attributes(
         .attributes()
         .any(|attribute| !allowed_attributes.contains(&attribute.name()))
     {
-        return Err(annotation_malformed(ctx, format_args!(
-            "annotation property {} value {} has unsupported attributes",
-            property.id,
-            value.tag_name().name()
-        )));
+        return Err(annotation_malformed(
+            ctx,
+            format_args!(
+                "annotation property {} value {} has unsupported attributes",
+                property.id,
+                value.tag_name().name()
+            ),
+        ));
     }
     Ok(())
 }
@@ -690,9 +837,12 @@ pub(crate) mod tests {
     #[test]
     fn annotation_diagnostic_refuses_at_matching_retained_limit() {
         crate::test_support::assert_retained_refusal_at(
-            &[], "fcstd annotation diagnostic", |ctx| {
+            &[],
+            "fcstd annotation diagnostic",
+            |ctx| {
                 Err::<(), _>(super::annotation_malformed(
-                    ctx, format_args!("annotation property {} has invalid XML", "Note"),
+                    ctx,
+                    format_args!("annotation property {} has invalid XML", "Note"),
                 ))
             },
         );
@@ -706,7 +856,7 @@ pub(crate) mod tests {
             type_name: "App::Annotation".into(),
             persistent_id: None,
             view_type: None,
-            attributes: Default::default(),
+            attributes: std::collections::BTreeMap::default(),
             dependencies: Vec::new(),
             dependency_allow_partial: None,
             order: 0,
@@ -730,7 +880,7 @@ pub(crate) mod tests {
             type_name: "App::Annotation".into(),
             persistent_id: None,
             view_type: None,
-            attributes: Default::default(),
+            attributes: std::collections::BTreeMap::default(),
             dependencies: Vec::new(),
             dependency_allow_partial: None,
             order: 0,
@@ -738,7 +888,8 @@ pub(crate) mod tests {
         };
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = crate::native::native_id("annotation", &object.name).len() as u64 - 1;
+        policy.limits.max_retained_bytes =
+            crate::native::native_id("annotation", &object.name).len() as u64 - 1;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         assert!(matches!(super::transfer(&ctx, &[object], &[]),
@@ -754,7 +905,7 @@ pub(crate) mod tests {
             kind: crate::native::AnnotationRuntimeType::Annotation,
             text: Vec::new(),
             references: std::collections::BTreeMap::from([("role".into(), Vec::new())]),
-            parameters: Default::default(),
+            parameters: std::collections::BTreeMap::default(),
             side_entries: Vec::new(),
         };
         let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -762,9 +913,11 @@ pub(crate) mod tests {
         policy.limits.max_collection_items = 2;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
-        assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
+        assert!(
+            matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "fcstd annotation keyed references"));
+                if limit.operation == "fcstd annotation keyed references")
+        );
     }
 
     #[test]
@@ -774,7 +927,7 @@ pub(crate) mod tests {
             object: "fcstd:native:object#Note".into(),
             kind: crate::native::AnnotationRuntimeType::Annotation,
             text: Vec::new(),
-            references: Default::default(),
+            references: std::collections::BTreeMap::default(),
             parameters: std::collections::BTreeMap::from([("role".into(), "value".into())]),
             side_entries: Vec::new(),
         };
@@ -783,9 +936,11 @@ pub(crate) mod tests {
         policy.limits.max_collection_items = 2;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
-        assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
+        assert!(
+            matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "fcstd annotation keyed parameters"));
+                if limit.operation == "fcstd annotation keyed parameters")
+        );
     }
 
     #[test]
@@ -795,19 +950,22 @@ pub(crate) mod tests {
             object: "fcstd:native:object#Note".into(),
             kind: crate::native::AnnotationRuntimeType::Annotation,
             text: Vec::new(),
-            references: Default::default(),
-            parameters: Default::default(),
+            references: std::collections::BTreeMap::default(),
+            parameters: std::collections::BTreeMap::default(),
             side_entries: Vec::new(),
         };
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = crate::native::model_id(
-            "semantic-annotation", &record.object, "content").len() as u64 - 1;
+        policy.limits.max_retained_bytes =
+            crate::native::model_id("semantic-annotation", &record.object, "content").len() as u64
+                - 1;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
-        assert!(matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
+        assert!(
+            matches!(super::transfer_neutral(&ctx, &mut cadmpeg_ir::document::Model::default(), &[record], &[], &[]),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FreeCAD model identity"));
+                if limit.operation == "FreeCAD model identity")
+        );
     }
 
     #[test]

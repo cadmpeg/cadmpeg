@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted native element-map nodes and persistent-name bindings.
 
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use crate::resource::{collection_vec, reserve_vec_items, retained_string};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use crate::resource::{collection_vec, reserve_vec_items, retained_string};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// One persisted element map owned by an exact-shape property.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -195,7 +195,13 @@ impl ElementMapNodes {
     }
 
     /// Add a topology binding without exposing child-map descriptors for mutation.
-    pub(crate) fn bind_root_topology(&mut self, ctx: &DecodeContext<'_>, indexed_name: &str, source_index: usize, id: &str) -> Result<(), CodecError> {
+    pub(crate) fn bind_root_topology(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        indexed_name: &str,
+        source_index: usize,
+        id: &str,
+    ) -> Result<(), CodecError> {
         let index = self.0.len() - 1;
         for group in &mut self.0[index].groups {
             if group.indexed_name != indexed_name {
@@ -206,8 +212,17 @@ impl ElementMapNodes {
             };
             for name in names {
                 if !name.topology_ids.iter().any(|existing| existing == id) {
-                    reserve_vec_items(ctx, &mut name.topology_ids, 1, "FreeCAD element topology bindings")?;
-                    name.topology_ids.push(retained_string(ctx, id, "FreeCAD element topology identity")?);
+                    reserve_vec_items(
+                        ctx,
+                        &mut name.topology_ids,
+                        1,
+                        "FreeCAD element topology bindings",
+                    )?;
+                    name.topology_ids.push(retained_string(
+                        ctx,
+                        id,
+                        "FreeCAD element topology identity",
+                    )?);
                 }
             }
         }

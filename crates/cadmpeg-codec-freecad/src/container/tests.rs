@@ -17,9 +17,9 @@ fn unsafe_entry_name_diagnostic_refuses_at_matching_retained_limit() {
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";
     let bytes = archive_entries(&[("../Document.xml", xml), ("Document.xml", xml)]);
     crate::test_support::assert_retained_refusal_at(
-        &bytes, "FCStd unsafe entry name diagnostic", |ctx| {
-            super::scan(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).map(|_| ())
-        },
+        &bytes,
+        "FCStd unsafe entry name diagnostic",
+        |ctx| super::scan(ctx, cadmpeg_core::decode::View::over_retained(&bytes)).map(|_| ()),
     );
 }
 
@@ -72,7 +72,15 @@ fn overlapping_logical_span_error_refuses_at_retained_limit() {
     };
     let properties = [property.clone(), property];
     crate::test_support::assert_retained_refusal_at(&[], "FCStd logical span error", |ctx| {
-        super::logical_ledger(ctx, &[entry.clone()], &properties, &crate::gui::Graph::default(), &[], &[], &[])
+        super::logical_ledger(
+            ctx,
+            std::slice::from_ref(&entry),
+            &properties,
+            &crate::gui::Graph::default(),
+            &[],
+            &[],
+            &[],
+        )
     });
 }
 
@@ -104,18 +112,23 @@ fn archive_span_identity_refuses_at_retained_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     for _ in 0..256 {
-        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-            .expect("archive root");
-        let error = super::scan(&ctx, root).err().expect("retained limit must refuse");
+        let (ctx, root) =
+            DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("archive root");
+        let error = super::scan(&ctx, root)
+            .err()
+            .expect("retained limit must refuse");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             panic!("expected retained refusal: {error:?}");
         };
         assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-        let threshold = limit.used.checked_add(limit.additional).expect("finite test budget");
+        let threshold = limit
+            .used
+            .checked_add(limit.additional)
+            .expect("finite test budget");
         if limit.operation == "FreeCAD native identity" {
             policy.limits.max_retained_bytes = threshold - 1;
-            let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-                .expect("archive root");
+            let (ctx, root) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("archive root");
             assert!(matches!(super::scan(&ctx, root),
                 Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
                     if refusal.operation == "FreeCAD native identity"));
@@ -248,7 +261,8 @@ fn entry_name_copy_refuses_at_retained_limit() {
         let name = &scan.entries[0].name;
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = (crate::native::native_id("entry", name).len() + name.len()) as u64 - 1;
+        policy.limits.max_retained_bytes =
+            (crate::native::native_id("entry", name).len() + name.len()) as u64 - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         assert!(matches!(super::entry_records(&ctx, scan, &[]),
@@ -264,7 +278,8 @@ fn entry_data_copy_refuses_at_retained_limit() {
         let byte_len = scan.data.get(name).expect("entry data").window().len();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = (crate::native::native_id("entry", name).len() + name.len() + byte_len) as u64 - 1;
+        policy.limits.max_retained_bytes =
+            (crate::native::native_id("entry", name).len() + name.len() + byte_len) as u64 - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         assert!(matches!(super::entry_records(&ctx, scan, &[]),
@@ -287,9 +302,11 @@ fn resource_entry_record() -> crate::native::EntryRecord {
 fn gui_entry_reference_refuses_at_collection_limit() {
     collection_context(0, |ctx| {
         let mut entry = resource_entry_record();
-        assert!(matches!(super::add_entry_reference(ctx, &mut entry, "owner"),
+        assert!(
+            matches!(super::add_entry_reference(ctx, &mut entry, "owner"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.operation == "FCStd GUI entry references"));
+                if limit.operation == "FCStd GUI entry references")
+        );
     });
 }
 
@@ -298,20 +315,24 @@ fn gui_entry_reference_identity_refuses_at_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = "owner".len() as u64 - 1;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root is within policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is within policy");
     let mut entry = resource_entry_record();
-    assert!(matches!(super::add_entry_reference(&ctx, &mut entry, "owner"),
+    assert!(
+        matches!(super::add_entry_reference(&ctx, &mut entry, "owner"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FCStd GUI entry reference identity"));
+            if limit.operation == "FCStd GUI entry reference identity")
+    );
 }
 
 #[test]
 fn document_domain_set_refuses_on_collection_limit() {
     let document = b"<Document SchemaVersion=\"4\"><Objects><Object type=\"Part::Feature\"/></Objects></Document>";
     let result = collection_context(0, |ctx| super::parse_document(ctx, document));
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd document domains"));
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd document domains")
+    );
 }
 
 #[test]
@@ -323,17 +344,21 @@ fn logical_span_vector_refuses_on_collection_limit() {
         referenced_by: Vec::new(),
         data: vec![0],
     };
-    let result = collection_context(0, |ctx| super::logical_ledger(
-        ctx,
-        &[entry],
-        &[],
-        &crate::gui::Graph::default(),
-        &[],
-        &[],
-        &[],
-    ));
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd logical ledger spans"));
+    let result = collection_context(0, |ctx| {
+        super::logical_ledger(
+            ctx,
+            &[entry],
+            &[],
+            &crate::gui::Graph::default(),
+            &[],
+            &[],
+            &[],
+        )
+    });
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd logical ledger spans")
+    );
 }
 
 #[test]
@@ -344,17 +369,21 @@ fn typed_entry_set_refuses_on_collection_limit() {
         entry: "entry".to_owned(),
         payload: crate::brep::ShapePayload::Empty,
     };
-    let result = collection_context(0, |ctx| super::logical_ledger(
-        ctx,
-        &[],
-        &[],
-        &crate::gui::Graph::default(),
-        &[payload],
-        &[],
-        &[],
-    ));
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd typed entry identities"));
+    let result = collection_context(0, |ctx| {
+        super::logical_ledger(
+            ctx,
+            &[],
+            &[],
+            &crate::gui::Graph::default(),
+            &[payload],
+            &[],
+            &[],
+        )
+    });
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd typed entry identities")
+    );
 }
 
 #[test]
@@ -365,8 +394,10 @@ fn ordered_physical_span_vector_refuses_on_collection_limit() {
         role: crate::native::ArchiveSpanRole::Zip64EndRecord,
     }];
     let result = collection_context(0, |ctx| super::byte_coverage(ctx, &physical, &[], &[], 1));
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd ordered physical spans"));
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd ordered physical spans")
+    );
 }
 
 #[test]
@@ -378,8 +409,10 @@ fn coverage_classification_map_refuses_on_collection_limit() {
         classification: crate::native::LogicalClassification::Structural,
     }];
     let result = collection_context(0, |ctx| super::byte_coverage(ctx, &[], &[], &logical, 0));
-    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd coverage classifications"));
+    assert!(
+        matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd coverage classifications")
+    );
 }
 
 #[test]
@@ -395,8 +428,10 @@ fn summary_schema_note_refuses_on_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within input limits");
-    assert!(matches!(super::summary_notes(&ctx, &scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "FCStd schema note"));
+    assert!(
+        matches!(super::summary_notes(&ctx, &scan), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "FCStd schema note")
+    );
 }
 
 #[test]

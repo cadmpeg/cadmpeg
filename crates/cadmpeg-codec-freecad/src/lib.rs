@@ -203,7 +203,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let applications_match =
         match application::matches_native(ctx, namespace, &objects, &properties, &entries) {
             Ok(matches) => matches,
-            Err(cadmpeg_ir::native::NativeConvertError::Resource(CodecError::ResourceLimit(limit))) => {
+            Err(cadmpeg_ir::native::NativeConvertError::Resource(CodecError::ResourceLimit(
+                limit,
+            ))) => {
                 return Err(CodecError::ResourceLimit(limit));
             }
             Err(error) => return Ok(vec![finding(Check::NativeLinks, error.to_string(), None)]),
@@ -302,9 +304,15 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     }
     let mut product_by_object = HashMap::new();
     ctx.charge_collection_items(product_nodes.len() as u64, "fcstd product validation index")?;
-    product_by_object.try_reserve(product_nodes.len()).map_err(|_| {
-        resource::collection_allocation_failed(ctx, product_nodes.len() as u64, "fcstd product validation index")
-    })?;
+    product_by_object
+        .try_reserve(product_nodes.len())
+        .map_err(|_| {
+            resource::collection_allocation_failed(
+                ctx,
+                product_nodes.len() as u64,
+                "fcstd product validation index",
+            )
+        })?;
     for node in &product_nodes {
         product_by_object.insert(node.object.as_str(), node);
     }
@@ -817,7 +825,10 @@ impl CodecBackend for FcstdCodec {
                     .map(|view| ("Thumbnail.png", view.window()))
             });
         if let Some((_, thumbnail)) = thumbnail {
-            attributes.insert(cadmpeg_core::nonblank_literal!("thumbnail_bytes"), thumbnail.len().to_string());
+            attributes.insert(
+                cadmpeg_core::nonblank_literal!("thumbnail_bytes"),
+                thumbnail.len().to_string(),
+            );
         }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;
@@ -860,8 +871,12 @@ impl CodecBackend for FcstdCodec {
             for property in &graph.properties {
                 for side_entry in property.side_entries() {
                     if !scan.data.contains_key(side_entry) {
-                        return Err(CodecError::Malformed(resource::retained_format(ctx,
-                            format_args!("property {} references missing side entry {side_entry}", property.id),
+                        return Err(CodecError::Malformed(resource::retained_format(
+                            ctx,
+                            format_args!(
+                                "property {} references missing side entry {side_entry}",
+                                property.id
+                            ),
                             "FCStd missing side entry diagnostic",
                         )?));
                     }
@@ -887,7 +902,8 @@ impl CodecBackend for FcstdCodec {
                 &brep::carrier_census(ctx, &shape_payloads)?,
             )?;
             namespace.set_arena(ctx, "string_tables", string_tables.as_slice())?;
-            let product_nodes = product::transfer(ctx, &graph.objects, &graph.properties, &scan.data)?;
+            let product_nodes =
+                product::transfer(ctx, &graph.objects, &graph.properties, &scan.data)?;
             namespace.set_arena(ctx, "product_nodes", &product_nodes)?;
             let joint_records = joint::transfer(ctx, &graph.objects, &graph.properties)?;
             namespace.set_arena(ctx, "joints", &joint_records)?;
@@ -1069,7 +1085,8 @@ impl CodecBackend for FcstdCodec {
                 .set_arena(ctx, "element_maps", &element_maps)?;
         } else {
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
-            let coverage = container::byte_coverage(ctx, &scan.ledger, &[], &[], physical_byte_len)?;
+            let coverage =
+                container::byte_coverage(ctx, &scan.ledger, &[], &[], physical_byte_len)?;
             ir.native.namespace_mut("fcstd").set_arena(
                 ctx,
                 "byte_coverage",
@@ -1084,10 +1101,20 @@ impl CodecBackend for FcstdCodec {
         // Charged on both decode branches: a schema outside the declared rows
         // is read with the schema-4 strategy on either path, so the charge is
         // not conditioned on the branch.
-        resource::reserve_vec_items(ctx, &mut losses, topology_losses.len(), "FCStd topology loss output")?;
+        resource::reserve_vec_items(
+            ctx,
+            &mut losses,
+            topology_losses.len(),
+            "FCStd topology loss output",
+        )?;
         losses.extend(topology_losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
-        resource::reserve_vec_items(ctx, &mut losses, usize::from(dialect_losses.is_some()), "FCStd dialect loss output")?;
+        resource::reserve_vec_items(
+            ctx,
+            &mut losses,
+            usize::from(dialect_losses.is_some()),
+            "FCStd dialect loss output",
+        )?;
         losses.extend(dialect_losses);
         ctx.admit_entities(
             ir.model.entity_count() as u64,
@@ -1142,34 +1169,67 @@ fn semantic_losses(
         let cadmpeg_ir::features::FeatureOperation::Native { kind, .. } = definition else {
             continue;
         };
-        let cycle_affected = feature.native_ref.as_ref()
+        let cycle_affected = feature
+            .native_ref
+            .as_ref()
             .is_some_and(|id| cycle_affected_design_objects.contains(id));
         let (code, suffix) = if cycle_affected {
-            (FreecadLossCode::FeatureCyclicHistory,
-                " is retained natively because neutral dependency ordering is cycle-affected")
+            (
+                FreecadLossCode::FeatureCyclicHistory,
+                " is retained natively because neutral dependency ordering is cycle-affected",
+            )
         } else {
-            (FreecadLossCode::FeatureNativeKindRetained,
-                " is retained natively but has no neutral semantics")
+            (
+                FreecadLossCode::FeatureNativeKindRetained,
+                " is retained natively but has no neutral semantics",
+            )
         };
-        push_semantic_loss(ctx, &mut losses, code,
+        push_semantic_loss(
+            ctx,
+            &mut losses,
+            code,
             &["FCStd design operation ", kind.as_str(), suffix],
-            feature.native_ref.as_deref(), "FCStd feature semantic loss")?;
+            feature.native_ref.as_deref(),
+            "FCStd feature semantic loss",
+        )?;
     }
     for entity in &ir.model.sketch_entities {
-        let cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {
+        let cadmpeg_ir::sketches::SketchGeometryDefinition::Native { native_kind } =
+            entity.geometry.definition()
+        else {
             continue;
         };
-        push_semantic_loss(ctx, &mut losses, FreecadLossCode::SketchNativeGeometry,
-            &["FCStd sketch geometry ", native_kind.as_str(), " is retained natively but is not neutralized"],
-            entity.native_ref.as_deref(), "FCStd sketch geometry semantic loss")?;
+        push_semantic_loss(
+            ctx,
+            &mut losses,
+            FreecadLossCode::SketchNativeGeometry,
+            &[
+                "FCStd sketch geometry ",
+                native_kind.as_str(),
+                " is retained natively but is not neutralized",
+            ],
+            entity.native_ref.as_deref(),
+            "FCStd sketch geometry semantic loss",
+        )?;
     }
     for constraint in &ir.model.sketch_constraints {
-        let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { native_kind, .. } = constraint.definition.kind() else {
+        let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { native_kind, .. } =
+            constraint.definition.kind()
+        else {
             continue;
         };
-        push_semantic_loss(ctx, &mut losses, FreecadLossCode::SketchNativeConstraint,
-            &["FCStd sketch constraint ", native_kind.as_str(), " is retained natively but is not neutralized"],
-            constraint.native_ref.as_deref(), "FCStd sketch constraint semantic loss")?;
+        push_semantic_loss(
+            ctx,
+            &mut losses,
+            FreecadLossCode::SketchNativeConstraint,
+            &[
+                "FCStd sketch constraint ",
+                native_kind.as_str(),
+                " is retained natively but is not neutralized",
+            ],
+            constraint.native_ref.as_deref(),
+            "FCStd sketch constraint semantic loss",
+        )?;
     }
     Ok(losses)
 }
@@ -1183,13 +1243,20 @@ fn push_semantic_loss(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     let message = resource::retained_join(ctx, message_parts, "", operation)?;
-    let tag = tag.map(|tag| resource::retained_string(ctx, tag, operation)).transpose()?;
+    let tag = tag
+        .map(|tag| resource::retained_string(ctx, tag, operation))
+        .transpose()?;
     resource::reserve_vec_items(ctx, losses, 1, "FCStd semantic loss output")?;
-    losses.push(code.note(message).with_provenance(
-        cadmpeg_ir::SourceProvenance::in_stream(
-            "fcstd", cadmpeg_ir::stream_name!("Document.xml"), 0,
-        ).with_optional_tag(tag),
-    ));
+    losses.push(
+        code.note(message).with_provenance(
+            cadmpeg_ir::SourceProvenance::in_stream(
+                "fcstd",
+                cadmpeg_ir::stream_name!("Document.xml"),
+                0,
+            )
+            .with_optional_tag(tag),
+        ),
+    );
     Ok(())
 }
 
