@@ -8,7 +8,7 @@ use crate::records::topology::{
 use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::{is_guid_relaxed, lp_utf16_bounded, take_reference};
-use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::design::decode::text::{copy_ascii_retained, lp_ascii_filtered_view, lp_utf16_bounded_charged, relaxed_guid_end};
 use crate::design::decode::text::design_record_id_charged;
 use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
@@ -1562,7 +1562,7 @@ pub(crate) fn bind_sketch_profiles(
             else {
                 continue;
             };
-            let Some(profile) = parse_sketch_profile(bytes, stream, ordinal, header, entities) else {
+            let Some(profile) = parse_sketch_profile(ctx, bytes, stream, ordinal, header, entities).transpose()? else {
                 continue;
             };
             if unique.is_some() {
@@ -4452,13 +4452,39 @@ fn parse_edge_identity_member(bytes: &[u8], start: usize) -> Option<ParsedEdgeId
     })
 }
 
+fn utf16_decimal_u64(bytes: &[u8], at: usize) -> Option<(u64, usize)> {
+    let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+    if !(1..=256).contains(&count) {
+        return None;
+    }
+    let start = at.checked_add(4)?;
+    let end = start.checked_add(count.checked_mul(2)?)?;
+    bytes.get(start..end)?;
+    let mut value = 0u64;
+    let mut digits = 0usize;
+    for index in 0..count {
+        let unit = View::u16_le_at(bytes, start.checked_add(index.checked_mul(2)?)?)?;
+        if index == 0 && unit == u16::from(b'+') {
+            continue;
+        }
+        let digit = u8::try_from(unit).ok()?.checked_sub(b'0')?;
+        if digit > 9 {
+            return None;
+        }
+        value = value.checked_mul(10)?.checked_add(u64::from(digit))?;
+        digits += 1;
+    }
+    (digits > 0).then_some((value, end))
+}
+
 pub(in crate::design) fn parse_sketch_profile(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     stream: &str,
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
     entities: &[DesignEntityHeader],
-) -> Option<DesignSketchProfileOperand> {
+) -> Option<Result<DesignSketchProfileOperand, CodecError>> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
@@ -4468,13 +4494,13 @@ pub(in crate::design) fn parse_sketch_profile(
     {
         return None;
     }
-    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 36, 1..=256)?;
-    if !is_guid_relaxed(&asset_id) {
-        return None;
-    }
-    let (entity_suffix_text, after_entity_suffix) =
-        lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
-    let entity_suffix = entity_suffix_text.parse::<u64>().ok()?;
+    relaxed_guid_end(bytes, start + 36)?;
+    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(ctx, bytes, start + 36, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let (entity_suffix, after_entity_suffix) = utf16_decimal_u64(bytes, after_asset_id)?;
     let paired_at = next_indexed_record_offset(bytes, start + 11)?;
     let (paired_class_tag, after_paired_tag) =
         lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
@@ -4507,19 +4533,26 @@ pub(in crate::design) fn parse_sketch_profile(
             return None;
         }
     }
-    let matches = entities
+    let mut matches = entities
         .iter()
         .filter(|entity| {
             native_stream(&entity.id) == Some(stream)
                 && entity.in_sketch_module()
                 && entity.entity_id.suffix() == entity_suffix
-        })
-        .collect::<Vec<_>>();
-    let [entity] = matches.as_slice() else {
+        });
+    let entity = matches.next()?;
+    if matches.next().is_some() {
         return None;
+    }
+    let region_selection = match parse_sketch_profile_region_selection(ctx, bytes, header.record_index, paired_at) {
+        Some(Ok(value)) => Some(value),
+        Some(Err(error)) => return Some(Err(error)),
+        None => None,
     };
-    let region_selection =
-        parse_sketch_profile_region_selection(bytes, header.record_index, paired_at);
+    let entity_id_text = match copy_ascii_retained(ctx, entity.entity_id.as_str(), "f3d sketch profile entity ID") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
     DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             scope_reference_ordinal,
@@ -4528,7 +4561,7 @@ pub(in crate::design) fn parse_sketch_profile(
             class_tag: header.class_tag.clone(),
             asset_id: asset_id.try_into().ok()?,
             asset_id_offset: u64::try_from(start + 40).ok()?,
-            entity_id: entity.entity_id.clone(),
+            entity_id: crate::records::identity::DesignEntityId::try_from(entity_id_text).ok()?,
             entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
             region_selection,
             paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag).ok()?,
@@ -4536,13 +4569,15 @@ pub(in crate::design) fn parse_sketch_profile(
         },
     )
     .ok()
+    .map(Ok)
 }
 
 fn parse_sketch_profile_region_selection(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     profile_record_index: u32,
     paired_at: usize,
-) -> Option<DesignSketchProfileRegionSelection> {
+) -> Option<Result<DesignSketchProfileRegionSelection, CodecError>> {
     const REGION_MARKER_LEN: usize = 1;
     const REGION_COUNT_LEN: usize = 4;
     const TERMINATOR_LEN: usize = 5;
@@ -4604,7 +4639,17 @@ fn parse_sketch_profile_region_selection(
     if cursor.checked_add(minimum_regions_len)? > bytes.len() {
         return None;
     }
-    let mut regions = Vec::with_capacity(region_count.min(4096));
+    let region_count_charge = match u64::try_from(region_count) {
+        Ok(count) => count,
+        Err(_) => return Some(Err(ctx.refuse_codec_limit("f3d sketch profile region count", 0, 1))),
+    };
+    if let Err(error) = ctx.charge_collection_items(region_count_charge, "f3d sketch profile regions") {
+        return Some(Err(error));
+    }
+    let mut regions = Vec::new();
+    if regions.try_reserve(region_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d sketch profile region allocation", 0, 1)));
+    }
     for region_ordinal in 0..region_count {
         if region_ordinal != 0 {
             if bytes.get(cursor) != Some(&1) {
@@ -4635,7 +4680,17 @@ fn parse_sketch_profile_region_selection(
         {
             return None;
         }
-        let mut members = Vec::with_capacity(member_count.min(4096));
+        let member_count_charge = match u64::try_from(member_count) {
+            Ok(count) => count,
+            Err(_) => return Some(Err(ctx.refuse_codec_limit("f3d sketch profile member count", 0, 1))),
+        };
+        if let Err(error) = ctx.charge_collection_items(member_count_charge, "f3d sketch profile region members") {
+            return Some(Err(error));
+        }
+        let mut members = Vec::new();
+        if members.try_reserve(member_count).is_err() {
+            return Some(Err(ctx.refuse_codec_limit("f3d sketch profile member allocation", 0, 1)));
+        }
         for _ in 0..member_count {
             let kind_offset = cursor;
             let kind = View::u32_le_at(bytes, cursor)?;
@@ -4696,7 +4751,7 @@ fn parse_sketch_profile_region_selection(
     if View::u32_le_at(bytes, after_companion_class_tag)? != selection_record_index {
         return None;
     }
-    Some(DesignSketchProfileRegionSelection {
+    Some(Ok(DesignSketchProfileRegionSelection {
         record_index: selection_record_index,
         byte_offset: u64::try_from(selection_at).ok()?,
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
@@ -4707,7 +4762,7 @@ fn parse_sketch_profile_region_selection(
         regions,
         companion_class_tag: crate::design::decode::text::class_tag_from_view(companion_class_tag).ok()?,
         companion_byte_offset: u64::try_from(companion_at).ok()?,
-    })
+    }))
 }
 
 struct ParsedRecipeOperand {
