@@ -660,8 +660,11 @@ impl FeatureTrimEntityTable {
 
     /// Whether each retained external entity identifier occurs once.
     pub(crate) fn has_unique_external_ids(&self) -> bool {
-        let mut ids = BTreeSet::new();
-        self.rows.iter().all(|row| ids.insert(row.external_id))
+        self.rows.len() == self.solved_external_ids.len()
+            && self
+                .solved_external_ids
+                .windows(2)
+                .all(|pair| pair[0] < pair[1])
     }
 }
 
