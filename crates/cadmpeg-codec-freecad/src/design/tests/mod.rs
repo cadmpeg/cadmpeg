@@ -12,6 +12,16 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn feature_base_source_refuses_at_retained_limit() {
+    let base = linked_property("feature-base", "BaseFeature", "base-property");
+    let mut features = std::collections::HashMap::new();
+    features.insert("base", cadmpeg_ir::features::FeatureId::mint("test:test:feature#base").expect("valid feature id"));
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd feature base source identity", |ctx| {
+        super::feature_base_definition(ctx, &[&base], &features)
+    });
+}
+
+#[test]
 fn sweep_profiles_and_paths_refuse_at_matching_limits() {
     let profile = linked_property("sweep", "Profile", "sweep-profile");
     let section = linked_property_count_to("sweep", "Sections", "sweep-section", 1, "other");

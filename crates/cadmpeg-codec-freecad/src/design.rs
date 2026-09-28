@@ -157,7 +157,7 @@ pub(crate) fn transfer(
         } else if is_stored_geometry_feature(&object.type_name) {
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
         } else if object.type_name == "PartDesign::FeatureBase" {
-            feature_base_definition(&owned, &feature_ids).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            feature_base_definition(ctx, &owned, &feature_ids)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_imported_geometry(&object.type_name) {
             imported_geometry_definition(ctx, &object.type_name, &owned)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_part_construction_geometry(&object.type_name) {
@@ -6937,26 +6937,28 @@ fn design_identity_text(
 }
 
 fn feature_base_definition(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
-) -> Option<FeatureDefinition> {
-    let base_properties = properties
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let mut base_properties = properties
         .iter()
         .filter(|property| property.name == "BaseFeature")
-        .copied()
-        .collect::<Vec<_>>();
-    let [property] = base_properties.as_slice() else {
-        return None;
-    };
-    if property.type_name != "App::PropertyLink" || property.links().len() != 1 {
-        return None;
+        .copied();
+    let Some(property) = base_properties.next() else { return Ok(None); };
+    if base_properties.next().is_some() {
+        return Ok(None);
     }
-    let source = property.links()[0].as_ref()?.object()?;
-    Some(FeatureDefinition::Operation(
+    if property.type_name != "App::PropertyLink" || property.links().len() != 1 {
+        return Ok(None);
+    }
+    let Some(source) = property.links()[0].as_ref().and_then(crate::native::LinkTarget::object) else { return Ok(None); };
+    let Some(feature) = feature_ids.get(source) else { return Ok(None); };
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::DerivedGeometry {
-            source: feature_ids.get(source)?.clone(),
+            source: FeatureId::mint(retained_string(ctx, feature.as_str(), "fcstd feature base source identity")?).map_err(CodecError::malformed)?,
         },
-    ))
+    )))
 }
 
 fn imported_geometry_definition(
