@@ -1071,27 +1071,28 @@ fn attach_standalone_wires(
     wires: &[(CurveId, [f64; 2], usize)],
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let plans = wires
-        .iter()
-        .enumerate()
-        .map(|(index, (curve_id, range, pos))| {
-            let geometry = &ir
+    let mut plans = Vec::new();
+    for (index, (curve_id, range, pos)) in wires.iter().enumerate() {
+            let Some(geometry) = ir
                 .model
                 .curves
                 .iter()
-                .find(|curve| curve.id == *curve_id)?
-                .geometry;
-            let start = cadmpeg_ir::eval::curve_point(geometry, range[0]).ok()?;
-            let end = cadmpeg_ir::eval::curve_point(geometry, range[1]).ok()?;
-            let carrier =
-                cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some(*range))
-                    .ok()?;
-            Some((index, carrier, *pos, start, end))
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(plans) = plans else {
-        return Ok(false);
-    };
+                .find(|curve| curve.id == *curve_id)
+                .map(|curve| &curve.geometry) else { return Ok(false) };
+            let Some(start) = cadmpeg_ir::eval::curve_point(geometry, range[0]).ok() else { return Ok(false) };
+            let Some(end) = cadmpeg_ir::eval::curve_point(geometry, range[1]).ok() else { return Ok(false) };
+            let carrier_id = crate::resource::copy_id(
+                admission.context(), curve_id.as_str(), CurveId::mint,
+                "catia_freeform_wire_plan_curve_id",
+            )?;
+            let Some(carrier) = cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(carrier_id), Some(*range),
+            ).ok() else { return Ok(false) };
+            crate::resource::push(
+                admission.context(), &mut plans, (index, carrier, *pos, start, end),
+                "catia_freeform_wire_plans",
+            )?;
+    }
     let body_id = BodyId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-body"),
         cadmpeg_ir::identity_key!("0"),
@@ -1104,15 +1105,17 @@ fn attach_standalone_wires(
         &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-shell"),
         cadmpeg_ir::identity_key!("0"),
     );
-    let edge_ids = plans
-        .iter()
-        .map(|(index, ..)| {
-            EdgeId::compose(
+    let mut edge_ids = Vec::new();
+    for (index, ..) in &plans {
+            let id = crate::resource::compose_index_id(
+                admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "freeform", "wire-edge"),
-                index,
-            )
-        })
-        .collect();
+                *index, EdgeId::mint, "catia_freeform_wire_shell_edge_id",
+            )?;
+            crate::resource::push(
+                admission.context(), &mut edge_ids, id, "catia_freeform_wire_shell_edges",
+            )?;
+    }
     let Ok(shell) = Shell::new(
         shell_id.clone(),
         region_id.clone(),
@@ -4103,6 +4106,34 @@ mod tests {
             admission
         ))
         .expect("service limits admit freeform model records"));
+        assert_eq!(ir.model, before);
+    }
+
+    #[test]
+    fn rejected_later_wire_refuses_before_plan_collection_growth() {
+        let mut ir = CadIr::empty();
+        let curve_id = CurveId::mint("catia:test:curve#0").expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+                    None,
+                    false,
+                ).expect("valid linear NURBS"),
+            )),
+            source_object: None,
+        });
+        let wires = [(curve_id.clone(), [0.0, 1.0], 0), (curve_id, [1.0, 0.0], 1)];
+        let before = ir.model.clone();
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            let mut admission = super::FamilyEntityAdmission::new(ctx);
+            attach_standalone_wires(&mut ir, &mut AnnotationBuilder::new(), &wires, &mut admission)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_freeform_wire_plans"));
         assert_eq!(ir.model, before);
     }
 
