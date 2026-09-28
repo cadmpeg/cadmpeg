@@ -1583,6 +1583,23 @@ fn typed_body_records(
     Ok((!records.is_empty()).then_some(records))
 }
 
+fn sorted_topology_sequences(
+    ctx: &DecodeContext<'_>,
+    pairs: impl ExactSizeIterator<Item = (u32, u16)>,
+    operation: &'static str,
+) -> Result<Vec<(u32, u16)>, cadmpeg_core::CodecError> {
+    let count = pairs.len();
+    let work = u64::try_from(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)?;
+    let mut sequences = Vec::new();
+    ctx.reserve_collection_vec(&mut sequences, count, operation)?;
+    sequences.extend(pairs);
+    sequences.sort_unstable();
+    sequences.dedup();
+    Ok(sequences)
+}
+
 fn decode_graph(
     ctx: &DecodeContext<'_>,
     carriers: &CarrierIndex,
@@ -1596,27 +1613,21 @@ fn decode_graph(
     let body_modifiers = unique_body_modifiers(ctx, entity_facts.body_modifiers)?;
     let (face_colors, conflicting_face_colors) =
         unique_face_colors(ctx, entity_facts.face_colors, entity_facts.face_color_versions)?;
-    let mut face_bridge_sequences = t
-        .bridges()
-        .values()
-        .map(|bridge| (bridge.sequence, bridge.attr))
-        .collect::<Vec<_>>();
-    face_bridge_sequences.sort_unstable();
-    face_bridge_sequences.dedup();
-    let mut edge_use_sequences = t
-        .edge_uses()
-        .values()
-        .map(|edge_use| (edge_use.sequence, edge_use.attr))
-        .collect::<Vec<_>>();
-    edge_use_sequences.sort_unstable();
-    edge_use_sequences.dedup();
-    let mut vertex_use_sequences = t
-        .vertex_uses()
-        .values()
-        .map(|vertex_use| (vertex_use.sequence, vertex_use.attr))
-        .collect::<Vec<_>>();
-    vertex_use_sequences.sort_unstable();
-    vertex_use_sequences.dedup();
+    let face_bridge_sequences = sorted_topology_sequences(
+        ctx,
+        t.bridges().values().map(|bridge| (bridge.sequence, bridge.attr)),
+        "collect Parasolid face bridge sequences",
+    )?;
+    let edge_use_sequences = sorted_topology_sequences(
+        ctx,
+        t.edge_uses().values().map(|edge_use| (edge_use.sequence, edge_use.attr)),
+        "collect Parasolid edge use sequences",
+    )?;
+    let vertex_use_sequences = sorted_topology_sequences(
+        ctx,
+        t.vertex_uses().values().map(|vertex_use| (vertex_use.sequence, vertex_use.attr)),
+        "collect Parasolid vertex use sequences",
+    )?;
 
     let mut out = Brep {
         face_colors: face_colors
