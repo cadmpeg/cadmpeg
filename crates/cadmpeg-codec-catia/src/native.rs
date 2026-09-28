@@ -2779,6 +2779,21 @@ impl CatiaEntityReference {
         }
     }
 
+    fn copy_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Null { entity_id } => Self::Null { entity_id: *entity_id },
+            Self::Unresolved { entity_id } => Self::Unresolved { entity_id: *entity_id },
+            Self::Resolved { entity_id, entity, class_name } => Self::Resolved {
+                entity_id: *entity_id,
+                entity: crate::resource::copy_retained_str(ctx, entity,
+                    "catia_native_reference_entity")?,
+                class_name: class_name.as_ref().map(|class_name|
+                    crate::resource::copy_retained_str(ctx, class_name,
+                        "catia_native_reference_class")).transpose()?,
+            },
+        })
+    }
+
     pub(crate) fn entity_id(&self) -> u32 {
         match *self {
             Self::Null { entity_id }
@@ -5482,66 +5497,78 @@ fn reference_signature(
     }
 }
 
-fn object_graph_derived_id(graph: &str, kind: &str, local_key: &str) -> Option<String> {
-    let (namespace, graph_key) = graph.split_once('#')?;
-    let mut components = namespace.split(':');
-    let format = components.next()?;
-    let scope = components.next()?;
-    components.next()?;
-    components
-        .next()
-        .is_none()
-        .then(|| format!("{format}:{scope}:{kind}#{graph_key}:{local_key}"))
-}
-
 fn derive_reference_signature_cohorts(
+    ctx: &DecodeContext<'_>,
     entity_records: &[CatiaEntityRecord],
-) -> Vec<CatiaReferenceSignatureCohort> {
+) -> Result<Vec<CatiaReferenceSignatureCohort>, CodecError> {
     let mut cohorts = Vec::<CatiaReferenceSignatureCohort>::new();
-    let mut cohort_by_pair = HashMap::<(String, u32), usize>::new();
-    let mut next_ordinal_by_graph = HashMap::<String, u64>::new();
+    let mut cohort_by_pair = HashMap::<(&str, u32), usize>::new();
+    let mut next_ordinal_by_graph = HashMap::<&str, u64>::new();
     for entity in entity_records {
         let Some(signature) = &entity.reference_signature else {
             continue;
         };
         let key = (
-            entity.object_graph.clone(),
+            entity.object_graph.as_str(),
             signature.production.first_reference(),
         );
         if let Some(index) = cohort_by_pair.get(&key).copied() {
-            cohorts[index].members.push(entity.id.clone());
+            let member = crate::resource::copy_retained_str(ctx, &entity.id,
+                "catia_native_cohort_member")?;
+            crate::resource::push(ctx, &mut cohorts[index].members, member,
+                "catia_native_cohort_members")?;
             continue;
         }
-        let ordinal = next_ordinal_by_graph
-            .entry(entity.object_graph.clone())
-            .and_modify(|ordinal| *ordinal += 1)
-            .or_insert(0);
-        let Some(id) = object_graph_derived_id(
-            &entity.object_graph,
-            "reference-signature-cohort",
-            &format!("{:08}", *ordinal),
-        ) else {
+        let ordinal = if let Some(next) = next_ordinal_by_graph.get_mut(entity.object_graph.as_str()) {
+            *next = next.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(
+                "catia_native_cohort_ordinal", u64::MAX, u64::MAX))?;
+            *next
+        } else {
+            crate::resource::insert_map(ctx, &mut next_ordinal_by_graph,
+                entity.object_graph.as_str(), 0, "catia_native_cohort_ordinals")?;
+            0
+        };
+        let Some((namespace, graph_key)) = entity.object_graph.split_once('#') else {
             continue;
         };
+        let mut components = namespace.split(':');
+        let (Some(format), Some(scope), Some(_kind)) =
+            (components.next(), components.next(), components.next()) else {
+            continue;
+        };
+        if components.next().is_some() {
+            continue;
+        }
+        let id = crate::resource::format_retained(ctx,
+            format_args!("{format}:{scope}:reference-signature-cohort#{graph_key}:{ordinal:08}"),
+            "catia_native_cohort_id")?;
         let index = cohorts.len();
-        cohorts.push(CatiaReferenceSignatureCohort {
+        let parent = crate::resource::copy_retained_str(ctx, &entity.object_graph,
+            "catia_native_cohort_parent")?;
+        let first_entity = signature.first_entity.copy_charged(ctx)?;
+        let second_entity = signature.second_entity.copy_charged(ctx)?;
+        let mut members = Vec::new();
+        crate::resource::push(ctx, &mut members,
+            crate::resource::copy_retained_str(ctx, &entity.id,
+                "catia_native_cohort_member")?, "catia_native_cohort_members")?;
+        crate::resource::push(ctx, &mut cohorts, CatiaReferenceSignatureCohort {
             id,
-            parent: entity.object_graph.clone(),
-            ordinal: *ordinal,
+            parent,
+            ordinal,
             references: signature.production.references(),
-            first_entity: signature.first_entity.clone(),
-            second_entity: signature.second_entity.clone(),
+            first_entity,
+            second_entity,
             schema_selection: None,
-            members: vec![entity.id.clone()],
-        });
-        cohort_by_pair.insert(key, index);
+            members,
+        }, "catia_native_cohorts")?;
+        crate::resource::insert_map(ctx, &mut cohort_by_pair, key, index,
+            "catia_native_cohort_pairs")?;
     }
-    let entities_by_id = entity_records
-        .iter()
-        .map(|entity| (entity.id.as_str(), entity))
-        .collect::<HashMap<_, _>>();
+    let entities_by_id = crate::resource::collect_map(ctx,
+        entity_records.iter().map(|entity| (entity.id.as_str(), entity)),
+        "catia_native_cohort_entity_index")?;
     for cohort in &mut cohorts {
-        let mut selected = None::<CatiaReferenceSignatureSchemaSelection>;
+        let mut selected = None::<&CatiaEntityValueSchemaSelection>;
         let mut valid = true;
         for member in &cohort.members {
             let Some(entity) = entities_by_id.get(member.as_str()) else {
@@ -5558,23 +5585,32 @@ fn derive_reference_signature_cohorts(
             let Some(selection) = selections.get(1) else {
                 continue;
             };
-            let candidate = CatiaReferenceSignatureSchemaSelection {
-                ordinal: selection.ordinal,
-                entry: selection.entry.clone(),
-                name: selection.name.clone(),
-            };
             if selected
                 .as_ref()
-                .is_some_and(|selected| selected != &candidate)
+                .is_some_and(|selected| selected.ordinal != selection.ordinal
+                    || selected.entry != selection.entry
+                    || selected.name != selection.name)
             {
                 valid = false;
                 break;
             }
-            selected = Some(candidate);
+            selected = Some(selection);
         }
-        cohort.schema_selection = valid.then_some(selected).flatten();
+        cohort.schema_selection = if valid {
+            selected.map(|selection| -> Result<_, CodecError> {
+                Ok(CatiaReferenceSignatureSchemaSelection {
+                    ordinal: selection.ordinal,
+                    entry: crate::resource::copy_retained_str(ctx, &selection.entry,
+                        "catia_native_cohort_schema_entry")?,
+                    name: crate::resource::copy_retained_str(ctx, &selection.name,
+                        "catia_native_cohort_schema_name")?,
+                })
+            }).transpose()?
+        } else {
+            None
+        };
     }
-    cohorts
+    Ok(cohorts)
 }
 
 fn schema_configuration_record(
@@ -9608,7 +9644,7 @@ impl CatiaNative {
                 &parameter_bindings,
             );
         }
-        let reference_signature_cohorts = derive_reference_signature_cohorts(&entity_records);
+        let reference_signature_cohorts = derive_reference_signature_cohorts(ctx, &entity_records)?;
         let schema_configuration_row_chains = derive_schema_configuration_row_chains(
             ctx,
             &entity_records,

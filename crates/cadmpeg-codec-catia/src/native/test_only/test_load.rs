@@ -190,7 +190,10 @@ impl CatiaNative {
         })
         .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         let expected_reference_signature_cohorts =
-            derive_reference_signature_cohorts(&entity_records);
+            crate::test_support::with_service_context(|ctx| {
+                derive_reference_signature_cohorts(ctx, &entity_records)
+            })
+            .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         if reference_signature_cohorts != expected_reference_signature_cohorts {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "CATIA reference-signature cohorts are not canonical".to_string(),
