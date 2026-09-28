@@ -1489,53 +1489,70 @@ fn unique_face_colors(
     Ok((out, unresolved))
 }
 
-fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option<Vec<BodyRecord>> {
-    let bridge_attrs = tables.bridges().keys().copied().collect::<HashSet<_>>();
-    let hierarchies = facts.hierarchies(&bridge_attrs)?;
-    let mut records = Vec::with_capacity(hierarchies.len());
+fn typed_body_records(
+    ctx: &DecodeContext<'_>,
+    facts: &typed::Facts,
+    tables: &topology::Tables,
+) -> Result<Option<Vec<BodyRecord>>, cadmpeg_core::CodecError> {
+    let mut bridge_attrs = HashSet::new();
+    for attr in tables.bridges().keys().copied() {
+        reserve_graph_set_key(ctx, &mut bridge_attrs, &attr, "index Parasolid body bridges")?;
+        bridge_attrs.insert(attr);
+    }
+    let Some(hierarchies) = facts.hierarchies(&bridge_attrs) else {
+        return Ok(None);
+    };
+    let mut records = Vec::new();
     for hierarchy in hierarchies {
-        let mut body_refs = hierarchy
+        ctx.charge_work(1, "assemble typed Parasolid bodies")?;
+        let mut body_refs = Vec::new();
+        for attr in hierarchy
             .regions
             .iter()
             .map(|region| region.attr)
             .chain(hierarchy.shells.iter().map(|shell| shell.attr))
             .chain(hierarchy.faces.iter().map(|(face, _)| *face))
-            .collect::<Vec<_>>();
+        {
+            ctx.reserve_collection_vec(&mut body_refs, 1, "collect typed Parasolid body references")?;
+            body_refs.push(attr);
+        }
         body_refs.sort_unstable();
         body_refs.dedup();
-        let mut regions = hierarchy
-            .regions
-            .iter()
-            .map(|region| {
-                let mut shells = hierarchy
-                    .shells
+        let mut regions = Vec::new();
+        for region in &hierarchy.regions {
+            let mut shells = Vec::new();
+            for shell in hierarchy.shells.iter().filter(|shell| {
+                u16::try_from(shell.refs[6]).ok() == Some(region.attr)
+            }) {
+                let mut refs = Vec::new();
+                for face_attr in hierarchy
+                    .faces
                     .iter()
-                    .filter(|shell| u16::try_from(shell.refs[6]).ok() == Some(region.attr))
-                    .map(|shell| {
-                        let mut refs = hierarchy
-                            .faces
-                            .iter()
-                            .filter(|(_, shell_attr)| *shell_attr == shell.attr)
-                            .map(|(face_attr, _)| *face_attr)
-                            .collect::<Vec<_>>();
-                        refs.sort_unstable();
-                        refs.dedup();
-                        ShellRecord {
-                            attr: shell.attr,
-                            offset: shell.offset,
-                            refs,
-                        }
-                    })
-                    .collect::<Vec<_>>();
-                shells.sort_by_key(|shell| shell.attr);
-                RegionRecord {
-                    attr: region.attr,
-                    offset: region.offset,
-                    shells,
+                    .filter(|(_, shell_attr)| *shell_attr == shell.attr)
+                    .map(|(face_attr, _)| *face_attr)
+                {
+                    ctx.reserve_collection_vec(&mut refs, 1, "collect typed Parasolid shell faces")?;
+                    refs.push(face_attr);
                 }
-            })
-            .collect::<Vec<_>>();
+                refs.sort_unstable();
+                refs.dedup();
+                ctx.reserve_collection_vec(&mut shells, 1, "collect typed Parasolid region shells")?;
+                shells.push(ShellRecord {
+                    attr: shell.attr,
+                    offset: shell.offset,
+                    refs,
+                });
+            }
+            shells.sort_by_key(|shell| shell.attr);
+            ctx.reserve_collection_vec(&mut regions, 1, "collect typed Parasolid body regions")?;
+            regions.push(RegionRecord {
+                attr: region.attr,
+                offset: region.offset,
+                shells,
+            });
+        }
         regions.sort_by_key(|region| region.attr);
+        ctx.reserve_collection_vec(&mut records, 1, "collect typed Parasolid body records")?;
         records.push(BodyRecord {
             attr: hierarchy.body.attr,
             kind: hierarchy.body.kind,
@@ -1545,7 +1562,7 @@ fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option
         });
     }
     records.sort_by_key(|record| record.attr);
-    (!records.is_empty()).then_some(records)
+    Ok((!records.is_empty()).then_some(records))
 }
 
 fn decode_graph(
@@ -1556,7 +1573,7 @@ fn decode_graph(
     typed_facts: &typed::Facts,
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    let typed_records = typed_body_records(typed_facts, t);
+    let typed_records = typed_body_records(ctx, typed_facts, t)?;
     let body_records = typed_records.unwrap_or_default();
     let body_modifiers = unique_body_modifiers(ctx, entity_facts.body_modifiers)?;
     let (face_colors, conflicting_face_colors) =
@@ -7389,7 +7406,9 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             offset: 11,
         }).expect("bridge");
 
-        let records = super::typed_body_records(&facts, &tables).expect("typed body records");
+        let records = super::typed_body_records(&ctx, &facts, &tables)
+            .expect("body record allocation")
+            .expect("typed body records");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].kind, BodyKind::Sheet);
         assert_eq!(records[0].regions.len(), 2);
