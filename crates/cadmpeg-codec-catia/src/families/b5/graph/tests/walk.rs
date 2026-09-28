@@ -646,7 +646,9 @@ fn indexed_frame_parse_matches_one_shot_parse() {
     );
     assert_eq!(
         typed_class_21_pcurves(&bytes),
-        typed_class_21_pcurves_from_records(&records)
+        crate::test_support::with_service_context(|ctx| {
+            typed_class_21_pcurves_from_records(ctx, &records)
+        }).expect("service budget")
     );
     assert_eq!(
         typed_parameter_incidences(&bytes),

@@ -9,7 +9,7 @@ use crate::families::b5::graph::{
     loop_chain_closes, loop_metadata as parse_loop_metadata, loop_references,
     loop_references_and_metadata,
     merge_pcurve_candidate, merge_surface_candidate, parameter_incidence, parse_face,
-    parse_face_record, parse_loop, parse_loop_record, parse_pcurve, pcurve_endpoints,
+    parse_face_record, parse_loop, parse_loop_record, pcurve_endpoints,
     pcurve_nurbs_knots,
     pcurve_parameter_domain, point_index, resolve_surface_aliases, resolve_targeted_surface,
     sphere_great_circle_point, surface_alias_carrier, typed_face_records_from_records,
@@ -233,6 +233,10 @@ fn pcurve_requires_one_complete_clamped_bezier_frame() {
         object_id: 2,
         payload,
     };
+    let parse_pcurve = |record: &B5Record| {
+        crate::test_support::with_service_context(|ctx| super::super::parse_pcurve(ctx, record))
+            .expect("service budget")
+    };
     assert_eq!(
         parse_pcurve(&record(payload.clone()))
             .expect("complete class-21 pcurve")
@@ -286,7 +290,39 @@ fn pcurve_requires_one_complete_clamped_bezier_frame() {
 }
 
 #[test]
+fn class21_pcurve_lanes_and_typed_index_refuse_collection_limit() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x21,
+        object_id: 2,
+        payload: crate::test_support::test_b5::b5_linear_pcurve_payload(
+            1, [0.0, 0.0], [1.0, 0.0],
+        ),
+    };
+    for (limit, operation) in [
+        (1, "catia_b5_class21_distinct_knots"),
+        (2, "catia_b5_class21_multiplicities"),
+        (4, "catia_b5_class21_control_points"),
+        (6, "catia_b5_typed_class21_pcurves"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::super::typed_class_21_pcurves_from_records(ctx, std::slice::from_ref(&record))
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation));
+    }
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        super::super::typed_class_21_pcurves_from_records(ctx, &[record])
+    }).expect("service budget").len(), 1);
+}
+
+#[test]
 fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
+    let parse_pcurve = |record: &B5Record| {
+        crate::test_support::with_service_context(|ctx| super::super::parse_pcurve(ctx, record))
+            .expect("service budget")
+    };
     let payload = crate::test_support::test_b5::b5_linear_pcurve_payload_with_knots(
         7,
         [10.0, 20.0],
