@@ -1907,29 +1907,37 @@ fn next_nullable_segment_int(payload: &[u8], offset: &mut usize) -> Result<Optio
     next_segment_int(payload, offset).map(Some).ok_or(())
 }
 
-fn segment_slots(payload: &[u8], offset: &mut usize, count: usize) -> Option<Vec<Option<u32>>> {
-    let mut values = Vec::with_capacity(count);
-    while values.len() < count {
+fn segment_slots(payload: &[u8], offset: &mut usize, count: usize) -> Option<[Option<u32>; 7]> {
+    (count <= 7).then_some(())?;
+    let mut values = [None; 7];
+    let mut filled = 0;
+    while filled < count {
         match *payload.get(*offset)? {
             0xe4 => {
-                values.push(Some(1));
+                values[filled] = Some(1);
+                filled += 1;
                 *offset += 1;
             }
             0xe5 => {
-                (values.len() + 2 <= count).then_some(())?;
-                values.extend([Some(0), Some(0)]);
+                (filled + 2 <= count).then_some(())?;
+                values[filled..filled + 2].fill(Some(0));
+                filled += 2;
                 *offset += 1;
             }
             0xe6 => {
-                (values.len() + 3 <= count).then_some(())?;
-                values.extend([Some(0), Some(0), Some(0)]);
+                (filled + 3 <= count).then_some(())?;
+                values[filled..filled + 3].fill(Some(0));
+                filled += 3;
                 *offset += 1;
             }
             0xf6 => {
-                values.push(None);
+                filled += 1;
                 *offset += 1;
             }
-            _ => values.push(Some(next_segment_int(payload, offset)?)),
+            _ => {
+                values[filled] = Some(next_segment_int(payload, offset)?);
+                filled += 1;
+            }
         }
     }
     Some(values)
@@ -2233,7 +2241,7 @@ fn segment_table_body(
             && payload.get(after_reference) == Some(&0xe2))
         .then_some((offset, after_reference))
     })?;
-    let named_values = |label: &[u8], count: usize| -> Option<(usize, Vec<Option<u32>>)> {
+    let named_values = |label: &[u8], count: usize| -> Option<(usize, [Option<u32>; 7])> {
         let offset = find_bytes(payload, label, cursor, close)?;
         let mut p = offset + label.len();
         if payload.get(p) == Some(&psb::token::ARRAY_OPEN) {
@@ -2324,7 +2332,6 @@ fn segment_table_body(
             continue;
         };
         let Some(prefix) = segment_slots(payload, &mut p, 7)
-            .and_then(|values| <[Option<u32>; 7]>::try_from(values).ok())
         else {
             cursor += 1;
             continue;
@@ -2350,7 +2357,6 @@ fn segment_table_body(
             values[0]
         };
         let Some(suffix) = segment_slots(payload, &mut p, 3)
-            .and_then(|values| <[Option<u32>; 3]>::try_from(values).ok())
         else {
             cursor += 1;
             continue;
@@ -4085,7 +4091,7 @@ fn named_dimension_reference(
     (declared_count == 2).then_some(())?;
     cursor = after_count;
     let point = segment_slots(payload, &mut cursor, 2)?;
-    let [first, second] = point.try_into().ok()?;
+    let [first, second] = [point[0], point[1]];
     Some((
         FeatureDimensionReference {
             item_id,
@@ -4187,9 +4193,6 @@ fn dimension_reference_table(
         let Some(point) = segment_slots(payload, &mut cursor, 2) else {
             break;
         };
-        if point.len() != 2 {
-            break;
-        }
         let [first, second] = [point[0], point[1]];
         rows.push(FeatureDimensionReference {
             item_id,
@@ -7410,6 +7413,19 @@ mod tests {
         assert_eq!(admitted(0, 0), Some(0));
         assert_eq!(admitted(4, 0), None);
         assert_eq!(admitted(u32::MAX, 0), None);
+    }
+
+    #[test]
+    fn segment_slots_keep_zero_runs_and_nullable_positions() {
+        let payload = [0xe5, 0xf6, 0xe6, 0xe4];
+        let mut offset = 0;
+        let slots = super::segment_slots(&payload, &mut offset, 7)
+            .expect("seven slots fit the fixed segment frame");
+        assert_eq!(slots, [Some(0), Some(0), None, Some(0), Some(0), Some(0), Some(1)]);
+        assert_eq!(offset, payload.len());
+
+        let mut offset = 0;
+        assert_eq!(super::segment_slots(&payload, &mut offset, 1), None);
     }
 }
 
