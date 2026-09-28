@@ -25,7 +25,7 @@ use std::sync::OnceLock;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_core::bytes::find;
-use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::layout::directory_entry as dir_entry;
@@ -395,21 +395,27 @@ impl<'a> Container<'a> {
             let _ = self.om_section_cache.set(cache);
         }
         let framed_cache = self.om_section_cache.get().ok_or_else(|| ctx.refuse_codec_limit("nx framed OM cache", 0, 1))?;
-        Ok(match framed_cache {
-            FramedSectionCache::Borrowed { sections } => sections
-                .iter()
-                .filter_map(|(entry_index, section)| {
-                    EntryRef::new(&self.entries, *entry_index).map(|entry| (entry, section.clone()))
-                })
-                .collect::<Vec<_>>(),
-            FramedSectionCache::Owned { layouts } => layouts
-                .iter()
-                .filter_map(|(entry_index, layout)| {
-                    EntryRef::new(&self.entries, *entry_index)
-                        .map(|entry| (entry, layout.materialize()))
-                })
-                .collect::<Vec<_>>(),
-        })
+        let mut result = crate::om::cache::charged_items(ctx, match framed_cache {
+            FramedSectionCache::Borrowed { sections } => sections.len(),
+            FramedSectionCache::Owned { layouts } => layouts.len(),
+        }, "NX framed section readers")?;
+        match framed_cache {
+            FramedSectionCache::Borrowed { sections } => {
+                for (entry_index, section) in sections {
+                    if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
+                        result.push((entry, section.clone()));
+                    }
+                }
+            }
+            FramedSectionCache::Owned { layouts } => {
+                for (entry_index, layout) in layouts {
+                    if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
+                        result.push((entry, layout.materialize(ctx)?));
+                    }
+                }
+            }
+        }
+        Ok(result)
     }
 
     /// Locate indexed NX object-model sections in catalogued file entries.
@@ -432,16 +438,18 @@ impl<'a> Container<'a> {
                             .get(*entry_index)
                             .and_then(crate::container::DirEntry::file_span)
                             .map_or(0, |(offset, _)| offset);
+                        ctx.charge_collection_items(1, "NX cached offset blocks")?;
+                        ctx.charge_retained(u64_from_index(std::mem::size_of::<(String, (&[u8], u64))>()), "NX cached offset blocks")?;
                         blocks.insert(
-                            format!("nx:om-data-blocks-{section_ordinal}:block#0"),
+                            offset_block_key(ctx, section_ordinal, 0)?,
                             (control.bytes, entry_offset + control.offset as u64),
                         );
                         for (record_ordinal, block) in records.iter().enumerate() {
+                            let ordinal = record_ordinal.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("NX offset block ordinal", u64::MAX, u64::MAX))?;
+                            ctx.charge_collection_items(1, "NX cached offset blocks")?;
+                            ctx.charge_retained(u64_from_index(std::mem::size_of::<(String, (&[u8], u64))>()), "NX cached offset blocks")?;
                             blocks.insert(
-                                format!(
-                                    "nx:om-data-blocks-{section_ordinal}:block#{}",
-                                    record_ordinal + 1
-                                ),
+                                offset_block_key(ctx, section_ordinal, ordinal)?,
                                 (block.bytes, entry_offset + block.offset as u64),
                             );
                         }
@@ -457,21 +465,27 @@ impl<'a> Container<'a> {
             let _ = self.indexed_section_layouts.set(cache);
         }
         let cache = self.indexed_section_layouts.get().ok_or_else(|| ctx.refuse_codec_limit("nx indexed OM cache", 0, 1))?;
-        Ok(match cache {
-            IndexedSectionCache::Borrowed { sections, .. } => sections
-                .iter()
-                .filter_map(|(entry_index, section)| {
-                    EntryRef::new(&self.entries, *entry_index).map(|entry| (entry, section.clone()))
-                })
-                .collect::<Vec<_>>(),
-            IndexedSectionCache::Owned { layouts } => layouts
-                .iter()
-                .filter_map(|(entry_index, layout)| {
-                    EntryRef::new(&self.entries, *entry_index)
-                        .map(|entry| (entry, layout.materialize()))
-                })
-                .collect::<Vec<_>>(),
-        })
+        let mut result = crate::om::cache::charged_items(ctx, match cache {
+            IndexedSectionCache::Borrowed { sections, .. } => sections.len(),
+            IndexedSectionCache::Owned { layouts } => layouts.len(),
+        }, "NX indexed section readers")?;
+        match cache {
+            IndexedSectionCache::Borrowed { sections, .. } => {
+                for (entry_index, section) in sections {
+                    if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
+                        result.push((entry, section.clone()));
+                    }
+                }
+            }
+            IndexedSectionCache::Owned { layouts } => {
+                for (entry_index, layout) in layouts {
+                    if let Some(entry) = EntryRef::new(&self.entries, *entry_index) {
+                        result.push((entry, layout.materialize(ctx)?));
+                    }
+                }
+            }
+        }
+        Ok(result)
     }
 
     /// Return the cached bytes and source offsets of every borrowed offset-store block.
@@ -1172,6 +1186,35 @@ pub(crate) enum FramedSectionCache<'a> {
 type FramedSections<'a> = Vec<(usize, crate::om::Section<'a>)>;
 type FramedSectionLayouts = Vec<(usize, crate::om::cache::SectionLayout)>;
 
+fn reserve_cache_slot<T>(ctx: &DecodeContext<'_>, values: &mut Vec<T>, operation: &'static str) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), operation)?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+}
+
+fn decimal_len(mut value: usize) -> usize {
+    let mut length = 1;
+    while value >= 10 {
+        value /= 10;
+        length += 1;
+    }
+    length
+}
+
+fn offset_block_key(ctx: &DecodeContext<'_>, section: usize, block: usize) -> Result<String, CodecError> {
+    use std::fmt::Write;
+    let length = "nx:om-data-blocks-".len()
+        .checked_add(decimal_len(section))
+        .and_then(|length| length.checked_add(":block#".len()))
+        .and_then(|length| length.checked_add(decimal_len(block)))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX offset block key", u64::MAX, u64::MAX))?;
+    ctx.charge_retained(u64_from_index(length), "NX offset block key")?;
+    let mut key = String::new();
+    key.try_reserve_exact(length).map_err(|_| ctx.refuse_codec_limit("NX offset block key", u64_from_index(length), u64_from_index(length)))?;
+    write!(&mut key, "nx:om-data-blocks-{section}:block#{block}").map_err(|_| ctx.refuse_codec_limit("NX offset block key", u64_from_index(length), u64_from_index(length)))?;
+    Ok(key)
+}
+
 fn parse_framed_section_cache<'bytes>(
     ctx: &DecodeContext<'_>,
     bytes: &'bytes [u8],
@@ -1194,15 +1237,20 @@ fn parse_framed_section_cache<'bytes>(
         if parsed.is_empty() {
             continue;
         }
-        let source = retain_layouts.then(|| std::sync::Arc::<[u8]>::from(payload));
+        let source = if retain_layouts {
+            ctx.charge_retained(u64_from_index(payload.len()), "NX framed cache source")?;
+            Some(std::sync::Arc::<[u8]>::from(payload))
+        } else { None };
         for section in parsed {
             if let Some(source) = &source {
-                let Some(layout) = crate::om::cache::SectionLayout::from_section(&section, source)
+                let Some(layout) = crate::om::cache::SectionLayout::from_section(ctx, &section, source)?
                 else {
                     continue;
                 };
+                reserve_cache_slot(ctx, &mut layouts, "NX framed cache layouts")?;
                 layouts.push((entry_index, layout));
             }
+            reserve_cache_slot(ctx, &mut sections, "NX framed cache sections")?;
             sections.push((entry_index, section));
         }
     }
@@ -1235,19 +1283,26 @@ fn parse_indexed_section_cache<'bytes>(
         if parsed.is_empty() {
             continue;
         }
-        let source = retain_layouts.then(|| std::sync::Arc::<[u8]>::from(payload));
+        let source = if retain_layouts {
+            ctx.charge_retained(u64_from_index(payload.len()), "NX indexed cache source")?;
+            Some(std::sync::Arc::<[u8]>::from(payload))
+        } else { None };
         for section in parsed {
+            ctx.charge_collection_items(1, "NX indexed cache seen sections")?;
+            ctx.charge_retained(u64_from_index(std::mem::size_of::<(usize, usize)>()), "NX indexed cache seen sections")?;
             if !seen.insert((offset, section.object_id_table_offset)) {
                 continue;
             }
             if let Some(source) = &source {
                 let Some(layout) =
-                    crate::om::cache::IndexedSectionLayout::from_section(&section, source)
+                    crate::om::cache::IndexedSectionLayout::from_section(ctx, &section, source)?
                 else {
                     continue;
                 };
+                reserve_cache_slot(ctx, &mut layouts, "NX indexed cache layouts")?;
                 layouts.push((entry_index, layout));
             }
+            reserve_cache_slot(ctx, &mut sections, "NX indexed cache sections")?;
             sections.push((entry_index, section));
         }
     }

@@ -192,6 +192,44 @@ fn container_caches_owned_section_layouts() {
 }
 
 #[test]
+fn framed_section_cache_reader_refuses_collection_limit() {
+    let payload = size_framed_om_section_with_repeated_operations(2);
+    let container = Container {
+        data: payload.as_slice().into(),
+        physical_size: payload.len() as u64,
+        layout: test_modern_layout(0),
+        entries: vec![DirEntry {
+            name: "/Root/om".into(),
+            region: Region::Header,
+            body: crate::container::DirEntryBody::File { offset: 0, len: payload.len() as u64 },
+        }],
+        fastload_table: None,
+        indexed_section_layouts: std::sync::OnceLock::new(),
+        om_section_cache: std::sync::OnceLock::new(),
+    };
+    crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = container.om_sections(&ctx).expect_err("one cached section exceeds zero items");
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "NX framed section readers"));
+}
+
+#[test]
+fn indexed_section_cache_reader_refuses_collection_limit() {
+    let file = prt_with_indexed_om_section();
+    let container = crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice())).unwrap();
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error = container.indexed_om_sections(&ctx).expect_err("one cached section exceeds zero items");
+    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "NX indexed section readers"));
+}
+
+#[test]
 fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
     let file = prt_with_indexed_om_section();
     let container =
