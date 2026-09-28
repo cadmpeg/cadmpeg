@@ -499,6 +499,60 @@ impl AnnotationBuilder {
 }
 
 impl Annotations {
+    /// Remap annotation identities after admitting each temporary and output entry.
+    /// The callback admits the retained bytes of every returned identity.
+    pub fn map_ids_charged(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut map: impl FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        let mut ids = std::collections::BTreeSet::new();
+        for id in self.provenance.keys().chain(self.exactness.keys()) {
+            if !ids.contains(id) {
+                ctx.charge_collection_items(1, "index remapped annotation identities")?;
+                ids.insert(id);
+            }
+        }
+        let mut targets = std::collections::BTreeSet::new();
+        let mut remapping = Vec::new();
+        for id in ids {
+            let target = map(id)?;
+            if targets.contains(&target) {
+                return Err(AnnotationIdentityCollision { id: target }.into());
+            }
+            ctx.charge_collection_items(1, "index remapped annotation targets")?;
+            targets.insert(copy_annotation_text(
+                ctx,
+                &target,
+                "copy remapped annotation target",
+            )?);
+            ctx.charge_collection_items(1, "collect annotation remapping")?;
+            remapping.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect annotation remapping", 0, 1)
+            })?;
+            remapping.push((
+                copy_annotation_text(ctx, id, "copy source annotation identity")?,
+                target,
+            ));
+        }
+        let mut remapped = Self::default();
+        for (id, target) in remapping {
+            if let Some(provenance) = self.provenance.remove(&id) {
+                ctx.charge_collection_items(1, "collect remapped provenance")?;
+                remapped.provenance.insert(
+                    copy_annotation_text(ctx, &target, "copy remapped provenance identity")?,
+                    provenance,
+                );
+            }
+            if let Some(exactness) = self.exactness.remove(&id) {
+                ctx.charge_collection_items(1, "collect remapped exactness")?;
+                remapped.exactness.insert(target, exactness);
+            }
+        }
+        *self = remapped;
+        Ok(())
+    }
+
     /// Remap both tables together. A collision leaves both tables unchanged.
     /// The callback runs once for each distinct source identity.
     pub fn map_ids(

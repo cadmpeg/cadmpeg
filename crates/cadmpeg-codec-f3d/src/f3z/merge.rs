@@ -255,7 +255,7 @@ impl MergeSession<'_, '_> {
                 ),
             )?;
             extend_native(self.ctx, &mut parent_ir.native, component_ir.native, &occurrence)?;
-            parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
+            parent_fidelity.append(rescope_fidelity(self.ctx, component_fidelity, &occurrence)?)?;
             merged += descendants + 1;
             if component_report.transfer.geometry_transferred() {
                 parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
@@ -346,11 +346,21 @@ fn append_feature_history(parent: &Model, component: &mut Model) -> Result<(), C
 }
 
 fn rescope_fidelity(
+    ctx: &DecodeContext<'_>,
     source: SourceFidelity,
     occurrence: &str,
 ) -> Result<SourceFidelity, CodecError> {
     let (mut annotations, records) = source.into_parts();
-    annotations.map_ids(|id| rescope(id, occurrence).unwrap_or_else(|| id.to_owned()))?;
+    annotations.map_ids_charged(ctx, |id| {
+        match rescope_charged(ctx, id, occurrence)? {
+            Some(id) => Ok(id),
+            None => crate::container::format_retained(
+                ctx,
+                "copy F3Z annotation identity",
+                format_args!("{id}"),
+            ),
+        }
+    })?;
     // The occurrence is one owner component. Escape its separators so two
     // different occurrences cannot share an owner by shifting a path boundary.
     let owner = cadmpeg_ir::stream_name!("f3d:xref/")
@@ -466,6 +476,22 @@ fn compose_transforms(
 fn rescope(text: &str, occurrence: &str) -> Option<String> {
     text.strip_prefix("f3d:")
         .map(|rest| format!("f3d:xref/{occurrence}/{rest}"))
+}
+
+fn rescope_charged(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+    occurrence: &str,
+) -> Result<Option<String>, CodecError> {
+    text.strip_prefix("f3d:")
+        .map(|rest| {
+            crate::container::format_retained(
+                ctx,
+                "rescope F3Z identity",
+                format_args!("f3d:xref/{occurrence}/{rest}"),
+            )
+        })
+        .transpose()
 }
 
 /// Rewrites every `f3d:` identity in one model entity into occurrence scope.
