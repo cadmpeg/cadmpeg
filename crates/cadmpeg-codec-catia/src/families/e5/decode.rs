@@ -2434,6 +2434,61 @@ fn e5_pcurve_on_surface(
     }
 }
 
+fn e5_lift_plane_nurbs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    plane: &cadmpeg_ir::geometry::analytic::PlaneSurface,
+    nurbs: &PcurveNurbs,
+    surface_record_id: u32,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Option<NurbsCurve>, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::geometry::nurbs::{NurbsPoles3, WeightedPole3};
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
+
+    let origin = plane.origin().get();
+    let normal = plane.frame().axis().as_raw();
+    let u_axis = plane.frame().reference().as_raw();
+    let v_axis = (*normal).cross(*u_axis);
+    if !v_axis.is_finite() {
+        return Ok(None);
+    }
+    let lift = |point: FinitePoint2| {
+        let point = point.get();
+        FinitePoint3::new(origin
+            .translated(*u_axis, point.u)
+            .translated(v_axis, point.v))
+    };
+    let operation = "catia_e5_boundary_lifted_poles";
+    let poles = match nurbs.pole_rows() {
+        PcurveNurbsPoles::Polynomial { points } => {
+            let bytes = points.len().checked_mul(std::mem::size_of::<FinitePoint3>())
+                .and_then(|bytes| u64::try_from(bytes).ok())
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            ctx.charge_retained(bytes, operation)?;
+            let Some(points) = crate::resource::collect_options(ctx,
+                points.iter().copied().map(lift), operation)? else { return Ok(None) };
+            NurbsPoles3::Polynomial { points }
+        }
+        PcurveNurbsPoles::Rational { points } => {
+            let bytes = points.len().checked_mul(std::mem::size_of::<WeightedPole3<FinitePoint3>>())
+                .and_then(|bytes| u64::try_from(bytes).ok())
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            ctx.charge_retained(bytes, operation)?;
+            let Some(points) = crate::resource::collect_options(ctx,
+                points.iter().map(|pole| Some(WeightedPole3 {
+                    point: lift(pole.point)?,
+                    weight: pole.weight,
+                })), operation)? else { return Ok(None) };
+            NurbsPoles3::Rational { points }
+        }
+    };
+    let knots = crate::resource::copy_knot_vector(ctx, nurbs.knots(),
+        "catia_e5_boundary_lifted_knots")?;
+    crate::nurbs::note_refusal(ctx,
+        NurbsCurve::from_admitted_parts(nurbs.degree(), knots, poles, nurbs.periodic()),
+        refusal,
+        format_args!("e5 boundary curve lifted from the pcurve on surface record {surface_record_id}"))
+}
+
 fn e5_boundary_curve(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
@@ -2482,92 +2537,17 @@ fn e5_boundary_curve(
     }
     if let (
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
-        crate::families::e5::graph::E5Pcurve::Jet { .. },
+        crate::families::e5::graph::E5Pcurve::Jet { .. }
+        | crate::families::e5::graph::E5Pcurve::Nurbs { .. },
         PcurveGeometry::Nurbs { nurbs },
     ) = (surface, native_pcurve, pcurve)
     {
-        let origin = plane_surface.origin().get();
-        let normal = plane_surface.frame().axis().as_raw();
-        let u_axis = plane_surface.frame().reference().as_raw();
-        let v_axis = (*normal).cross(*u_axis);
-        let control_points = nurbs
-            .control_points()
-            .iter()
-            .map(|point| {
-                FinitePoint3::new(
-                    origin
-                        .translated(*u_axis, point.u)
-                        .translated(v_axis, point.v),
-                )
-            })
-            .collect::<Option<Vec<_>>>()?;
-        if !v_axis.is_finite() {
-            return None;
-        }
-        let nurbs = match crate::nurbs::note_refusal(ctx,
-                NurbsCurve::from_checked_lanes(
-                    nurbs.degree(),
-                    nurbs.knots().clone(),
-                    control_points,
-                    nurbs.weights(),
-                    nurbs.periodic(),
-                ),
-                refusal,
-                format_args!(
-                    "e5 boundary curve lifted from the pcurve on surface record {}",
-                    native_pcurve.surface_record_id()
-                ),
-            ) {
-                Ok(Some(nurbs)) => nurbs,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-        return Some(Ok((
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)), range,
-        )));
-    }
-    if let (
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
-        crate::families::e5::graph::E5Pcurve::Nurbs { .. },
-        PcurveGeometry::Nurbs { nurbs },
-    ) = (surface, native_pcurve, pcurve)
-    {
-        let origin = plane_surface.origin().get();
-        let normal = plane_surface.frame().axis().as_raw();
-        let u_axis = plane_surface.frame().reference().as_raw();
-        let v_axis = (*normal).cross(*u_axis);
-        let control_points = nurbs
-            .control_points()
-            .iter()
-            .map(|point| {
-                FinitePoint3::new(
-                    origin
-                        .translated(*u_axis, point.u)
-                        .translated(v_axis, point.v),
-                )
-            })
-            .collect::<Option<Vec<_>>>()?;
-        if !v_axis.is_finite() {
-            return None;
-        }
-        let nurbs = match crate::nurbs::note_refusal(ctx,
-                NurbsCurve::from_checked_lanes(
-                    nurbs.degree(),
-                    nurbs.knots().clone(),
-                    control_points,
-                    nurbs.weights(),
-                    nurbs.periodic(),
-                ),
-                refusal,
-                format_args!(
-                    "e5 boundary curve lifted from the pcurve on surface record {}",
-                    native_pcurve.surface_record_id()
-                ),
-            ) {
-                Ok(Some(nurbs)) => nurbs,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
+        let nurbs = match e5_lift_plane_nurbs(ctx, plane_surface, nurbs,
+            native_pcurve.surface_record_id(), refusal) {
+            Ok(Some(nurbs)) => nurbs,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         return Some(Ok((
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)), range,
         )));
@@ -2596,9 +2576,8 @@ fn e5_boundary_curve(
             end_uv.as_raw().u - start_uv.as_raw().u,
             end_uv.as_raw().v - start_uv.as_raw().v,
         ))?;
-        let candidates = [axis, axis.scale(-1.0)]
-            .into_iter()
-            .filter_map(|axis| {
+        let [first, second] = [axis, axis.scale(-1.0)]
+            .map(|axis| {
                 let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
                 let range = circle_parameter_range_from_surface_branch(
                     surface,
@@ -2616,22 +2595,22 @@ fn e5_boundary_curve(
                     ref_direction,
                     crate::nurbs::canonical_periodic_range(range)?,
                 ))
-            })
-            .collect::<Vec<_>>();
-        let [(axis, ref_direction, curve_range)] = candidates.as_slice() else {
-            return None;
+            });
+        let (axis, ref_direction, curve_range) = match (first, second) {
+            (Some(candidate), None) | (None, Some(candidate)) => candidate,
+            _ => return None,
         };
         return Some(Ok((
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     center,
-                    *axis,
-                    *ref_direction,
+                    axis,
+                    ref_direction,
                     radius,
                 )
                 .ok()?,
             )),
-            *curve_range,
+            curve_range,
         )));
     }
 
@@ -4646,6 +4625,64 @@ mod route_tests {
                             && radius == 2.0
                     })
         );
+    }
+
+    #[test]
+    fn e5_boundary_nurbs_lift_refuses_low_collection_and_retained_limits() {
+        let plane = cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ).expect("valid plane fixture");
+        let nurbs = PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
+            None,
+            false,
+        ).expect("valid pcurve fixture");
+        let retained = crate::test_support::with_retained_limit(0, |ctx| {
+            super::e5_lift_plane_nurbs(ctx, &plane, &nurbs, 17,
+                &mut crate::nurbs::LaneRefusals::new())
+        });
+        assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_e5_boundary_lifted_poles"));
+        let collection = crate::test_support::with_collection_limit(0, |ctx| {
+            super::e5_lift_plane_nurbs(ctx, &plane, &nurbs, 17,
+                &mut crate::nurbs::LaneRefusals::new())
+        });
+        assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_e5_boundary_lifted_poles"));
+        let lifted = crate::test_support::with_service_context(|ctx| {
+            super::e5_lift_plane_nurbs(ctx, &plane, &nurbs, 17,
+                &mut crate::nurbs::LaneRefusals::new())
+        }).expect("service profile admits lifted pcurve").expect("valid lifted NURBS");
+        assert_eq!(lifted.pole_count(), 2);
+
+        let rational = PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)],
+            Some(vec![1.0, 2.0]),
+            false,
+        ).expect("valid rational pcurve fixture");
+        let retained = crate::test_support::with_retained_limit(0, |ctx| {
+            super::e5_lift_plane_nurbs(ctx, &plane, &rational, 18,
+                &mut crate::nurbs::LaneRefusals::new())
+        });
+        assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_e5_boundary_lifted_poles"));
+        let collection = crate::test_support::with_collection_limit(0, |ctx| {
+            super::e5_lift_plane_nurbs(ctx, &plane, &rational, 18,
+                &mut crate::nurbs::LaneRefusals::new())
+        });
+        assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_e5_boundary_lifted_poles"));
+        let lifted = crate::test_support::with_service_context(|ctx| {
+            super::e5_lift_plane_nurbs(ctx, &plane, &rational, 18,
+                &mut crate::nurbs::LaneRefusals::new())
+        }).expect("service profile admits rational lift").expect("valid rational NURBS");
+        assert_eq!(lifted.pole_rows().weights(), Some(vec![1.0, 2.0]));
     }
 
     #[test]
