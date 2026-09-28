@@ -123,8 +123,13 @@ impl SketchGeometry {
     /// Scale length-bearing fields while carrying stored directions, angles,
     /// bounds unrelated to length, and text attributes unchanged.
     pub fn scaled_lengths(&self, scale: PositiveReal) -> Result<Self, SketchLengthScaleError> {
+        self.clone().scaled_lengths_owned(scale)
+    }
+
+    /// Scale an owned carrier without copying its retained text or NURBS lanes.
+    pub fn scaled_lengths_owned(self, scale: PositiveReal) -> Result<Self, SketchLengthScaleError> {
         use SketchGeometryDefinition as Definition;
-        let mut definition = self.definition().clone();
+        let mut definition = self.0;
         match &mut definition {
             Definition::Point { position } => {
                 *position = planar_point(*position, scale).ok_or(SketchLengthScaleError::Field(
@@ -210,11 +215,7 @@ impl SketchGeometry {
             }
             Definition::Nurbs { curve } => {
                 curve
-                    .edit_control_points(|point| {
-                        point.u *= scale.get();
-                        point.v *= scale.get();
-                        Ok(())
-                    })
+                    .scale_control_points_in_place(scale)
                     .map_err(SketchLengthScaleError::CurveControlPoints)?;
             }
             Definition::Text {
@@ -391,6 +392,48 @@ mod tests {
                 center: Point2::new(1.0e300, 0.0),
                 radius: Length::new(1.0e300).unwrap(),
             }
+        );
+    }
+
+    #[test]
+    fn owned_planar_nurbs_scaling_preserves_knots_and_weights() {
+        use crate::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
+
+        let original = SketchGeometry::nurbs(
+            PcurveNurbs::from_lanes(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    Point2::new(1.0, 2.0),
+                    Point2::new(3.0, 4.0),
+                    Point2::new(5.0, 6.0),
+                ],
+                Some(vec![1.0, 2.0, 3.0]),
+                false,
+            )
+            .expect("rational source sketch curve"),
+        );
+        let scaled = original
+            .scaled_lengths_owned(PositiveReal::new(10.0).expect("positive scale"))
+            .expect("finite scaled sketch curve");
+        let SketchGeometryDefinition::Nurbs { curve } = scaled.definition() else {
+            panic!("scaled sketch curve changed family");
+        };
+        assert_eq!(curve.knots().to_vec(), vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        let PcurveNurbsPoles::Rational { points } = curve.pole_rows() else {
+            panic!("scaled sketch curve changed rational form");
+        };
+        assert_eq!(
+            points.iter().map(|pole| pole.point.get()).collect::<Vec<_>>(),
+            vec![
+                Point2::new(10.0, 20.0),
+                Point2::new(30.0, 40.0),
+                Point2::new(50.0, 60.0),
+            ]
+        );
+        assert_eq!(
+            points.iter().map(|pole| pole.weight.get()).collect::<Vec<_>>(),
+            vec![1.0, 2.0, 3.0]
         );
     }
 

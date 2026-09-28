@@ -66,6 +66,24 @@ fn a_refused_pcurve_pole_edit_keeps_the_prior_poles() {
 }
 
 #[test]
+fn in_place_pcurve_pole_scale_refuses_atomically() {
+    let mut nurbs = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(1.0, 2.0), Point2::new(f64::MAX, 3.0)],
+        Some(vec![1.0, 2.0]),
+        false,
+    )
+    .expect("finite source poles");
+    let original = nurbs.clone();
+    let error = nurbs
+        .scale_control_points_in_place(crate::scalar::PositiveReal::new(2.0).unwrap())
+        .expect_err("second pole overflows");
+    assert!(matches!(error, crate::geometry::nurbs::NurbsError::Structure(_)));
+    assert_eq!(nurbs, original);
+}
+
+#[test]
 fn a_refused_nurbs_pcurve_scale_keeps_the_prior_poles() {
     let mut geometry = PcurveGeometry::Nurbs { nurbs: pcurve() };
     let original = geometry.clone();
