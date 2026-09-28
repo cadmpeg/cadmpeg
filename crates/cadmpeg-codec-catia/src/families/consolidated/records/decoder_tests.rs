@@ -31,6 +31,16 @@ use crate::test_support::test_bytes::{be32, le_f32};
 use crate::test_support::test_container::{standard_catpart, standard_catpart_from_streams};
 use crate::CatiaCodec;
 
+fn parsed_compact_edge_endpoints(
+    bytes: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Vec<crate::families::consolidated::records::ConsolidatedCompactEdgeEndpoints> {
+    crate::test_support::with_service_context(|ctx| {
+        super::consolidated_compact_edge_endpoints_from_records(ctx, bytes, records)
+            .expect("service decode")
+    })
+}
+
 fn parsed_owner_boundary_cycles(
     bytes: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
@@ -792,7 +802,7 @@ fn compact_endpoint_walk_resolves_children_and_backward_edge_links() {
     bytes.extend_from_slice(&second_edge);
     let records = crate::wire::records::consolidated_records(&bytes);
     let endpoints =
-        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+        parsed_compact_edge_endpoints(
             &bytes, &records,
         );
 
@@ -833,7 +843,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
     assert_eq!(nodes.len(), 1);
     assert_eq!([nodes[0].start_vertex_ref, nodes[0].end_vertex_ref], [2, 3]);
     let endpoints =
-        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+        parsed_compact_edge_endpoints(
             &bytes, &records,
         );
 
@@ -847,7 +857,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
         [0..edge.len(), edge.len()..bytes.len()],
     );
     assert!(
-        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+        parsed_compact_edge_endpoints(
             &bytes,
             &split_sources,
         )
@@ -872,7 +882,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
         ]],
     );
     let endpoints =
-        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+        parsed_compact_edge_endpoints(
             &reordered, &records,
         );
     let [resolved] = endpoints.as_slice() else {
@@ -896,7 +906,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
     );
     assert!(records[1].range().is_none());
     let endpoints =
-        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+        parsed_compact_edge_endpoints(
             &spanning, &records,
         );
     let [resolved] = endpoints.as_slice() else {
@@ -911,7 +921,7 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
     wrong_class[first_endpoint + 2] = 0x19;
     let records = crate::wire::records::consolidated_records(&wrong_class);
     assert!(
-        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+        parsed_compact_edge_endpoints(
             &wrong_class,
             &records,
         )
@@ -944,6 +954,35 @@ fn fixed_owner_boundary_cycle_rejects_cross_source_endpoint_network() {
         .is_empty(),
         "a fixed-owner cycle cannot join endpoint records across bounded sources"
     );
+}
+
+#[test]
+fn compact_endpoint_indexes_scopes_and_memo_refuse_collection_limits() {
+    use std::collections::HashSet;
+
+    let (bytes, _, _, _) = b2_fixed_owner_boundary_cycle_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut refused = HashSet::new();
+    for limit in 0..256 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::consolidated_compact_edge_endpoints_from_records(ctx, &bytes, &records)
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+            refused.insert(error.operation);
+        }
+    }
+    for operation in [
+        "catia_compact_endpoint_nodes_by_pos",
+        "catia_compact_endpoint_nodes_by_index",
+        "catia_compact_endpoint_scopes",
+        "catia_compact_endpoint_scope_entries",
+        "catia_compact_endpoint_locations",
+        "catia_compact_endpoint_active",
+        "catia_compact_endpoint_memo",
+        "catia_compact_endpoint_bindings",
+    ] {
+        assert!(refused.contains(operation), "{operation} did not refuse");
+    }
 }
 
 #[test]
