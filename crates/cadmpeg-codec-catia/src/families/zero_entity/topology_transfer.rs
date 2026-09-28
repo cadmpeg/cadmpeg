@@ -359,13 +359,13 @@ pub(super) fn transfer_closed_face_topology(
                                 };
                                 if let Some(parameter_range) = canonical_range {
                                     curve.geometry = geometry;
-                                    annotations.derived(&occurrence.curve, "geometry").ok()?;
+                                    admitted!(crate::resource::derived_annotation(admission.context(), annotations, &occurrence.curve, "geometry", "catia_annotation_field"));
                                     (occurrence.curve.clone(), parameter_range)
                                 } else {
                                     curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
                                         SolvedCurveGeometry::Unknown { record: None },
                                     );
-                                    annotations.derived(&occurrence.curve, "geometry").ok()?;
+                                    admitted!(crate::resource::derived_annotation(admission.context(), annotations, &occurrence.curve, "geometry", "catia_annotation_field"));
                                     (occurrence.curve.clone(), parameter_range)
                                 }
                             }
@@ -373,7 +373,7 @@ pub(super) fn transfer_closed_face_topology(
                                 curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
                                     SolvedCurveGeometry::Unknown { record: None },
                                 );
-                                annotations.derived(&occurrence.curve, "geometry").ok()?;
+                                admitted!(crate::resource::derived_annotation(admission.context(), annotations, &occurrence.curve, "geometry", "catia_annotation_field"));
                                 (occurrence.curve.clone(), parameter_range)
                             }
                         }
@@ -400,7 +400,7 @@ pub(super) fn transfer_closed_face_topology(
                             SolvedCurveGeometry::Unknown { record: None },
                         );
                     }
-                    annotations.derived(&occurrence.curve, "geometry").ok()?;
+                    admitted!(crate::resource::derived_annotation(admission.context(), annotations, &occurrence.curve, "geometry", "catia_annotation_field"));
                     (occurrence.curve.clone(), parameter_range)
                 };
             occurrence.oriented_curve = Some((oriented_curve, oriented_curve_parameter_range));
@@ -551,7 +551,7 @@ pub(super) fn transfer_closed_face_topology(
                 ownership_root.map_or(first_face.pos, |root| root.face_roster_pos) as u64,
                 "endpoint_locus_point",
                 Exactness::Inferred));
-            annotations.derived(&point_ids[index], "position").ok()?;
+            admitted!(crate::resource::derived_annotation(admission.context(), annotations, &point_ids[index], "position", "catia_annotation_field"));
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
@@ -571,7 +571,7 @@ pub(super) fn transfer_closed_face_topology(
                 ownership_root.map_or(first_face.pos, |root| root.face_roster_pos) as u64,
                 "endpoint_locus_vertex",
                 Exactness::Inferred));
-            annotations.derived(&vertex_ids[index], "point").ok()?;
+            admitted!(crate::resource::derived_annotation(admission.context(), annotations, &vertex_ids[index], "point", "catia_annotation_field"));
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
@@ -602,7 +602,7 @@ pub(super) fn transfer_closed_face_topology(
                 occurrence.support_record_ordinal as u64,
                 "topology_pcurve",
                 Exactness::Derived));
-            annotations.derived(&pcurve.id, "geometry").ok()?;
+            admitted!(crate::resource::derived_annotation(admission.context(), annotations, &pcurve.id, "geometry", "catia_annotation_field"));
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
@@ -695,15 +695,11 @@ pub(super) fn transfer_closed_face_topology(
                 first_occurrence.support_record_ordinal as u64,
                 "topology_physical_edge_candidate",
                 Exactness::Inferred));
-            annotations
-                .derived(&edge_id, "curve")
-                .ok()?
-                .derived(&edge_id, "start")
-                .ok()?
-                .derived(&edge_id, "end")
-                .ok()?;
+            admitted!(crate::resource::derived_annotation(admission.context(), annotations, &edge_id, "curve", "catia_annotation_field"));
+            admitted!(crate::resource::derived_annotation(admission.context(), annotations, &edge_id, "start", "catia_annotation_field"));
+            admitted!(crate::resource::derived_annotation(admission.context(), annotations, &edge_id, "end", "catia_annotation_field"));
             if param_range.is_some() {
-                annotations.derived(&edge_id, "param_range").ok()?;
+                admitted!(crate::resource::derived_annotation(admission.context(), annotations, &edge_id, "param_range", "catia_annotation_field"));
             }
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
@@ -766,15 +762,10 @@ pub(super) fn transfer_closed_face_topology(
                 face.record_ordinal as u64,
                 "topology_face",
                 Exactness::Inferred));
-            annotations
-                .derived(face_id, "shell")
-                .ok()?
-                .derived(face_id, "surface")
-                .ok()?
-                .derived(face_id, "sense")
-                .ok()?
-                .derived(face_id, "loops")
-                .ok()?;
+            admitted!(crate::resource::derived_annotation(admission.context(), annotations, face_id, "shell", "catia_annotation_field"));
+            admitted!(crate::resource::derived_annotation(admission.context(), annotations, face_id, "surface", "catia_annotation_field"));
+            admitted!(crate::resource::derived_annotation(admission.context(), annotations, face_id, "sense", "catia_annotation_field"));
+            admitted!(crate::resource::derived_annotation(admission.context(), annotations, face_id, "loops", "catia_annotation_field"));
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
@@ -853,13 +844,9 @@ pub(super) fn transfer_closed_face_topology(
                     loop_record.record_ordinal as u64,
                     "topology_loop",
                     Exactness::Inferred));
-                annotations
-                    .derived(loop_id, "face")
-                    .ok()?
-                    .derived(loop_id, "coedges")
-                    .ok()?
-                    .derived(loop_id, "vertex_uses")
-                    .ok()?;
+                admitted!(crate::resource::derived_annotation(admission.context(), annotations, loop_id, "face", "catia_annotation_field"));
+                admitted!(crate::resource::derived_annotation(admission.context(), annotations, loop_id, "coedges", "catia_annotation_field"));
+                admitted!(crate::resource::derived_annotation(admission.context(), annotations, loop_id, "vertex_uses", "catia_annotation_field"));
                 let ring = cadmpeg_ir::topology::LoopRing::new(
                     match crate::resource::copy_slice(
                         admission.context(),
@@ -969,23 +956,14 @@ pub(super) fn transfer_closed_face_topology(
                         occurrence.support_record_ordinal as u64,
                         "topology_coedge",
                         Exactness::Inferred));
-                    annotations
-                        .derived(&coedge_id, "owner_loop")
-                        .ok()?
-                        .derived(&coedge_id, "edge")
-                        .ok()?
-                        .derived(&coedge_id, "radial_next")
-                        .ok()?
-                        .derived(&coedge_id, "sense")
-                        .ok()?
-                        .derived(&coedge_id, "pcurves")
-                        .ok()?;
+                    admitted!(crate::resource::derived_annotation(admission.context(), annotations, &coedge_id, "owner_loop", "catia_annotation_field"));
+                    admitted!(crate::resource::derived_annotation(admission.context(), annotations, &coedge_id, "edge", "catia_annotation_field"));
+                    admitted!(crate::resource::derived_annotation(admission.context(), annotations, &coedge_id, "radial_next", "catia_annotation_field"));
+                    admitted!(crate::resource::derived_annotation(admission.context(), annotations, &coedge_id, "sense", "catia_annotation_field"));
+                    admitted!(crate::resource::derived_annotation(admission.context(), annotations, &coedge_id, "pcurves", "catia_annotation_field"));
                     if use_curve.is_some() {
-                        annotations
-                            .derived(&coedge_id, "use_curve")
-                            .ok()?
-                            .derived(&coedge_id, "use_curve_parameter_range")
-                            .ok()?;
+                        admitted!(crate::resource::derived_annotation(admission.context(), annotations, &coedge_id, "use_curve", "catia_annotation_field"));
+                        admitted!(crate::resource::derived_annotation(admission.context(), annotations, &coedge_id, "use_curve_parameter_range", "catia_annotation_field"));
                     }
                     if let Err(error) = admission.charge() {
                         return Some(Err(error));
@@ -1043,11 +1021,8 @@ pub(super) fn transfer_closed_face_topology(
             ownership_root.map_or(first_face.pos, |root| root.body_pos) as u64,
             "topology_body",
             Exactness::Derived));
-        annotations
-            .derived(&body_id, "kind")
-            .ok()?
-            .derived(&body_id, "regions")
-            .ok()?;
+        admitted!(crate::resource::derived_annotation(admission.context(), annotations, &body_id, "kind", "catia_annotation_field"));
+        admitted!(crate::resource::derived_annotation(admission.context(), annotations, &body_id, "regions", "catia_annotation_field"));
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }
@@ -1085,11 +1060,8 @@ pub(super) fn transfer_closed_face_topology(
             ownership_root.map_or(first_face.pos, |root| root.shell_pos) as u64,
             "topology_region",
             Exactness::Derived));
-        annotations
-            .derived(&region_id, "body")
-            .ok()?
-            .derived(&region_id, "shells")
-            .ok()?;
+        admitted!(crate::resource::derived_annotation(admission.context(), annotations, &region_id, "body", "catia_annotation_field"));
+        admitted!(crate::resource::derived_annotation(admission.context(), annotations, &region_id, "shells", "catia_annotation_field"));
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }
@@ -1123,11 +1095,8 @@ pub(super) fn transfer_closed_face_topology(
             ownership_root.map_or(first_face.pos, |root| root.shell_pos) as u64,
             "topology_shell",
             Exactness::Derived));
-        annotations
-            .derived(&shell_id, "region")
-            .ok()?
-            .derived(&shell_id, "faces")
-            .ok()?;
+        admitted!(crate::resource::derived_annotation(admission.context(), annotations, &shell_id, "region", "catia_annotation_field"));
+        admitted!(crate::resource::derived_annotation(admission.context(), annotations, &shell_id, "faces", "catia_annotation_field"));
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }

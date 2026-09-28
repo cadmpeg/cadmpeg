@@ -3014,9 +3014,7 @@ fn append_resolved_consolidated_surface_curves(
                                 "catia_freeform_bound_partner_surface",
                             )?,
                         ));
-                        annotations
-                            .derived(&surface.id, "geometry")
-                            .map_err(cadmpeg_core::CodecError::malformed)?;
+                        crate::resource::derived_annotation(admission.context(), annotations, &surface.id, "geometry", "catia_annotation_field")?;
                         binding_counts.standard_face_surfaces += 1;
                         bound_new_standard_surface = true;
                     }
@@ -3136,9 +3134,7 @@ fn append_resolved_consolidated_surface_curves(
                         },
                         "catia_freeform_standard_coedge_pcurve_uses",
                     )?;
-                    annotations
-                        .derived(&ir.model.coedges[coedge_index].id, "pcurves")
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
+                    crate::resource::derived_annotation(admission.context(), annotations, &ir.model.coedges[coedge_index].id, "pcurves", "catia_annotation_field")?;
                 }
             }
             ir.model.edges[edge_index].set_param_range(Some(
@@ -3154,11 +3150,8 @@ fn append_resolved_consolidated_surface_curves(
                 run.edge.pcurves[0].pos as u64,
                 "resolved_surface_curve_bound_to_standard_edge",
                 Exactness::Derived)?;
-            annotations
-                .derived(&procedural.id, "curve")
-                .map_err(cadmpeg_core::CodecError::malformed)?
-                .derived(&procedural.id, "definition")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            crate::resource::derived_annotation(admission.context(), annotations, &procedural.id, "curve", "catia_annotation_field")?;
+            crate::resource::derived_annotation(admission.context(), annotations, &procedural.id, "definition", "catia_annotation_field")?;
         } else {
             let curve_id = crate::resource::compose_index_id(
                 admission.context(),
@@ -3202,11 +3195,8 @@ fn append_resolved_consolidated_surface_curves(
                 run.edge.pcurves[0].pos as u64,
                 "resolved_surface_curve",
                 Exactness::Derived)?;
-            annotations
-                .derived(&procedural_id, "curve")
-                .map_err(cadmpeg_core::CodecError::malformed)?
-                .derived(&procedural_id, "definition")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+            crate::resource::derived_annotation(admission.context(), annotations, &procedural_id, "curve", "catia_annotation_field")?;
+            crate::resource::derived_annotation(admission.context(), annotations, &procedural_id, "definition", "catia_annotation_field")?;
             admission.reserve_entity(
                 &mut ir.model.procedural_curves,
                 "catia_freeform_resolved_procedural_curves",

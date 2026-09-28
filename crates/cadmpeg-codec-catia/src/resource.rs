@@ -442,23 +442,50 @@ pub(crate) fn push_loss(
 pub(crate) fn derived_annotation(
     ctx: &DecodeContext<'_>,
     annotations: &mut AnnotationBuilder,
-    id: &str,
+    id: impl std::fmt::Display,
     field: &str,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let (outer, inner) = annotations.derived_field_admission(id, field);
+    let id = format_retained(ctx, format_args!("{id}"), operation)?;
+    let (outer, inner) = annotations.derived_field_admission(&id, field);
     if outer {
         ctx.charge_collection_items(1, operation)?;
     }
     if inner {
         ctx.charge_collection_items(1, operation)?;
     }
-    let id = copy_retained_str(ctx, id, operation)?;
     let field = copy_retained_str(ctx, field, operation)?;
     annotations
         .field_exactness_owned(id, field, cadmpeg_ir::Exactness::Derived)
         .map_err(CodecError::malformed)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod derived_annotation_tests {
+    #[test]
+    fn derived_field_refuses_retained_and_collection_limits() {
+        let retained = crate::test_support::with_retained_limit(0, |ctx| {
+            super::derived_annotation(ctx, &mut cadmpeg_ir::AnnotationBuilder::new(),
+                "catia:test:vertex#0", "point", "catia_annotation_field")
+        });
+        assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_annotation_field"));
+        let collection = crate::test_support::with_collection_limit(0, |ctx| {
+            super::derived_annotation(ctx, &mut cadmpeg_ir::AnnotationBuilder::new(),
+                "catia:test:vertex#0", "point", "catia_annotation_field")
+        });
+        assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_annotation_field"));
+        let annotations = crate::test_support::with_service_context(|ctx| {
+            let mut builder = cadmpeg_ir::AnnotationBuilder::new();
+            super::derived_annotation(ctx, &mut builder, "catia:test:vertex#0", "point",
+                "catia_annotation_field").expect("service profile admits derived field");
+            builder.build()
+        });
+        let fields = annotations.exactness()["catia:test:vertex#0"].fields();
+        assert_eq!(fields.get("point"), Some(&cadmpeg_ir::Exactness::Derived));
+    }
 }
 
 pub(crate) fn format_retained(
