@@ -11,7 +11,6 @@ use crate::bytes::{
     f64s_at, take_reference, utf16le_at, Reference,
 };
 use crate::design::decode::text::lp_ascii_filtered_view;
-use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
@@ -1662,32 +1661,92 @@ pub(crate) fn decode_sketch_points(ctx: &DecodeContext<'_>, scan: &ContainerScan
 /// Which keys a record carries varies by record, so a caller addresses a
 /// property by name. Reading the block by fixed offset misframes every record
 /// whose key set differs from the one the offsets were taken from.
-fn read_property_block(payload: &[u8], cursor: &mut usize) -> Option<Vec<(String, u64)>> {
-    let mut properties = Vec::new();
+struct SketchProperties<'a> {
+    payload: &'a [u8],
+    first: usize,
+    count: usize,
+}
+
+impl SketchProperties<'_> {
+    fn find(&self, key: &str) -> Option<u64> {
+        let mut cursor = self.first;
+        for _ in 0..self.count {
+            let (name, after_name) =
+                lp_ascii_filtered_view(self.payload, cursor, 0..=256, u8::is_ascii_graphic)?;
+            let (_, after_type) = lp_ascii_filtered_view(
+                self.payload,
+                after_name,
+                0..=256,
+                u8::is_ascii_graphic,
+            )?;
+            let value = View::u64_le_at(self.payload, after_type)?;
+            if name == key {
+                return Some(value);
+            }
+            cursor = after_type.checked_add(8)?;
+        }
+        None
+    }
+
+    fn first_two(&self) -> Option<((&str, u64), Option<(&str, u64)>)> {
+        if !matches!(self.count, 1 | 2) {
+            return None;
+        }
+        let (first_name, after_name) =
+            lp_ascii_filtered_view(self.payload, self.first, 0..=256, u8::is_ascii_graphic)?;
+        let (_, after_type) = lp_ascii_filtered_view(
+            self.payload,
+            after_name,
+            0..=256,
+            u8::is_ascii_graphic,
+        )?;
+        let first_value = View::u64_le_at(self.payload, after_type)?;
+        let second = if self.count == 2 {
+            let at = after_type.checked_add(8)?;
+            let (name, after_name) =
+                lp_ascii_filtered_view(self.payload, at, 0..=256, u8::is_ascii_graphic)?;
+            let (_, after_type) = lp_ascii_filtered_view(
+                self.payload,
+                after_name,
+                0..=256,
+                u8::is_ascii_graphic,
+            )?;
+            Some((name, View::u64_le_at(self.payload, after_type)?))
+        } else {
+            None
+        };
+        Some(((first_name, first_value), second))
+    }
+}
+
+fn read_property_block<'a>(payload: &'a [u8], cursor: &mut usize) -> Option<SketchProperties<'a>> {
+    let mut count = 0;
+    let mut first = *cursor;
     match payload.get(*cursor)? {
         0 => *cursor += 1,
         1 => {
             *cursor += 1;
-            let count = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
+            count = usize::try_from(View::u32_le_at(payload, *cursor)?).ok()?;
             if count > MAX_RELATION_RUN {
                 return None;
             }
             *cursor += 4;
+            first = *cursor;
             for _ in 0..count {
-                let (key, after_key) =
-                    lp_ascii_filtered(payload, *cursor, 0..=256, u8::is_ascii_graphic)?;
+                let (_, after_key) =
+                    lp_ascii_filtered_view(payload, *cursor, 0..=256, u8::is_ascii_graphic)?;
                 let (type_name, after_type) =
                     lp_ascii_filtered_view(payload, after_key, 0..=256, u8::is_ascii_graphic)?;
                 if type_name != "IntrinsicMetaTypeuint64" {
                     return None;
                 }
-                properties.push((key, View::u64_le_at(payload, after_type)?));
+                View::u64_le_at(payload, after_type)?;
                 *cursor = after_type.checked_add(8)?;
             }
         }
         _ => return None,
     }
-    Some(properties)
+    Some(SketchProperties { payload, first, count })
 }
 
 const SKETCH_TEXT_TYPE_GUIDS: [&str; 2] = [
@@ -1937,12 +1996,7 @@ fn decode_sketch_text_head(
     // and carries no persistent identity, so its class version selects the
     // layout in place of a key.
     let properties = read_property_block(payload, &mut cursor)?;
-    let property = |key: &str| {
-        properties
-            .iter()
-            .find(|(name, _)| name == key)
-            .map(|(_, value)| *value)
-    };
+    let property = |key: &str| properties.find(key);
     let is_txt_tag = match (property("textex_tag"), property("txt_tag")) {
         (Some(_), _) => false,
         (None, Some(_)) => true,
@@ -2013,12 +2067,7 @@ fn decode_indexed_sketch_text_head(payload: &[u8]) -> Option<(SketchTextHead, No
     }
     let mut cursor = 20;
     let properties = read_property_block(payload, &mut cursor)?;
-    let property = |key: &str| {
-        properties
-            .iter()
-            .find(|(name, _)| name == key)
-            .map(|(_, value)| *value)
-    };
+    let property = |key: &str| properties.find(key);
     let persistent_id = property("textex_tag")?;
     (payload.get(cursor)? == &0).then_some(())?;
     cursor += 1;
@@ -2455,12 +2504,12 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     }
     let mut cursor = header_end.checked_add(9)?;
     let properties = read_property_block(payload, &mut cursor)?;
-    let (entity_genesis, persistent_id) = match properties.as_slice() {
-        [(key, persistent_id)] if key == "pt_tag" => (None, *persistent_id),
-        [(genesis_key, entity_genesis), (point_key, persistent_id)]
-            if class_version == 11 && genesis_key == "EntityGenesis" && point_key == "pt_tag" =>
+    let (entity_genesis, persistent_id) = match properties.first_two()? {
+        (("pt_tag", persistent_id), None) => (None, persistent_id),
+        (("EntityGenesis", entity_genesis), Some(("pt_tag", persistent_id)))
+            if class_version == 11 =>
         {
-            (Some(*entity_genesis), *persistent_id)
+            (Some(entity_genesis), persistent_id)
         }
         _ => return None,
     };
@@ -4105,10 +4154,7 @@ fn parse_classed_sketch_relation(
     // The base class level opens with its property-block presence byte. The
     // block is `u32 count` and that many `(key, type name, value)` triples;
     // `EntityGenesis` is one such key.
-    let entity_genesis = read_property_block(payload, &mut cursor)?
-        .into_iter()
-        .find(|(key, _)| key == "EntityGenesis")
-        .map(|(_, value)| value);
+    let entity_genesis = read_property_block(payload, &mut cursor)?.find("EntityGenesis");
     let mut auxiliary_references = Vec::new();
     let class_members =
         parse_relation_class_members(payload, &mut cursor, class, &mut auxiliary_references)?;
