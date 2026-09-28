@@ -2014,6 +2014,26 @@ fn read_flow_optional_pointers(
     Ok(Some(pointers))
 }
 
+fn definition_members(
+    record: &ParameterRecord,
+    count: usize,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<Option<Vec<u32>>, CodecError> {
+    let mut members = reserve_vec(ctx, count, operation)?;
+    for index in 0..count {
+        let Some(sequence) = record.integer(4 + index)
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
+        else {
+            return Ok(None);
+        };
+        members.push(sequence);
+    }
+    Ok(Some(members))
+}
+
 fn flow_associativity(
     entry: &DirectoryEntry,
     record: &ParameterRecord,
@@ -2286,18 +2306,15 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "Parameter Data record is missing"))?;
             continue;
         };
-        let owners = records
-            .iter()
-            .filter_map(|(sequence, owner_record)| {
-                (*sequence != entry.sequence
-                    && has_property_pointer(
-                        owner_record,
-                        entry.sequence,
-                        trailing_pointer_analysis,
-                    ))
-                .then_some(*sequence)
-            })
-            .collect::<Vec<_>>();
+        let mut owners = Vec::new();
+        for (sequence, owner_record) in &records {
+            if *sequence != entry.sequence
+                && has_property_pointer(owner_record, entry.sequence, trailing_pointer_analysis)
+            {
+                reserve_vec_growth(ctx, &mut owners, 1, "iges property owner sequences")?;
+                owners.push(*sequence);
+            }
+        }
         let fields_valid = property_fields_valid(entry, record, record.parameter_end(), &entries);
         let attachment_valid =
             entry.status.subordinate() == Some(Subordinate::Independent) || !owners.is_empty();
@@ -2622,22 +2639,26 @@ pub(super) fn project(
             continue;
         };
         let count = record.count(1).filter(|count| *count > 0);
-        let mut types = BTreeSet::<Vec<u8>>::new();
-        let units_valid = count.is_some_and(|count| {
-            record.parameter_end() == 2 + count * 3
-                && (0..count).all(|offset| {
-                    let start = 2 + offset * 3;
-                    record
-                        .string(start)
-                        .zip(record.string(start + 1))
-                        .is_some_and(|(unit_type, value)| {
-                            unit_value_valid(unit_type, value) && types.insert(unit_type.to_vec())
-                        })
-                        && record
-                            .number(start + 2)
-                            .is_some_and(|scale| scale.is_finite() && scale > 0.0)
-                })
-        });
+        let mut types = BTreeSet::<&[u8]>::new();
+        let mut units_valid = count.is_some_and(|count| record.parameter_end() == 2 + count * 3);
+        if let Some(count) = count.filter(|_| units_valid) {
+            for offset in 0..count {
+                let start = 2 + offset * 3;
+                let valid = if let Some((unit_type, value)) = record.string(start).zip(record.string(start + 1)) {
+                    unit_value_valid(unit_type, value)
+                        && crate::decode_resource::insert_optional_btree_set(
+                            Some(ctx), &mut types, unit_type, "iges unit type nodes",
+                        )?
+                        && record.number(start + 2).is_some_and(|scale| scale.is_finite() && scale > 0.0)
+                } else {
+                    false
+                };
+                if !valid {
+                    units_valid = false;
+                    break;
+                }
+            }
+        }
         let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if units_valid && directory_valid {
@@ -2691,29 +2712,22 @@ pub(super) fn project(
             continue;
         };
         let count = record.count(1).filter(|count| *count > 0);
-        let members = count.and_then(|count| {
-            (0..count)
-                .map(|index| {
-                    record.integer(2 + index).and_then(|value| {
-                        let sequence = u32::try_from(value).ok()?;
-                        (sequence % 2 == 1 && entries.contains_key(&sequence)).then_some(sequence)
+        let members_valid = count.is_some_and(|count| {
+            (0..count).all(|index| {
+                record.integer(2 + index)
+                    .and_then(|value| u32::try_from(value).ok())
+                    .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
+                    .is_some_and(|sequence| {
+                        !matches!(entry.form, 1 | 14)
+                            || records.get(&sequence).is_some_and(|member_record| {
+                                has_association_back_pointer(
+                                    member_record, entry.sequence, trailing_pointer_analysis,
+                                )
+                            })
                     })
-                })
-                .collect::<Option<Vec<_>>>()
+            })
         });
-        let back_pointers_valid = members.as_ref().is_some_and(|members| {
-            !matches!(entry.form, 1 | 14)
-                || members.iter().all(|member| {
-                    records.get(member).is_some_and(|member_record| {
-                        has_association_back_pointer(
-                            member_record,
-                            entry.sequence,
-                            trailing_pointer_analysis,
-                        )
-                    })
-                })
-        });
-        if members.is_some() && back_pointers_valid {
+        if members_valid {
             crate::decode_resource::insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges structure decoded sequences")?;
         } else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "group member list or required association back pointer is invalid"))?;
@@ -2810,11 +2824,13 @@ pub(super) fn project(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,
                     );
+                    let mut boundary_edges = reserve_vec(ctx, 1, "iges bounded plane boundary edges")?;
+                    boundary_edges.push(edge);
                     let candidate = plane_face_draft(
                         entry.sequence,
                         entry.sequence,
                         &stem,
-                        vec![edge],
+                        boundary_edges,
                         global.minimum_resolution_mm(),
                         sequences,
                         ctx,
@@ -3115,8 +3131,10 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid-assembly item count is not positive"))?;
             continue;
         };
-        let items = (0..count)
-            .map(|index| {
+        let mut items = reserve_vec(ctx, count, "iges solid assembly items")?;
+        let mut items_valid = true;
+        for index in 0..count {
+            let Some(item) = (|| {
                 let item = record.integer(2 + index).and_then(|value| {
                     let sequence = u32::try_from(value).ok()?;
                     (sequence % 2 == 1).then_some(sequence)
@@ -3125,19 +3143,24 @@ pub(super) fn project(
                     .integer(2 + count + index)
                     .and_then(|value| u32::try_from(value).ok())?;
                 (transformation == 0 || transformation % 2 == 1).then_some((item, transformation))
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(items) = items else {
+            })() else {
+                items_valid = false;
+                break;
+            };
+            items.push(item);
+        }
+        if !items_valid {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "solid-assembly item tuple is invalid"))?;
             continue;
-        };
-        assemblies.insert(
-            entry.sequence,
+        }
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut assemblies, entry.sequence,
             SolidAssembly {
                 form: entry.form,
                 items,
             },
-        );
+            "iges solid assembly index nodes",
+        )?;
     }
 
     let mut visited = BTreeSet::new();
@@ -3221,27 +3244,28 @@ pub(super) fn project(
             .and_then(|value| usize::try_from(value).ok());
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
         let count = record.count(3);
-        let members = count.and_then(|count| {
-            (0..count)
-                .map(|index| {
-                    record.integer(4 + index).and_then(|value| {
-                        let sequence = u32::try_from(value).ok()?;
-                        (sequence % 2 == 1 && entries.contains_key(&sequence)).then_some(sequence)
-                    })
-                })
-                .collect::<Option<Vec<_>>>()
-        });
+        let members = match count {
+            Some(count) => definition_members(record, count, &entries, ctx, "iges subfigure definition members")?,
+            None => None,
+        };
         let (Some(depth), Some(members)) = (depth, members) else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "subfigure depth, member count, or member pointer is invalid"))?;
             continue;
         };
-        definitions.insert(entry.sequence, SubfigureDefinition { depth, members });
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut definitions, entry.sequence,
+            SubfigureDefinition { depth, members },
+            "iges subfigure definition index nodes",
+        )?;
         if name_valid
             && subfigure_definition_directory_fields_valid(entry, global.global_table())
             && subfigure_definition_label_display_valid(entry, &entries)
             && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?
         {
-            definition_fields_valid.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx), &mut definition_fields_valid, entry.sequence,
+                "iges subfigure valid-definition nodes",
+            )?;
         }
     }
 
@@ -3306,16 +3330,10 @@ pub(super) fn project(
             .and_then(|value| usize::try_from(value).ok());
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
         let member_count = record.count(3);
-        let members = member_count.and_then(|count| {
-            (0..count)
-                .map(|index| {
-                    record.integer(4 + index).and_then(|value| {
-                        let sequence = u32::try_from(value).ok()?;
-                        (sequence % 2 == 1 && entries.contains_key(&sequence)).then_some(sequence)
-                    })
-                })
-                .collect::<Option<Vec<_>>>()
-        });
+        let members = match member_count {
+            Some(count) => definition_members(record, count, &entries, ctx, "iges network definition members")?,
+            None => None,
+        };
         let Some((depth, member_count, members)) = depth
             .zip(member_count)
             .zip(members)
@@ -3346,14 +3364,15 @@ pub(super) fn project(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "network definition connect-point count is invalid"))?;
             continue;
         };
-        network_definitions.insert(
-            entry.sequence,
+        crate::decode_resource::insert_optional_btree_map(
+            Some(ctx), &mut network_definitions, entry.sequence,
             NetworkDefinition {
                 depth,
                 members,
                 connect_points,
             },
-        );
+            "iges network definition index nodes",
+        )?;
         if name_valid
             && type_flag_valid
             && designator_valid
@@ -3362,7 +3381,10 @@ pub(super) fn project(
             && subfigure_definition_label_display_valid(entry, &entries)
             && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?
         {
-            network_definition_fields_valid.insert(entry.sequence);
+            crate::decode_resource::insert_optional_btree_set(
+                Some(ctx), &mut network_definition_fields_valid, entry.sequence,
+                "iges network valid-definition nodes",
+            )?;
         }
     }
 

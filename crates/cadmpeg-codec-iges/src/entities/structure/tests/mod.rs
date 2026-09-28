@@ -14,11 +14,12 @@ use super::line_font_property_code_valid;
 use super::signal_string_geometry_target;
 use crate::loss::IgesLossCode;
 use crate::test_support::test_drawing_and_trimming::{
-    associativity_definition_file, bounded_associativity_forms_file,
+    admitted_containing_network_file, associativity_definition_file, bounded_associativity_forms_file,
     bounded_associativity_forms_file_with_global, flow_associativity_forms_file,
     label_display_without_leader_file, legacy_associativity_forms_file,
     legacy_associativity_forms_file_with_global, legacy_generic_single_parent_file,
-    legacy_perforated_plane_file,
+    legacy_perforated_plane_file, nested_subfigure_file, network_subfigure_file,
+    units_data_file,
 };
 use crate::test_support::test_owned::{
     owned_test_file, owned_test_file_with_global, OwnedTestEntity,
@@ -30,7 +31,7 @@ use crate::test_support::test_solids_and_structure::{
     equal_drilled_hole_layer_range_file, external_reference_forms_file, grid_property_file,
     group_forms_file, group_type_property_file, invalid_drilled_hole_layer_order_file,
     lep_property_forms_file, patterned_instance_file, product_property_file,
-    scalar_property_forms_file, solid_instance_file, structure_target_rules_file,
+    scalar_property_forms_file, solid_assembly_file, solid_instance_file, structure_target_rules_file,
     text_score_property_forms_file, variable_schema_property_forms_file,
 };
 use crate::IgesCodec;
@@ -1546,6 +1547,40 @@ fn legacy_single_parent_face_refuses_nested_topology_storage() {
         }
     }
     assert!(reached, "legacy plane active curve identity copy was not reached");
+}
+
+#[test]
+fn structure_lists_and_indexes_refuse_unadmitted_storage() {
+    for (bytes, operation) in [
+        (product_property_file(), "iges property owner sequences"),
+        (units_data_file(), "iges unit type nodes"),
+        (solid_assembly_file(), "iges solid assembly items"),
+        (solid_assembly_file(), "iges solid assembly index nodes"),
+        (nested_subfigure_file(), "iges subfigure definition members"),
+        (nested_subfigure_file(), "iges subfigure definition index nodes"),
+        (admitted_containing_network_file(), "iges network definition members"),
+        (network_subfigure_file(), "iges network definition index nodes"),
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions { policy, ..DecodeOptions::default() }) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                _ => panic!("expected structure storage refusal at {operation}"),
+            }
+        }
+        assert!(reached, "structure storage refusal was not reached: {operation}");
+        assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+    }
 }
 
 #[test]
