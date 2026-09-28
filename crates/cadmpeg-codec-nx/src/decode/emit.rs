@@ -1239,6 +1239,7 @@ pub(super) fn emit_topology(
     )?;
     intersection_index.complete_from_stream(ctx, ir, intersection_starts)?;
     complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
+        ctx,
         ir,
         &serialized_branch_pcurves,
         intersection_starts.coedges,
@@ -1247,6 +1248,7 @@ pub(super) fn emit_topology(
         completion_geometry_budget,
     )?;
     complete_exact_boundary_intersection_pcurves_with_budget(
+        ctx,
         ir,
         annotations,
         procedural_start,

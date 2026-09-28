@@ -90,39 +90,61 @@ pub(super) fn ordered_parameter_range(mut range: [f64; 2]) -> Option<[f64; 2]> {
     Some(range)
 }
 
-fn vertex_point_positions(ir: &CadIr) -> BTreeMap<VertexId, Point3> {
-    let point_positions = ir
-        .model
-        .points
-        .iter()
-        .fold(BTreeMap::new(), |mut positions, point| {
-            positions
-                .entry(point.id.clone())
-                .or_insert(point.position().get());
-            positions
-        });
-    ir.model
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            point_positions
-                .get(&vertex.point)
-                .copied()
-                .map(|position| (vertex.id.clone(), position))
-        })
-        .collect()
+fn charge_derived_param_range(
+    ctx: &DecodeContext<'_>,
+    id: &EdgeId,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let bytes = id.as_str().len().checked_add("param_range".len()).ok_or_else(|| {
+        ctx.refuse_codec_limit("nx derived edge parameter text", 0, u64::MAX)
+    })?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "nx derived edge parameter text",
+    )?;
+    ctx.charge_collection_items(2, "nx derived edge parameter annotations")
 }
 
-fn edge_indices_by_curve(ir: &CadIr) -> BTreeMap<CurveId, Vec<usize>> {
-    ir.model
-        .edges
-        .iter()
-        .enumerate()
-        .filter_map(|(index, edge)| Some((edge.curve().cloned()?, index)))
-        .fold(BTreeMap::new(), |mut indices, (curve, index)| {
-            indices.entry(curve).or_default().push(index);
-            indices
-        })
+fn vertex_point_positions(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<BTreeMap<VertexId, Point3>, cadmpeg_core::CodecError> {
+    let mut point_positions = BTreeMap::new();
+    for point in &ir.model.points {
+        ctx.charge_collection_items(1, "nx pcurve point position index")?;
+        point_positions.entry(&point.id).or_insert(point.position().get());
+    }
+    let mut vertices = BTreeMap::new();
+    for vertex in &ir.model.vertices {
+        let Some(position) = point_positions.get(&vertex.point).copied() else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "nx pcurve vertex position index")?;
+        vertices.insert(
+            copy_typed_id(ctx, vertex.id.as_str(), "nx pcurve vertex identity")?,
+            position,
+        );
+    }
+    Ok(vertices)
+}
+
+fn edge_indices_by_curve(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<BTreeMap<CurveId, Vec<usize>>, cadmpeg_core::CodecError> {
+    let mut indices = BTreeMap::new();
+    for (index, edge) in ir.model.edges.iter().enumerate() {
+        let Some(curve) = edge.curve() else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "nx pcurve edge curve index")?;
+        let group = indices
+            .entry(copy_typed_id(ctx, curve.as_str(), "nx pcurve edge curve identity")?)
+            .or_insert_with(Vec::new);
+        ctx.charge_collection_items(1, "nx pcurve edge indices")?;
+        group.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx pcurve edge indices", 0, 1))?;
+        group.push(index);
+    }
+    Ok(indices)
 }
 
 #[derive(Clone, Copy, Default)]
@@ -385,8 +407,11 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
     serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
     annotations: &mut AnnotationBuilder,
 ) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("test context");
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget(
+        &ctx,
         ir,
         serialized,
         annotations,
@@ -396,12 +421,14 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
 
 #[cfg(test)]
 fn complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
     annotations: &mut AnnotationBuilder,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) {
     complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
+        ctx,
         ir,
         serialized,
         0,
@@ -413,6 +440,7 @@ fn complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget(
 }
 
 pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
     coedge_start: usize,
@@ -420,24 +448,24 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
     annotations: &mut AnnotationBuilder,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let loop_faces = ir
-        .model
-        .loops
-        .iter()
-        .map(|loop_| (loop_.id.clone(), loop_.face.clone()))
-        .collect::<BTreeMap<_, _>>();
-    let face_surfaces = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| (face.id.clone(), face.surface.clone()))
-        .collect::<BTreeMap<_, _>>();
-    let edge_curves = ir
-        .model
-        .edges
-        .iter()
-        .filter_map(|edge| Some((edge.id.clone(), edge.curve().cloned()?)))
-        .collect::<BTreeMap<_, _>>();
+    let mut loop_faces = BTreeMap::new();
+    for loop_ in &ir.model.loops {
+        ctx.charge_collection_items(1, "nx serialized branch loop faces")?;
+        loop_faces.insert(&loop_.id, &loop_.face);
+    }
+    let mut face_surfaces = BTreeMap::new();
+    for face in &ir.model.faces {
+        ctx.charge_collection_items(1, "nx serialized branch face surfaces")?;
+        face_surfaces.insert(&face.id, &face.surface);
+    }
+    let mut edge_curves = BTreeMap::new();
+    for edge in &ir.model.edges {
+        let Some(curve) = edge.curve() else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "nx serialized branch edge curves")?;
+        edge_curves.insert(&edge.id, curve);
+    }
     let mut incident = BTreeMap::<(CurveId, SurfaceId), Vec<(PcurveId, Option<[f64; 2]>)>>::new();
     for coedge in ir.model.coedges.iter().skip(coedge_start) {
         let Some(curve) = edge_curves.get(&coedge.edge) else {
@@ -450,34 +478,43 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             continue;
         };
         for use_ in &coedge.pcurves {
-            if !serialized.contains(&(curve.clone(), surface.clone(), use_.pcurve.clone())) {
+            let key = (
+                copy_typed_id(ctx, curve.as_str(), "nx serialized branch curve lookup")?,
+                copy_typed_id(ctx, surface.as_str(), "nx serialized branch surface lookup")?,
+                copy_typed_id(ctx, use_.pcurve.as_str(), "nx serialized branch pcurve lookup")?,
+            );
+            if !serialized.contains(&key) {
                 continue;
             }
+            ctx.charge_collection_items(1, "nx serialized branch incidence")?;
             let candidates = incident
-                .entry((curve.clone(), surface.clone()))
+                .entry((
+                    copy_typed_id(ctx, curve.as_str(), "nx branch incidence curve")?,
+                    copy_typed_id(ctx, surface.as_str(), "nx branch incidence surface")?,
+                ))
                 .or_default();
             let candidate = (
-                use_.pcurve.clone(),
+                copy_typed_id(ctx, use_.pcurve.as_str(), "nx branch candidate pcurve")?,
                 use_.parameter_range
                     .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints),
             );
             if !candidates.contains(&candidate) {
+                ctx.charge_collection_items(1, "nx serialized branch candidates")?;
+                candidates.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx serialized branch candidates", 0, 1))?;
                 candidates.push(candidate);
             }
         }
     }
 
-    let vertex_points = vertex_point_positions(ir);
+    let vertex_points = vertex_point_positions(ctx, ir)?;
     let replacements = {
-        let edges_by_curve = edge_indices_by_curve(ir);
-        let pcurves_by_id = ir.model.pcurves.iter().enumerate().fold(
-            BTreeMap::<PcurveId, usize>::new(),
-            |mut indices, (index, pcurve)| {
-                indices.entry(pcurve.id.clone()).or_insert(index);
-                indices
-            },
-        );
-        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+        let edges_by_curve = edge_indices_by_curve(ctx, ir)?;
+        let mut pcurves_by_id = BTreeMap::<PcurveId, usize>::new();
+        for (index, pcurve) in ir.model.pcurves.iter().enumerate() {
+            ctx.charge_collection_items(1, "nx serialized branch pcurve index")?;
+            pcurves_by_id.entry(copy_typed_id(ctx, pcurve.id.as_str(), "nx branch pcurve identity")?).or_insert(index);
+        }
+        let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
         let mut replacements = Vec::new();
         for procedural in ir.model.procedural_curves.iter().skip(procedural_start) {
             let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
@@ -526,11 +563,14 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 }
                 _ => continue,
             };
-            let candidates = supports.each_ref().map(|support| {
-                incident
-                    .get(&(owner.clone(), support.clone()))
-                    .map(Vec::as_slice)
-            });
+            let lookup = |support: &SurfaceId| -> Result<_, cadmpeg_core::CodecError> {
+                let key = (
+                    copy_typed_id(ctx, owner.as_str(), "nx branch owner lookup")?,
+                    copy_typed_id(ctx, support.as_str(), "nx branch support lookup")?,
+                );
+                Ok(incident.get(&key).map(Vec::as_slice))
+            };
+            let candidates = [lookup(&supports[0])?, lookup(&supports[1])?];
             let [Some([(first_id, first_use_range)]), Some([(second_id, second_use_range)])] =
                 candidates
             else {
@@ -606,9 +646,11 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 else {
                     continue;
                 };
+                ctx.charge_collection_items(1, "nx serialized branch replacements")?;
+                replacements.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx serialized branch replacements", 0, 1))?;
                 replacements.push((
-                    procedural.id.clone(),
-                    edge.id.clone(),
+                    copy_typed_id(ctx, procedural.id.as_str(), "nx branch procedural identity")?,
+                    copy_typed_id(ctx, edge.id.as_str(), "nx branch edge identity")?,
                     edge_reversed,
                     parameterization,
                 ));
@@ -649,6 +691,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 std::mem::swap(&mut edge.start, &mut edge.end);
             }
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
+            charge_derived_param_range(ctx, &edge.id)?;
             annotations
                 .derived(&edge.id, "param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1402,9 +1445,12 @@ pub(super) fn complete_exact_boundary_intersection_pcurves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("test context");
     let transfer_budget = WorkBudget::new(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES);
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     complete_exact_boundary_intersection_pcurves_with_budget(
+        &ctx,
         ir,
         annotations,
         0,
@@ -1415,22 +1461,21 @@ pub(super) fn complete_exact_boundary_intersection_pcurves(
 }
 
 pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     procedural_start: usize,
     transfer_budget: &TransferBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let vertex_points = vertex_point_positions(ir);
-    let edges_by_curve = edge_indices_by_curve(ir);
-    let procedural_indices = ir.model.procedural_curves.iter().enumerate().fold(
-        BTreeMap::new(),
-        |mut indices, (index, procedural)| {
-            indices.entry(procedural.id.clone()).or_insert(index);
-            indices
-        },
-    );
+    let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+    let vertex_points = vertex_point_positions(ctx, ir)?;
+    let edges_by_curve = edge_indices_by_curve(ctx, ir)?;
+    let mut procedural_indices = BTreeMap::<ProceduralCurveId, usize>::new();
+    for (index, procedural) in ir.model.procedural_curves.iter().enumerate() {
+        ctx.charge_collection_items(1, "nx exact boundary procedural index")?;
+        procedural_indices.entry(copy_typed_id(ctx, procedural.id.as_str(), "nx exact boundary procedural identity")?).or_insert(index);
+    }
     let mut blend_parameter_grids = BlendParameterGridCache::new();
     let mut replacements = Vec::new();
     for procedural in ir.model.procedural_curves.iter().skip(procedural_start) {
@@ -1552,7 +1597,12 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                             geometry_budget,
                             &mut blend_parameter_grids,
                         )?
-                        .map(|transferred| [first.clone(), transferred]),
+                        .map(|transferred| {
+                            first
+                                .try_clone_for_decode(ctx, "nx exact boundary first pcurve")
+                                .map(|first| [first, transferred])
+                        })
+                        .transpose()?,
                         transfer_intersection_pcurve(
                             &model_index,
                             owner,
@@ -1565,7 +1615,12 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                             geometry_budget,
                             &mut blend_parameter_grids,
                         )?
-                        .map(|transferred| [transferred, second.clone()]),
+                        .map(|transferred| {
+                            second
+                                .try_clone_for_decode(ctx, "nx exact boundary second pcurve")
+                                .map(|second| [transferred, second])
+                        })
+                        .transpose()?,
                     ];
                     match transferred {
                         [Some(pair), None] | [None, Some(pair)] => pair,
@@ -1589,7 +1644,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 else {
                     continue;
                 };
-                [first.clone(), transferred]
+                [first, transferred]
             }
             [None, Some(second)] => {
                 let Some(transferred) = transfer_intersection_pcurve(
@@ -1612,12 +1667,14 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             [None, None] => continue,
         };
         let fit_tolerance = cadmpeg_ir::geometry::FitTolerance::from(admitted_tolerance);
+        ctx.charge_collection_items(1, "nx exact boundary replacements")?;
+        replacements.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx exact boundary replacements", 0, 1))?;
         replacements.push((
-            procedural.id.clone(),
+            copy_typed_id(ctx, procedural.id.as_str(), "nx exact boundary procedural identity")?,
             pcurves,
             fit_tolerance,
             curve_is_cache_backed_with_index(&model_index, owner),
-            owner.clone(),
+            copy_typed_id(ctx, owner.as_str(), "nx exact boundary owner identity")?,
             range,
         ));
     }
@@ -1661,6 +1718,8 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             procedural.require_cache_fit_tolerance(tolerance)?;
         }
         if let Some(range) = tolerant_range {
+            ctx.charge_collection_items(1, "nx bounded tolerant curves")?;
+            bounded_tolerant_curves.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx bounded tolerant curves", 0, 1))?;
             bounded_tolerant_curves.push((curve, range));
         }
     }
@@ -1673,6 +1732,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         };
         if let Some(edge) = ir.model.edges.get_mut(*edge_index) {
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
+            charge_derived_param_range(ctx, &edge.id)?;
             annotations
                 .derived(&edge.id, "param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -4225,6 +4285,40 @@ mod tests {
         let error = index
             .complete_from_stream(&ctx, &mut ir, super::IntersectionEntityStarts::default())
             .expect_err("incidence collection refusal");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn serialized_branch_completion_route_refuses_retained_limit() {
+        let mut ir = CadIr::empty();
+        let point = cadmpeg_ir::ids::PointId::mint("nx:test:point#0").expect("identity grammar");
+        ir.model.points.push(cadmpeg_ir::topology::Point::new(
+            point.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
+                .expect("finite point"),
+            None,
+        ));
+        ir.model.vertices.push(cadmpeg_ir::topology::Vertex {
+            id: VertexId::mint("nx:test:vertex#0").expect("identity grammar"),
+            point,
+            tolerance: None,
+        });
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
+        let geometry_budget = super::GeometryWorkBudget::from_context(&ctx, 100);
+        let error = super::complete_tolerant_intersection_pcurves_from_serialized_branches_for_stream_with_budget(
+            &ctx,
+            &mut ir,
+            &std::collections::BTreeSet::new(),
+            0,
+            0,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &geometry_budget,
+        )
+        .expect_err("branch completion retained refusal");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     }
 
