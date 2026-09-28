@@ -3,14 +3,15 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::om::boolean_operations_with_labels;
 use crate::om::extrude_payload_header;
 use crate::om::identical_instance_output_payload_lane;
 use crate::om::indexed_sections;
 use crate::om::offset_store_control_class_ordinals;
 use crate::om::offset_store_control_form;
 use crate::om::offset_store_control_values;
-
+fn boolean_operations_with_labels_for_test(bytes: &[u8], base_offset: usize, labels: &[crate::om::OperationLabel<'_>]) -> Vec<crate::om::BooleanOperation> {
+    crate::test_support::with_decode_context(|ctx| crate::om::boolean_operations_with_labels(ctx, bytes, base_offset, labels)).unwrap()
+}
 fn operation_body_reference_lanes_for_test(record: crate::om::operation_record::OperationBodyInput<'_>) -> Vec<crate::om::OperationBodyReferenceLane> {
     crate::test_support::with_decode_context(|ctx| crate::om::operation_body_reference_lanes(ctx, record)).unwrap()
 }
@@ -1571,7 +1572,7 @@ fn om_block_construction_field_decodes_ordered_canonical_references() {
 #[test]
 fn om_boolean_operations_decode_counted_target_and_tools() {
     let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x0aSUBTRACT\0\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x5e\x00\x01\x05\x90\x19\x5f\x90\x19\x44\x90\x19\x43\x90\x19\x60\x00";
-    let operations = boolean_operations_with_labels(bytes, 100, &operation_labels(bytes, 100));
+    let operations = boolean_operations_with_labels_for_test(bytes, 100, &operation_labels(bytes, 100));
     assert_eq!(operations.len(), 1);
     assert_eq!(operations[0].kind, BooleanOperationKind::Subtract);
     assert_eq!(operations[0].target.token.value(), 6494);
@@ -1623,7 +1624,7 @@ fn om_boolean_operations_decode_counted_target_and_tools() {
 
     let mut invalid = bytes.to_vec();
     *invalid.last_mut().unwrap() = 1;
-    assert!(boolean_operations_with_labels(&invalid, 0, &operation_labels(&invalid, 0)).is_empty());
+    assert!(boolean_operations_with_labels_for_test(&invalid, 0, &operation_labels(&invalid, 0)).is_empty());
 }
 
 #[test]
@@ -1994,3 +1995,5 @@ fn body_members_refuse_work_limit() {
 }
 
 mod operation_body_limits;
+
+mod boolean_limits;

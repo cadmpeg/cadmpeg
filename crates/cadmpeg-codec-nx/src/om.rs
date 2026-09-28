@@ -1122,11 +1122,11 @@ impl<'a> Section<'a> {
     }
 
     /// Decode fully framed Boolean operations from the pointed record area.
-    pub(crate) fn boolean_operations(&self) -> Vec<BooleanOperation> {
+    pub(crate) fn boolean_operations(&self, ctx: &DecodeContext<'_>) -> Result<Vec<BooleanOperation>, CodecError> {
         let Some((base_offset, bytes)) = self.record_area_parts() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        boolean_operations_with_labels(bytes, base_offset, &self.cached_operation_labels)
+        boolean_operations_with_labels(ctx, bytes, base_offset, &self.cached_operation_labels)
     }
 
     /// Bound operation records and retain their ordinal in the complete label sequence.
@@ -3376,18 +3376,20 @@ pub(crate) fn data_block_object_references(ctx: &DecodeContext<'_>, bytes: &[u8]
 }
 
 fn boolean_operations_with_labels(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     base_offset: usize,
     labels: &[OperationLabel<'_>],
-) -> Vec<BooleanOperation> {
+) -> Result<Vec<BooleanOperation>, CodecError> {
     const BODY_HEADER: &[u8] = &[
         0x31, 0x00, 0x00, 0x01, 0x00, 0x14, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0x03,
         0x00, 0x00, 0xe0, 0x7f, 0xff, 0xff, 0xff, 0x01, 0x01,
     ];
-    labels
-        .iter()
-        .copied()
-        .filter_map(|label| {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(labels.len()), "scan NX Boolean operation labels")?;
+    let mut operations = Vec::new();
+    for label in labels.iter().copied() {
+        let mut failure = None;
+        let operation = (|| {
             let kind = match label.value {
                 "UNITE" => BooleanOperationKind::Unite,
                 "SUBTRACT" => BooleanOperationKind::Subtract,
@@ -3399,12 +3401,19 @@ fn boolean_operations_with_labels(
             if bytes.get(label_end..label_end + BODY_HEADER.len()) != Some(BODY_HEADER) {
                 return None;
             }
-            let (targets, next) =
-                counted_feature_object_indices(bytes, base_offset, label_end + BODY_HEADER.len())?;
+            let (targets, next) = match counted_feature_object_indices(ctx, bytes, base_offset, label_end + BODY_HEADER.len()) {
+                Ok(Some(values)) => values,
+                Ok(None) => return None,
+                Err(error) => { failure = Some(error); return None; }
+            };
             if targets.len() != 1 || bytes.get(next) != Some(&0) {
                 return None;
             }
-            let (tools, end) = counted_feature_object_indices(bytes, base_offset, next + 1)?;
+            let (tools, end) = match counted_feature_object_indices(ctx, bytes, base_offset, next + 1) {
+                Ok(Some(values)) => values,
+                Ok(None) => return None,
+                Err(error) => { failure = Some(error); return None; }
+            };
             if tools.is_empty() || bytes.get(end) != Some(&0) {
                 return None;
             }
@@ -3415,39 +3424,47 @@ fn boolean_operations_with_labels(
                 target,
                 tools,
             })
-        })
-        .collect()
+        })();
+        if let Some(error) = failure { return Err(error); }
+        if let Some(operation) = operation {
+            reserve_om_retained_item(ctx, &mut operations, "NX Boolean operations")?;
+            operations.push(operation);
+        }
+    }
+    Ok(operations)
 }
 
 fn counted_feature_object_indices(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     base_offset: usize,
     at: usize,
-) -> Option<(Vec<PayloadObjectReference>, usize)> {
+) -> Result<Option<(Vec<PayloadObjectReference>, usize)>, CodecError> {
     if bytes.get(at) != Some(&0x01) {
-        return None;
+        return Ok(None);
     }
-    let count = usize::from(*bytes.get(at + 1)?).checked_sub(1)?;
+    let Some(count) = bytes.get(at + 1).and_then(|value| usize::from(*value).checked_sub(1)) else { return Ok(None) };
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "scan NX Boolean reference count")?;
     let values_start = at + 2;
     let mut scan_cursor = values_start;
     for _ in 0..count {
-        let (value, next) = feature_object_index(bytes, scan_cursor)?;
-        value?;
+        let Some((Some(_), next)) = feature_object_index(bytes, scan_cursor) else { return Ok(None) };
         scan_cursor = next;
     }
 
     let mut cursor = values_start;
-    let mut values = Vec::with_capacity(count);
+    let mut values = Vec::new();
     for _ in 0..count {
-        let value = ReferenceIndexToken::read_feature(bytes.get(cursor..)?)?;
+        let Some(value) = bytes.get(cursor..).and_then(ReferenceIndexToken::read_feature) else { return Ok(None) };
         let next = cursor + value.raw().len();
+        reserve_om_retained_item(ctx, &mut values, "NX Boolean references")?;
         values.push(PayloadObjectReference {
             offset: base_offset + cursor,
             token: value,
         });
         cursor = next;
     }
-    Some((values, cursor))
+    Ok(Some((values, cursor)))
 }
 
 /// Decode count-framed runs of same-section record references.
