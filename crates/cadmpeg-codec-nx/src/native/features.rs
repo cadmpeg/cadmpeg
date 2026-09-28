@@ -3866,15 +3866,19 @@ pub(super) fn feature_unlabeled_operation_body_writes(ctx: &cadmpeg_core::decode
 {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut writes = Vec::new();
+    let mut failure = None;
     visit_feature_history_unlabeled_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() { return; }
+            let decoded = match crate::om::unlabeled_operation_body_write_frames(ctx, record) {
+                Ok(decoded) => decoded,
+                Err(error) => { failure = Some(error); return; }
+            };
             let operation_record = format!(
                 "nx:feature-history:unlabeled-operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, write) in crate::om::unlabeled_operation_body_write_frames(record)
-                .into_iter()
-                .enumerate()
+            for (ordinal, write) in decoded.into_iter().enumerate()
             {
                 let Some(offset) = entry_offset.checked_add(write.offset() as u64) else {
                     continue;
@@ -3901,6 +3905,7 @@ pub(super) fn feature_unlabeled_operation_body_writes(ctx: &cadmpeg_core::decode
             }
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(writes)
 }
 
@@ -3911,17 +3916,21 @@ pub(super) fn feature_operation_body_writes(ctx: &cadmpeg_core::decode::DecodeCo
 {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut writes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() { return; }
+            let decoded = match crate::om::operation_body_write_frames(ctx, record.payload_view()) {
+                Ok(decoded) => decoded,
+                Err(error) => { failure = Some(error); return; }
+            };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, write) in crate::om::operation_body_write_frames(record.payload_view())
-                .into_iter()
-                .enumerate()
+            for (ordinal, write) in decoded.into_iter().enumerate()
             {
                 let Some(offset) = entry_offset.checked_add(write.offset() as u64) else {
                     continue;
@@ -3948,6 +3957,7 @@ pub(super) fn feature_operation_body_writes(ctx: &cadmpeg_core::decode::DecodeCo
             }
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(writes)
 }
 

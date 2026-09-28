@@ -2725,19 +2725,22 @@ pub(crate) fn operation_body_references(
 /// Both indices are non-null and canonical. Endpoint tags `10`, `12`, and
 /// `15` select the body-image field across the supported schema generations.
 pub(crate) fn operation_body_write_frames(
+    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Vec<BodyWriteFrame<usize>> {
-    body_write_frames(record.payload(), record.payload_offset())
+) -> Result<Vec<BodyWriteFrame<usize>>, CodecError> {
+    body_write_frames(ctx, record.payload(), record.payload_offset())
 }
 
 /// Decode body-write frames from one independently bounded unlabeled record.
 pub(crate) fn unlabeled_operation_body_write_frames(
+    ctx: &DecodeContext<'_>,
     record: UnlabeledOperationRecord<'_>,
-) -> Vec<BodyWriteFrame<usize>> {
-    body_write_frames(record.payload(), record.header().end_offset())
+) -> Result<Vec<BodyWriteFrame<usize>>, CodecError> {
+    body_write_frames(ctx, record.payload(), record.header().end_offset())
 }
 
-fn body_write_frames(payload: &[u8], payload_offset: usize) -> Vec<BodyWriteFrame<usize>> {
+fn body_write_frames(ctx: &DecodeContext<'_>, payload: &[u8], payload_offset: usize) -> Result<Vec<BodyWriteFrame<usize>>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(payload.len()), "scan NX body-write frames")?;
     let mut relations = Vec::new();
     for marker in payload
         .windows(2)
@@ -2745,10 +2748,11 @@ fn body_write_frames(payload: &[u8], payload_offset: usize) -> Vec<BodyWriteFram
         .filter_map(|(offset, window)| (window == [0x01, 0x02]).then_some(offset))
     {
         if let Some(write) = operation_body_write_frame_at(payload, payload_offset, marker) {
+            reserve_om_retained_item(ctx, &mut relations, "nx body-write frames")?;
             relations.push(write);
         }
     }
-    relations
+    Ok(relations)
 }
 
 fn operation_body_write_frame_at(

@@ -28,7 +28,6 @@ fn offset_store_named_point_test<'a>(blocks: impl IntoIterator<Item = &'a [u8]>)
 }
 use crate::om::operation_body_reference;
 use crate::om::operation_body_references;
-use crate::om::operation_body_write_frames;
 use crate::om::sections;
 use crate::om::DataBlockObjectReference;
 use crate::om::OperationBodyReference;
@@ -60,6 +59,10 @@ fn operation_payload_text_frames(record: crate::om::operation_record::OperationP
 
 fn operation_common_frames(record: crate::om::operation_record::OperationPayload<'_>) -> Vec<crate::om::common_frame::CommonFrame<usize>> {
     crate::test_support::with_decode_context(|ctx| crate::om::operation_common_frames(ctx, record)).unwrap()
+}
+
+fn operation_body_write_frames(record: crate::om::operation_record::OperationPayload<'_>) -> Vec<crate::om::body_write::BodyWriteFrame<usize>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_body_write_frames(ctx, record)).unwrap()
 }
 
 fn data_block_object_references(bytes: &[u8]) -> Vec<crate::om::DataBlockObjectReference> {
