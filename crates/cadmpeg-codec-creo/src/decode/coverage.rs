@@ -12,7 +12,6 @@ use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinitionInput};
 use crate::container::ContainerScan;
 
 use super::feature_history::link::surface_kind_for_geometry;
-use super::records::CreoSurfaceNamedParameterRecord;
 
 pub(super) fn source_section(scan: &ContainerScan, offset: usize) -> String {
     source_section_ref(scan, offset).to_string()
@@ -494,32 +493,5 @@ pub(super) fn surface_variant(kind: crate::surface::SurfaceKind) -> Option<&'sta
             crate::surface::ExtrusionVariant::TabulatedCylinder,
         ) => Some("tabulated_cylinder"),
         _ => None,
-    }
-}
-
-pub(super) fn surface_prototype_family_name(
-    family: &crate::surface::SurfacePrototypeFamily,
-) -> String {
-    match family {
-        crate::surface::SurfacePrototypeFamily::Plane => "plane".to_string(),
-        crate::surface::SurfacePrototypeFamily::Cylinder => "cylinder".to_string(),
-        crate::surface::SurfacePrototypeFamily::Cone => "cone".to_string(),
-        crate::surface::SurfacePrototypeFamily::Torus(_) => "torus_or_sphere".to_string(),
-        crate::surface::SurfacePrototypeFamily::Spline(_) => "spline".to_string(),
-        crate::surface::SurfacePrototypeFamily::Fillet(_) => "fillet".to_string(),
-        crate::surface::SurfacePrototypeFamily::Extrusion(_) => "extrusion".to_string(),
-        crate::surface::SurfacePrototypeFamily::Other(name) => format!("other:{name}"),
-    }
-}
-
-pub(super) fn surface_named_parameter_record(
-    parameter: &crate::surface::SurfaceNamedParameter,
-) -> CreoSurfaceNamedParameterRecord {
-    CreoSurfaceNamedParameterRecord {
-        name: parameter.name.clone(),
-        value: parameter.value.clone(),
-        body: parameter.body.clone(),
-        offset: parameter.offset,
-        value_offset: parameter.value_offset,
     }
 }
