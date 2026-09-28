@@ -4888,89 +4888,89 @@ fn decode_asm_history(
     crate::history::decode(ctx, bytes, &history_brep.name, width, &ctx.policy().limits)
 }
 
+fn collect_related_indices<'a>(
+    ctx: &DecodeContext<'_>,
+    indices: impl IntoIterator<Item = (&'a str, u32)>,
+) -> Result<Vec<(String, u32)>, CodecError> {
+    let mut collected = Vec::new();
+    for (stream, index) in indices {
+        let stream = copy_decode_string(ctx, stream, "retain F3D related record stream")?;
+        push_decode_item(ctx, &mut collected, (stream, index), "collect F3D related record indices")?;
+    }
+    Ok(collected)
+}
+
+fn append_related_record_headers(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    native: &mut F3dNative,
+    indices: &[(String, u32)],
+) -> Result<(), CodecError> {
+    let existing = collect_decode_set(
+        ctx,
+        native.design_record_headers.iter().filter_map(|record| {
+            Some((crate::ids::native_stream(&record.id)?, record.record_index))
+        }),
+        "index F3D existing record headers",
+    )?;
+    let mut related = crate::design::decode::sketch::decode_related_record_headers(scan, indices)?;
+    related.retain(|record| {
+        crate::ids::native_stream(&record.id).is_none_or(|stream| {
+            !existing.contains(&(stream, record.record_index))
+        })
+    });
+    drop(existing);
+    append_decode_items(
+        ctx,
+        &mut native.design_record_headers,
+        related,
+        "append F3D related record headers",
+    )?;
+    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(())
+}
+
 fn extend_related_design_records(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     native: &mut F3dNative,
 ) -> Result<(), CodecError> {
-    let indices = native
-        .sketch_relations
-        .iter()
-        .flat_map(|relation| {
+    let indices = collect_related_indices(
+        ctx,
+        native.sketch_relations.iter().flat_map(|relation| {
             let scope = crate::ids::native_stream(&relation.id)
-                .unwrap_or(crate::ids::DEFAULT_STREAM)
-                .to_owned();
+                .unwrap_or(crate::ids::DEFAULT_STREAM);
             relation
                 .all_member_indices()
-                .map(move |record_index| (scope.clone(), record_index))
+                .map(move |record_index| (scope, record_index))
         })
         .chain(native.design_parameters.iter().filter_map(|parameter| {
             Some((
-                crate::ids::native_stream(&parameter.id)?.to_owned(),
+                crate::ids::native_stream(&parameter.id)?,
                 parameter.owner_record_index()?,
             ))
-        }))
-        .collect::<Vec<_>>();
-    let existing = native
-        .design_record_headers
-        .iter()
-        .filter_map(|record| {
-            Some((
-                crate::ids::native_stream(&record.id)?.to_owned(),
-                record.record_index,
-            ))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
-            .into_iter()
-            .filter(|record| {
-                crate::ids::native_stream(&record.id).is_none_or(|scope| {
-                    !existing.contains(&(scope.to_owned(), record.record_index))
-                })
-            }),
-    );
-    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
+        })),
+    )?;
+    append_related_record_headers(ctx, scan, native, &indices)?;
     native.design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
         scan,
         &native.design_parameters,
         &native.design_record_headers,
     )?;
-    let indices = native
-        .design_parameter_owners
-        .iter()
-        .flat_map(|owner| {
+    let indices = collect_related_indices(
+        ctx,
+        native.design_parameter_owners.iter().flat_map(|owner| {
             let scope = crate::ids::native_stream(owner.id())
-                .unwrap_or(crate::ids::DEFAULT_STREAM)
-                .to_owned();
+                .unwrap_or(crate::ids::DEFAULT_STREAM);
             [
                 owner.scope_record_index(),
                 owner.parameter_record_index(),
                 owner.companion_record_index(),
             ]
-            .map(|record_index| (scope.clone(), record_index))
-        })
-        .collect::<Vec<_>>();
-    let existing = native
-        .design_record_headers
-        .iter()
-        .filter_map(|record| {
-            Some((
-                crate::ids::native_stream(&record.id)?.to_owned(),
-                record.record_index,
-            ))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
-            .into_iter()
-            .filter(|record| {
-                crate::ids::native_stream(&record.id).is_none_or(|scope| {
-                    !existing.contains(&(scope.to_owned(), record.record_index))
-                })
-            }),
-    );
-    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
+            .map(|record_index| (scope, record_index))
+        }),
+    )?;
+    append_related_record_headers(ctx, scan, native, &indices)?;
     native.design_parameter_companions =
         crate::design::decode::parameters::decode_parameter_companions(
             scan,
@@ -5016,79 +5016,73 @@ fn extend_related_design_records(
         &mut native.design_parameter_scopes,
         &native.design_parameter_owners,
     );
-    let mut existing = native
-        .design_record_headers
-        .iter()
-        .filter_map(|record| {
-            Some((
-                crate::ids::native_stream(&record.id)?.to_owned(),
-                record.record_index,
-            ))
-        })
-        .collect::<std::collections::HashSet<_>>();
+    let mut existing = collect_decode_set(
+        ctx,
+        native.design_record_headers.iter().filter_map(|record| {
+            Some((crate::ids::native_stream(&record.id)?, record.record_index))
+        }),
+        "index F3D scope record headers",
+    )?;
+    let mut scope_headers = Vec::new();
     for scope in &native.design_parameter_scopes {
         let Some(stream) = crate::ids::native_stream(&scope.id) else {
             continue;
         };
-        if existing.insert((stream.to_owned(), scope.record_index)) {
-            native
-                .design_record_headers
-                .push(crate::records::decal::DesignRecordHeader {
-                    id: format!("{stream}:design-record-header#{}", scope.byte_offset()),
-                    record_index: scope.record_index,
-                    class_tag: scope.class_tag.clone(),
-                    byte_offset: scope.byte_offset(),
-                });
+        if !existing.contains(&(stream, scope.record_index)) {
+            insert_decode_set(
+                ctx,
+                &mut existing,
+                (stream, scope.record_index),
+                "index F3D scope record headers",
+            )?;
+            let id = format_decode_string(
+                ctx,
+                "retain F3D scope record header ID",
+                format_args!("{stream}:design-record-header#{}", scope.byte_offset()),
+            )?;
+            push_decode_item(ctx, &mut scope_headers, crate::records::decal::DesignRecordHeader {
+                id,
+                record_index: scope.record_index,
+                class_tag: scope.class_tag.clone(),
+                byte_offset: scope.byte_offset(),
+            }, "collect F3D scope record headers")?;
         }
         if let Some(operation) = scope.copy_paste_bodies_operation() {
-            if existing.insert((stream.to_owned(), operation.relation_record_index)) {
-                native
-                    .design_record_headers
-                    .push(crate::records::decal::DesignRecordHeader {
-                        id: format!(
-                            "{stream}:design-record-header#{}",
-                            operation.relation_byte_offset()
-                        ),
-                        record_index: operation.relation_record_index,
-                        class_tag: operation.relation_class_tag.clone(),
-                        byte_offset: operation.relation_byte_offset(),
-                    });
+            if !existing.contains(&(stream, operation.relation_record_index)) {
+                insert_decode_set(
+                    ctx,
+                    &mut existing,
+                    (stream, operation.relation_record_index),
+                    "index F3D scope record headers",
+                )?;
+                let id = format_decode_string(
+                    ctx,
+                    "retain F3D scope record header ID",
+                    format_args!("{stream}:design-record-header#{}", operation.relation_byte_offset()),
+                )?;
+                push_decode_item(ctx, &mut scope_headers, crate::records::decal::DesignRecordHeader {
+                    id,
+                    record_index: operation.relation_record_index,
+                    class_tag: operation.relation_class_tag.clone(),
+                    byte_offset: operation.relation_byte_offset(),
+                }, "collect F3D scope record headers")?;
             }
         }
     }
-    let indices = native
-        .design_parameter_scopes
-        .iter()
-        .flat_map(|scope| {
+    drop(existing);
+    append_decode_items(ctx, &mut native.design_record_headers, scope_headers, "append F3D scope record headers")?;
+    let indices = collect_related_indices(
+        ctx,
+        native.design_parameter_scopes.iter().flat_map(|scope| {
             let stream = crate::ids::native_stream(&scope.id)
-                .unwrap_or(crate::ids::DEFAULT_STREAM)
-                .to_owned();
+                .unwrap_or(crate::ids::DEFAULT_STREAM);
             scope
                 .reference_members()
                 .values()
-                .map(move |record_index| (stream.clone(), *record_index))
-        })
-        .collect::<Vec<_>>();
-    let existing = native
-        .design_record_headers
-        .iter()
-        .filter_map(|record| {
-            Some((
-                crate::ids::native_stream(&record.id)?.to_owned(),
-                record.record_index,
-            ))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
-            .into_iter()
-            .filter(|record| {
-                crate::ids::native_stream(&record.id).is_none_or(|stream| {
-                    !existing.contains(&(stream.to_owned(), record.record_index))
-                })
-            }),
-    );
-    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
+                .map(move |record_index| (stream, *record_index))
+        }),
+    )?;
+    append_related_record_headers(ctx, scan, native, &indices)?;
     crate::design::decode::operands::bind_sketch_profiles(
         scan,
         &mut native.design_parameter_scopes,
@@ -5122,27 +5116,19 @@ fn extend_related_design_records(
             &native.design_parameter_scopes,
             &native.design_record_headers,
         )?;
-    let mut indices = native
-        .design_extrude_selection_groups
-        .iter()
-        .flat_map(|group| {
+    let indices = collect_related_indices(
+        ctx,
+        native.design_extrude_selection_groups.iter().flat_map(|group| {
             let stream = crate::ids::native_stream(&group.id)
-                .unwrap_or(crate::ids::DEFAULT_STREAM)
-                .to_owned();
+                .unwrap_or(crate::ids::DEFAULT_STREAM);
             group
                 .members()
                 .iter()
-                .map(move |record_index| (stream.clone(), record_index.value))
-        })
-        .collect::<Vec<_>>();
-    indices.extend(
-        native
-            .design_construction_operand_groups
-            .iter()
-            .flat_map(|group| {
+                .map(move |record_index| (stream, record_index.value))
+        }).chain(
+            native.design_construction_operand_groups.iter().flat_map(|group| {
                 let stream = crate::ids::native_stream(&group.id)
-                    .unwrap_or(crate::ids::DEFAULT_STREAM)
-                    .to_owned();
+                    .unwrap_or(crate::ids::DEFAULT_STREAM);
                 group
                     .members()
                     .iter()
@@ -5172,29 +5158,11 @@ fn extend_related_design_records(
                                     .chain(record_index.checked_add(2))
                             }),
                     )
-                    .map(move |record_index| (stream.clone(), record_index))
+                    .map(move |record_index| (stream, record_index))
             }),
-    );
-    let existing = native
-        .design_record_headers
-        .iter()
-        .filter_map(|record| {
-            Some((
-                crate::ids::native_stream(&record.id)?.to_owned(),
-                record.record_index,
-            ))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
-            .into_iter()
-            .filter(|record| {
-                crate::ids::native_stream(&record.id).is_none_or(|stream| {
-                    !existing.contains(&(stream.to_owned(), record.record_index))
-                })
-            }),
-    );
-    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
+        ),
+    )?;
+    append_related_record_headers(ctx, scan, native, &indices)?;
     crate::design::decode::operands::bind_construction_operand_trailing_records(
         scan,
         &mut native.design_construction_operand_groups,
@@ -5211,29 +5179,20 @@ fn extend_related_design_records(
             &native.design_construction_operand_groups,
             &native.design_record_headers,
         )?;
-    let scopes = native
-        .design_parameter_scopes
-        .iter()
-        .filter_map(|scope| {
-            Some((
-                (
-                    crate::ids::native_stream(&scope.id)?.to_owned(),
-                    scope.record_index,
-                ),
-                scope.kind(),
-            ))
-        })
-        .collect::<std::collections::HashMap<_, _>>();
-    let identified_groups = native
-        .design_construction_operand_identities
-        .iter()
-        .filter_map(|identity| {
-            Some((
-                crate::ids::native_stream(&identity.id)?.to_owned(),
-                identity.group_record_index,
-            ))
-        })
-        .collect::<std::collections::HashSet<_>>();
+    let scopes = collect_decode_map(
+        ctx,
+        native.design_parameter_scopes.iter().filter_map(|scope| {
+            Some(((crate::ids::native_stream(&scope.id)?, scope.record_index), scope.kind()))
+        }),
+        "index F3D related parameter scopes",
+    )?;
+    let identified_groups = collect_decode_set(
+        ctx,
+        native.design_construction_operand_identities.iter().filter_map(|identity| {
+            Some((crate::ids::native_stream(&identity.id)?, identity.group_record_index))
+        }),
+        "index F3D identified construction groups",
+    )?;
     native.design_edge_identity_operands =
         crate::design::decode::operands::decode_edge_identity_operands(
             scan,
@@ -5241,25 +5200,22 @@ fn extend_related_design_records(
             &native.design_construction_operand_groups,
             &native.design_record_headers,
         )?;
-    let identity_member_groups = native
-        .design_edge_identity_operands
-        .iter()
-        .filter_map(|operand| {
-            Some((
-                crate::ids::native_stream(&operand.id)?.to_owned(),
-                operand.group_record_index,
-            ))
-        })
-        .collect::<std::collections::HashSet<_>>();
+    let identity_member_groups = collect_decode_set(
+        ctx,
+        native.design_edge_identity_operands.iter().filter_map(|operand| {
+            Some((crate::ids::native_stream(&operand.id)?, operand.group_record_index))
+        }),
+        "index F3D edge identity groups",
+    )?;
     native.design_construction_operand_groups.retain(|group| {
         let Some(stream) = crate::ids::native_stream(&group.id) else {
             return true;
         };
-        let kind = scopes.get(&(stream.to_owned(), group.scope_record_index));
+        let kind = scopes.get(&(stream, group.scope_record_index));
         crate::design::decode::operands::construction_operand_group_is_retained(
             kind,
-            identified_groups.contains(&(stream.to_owned(), group.record_index))
-                || identity_member_groups.contains(&(stream.to_owned(), group.record_index)),
+            identified_groups.contains(&(stream, group.record_index))
+                || identity_member_groups.contains(&(stream, group.record_index)),
         )
     });
     native.design_fillet_radius_groups =
@@ -5274,57 +5230,26 @@ fn extend_related_design_records(
         &native.design_construction_operand_identities,
         &native.lost_edge_references,
     )?;
-    let indices = native
-        .design_construction_operand_identities
-        .iter()
-        .flat_map(|identity| {
+    let indices = collect_related_indices(
+        ctx,
+        native.design_construction_operand_identities.iter().flat_map(|identity| {
             let stream = crate::ids::native_stream(&identity.id)
-                .unwrap_or(crate::ids::DEFAULT_STREAM)
-                .to_owned();
+                .unwrap_or(crate::ids::DEFAULT_STREAM);
             identity
                 .wrappers()
                 .iter()
                 .map(|wrapper| wrapper.record_index)
                 .chain(std::iter::once(identity.following_record_index()))
-                .map(move |record_index| (stream.clone(), record_index))
-        })
-        .chain(
-            native
-                .design_construction_operand_groups
-                .iter()
-                .filter_map(|group| {
-                    let stream = crate::ids::native_stream(&group.id)?.to_owned();
-                    Some(
-                        group
-                            .members()
-                            .iter()
-                            .map(|member| member.value)
-                            .map(move |record_index| (stream.clone(), record_index)),
-                    )
-                })
-                .flatten(),
-        )
-        .collect::<Vec<_>>();
-    let existing = native
-        .design_record_headers
-        .iter()
-        .filter_map(|record| {
-            Some((
-                crate::ids::native_stream(&record.id)?.to_owned(),
-                record.record_index,
-            ))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    native.design_record_headers.extend(
-        crate::design::decode::sketch::decode_related_record_headers(scan, &indices)?
-            .into_iter()
-            .filter(|record| {
-                crate::ids::native_stream(&record.id).is_none_or(|stream| {
-                    !existing.contains(&(stream.to_owned(), record.record_index))
-                })
-            }),
-    );
-    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
+                .map(move |record_index| (stream, record_index))
+        }).chain(
+            native.design_construction_operand_groups.iter().filter_map(|group| {
+                let stream = crate::ids::native_stream(&group.id)?;
+                Some(group.members().iter().map(|member| member.value)
+                    .map(move |record_index| (stream, record_index)))
+            }).flatten(),
+        ),
+    )?;
+    append_related_record_headers(ctx, scan, native, &indices)?;
     native.design_extrude_selection_members =
         crate::design::decode::operands::decode_extrude_selection_members(
             scan,
@@ -5486,15 +5411,16 @@ fn extend_related_design_records(
         &native.design_parameter_scopes,
         &native.design_entity_headers,
     )?;
-    let stream_lengths: std::collections::HashMap<String, usize> = scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-        .map(|entry| {
-            scan.entry_bytes(&entry.name)
-                .map(|bytes| (crate::ids::native_scope(&entry.name), bytes.len()))
-        })
-        .collect::<Result<_, _>>()?;
+    let mut stream_lengths = std::collections::HashMap::new();
+    for entry in scan.entries.iter().filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream)) {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let stream = crate::ids::native_scope_charged(ctx, &entry.name)?;
+        if !stream_lengths.contains_key(&stream) {
+            ctx.charge_collection_items(1, "index F3D design stream lengths")?;
+            stream_lengths.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index F3D design stream lengths", 0, 1))?;
+        }
+        stream_lengths.insert(stream, bytes.len());
+    }
     native.design_parameter_companions =
         crate::design::decode::parameters::bind_parameter_companion_payloads(
             std::mem::take(&mut native.design_parameter_companions),
