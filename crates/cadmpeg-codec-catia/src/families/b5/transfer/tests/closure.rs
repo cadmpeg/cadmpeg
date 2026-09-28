@@ -15,7 +15,7 @@ use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use crate::families::b5::transfer::edges::b5_supports_agree;
 use crate::families::b5::transfer::{
-    curve_on_parameter_range, transfer, SurfacePlan,
+    curve_on_parameter_range as charged_curve_on_parameter_range, transfer, SurfacePlan,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -29,6 +29,46 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn curve_on_parameter_range(
+    curve: CurveGeometry,
+    source: [f64; 2],
+    target: cadmpeg_ir::topology::IncreasingParameterInterval,
+    record: &dyn std::fmt::Display,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<CurveGeometry> {
+    crate::test_support::with_service_context(|ctx|
+        charged_curve_on_parameter_range(ctx, curve, source, target, record, refusal))
+        .expect("service resource budget")
+}
+
+#[test]
+fn reparameterized_nurbs_knots_refuse_collection_limit_below_need() {
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1,
+            vec![10.0, 10.0, 20.0, 20.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid curve"),
+    ));
+    let target = crate::test_support::test_b5::increasing([0.0, 2.0]);
+    let refused = crate::test_support::with_collection_limit(3, |ctx| {
+        charged_curve_on_parameter_range(
+            ctx, curve.clone(), [10.0, 20.0], target, &"curve", &mut crate::nurbs::LaneRefusals::new(),
+        )
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        charged_curve_on_parameter_range(
+            ctx, curve, [10.0, 20.0], target, &"curve", &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service budget");
+    assert!(admitted.is_some());
+}
 
 fn transfer_vertex_tolerances(
     graph: &B5Graph,
