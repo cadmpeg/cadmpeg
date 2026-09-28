@@ -1064,28 +1064,28 @@ impl<'a> FixedEntityRecord<'a> {
     /// Decode tagged references within this fixed-record table.
     pub(crate) fn references(
         &self,
+        ctx: &DecodeContext<'_>,
         record_count: usize,
-    ) -> Vec<LocatedReference<RecordReference<()>>> {
-        let mut references = record_references(self.bytes, self.offset)
-            .into_iter()
-            .map(|reference| LocatedReference {
+    ) -> Result<Vec<LocatedReference<RecordReference<()>>>, CodecError> {
+        let direct = record_references(ctx, self.bytes, self.offset)?;
+        let counted = counted_record_references(ctx, self.bytes, self.offset, record_count)?;
+        let mut references = Vec::new();
+        for reference in direct {
+            reserve_om_retained_item(ctx, &mut references, "NX fixed entity references")?;
+            references.push(LocatedReference {
                 offset: reference.offset,
                 value: RecordReference::Direct(reference.value),
-            })
-            .collect::<Vec<_>>();
-        references.extend(
-            counted_record_references(self.bytes, self.offset, record_count)
-                .into_iter()
-                .map(|reference| LocatedReference {
-                    offset: reference.offset,
-                    value: RecordReference::RecordOrdinal16 {
-                        ordinal: reference.value,
-                        target: (),
-                    },
-                }),
-        );
+            });
+        }
+        for reference in counted {
+            reserve_om_retained_item(ctx, &mut references, "NX fixed entity references")?;
+            references.push(LocatedReference {
+                offset: reference.offset,
+                value: RecordReference::RecordOrdinal16 { ordinal: reference.value, target: () },
+            });
+        }
         references.sort_by_key(|reference| reference.offset);
-        references
+        Ok(references)
     }
 }
 
@@ -3469,10 +3469,12 @@ fn counted_feature_object_indices(
 
 /// Decode count-framed runs of same-section record references.
 pub(crate) fn counted_record_references(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     base_offset: usize,
     record_count: usize,
-) -> Vec<LocatedReference<u16>> {
+) -> Result<Vec<LocatedReference<u16>>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX counted record references")?;
     let mut references = Vec::new();
     let mut at = 0usize;
     while at + 5 <= bytes.len() {
@@ -3489,63 +3491,59 @@ pub(crate) fn counted_record_references(
             at += 1;
             continue;
         }
-        let run = (0..count)
-            .map(|index| {
-                let token = at + 2 + index * 3;
-                let value = View::u16_be_at(bytes, token + 1)?;
-                (usize::from(value) < record_count).then_some(LocatedReference {
-                    offset: base_offset + token,
-                    value,
-                })
-            })
-            .collect::<Option<Vec<_>>>();
-        if let Some(run) = run {
-            references.extend(run);
-            at = end;
-        } else {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "validate NX counted record references")?;
+        if (0..count).any(|index| {
+            let token = at + 2 + index * 3;
+            View::u16_be_at(bytes, token + 1).is_none_or(|value| usize::from(value) >= record_count)
+        }) {
             at += 1;
+            continue;
         }
+        for index in 0..count {
+            let token = at + 2 + index * 3;
+            let Some(value) = View::u16_be_at(bytes, token + 1) else { break };
+            reserve_om_retained_item(ctx, &mut references, "NX counted record references")?;
+            references.push(LocatedReference { offset: base_offset + token, value });
+        }
+        at = end;
     }
-    references
+    Ok(references)
 }
 
 /// Decode self-identifying persistent handles and exact adjacent handle pairs.
-fn record_references(bytes: &[u8], base_offset: usize) -> Vec<LocatedReference<DirectReference>> {
-    let parsed = references(bytes, base_offset);
-    let mut out = parsed
-        .iter()
-        .copied()
-        .filter(|reference| matches!(reference.value, DirectReference::PersistentHandle(_)))
-        .collect::<Vec<_>>();
-    out.extend(
-        parsed
-            .iter()
-            .zip(parsed.iter().skip(1))
-            .filter_map(|(persistent, tagged)| {
-                let adjacent = persistent
-                    .offset
-                    .checked_add(5)
-                    .is_some_and(|offset| tagged.offset == offset);
-                (matches!(persistent.value, DirectReference::PersistentHandle(_))
-                    && matches!(tagged.value, DirectReference::Tagged28(_))
-                    && adjacent)
-                    .then_some(*tagged)
-            }),
-    );
+fn record_references(ctx: &DecodeContext<'_>, bytes: &[u8], base_offset: usize) -> Result<Vec<LocatedReference<DirectReference>>, CodecError> {
+    let parsed = references(ctx, bytes, base_offset)?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(parsed.len()), "scan NX paired record references")?;
+    let mut out = Vec::new();
+    for reference in parsed.iter().copied().filter(|reference| matches!(reference.value, DirectReference::PersistentHandle(_))) {
+        reserve_om_retained_item(ctx, &mut out, "NX record references")?;
+        out.push(reference);
+    }
+    for (persistent, tagged) in parsed.iter().zip(parsed.iter().skip(1)) {
+        let adjacent = persistent.offset.checked_add(5).is_some_and(|offset| tagged.offset == offset);
+        if matches!(persistent.value, DirectReference::PersistentHandle(_))
+            && matches!(tagged.value, DirectReference::Tagged28(_)) && adjacent {
+            reserve_om_retained_item(ctx, &mut out, "NX record references")?;
+            out.push(*tagged);
+        }
+    }
     out.sort_by_key(|reference| reference.offset);
-    out
+    Ok(out)
 }
 
 /// Decode tagged references wholly contained in `bytes`.
 pub(crate) fn references(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     base_offset: usize,
-) -> Vec<LocatedReference<DirectReference>> {
+) -> Result<Vec<LocatedReference<DirectReference>>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX tagged references")?;
     let mut out = Vec::new();
     let mut at = 0usize;
     while at < bytes.len() {
         if bytes[at] == 0xe0 {
             if let Some(value) = View::u32_be_at(bytes, at + 1) {
+                reserve_om_retained_item(ctx, &mut out, "NX tagged references")?;
                 out.push(LocatedReference {
                     offset: base_offset + at,
                     value: DirectReference::PersistentHandle(value),
@@ -3555,6 +3553,7 @@ pub(crate) fn references(
             }
         } else if bytes[at] & 0xf0 == 0xc0 {
             if let Some(value) = View::u32_be_at(bytes, at) {
+                reserve_om_retained_item(ctx, &mut out, "NX tagged references")?;
                 out.push(LocatedReference {
                     offset: base_offset + at,
                     value: DirectReference::Tagged28(Tagged28::from_word(value)),
@@ -3565,7 +3564,7 @@ pub(crate) fn references(
         }
         at += 1;
     }
-    out
+    Ok(out)
 }
 
 /// Decode `66 32 03` printable-string values wholly contained in `bytes`.

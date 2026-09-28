@@ -1417,21 +1417,21 @@ fn stable_object_record_identity(source_entry: &str, bytes: &[u8]) -> String {
 /// serialized bytes: no cross-record owner relation proves that they are
 /// position-independent. A shared finite work budget returns no identity when
 /// canonicalization would exceed the decoder's bounded resource policy.
-fn stable_object_record_identities(source_entry: &str, records: &[&[u8]]) -> Vec<Option<String>> {
+fn stable_object_record_identities(ctx: &cadmpeg_core::decode::DecodeContext<'_>, source_entry: &str, records: &[&[u8]]) -> Result<Vec<Option<String>>, cadmpeg_core::CodecError> {
     const MAX_GRAPH_WORK: usize = 8 * 1024 * 1024;
 
     let references = records
         .iter()
         .map(|bytes| {
-            crate::om::counted_record_references(bytes, 0, records.len())
+            Ok(crate::om::counted_record_references(ctx, bytes, 0, records.len())?
                 .into_iter()
                 .map(|reference| (reference.offset, usize::from(reference.value)))
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>())
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
     let mut graph_work = MAX_GRAPH_WORK;
 
-    (0..records.len())
+    Ok((0..records.len())
         .map(|root| {
             if references[root].is_empty() {
                 return Some(stable_object_record_identity(source_entry, records[root]));
@@ -1444,7 +1444,7 @@ fn stable_object_record_identities(source_entry: &str, records: &[&[u8]]) -> Vec
                 &mut graph_work,
             )
         })
-        .collect()
+        .collect())
 }
 
 fn consume_stable_object_graph_work(work: &mut usize, amount: usize) -> Option<()> {
@@ -3322,15 +3322,11 @@ pub(super) fn object_records(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cont
             .iter()
             .map(|record| record.bytes)
             .collect::<Vec<_>>();
-        let stable_identities = stable_object_record_identities(&entry.name, &record_bytes);
+        let stable_identities = stable_object_record_identities(ctx, &entry.name, &record_bytes)?;
         let mut dependencies = BTreeMap::<usize, Vec<usize>>::new();
         let mut dependents = BTreeMap::<usize, Vec<usize>>::new();
-        for (source, reference) in records.iter().enumerate().flat_map(|(source, record)| {
-            record
-                .references(records.len())
-                .into_iter()
-                .map(move |reference| (source, reference))
-        }) {
+        for (source, record) in records.iter().enumerate() {
+            for reference in record.references(ctx, records.len())? {
             let RecordReference::RecordOrdinal16 { ordinal, .. } = reference.value else {
                 continue;
             };
@@ -3342,6 +3338,7 @@ pub(super) fn object_records(ctx: &cadmpeg_core::decode::DecodeContext<'_>, cont
             let incoming = dependents.entry(target).or_default();
             if !incoming.contains(&source) {
                 incoming.push(source);
+            }
             }
         }
         for (record_ordinal, record) in records.iter().cloned().enumerate() {
@@ -3896,20 +3893,15 @@ pub(super) fn data_block_control_references(ctx: &cadmpeg_core::decode::DecodeCo
     container: &Container,
 ) -> Result<Vec<DataBlockControlReference>, cadmpeg_core::CodecError>
 {
-    Ok(container
-        .indexed_om_sections(ctx)?
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
+    let mut output = Vec::new();
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
             let Some((control, _, _)) = section.as_offset_only() else {
-                return Vec::new();
+                continue;
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
-            crate::om::references(control.bytes, control.offset)
-                .into_iter()
-                .enumerate()
-                .map(|(ordinal, reference)| DataBlockControlReference {
+            for (ordinal, reference) in crate::om::references(ctx, control.bytes, control.offset)?.into_iter().enumerate() {
+                output.push(DataBlockControlReference {
                     id: format!(
                         "nx:om-data-block-control-references-{section_ordinal}:reference#{}",
                         reference.offset
@@ -3918,10 +3910,10 @@ pub(super) fn data_block_control_references(ctx: &cadmpeg_core::decode::DecodeCo
                     ordinal: ordinal as u32,
                     reference: reference.value,
                     source_offset: entry_offset + reference.offset as u64,
-                })
-                .collect()
-        })
-        .collect())
+                });
+            }
+    }
+    Ok(output)
 }
 
 /// Join maximal two-token adjacent persistent-handle runs atomically.
@@ -4262,32 +4254,24 @@ pub(super) fn string_values(ctx: &cadmpeg_core::decode::DecodeContext<'_>, conta
 /// Decode ordered tagged references from bounded NX OM records.
 pub(super) fn object_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<ObjectReference>, cadmpeg_core::CodecError>
 {
-    Ok(container
-        .indexed_om_sections(ctx)?
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
+    let mut output = Vec::new();
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
             let Some(records) = section.as_fixed() else {
-                return Vec::new();
+                continue;
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            records.iter().enumerate().flat_map(|(record_ordinal, record)| {
-                record.references(records.len()).into_iter().enumerate().map(move |(reference_ordinal, reference)| {
-                    (record_ordinal, reference_ordinal, record.object_id.0, reference)
-                })
-            })
-                .map(
-                    move |(record_ordinal, reference_ordinal, object_id, reference)| {
-                        let record = format!(
+            for (record_ordinal, record) in records.iter().enumerate() {
+                for (reference_ordinal, reference) in record.references(ctx, records.len())?.into_iter().enumerate() {
+                        let record_id = format!(
                             "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
                         );
-                        ObjectReference {
+                        output.push(ObjectReference {
                             id: format!(
                                 "nx:om-references-{section_ordinal}-{record_ordinal}:reference#{}",
                                 reference.offset
                             ),
-                            record,
-                            object_id,
+                            record: record_id,
+                            object_id: record.object_id.0,
                             ordinal: reference_ordinal as u32,
                             reference: match reference.value {
                                 RecordReference::Direct(value) => RecordReference::Direct(value),
@@ -4298,12 +4282,11 @@ pub(super) fn object_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>, c
                             },
                             source_entry: entry.name.clone(),
                             source_offset: entry_offset + reference.offset as u64,
-                        }
-                    },
-                )
-                .collect()
-        })
-        .collect())
+                        });
+                }
+            }
+    }
+    Ok(output)
 }
 
 /// Join maximal two-token adjacent persistent-handle runs within object records.
@@ -6485,6 +6468,10 @@ mod object_record_identity_tests {
         assert_ne!(records[0].stable_identity, records[1].stable_identity);
     }
 
+    fn stable_identities_for_test(records: &[&[u8]]) -> Vec<Option<String>> {
+        crate::test_support::with_decode_context(|ctx| super::stable_object_record_identities(ctx, "/entry", records)).unwrap()
+    }
+
     #[test]
     fn graph_identity_ignores_same_section_record_reordering() {
         let first: &[u8] = &[0x01, 0x02, 0x90, 0x00, 0x01, 0xa0];
@@ -6495,20 +6482,20 @@ mod object_record_identity_tests {
         let reordered_second: &[u8] = &[0x01, 0x02, 0x90, 0x00, 0x00, 0xa0];
         let reordered = [reordered_first, reordered_second];
 
-        let original_identities = super::stable_object_record_identities("/entry", &original);
-        let reordered_identities = super::stable_object_record_identities("/entry", &reordered);
+        let original_identities = stable_identities_for_test(&original);
+        let reordered_identities = stable_identities_for_test(&reordered);
         assert_eq!(original_identities[0], reordered_identities[1]);
         assert_eq!(original_identities[1], reordered_identities[0]);
 
         let unrelated: &[u8] = &[0xd0];
         let with_unrelated = [original[0], original[1], unrelated];
         let with_unrelated_identities =
-            super::stable_object_record_identities("/entry", &with_unrelated);
+            stable_identities_for_test(&with_unrelated);
         assert_eq!(original_identities[0], with_unrelated_identities[0]);
         assert_eq!(original_identities[1], with_unrelated_identities[1]);
 
         let changed = [reordered_first, &[0x01, 0x02, 0x90, 0x00, 0x00, 0xc0][..]];
-        let changed_identities = super::stable_object_record_identities("/entry", &changed);
+        let changed_identities = stable_identities_for_test(&changed);
         assert_ne!(original_identities[0], changed_identities[1]);
     }
 }
