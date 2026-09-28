@@ -621,7 +621,7 @@ pub(super) fn complete_ext11_support_uv_with_budget(
     pending: &[PendingExt11SupportUv],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+    let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
     let mut replacements = Vec::new();
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
         let points = &samples.points_charged(ctx)?;
@@ -631,12 +631,12 @@ pub(super) fn complete_ext11_support_uv_with_budget(
         };
         let (surfaces, missing) = match procedural.definition() {
             ProceduralCurveDefinition::Intersection { context, .. } => {
-                let [Some(first), Some(second)] = &context.sides().clone().map(|side| side.surface)
+                let [Some(first), Some(second)] = context.sides().each_ref().map(|side| side.surface.as_ref())
                 else {
                     continue;
                 };
                 (
-                    [first.clone(), second.clone()],
+                    [first, second],
                     context.sides().each_ref().map(|side| {
                         pcurve_requires_completion(
                             side.pcurve.as_ref().map(|pcurve| &pcurve.geometry),
@@ -661,26 +661,51 @@ pub(super) fn complete_ext11_support_uv_with_budget(
         else {
             continue;
         };
-        let side_lanes: [Option<Vec<Point2>>; 2] = std::array::from_fn(|side| {
+        let mut side_lanes: [Option<Vec<Point2>>; 2] = [None, None];
+        for side in 0..2 {
             if !missing[side] {
-                return None;
+                continue;
             }
-            let surface_geometry = model_index
+            let Some(surface_geometry) = model_index
                 .surfaces(surfaces[side].as_str())
-                .map(|surface| &surface.geometry)?;
-            let values = assigned[side].as_ref()?;
+                .map(|surface| &surface.geometry) else {
+                    continue;
+                };
+            let Some(values) = assigned[side].as_ref() else {
+                continue;
+            };
             if values
                 .iter()
                 .flat_map(|pair| pair.iter())
                 .any(|value| missing_support_parameter(*value))
             {
-                return None;
+                continue;
             }
-            values
-                .iter()
-                .map(|uv| surface_parameters(surface_geometry, **uv).map(FinitePoint2::get))
-                .collect::<Option<Vec<_>>>()
-        });
+            let mut controls = Vec::new();
+            ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(values.len()),
+                "nx serialized support UV controls",
+            )?;
+            controls.try_reserve_exact(values.len()).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "nx serialized support UV controls",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(values.len()),
+                )
+            })?;
+            let mut valid = true;
+            for uv in values.iter() {
+                if let Some(point) = surface_parameters(surface_geometry, **uv) {
+                    controls.push(point.get());
+                } else {
+                    valid = false;
+                    break;
+                }
+            }
+            if valid {
+                side_lanes[side] = Some(controls);
+            }
+        }
         for (side, control_points) in side_lanes.into_iter().enumerate() {
             let Some(control_points) = control_points else {
                 continue;
@@ -694,7 +719,19 @@ pub(super) fn complete_ext11_support_uv_with_budget(
                     false,
                 )?,
             };
-            replacements.push((procedural_id.clone(), side, replacement));
+            ctx.charge_collection_items(1, "nx serialized support UV replacements")?;
+            replacements.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx serialized support UV replacements", 0, 1)
+            })?;
+            replacements.push((
+                crate::decode::ids::copy_typed_id(
+                    ctx,
+                    procedural_id.as_str(),
+                    "nx serialized support UV owner",
+                )?,
+                side,
+                replacement,
+            ));
         }
     }
     drop(model_index);
