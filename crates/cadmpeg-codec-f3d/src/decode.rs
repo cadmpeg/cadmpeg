@@ -2949,11 +2949,12 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.asm_histories,
         );
         crate::history::bind_feature_path_selections(
+            self.ctx,
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.design_construction_operand_groups,
             &self.native.design_entity_selection_operands,
-        );
+        )?;
         crate::design::feature_project::bind_revolve_face_axes(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,

@@ -14,6 +14,7 @@ mod face_boundaries;
 mod hole;
 mod mirror;
 mod planes;
+mod path_selection_limits;
 mod recipe_projection;
 mod recipes;
 mod selections;

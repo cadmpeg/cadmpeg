@@ -3125,16 +3125,18 @@ fn bind_hole_face_selection(
 }
 
 pub(crate) fn bind_feature_path_selections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceBoundary};
 
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         let feature_id = &feature.id;
+        let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
         'feature_edit: {
             let Some(native_ref) = native_ref else {
@@ -3154,7 +3156,8 @@ pub(crate) fn bind_feature_path_selections(
                 FeatureDefinition::Operation(FeatureOperation::FilledSurface {
                     boundary: SurfaceBoundary::Path(path),
                     ..
-                }) => bind_entity_selection_path(
+                }) => edit_result = bind_entity_selection_path(
+                    ctx,
                     path,
                     &feature_id,
                     previous_state_id,
@@ -3170,7 +3173,8 @@ pub(crate) fn bind_feature_path_selections(
                         }
                     };
                     for path in paths {
-                        bind_entity_selection_path(
+                        edit_result = bind_entity_selection_path(
+                            ctx,
                             path,
                             &feature_id,
                             previous_state_id,
@@ -3178,13 +3182,15 @@ pub(crate) fn bind_feature_path_selections(
                             groups,
                             operands,
                         );
+                        if edit_result.is_err() { break; }
                     }
                 }
                 FeatureDefinition::Operation(FeatureOperation::Sweep {
                     path, guide_rail, ..
                 }) => {
                     if let Some(path) = path {
-                        bind_entity_selection_path(
+                        edit_result = bind_entity_selection_path(
+                            ctx,
                             path,
                             &feature_id,
                             previous_state_id,
@@ -3192,9 +3198,11 @@ pub(crate) fn bind_feature_path_selections(
                             groups,
                             operands,
                         );
+                        if edit_result.is_err() { break 'feature_edit; }
                     }
                     if let Some(guide_rail) = guide_rail {
-                        bind_entity_selection_path(
+                        edit_result = bind_entity_selection_path(
+                            ctx,
                             &mut guide_rail.path,
                             &feature_id,
                             previous_state_id,
@@ -3208,21 +3216,24 @@ pub(crate) fn bind_feature_path_selections(
             }
         }
         });
+        edit_result?;
     }
+    Ok(())
 }
 
 fn bind_entity_selection_path(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     path: &mut cadmpeg_ir::features::PathRef,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::PathRef;
 
     let PathRef::Native(group_id) = path else {
-        return;
+        return Ok(());
     };
     let stream = crate::ids::native_stream(&scope.id);
     let mut matching_groups = groups.iter().filter(|group| {
@@ -3231,12 +3242,17 @@ fn bind_entity_selection_path(
             && crate::ids::native_stream(&group.id) == stream
     });
     let Some(group) = matching_groups.next() else {
-        return;
+        return Ok(());
     };
     if matching_groups.next().is_some() || group.members().is_empty() {
-        return;
+        return Ok(());
     }
-    let mut edge_slots = Vec::with_capacity(group.members().len());
+    let count = u64::try_from(group.members().len())
+        .map_err(|_| ctx.refuse_codec_limit("collect F3D path edge slots", 0, u64::MAX))?;
+    ctx.charge_collection_items(count, "collect F3D path edge slots")?;
+    let mut edge_slots = Vec::new();
+    edge_slots.try_reserve(group.members().len())
+        .map_err(|_| ctx.refuse_codec_limit("collect F3D path edge slots", 0, count))?;
     for (ordinal, record_index) in group
         .members()
         .iter()
@@ -3244,7 +3260,7 @@ fn bind_entity_selection_path(
         .enumerate()
     {
         let Ok(ordinal) = u32::try_from(ordinal) else {
-            return;
+            return Ok(());
         };
         let mut matching_operands = operands.iter().filter(|operand| {
             operand.group_record_index == group.record_index
@@ -3253,26 +3269,32 @@ fn bind_entity_selection_path(
                 && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
-            return;
+            return Ok(());
         };
         if matching_operands.next().is_some() {
-            return;
+            return Ok(());
         }
         let Some(edge_slot) = operand.resolved_edge_slot else {
-            return;
+            return Ok(());
         };
         edge_slots.push(edge_slot);
     }
-    let prefix = feature_input_prefix(feature_id, previous_state_id);
-    *path = PathRef::historical_edges(
-        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id),
-        edge_slots
-            .into_iter()
-            .map(|slot| crate::ids::history_input_edge_id(&prefix, slot))
-            .collect(),
-        group_id.clone(),
-    )
-    .unwrap_or_else(|_| PathRef::Native(group_id.clone()));
+    ctx.charge_collection_items(count, "collect F3D path edge identities")?;
+    let mut edge_ids = Vec::new();
+    edge_ids.try_reserve(edge_slots.len())
+        .map_err(|_| ctx.refuse_codec_limit("collect F3D path edge identities", 0, count))?;
+    for slot in edge_slots {
+        edge_ids.push(crate::ids::history_input_edge_id_charged(
+            ctx, feature_id, previous_state_id, slot,
+        )?);
+    }
+    let state = crate::ids::history_input_state_id_charged(ctx, feature_id, previous_state_id)?;
+    let native = copy_history_string(ctx, &group.id, "copy F3D path group identity")?;
+    ctx.charge_collection_items(count, "validate F3D path edge identities")?;
+    if let Ok(historical) = PathRef::historical_edges(state, edge_ids, native) {
+        *path = historical;
+    }
+    Ok(())
 }
 
 pub(crate) fn project_feature_input_topologies(
