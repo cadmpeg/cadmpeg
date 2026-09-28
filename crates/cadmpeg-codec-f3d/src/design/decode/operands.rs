@@ -13,7 +13,7 @@ use crate::design::decode::text::{copy_ascii_retained, lp_ascii_filtered_view, l
 use crate::design::decode::text::design_record_id_charged;
 use crate::container::ContainerScan;
 use crate::design::decode::dimension_frames::{
-    bind_recipe_reference_candidates_charged, contiguous_i32_program, decode_recipe_references,
+    bind_recipe_reference_candidates_charged, contiguous_i32_program, decode_recipe_references_charged,
     recipe_record_prefix,
 };
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
@@ -5333,7 +5333,10 @@ fn parse_recipe_operand(
         family_name.len(),
     )?;
     let recipe_prefix_offset = u64::try_from(recipe_prefix_at).ok()?;
-    let recipe_references = decode_recipe_references(recipe_prefix_bytes, recipe_prefix_offset);
+    let recipe_references = match decode_recipe_references_charged(ctx, recipe_prefix_bytes, recipe_prefix_offset) {
+        Ok(references) => references,
+        Err(error) => return Some(Err(error)),
+    };
     let recipe_program_at = usize::try_from(recipe.byte_offset)
         .ok()?
         .checked_add(family_name.len())?;
@@ -5961,8 +5964,12 @@ pub(super) fn parse_face_operand(
         usize::try_from(recipe.byte_offset).ok()?,
         family_name_len,
     )?;
-    let recipe_references =
-        decode_recipe_references(recipe_prefix_bytes, u64::try_from(recipe_prefix_at).ok()?);
+    let recipe_references = match decode_recipe_references_charged(
+        ctx, recipe_prefix_bytes, u64::try_from(recipe_prefix_at).ok()?,
+    ) {
+        Ok(references) => references,
+        Err(error) => return Some(Err(error)),
+    };
     let recipe_program_at = usize::try_from(recipe.byte_offset)
         .ok()?
         .checked_add(family_name_len)?;

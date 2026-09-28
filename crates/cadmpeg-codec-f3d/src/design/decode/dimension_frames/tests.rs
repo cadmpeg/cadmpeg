@@ -197,6 +197,84 @@ fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
     );
 }
 
+fn recipe_reference_limit(
+    prefix: &[u8],
+    collection_limit: u64,
+    retained_limit: u64,
+    operation: &str,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            &ctx, prefix, 0,
+        ),
+        Err(CodecError::ResourceLimit(failure)) if failure.operation == operation
+    ));
+}
+
+#[test]
+fn standard_recipe_references_refuse_nested_items_and_token_text() {
+    let mut prefix = vec![0; 10];
+    for word in [1u32, 3, 4, 1] {
+        prefix.extend_from_slice(&word.to_le_bytes());
+    }
+    prefix.extend_from_slice(b"7");
+    prefix.extend_from_slice(&[0; 4]);
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&331u32.to_le_bytes());
+    prefix.extend_from_slice(&[0; 8]);
+    assert_eq!(crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 0).len(), 1);
+    recipe_reference_limit(&prefix, u64::MAX, 0, "f3d recipe reference token");
+    recipe_reference_limit(&prefix, 0, u64::MAX, "f3d recipe operand references");
+    recipe_reference_limit(&prefix, 1, u64::MAX, "f3d recipe standard references");
+}
+
+#[test]
+fn paired_recipe_references_refuse_operand_and_flattened_runs() {
+    let mut prefix = vec![0; 10];
+    for word in [1u32, 2, 1, 1] {
+        prefix.extend_from_slice(&word.to_le_bytes());
+    }
+    prefix.extend_from_slice(b"2");
+    prefix.extend_from_slice(&[0; 4]);
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&305u32.to_le_bytes());
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(b"2");
+    prefix.extend_from_slice(&[0; 4]);
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&305u32.to_le_bytes());
+    prefix.extend_from_slice(&[0; 4]);
+    assert_eq!(crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 0).len(), 2);
+    recipe_reference_limit(&prefix, 2, u64::MAX, "f3d recipe paired operands");
+    recipe_reference_limit(&prefix, 4, u64::MAX, "f3d recipe paired references");
+}
+
+#[test]
+fn grouped_recipe_references_refuse_output_run() {
+    let mut prefix = vec![0; 10];
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&4u32.to_le_bytes());
+    for selector in 1u32..=4 {
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&selector.to_le_bytes());
+        prefix.extend_from_slice(b"2");
+        prefix.extend_from_slice(&[0; 4]);
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&(300 + selector).to_le_bytes());
+    }
+    prefix.extend_from_slice(&[0; 4]);
+    assert_eq!(crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 0).len(), 4);
+    recipe_reference_limit(&prefix, 1, u64::MAX, "f3d recipe grouped references");
+}
+
 #[test]
 fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     let mut prefix = vec![0; 10];

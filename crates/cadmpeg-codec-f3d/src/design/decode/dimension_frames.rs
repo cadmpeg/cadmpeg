@@ -142,7 +142,7 @@ pub(crate) fn decode_dimension_recipe_records(
             let Ok(prefix_offset) = u64::try_from(prefix_offset) else {
                 continue;
             };
-            let references = decode_recipe_references(prefix_bytes, prefix_offset);
+            let references = decode_recipe_references_charged(ctx, prefix_bytes, prefix_offset)?;
             let Some(program) = contiguous_i32_program(ctx, bytes, program_offset, record_end) else {
                 continue;
             };
@@ -183,98 +183,189 @@ pub(crate) fn decode_dimension_recipe_records(
     Ok(out)
 }
 
+trait RecipeReferenceAllocation {
+    type Error;
+
+    fn push<T>(
+        &self,
+        values: &mut Vec<T>,
+        value: T,
+        operation: &'static str,
+        allocation_operation: &'static str,
+    ) -> Result<(), Self::Error>;
+
+    fn copy_text(&self, value: &str) -> Result<String, Self::Error>;
+}
+
+struct UnmeteredRecipeReferences;
+
+impl RecipeReferenceAllocation for UnmeteredRecipeReferences {
+    type Error = std::convert::Infallible;
+
+    fn push<T>(
+        &self,
+        values: &mut Vec<T>,
+        value: T,
+        _operation: &'static str,
+        _allocation_operation: &'static str,
+    ) -> Result<(), Self::Error> {
+        values.push(value);
+        Ok(())
+    }
+
+    fn copy_text(&self, value: &str) -> Result<String, Self::Error> {
+        Ok(value.to_owned())
+    }
+}
+
+impl RecipeReferenceAllocation for DecodeContext<'_> {
+    type Error = CodecError;
+
+    fn push<T>(
+        &self,
+        values: &mut Vec<T>,
+        value: T,
+        operation: &'static str,
+        allocation_operation: &'static str,
+    ) -> Result<(), Self::Error> {
+        self.charge_collection_items(1, operation)?;
+        values.try_reserve(1).map_err(|_| {
+            self.refuse_codec_limit(allocation_operation, 0, 1)
+        })?;
+        values.push(value);
+        Ok(())
+    }
+
+    fn copy_text(&self, value: &str) -> Result<String, Self::Error> {
+        String::from_utf8(self.copy_retained(value.as_bytes(), "f3d recipe reference token")?)
+            .map_err(|_| CodecError::malformed("F3D recipe token must be ASCII"))
+    }
+}
+
 pub(crate) fn decode_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
 ) -> Vec<crate::records::dimensions::DesignRecipeReference> {
+    match decode_recipe_references_with(&UnmeteredRecipeReferences, prefix, prefix_offset) {
+        Ok(references) => references,
+        Err(never) => match never {},
+    }
+}
+
+pub(crate) fn decode_recipe_references_charged(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+    prefix_offset: u64,
+) -> Result<Vec<crate::records::dimensions::DesignRecipeReference>, CodecError> {
+    decode_recipe_references_with(ctx, prefix, prefix_offset)
+}
+
+fn decode_recipe_references_with<A: RecipeReferenceAllocation>(
+    allocation: &A,
+    prefix: &[u8],
+    prefix_offset: u64,
+) -> Result<Vec<crate::records::dimensions::DesignRecipeReference>, A::Error> {
     if prefix
         .get(..10)
         .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0))
         || View::u32_le_at(prefix, 10) != Some(1)
         || View::u32_le_at(prefix, 18).is_none_or(|value| value == 0)
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     match View::u32_le_at(prefix, 14) {
-        Some(2) => decode_paired_recipe_references(prefix, prefix_offset),
-        Some(3) => decode_standard_recipe_references(prefix, prefix_offset),
+        Some(2) => decode_paired_recipe_references(allocation, prefix, prefix_offset),
+        Some(3) => decode_standard_recipe_references(allocation, prefix, prefix_offset),
         Some(group_count) if group_count >= 4 => usize::try_from(group_count)
             .ok()
-            .map_or_else(Vec::new, |group_count| {
-                decode_grouped_recipe_references(prefix, prefix_offset, group_count)
+            .map_or_else(|| Ok(Vec::new()), |group_count| {
+                decode_grouped_recipe_references(allocation, prefix, prefix_offset, group_count)
             }),
-        _ => Vec::new(),
+        _ => Ok(Vec::new()),
     }
 }
 
-fn decode_standard_recipe_references(
+fn decode_standard_recipe_references<A: RecipeReferenceAllocation>(
+    allocation: &A,
     prefix: &[u8],
     prefix_offset: u64,
-) -> Vec<crate::records::dimensions::DesignRecipeReference> {
+) -> Result<Vec<crate::records::dimensions::DesignRecipeReference>, A::Error> {
     if View::u32_le_at(prefix, 22).is_none_or(|value| value == 0) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut references = Vec::new();
     let mut at = 22usize;
     while prefix.len().saturating_sub(at) > 4 {
         if recipe_reference_suffix(&prefix[at..]) {
-            return references;
+            return Ok(references);
         }
-        let Some((mut operand_references, next)) = decode_recipe_reference_operand(
+        let Some(parsed) = decode_recipe_reference_operand(
+            allocation,
             prefix,
             prefix_offset,
             at,
             RecipeReferenceTokenFrame::Either,
         ) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        references.append(&mut operand_references);
+        let (operand_references, next) = parsed?;
+        for reference in operand_references {
+            allocation.push(
+                &mut references, reference,
+                "f3d recipe standard references", "f3d recipe standard reference allocation",
+            )?;
+        }
         at = next;
     }
     if prefix.get(at..) == Some(&[0, 0, 0, 0]) {
-        references
+        Ok(references)
     } else {
-        Vec::new()
+        Ok(Vec::new())
     }
 }
 
-fn decode_paired_recipe_references(
+fn decode_paired_recipe_references<A: RecipeReferenceAllocation>(
+    allocation: &A,
     prefix: &[u8],
     prefix_offset: u64,
-) -> Vec<crate::records::dimensions::DesignRecipeReference> {
+) -> Result<Vec<crate::records::dimensions::DesignRecipeReference>, A::Error> {
     const MINIMUM_PAIR_SIZE: usize = 42;
 
     let Some(pair_count) = View::u32_le_at(prefix, 18).map(index_from_u32) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if pair_count == 0 || pair_count > prefix.len().saturating_sub(22) / MINIMUM_PAIR_SIZE {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let Some(operand_count) = pair_count.checked_mul(2) else {
-        return Vec::new();
-    };
+    if pair_count.checked_mul(2).is_none() {
+        return Ok(Vec::new());
+    }
     let mut at = 22usize;
-    let mut operands = Vec::with_capacity(operand_count);
+    let mut operands = Vec::new();
     for _ in 0..pair_count {
-        let Some((packed, next)) = decode_recipe_reference_operand(
+        let Some(parsed) = decode_recipe_reference_operand(
+            allocation,
             prefix,
             prefix_offset,
             at,
             RecipeReferenceTokenFrame::Packed,
         ) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        let (packed, next) = parsed?;
         at = next;
-        let Some((length_prefixed, next)) = decode_recipe_reference_operand(
+        let Some(parsed) = decode_recipe_reference_operand(
+            allocation,
             prefix,
             prefix_offset,
             at,
             RecipeReferenceTokenFrame::LengthPrefixed,
         ) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        operands.push(packed);
-        operands.push(length_prefixed);
+        let (length_prefixed, next) = parsed?;
+        allocation.push(&mut operands, packed, "f3d recipe paired operands", "f3d recipe paired operand allocation")?;
+        allocation.push(&mut operands, length_prefixed, "f3d recipe paired operands", "f3d recipe paired operand allocation")?;
         at = next;
     }
     if at != prefix.len()
@@ -287,16 +378,21 @@ fn decode_paired_recipe_references(
                     .ne(pair[1].iter().map(|reference| reference.design_reference))
         })
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    operands.into_iter().flatten().collect()
+    let mut references = Vec::new();
+    for reference in operands.into_iter().flatten() {
+        allocation.push(&mut references, reference, "f3d recipe paired references", "f3d recipe paired reference allocation")?;
+    }
+    Ok(references)
 }
 
-fn decode_grouped_recipe_references(
+fn decode_grouped_recipe_references<A: RecipeReferenceAllocation>(
+    allocation: &A,
     prefix: &[u8],
     prefix_offset: u64,
     group_count: usize,
-) -> Vec<crate::records::dimensions::DesignRecipeReference> {
+) -> Result<Vec<crate::records::dimensions::DesignRecipeReference>, A::Error> {
     const MINIMUM_PACKED_OPERAND_SIZE: usize = 17;
     const GROUP_COUNT_WORD_SIZE: usize = 4;
 
@@ -308,46 +404,50 @@ fn decode_grouped_recipe_references(
     // this decoder can read. The multiplication states the same bound the
     // division stated, without a divisor whose zero case no input reaches.
     let Some(available) = prefix.len().checked_sub(at) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(required) =
         group_count.checked_mul(GROUP_COUNT_WORD_SIZE + MINIMUM_PACKED_OPERAND_SIZE)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if required > available {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     for _ in 0..group_count {
         let Some(operand_count) = View::u32_le_at(prefix, at).map(index_from_u32) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(next) = at.checked_add(4) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         at = next;
         if operand_count == 0
             || operand_count > prefix.len().saturating_sub(at) / MINIMUM_PACKED_OPERAND_SIZE
         {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         for _ in 0..operand_count {
-            let Some((mut operand_references, next)) = decode_recipe_reference_operand(
+            let Some(parsed) = decode_recipe_reference_operand(
+                allocation,
                 prefix,
                 prefix_offset,
                 at,
                 RecipeReferenceTokenFrame::Packed,
             ) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
-            references.append(&mut operand_references);
+            let (operand_references, next) = parsed?;
+            for reference in operand_references {
+                allocation.push(&mut references, reference, "f3d recipe grouped references", "f3d recipe grouped reference allocation")?;
+            }
             at = next;
         }
     }
     if prefix.get(at..) == Some(&[0, 0, 0, 0]) {
-        references
+        Ok(references)
     } else {
-        Vec::new()
+        Ok(Vec::new())
     }
 }
 
@@ -368,20 +468,21 @@ enum RecipeReferenceTokenFrame {
     LengthPrefixed,
 }
 
-fn decode_recipe_reference_operand(
+fn decode_recipe_reference_operand<A: RecipeReferenceAllocation>(
+    allocation: &A,
     prefix: &[u8],
     prefix_offset: u64,
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
-) -> Option<(
+) -> Option<Result<(
     Vec<crate::records::dimensions::DesignRecipeReference>,
     usize,
-)> {
+), A::Error>> {
     let selector = View::u32_le_at(prefix, at).filter(|value| *value != 0)?;
     let token_encoding_at = at.checked_add(4)?;
     let length_prefixed = (!matches!(token_frame, RecipeReferenceTokenFrame::Packed))
         .then(|| {
-            lp_ascii_filtered(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic).and_then(
+            lp_ascii_filtered_view(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic).and_then(
                 |(token, marker_at)| {
                     (is_decimal_integer_token(token.as_bytes())
                         && View::u32_le_at(prefix, marker_at) == Some(0))
@@ -400,7 +501,7 @@ fn decode_recipe_reference_operand(
                     && prefix.get(zero_at..zero_at + 4) == Some(&[0; 4]))
                 .then(|| std::str::from_utf8(token).ok())
                 .flatten()
-                .map(|token| (token.to_owned(), token_encoding_at, zero_at + 4))
+                .map(|token| (token, token_encoding_at, zero_at + 4))
             })
         })
         .flatten();
@@ -422,26 +523,39 @@ fn decode_recipe_reference_operand(
             references_end.checked_add(4)?
         }
     };
-    let references = (0..reference_count)
-        .map(|reference_ordinal| {
-            let design_reference_at = references_at.checked_add(4 * reference_ordinal)?;
-            let design_reference =
-                View::u32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
-            Some(crate::records::dimensions::DesignRecipeReference {
-                selector: i64::from(selector),
-                selector_offset: prefix_offset.saturating_add(at as u64),
-                token: token.clone(),
-                token_offset: prefix_offset.saturating_add(token_at as u64),
-                design_reference: i64::from(design_reference),
-                design_reference_offset: prefix_offset.saturating_add(design_reference_at as u64),
-                candidate_faces: Vec::new(),
-                candidate_edges: Vec::new(),
-                alternate_selector_faces: Vec::new(),
-                alternate_selector_edges: Vec::new(),
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    Some((references, next))
+    let selector_offset = prefix_offset.checked_add(u64::try_from(at).ok()?)?;
+    let token_offset = prefix_offset.checked_add(u64::try_from(token_at).ok()?)?;
+    let mut references = Vec::new();
+    for reference_ordinal in 0..reference_count {
+        let design_reference_at = references_at.checked_add(reference_ordinal.checked_mul(4)?)?;
+        let design_reference =
+            View::u32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
+        let design_reference_offset =
+            prefix_offset.checked_add(u64::try_from(design_reference_at).ok()?)?;
+        let token_copy = match allocation.copy_text(token) {
+            Ok(token) => token,
+            Err(error) => return Some(Err(error)),
+        };
+        let reference = crate::records::dimensions::DesignRecipeReference {
+            selector: i64::from(selector),
+            selector_offset,
+            token: token_copy,
+            token_offset,
+            design_reference: i64::from(design_reference),
+            design_reference_offset,
+            candidate_faces: Vec::new(),
+            candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
+        };
+        if let Err(error) = allocation.push(
+            &mut references, reference,
+            "f3d recipe operand references", "f3d recipe operand reference allocation",
+        ) {
+            return Some(Err(error));
+        }
+    }
+    Some(Ok((references, next)))
 }
 
 fn is_decimal_integer_token(token: &[u8]) -> bool {
