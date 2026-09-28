@@ -366,48 +366,56 @@ struct HomogeneousSurfaceNet {
 }
 
 impl HomogeneousSurfaceNet {
-    fn from_homogeneous_surface(surface: &NurbsSurface) -> Option<Self> {
-        Self::from_components(surface, |point, weight| {
+    fn from_homogeneous_surface(
+        surface: &NurbsSurface,
+        geometry_budget: &GeometryWorkBudget<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::decode::ResourceLimit> {
+        Self::from_components(surface, geometry_budget, |point, weight| {
             [point.x * weight, point.y * weight, point.z * weight, weight]
         })
     }
 
-    fn from_homogeneous_residual(support: &NurbsSurface, candidate: &NurbsSurface) -> Option<Self> {
-        Self::from_homogeneous_surface(candidate)?;
-        let mut net = Self::from_components(support, |point, weight| {
+    fn from_homogeneous_residual(
+        support: &NurbsSurface,
+        candidate: &NurbsSurface,
+        geometry_budget: &GeometryWorkBudget<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::decode::ResourceLimit> {
+        let Some(mut net) = Self::from_components(support, geometry_budget, |point, weight| {
             [point.x * weight, point.y * weight, point.z * weight, weight]
-        })?;
+        })? else { return Ok(None); };
         for (index, control) in net.controls.iter_mut().enumerate() {
             let u = index / net.v_count;
             let v = index % net.v_count;
-            let support_point = support.pole(u, v)?;
-            let candidate_point = candidate.pole(u, v)?;
+            let (Some(support_point), Some(candidate_point)) = (support.pole(u, v), candidate.pole(u, v)) else { return Ok(None); };
             control[0] = (candidate_point.x - support_point.x) * control[3];
             control[1] = (candidate_point.y - support_point.y) * control[3];
             control[2] = (candidate_point.z - support_point.z) * control[3];
         }
-        net.controls
+        Ok(net.controls
             .iter()
             .flatten()
             .all(|component| component.is_finite())
-            .then_some(net)
+            .then_some(net))
     }
 
     fn from_components(
         surface: &NurbsSurface,
+        geometry_budget: &GeometryWorkBudget<'_>,
         components: impl Fn(Point3, f64) -> [f64; 4],
-    ) -> Option<Self> {
-        let u_degree = usize::try_from(surface.u_degree()).ok()?;
-        let v_degree = usize::try_from(surface.v_degree()).ok()?;
+    ) -> Result<Option<Self>, cadmpeg_core::decode::ResourceLimit> {
+        let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else { return Ok(None); };
+        let Some(v_degree) = usize::try_from(surface.v_degree()).ok() else { return Ok(None); };
         let u_count = surface.u_count();
         let v_count = surface.v_count();
         if !positive_weights(surface) {
-            return None;
+            return Ok(None);
         }
         let mut controls = Vec::new();
         for u in 0..u_count {
+            let _reservation = geometry_budget.reserve_vec(&mut controls, v_count, "nx offset net controls")?;
             for v in 0..v_count {
-                controls.push(components(surface.pole(u, v)?.get(), surface.weight(u, v).map_or(1.0, |weight| weight.get())));
+                let Some(point) = surface.pole(u, v) else { return Ok(None); };
+                controls.push(components(point.get(), surface.weight(u, v).map_or(1.0, |weight| weight.get())));
             }
         }
         if controls
@@ -415,32 +423,33 @@ impl HomogeneousSurfaceNet {
             .flatten()
             .any(|component| !component.is_finite())
         {
-            return None;
+            return Ok(None);
         }
-        Some(Self {
+        Ok(Some(Self {
             u_degree,
             v_degree,
-            u_knots: surface.u_knots().to_vec(),
-            v_knots: surface.v_knots().to_vec(),
+            u_knots: copy_offset_knots(surface.u_knots(), geometry_budget)?,
+            v_knots: copy_offset_knots(surface.v_knots(), geometry_budget)?,
             u_count,
             v_count,
             controls,
-        })
+        }))
     }
 
-    fn derivative(&self, u_axis: bool) -> Option<Self> {
+    fn derivative(&self, u_axis: bool, geometry_budget: &GeometryWorkBudget<'_>) -> Result<Option<Self>, cadmpeg_core::decode::ResourceLimit> {
         let (degree, count, knots) = if u_axis {
             (self.u_degree, self.u_count, &self.u_knots)
         } else {
             (self.v_degree, self.v_count, &self.v_knots)
         };
         if degree == 0 || count < 2 {
-            return None;
+            return Ok(None);
         }
         let next_u_count = self.u_count - usize::from(u_axis);
         let next_v_count = self.v_count - usize::from(!u_axis);
-        let mut controls = Vec::with_capacity(next_u_count.checked_mul(next_v_count)?);
+        let mut controls = Vec::new();
         for u in 0..next_u_count {
+            let _reservation = geometry_budget.reserve_vec(&mut controls, next_v_count, "nx offset derivative controls")?;
             for v in 0..next_v_count {
                 let index = |u, v| u * self.v_count + v;
                 let (first, second, derivative_index) = if u_axis {
@@ -459,7 +468,7 @@ impl HomogeneousSurfaceNet {
                 let denominator =
                     knots[derivative_index + degree + 1] - knots[derivative_index + 1];
                 if !denominator.is_finite() || denominator < 0.0 {
-                    return None;
+                    return Ok(None);
                 }
                 if denominator == 0.0 {
                     controls.push([0.0; 4]);
@@ -471,23 +480,23 @@ impl HomogeneousSurfaceNet {
                 }));
             }
         }
-        Some(Self {
+        Ok(Some(Self {
             u_degree: self.u_degree - usize::from(u_axis),
             v_degree: self.v_degree - usize::from(!u_axis),
             u_knots: if u_axis {
-                self.u_knots[1..self.u_knots.len() - 1].to_vec()
+                copy_offset_knots(&self.u_knots[1..self.u_knots.len() - 1], geometry_budget)?
             } else {
-                self.u_knots.clone()
+                copy_offset_knots(&self.u_knots, geometry_budget)?
             },
             v_knots: if u_axis {
-                self.v_knots.clone()
+                copy_offset_knots(&self.v_knots, geometry_budget)?
             } else {
-                self.v_knots[1..self.v_knots.len() - 1].to_vec()
+                copy_offset_knots(&self.v_knots[1..self.v_knots.len() - 1], geometry_budget)?
             },
             u_count: next_u_count,
             v_count: next_v_count,
             controls,
-        })
+        }))
     }
 
     fn active_control_bounds(
@@ -522,6 +531,16 @@ impl HomogeneousSurfaceNet {
         }
         Some(bounds)
     }
+}
+
+fn copy_offset_knots(
+    knots: &[f64],
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let mut copied = Vec::new();
+    let _reservation = geometry_budget.reserve_vec(&mut copied, knots.len(), "nx offset net knots")?;
+    copied.extend_from_slice(knots);
+    Ok(copied)
 }
 
 #[derive(Clone, Copy)]
@@ -561,19 +580,41 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
     (|| -> Option<Result<f64, cadmpeg_core::decode::ResourceLimit>> {
-        let support_net = HomogeneousSurfaceNet::from_homogeneous_surface(support)?;
-        let candidate_net = HomogeneousSurfaceNet::from_homogeneous_surface(candidate)?;
+        let support_net = match HomogeneousSurfaceNet::from_homogeneous_surface(support, geometry_budget) {
+            Ok(Some(net)) => net,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let candidate_net = match HomogeneousSurfaceNet::from_homogeneous_surface(candidate, geometry_budget) {
+            Ok(Some(net)) => net,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
         let residual_net = if same_basis {
-            Some(HomogeneousSurfaceNet::from_homogeneous_residual(
-                support, candidate,
-            )?)
+            match HomogeneousSurfaceNet::from_homogeneous_residual(support, candidate, geometry_budget) {
+                Ok(Some(net)) => Some(net),
+                Ok(None) => return None,
+                Err(limit) => return Some(Err(limit)),
+            }
         } else {
             None
         };
-        let support_derivatives = RationalSurfaceDerivativeNets::from_net(&support_net)?;
-        let candidate_derivatives = RationalSurfaceDerivativeNets::from_net(&candidate_net)?;
+        let support_derivatives = match RationalSurfaceDerivativeNets::from_net(&support_net, geometry_budget) {
+            Ok(Some(nets)) => nets,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
+        let candidate_derivatives = match RationalSurfaceDerivativeNets::from_net(&candidate_net, geometry_budget) {
+            Ok(Some(nets)) => nets,
+            Ok(None) => return None,
+            Err(limit) => return Some(Err(limit)),
+        };
         let residual_derivatives = match residual_net.as_ref() {
-            Some(net) => Some(RationalSurfaceDerivativeNets::from_net(net)?),
+            Some(net) => match RationalSurfaceDerivativeNets::from_net(net, geometry_budget) {
+                Ok(Some(nets)) => Some(nets),
+                Ok(None) => return None,
+                Err(limit) => return Some(Err(limit)),
+            },
             None => None,
         };
 
@@ -725,21 +766,22 @@ struct RationalSurfaceDerivativeNets {
 }
 
 impl RationalSurfaceDerivativeNets {
-    fn from_net(net: &HomogeneousSurfaceNet) -> Option<Self> {
-        let u = net.derivative(true)?;
-        let v = net.derivative(false)?;
-        let uv = u.derivative(false)?;
+    fn from_net(net: &HomogeneousSurfaceNet, geometry_budget: &GeometryWorkBudget<'_>) -> Result<Option<Self>, cadmpeg_core::decode::ResourceLimit> {
+        let Some(u) = net.derivative(true, geometry_budget)? else { return Ok(None); };
+        let Some(v) = net.derivative(false, geometry_budget)? else { return Ok(None); };
+        let Some(uv) = u.derivative(false, geometry_budget)? else { return Ok(None); };
         let uu = if u.u_degree == 0 {
             None
         } else {
-            Some(u.derivative(true)?)
+            u.derivative(true, geometry_budget)?
         };
         let vv = if v.v_degree == 0 {
             None
         } else {
-            Some(v.derivative(false)?)
+            v.derivative(false, geometry_budget)?
         };
-        Some(Self { u, v, uv, uu, vv })
+        if (u.u_degree != 0 && uu.is_none()) || (v.v_degree != 0 && vv.is_none()) { return Ok(None); }
+        Ok(Some(Self { u, v, uv, uu, vv }))
     }
 }
 
@@ -2984,8 +3026,9 @@ mod tests {
                 false,
             )
             .unwrap();
-            let net = super::HomogeneousSurfaceNet::from_homogeneous_surface(&surface).unwrap();
-            let derivatives = super::RationalSurfaceDerivativeNets::from_net(&net).unwrap();
+            let geometry_budget = super::GeometryWorkBudget::new(super::MAX_ADAPTIVE_GEOMETRY_WORK);
+            let net = super::HomogeneousSurfaceNet::from_homogeneous_surface(&surface, &geometry_budget).unwrap().unwrap();
+            let derivatives = super::RationalSurfaceDerivativeNets::from_net(&net, &geometry_budget).unwrap().unwrap();
             let bounds =
                 super::rational_surface_derivative_bounds_with_nets(&net, &derivatives, 0.5, 0.5)
                     .unwrap();
