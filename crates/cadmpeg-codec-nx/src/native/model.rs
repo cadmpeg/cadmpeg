@@ -1396,9 +1396,10 @@ impl NativeModel {
         let external_reference_tail_reference_pairs =
             external_reference_tail_reference_pairs(ctx, container, &external_reference_records)?;
         let external_reference_record_string_uses = external_reference_record_string_uses(
+            ctx,
             &external_reference_records,
             &external_references,
-        );
+        )?;
         let external_reference_record_children = external_reference_record_children(
             &external_reference_records,
             &external_references,

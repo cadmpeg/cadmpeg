@@ -3220,61 +3220,100 @@ pub(super) fn external_reference_tail_reference_pairs(
 
 /// Resolve complete four-slot record lanes through same-stream string tables.
 pub(super) fn external_reference_record_string_uses(
+    ctx: &DecodeContext<'_>,
     records: &[ExternalReferenceRecord],
     references: &[ExternalReference],
-) -> Vec<ExternalReferenceRecordStringUse> {
+) -> Result<Vec<ExternalReferenceRecordStringUse>, CodecError> {
     let mut references_by_key = BTreeMap::<(&str, u32), Option<&ExternalReference>>::new();
+    let index_bytes = references
+        .len()
+        .checked_mul(std::mem::size_of::<((&str, u32), Option<&ExternalReference>)>())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx external reference slot index", 0, 1))?;
+    let _index_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(index_bytes),
+        "nx external reference slot index",
+    )?;
     for reference in references {
-        references_by_key
-            .entry((reference.source_entry.as_str(), reference.ordinal))
-            .and_modify(|value| *value = None)
-            .or_insert(Some(reference));
+        ctx.charge_work(1, "nx external reference slot index")?;
+        let key = (reference.source_entry.as_str(), reference.ordinal);
+        if let Some(value) = references_by_key.get_mut(&key) {
+            *value = None;
+        } else {
+            ctx.charge_collection_items(1, "nx external reference slot index")?;
+            references_by_key.insert(key, Some(reference));
+        }
     }
-    records
-        .iter()
-        .flat_map(|record| {
-            if record
+    let mut output = Vec::new();
+    for record in records {
+        ctx.charge_work(1, "nx external reference slot resolution")?;
+        if record
+            .source_offset
+            .checked_add(ExtrefSlot::Fourth.offset())
+            .is_none()
+        {
+            continue;
+        }
+        let resolved = record.id_slots.map(|index| {
+            references_by_key
+                .get(&(record.source_entry.as_str(), index))
+                .and_then(|reference| *reference)
+        });
+        let [Some(first), Some(second), Some(third), Some(fourth)] = resolved else {
+            continue;
+        };
+        for (slot, reference) in ExtrefSlot::ALL.into_iter().zip([first, second, third, fourth]) {
+            ctx.charge_collection_items(1, "nx native external reference string uses")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ExternalReferenceRecordStringUse>()),
+                "nx native external reference string uses",
+            )?;
+            output.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx native external reference string uses", 0, 1)
+            })?;
+            let record_key = record
+                .id
+                .split_once('#')
+                .map_or(record.id.as_str(), |(_, key)| key);
+            let prefix = "nx:external-reference:record-string-use#";
+            let id_len = prefix
+                .len()
+                .checked_add(record_key.len())
+                .and_then(|len| len.checked_add(2))
+                .ok_or_else(|| ctx.refuse_codec_limit("nx native external reference string use id", 0, 1))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(id_len),
+                "nx native external reference string use id",
+            )?;
+            let mut id = String::new();
+            id.try_reserve_exact(id_len).map_err(|_| {
+                ctx.refuse_codec_limit("nx native external reference string use id", 0, 1)
+            })?;
+            write!(&mut id, "{prefix}{record_key}-{}", u8::from(slot)).map_err(|_| {
+                ctx.refuse_codec_limit("nx native external reference string use id", 0, 1)
+            })?;
+            let source_offset = record
                 .source_offset
-                .checked_add(ExtrefSlot::Fourth.offset())
-                .is_none()
-            {
-                return Vec::new();
-            }
-            let resolved = record
-                .id_slots
-                .iter()
-                .map(|index| {
-                    references_by_key
-                        .get(&(record.source_entry.as_str(), *index))
-                        .and_then(|reference| *reference)
-                })
-                .collect::<Option<Vec<_>>>();
-            let Some(resolved) = resolved else {
-                return Vec::new();
-            };
-            ExtrefSlot::ALL
-                .into_iter()
-                .zip(resolved)
-                .map(|(slot, reference)| {
-                    let record_key = record
-                        .id
-                        .split_once('#')
-                        .map_or(record.id.as_str(), |(_, key)| key);
-                    ExternalReferenceRecordStringUse {
-                        id: format!(
-                            "nx:external-reference:record-string-use#{record_key}-{}",
-                            u8::from(slot)
-                        ),
-                        external_record: record.id.clone(),
-                        slot,
-                        string_index: record.id_slots[slot.index()],
-                        external_reference: reference.id.clone(),
-                        source_offset: record.source_offset + slot.offset(),
-                    }
-                })
-                .collect()
-        })
-        .collect()
+                .checked_add(slot.offset())
+                .ok_or_else(|| ctx.refuse_codec_limit("nx native external reference string use offset", 0, 1))?;
+            output.push(ExternalReferenceRecordStringUse {
+                id,
+                external_record: copy_om_retained_text(
+                    ctx,
+                    &record.id,
+                    "nx native external reference string use record",
+                )?,
+                slot,
+                string_index: record.id_slots[slot.index()],
+                external_reference: copy_om_retained_text(
+                    ctx,
+                    &reference.id,
+                    "nx native external reference string use target",
+                )?,
+                source_offset,
+            });
+        }
+    }
+    Ok(output)
 }
 
 /// Bind complete record lanes to their slot-zero name and slot-two directory.
