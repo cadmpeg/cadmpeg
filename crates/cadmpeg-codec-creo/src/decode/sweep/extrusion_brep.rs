@@ -46,6 +46,24 @@ const GENERATED_EXTRUSION_SIDE_KINDS: &[crate::surface::SurfaceKind] = &[
     crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
 ];
 
+fn copy_ring_coedges(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ids: &[CoedgeId],
+    collection_operation: &'static str,
+    identity_operation: &'static str,
+) -> Result<Vec<CoedgeId>, cadmpeg_core::CodecError> {
+    let mut copied = Vec::new();
+    ctx.try_reserve_items(&mut copied, ids.len(), collection_operation)?;
+    for id in ids {
+        copied.push(crate::identity::copy_checked_id(
+            ctx,
+            id.as_str(),
+            identity_operation,
+        )?);
+    }
+    Ok(copied)
+}
+
 fn sketch_profiles_cover_generated_extrusion_sides(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
@@ -603,7 +621,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new_admitted(
                         ctx,
-                        bottom_coedges.clone(),
+                        copy_ring_coedges(
+                            ctx,
+                            &bottom_coedges,
+                            "creo extrusion bottom ring coedge copies",
+                            "creo extrusion bottom ring coedge identities",
+                        )?,
                         Vec::new(),
                         "creo extrusion bottom loop validation nodes",
                     )?,
@@ -616,7 +639,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new_admitted(
                         ctx,
-                        top_coedges.clone(),
+                        copy_ring_coedges(
+                            ctx,
+                            &top_coedges,
+                            "creo extrusion top ring coedge copies",
+                            "creo extrusion top ring coedge identities",
+                        )?,
                         Vec::new(),
                         "creo extrusion top loop validation nodes",
                     )?,
@@ -890,7 +918,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                         cadmpeg_ir::topology::LoopRing::new_admitted(
                             ctx,
-                            coedges.to_vec(),
+                            copy_ring_coedges(
+                                ctx,
+                                &coedges,
+                                "creo extrusion side ring coedge copies",
+                                "creo extrusion side ring coedge identities",
+                            )?,
                             Vec::new(),
                             "creo extrusion side loop validation nodes",
                         )?,
