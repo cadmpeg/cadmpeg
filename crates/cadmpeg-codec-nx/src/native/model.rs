@@ -802,21 +802,24 @@ impl NativeModel {
             &parasolid_entity_62_unicode_records,
         );
         let parasolid_entity_51_numeric_uses = parasolid_entity_51_numeric_uses(
+            ctx,
             &parasolid_entity_51_records,
             &parasolid_entity_52_integer_records,
             &parasolid_entity_53_double_records,
-        );
+        )?;
         let parasolid_entity_51_string_uses = parasolid_entity_51_string_uses(
+            ctx,
             &parasolid_entity_51_records,
             &parasolid_entity_54_string_records,
-        );
+        )?;
         let parasolid_entity_51_structured_uses = parasolid_entity_51_structured_uses(
+            ctx,
             &parasolid_entity_51_records,
             &parasolid_entity_vector_records,
             &parasolid_entity_57_axis_records,
             &parasolid_entity_58_tag_records,
             &parasolid_entity_62_unicode_records,
-        );
+        )?;
         let parasolid_attribute_class_uses = parasolid_attribute_class_uses(
             &parasolid_entity_51_records,
             &parasolid_attribute_definitions,
