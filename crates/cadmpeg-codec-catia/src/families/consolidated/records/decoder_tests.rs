@@ -786,7 +786,8 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
             .collect::<Vec<_>>(),
         [0x5e, 0x05, 0x18, 0x18]
     );
-    let nodes = crate::families::b2::records::b2_edge_nodes_from_records(&bytes, &records);
+    let nodes = crate::families::b2::records::b2_edge_nodes_from_records(&bytes, &records)
+        .collect::<Vec<_>>();
     assert_eq!(nodes.len(), 1);
     assert_eq!([nodes[0].start_vertex_ref, nodes[0].end_vertex_ref], [2, 3]);
     let endpoints =
