@@ -4,20 +4,26 @@ use crate::om::counted_pattern_references::CountedPatternReferences;
 use crate::om::operation_record::OperationPayload;
 
 fn read_counted_pattern_test(record: OperationPayload<'_>) -> Option<CountedPatternReferences<()>> {
-    crate::test_support::with_decode_context(|ctx| CountedPatternReferences::read(ctx, record)).unwrap()
+    crate::test_support::with_decode_context(|ctx| CountedPatternReferences::read(ctx, record))
+        .unwrap()
 }
 
 #[test]
 fn counted_pattern_references_refuse_collection_limit() {
     let mut payload = vec![1, 2, 0xf1, 0x06, 0xb1];
-    payload.extend_from_slice(&[0, 0, 0, 0x37, 0xff, 0xff, 1, 0, 0, 0, 0x38, 0xff, 1, 0xff, 0xff, 0xff, 0xff, 1, 0xff]);
+    payload.extend_from_slice(&[
+        0, 0, 0, 0x37, 0xff, 0xff, 1, 0, 0, 0, 0x38, 0xff, 1, 0xff, 0xff, 0xff, 0xff, 1, 0xff,
+    ]);
     let record = OperationPayload::new(&payload, 0, "Pattern Feature").unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
     let error = CountedPatternReferences::read(&ctx, record).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]

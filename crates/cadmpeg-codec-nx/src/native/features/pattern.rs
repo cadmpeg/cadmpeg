@@ -916,13 +916,14 @@ impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanc
 
 /// Decode and resolve exact ordered construction references in pattern
 /// payloads without assigning seed or transform semantics to their slots.
-pub(in crate::native) fn feature_pattern_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_pattern_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeaturePatternReference>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeaturePatternReference>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(decoded) = PatternReferences::read(record.payload_view()) else {
@@ -951,28 +952,37 @@ pub(in crate::native) fn feature_pattern_references(ctx: &cadmpeg_core::decode::
 
 /// Decode and resolve the exact counted reference lane in `Pattern Feature`
 /// payloads without assigning roles to its references.
-pub(in crate::native) fn feature_pattern_counted_reference_lanes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_pattern_counted_reference_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeaturePatternCountedReferenceLane>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeaturePatternCountedReferenceLane>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
     let mut refusal: Option<cadmpeg_core::CodecError> = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if refusal.is_some() { return; }
+            if refusal.is_some() {
+                return;
+            }
             let lane = match CountedPatternReferences::read(ctx, record.payload_view()) {
                 Ok(Some(lane)) => lane,
                 Ok(None) => return,
-                Err(error) => { refusal = Some(error); return; }
+                Err(error) => {
+                    refusal = Some(error);
+                    return;
+                }
             };
             let references = match lane.resolve(ctx, entry_offset, |token| {
                 unique_offset_data_block(&indexed, token.value())
             }) {
                 Ok(Some(references)) => references,
                 Ok(None) => return,
-                Err(error) => { refusal = Some(error); return; }
+                Err(error) => {
+                    refusal = Some(error);
+                    return;
+                }
             };
             lanes.push(FeaturePatternCountedReferenceLane {
                 id: format!(
@@ -985,17 +995,19 @@ pub(in crate::native) fn feature_pattern_counted_reference_lanes(ctx: &cadmpeg_c
             });
         },
     )?;
-    if let Some(error) = refusal { return Err(error); }
+    if let Some(error) = refusal {
+        return Err(error);
+    }
     Ok(lanes)
 }
 
 /// Reconstruct ordered logical payloads from complete pattern-reference graphs.
-pub(in crate::native) fn feature_pattern_construction_payloads(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_pattern_construction_payloads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     labels: &[FeatureOperationLabel],
     references: &[FeaturePatternReference],
-) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let kinds = labels
         .iter()
@@ -1060,64 +1072,77 @@ pub(in crate::native) fn feature_pattern_construction_payloads(ctx: &cadmpeg_cor
 }
 
 /// Decode canonical printable strings from reconstructed pattern payloads.
-pub(in crate::native) fn feature_pattern_construction_strings(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_pattern_construction_strings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Result<Vec<FeaturePatternConstructionString>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeaturePatternConstructionString>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut strings = Vec::new();
     for payload in payloads {
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
-            else {
+        let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks) else {
+            continue;
+        };
+        for (ordinal, value) in crate::om::string_values(ctx, joined.bytes(), 0)?
+            .into_iter()
+            .enumerate()
+        {
+            let payload_offset = value.offset as u64;
+            let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
-            for (ordinal, value) in crate::om::string_values(ctx, joined.bytes(), 0)?.into_iter().enumerate() {
-                    let payload_offset = value.offset as u64;
-                    let Some(source_offset) = joined.source_offset(payload_offset) else { continue };
-                    strings.push(FeaturePatternConstructionString {
-                        id: format!("{}-string-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        value: value.value.into_owned(),
-                        payload_offset,
-                        source_offset,
-                    });
-            }
+            strings.push(FeaturePatternConstructionString {
+                id: format!("{}-string-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                value: value.value.into_owned(),
+                payload_offset,
+                source_offset,
+            });
+        }
     }
     Ok(strings)
 }
 
 /// Decode complete signed Q1.55 lanes from reconstructed pattern payloads.
-pub(in crate::native) fn feature_pattern_construction_fixed_lanes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_pattern_construction_fixed_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Result<Vec<FeaturePatternConstructionFixedLane>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeaturePatternConstructionFixedLane>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut failure = None;
     let lanes = payloads
         .iter()
         .flat_map(|payload| {
-            if failure.is_some() { return Vec::new(); }
+            if failure.is_some() {
+                return Vec::new();
+            }
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
             let rows = match crate::om::draft_construction_fixed_lanes(ctx, joined.bytes()) {
                 Ok(rows) => rows,
-                Err(error) => { failure = Some(error); return Vec::new(); }
+                Err(error) => {
+                    failure = Some(error);
+                    return Vec::new();
+                }
             };
-            rows
-                .into_iter()
+            rows.into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
                     let payload_offset = lane.offset();
-                    let lane = match lane.try_map_locations(ctx, |offset, ()| joined.source_offset(offset)) {
+                    let lane = match lane
+                        .try_map_locations(ctx, |offset, ()| joined.source_offset(offset))
+                    {
                         Ok(Some(lane)) => lane,
                         Ok(None) => return None,
-                        Err(error) => { failure = Some(error); return None; }
+                        Err(error) => {
+                            failure = Some(error);
+                            return None;
+                        }
                     };
                     Some(FeaturePatternConstructionFixedLane {
                         id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
@@ -1131,26 +1156,37 @@ pub(in crate::native) fn feature_pattern_construction_fixed_lanes(ctx: &cadmpeg_
                 .collect()
         })
         .collect();
-    if let Some(error) = failure { Err(error) } else { Ok(lanes) }
+    if let Some(error) = failure {
+        Err(error)
+    } else {
+        Ok(lanes)
+    }
 }
 
 /// Decode exact counted transform lanes from bounded pattern payloads.
-pub(in crate::native) fn feature_pattern_transform_lanes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_pattern_transform_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeaturePatternTransformLane>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeaturePatternTransformLane>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let lane = match crate::om::pattern_payload_transform_lane(ctx, record.payload_view()) {
                 Ok(Some(lane)) => lane,
                 Ok(None) => return,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
-            let rows = match lane.rows.map_charged(ctx,
+            let rows = match lane.rows.map_charged(
+                ctx,
                 |selector| crate::om::compact::LocatedCompactIndex {
                     atom: selector.atom,
                     offset: entry_offset + selector.offset as u64,
@@ -1158,7 +1194,10 @@ pub(in crate::native) fn feature_pattern_transform_lanes(ctx: &cadmpeg_core::dec
                 |offset| entry_offset + offset as u64,
             ) {
                 Ok(rows) => rows,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             lanes.push(FeaturePatternTransformLane {
                 id: format!(
@@ -1173,29 +1212,44 @@ pub(in crate::native) fn feature_pattern_transform_lanes(ctx: &cadmpeg_core::dec
             });
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(lanes)
 }
 
 /// Decode exact counted output lanes from bounded multi-instance payloads.
-pub(in crate::native) fn feature_multi_instance_output_lanes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_multi_instance_output_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureMultiInstanceOutputLane>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureMultiInstanceOutputLane>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
-            let lane = match crate::om::multi_instance_output_payload_lane(ctx, record.payload_view()) {
-                Ok(Some(lane)) => lane,
-                Ok(None) => return,
-                Err(error) => { failure = Some(error); return; }
-            };
-            let outputs = match lane.outputs.map_offsets(ctx, |offset| entry_offset + offset as u64) {
+            if failure.is_some() {
+                return;
+            }
+            let lane =
+                match crate::om::multi_instance_output_payload_lane(ctx, record.payload_view()) {
+                    Ok(Some(lane)) => lane,
+                    Ok(None) => return,
+                    Err(error) => {
+                        failure = Some(error);
+                        return;
+                    }
+                };
+            let outputs = match lane
+                .outputs
+                .map_offsets(ctx, |offset| entry_offset + offset as u64)
+            {
                 Ok(outputs) => outputs,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             lanes.push(FeatureMultiInstanceOutputLane {
                 id: format!(
@@ -1209,7 +1263,9 @@ pub(in crate::native) fn feature_multi_instance_output_lanes(ctx: &cadmpeg_core:
             });
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(lanes)
 }
 
@@ -1221,23 +1277,36 @@ pub(in crate::native) fn feature_identical_instance_output_lanes(
 ) -> Result<Vec<FeatureIdenticalInstanceOutputLane>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
-            let lane = match crate::om::identical_instance_output_payload_lane(ctx, record.payload_view()) {
-                Ok(lane) => lane,
-                Err(error) => { failure = Some(error); return; }
-            };
+            if failure.is_some() {
+                return;
+            }
+            let lane =
+                match crate::om::identical_instance_output_payload_lane(ctx, record.payload_view())
+                {
+                    Ok(lane) => lane,
+                    Err(error) => {
+                        failure = Some(error);
+                        return;
+                    }
+                };
             let Some(lane) = lane else {
                 return;
             };
-            let selectors = match lane.selectors.map_charged(ctx, |token| crate::om::compact::LocatedCompactIndex {
-                atom: token.atom,
-                offset: entry_offset + token.offset as u64,
+            let selectors = match lane.selectors.map_charged(ctx, |token| {
+                crate::om::compact::LocatedCompactIndex {
+                    atom: token.atom,
+                    offset: entry_offset + token.offset as u64,
+                }
             }) {
                 Ok(selectors) => selectors,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             lanes.push(FeatureIdenticalInstanceOutputLane {
                 id: format!(
@@ -1253,7 +1322,11 @@ pub(in crate::native) fn feature_identical_instance_output_lanes(
             });
         },
     )?;
-    if let Some(error) = failure { Err(error) } else { Ok(lanes) }
+    if let Some(error) = failure {
+        Err(error)
+    } else {
+        Ok(lanes)
+    }
 }
 
 use super::deserialize_reference_lane_count;

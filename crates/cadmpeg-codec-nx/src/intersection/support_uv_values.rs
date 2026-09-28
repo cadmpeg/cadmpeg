@@ -143,21 +143,32 @@ impl SupportUvValues {
         }
         let operation = "NX solved support-UV values";
         let count_u64 = u64_from_index(count);
-        let lane_count = if self.packing == SupportUvPacking::Form4 { 2 } else { 1 };
+        let lane_count = if self.packing == SupportUvPacking::Form4 {
+            2
+        } else {
+            1
+        };
         ctx.charge_collection_items(
-            count_u64.checked_mul(lane_count).ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?,
+            count_u64
+                .checked_mul(lane_count)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?,
             operation,
         )?;
         let bytes = count_u64
             .checked_mul(lane_count)
-            .and_then(|slots| slots.checked_mul(u64_from_index(std::mem::size_of::<FiniteVector<2>>())))
+            .and_then(|slots| {
+                slots.checked_mul(u64_from_index(std::mem::size_of::<FiniteVector<2>>()))
+            })
             .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
         ctx.charge_retained(bytes, operation)?;
         let mut first = Vec::new();
-        first.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        first
+            .try_reserve_exact(count)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
         let mut second = if lane_count == 2 {
             let mut lane = Vec::new();
-            lane.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+            lane.try_reserve_exact(count)
+                .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
             Some(lane)
         } else {
             None

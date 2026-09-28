@@ -162,32 +162,45 @@ impl TryFrom<SurfaceBranchWire> for FeatureSurfaceConstructionBranch {
 }
 
 /// Resolve branch references without assigning section or guide semantics.
-pub(in crate::native) fn feature_surface_construction_branches(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(in crate::native) fn feature_surface_construction_branches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureSurfaceConstructionBranch>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureSurfaceConstructionBranch>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut branches = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let group = match surface_feature_payload_branches(ctx, record.payload_view()) {
                 Ok(Some(group)) => group,
                 Ok(None) => return,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let family = group.family;
             let header_code = group.header_code;
             for (ordinal, branch) in group.into_branches().into_iter().enumerate() {
-                let Some(order) = u8::try_from(ordinal + 1).ok().and_then(NonZeroU8::new) else { continue };
-                let references = match branch.resolve(ctx, entry_offset, |token| unique_offset_data_block(&indexed, token.value())) {
+                let Some(order) = u8::try_from(ordinal + 1).ok().and_then(NonZeroU8::new) else {
+                    continue;
+                };
+                let references = match branch.resolve(ctx, entry_offset, |token| {
+                    unique_offset_data_block(&indexed, token.value())
+                }) {
                     Ok(Some(references)) => references,
                     Ok(None) => continue,
-                    Err(error) => { failure = Some(error); return; }
+                    Err(error) => {
+                        failure = Some(error);
+                        return;
+                    }
                 };
                 branches.push(FeatureSurfaceConstructionBranch {
                     id: format!("nx:feature-history:surface-construction-branch#{section_key}-{operation_ordinal:010}-{ordinal:010}"),
@@ -196,7 +209,9 @@ pub(in crate::native) fn feature_surface_construction_branches(ctx: &cadmpeg_cor
             }
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(branches)
 }
 

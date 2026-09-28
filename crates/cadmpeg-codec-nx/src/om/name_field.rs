@@ -78,24 +78,28 @@ impl NameField<&str, usize, ()> {
         ctx: &DecodeContext<'_>,
         source_offset: impl FnOnce(u64) -> Option<u64>,
     ) -> Result<Option<NameField<String>>, CodecError> {
-        let Some(offset) = u64::try_from(self.offset()).ok() else { return Ok(None); };
-        let code = match self.code() {
-            None => None,
-            Some(code) => Some(CompactIndexTarget {
-                atom: code.atom,
-                target: source_offset(u64_from_index(code.offset)),
-            }),
+        let Some(offset) = u64::try_from(self.offset()).ok() else {
+            return Ok(None);
         };
+        let code = self.code().map(|code| CompactIndexTarget {
+            atom: code.atom,
+            target: source_offset(u64_from_index(code.offset)),
+        });
         ctx.charge_retained(u64_from_index(self.value.len()), "NX native name field")?;
         let mut value = String::new();
-        value.try_reserve_exact(self.value.len()).map_err(|_| ctx.refuse_codec_limit("NX native name field", 0, u64_from_index(self.value.len())))?;
+        value.try_reserve_exact(self.value.len()).map_err(|_| {
+            ctx.refuse_codec_limit("NX native name field", 0, u64_from_index(self.value.len()))
+        })?;
         value.push_str(self.value);
         Ok(NameField::new(value, offset, code).ok())
     }
 }
 
 /// Decode exact `66, compact_type, 03, declared_len, text, 00` fields.
-pub(crate) fn scan<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<Vec<NameField<&'a str, usize, ()>>, CodecError> {
+pub(crate) fn scan<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<Vec<NameField<&'a str, usize, ()>>, CodecError> {
     let mut fields = Vec::new();
     ctx.charge_work(u64_from_index(bytes.len()), "scan NX name fields")?;
     if bytes.first() == Some(&3) {
@@ -136,7 +140,9 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8]) -> Result<Vec<N
 fn reserve_field<T>(ctx: &DecodeContext<'_>, fields: &mut Vec<T>) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "NX name fields")?;
     ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), "NX name fields")?;
-    fields.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX name fields", 0, 1))
+    fields
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("NX name fields", 0, 1))
 }
 
 fn name_text(bytes: &[u8], length_offset: usize) -> Option<&str> {
@@ -167,9 +173,12 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let error = scan(&ctx, &bytes).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
@@ -206,15 +215,26 @@ mod tests {
     fn source_name_mapping_keeps_optional_noncontiguous_source_positions() {
         let bytes = [0x66, 128, 1, 3, 3, b'A', 0];
         let field = scan_test(&bytes).pop().unwrap();
-        let native = crate::test_support::with_decode_context(|ctx| field.clone().into_native(ctx, |_| Some(900))).unwrap().unwrap();
+        let native = crate::test_support::with_decode_context(|ctx| {
+            field.clone().into_native(ctx, |_| Some(900))
+        })
+        .unwrap()
+        .unwrap();
         assert_eq!(native.offset(), 0);
         assert_eq!(native.code().unwrap().offset, 1);
         assert_eq!(*native.code().unwrap().target, Some(900));
         assert_eq!(native.value(), "A");
-        let unmapped = crate::test_support::with_decode_context(|ctx| field.into_native(ctx, |_| None)).unwrap().unwrap();
+        let unmapped =
+            crate::test_support::with_decode_context(|ctx| field.into_native(ctx, |_| None))
+                .unwrap()
+                .unwrap();
         assert_eq!(*unmapped.code().unwrap().target, None);
         let leading = scan_test(&[3, 3, b'A', 0]).pop().unwrap();
-        let leading = crate::test_support::with_decode_context(|ctx| leading.into_native(ctx, |_| panic!("leading name has no type token"))).unwrap().unwrap();
+        let leading = crate::test_support::with_decode_context(|ctx| {
+            leading.into_native(ctx, |_| panic!("leading name has no type token"))
+        })
+        .unwrap()
+        .unwrap();
         assert_eq!(leading.offset(), 0);
         assert!(leading.code().is_none());
     }
@@ -240,29 +260,21 @@ mod tests {
         assert_eq!(second.atom.raw(), vec![0x80, 0x83]);
         assert_eq!(second.offset, 13);
 
-        assert!(scan_test(&[
-            0x66, 0xff, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00,
-        ])
-        .is_empty());
-        assert!(scan_test(&[
-            0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't',
-        ])
-        .is_empty());
+        assert!(
+            scan_test(&[0x66, 0xff, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00,])
+                .is_empty()
+        );
+        assert!(scan_test(&[0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't',]).is_empty());
     }
 
     #[test]
     fn om_sketch_name_field_decodes_type_free_payload_leading_form() {
-        let fields = scan_test(&[
-            0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00, 0x04,
-        ]);
+        let fields = scan_test(&[0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00, 0x04]);
         assert_eq!(fields.len(), 1);
         assert_eq!(fields[0].offset(), 0);
         assert!(fields[0].code().is_none());
         assert_eq!(fields[0].value(), "Point1");
 
-        assert!(
-            scan_test(&[0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1',])
-                .is_empty()
-        );
+        assert!(scan_test(&[0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1',]).is_empty());
     }
 }

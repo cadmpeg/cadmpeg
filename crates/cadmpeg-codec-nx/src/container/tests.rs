@@ -2,10 +2,10 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::test_support::test_cfb::legacy_cfb_with_two_streams;
 use crate::test_support::test_om::offset_only_indexed_om_section_with_index_values;
 use crate::test_support::test_om::segment_index_payload;
 use crate::test_support::test_om::size_framed_om_section_with_repeated_operations;
-use crate::test_support::test_cfb::legacy_cfb_with_two_streams;
 use crate::test_support::test_prt::append_rmfastload_table;
 use crate::test_support::test_prt::prt_with_indexed_om_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
@@ -134,8 +134,10 @@ fn container_cached_operation_labels_preserve_section_materialization() {
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    let direct = crate::test_support::with_decode_context(|ctx| crate::om::sections(ctx, &payload)).unwrap();
-    let cached = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+    let direct =
+        crate::test_support::with_decode_context(|ctx| crate::om::sections(ctx, &payload)).unwrap();
+    let cached =
+        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
     assert_eq!(cached.len(), direct.len());
     assert!(container.om_section_cache.get().is_some());
     for ((entry, section), expected) in cached.iter().zip(direct.iter()) {
@@ -143,11 +145,18 @@ fn container_cached_operation_labels_preserve_section_materialization() {
         assert_eq!(section, expected);
         assert_eq!(section.operation_labels(), expected.operation_labels());
         assert_eq!(
-            crate::test_support::with_decode_context(|ctx| section.operation_records_with_label_ordinals(ctx)).unwrap(),
-            crate::test_support::with_decode_context(|ctx| expected.operation_records_with_label_ordinals(ctx)).unwrap()
+            crate::test_support::with_decode_context(
+                |ctx| section.operation_records_with_label_ordinals(ctx)
+            )
+            .unwrap(),
+            crate::test_support::with_decode_context(
+                |ctx| expected.operation_records_with_label_ordinals(ctx)
+            )
+            .unwrap()
         );
     }
-    let repeated = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+    let repeated =
+        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
     assert_eq!(repeated, cached);
     assert!(std::sync::Arc::ptr_eq(
         &cached[0].1.types,
@@ -179,10 +188,18 @@ fn container_caches_owned_section_layouts() {
         om_section_cache: std::sync::OnceLock::new(),
     };
     let first = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
-    let second = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+    let second =
+        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
     assert_eq!(first.len(), 1);
     assert_eq!(second, first);
-    assert_eq!(first[0].1, crate::test_support::with_decode_context(|ctx| crate::om::sections(ctx, &container.data[17..])).unwrap()[0]);
+    assert_eq!(
+        first[0].1,
+        crate::test_support::with_decode_context(|ctx| crate::om::sections(
+            ctx,
+            &container.data[17..]
+        ))
+        .unwrap()[0]
+    );
     assert!(container.om_section_cache.get().is_some_and(|cache| {
         matches!(
             cache,
@@ -201,7 +218,10 @@ fn framed_section_cache_reader_refuses_collection_limit() {
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
-            body: crate::container::DirEntryBody::File { offset: 0, len: payload.len() as u64 },
+            body: crate::container::DirEntryBody::File {
+                offset: 0,
+                len: payload.len() as u64,
+            },
         }],
         fastload_table: None,
         indexed_section_layouts: std::sync::OnceLock::new(),
@@ -212,21 +232,31 @@ fn framed_section_cache_reader_refuses_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error = container.om_sections(&ctx).expect_err("one cached section exceeds zero items");
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "NX framed section readers"));
+    let error = container
+        .om_sections(&ctx)
+        .expect_err("one cached section exceeds zero items");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "NX framed section readers")
+    );
 }
 
 #[test]
 fn indexed_section_cache_reader_refuses_collection_limit() {
     let file = prt_with_indexed_om_section();
-    let container = crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice())).unwrap();
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
+            .unwrap();
     crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
-    let error = container.indexed_om_sections(&ctx).expect_err("one cached section exceeds zero items");
-    assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "NX indexed section readers"));
+    let error = container
+        .indexed_om_sections(&ctx)
+        .expect_err("one cached section exceeds zero items");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "NX indexed section readers")
+    );
 }
 
 #[test]
@@ -235,8 +265,10 @@ fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
             .unwrap();
-    let first = crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
-    let second = crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+    let first =
+        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+    let second =
+        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
     assert!(!first.is_empty());
     assert_eq!(first, second);
     assert!(std::sync::Arc::ptr_eq(
@@ -273,7 +305,8 @@ fn container_reuses_borrowed_offset_store_block_index() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
             .unwrap();
-    let _ = crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+    let _ =
+        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
     let first = container
         .cached_offset_data_block_bytes()
         .expect("borrowed indexed sections cache their offset-store blocks");
@@ -750,8 +783,8 @@ fn external_reference_record_parser_accepts_sorted_repeated_handles() {
             crate::container::parse_extref_record_index(ctx, &payload)
         })
         .expect("index resources")
-            .expect("opaque indexed record")
-            .len(),
+        .expect("opaque indexed record")
+        .len(),
         1
     );
 }

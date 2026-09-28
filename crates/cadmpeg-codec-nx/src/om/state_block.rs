@@ -174,7 +174,9 @@ pub(super) fn operation_state_block_before_boundary<'a>(
         ctx.reserve_scoped(u64_from_index(path_bytes), "scan NX state message paths")?;
     let opaque_bytes = scanned
         .checked_mul(std::mem::size_of::<usize>())
-        .ok_or_else(|| ctx.refuse_codec_limit("nx opaque state lanes", 0, u64_from_index(scanned)))?;
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("nx opaque state lanes", 0, u64_from_index(scanned))
+        })?;
     let _opaque_lanes_reservation =
         ctx.reserve_scoped(u64_from_index(opaque_bytes), "scan NX opaque state lanes")?;
 
@@ -182,9 +184,9 @@ pub(super) fn operation_state_block_before_boundary<'a>(
     for at in start..end.saturating_sub(1) {
         if bytes.get(at..at + 2) == Some(&[0x02, 0x11]) {
             ctx.charge_collection_items(1, "nx opaque state lanes")?;
-            opaque_lane_starts.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx opaque state lanes", 0, 1)
-            })?;
+            opaque_lane_starts
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx opaque state lanes", 0, 1))?;
             opaque_lane_starts.push(at);
         }
     }
@@ -198,16 +200,16 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                 let continuation = (next < end)
                     .then(|| operation_state_path_at(&message_paths, next))
                     .flatten();
-                let length = continuation
-                    .map_or(Some(NonZeroUsize::MIN), |path| path.length.checked_add(1));
+                let length =
+                    continuation.map_or(Some(NonZeroUsize::MIN), |path| path.length.checked_add(1));
                 let Some(length) = length else {
                     return Ok(None);
                 };
                 let path_end = continuation.map_or(next, |path| path.end);
                 ctx.charge_collection_items(1, "nx state message paths")?;
-                message_paths.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx state message paths", 0, 1)
-                })?;
+                message_paths
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("nx state message paths", 0, 1))?;
                 message_paths.push((
                     at,
                     OperationStatePath {
@@ -238,9 +240,9 @@ pub(super) fn operation_state_block_before_boundary<'a>(
             .or(message_path);
         if let Some(path) = best_path {
             ctx.charge_collection_items(1, "nx state status paths")?;
-            status_paths.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx state status paths", 0, 1)
-            })?;
+            status_paths
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx state status paths", 0, 1))?;
             status_paths.push((at, path));
         }
     }
@@ -310,9 +312,9 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                     u64_from_index(std::mem::size_of::<StateTableEntry<'_>>()),
                     "retain NX state block entry",
                 )?;
-                entries.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx state block entries", 0, 1)
-                })?;
+                entries
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("nx state block entries", 0, 1))?;
                 entries.push(StateTableEntry::Slots(lane.into_slots()));
                 at = next;
             } else {
@@ -334,9 +336,9 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                     u64_from_index(std::mem::size_of::<StateTableEntry<'_>>()),
                     "retain NX state block entry",
                 )?;
-                entries.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx state block entries", 0, 1)
-                })?;
+                entries
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("nx state block entries", 0, 1))?;
                 entries.push(StateTableEntry::Status(row.body()));
                 at = next;
             }
@@ -353,9 +355,9 @@ pub(super) fn operation_state_block_before_boundary<'a>(
                 u64_from_index(std::mem::size_of::<StateMessage<&str>>()),
                 "retain NX state block message",
             )?;
-            messages.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx state block messages", 0, 1)
-            })?;
+            messages
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx state block messages", 0, 1))?;
             messages.push(message.body());
             at = next;
             break;
@@ -374,9 +376,9 @@ pub(super) fn operation_state_block_before_boundary<'a>(
             u64_from_index(std::mem::size_of::<StateMessage<&str>>()),
             "retain NX state block message",
         )?;
-        messages.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("nx state block messages", 0, 1)
-        })?;
+        messages
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx state block messages", 0, 1))?;
         messages.push(message.body());
         at = next;
     }
@@ -432,9 +434,8 @@ mod tests {
         assert!(matches!(positioned[1].1, StateTableEntry::Slots(_)));
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &policy,
-        ).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let messages = OperationStateBlock::new(100, entries, vec![message])
             .unwrap()
             .into_messages(&ctx)
@@ -474,11 +475,11 @@ mod tests {
 
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes, &arena, &policy,
-        ).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let block = operation_state_block_before_boundary(&ctx, &bytes, 0, bytes.len(), 500)
-            .unwrap().expect("complete operation-state block");
+            .unwrap()
+            .expect("complete operation-state block");
         assert_eq!(block.rows().len(), 1);
         assert!(matches!(
             block.rows()[0].payload,
@@ -501,11 +502,11 @@ mod tests {
 
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes, &arena, &policy,
-        ).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let block = operation_state_block_before_boundary(&ctx, &bytes, 0, boundary, 500)
-            .unwrap().expect("complete status chain");
+            .unwrap()
+            .expect("complete status chain");
         assert_eq!(block.offset(), 500 + 13);
         assert_eq!(block.rows().len(), 2);
         assert_eq!(Some(block.rows()[0].object_index.value()), Some(0x20));
@@ -523,11 +524,11 @@ mod tests {
 
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes, &arena, &policy,
-        ).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let block = operation_state_block_before_boundary(&ctx, &bytes, 0, bytes.len(), 500)
-            .unwrap().expect("status chain before bounded tail");
+            .unwrap()
+            .expect("status chain before bounded tail");
         assert_eq!(block.offset(), 500);
         assert_eq!(block.rows().len(), 2);
         assert!(block.messages().is_empty());
@@ -546,11 +547,11 @@ mod tests {
 
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes, &arena, &policy,
-        ).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let block = operation_state_block_before_boundary(&ctx, &bytes, 0, boundary, 500)
-            .unwrap().expect("status chain after large opaque prefix");
+            .unwrap()
+            .expect("status chain after large opaque prefix");
         assert_eq!(block.offset(), 500 + status_start);
         assert_eq!(block.rows().len(), 2);
         assert!(block.messages().is_empty());
@@ -566,11 +567,11 @@ mod tests {
             .expect("group table");
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes, &arena, &policy,
-        ).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let messages = operation_state_block_before_boundary(&ctx, &bytes, 0, group_start + 2, 500)
-            .unwrap().expect("terminal message")
+            .unwrap()
+            .expect("terminal message")
             .into_messages(&ctx)
             .unwrap()
             .unwrap();
@@ -593,11 +594,11 @@ mod tests {
 
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes, &arena, &policy,
-        ).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let block = operation_state_block_before_boundary(&ctx, &bytes, 0, bytes.len(), 500)
-            .unwrap().expect("boundary-closed state path");
+            .unwrap()
+            .expect("boundary-closed state path");
         assert_eq!(block.offset(), 500 + closed_path_start);
         assert_eq!(block.rows().len(), 1);
         assert_eq!(block.messages().len(), 1);
@@ -605,58 +606,77 @@ mod tests {
     }
     #[test]
     fn operation_state_block_refuses_collection_limit() {
-        let bytes = [0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff];
+        let bytes = [
+            0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff,
+        ];
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = 0;
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = operation_state_block_before_boundary(&ctx, &bytes, 0, bytes.len(), 0)
-            .err().expect("resource refusal");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+            .err()
+            .expect("resource refusal");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
     fn operation_state_block_refuses_retained_limit() {
-        let bytes = [0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff];
+        let bytes = [
+            0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff,
+        ];
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = operation_state_block_before_boundary(&ctx, &bytes, 0, bytes.len(), 0)
-            .err().expect("resource refusal");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+            .err()
+            .expect("resource refusal");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]
     fn operation_state_block_refuses_scoped_limit() {
-        let bytes = [0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff];
+        let bytes = [
+            0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff,
+        ];
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_materialized_bytes = 0;
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = operation_state_block_before_boundary(&ctx, &bytes, 0, bytes.len(), 0)
-            .err().expect("resource refusal");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+            .err()
+            .expect("resource refusal");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+        );
     }
 
     #[test]
     fn operation_state_block_refuses_work_limit() {
-        let bytes = [0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff];
+        let bytes = [
+            0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff,
+        ];
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_work_units = 0;
         let (ctx, _) =
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let error = operation_state_block_before_boundary(&ctx, &bytes, 0, bytes.len(), 0)
-            .err().expect("resource refusal");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+            .err()
+            .expect("resource refusal");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
     }
-
 }

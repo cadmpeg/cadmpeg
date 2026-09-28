@@ -384,11 +384,9 @@ fn display_jt_element_index_refuses_before_retained_reservation() {
 
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(
-        super::super::parse_jt_element_sequence(&service, &bytes)
-            .unwrap()
-            .is_some()
-    );
+    assert!(super::super::parse_jt_element_sequence(&service, &bytes)
+        .unwrap()
+        .is_some());
 }
 
 #[test]
@@ -409,9 +407,7 @@ fn display_jt_element_scan_refuses_before_framing_work() {
 
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(
-        super::super::parse_jt_element_sequence(&service, &bytes)
-            .unwrap()
-            .is_some()
-    );
+    assert!(super::super::parse_jt_element_sequence(&service, &bytes)
+        .unwrap()
+        .is_some());
 }

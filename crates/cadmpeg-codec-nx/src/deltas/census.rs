@@ -4,16 +4,15 @@
 use super::record_kind::RecordKind;
 use super::tails::{TermUseNumericTail, TerminalNullReferences};
 use super::{
-    body_revision_prefix, compact_tombstone, consume_fixed,
-    consume_intersection_auxiliary, consume_shared_record, consume_variable,
-    first_complete_record, fixed_signature, inline_body_states,
-    inline_schema_declaration, inline_schema_declarations, is_value_family, merged_event_spans,
-    reference_marker_packets, reference_state_packets, reference_type_map, reference_type_maps,
-    schema_reference_preamble, schema_reference_preambles, tagged_reference_lanes,
-    term_use_numeric_tails, transmit_header, type_150_state_packets, uncovered_spans, BodyRevision,
-    InlineBodyState, InlineSchemaDeclaration, Record, ReferenceMarkerPacket, ReferenceStatePacket,
-    ReferenceTypeMap, ReferenceTypeMapLimit, SchemaReferencePreamble, TaggedReferenceLane,
-    Tombstone, TransmitHeader, Type150StatePacket,
+    body_revision_prefix, compact_tombstone, consume_fixed, consume_intersection_auxiliary,
+    consume_shared_record, consume_variable, first_complete_record, fixed_signature,
+    inline_body_states, inline_schema_declaration, inline_schema_declarations, is_value_family,
+    merged_event_spans, reference_marker_packets, reference_state_packets, reference_type_map,
+    reference_type_maps, schema_reference_preamble, schema_reference_preambles,
+    tagged_reference_lanes, term_use_numeric_tails, transmit_header, type_150_state_packets,
+    uncovered_spans, BodyRevision, InlineBodyState, InlineSchemaDeclaration, Record,
+    ReferenceMarkerPacket, ReferenceStatePacket, ReferenceTypeMap, ReferenceTypeMapLimit,
+    SchemaReferencePreamble, TaggedReferenceLane, Tombstone, TransmitHeader, Type150StatePacket,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -139,9 +138,9 @@ fn extend_events<T>(
 ) -> Result<(), CodecError> {
     let count = values.len();
     ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
-    events
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(count)))?;
+    events.try_reserve(count).map_err(|_| {
+        ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(count))
+    })?;
     events.extend(values);
     Ok(())
 }
@@ -178,14 +177,24 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             census.bytes_decoded += preamble.end - preamble.offset;
             offset = preamble.end;
             value_boundary = true;
-            push_event(ctx, &mut census.events.schema_reference_preambles, preamble, "NX deltas schema preambles")?;
+            push_event(
+                ctx,
+                &mut census.events.schema_reference_preambles,
+                preamble,
+                "NX deltas schema preambles",
+            )?;
             continue;
         }
         if let Some(declaration) = inline_schema_declaration(ctx, stream, offset, stream.len())? {
             census.bytes_decoded += declaration.end - declaration.offset;
             offset = declaration.end;
             value_boundary = true;
-            push_event(ctx, &mut census.events.inline_schema_declarations, declaration, "NX deltas schema declarations")?;
+            push_event(
+                ctx,
+                &mut census.events.inline_schema_declarations,
+                declaration,
+                "NX deltas schema declarations",
+            )?;
             continue;
         }
         if let Some(map) =
@@ -194,7 +203,12 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             census.bytes_decoded += map.end - map.offset;
             offset = map.end;
             value_boundary = true;
-            push_event(ctx, &mut census.events.reference_type_maps, map, "NX deltas reference type maps")?;
+            push_event(
+                ctx,
+                &mut census.events.reference_type_maps,
+                map,
+                "NX deltas reference type maps",
+            )?;
             continue;
         }
         let shared_record = consume_shared_record(
@@ -234,7 +248,12 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
                 census.bytes_decoded += revision.prefix_end - revision.offset;
                 offset = revision.prefix_end;
                 value_boundary = true;
-                push_event(ctx, &mut census.events.body_revisions, revision, "NX deltas body revisions")?;
+                push_event(
+                    ctx,
+                    &mut census.events.body_revisions,
+                    revision,
+                    "NX deltas body revisions",
+                )?;
                 continue;
             }
         }
@@ -285,11 +304,16 @@ pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, Cod
             .flatten()
         {
             if xmt > 1 {
-                push_event(ctx, &mut census.events.tombstones, Tombstone {
-                    kind: record_kind,
-                    xmt,
-                    offset,
-                }, "NX deltas tombstones")?;
+                push_event(
+                    ctx,
+                    &mut census.events.tombstones,
+                    Tombstone {
+                        kind: record_kind,
+                        xmt,
+                        offset,
+                    },
+                    "NX deltas tombstones",
+                )?;
                 census.bytes_decoded += 6;
                 offset += 6;
                 value_boundary = true;
@@ -324,28 +348,68 @@ fn populate_gap_events(
             .sum::<usize>();
 
         let lanes = tagged_reference_lanes(ctx, stream, census)?;
-        extend_events(ctx, &mut census.events.tagged_reference_lanes, lanes, "NX tagged reference lanes")?;
+        extend_events(
+            ctx,
+            &mut census.events.tagged_reference_lanes,
+            lanes,
+            "NX tagged reference lanes",
+        )?;
 
         let maps = reference_type_maps(ctx, stream, census)?;
-        extend_events(ctx, &mut census.events.reference_type_maps, maps, "NX reference type maps")?;
+        extend_events(
+            ctx,
+            &mut census.events.reference_type_maps,
+            maps,
+            "NX reference type maps",
+        )?;
 
         let state_packets = reference_state_packets(ctx, stream, census)?;
-        extend_events(ctx, &mut census.events.reference_state_packets, state_packets, "NX reference state packets")?;
+        extend_events(
+            ctx,
+            &mut census.events.reference_state_packets,
+            state_packets,
+            "NX reference state packets",
+        )?;
 
         let preambles = schema_reference_preambles(ctx, stream, census)?;
-        extend_events(ctx, &mut census.events.schema_reference_preambles, preambles, "NX schema reference preambles")?;
+        extend_events(
+            ctx,
+            &mut census.events.schema_reference_preambles,
+            preambles,
+            "NX schema reference preambles",
+        )?;
 
         let declarations = inline_schema_declarations(ctx, stream, census)?;
-        extend_events(ctx, &mut census.events.inline_schema_declarations, declarations, "NX inline schema declarations")?;
+        extend_events(
+            ctx,
+            &mut census.events.inline_schema_declarations,
+            declarations,
+            "NX inline schema declarations",
+        )?;
 
         let body_states = inline_body_states(ctx, stream, census)?;
-        extend_events(ctx, &mut census.events.inline_body_states, body_states, "NX inline body states")?;
+        extend_events(
+            ctx,
+            &mut census.events.inline_body_states,
+            body_states,
+            "NX inline body states",
+        )?;
 
         let marker_packets = reference_marker_packets(ctx, stream, census)?;
-        extend_events(ctx, &mut census.events.reference_marker_packets, marker_packets, "NX reference marker packets")?;
+        extend_events(
+            ctx,
+            &mut census.events.reference_marker_packets,
+            marker_packets,
+            "NX reference marker packets",
+        )?;
 
         let type_150_packets = type_150_state_packets(ctx, stream, census)?;
-        extend_events(ctx, &mut census.events.type_150_state_packets, type_150_packets, "NX type 150 state packets")?;
+        extend_events(
+            ctx,
+            &mut census.events.type_150_state_packets,
+            type_150_packets,
+            "NX type 150 state packets",
+        )?;
 
         let covered_after = merged_event_spans(ctx, census, true)?
             .into_iter()

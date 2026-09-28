@@ -62,7 +62,9 @@ pub(crate) fn simple_hole_repeated_scalar_lane_block_references(
     ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
 ) -> Result<Option<[ReferencePair; 2]>, CodecError> {
-    let Some(scalars) = super::simple_hole_repeated_scalar_lane(ctx, record)? else { return Ok(None); };
+    let Some(scalars) = super::simple_hole_repeated_scalar_lane(ctx, record)? else {
+        return Ok(None);
+    };
     let [first, second] = scalars.last().witness_offsets;
     Ok(ReferencePair::read(record, first, FIRST_PREFIX)
         .zip(ReferencePair::read(record, second, SECOND_PREFIX))

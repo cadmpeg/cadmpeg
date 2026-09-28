@@ -58,9 +58,10 @@ fn extracted_parasolid_schema_emits_a_kernel_layer() {
         .unwrap(),
         streams: extract_streams(&bytes),
     };
-    let (layers, losses) = crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
-        .unwrap()
-        .into_report_parts();
+    let (layers, losses) =
+        crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
+            .unwrap()
+            .into_report_parts();
     let kernel = layers
         .iter()
         .find(|matched| matched.format() == PARASOLID_FORMAT)
@@ -98,9 +99,10 @@ fn a_named_sldprt_parasolid_schema_remains_unverified_under_nx() {
         .unwrap(),
         streams,
     };
-    let (layers, losses) = crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
-        .unwrap()
-        .into_report_parts();
+    let (layers, losses) =
+        crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
+            .unwrap()
+            .into_report_parts();
     let kernel = layers
         .iter()
         .find(|matched| matched.format() == PARASOLID_FORMAT)
@@ -129,9 +131,10 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
     let summary =
         crate::test_support::with_decode_context(|ctx| crate::inspect::summarize(ctx, &scan))
             .expect("test container summary");
-    let (layers, losses) = crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
-        .unwrap()
-        .into_report_parts();
+    let (layers, losses) =
+        crate::test_support::with_decode_context(|ctx| classify_layers(ctx, &scan))
+            .unwrap()
+            .into_report_parts();
     assert_eq!(
         layers
             .iter()
@@ -272,9 +275,11 @@ fn dialect_classification_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
-    let error = classify_layers(&ctx, &scan).err().expect("resource refusal");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = classify_layers(&ctx, &scan)
+        .err()
+        .expect("resource refusal");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
@@ -292,9 +297,11 @@ fn dialect_classification_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
-    let error = classify_layers(&ctx, &scan).err().expect("resource refusal");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = classify_layers(&ctx, &scan)
+        .err()
+        .expect("resource refusal");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
 }
@@ -312,9 +319,11 @@ fn dialect_classification_refuses_work_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     policy.limits.max_work_units = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
-    let error = classify_layers(&ctx, &scan).err().expect("resource refusal");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = classify_layers(&ctx, &scan)
+        .err()
+        .expect("resource refusal");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }

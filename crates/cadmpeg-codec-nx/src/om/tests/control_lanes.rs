@@ -2,8 +2,14 @@
 //! Offset-store control-lane grammar tests.
 
 use crate::om::OffsetStoreControlForm;
-fn offset_store_control_form(control: &[u8], first_record: Option<&[u8]>) -> Option<crate::om::OffsetStoreControlForm> {
-    crate::test_support::with_decode_context(|ctx| crate::om::offset_store_control_form(ctx, control, first_record)).unwrap()
+fn offset_store_control_form(
+    control: &[u8],
+    first_record: Option<&[u8]>,
+) -> Option<crate::om::OffsetStoreControlForm> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::offset_store_control_form(ctx, control, first_record)
+    })
+    .unwrap()
 }
 
 #[test]
@@ -46,23 +52,30 @@ fn product_anchored_control_lane_crosses_the_first_column_boundary() {
     );
 }
 
-fn control_form_refusal(configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+fn control_form_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
     let bytes = [0, 1, 0, 0, 0, 2, 0, 0];
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
     configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     crate::om::offset_store_control_form(&ctx, &bytes, None).unwrap_err()
 }
 
 #[test]
 fn offset_control_form_refuses_collection_limit() {
     let error = control_form_refusal(|policy| policy.limits.max_collection_items = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
 }
 
 #[test]
 fn offset_control_form_refuses_retained_limit() {
     let error = control_form_refusal(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
 }

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked physical chart layouts and paired samples for solved charts.
 
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonNegativeReal, NonZeroReal, PositiveReal};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
-use cadmpeg_core::CodecError;
 
 fn charged_vec<T>(
     ctx: &DecodeContext<'_>,
@@ -50,7 +50,10 @@ impl ChartParameter {
 impl ChartSamples {
     pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let mut values = charged_vec(ctx, self.samples.len(), "NX solved chart sample copy")?;
-        ctx.charge_work(u64_from_index(self.samples.len()), "copy NX solved chart samples")?;
+        ctx.charge_work(
+            u64_from_index(self.samples.len()),
+            "copy NX solved chart samples",
+        )?;
         values.extend(self.samples.iter().copied());
         let samples = crate::om::nonempty::NonEmpty::from_vec(values)
             .ok_or_else(|| ctx.refuse_codec_limit("NX solved chart sample copy", 0, 0))?;
@@ -91,7 +94,10 @@ impl ChartSamples {
             samples.push((point, ChartParameter::Derived(parameter)));
             previous = Some(point);
         }
-        ctx.charge_work(u64_from_index(samples.len()), "form NX derived chart sample pairs")?;
+        ctx.charge_work(
+            u64_from_index(samples.len()),
+            "form NX derived chart sample pairs",
+        )?;
         Ok(crate::om::nonempty::NonEmpty::from_vec(samples).map(|samples| Self { samples }))
     }
     fn new(
@@ -129,7 +135,10 @@ impl ChartSamples {
     pub(crate) fn points(&self) -> Vec<Point3> {
         self.samples.iter().map(|sample| sample.0.get()).collect()
     }
-    pub(crate) fn points_charged(&self, ctx: &DecodeContext<'_>) -> Result<Vec<Point3>, CodecError> {
+    pub(crate) fn points_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<Point3>, CodecError> {
         let mut points = charged_vec(ctx, self.samples.len(), "NX chart points")?;
         points.extend(self.samples.iter().map(|sample| sample.0.get()));
         Ok(points)
@@ -144,7 +153,10 @@ impl ChartSamples {
     pub(crate) fn parameters(&self) -> Vec<f64> {
         self.samples.iter().map(|sample| sample.1.get()).collect()
     }
-    pub(crate) fn parameters_charged(&self, ctx: &DecodeContext<'_>) -> Result<Vec<f64>, CodecError> {
+    pub(crate) fn parameters_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<f64>, CodecError> {
         let mut parameters = charged_vec(ctx, self.samples.len(), "NX chart parameters")?;
         parameters.extend(self.samples.iter().map(|sample| sample.1.get()));
         Ok(parameters)
@@ -167,12 +179,18 @@ impl ChartSamples {
         if self.samples.len() != other.samples.len() || self.samples.len() < 2 {
             return Ok(false);
         }
-        let mut replacement = charged_vec(ctx, self.samples.len(), "NX chart parameter replacement")?;
+        let mut replacement =
+            charged_vec(ctx, self.samples.len(), "NX chart parameter replacement")?;
         for (old, new) in self.samples.iter().zip(other.samples.iter()) {
             replacement.push((old.0, new.1));
         }
-        ctx.charge_work(u64_from_index(replacement.len()), "replace NX chart sample pairs")?;
-        let Some(samples) = crate::om::nonempty::NonEmpty::from_vec(replacement) else { return Ok(false); };
+        ctx.charge_work(
+            u64_from_index(replacement.len()),
+            "replace NX chart sample pairs",
+        )?;
+        let Some(samples) = crate::om::nonempty::NonEmpty::from_vec(replacement) else {
+            return Ok(false);
+        };
         self.samples = samples;
         Ok(true)
     }
@@ -258,7 +276,9 @@ impl SourceChartData {
         }
         let mut checked = charged_vec(ctx, points.len(), "NX finite chart points")?;
         for point in points {
-            let Some(point) = FinitePoint3::new(point) else { return Ok(None); };
+            let Some(point) = FinitePoint3::new(point) else {
+                return Ok(None);
+            };
             checked.push(point);
         }
         Ok(Some(checked))
@@ -271,8 +291,12 @@ impl SourceChartData {
         if !points.windows(2).any(|pair| pair[0] != pair[1]) {
             return Ok(None);
         }
-        let Some(points) = Self::checked_points_charged(ctx, points)? else { return Ok(None); };
-        Ok(Some(Self { encoding: SourceEncoding::Xyz3 { points } }))
+        let Some(points) = Self::checked_points_charged(ctx, points)? else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            encoding: SourceEncoding::Xyz3 { points },
+        }))
     }
 
     pub(crate) fn ext11_charged(
@@ -282,14 +306,23 @@ impl SourceChartData {
         support_uv: [Option<Vec<[f64; 2]>>; 2],
     ) -> Result<Option<Self>, CodecError> {
         if parameters.len() != points.len()
-            || support_uv.iter().flatten().any(|lane| lane.len() != points.len())
+            || support_uv
+                .iter()
+                .flatten()
+                .any(|lane| lane.len() != points.len())
         {
             return Ok(None);
         }
-        let mut checked_parameters = charged_vec(ctx, parameters.len(), "NX finite chart parameters")?;
+        let mut checked_parameters =
+            charged_vec(ctx, parameters.len(), "NX finite chart parameters")?;
         for value in parameters {
-            let Some(value) = FiniteReal::new(value) else { return Ok(None); };
-            if checked_parameters.last().is_some_and(|previous: &FiniteReal| value <= *previous) {
+            let Some(value) = FiniteReal::new(value) else {
+                return Ok(None);
+            };
+            if checked_parameters
+                .last()
+                .is_some_and(|previous: &FiniteReal| value <= *previous)
+            {
                 return Ok(None);
             }
             checked_parameters.push(value);
@@ -297,21 +330,37 @@ impl SourceChartData {
         let [first, second] = support_uv;
         let first = match first {
             Some(values) => {
-                let Some(lane) = super::SupportUvLane::from_present_values_charged(ctx, values)? else { return Ok(None); };
+                let Some(lane) = super::SupportUvLane::from_present_values_charged(ctx, values)?
+                else {
+                    return Ok(None);
+                };
                 Some(lane)
             }
             None => None,
         };
         let second = match second {
             Some(values) => {
-                let Some(lane) = super::SupportUvLane::from_present_values_charged(ctx, values)? else { return Ok(None); };
+                let Some(lane) = super::SupportUvLane::from_present_values_charged(ctx, values)?
+                else {
+                    return Ok(None);
+                };
                 Some(lane)
             }
             None => None,
         };
-        let Some(points) = Self::checked_points_charged(ctx, points)? else { return Ok(None); };
-        let Some(samples) = ChartSamples::from_source_charged(ctx, points, checked_parameters)? else { return Ok(None); };
-        Ok(Some(Self { encoding: SourceEncoding::Ext11 { samples, support_uv: [first, second] } }))
+        let Some(points) = Self::checked_points_charged(ctx, points)? else {
+            return Ok(None);
+        };
+        let Some(samples) = ChartSamples::from_source_charged(ctx, points, checked_parameters)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            encoding: SourceEncoding::Ext11 {
+                samples,
+                support_uv: [first, second],
+            },
+        }))
     }
     fn checked_points(points: Vec<Point3>) -> Result<Vec<FinitePoint3>, &'static str> {
         u32::try_from(points.len()).map_err(|_| "points: count exceeds u32")?;
@@ -467,9 +516,14 @@ impl SourceChartData {
         preamble: ChartPreamble,
     ) -> Result<Option<(ChartSamples, super::SupportUv)>, CodecError> {
         match self.encoding {
-            SourceEncoding::Xyz3 { points } => Ok(ChartSamples::from_xyz3_charged(ctx, points, preamble)?
-                .map(|samples| (samples, [None, None]))),
-            SourceEncoding::Ext11 { samples, support_uv } => Ok(Some((samples, support_uv))),
+            SourceEncoding::Xyz3 { points } => {
+                Ok(ChartSamples::from_xyz3_charged(ctx, points, preamble)?
+                    .map(|samples| (samples, [None, None])))
+            }
+            SourceEncoding::Ext11 {
+                samples,
+                support_uv,
+            } => Ok(Some((samples, support_uv))),
         }
     }
 }
@@ -491,7 +545,10 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(samples.points_charged(&ctx), Err(CodecError::ResourceLimit(_))));
+        assert!(matches!(
+            samples.points_charged(&ctx),
+            Err(CodecError::ResourceLimit(_))
+        ));
     }
 
     #[test]
@@ -505,7 +562,10 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 15;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(samples.parameters_charged(&ctx), Err(CodecError::ResourceLimit(_))));
+        assert!(matches!(
+            samples.parameters_charged(&ctx),
+            Err(CodecError::ResourceLimit(_))
+        ));
     }
 
     #[test]

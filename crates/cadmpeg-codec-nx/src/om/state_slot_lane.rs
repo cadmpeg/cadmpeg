@@ -142,8 +142,10 @@ mod tests {
         assert!(
             StateSlotLane::new(u64::MAX - 111 + lane.offset() as u64, lane.into_slots()).is_err()
         );
-        assert!(StateSlotLane::read(&ctx, &bytes, 0, bytes.len(), usize::MAX - 11)
-            .unwrap()
-            .is_none());
+        assert!(
+            StateSlotLane::read(&ctx, &bytes, 0, bytes.len(), usize::MAX - 11)
+                .unwrap()
+                .is_none()
+        );
     }
 }

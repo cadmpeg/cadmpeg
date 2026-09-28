@@ -19,8 +19,14 @@ use crate::decode::feature_completeness::{
     shell_definition_is_incomplete,
 };
 
-fn append_design_intent_losses(ir: &cadmpeg_ir::document::CadIr, losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>) {
-    crate::test_support::with_decode_context(|ctx| crate::decode::report::append_design_intent_losses(ctx, ir, losses)).unwrap();
+fn append_design_intent_losses(
+    ir: &cadmpeg_ir::document::CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::decode::report::append_design_intent_losses(ctx, ir, losses)
+    })
+    .unwrap();
 }
 
 #[test]

@@ -219,7 +219,8 @@ fn complete_type_registry_at<'a>(
         let Some(declaration) = registry_declaration_at(bytes, at, end, b"UGS::") else {
             return Ok(None);
         };
-        let Some((_, tail_end)) = class_registry_layout_at(bytes, declaration.name_end(), end) else {
+        let Some((_, tail_end)) = class_registry_layout_at(bytes, declaration.name_end(), end)
+        else {
             return Ok(None);
         };
         let Some(registry_tail) = bytes.get(declaration.name_end()..tail_end) else {
@@ -277,7 +278,10 @@ pub(super) fn type_registry<'a>(
     let span = end
         .checked_sub(start)
         .ok_or_else(|| ctx.refuse_codec_limit("nx type registry range", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(span), "nx type registry scan")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(span),
+        "nx type registry scan",
+    )?;
     for at in start..end {
         if registry_declaration_at(bytes, at, end, b"UGS::").is_some() {
             if let Some(registry) = complete_type_registry_at(ctx, bytes, at, end)? {
@@ -376,8 +380,12 @@ fn reserve_registry_item<T>(
 ) -> Result<(), CodecError> {
     let operation = "nx complete type registry";
     ctx.charge_collection_items(1, operation)?;
-    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()))?;
-    items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+    reservation.grow(cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<T>(),
+    ))?;
+    items
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
 }
 
 fn reserve_retained_registry_item<T>(
@@ -386,8 +394,13 @@ fn reserve_retained_registry_item<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), operation)?;
-    items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
+        operation,
+    )?;
+    items
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
 }
 
 fn bound_field_registry_tails<'a>(bytes: &'a [u8], definitions: &mut [FieldDefinition<'a>]) {

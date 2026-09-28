@@ -9,10 +9,16 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Deserializer, Serialize};
 
-fn reserve_surface_item<T>(ctx: &DecodeContext<'_>, values: &mut Vec<T>, operation: &'static str) -> Result<(), CodecError> {
+fn reserve_surface_item<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
     ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), operation)?;
-    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+    values
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -160,7 +166,9 @@ impl SurfaceBranch<()> {
         file_base: u64,
         mut target: impl FnMut(PayloadIndexToken) -> B,
     ) -> Result<Option<SurfaceBranch<B>>, CodecError> {
-        let Some(offset) = self.offset.checked_add(file_base) else { return Ok(None) };
+        let Some(offset) = self.offset.checked_add(file_base) else {
+            return Ok(None);
+        };
         let members = self
             .members
             .map_indexed_charged(ctx, |_, (token, ())| (token, target(token)))?;
@@ -172,7 +180,8 @@ impl SurfaceBranch<()> {
             members,
             terminal,
             self.suffix,
-        ).ok())
+        )
+        .ok())
     }
 }
 
@@ -273,7 +282,14 @@ fn surface_feature_branch_paths(
             }
             continuations
         } else {
-            surface_feature_branch_paths(ctx, payload, payload_offset, next, remaining - 1, terminator)?
+            surface_feature_branch_paths(
+                ctx,
+                payload,
+                payload_offset,
+                next,
+                remaining - 1,
+                terminator,
+            )?
         };
         if continuations.is_empty() {
             continue;
@@ -283,15 +299,28 @@ fn surface_feature_branch_paths(
         };
         for mut continuation in continuations {
             let mut member_copy = Vec::new();
-            for member in members.as_slice().iter().cloned() {
+            for member in members.as_slice().iter().copied() {
                 reserve_surface_item(ctx, &mut member_copy, "NX surface branch member copy")?;
                 member_copy.push(member);
             }
-            let Ok(member_copy) = BranchItems::new(member_copy) else { continue };
+            let Ok(member_copy) = BranchItems::new(member_copy) else {
+                continue;
+            };
             ctx.charge_collection_items(u64_from_index(suffix.len()), "NX surface suffix bytes")?;
             let suffix_copy = ctx.copy_retained(suffix, "NX surface suffix bytes")?;
-            let Ok(suffix_copy) = SurfaceSuffix::new(suffix_copy) else { continue };
-            let Ok(branch) = SurfaceBranch::new(offset, mode, witnessed, member_copy, (terminal, ()), suffix_copy) else { continue };
+            let Ok(suffix_copy) = SurfaceSuffix::new(suffix_copy) else {
+                continue;
+            };
+            let Ok(branch) = SurfaceBranch::new(
+                offset,
+                mode,
+                witnessed,
+                member_copy,
+                (terminal, ()),
+                suffix_copy,
+            ) else {
+                continue;
+            };
             reserve_surface_item(ctx, &mut continuation, "NX surface branch path entries")?;
             continuation.insert(0, branch);
             reserve_surface_item(ctx, &mut paths, "NX surface branch paths")?;
@@ -319,7 +348,10 @@ pub(crate) fn surface_feature_payload_branches(
         "Studio Surface" => &STUDIO_TERMINATOR[..],
         _ => return Ok(None),
     };
-    ctx.charge_work(u64_from_index(record.payload().len()), "scan NX surface branch groups")?;
+    ctx.charge_work(
+        u64_from_index(record.payload().len()),
+        "scan NX surface branch groups",
+    )?;
     let mut candidate = None;
     for start in 0..record.payload().len().saturating_sub(6) {
         if record.payload().get(start..start + 2) != Some(&[0xa0, 0x5a]) {
@@ -353,7 +385,9 @@ pub(crate) fn surface_feature_payload_branches(
         if paths.len() != 1 {
             continue;
         }
-        let Some(branches) = paths.into_iter().next() else { continue };
+        let Some(branches) = paths.into_iter().next() else {
+            continue;
+        };
         let group = SurfaceFeaturePayloadBranches {
             family,
             header_code,

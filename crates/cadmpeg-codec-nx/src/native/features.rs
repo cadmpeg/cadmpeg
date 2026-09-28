@@ -3558,10 +3558,12 @@ fn feature_history_sections(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<(usize, SegmentOmLink)>, CodecError> {
-    Ok(canonical_feature_history_links(segment_om_links(ctx, container)?)
-        .into_iter()
-        .enumerate()
-        .collect())
+    Ok(
+        canonical_feature_history_links(segment_om_links(ctx, container)?)
+            .into_iter()
+            .enumerate()
+            .collect(),
+    )
 }
 
 fn visit_feature_history_operation_records(
@@ -3633,8 +3635,10 @@ pub(super) fn canonical_feature_history_links(
 /// inserted. The map is usable only when the ordinal resolves to exactly one
 /// column block across all offset stores and that block has a unique
 /// content-backed identity. An ambiguous or duplicate block remains absent.
-fn operation_header_block_identities(ctx: &DecodeContext<'_>, container: &Container) -> Result<BTreeMap<u32, Option<String>>, CodecError>
-{
+fn operation_header_block_identities(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<BTreeMap<u32, Option<String>>, CodecError> {
     let mut candidates = BTreeMap::<u32, Vec<Option<String>>>::new();
     for block in data_blocks(ctx, container)? {
         if block.role == DataBlockRole::Column {
@@ -3700,8 +3704,10 @@ fn assign_operation_header_identities(
 }
 
 /// Decode ordered operation labels from feature-history record areas.
-pub(super) fn feature_operation_labels(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<FeatureOperationLabel>, cadmpeg_core::CodecError>
-{
+pub(super) fn feature_operation_labels(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<FeatureOperationLabel>, cadmpeg_core::CodecError> {
     let sections = container.om_sections(ctx)?;
     let block_identities = operation_header_block_identities(ctx, container)?;
     let mut labels = Vec::new();
@@ -3743,17 +3749,25 @@ pub(super) fn feature_operation_labels(ctx: &cadmpeg_core::decode::DecodeContext
 }
 
 /// Decode ordered Boolean target/tool bindings from feature-history sections.
-pub(super) fn feature_boolean_operations(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<FeatureBooleanOperation>, cadmpeg_core::CodecError>
-{
+pub(super) fn feature_boolean_operations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<FeatureBooleanOperation>, cadmpeg_core::CodecError> {
     let mut operations = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let candidates = match section.boolean_operations(ctx) {
                 Ok(candidates) => candidates,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let Some(operation) = candidates
                 .into_iter()
@@ -3788,17 +3802,22 @@ pub(super) fn feature_boolean_operations(ctx: &cadmpeg_core::decode::DecodeConte
             });
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(operations)
 }
 
 /// Decode exact feature-operation record boundaries and byte identities.
-pub(super) fn feature_operation_records(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<FeatureOperationRecord>, cadmpeg_core::CodecError>
-{
+pub(super) fn feature_operation_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<FeatureOperationRecord>, cadmpeg_core::CodecError> {
     let block_identities = operation_header_block_identities(ctx, container)?;
     let mut identity_counts = BTreeMap::<String, usize>::new();
     let mut records = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let operation_label =
@@ -3846,12 +3865,13 @@ pub(super) fn feature_operation_records(ctx: &cadmpeg_core::decode::DecodeContex
 }
 
 /// Retain operation records whose validated headers have no complete label.
-pub(super) fn feature_unlabeled_operation_records(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_unlabeled_operation_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureUnlabeledOperationRecord>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureUnlabeledOperationRecord>, cadmpeg_core::CodecError> {
     let mut records = Vec::new();
-    visit_feature_history_unlabeled_operation_records(ctx,
+    visit_feature_history_unlabeled_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             if let Some(record) = FeatureUnlabeledOperationRecord::from_source(
@@ -3866,26 +3886,31 @@ pub(super) fn feature_unlabeled_operation_records(ctx: &cadmpeg_core::decode::De
 }
 
 /// Decode body-write frames owned by independently bounded unlabeled records.
-pub(super) fn feature_unlabeled_operation_body_writes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_unlabeled_operation_body_writes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureOperationBodyWrite>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureOperationBodyWrite>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut writes = Vec::new();
     let mut failure = None;
-    visit_feature_history_unlabeled_operation_records(ctx,
+    visit_feature_history_unlabeled_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let decoded = match crate::om::unlabeled_operation_body_write_frames(ctx, record) {
                 Ok(decoded) => decoded,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let operation_record = format!(
                 "nx:feature-history:unlabeled-operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, write) in decoded.into_iter().enumerate()
-            {
+            for (ordinal, write) in decoded.into_iter().enumerate() {
                 let Some(offset) = entry_offset.checked_add(write.offset() as u64) else {
                     continue;
                 };
@@ -3911,33 +3936,40 @@ pub(super) fn feature_unlabeled_operation_body_writes(ctx: &cadmpeg_core::decode
             }
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(writes)
 }
 
 /// Decode exact body-write frames from bounded feature operations.
-pub(super) fn feature_operation_body_writes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_operation_body_writes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureOperationBodyWrite>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureOperationBodyWrite>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut writes = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let decoded = match crate::om::operation_body_write_frames(ctx, record.payload_view()) {
                 Ok(decoded) => decoded,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, write) in decoded.into_iter().enumerate()
-            {
+            for (ordinal, write) in decoded.into_iter().enumerate() {
                 let Some(offset) = entry_offset.checked_add(write.offset() as u64) else {
                     continue;
                 };
@@ -3963,7 +3995,9 @@ pub(super) fn feature_operation_body_writes(ctx: &cadmpeg_core::decode::DecodeCo
             }
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(writes)
 }
 
@@ -4202,11 +4236,11 @@ pub(super) fn feature_body_write_group_partition_uses(
 }
 
 /// Decode one direct-reference field family from bounded feature operations.
-pub(super) fn feature_operation_object_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_operation_object_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     kind: crate::om::direct_reference::ReferenceFieldKind,
-) -> Result<Vec<FeatureOperationObjectReference>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureOperationObjectReference>, cadmpeg_core::CodecError> {
     let stem = match kind {
         crate::om::direct_reference::ReferenceFieldKind::Tagged17 => "operation-tagged-reference",
         crate::om::direct_reference::ReferenceFieldKind::DataBlock03 => {
@@ -4216,18 +4250,28 @@ pub(super) fn feature_operation_object_references(ctx: &cadmpeg_core::decode::De
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
-            let fields = match crate::om::direct_reference::operation_reference_fields(ctx, record.payload_view(), kind) {
+            let fields = match crate::om::direct_reference::operation_reference_fields(
+                ctx,
+                record.payload_view(),
+                kind,
+            ) {
                 Ok(fields) => fields,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             for (ordinal, reference) in fields.into_iter().enumerate() {
                 let Some(offset) = entry_offset.checked_add(reference.offset() as u64) else {
@@ -4253,31 +4297,38 @@ pub(super) fn feature_operation_object_references(ctx: &cadmpeg_core::decode::De
             }
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(references)
 }
 
 /// Decode every exact common frame from bounded feature operations.
-pub(super) fn feature_operation_common_frames(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_operation_common_frames(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureOperationCommonFrame>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureOperationCommonFrame>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut frames = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let decoded = match crate::om::operation_common_frames(ctx, record.payload_view()) {
                 Ok(decoded) => decoded,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, frame) in decoded.into_iter().enumerate()
-            {
+            for (ordinal, frame) in decoded.into_iter().enumerate() {
                 let Some(offset) = entry_offset.checked_add(frame.offset() as u64) else {
                     continue;
                 };
@@ -4300,27 +4351,35 @@ pub(super) fn feature_operation_common_frames(ctx: &cadmpeg_core::decode::Decode
             }
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(frames)
 }
 
 /// Decode canonical terminal common-frame suffixes from bounded operations.
-pub(super) fn feature_operation_terminal_frames(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_operation_terminal_frames(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     common_frames: &[FeatureOperationCommonFrame],
-) -> Result<Vec<FeatureOperationTerminalFrame>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureOperationTerminalFrame>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut frames = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let frame = match crate::om::operation_terminal_frame(ctx, record.payload_view()) {
                 Ok(Some(frame)) => frame,
                 Ok(None) => return,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
@@ -4352,7 +4411,9 @@ pub(super) fn feature_operation_terminal_frames(ctx: &cadmpeg_core::decode::Deco
             });
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(frames)
 }
 
@@ -4429,17 +4490,25 @@ pub(super) fn feature_operation_state_journal_uses(
 }
 
 /// Decode ordered self-framed strings from feature-operation payloads.
-pub(super) fn feature_payload_strings(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<FeaturePayloadString>, cadmpeg_core::CodecError>
-{
+pub(super) fn feature_payload_strings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<FeaturePayloadString>, cadmpeg_core::CodecError> {
     let mut strings = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let values = match crate::om::operation_payload_strings(ctx, record.payload_view()) {
                 Ok(values) => values,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
@@ -4459,15 +4528,20 @@ pub(super) fn feature_payload_strings(ctx: &cadmpeg_core::decode::DecodeContext<
             );
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(strings)
 }
 
 /// Decode complete body-reference fields from feature-history operations.
-pub(super) fn feature_body_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<FeatureBodyReference>, cadmpeg_core::CodecError>
-{
+pub(super) fn feature_body_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<FeatureBodyReference>, cadmpeg_core::CodecError> {
     let mut references = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(reference) = crate::om::operation_body_reference(record.body_view()) else {
@@ -4513,19 +4587,25 @@ pub(super) fn unique_feature_body_references(
 }
 
 /// Decode every ordered body-reference field from bounded feature operations.
-pub(super) fn feature_body_reference_occurrences(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_body_reference_occurrences(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureBodyReference>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureBodyReference>, cadmpeg_core::CodecError> {
     let mut references = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let rows = match crate::om::operation_body_references(ctx, record.body_view()) {
                 Ok(rows) => rows,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
@@ -4545,7 +4625,9 @@ pub(super) fn feature_body_reference_occurrences(ctx: &cadmpeg_core::decode::Dec
             );
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(references)
 }
 
@@ -4725,11 +4807,14 @@ pub(super) fn feature_body_data_block_uses(
 }
 
 /// Resolve operation-header object indices to unique offset-only data blocks.
-pub(super) fn feature_input_blocks(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<FeatureInputBlock>, cadmpeg_core::CodecError>
-{
+pub(super) fn feature_input_blocks(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<FeatureInputBlock>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut inputs = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let label = record.label();
@@ -5052,14 +5137,15 @@ pub(super) fn feature_input_column_targets(
 
 /// Decode and atomically resolve datum coordinate-system construction lanes
 /// through the offset store selected by each operation header.
-pub(super) fn feature_datum_csys_constructions(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_datum_csys_constructions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureDatumCsysConstruction>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureDatumCsysConstruction>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let inputs = feature_input_blocks(ctx, container)?;
     let mut constructions = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(field) = crate::om::datum_csys::datum_csys_references(record.payload_view())
@@ -5111,14 +5197,19 @@ pub(super) fn feature_datum_plane_payloads(
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut output = Vec::new();
     for header in headers {
-        if header.resolved_data_blocks(DatumPlaneBlockLane::Object).next().is_none() {
+        if header
+            .resolved_data_blocks(DatumPlaneBlockLane::Object)
+            .next()
+            .is_none()
+        {
             continue;
         }
         let data_blocks = header
             .resolved_data_blocks(DatumPlaneBlockLane::Object)
             .cloned()
             .collect::<Vec<_>>();
-        let Some((payload, content)) = FeaturePayloadContent::from_source(data_blocks, &blocks) else {
+        let Some((payload, content)) = FeaturePayloadContent::from_source(data_blocks, &blocks)
+        else {
             continue;
         };
         let lanes = crate::om::datum_index::scan(ctx, &payload)?;
@@ -5136,11 +5227,11 @@ pub(super) fn feature_datum_plane_payloads(
 }
 
 /// Reconstruct the two leading object blocks of each datum coordinate system.
-pub(super) fn feature_datum_csys_payloads(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_datum_csys_payloads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     constructions: &[FeatureDatumCsysConstruction],
-) -> Result<Vec<FeatureDatumCsysPayload>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureDatumCsysPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     Ok(constructions
         .iter()
@@ -5167,14 +5258,14 @@ pub(super) fn feature_datum_csys_payloads(ctx: &cadmpeg_core::decode::DecodeCont
 /// mapper once, scan the bytes, and let each family build its record, dropping
 /// frames whose offsets fall outside a source block. Extractors differ only in
 /// their payload block lane, scanner, and output record.
-fn construction_payload_frames<P, S, R>(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn construction_payload_frames<P, S, R>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[P],
     data_blocks: impl Fn(&P) -> &[FeaturePayloadBlock],
     scan: impl Fn(&[u8]) -> Result<Vec<S>, CodecError>,
     mut build: impl FnMut(&P, usize, S, &dyn Fn(usize) -> Option<u64>) -> Option<R>,
-) -> Result<Vec<R>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<R>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let projected = payloads
         .iter()
@@ -5197,12 +5288,13 @@ fn construction_payload_frames<P, S, R>(ctx: &cadmpeg_core::decode::DecodeContex
 }
 
 /// Decode exact scalar-pair frames from reconstructed datum-CSYS payloads.
-pub(super) fn feature_datum_csys_payload_scalar_pairs(ctx: &DecodeContext<'_>,
+pub(super) fn feature_datum_csys_payload_scalar_pairs(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
-) -> Result<Vec<FeaturePayloadScalarPair>, CodecError>
-{
-    construction_payload_frames(ctx,
+) -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
+    construction_payload_frames(
+        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
@@ -5227,12 +5319,13 @@ pub(super) fn feature_datum_csys_payload_scalar_pairs(ctx: &DecodeContext<'_>,
 }
 
 /// Decode complete signed Q1.55 pair frames from reconstructed datum-CSYS payloads.
-pub(super) fn feature_datum_csys_payload_fixed_pairs(ctx: &DecodeContext<'_>,
+pub(super) fn feature_datum_csys_payload_fixed_pairs(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
-) -> Result<Vec<FeatureDatumCsysPayloadFixedPair>, CodecError>
-{
-    construction_payload_frames(ctx,
+) -> Result<Vec<FeatureDatumCsysPayloadFixedPair>, CodecError> {
+    construction_payload_frames(
+        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
@@ -5256,12 +5349,13 @@ pub(super) fn feature_datum_csys_payload_fixed_pairs(ctx: &DecodeContext<'_>,
 }
 
 /// Decode complete shifted-binary64 fields from reconstructed datum-CSYS payloads.
-pub(super) fn feature_datum_csys_payload_scalars(ctx: &DecodeContext<'_>,
+pub(super) fn feature_datum_csys_payload_scalars(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDatumCsysPayload],
-) -> Result<Vec<FeaturePayloadScalar>, CodecError>
-{
-    construction_payload_frames(ctx,
+) -> Result<Vec<FeaturePayloadScalar>, CodecError> {
+    construction_payload_frames(
+        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
@@ -5292,12 +5386,23 @@ pub(super) fn feature_datum_csys_descriptors(
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut descriptors = Vec::new();
     for construction in constructions {
-        for slot in [CsysDescriptorSlot::Five, CsysDescriptorSlot::Six, CsysDescriptorSlot::Seven] {
+        for slot in [
+            CsysDescriptorSlot::Five,
+            CsysDescriptorSlot::Six,
+            CsysDescriptorSlot::Seven,
+        ] {
             let reference_ordinal = u8::from(slot);
             let data_block = &construction.frame.members()[usize::from(reference_ordinal)].1;
-            let Some(&(bytes, source_offset)) = blocks.get(data_block) else { continue; };
-            let Some(descriptor) = crate::om::datum_csys_descriptor_block(ctx, bytes)? else { continue; };
-            let Some(descriptor) = LocatedCsysDescriptor::new(descriptor, source_offset).ok() else { continue; };
+            let Some(&(bytes, source_offset)) = blocks.get(data_block) else {
+                continue;
+            };
+            let Some(descriptor) = crate::om::datum_csys_descriptor_block(ctx, bytes)? else {
+                continue;
+            };
+            let Some(descriptor) = LocatedCsysDescriptor::new(descriptor, source_offset).ok()
+            else {
+                continue;
+            };
             descriptors.push(FeatureDatumCsysDescriptor {
                 id: format!("{}-descriptor-{reference_ordinal}", construction.id),
                 operation_label: construction.operation_label.clone(),
@@ -5343,12 +5448,13 @@ pub(super) fn feature_datum_plane_csys_identity_uses(
 }
 
 /// Decode exact scalar-pair frames from reconstructed datum-plane payloads.
-pub(super) fn feature_datum_plane_payload_scalar_pairs(ctx: &DecodeContext<'_>,
+pub(super) fn feature_datum_plane_payload_scalar_pairs(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDatumPlanePayload],
-) -> Result<Vec<FeaturePayloadScalarPair>, CodecError>
-{
-    construction_payload_frames(ctx,
+) -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
+    construction_payload_frames(
+        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
@@ -5596,11 +5702,11 @@ pub(super) fn feature_sketch_construction_inputs(
 }
 
 /// Reconstruct exact sketch payloads across offset-store block boundaries.
-pub(super) fn feature_sketch_construction_payloads(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_sketch_construction_payloads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
-) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
 
     Ok(constructions
@@ -5630,12 +5736,13 @@ pub(super) fn feature_sketch_construction_payloads(ctx: &cadmpeg_core::decode::D
 }
 
 /// Decode exact coordinate-pair frames from reconstructed sketch payloads.
-pub(super) fn feature_sketch_payload_coordinate_pairs(ctx: &DecodeContext<'_>,
+pub(super) fn feature_sketch_payload_coordinate_pairs(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Result<Vec<FeaturePayloadScalarPair>, CodecError>
-{
-    construction_payload_frames(ctx,
+) -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
+    construction_payload_frames(
+        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
@@ -5660,12 +5767,13 @@ pub(super) fn feature_sketch_payload_coordinate_pairs(ctx: &DecodeContext<'_>,
 }
 
 /// Decode exact scaled shifted-binary64 pair frames from reconstructed sketch payloads.
-pub(super) fn feature_sketch_payload_fixed_pairs(ctx: &DecodeContext<'_>,
+pub(super) fn feature_sketch_payload_fixed_pairs(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Result<Vec<FeatureSketchPayloadFixedPair>, CodecError>
-{
-    construction_payload_frames(ctx,
+) -> Result<Vec<FeatureSketchPayloadFixedPair>, CodecError> {
+    construction_payload_frames(
+        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
@@ -5689,12 +5797,13 @@ pub(super) fn feature_sketch_payload_fixed_pairs(ctx: &DecodeContext<'_>,
 }
 
 /// Decode exact mixed scaled shifted-binary64/binary32 pair frames from reconstructed sketch payloads.
-pub(super) fn feature_sketch_payload_mixed_pairs(ctx: &DecodeContext<'_>,
+pub(super) fn feature_sketch_payload_mixed_pairs(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Result<Vec<FeatureSketchPayloadMixedPair>, CodecError>
-{
-    construction_payload_frames(ctx,
+) -> Result<Vec<FeatureSketchPayloadMixedPair>, CodecError> {
+    construction_payload_frames(
+        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
@@ -5717,12 +5826,14 @@ pub(super) fn feature_sketch_payload_mixed_pairs(ctx: &DecodeContext<'_>,
     )
 }
 
+type OffsetDataBlocks<'a> = BTreeMap<String, (&'a [u8], u64)>;
+
 fn offset_data_block_bytes_for_section<'a>(
     section_ordinal: usize,
     entry_offset: u64,
     control: &crate::om::EntityRecord<'a>,
     records: &[crate::om::EntityRecord<'a>],
-) -> BTreeMap<String, (&'a [u8], u64)> {
+) -> OffsetDataBlocks<'a> {
     let mut blocks = BTreeMap::new();
     blocks.insert(
         format!("nx:om-data-blocks-{section_ordinal}:block#0"),
@@ -5743,8 +5854,7 @@ fn offset_data_block_bytes_for_section<'a>(
 fn offset_data_block_bytes<'a>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &'a Container<'_>,
-) -> Result<Cow<'a, BTreeMap<String, (&'a [u8], u64)>>, cadmpeg_core::CodecError>
-{
+) -> Result<Cow<'a, OffsetDataBlocks<'a>>, cadmpeg_core::CodecError> {
     if let Some(blocks) = container.cached_offset_data_block_bytes() {
         return Ok(Cow::Borrowed(blocks));
     }
@@ -5769,66 +5879,71 @@ fn offset_data_block_bytes<'a>(
 }
 
 /// Decode exact framed scalar fields across reconstructed sketch payloads.
-pub(super) fn feature_sketch_payload_scalars(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_sketch_payload_scalars(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
-) -> Result<Vec<FeaturePayloadScalar>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeaturePayloadScalar>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let projected = constructions
         .iter()
-        .map(|construction| -> Result<Vec<FeaturePayloadScalar>, CodecError> {
-            let mut data_blocks = construction
-                .members
-                .iter()
-                .map(|member| member.data_block.clone())
-                .collect::<Vec<_>>();
-            data_blocks.push(construction.terminal_data_block.clone());
-            let Some(joined) = JoinedPayload::from_source(data_blocks.iter(), &blocks) else { return Ok(Vec::new()); };
-            let construction_payload = construction.id.replacen(
-                "sketch-construction-inputs",
-                "sketch-construction-payload",
-                1,
-            );
-            Ok(
-                crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(ordinal, field)| {
-                        let source_offset = joined.source_offset(field.offset as u64)?;
-                        Some(FeaturePayloadScalar {
-                            id: format!(
-                                "nx:feature-history:sketch-payload-scalar#{}-{ordinal:010}",
-                                construction_payload
-                                    .rsplit_once('#')
-                                    .map_or("unknown", |(_, key)| key)
-                            ),
-                            operation_label: construction.operation_label.clone(),
-                            payload: FeatureScalarPayload::Construction {
-                                construction_payload: construction_payload.clone(),
-                            },
-                            ordinal: ordinal as u32,
-                            field_code: field.field_code,
-                            scalar: field.scalar,
-                            payload_offset: field.offset as u64,
-                            source_offset,
+        .map(
+            |construction| -> Result<Vec<FeaturePayloadScalar>, CodecError> {
+                let mut data_blocks = construction
+                    .members
+                    .iter()
+                    .map(|member| member.data_block.clone())
+                    .collect::<Vec<_>>();
+                data_blocks.push(construction.terminal_data_block.clone());
+                let Some(joined) = JoinedPayload::from_source(data_blocks.iter(), &blocks) else {
+                    return Ok(Vec::new());
+                };
+                let construction_payload = construction.id.replacen(
+                    "sketch-construction-inputs",
+                    "sketch-construction-payload",
+                    1,
+                );
+                Ok(
+                    crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(ordinal, field)| {
+                            let source_offset = joined.source_offset(field.offset as u64)?;
+                            Some(FeaturePayloadScalar {
+                                id: format!(
+                                    "nx:feature-history:sketch-payload-scalar#{}-{ordinal:010}",
+                                    construction_payload
+                                        .rsplit_once('#')
+                                        .map_or("unknown", |(_, key)| key)
+                                ),
+                                operation_label: construction.operation_label.clone(),
+                                payload: FeatureScalarPayload::Construction {
+                                    construction_payload: construction_payload.clone(),
+                                },
+                                ordinal: ordinal as u32,
+                                field_code: field.field_code,
+                                scalar: field.scalar,
+                                payload_offset: field.offset as u64,
+                                source_offset,
+                            })
                         })
-                    })
-                    .collect::<Vec<_>>(),
-            )
-        })
+                        .collect::<Vec<_>>(),
+                )
+            },
+        )
         .collect::<Result<Vec<_>, _>>()?;
     Ok(projected.into_iter().flatten().collect())
 }
 
 /// Decode exact scalar-vector frames across reconstructed sketch payloads.
-pub(super) fn feature_sketch_payload_scalar_lanes(ctx: &DecodeContext<'_>,
+pub(super) fn feature_sketch_payload_scalar_lanes(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Result<Vec<FeatureSketchPayloadScalarLane>, CodecError>
-{
+) -> Result<Vec<FeatureSketchPayloadScalarLane>, CodecError> {
     let mut failure = None;
-    let rows = construction_payload_frames(ctx,
+    let rows = construction_payload_frames(
+        ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
@@ -5836,11 +5951,15 @@ pub(super) fn feature_sketch_payload_scalar_lanes(ctx: &DecodeContext<'_>,
         |payload, ordinal, lane, source_offset| {
             let header_source = source_offset(lane.offset() as usize)?;
             let terminator_source = source_offset(lane.end() as usize)?;
-            let lane = match lane.try_map_locations(ctx, |offset, ()| source_offset(offset as usize)) {
-                Ok(Some(lane)) => lane,
-                Ok(None) => return None,
-                Err(error) => { failure = Some(error); return None; }
-            };
+            let lane =
+                match lane.try_map_locations(ctx, |offset, ()| source_offset(offset as usize)) {
+                    Ok(Some(lane)) => lane,
+                    Ok(None) => return None,
+                    Err(error) => {
+                        failure = Some(error);
+                        return None;
+                    }
+                };
             Some(FeatureSketchPayloadScalarLane {
                 id: format!("{}-scalar-lane-{ordinal:010}", payload.id),
                 operation_label: payload.operation_label.clone(),
@@ -5852,57 +5971,71 @@ pub(super) fn feature_sketch_payload_scalar_lanes(ctx: &DecodeContext<'_>,
             })
         },
     )?;
-    if let Some(error) = failure { Err(error) } else { Ok(rows) }
+    if let Some(error) = failure {
+        Err(error)
+    } else {
+        Ok(rows)
+    }
 }
 
 /// Decode exact compact-code name fields across reconstructed sketch payloads.
-pub(super) fn feature_sketch_payload_names(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_sketch_payload_names(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
-) -> Result<Vec<FeaturePayloadName>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeaturePayloadName>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let projected = constructions
         .iter()
-        .map(|construction| -> Result<Vec<FeaturePayloadName>, CodecError> {
-            let mut data_blocks = construction
-                .members
-                .iter()
-                .map(|member| member.data_block.clone())
-                .collect::<Vec<_>>();
-            data_blocks.push(construction.terminal_data_block.clone());
-            let Some(joined) = JoinedPayload::from_source(data_blocks.iter(), &blocks) else {
-                return Ok(Vec::new());
-            };
-            let construction_payload = construction.id.replacen(
-                "sketch-construction-inputs",
-                "sketch-construction-payload",
-                1,
-            );
-            crate::om::name_field::scan(ctx, joined.bytes())?
-                .into_iter()
-                .enumerate()
-                .map(|(ordinal, field)| -> Result<Option<FeaturePayloadName>, CodecError> {
-                    let relative = field.offset() as u64;
-                    let Some(source_offset) = joined.source_offset(relative) else { return Ok(None); };
-                    let Some(frame) = field.into_native(ctx, |offset| joined.source_offset(offset))? else { return Ok(None); };
-                    Ok(Some(FeaturePayloadName {
-                        id: format!(
-                            "nx:feature-history:sketch-payload-name#{}-{ordinal:010}",
-                            construction_payload
-                                .rsplit_once('#')
-                                .map_or("unknown", |(_, key)| key)
-                        ),
-                        operation_label: construction.operation_label.clone(),
-                        construction_payload: construction_payload.clone(),
-                        ordinal: ordinal as u32,
-                        frame,
-                        source_offset,
-                    }))
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(|values| values.into_iter().flatten().collect())
-        })
+        .map(
+            |construction| -> Result<Vec<FeaturePayloadName>, CodecError> {
+                let mut data_blocks = construction
+                    .members
+                    .iter()
+                    .map(|member| member.data_block.clone())
+                    .collect::<Vec<_>>();
+                data_blocks.push(construction.terminal_data_block.clone());
+                let Some(joined) = JoinedPayload::from_source(data_blocks.iter(), &blocks) else {
+                    return Ok(Vec::new());
+                };
+                let construction_payload = construction.id.replacen(
+                    "sketch-construction-inputs",
+                    "sketch-construction-payload",
+                    1,
+                );
+                crate::om::name_field::scan(ctx, joined.bytes())?
+                    .into_iter()
+                    .enumerate()
+                    .map(
+                        |(ordinal, field)| -> Result<Option<FeaturePayloadName>, CodecError> {
+                            let relative = field.offset() as u64;
+                            let Some(source_offset) = joined.source_offset(relative) else {
+                                return Ok(None);
+                            };
+                            let Some(frame) =
+                                field.into_native(ctx, |offset| joined.source_offset(offset))?
+                            else {
+                                return Ok(None);
+                            };
+                            Ok(Some(FeaturePayloadName {
+                                id: format!(
+                                    "nx:feature-history:sketch-payload-name#{}-{ordinal:010}",
+                                    construction_payload
+                                        .rsplit_once('#')
+                                        .map_or("unknown", |(_, key)| key)
+                                ),
+                                operation_label: construction.operation_label.clone(),
+                                construction_payload: construction_payload.clone(),
+                                ordinal: ordinal as u32,
+                                frame,
+                                source_offset,
+                            }))
+                        },
+                    )
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(|values| values.into_iter().flatten().collect())
+            },
+        )
         .collect::<Result<Vec<_>, _>>()?;
     Ok(projected.into_iter().flatten().collect())
 }
@@ -6150,8 +6283,10 @@ pub(super) fn feature_sketch_point_groups(
 }
 
 /// Decode exact named point objects across consecutive offset-store blocks.
-pub(super) fn offset_store_named_points(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<OffsetStoreNamedPoint>, cadmpeg_core::CodecError>
-{
+pub(super) fn offset_store_named_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<OffsetStoreNamedPoint>, cadmpeg_core::CodecError> {
     let mut points = Vec::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections(ctx)?.into_iter().enumerate()
@@ -6165,7 +6300,8 @@ pub(super) fn offset_store_named_points(ctx: &cadmpeg_core::decode::DecodeContex
             let Some(point) = crate::om::offset_store_named_point(
                 ctx,
                 records[ordinal..].iter().map(|record| record.bytes),
-            )? else {
+            )?
+            else {
                 continue;
             };
             let records = &records[ordinal..ordinal + point.block_count];
@@ -6556,19 +6692,27 @@ fn parse_sketch_point_name(value: &str) -> Option<u32> {
 }
 
 /// Decode and resolve the ordered counted-reference field in sketch payloads.
-pub(super) fn feature_sketch_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<FeatureSketchReference>, cadmpeg_core::CodecError>
-{
+pub(super) fn feature_sketch_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<FeatureSketchReference>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let decoded = match crate::om::sketch_payload_references(ctx, record.payload_view()) {
                 Ok(Some(decoded)) => decoded,
                 Ok(None) => return,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
@@ -6588,7 +6732,9 @@ pub(super) fn feature_sketch_references(ctx: &cadmpeg_core::decode::DecodeContex
             }));
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(references)
 }
 
@@ -6601,17 +6747,18 @@ struct ResolvedFeaturePayloadReference {
     source_offset: u64,
 }
 
-fn resolved_feature_payload_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn resolved_feature_payload_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     decode: impl Fn(
         crate::om::operation_record::OperationPayload<'_>,
         u64,
     ) -> Option<Vec<(PayloadIndexToken, u64)>>,
-) -> Result<Vec<ResolvedFeaturePayloadReference>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<ResolvedFeaturePayloadReference>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(decoded) = decode(record.payload_view(), entry_offset) else {
@@ -6634,49 +6781,53 @@ fn resolved_feature_payload_references(ctx: &cadmpeg_core::decode::DecodeContext
 
 /// Decode and resolve the exact ordered construction-reference field in
 /// projected-curve payloads without assigning semantic roles to its slots.
-pub(super) fn feature_projected_curve_references(ctx: &DecodeContext<'_>,
+pub(super) fn feature_projected_curve_references(
+    ctx: &DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureProjectedCurveReference>, CodecError>
-{
-    Ok(resolved_feature_payload_references(ctx, container, |record, base| {
-        crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(|field| {
-            field
-                .into_references()
-                .into_iter()
-                .map(|reference| {
-                    Some((reference.token, base.checked_add(reference.offset as u64)?))
-                })
-                .collect()
+) -> Result<Vec<FeatureProjectedCurveReference>, CodecError> {
+    Ok(
+        resolved_feature_payload_references(ctx, container, |record, base| {
+            crate::om::projected_references::ProjectedCurveReferences::read(record).and_then(
+                |field| {
+                    field
+                        .into_references()
+                        .into_iter()
+                        .map(|reference| {
+                            Some((reference.token, base.checked_add(reference.offset as u64)?))
+                        })
+                        .collect()
+                },
+            )
+        })?
+        .into_iter()
+        .map(|reference| {
+            let operation_label = format!(
+                "nx:feature-history:operation-label#{}-{:010}",
+                reference.section_key, reference.operation_ordinal
+            );
+            FeatureProjectedCurveReference {
+                id: format!(
+                    "nx:feature-history:projected-curve-reference#{}-{:010}-{:010}",
+                    reference.section_key, reference.operation_ordinal, reference.ordinal
+                ),
+                operation_label,
+                ordinal: reference.ordinal as u32,
+                token: reference.token,
+                data_block: reference.data_block,
+                source_offset: reference.source_offset,
+            }
         })
-    })?
-    .into_iter()
-    .map(|reference| {
-        let operation_label = format!(
-            "nx:feature-history:operation-label#{}-{:010}",
-            reference.section_key, reference.operation_ordinal
-        );
-        FeatureProjectedCurveReference {
-            id: format!(
-                "nx:feature-history:projected-curve-reference#{}-{:010}-{:010}",
-                reference.section_key, reference.operation_ordinal, reference.ordinal
-            ),
-            operation_label,
-            ordinal: reference.ordinal as u32,
-            token: reference.token,
-            data_block: reference.data_block,
-            source_offset: reference.source_offset,
-        }
-    })
-    .collect())
+        .collect(),
+    )
 }
 
 /// Reconstruct ordered logical payloads from projected-curve reference fields.
-pub(super) fn feature_projected_curve_construction_payloads(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_projected_curve_construction_payloads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     labels: &[FeatureOperationLabel],
     references: &[FeatureProjectedCurveReference],
-) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let kinds = labels
         .iter()
@@ -6739,43 +6890,48 @@ pub(super) fn feature_projected_curve_construction_payloads(ctx: &cadmpeg_core::
 }
 
 /// Decode canonical printable strings from reconstructed projected-curve payloads.
-pub(super) fn feature_projected_curve_construction_strings(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_projected_curve_construction_strings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Result<Vec<FeatureProjectedCurveConstructionString>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureProjectedCurveConstructionString>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut strings = Vec::new();
     for payload in payloads {
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
-            else {
+        let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks) else {
+            continue;
+        };
+        for (ordinal, value) in crate::om::string_values(ctx, joined.bytes(), 0)?
+            .into_iter()
+            .enumerate()
+        {
+            let payload_offset = value.offset as u64;
+            let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
-            for (ordinal, value) in crate::om::string_values(ctx, joined.bytes(), 0)?.into_iter().enumerate() {
-                    let payload_offset = value.offset as u64;
-                    let Some(source_offset) = joined.source_offset(payload_offset) else { continue };
-                    strings.push(FeatureProjectedCurveConstructionString {
-                        id: format!("{}-string-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        value: value.value.into_owned(),
-                        payload_offset,
-                        source_offset,
-                    });
-            }
+            strings.push(FeatureProjectedCurveConstructionString {
+                id: format!("{}-string-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                value: value.value.into_owned(),
+                payload_offset,
+                source_offset,
+            });
+        }
     }
     Ok(strings)
 }
 
 /// Decode exact point-feature construction headers without assigning coordinate semantics.
-pub(super) fn feature_point_construction_headers(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_point_construction_headers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeaturePointConstructionHeader>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeaturePointConstructionHeader>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut headers = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(header) = crate::om::point_feature_payload_header(record.payload_view())
@@ -6800,11 +6956,11 @@ pub(super) fn feature_point_construction_headers(ctx: &cadmpeg_core::decode::Dec
 }
 
 /// Decode exact scalar lanes selected by uniquely resolved point-feature headers.
-pub(super) fn feature_point_construction_scalar_lanes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_point_construction_scalar_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     headers: &[FeaturePointConstructionHeader],
-) -> Result<Vec<FeaturePointConstructionScalarLane>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeaturePointConstructionScalarLane>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
     for header in headers {
@@ -6874,48 +7030,51 @@ pub(super) fn feature_point_construction_scalar_lanes(ctx: &cadmpeg_core::decode
 
 /// Decode and resolve the exact common reference envelope in surface-feature
 /// payloads without assigning section or guide semantics to its slots.
-pub(super) fn feature_surface_construction_references(ctx: &DecodeContext<'_>,
+pub(super) fn feature_surface_construction_references(
+    ctx: &DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureSurfaceConstructionReference>, CodecError>
-{
-    Ok(resolved_feature_payload_references(ctx, container, |record, base| {
-        crate::om::surface_envelope::surface_feature_payload_references(record)
-            .and_then(|field| field.relocate(base))
-            .map(|field| field.references().into_iter().collect())
-            .or_else(|| {
-                crate::om::surface_envelope::thru_curve_payload_references(record)
-                    .and_then(|field| field.relocate(base))
-                    .map(|field| field.references().into_iter().collect())
-            })
-    })?
-    .into_iter()
-    .map(|reference| {
-        let operation_label = format!(
-            "nx:feature-history:operation-label#{}-{:010}",
-            reference.section_key, reference.operation_ordinal
-        );
-        FeatureSurfaceConstructionReference {
-            id: format!(
-                "nx:feature-history:surface-construction-reference#{}-{:010}-{:010}",
-                reference.section_key, reference.operation_ordinal, reference.ordinal
-            ),
-            operation_label,
-            ordinal: reference.ordinal as u32,
-            token: reference.token,
-            data_block: reference.data_block,
-            source_offset: reference.source_offset,
-        }
-    })
-    .collect())
+) -> Result<Vec<FeatureSurfaceConstructionReference>, CodecError> {
+    Ok(
+        resolved_feature_payload_references(ctx, container, |record, base| {
+            crate::om::surface_envelope::surface_feature_payload_references(record)
+                .and_then(|field| field.relocate(base))
+                .map(|field| field.references().into_iter().collect())
+                .or_else(|| {
+                    crate::om::surface_envelope::thru_curve_payload_references(record)
+                        .and_then(|field| field.relocate(base))
+                        .map(|field| field.references().into_iter().collect())
+                })
+        })?
+        .into_iter()
+        .map(|reference| {
+            let operation_label = format!(
+                "nx:feature-history:operation-label#{}-{:010}",
+                reference.section_key, reference.operation_ordinal
+            );
+            FeatureSurfaceConstructionReference {
+                id: format!(
+                    "nx:feature-history:surface-construction-reference#{}-{:010}-{:010}",
+                    reference.section_key, reference.operation_ordinal, reference.ordinal
+                ),
+                operation_label,
+                ordinal: reference.ordinal as u32,
+                token: reference.token,
+                data_block: reference.data_block,
+                source_offset: reference.source_offset,
+            }
+        })
+        .collect(),
+    )
 }
 
 /// Decode the exact leading construction envelope in each `THRU_CURVE` payload.
-pub(super) fn feature_thru_curve_construction_envelopes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_thru_curve_construction_envelopes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureThruCurveConstructionEnvelope>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureThruCurveConstructionEnvelope>, cadmpeg_core::CodecError> {
     let mut envelopes = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(field) =
@@ -6940,20 +7099,27 @@ pub(super) fn feature_thru_curve_construction_envelopes(ctx: &cadmpeg_core::deco
 }
 
 /// Decode and resolve each exact leading `SWP104` construction branch.
-pub(super) fn feature_swp104_leading_branches(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_swp104_leading_branches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureSwp104LeadingBranch>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureSwp104LeadingBranch>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut branches = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
-            let branch = match crate::om::swp104_payload_leading_branch(ctx, record.payload_view()) {
+            if failure.is_some() {
+                return;
+            }
+            let branch = match crate::om::swp104_payload_leading_branch(ctx, record.payload_view())
+            {
                 Ok(branch) => branch,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let Some(branch) = branch else {
                 return;
@@ -6973,21 +7139,25 @@ pub(super) fn feature_swp104_leading_branches(ctx: &cadmpeg_core::decode::Decode
             );
             match resolved {
                 Ok(Some(branch)) => branches.push(branch),
-                Ok(None) => {},
-                Err(error) => { failure = Some(error); }
+                Ok(None) => {}
+                Err(error) => {
+                    failure = Some(error);
+                }
             }
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(branches)
 }
 
 /// Reconstruct ordered logical payloads from complete surface-construction graphs.
-pub(super) fn feature_surface_construction_payloads(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_surface_construction_payloads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     references: &[FeatureSurfaceConstructionReference],
-) -> Result<Vec<FeatureSurfaceConstructionPayload>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureSurfaceConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     Ok(references
         .iter()
@@ -7034,40 +7204,42 @@ pub(super) fn feature_surface_construction_payloads(ctx: &cadmpeg_core::decode::
 }
 
 /// Decode exact scalar-pair frames from reconstructed surface payloads.
-pub(super) fn feature_surface_construction_scalar_pairs(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_surface_construction_scalar_pairs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureSurfaceConstructionPayload],
-) -> Result<Vec<FeaturePayloadScalarPair>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeaturePayloadScalarPair>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let projected = payloads
         .iter()
-        .map(|payload| -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
-            let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
-            else {
-                return Ok(Vec::new());
-            };
-            Ok(crate::om::binary64_pair::object_pairs(ctx, joined.bytes())?
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, pair)| {
-                    Some(FeaturePayloadScalarPair {
-                        id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        payload: FeatureScalarPairPayload::SurfaceConstruction {
-                            surface_construction_payload: payload.id.clone(),
-                            frame: pair.into_wire_frame()?,
-                        },
-                        ordinal: ordinal as u32,
-                        value_source_offsets: [
-                            joined.source_offset(pair.value_offsets()[0] as u64)?,
-                            joined.source_offset(pair.value_offsets()[1] as u64)?,
-                        ],
-                        source_offset: joined.source_offset(pair.offset() as u64)?,
+        .map(
+            |payload| -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
+                let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
+                else {
+                    return Ok(Vec::new());
+                };
+                Ok(crate::om::binary64_pair::object_pairs(ctx, joined.bytes())?
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(ordinal, pair)| {
+                        Some(FeaturePayloadScalarPair {
+                            id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
+                            operation_label: payload.operation_label.clone(),
+                            payload: FeatureScalarPairPayload::SurfaceConstruction {
+                                surface_construction_payload: payload.id.clone(),
+                                frame: pair.into_wire_frame()?,
+                            },
+                            ordinal: ordinal as u32,
+                            value_source_offsets: [
+                                joined.source_offset(pair.value_offsets()[0] as u64)?,
+                                joined.source_offset(pair.value_offsets()[1] as u64)?,
+                            ],
+                            source_offset: joined.source_offset(pair.offset() as u64)?,
+                        })
                     })
-                })
-                .collect())
-        })
+                    .collect())
+            },
+        )
         .collect::<Result<Vec<_>, _>>()?;
     Ok(projected.into_iter().flatten().collect())
 }
@@ -7092,8 +7264,9 @@ pub(super) fn feature_surface_construction_strings(
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
-            let ordinal = u32::try_from(ordinal)
-                .map_err(|_| ctx.refuse_codec_limit("nx surface payload string ordinal", 0, u64::MAX))?;
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                ctx.refuse_codec_limit("nx surface payload string ordinal", 0, u64::MAX)
+            })?;
             strings.push(FeatureSurfaceConstructionString {
                 id: format!("{}-string-{ordinal:010}", payload.id),
                 operation_label: payload.operation_label.clone(),
@@ -7109,23 +7282,34 @@ pub(super) fn feature_surface_construction_strings(
 }
 
 /// Decode and resolve the witnessed ordered profile list in extrusion payloads.
-pub(super) fn feature_extrude_profile_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_extrude_profile_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureExtrudeProfileReference>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureExtrudeProfileReference>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
     let mut refusal: Option<CodecError> = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if refusal.is_some() { return; }
-            let decoded = match crate::om::extrude_profile::extrude_profile_references(ctx, record.payload_view()) {
+            if refusal.is_some() {
+                return;
+            }
+            let decoded = match crate::om::extrude_profile::extrude_profile_references(
+                ctx,
+                record.payload_view(),
+            ) {
                 Ok(Some(field)) => field,
                 Ok(None) => return,
-                Err(error) => { refusal = Some(error); return; }
+                Err(error) => {
+                    refusal = Some(error);
+                    return;
+                }
             };
-            let Some(decoded) = decoded.relocate(entry_offset) else { return; };
+            let Some(decoded) = decoded.relocate(entry_offset) else {
+                return;
+            };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             references.extend(decoded.references().enumerate().map(|(ordinal, (token, source_offset, witness_source_offset))| {
@@ -7144,17 +7328,20 @@ pub(super) fn feature_extrude_profile_references(ctx: &cadmpeg_core::decode::Dec
             }));
         },
     )?;
-    if let Some(error) = refusal { return Err(error); }
+    if let Some(error) = refusal {
+        return Err(error);
+    }
     Ok(references)
 }
 
 /// Decode fixed scalar headers from bounded extrusion payloads.
-pub(super) fn feature_extrude_payload_headers(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_extrude_payload_headers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureExtrudePayloadHeader>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureExtrudePayloadHeader>, cadmpeg_core::CodecError> {
     let mut headers = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(header) = crate::om::extrude_payload_header(record.payload_view()) else {
@@ -7182,15 +7369,22 @@ pub(super) fn feature_operation_terminal_discriminators(
 ) -> Result<Vec<FeatureOperationTerminalDiscriminator>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let frame = match crate::om::terminal_discriminator::operation_terminal_discriminator(
-                ctx, record.payload_view(),
+                ctx,
+                record.payload_view(),
             ) {
                 Ok(frame) => frame,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             let Some(frame) = frame.and_then(|frame| frame.relocate(entry_offset)) else {
                 return;
@@ -7202,23 +7396,36 @@ pub(super) fn feature_operation_terminal_discriminators(
             });
         },
     )?;
-    if let Some(error) = failure { Err(error) } else { Ok(lanes) }
+    if let Some(error) = failure {
+        Err(error)
+    } else {
+        Ok(lanes)
+    }
 }
 
 /// Decode typed scalar clauses anchored to operation body-reference fields.
-pub(super) fn feature_operation_body_scalar_triples(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_operation_body_scalar_triples(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureOperationBodyScalarTriple>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureOperationBodyScalarTriple>, cadmpeg_core::CodecError> {
     let mut triples = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
-            let rows = match crate::om::body_scalar_triple::operation_body_scalar_triples(ctx, record.body_view()) {
+            if failure.is_some() {
+                return;
+            }
+            let rows = match crate::om::body_scalar_triple::operation_body_scalar_triples(
+                ctx,
+                record.body_view(),
+            ) {
                 Ok(rows) => rows,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             for triple in rows {
                 let Some(scalars) = triple.scalars.relocate(entry_offset) else {
@@ -7240,24 +7447,32 @@ pub(super) fn feature_operation_body_scalar_triples(ctx: &cadmpeg_core::decode::
             }
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(triples)
 }
 
 /// Decode ordered member lanes following branch-`11` operation body clauses.
-pub(super) fn feature_operation_body_members(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_operation_body_members(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureOperationBodyMember>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureOperationBodyMember>, cadmpeg_core::CodecError> {
     let mut members = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let groups = match crate::om::operation_body_members(ctx, record.body_view()) {
                 Ok(groups) => groups,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             members.extend(
                 groups
@@ -7278,7 +7493,9 @@ pub(super) fn feature_operation_body_members(ctx: &cadmpeg_core::decode::DecodeC
             );
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(members)
 }
 
@@ -7378,19 +7595,25 @@ pub(super) fn feature_operation_body_operands(
 }
 
 /// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.
-pub(super) fn feature_operation_body_11_continuations(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_operation_body_11_continuations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureOperationBody11Continuation>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureOperationBody11Continuation>, cadmpeg_core::CodecError> {
     let mut continuations = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let rows = match crate::om::operation_body_11_continuations(ctx, record.body_view()) {
                 Ok(rows) => rows,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             continuations.extend(
                 rows
@@ -7415,25 +7638,33 @@ pub(super) fn feature_operation_body_11_continuations(ctx: &cadmpeg_core::decode
             );
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(continuations)
 }
 
 /// Decode complete unwrapped counted reference lanes following body scalar clauses.
-pub(super) fn feature_operation_body_reference_lanes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_operation_body_reference_lanes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureOperationBodyReferenceLane>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureOperationBodyReferenceLane>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
+            if failure.is_some() {
+                return;
+            }
             let parsed = match crate::om::operation_body_reference_lanes(ctx, record.body_view()) {
                 Ok(parsed) => parsed,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             for lane in parsed {
                 let references = match lane.values {
@@ -7484,7 +7715,9 @@ pub(super) fn feature_operation_body_reference_lanes(ctx: &cadmpeg_core::decode:
             }
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(lanes)
 }
 
@@ -7533,27 +7766,39 @@ pub(super) fn feature_extrude_construction_profiles(
 }
 
 /// Decode structured `32` branches following extrusion body-reference fields.
-pub(super) fn feature_extrude_payload_32_branches(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_extrude_payload_32_branches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureExtrudePayload32Branch>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureExtrudePayload32Branch>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut branches = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() { return; }
-            let frame = match crate::om::extrude_32::extrude_payload_32_branch(ctx, record.body_view()) {
-                Ok(frame) => frame,
-                Err(error) => { failure = Some(error); return; }
-            };
+            if failure.is_some() {
+                return;
+            }
+            let frame =
+                match crate::om::extrude_32::extrude_payload_32_branch(ctx, record.body_view()) {
+                    Ok(frame) => frame,
+                    Err(error) => {
+                        failure = Some(error);
+                        return;
+                    }
+                };
             let Some(frame) = frame.and_then(|frame| frame.relocate(entry_offset)) else {
                 return;
             };
-            let frame = match frame.map_bindings(ctx, |index, ()| unique_offset_data_block(&indexed, index)) {
+            let frame = match frame
+                .map_bindings(ctx, |index, ()| unique_offset_data_block(&indexed, index))
+            {
                 Ok(frame) => frame,
-                Err(error) => { failure = Some(error); return; }
+                Err(error) => {
+                    failure = Some(error);
+                    return;
+                }
             };
             branches.push(FeatureExtrudePayload32Branch {
                 id: format!("nx:feature-history:extrude-payload-32-branch#{section_key}-{operation_ordinal:010}"),
@@ -7562,7 +7807,9 @@ pub(super) fn feature_extrude_payload_32_branches(ctx: &cadmpeg_core::decode::De
             });
         },
     )?;
-    if let Some(error) = failure { return Err(error); }
+    if let Some(error) = failure {
+        return Err(error);
+    }
     Ok(branches)
 }
 
@@ -7655,13 +7902,14 @@ pub(super) fn feature_extrude_32_constructions(
 }
 
 /// Decode and resolve ordered construction references in `BLOCK` payloads.
-pub(super) fn feature_block_construction_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_block_construction_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Result<Vec<FeatureBlockConstructionReference>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureBlockConstructionReference>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
-    visit_feature_history_operation_records(ctx,
+    visit_feature_history_operation_records(
+        ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(field) =
@@ -7746,11 +7994,11 @@ pub(super) fn feature_block_constructions(
 }
 
 /// Reconstruct complete `BLOCK` construction payloads in reference order.
-pub(super) fn feature_block_construction_payloads(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_block_construction_payloads(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     constructions: &[FeatureBlockConstruction],
-) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     Ok(constructions
         .iter()
@@ -7777,11 +8025,11 @@ pub(super) fn feature_block_construction_payloads(ctx: &cadmpeg_core::decode::De
 }
 
 /// Decode exact framed scalar fields across reconstructed `BLOCK` payloads.
-pub(super) fn feature_block_payload_scalars(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_block_payload_scalars(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Result<Vec<FeaturePayloadScalar>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeaturePayloadScalar>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let projected = payloads
         .iter()
@@ -7790,36 +8038,38 @@ pub(super) fn feature_block_payload_scalars(ctx: &cadmpeg_core::decode::DecodeCo
             else {
                 return Ok(Vec::new());
             };
-            Ok(crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, field)| {
-                    let source_offset = joined.source_offset(field.offset as u64)?;
-                    Some(FeaturePayloadScalar {
-                        id: format!("{}-scalar-{ordinal}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        payload: FeatureScalarPayload::Construction {
-                            construction_payload: payload.id.clone(),
-                        },
-                        ordinal: ordinal as u32,
-                        field_code: field.field_code,
-                        scalar: field.scalar,
-                        payload_offset: field.offset as u64,
-                        source_offset,
+            Ok(
+                crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(ordinal, field)| {
+                        let source_offset = joined.source_offset(field.offset as u64)?;
+                        Some(FeaturePayloadScalar {
+                            id: format!("{}-scalar-{ordinal}", payload.id),
+                            operation_label: payload.operation_label.clone(),
+                            payload: FeatureScalarPayload::Construction {
+                                construction_payload: payload.id.clone(),
+                            },
+                            ordinal: ordinal as u32,
+                            field_code: field.field_code,
+                            scalar: field.scalar,
+                            payload_offset: field.offset as u64,
+                            source_offset,
+                        })
                     })
-                })
-                .collect::<Vec<_>>())
+                    .collect::<Vec<_>>(),
+            )
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(projected.into_iter().flatten().collect())
 }
 
 /// Decode exact compact-code name fields across reconstructed `BLOCK` payloads.
-pub(super) fn feature_block_payload_names(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+pub(super) fn feature_block_payload_names(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Result<Vec<FeaturePayloadName>, cadmpeg_core::CodecError>
-{
+) -> Result<Vec<FeaturePayloadName>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let projected = payloads
         .iter()
@@ -7831,18 +8081,27 @@ pub(super) fn feature_block_payload_names(ctx: &cadmpeg_core::decode::DecodeCont
             crate::om::name_field::scan(ctx, joined.bytes())?
                 .into_iter()
                 .enumerate()
-                .map(|(ordinal, field)| -> Result<Option<FeaturePayloadName>, CodecError> {
-                    let Some(source_offset) = joined.source_offset(field.offset() as u64) else { return Ok(None); };
-                    let Some(frame) = field.into_native(ctx, |offset| joined.source_offset(offset))? else { return Ok(None); };
-                    Ok(Some(FeaturePayloadName {
-                        id: format!("{}-name-{ordinal}", payload.id),
-                        operation_label: payload.operation_label.clone(),
-                        construction_payload: payload.id.clone(),
-                        ordinal: ordinal as u32,
-                        frame,
-                        source_offset,
-                    }))
-                })
+                .map(
+                    |(ordinal, field)| -> Result<Option<FeaturePayloadName>, CodecError> {
+                        let Some(source_offset) = joined.source_offset(field.offset() as u64)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(frame) =
+                            field.into_native(ctx, |offset| joined.source_offset(offset))?
+                        else {
+                            return Ok(None);
+                        };
+                        Ok(Some(FeaturePayloadName {
+                            id: format!("{}-name-{ordinal}", payload.id),
+                            operation_label: payload.operation_label.clone(),
+                            construction_payload: payload.id.clone(),
+                            ordinal: ordinal as u32,
+                            frame,
+                            source_offset,
+                        }))
+                    },
+                )
                 .collect::<Result<Vec<_>, _>>()
                 .map(|values| values.into_iter().flatten().collect())
         })
@@ -8067,20 +8326,25 @@ pub(super) fn feature_block_dimensions(
 }
 
 /// Decode persistent object frames from bounded offset-store blocks.
-pub(super) fn data_block_object_frames(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockObjectFrame>, cadmpeg_core::CodecError>
-{
+pub(super) fn data_block_object_frames(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<DataBlockObjectFrame>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
     let mut out = Vec::new();
     for (data_block, (bytes, source_offset)) in blocks.iter() {
-        for (ordinal, frame) in crate::om::data_block_object_frames(ctx, bytes)?.into_iter().enumerate() {
+        for (ordinal, frame) in crate::om::data_block_object_frames(ctx, bytes)?
+            .into_iter()
+            .enumerate()
+        {
             out.push(DataBlockObjectFrame {
-                    id: data_block_object_frame_id(data_block, ordinal),
-                    data_block: data_block.clone(),
-                    ordinal: ordinal as u32,
-                    object: LocatedCompactIndex {
-                        atom: frame.atom,
-                        offset: source_offset + frame.offset as u64,
-                    },
+                id: data_block_object_frame_id(data_block, ordinal),
+                data_block: data_block.clone(),
+                ordinal: ordinal as u32,
+                object: LocatedCompactIndex {
+                    atom: frame.atom,
+                    offset: source_offset + frame.offset as u64,
+                },
             });
         }
     }
@@ -8233,11 +8497,11 @@ pub(super) fn feature_parameter_uses(
         .collect()
 }
 
-fn visit_feature_history_sections(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn visit_feature_history_sections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     mut visit: impl FnMut(&crate::om::Section<'_>, &str, u64) -> Result<(), cadmpeg_core::CodecError>,
-) -> Result<(), cadmpeg_core::CodecError>
-{
+) -> Result<(), cadmpeg_core::CodecError> {
     let sections = container.om_sections(ctx)?;
     for (section_ordinal, link) in feature_history_sections(ctx, container)? {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {

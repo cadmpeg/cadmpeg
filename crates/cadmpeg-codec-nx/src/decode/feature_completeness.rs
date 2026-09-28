@@ -177,7 +177,10 @@ fn directions_are_perpendicular(first: Vector3, second: Vector3) -> bool {
     first.dot(second).abs() <= EPS_PERPENDICULAR * (first.norm() * second.norm())
 }
 
-pub(crate) fn incomplete_expression_parameters(ctx: &cadmpeg_core::decode::DecodeContext<'_>, ir: &CadIr) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
+pub(crate) fn incomplete_expression_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
     let parameter_owners = ir
         .model
         .parameters

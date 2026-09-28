@@ -126,7 +126,10 @@ impl StateCounterMap {
         base_offset: usize,
     ) -> Result<Option<Self>, CodecError> {
         const MAX_COUNTER_TAIL_BYTES: usize = 64;
-        ctx.charge_work(u64_from_index(bytes.len()), "scan NX operation-state counter map")?;
+        ctx.charge_work(
+            u64_from_index(bytes.len()),
+            "scan NX operation-state counter map",
+        )?;
         let mut best: Option<(usize, usize, usize)> = None;
         let mut run_start = 0;
         let mut run_end = 0;
@@ -138,7 +141,9 @@ impl StateCounterMap {
             let Some(row) = StateCounter::read(bytes, at, base_offset) else {
                 continue;
             };
-            let Some(row_end) = at.checked_add(row.byte_len()) else { return Ok(None) };
+            let Some(row_end) = at.checked_add(row.byte_len()) else {
+                return Ok(None);
+            };
             if at == run_end {
                 run_end = row_end;
                 run_len += 1;
@@ -154,24 +159,39 @@ impl StateCounterMap {
                 best = Some((run_start, run_end, run_len));
             }
         }
-        let Some((start, end, row_count)) = best else { return Ok(None) };
-        let Some(first) = StateCounter::read(bytes, start, base_offset) else { return Ok(None) };
-        let Some(second_at) = start.checked_add(first.byte_len()) else { return Ok(None) };
-        let Some(second) = StateCounter::read(bytes, second_at, base_offset) else { return Ok(None) };
+        let Some((start, end, row_count)) = best else {
+            return Ok(None);
+        };
+        let Some(first) = StateCounter::read(bytes, start, base_offset) else {
+            return Ok(None);
+        };
+        let Some(second_at) = start.checked_add(first.byte_len()) else {
+            return Ok(None);
+        };
+        let Some(second) = StateCounter::read(bytes, second_at, base_offset) else {
+            return Ok(None);
+        };
         let rest_count = row_count - 2;
         let operation = "NX operation-state counter rows";
         let count = u64_from_index(rest_count);
         ctx.charge_collection_items(count, operation)?;
-        let retained = count.checked_mul(u64_from_index(std::mem::size_of::<StateCounter<usize>>()))
+        let retained = count
+            .checked_mul(u64_from_index(std::mem::size_of::<StateCounter<usize>>()))
             .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count))?;
         ctx.charge_retained(retained, operation)?;
         let mut rest = Vec::new();
         rest.try_reserve_exact(rest_count)
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
-        let Some(mut cursor) = second_at.checked_add(second.byte_len()) else { return Ok(None) };
+        let Some(mut cursor) = second_at.checked_add(second.byte_len()) else {
+            return Ok(None);
+        };
         while cursor < end {
-            let Some(row) = StateCounter::read(bytes, cursor, base_offset) else { return Ok(None) };
-            let Some(next) = cursor.checked_add(row.byte_len()) else { return Ok(None) };
+            let Some(row) = StateCounter::read(bytes, cursor, base_offset) else {
+                return Ok(None);
+            };
+            let Some(next) = cursor.checked_add(row.byte_len()) else {
+                return Ok(None);
+            };
             cursor = next;
             rest.push(row);
         }
@@ -196,8 +216,11 @@ mod tests {
             0xf1, 0xed,
         ]);
 
-        let map = crate::test_support::with_decode_context(|ctx| crate::om::state_counter::StateCounterMap::read(ctx, &bytes, 1000)).unwrap()
-            .expect("counter-map suffix");
+        let map = crate::test_support::with_decode_context(|ctx| {
+            crate::om::state_counter::StateCounterMap::read(ctx, &bytes, 1000)
+        })
+        .unwrap()
+        .expect("counter-map suffix");
         assert_eq!(map.offset(), 1004);
         let rows: Vec<_> = map.into_rows().collect();
         assert_eq!(rows.len(), 3);
@@ -224,45 +247,61 @@ mod tests {
             0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
             0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99, 0x99,
         ];
-        assert!(crate::test_support::with_decode_context(|ctx| crate::om::state_counter::StateCounterMap::read(ctx, &bytes, 0)).unwrap().is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            crate::om::state_counter::StateCounterMap::read(ctx, &bytes, 0)
+        })
+        .unwrap()
+        .is_none());
     }
 
     #[test]
     fn operation_state_counter_map_refuses_collection_limit() {
-        let bytes = [0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e,
-            0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a, 0x2b, 0x4e,
-            0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e];
+        let bytes = [
+            0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a,
+            0x2b, 0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
+        ];
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let error = super::StateCounterMap::read(&ctx, &bytes, 0).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
     fn operation_state_counter_map_refuses_retained_limit() {
-        let bytes = [0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e,
-            0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a, 0x2b, 0x4e,
-            0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e];
+        let bytes = [
+            0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a,
+            0x2b, 0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
+        ];
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let error = super::StateCounterMap::read(&ctx, &bytes, 0).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]
     fn operation_state_counter_map_refuses_work_limit() {
-        let bytes = [0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e,
-            0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a, 0x2b, 0x4e,
-            0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e];
+        let bytes = [
+            0x05, 0x01, 0x90, 0x12, 0x34, 0x56, 0x57, 0x4e, 0x05, 0x02, 0xa3, 0x1f, 0x85, 0x2a,
+            0x2b, 0x4e, 0x05, 0x01, 0x7d, 0x63, 0x63, 0x4e,
+        ];
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let error = super::StateCounterMap::read(&ctx, &bytes, 0).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
     }
 }

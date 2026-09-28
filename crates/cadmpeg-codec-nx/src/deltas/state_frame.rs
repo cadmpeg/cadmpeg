@@ -25,10 +25,21 @@ impl Serialize for StateFrames {
 }
 
 impl StateFrames {
-    pub(super) fn new(ctx: &DecodeContext<'_>, first: ReferenceStateFrame) -> Result<Self, CodecError> {
-        Ok(Self(ctx.alloc_filled(1, first, "NX reference state frames")?))
+    pub(super) fn new(
+        ctx: &DecodeContext<'_>,
+        first: ReferenceStateFrame,
+    ) -> Result<Self, CodecError> {
+        Ok(Self(ctx.alloc_filled(
+            1,
+            first,
+            "NX reference state frames",
+        )?))
     }
-    pub(super) fn push(&mut self, ctx: &DecodeContext<'_>, frame: ReferenceStateFrame) -> Result<(), CodecError> {
+    pub(super) fn push(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        frame: ReferenceStateFrame,
+    ) -> Result<(), CodecError> {
         ctx.charge_collection_items(1, "NX reference state frames")?;
         self.0
             .try_reserve(1)

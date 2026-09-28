@@ -6,9 +6,9 @@ use crate::parasolid::name_references::NameReferences;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::blend_surface_state::BlendSurfaceState;
 use crate::topology::offset_surface_state::OffsetSurfaceState;
-use serde::{Deserialize, Serialize};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use serde::{Deserialize, Serialize};
 
 use crate::deltas::census::Census;
 use crate::deltas::record_family::RecordFamily;
@@ -1501,7 +1501,10 @@ trait ParasolidScanRecords {
 
 /// Run the fresh-scan record skeleton for one family: scan every Parasolid
 /// stream, map each scanned row to a record, then sort by identity.
-fn per_parasolid_scan<P: ParasolidScanRecords>(ctx: &DecodeContext<'_>, streams: &[Stream]) -> Result<Vec<P::Record>, CodecError> {
+fn per_parasolid_scan<P: ParasolidScanRecords>(
+    ctx: &DecodeContext<'_>,
+    streams: &[Stream],
+) -> Result<Vec<P::Record>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
@@ -1677,7 +1680,10 @@ pub(super) struct ParasolidBlendBoundRecord {
 }
 
 /// Decode complete typed source records for Parasolid blend-bound bridges.
-pub(super) fn parasolid_blend_bound_records(ctx: &DecodeContext<'_>, streams: &[Stream]) -> Result<Vec<ParasolidBlendBoundRecord>, CodecError> {
+pub(super) fn parasolid_blend_bound_records(
+    ctx: &DecodeContext<'_>,
+    streams: &[Stream],
+) -> Result<Vec<ParasolidBlendBoundRecord>, CodecError> {
     per_parasolid_scan::<ParasolidBlendBoundRecord>(ctx, streams)
 }
 
@@ -1834,7 +1840,10 @@ mod term_use_wire_tests {
 }
 
 /// Decode complete typed source records for Parasolid `term_use` endpoints.
-pub(super) fn parasolid_term_use_records(ctx: &DecodeContext<'_>, streams: &[Stream]) -> Result<Vec<ParasolidTermUseRecord>, CodecError> {
+pub(super) fn parasolid_term_use_records(
+    ctx: &DecodeContext<'_>,
+    streams: &[Stream],
+) -> Result<Vec<ParasolidTermUseRecord>, CodecError> {
     per_parasolid_scan::<ParasolidTermUseRecord>(ctx, streams)
 }
 
@@ -1883,7 +1892,10 @@ pub(super) struct ParasolidSupportUvRecord {
 }
 
 /// Decode complete typed source records for Parasolid support-UV arrays.
-pub(super) fn parasolid_support_uv_records(ctx: &DecodeContext<'_>, streams: &[Stream]) -> Result<Vec<ParasolidSupportUvRecord>, CodecError> {
+pub(super) fn parasolid_support_uv_records(
+    ctx: &DecodeContext<'_>,
+    streams: &[Stream],
+) -> Result<Vec<ParasolidSupportUvRecord>, CodecError> {
     per_parasolid_scan::<ParasolidSupportUvRecord>(ctx, streams)
 }
 
@@ -1943,7 +1955,8 @@ pub(super) fn parasolid_chart_records(
             continue;
         };
         let point_layout = subtype.chart_point_layout();
-        for chart in crate::intersection::chart_source_records(ctx, &stream.inflated, point_layout)? {
+        for chart in crate::intersection::chart_source_records(ctx, &stream.inflated, point_layout)?
+        {
             records.push(ParasolidChartRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:chart-record#{}-{}",
@@ -4089,7 +4102,10 @@ mod tests {
 
     #[test]
     fn group_member_xmt_is_checked_before_node_identity_fallback() {
-        let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &many_face_partition_stream(1_000))).unwrap();
+        let graph = crate::test_support::with_decode_context(|ctx| {
+            Graph::parse(ctx, &many_face_partition_stream(1_000))
+        })
+        .unwrap();
         let resolve = |member: &ParasolidGroupMember| match member
             .target
             .resolve(&graph, member.member_xmt)
@@ -4148,7 +4164,10 @@ mod tests {
             ),
         ];
 
-        let groups = crate::test_support::with_decode_context(|ctx| super::parasolid_group_records(ctx, &streams, &BTreeMap::new(), &[])).unwrap();
+        let groups = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_group_records(ctx, &streams, &BTreeMap::new(), &[])
+        })
+        .unwrap();
 
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].node_id, groups[1].node_id);
@@ -4181,7 +4200,10 @@ mod tests {
         let events = super::parasolid_deltas_events(&streams);
         let pairs = BTreeMap::from([(0, vec![1])]);
 
-        let groups = crate::test_support::with_decode_context(|ctx| super::parasolid_group_records(ctx, &streams, &pairs, &events.records)).unwrap();
+        let groups = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_group_records(ctx, &streams, &pairs, &events.records)
+        })
+        .unwrap();
 
         assert_eq!(groups.len(), 3);
         assert_eq!(groups[0].origin.partition_stream_ordinal(), Some(0));
@@ -4229,8 +4251,14 @@ mod tests {
             },
         }];
 
-        let census = crate::test_support::with_decode_context(|ctx| crate::deltas::census::walk(ctx, &streams[0].inflated)).unwrap();
-        let events = crate::test_support::with_decode_context(|ctx| super::parasolid_deltas_events_with_censuses(ctx, &streams, vec![Some(census)])).unwrap();
+        let census = crate::test_support::with_decode_context(|ctx| {
+            crate::deltas::census::walk(ctx, &streams[0].inflated)
+        })
+        .unwrap();
+        let events = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_deltas_events_with_censuses(ctx, &streams, vec![Some(census)])
+        })
+        .unwrap();
 
         assert_eq!(events.body_revisions.len(), 1);
         assert_eq!(u32::from(events.body_revisions[0].xmt), 3);
@@ -5356,7 +5384,10 @@ mod tests {
         stream.extend_from_slice(&42u16.to_be_bytes());
         stream.extend_from_slice(b"deadbeef\0");
 
-        let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
+        let graph = crate::test_support::with_decode_context(|ctx| {
+            crate::topology::Graph::parse(ctx, &stream)
+        })
+        .unwrap();
         assert_eq!(
             graph
                 .get(crate::framing::node_kind::NodeKind::Face, 4)

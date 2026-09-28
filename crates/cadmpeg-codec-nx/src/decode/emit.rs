@@ -139,7 +139,8 @@ pub(super) fn emit_topology(
         })
         .filter(|xmt| *xmt > 1)
         .collect();
-    let body_xmts: BTreeSet<_> = graph.body_shape_shells()
+    let body_xmts: BTreeSet<_> = graph
+        .body_shape_shells()
         .filter_map(|shell| {
             shell
                 .shell_fields()
@@ -1529,7 +1530,8 @@ pub(super) fn source_meta(
             format_args!("{:08x}", assemble_u32_be(footer_fingerprint)),
         )?;
     }
-    let (control_count, classified_control_count) = offset_store_control_counts(ctx, &scan.container)?;
+    let (control_count, classified_control_count) =
+        offset_store_control_counts(ctx, &scan.container)?;
     if control_count != 0 {
         insert_source_attribute(
             ctx,
@@ -1933,9 +1935,11 @@ mod tests {
     #[test]
     fn source_meta_refuses_first_attribute_node_at_collection_limit() {
         let scan = empty_source_scan();
-        let (dialects, _) = crate::test_support::with_decode_context(|ctx| crate::dialect::classify_layers(ctx, &scan))
-            .unwrap()
-            .into_report_parts();
+        let (dialects, _) = crate::test_support::with_decode_context(|ctx| {
+            crate::dialect::classify_layers(ctx, &scan)
+        })
+        .unwrap()
+        .into_report_parts();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
@@ -1951,9 +1955,11 @@ mod tests {
     #[test]
     fn source_meta_refuses_first_attribute_text_at_retained_limit() {
         let scan = empty_source_scan();
-        let (dialects, _) = crate::test_support::with_decode_context(|ctx| crate::dialect::classify_layers(ctx, &scan))
-            .unwrap()
-            .into_report_parts();
+        let (dialects, _) = crate::test_support::with_decode_context(|ctx| {
+            crate::dialect::classify_layers(ctx, &scan)
+        })
+        .unwrap()
+        .into_report_parts();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
@@ -1969,9 +1975,11 @@ mod tests {
     #[test]
     fn source_meta_refuses_second_map_nodes_at_collection_limit() {
         let scan = empty_source_scan();
-        let (dialects, _) = crate::test_support::with_decode_context(|ctx| crate::dialect::classify_layers(ctx, &scan))
-            .unwrap()
-            .into_report_parts();
+        let (dialects, _) = crate::test_support::with_decode_context(|ctx| {
+            crate::dialect::classify_layers(ctx, &scan)
+        })
+        .unwrap()
+        .into_report_parts();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (service_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();

@@ -659,8 +659,10 @@ pub(super) fn body_alias_roots(bindings: &[SegmentBodyBinding]) -> Option<BTreeM
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.
-pub(super) fn segment_om_links(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<SegmentOmLink>, cadmpeg_core::CodecError>
-{
+pub(super) fn segment_om_links(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<SegmentOmLink>, cadmpeg_core::CodecError> {
     let Some((entry, index)) = container.segment_index() else {
         return Ok(Vec::new());
     };

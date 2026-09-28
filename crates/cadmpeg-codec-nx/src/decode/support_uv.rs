@@ -560,7 +560,9 @@ pub(super) fn complete_ext11_support_uv(
     pending: &[PendingExt11SupportUv],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
-    crate::test_support::with_decode_context(|ctx| complete_ext11_support_uv_with_budget(ctx, ir, pending, &geometry_budget))
+    crate::test_support::with_decode_context(|ctx| {
+        complete_ext11_support_uv_with_budget(ctx, ir, pending, &geometry_budget)
+    })
 }
 
 pub(super) fn complete_ext11_support_uv_with_budget(
@@ -691,28 +693,28 @@ pub(super) fn complete_support_uv_with_budget(
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut endpoint_witnesses = BTreeMap::new();
-    crate::test_support::with_decode_context(|ctx| complete_support_uv_with_budget_and_endpoint_witnesses(
-        ctx,
-        ir,
-        pending,
-        support_budget,
-        geometry_budget,
-        coupled_support_budget,
-        coupled_geometry_budget,
-        &mut endpoint_witnesses,
-    ))
+    crate::test_support::with_decode_context(|ctx| {
+        complete_support_uv_with_budget_and_endpoint_witnesses(
+            ctx,
+            ir,
+            pending,
+            (support_budget, geometry_budget),
+            (coupled_support_budget, coupled_geometry_budget),
+            &mut endpoint_witnesses,
+        )
+    })
 }
 
 pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
-    support_budget: &SupportUvBudget<'_>,
-    geometry_budget: &GeometryWorkBudget<'_>,
-    coupled_support_budget: &SupportUvBudget<'_>,
-    coupled_geometry_budget: &GeometryWorkBudget<'_>,
+    direct_budgets: (&SupportUvBudget<'_>, &GeometryWorkBudget<'_>),
+    coupled_budgets: (&SupportUvBudget<'_>, &GeometryWorkBudget<'_>),
     endpoint_witnesses: &mut EndpointWitnesses,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    let (support_budget, geometry_budget) = direct_budgets;
+    let (coupled_support_budget, coupled_geometry_budget) = coupled_budgets;
     // A failed fit can become solvable when either lane is filled by an
     // earlier wave. Keep those dependencies as the direct and coupled retry
     // keys; unrelated progress must not repeat the same inverse problems.
@@ -754,15 +756,17 @@ pub(super) fn invalidate_inconsistent_support_uv(
 ) {
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     let support_budget = WorkBudget::new(MAX_SUPPORT_UV_SAMPLES);
-    crate::test_support::with_decode_context(|ctx| invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
-        ctx,
-        ir,
-        pending,
-        &BTreeSet::new(),
-        &support_budget,
-        &geometry_budget,
-        false,
-    ))
+    crate::test_support::with_decode_context(|ctx| {
+        invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+            ctx,
+            ir,
+            pending,
+            &BTreeSet::new(),
+            &support_budget,
+            &geometry_budget,
+            false,
+        )
+    })
     .expect("evaluator allocation succeeds");
 }
 
@@ -1804,15 +1808,17 @@ pub(super) fn complete_coupled_support_uv_with_geometry_budget_for_test(
     let coupled_support_budget = new_support_uv_budget();
     let geometry_budget = GeometryWorkBudget::new(geometry_work);
     let mut failed_attempts = BTreeMap::new();
-    crate::test_support::with_decode_context(|ctx| complete_coupled_support_uv(
-        ctx,
-        ir,
-        pending,
-        &coupled_support_budget,
-        &geometry_budget,
-        &mut failed_attempts,
-        &mut BTreeMap::new(),
-    ))
+    crate::test_support::with_decode_context(|ctx| {
+        complete_coupled_support_uv(
+            ctx,
+            ir,
+            pending,
+            &coupled_support_budget,
+            &geometry_budget,
+            &mut failed_attempts,
+            &mut BTreeMap::new(),
+        )
+    })
     .expect("the coupled support-uv wave pairs its lanes");
 }
 

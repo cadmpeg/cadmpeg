@@ -207,13 +207,18 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         let operation = "NX mapped counted index members";
         ctx.charge_collection_items(count_u64, operation)?;
         let bytes = count_u64
-            .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<U>()))
+            .checked_mul(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<U>(),
+            ))
             .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
         ctx.charge_retained(bytes, operation)?;
         let mut mapped = Vec::new();
-        mapped.try_reserve_exact(count)
+        mapped
+            .try_reserve_exact(count)
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
-        for member in self.0 { mapped.push(map(member)); }
+        for member in self.0 {
+            mapped.push(map(member));
+        }
         Ok(CountedIndexMembers(mapped))
     }
     pub(super) fn try_map_charged<U>(
@@ -226,13 +231,19 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         let operation = "NX resolved counted index members";
         ctx.charge_collection_items(count_u64, operation)?;
         let bytes = count_u64
-            .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<U>()))
+            .checked_mul(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<U>(),
+            ))
             .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
         ctx.charge_retained(bytes, operation)?;
         let mut mapped = Vec::new();
-        mapped.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        mapped
+            .try_reserve_exact(count)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
         for member in self.0 {
-            let Some(value) = map(member) else { return Ok(None); };
+            let Some(value) = map(member) else {
+                return Ok(None);
+            };
             mapped.push(value);
         }
         Ok(Some(CountedIndexMembers(mapped)))

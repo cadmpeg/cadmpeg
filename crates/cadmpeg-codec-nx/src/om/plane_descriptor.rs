@@ -55,11 +55,20 @@ impl PlaneDescriptor {
         ctx: &DecodeContext<'_>,
         bytes: &[u8],
     ) -> Result<Option<Self>, CodecError> {
-        let Some((identity, schema, label)) = Self::parse(bytes) else { return Ok(None); };
+        let Some((identity, schema, label)) = Self::parse(bytes) else {
+            return Ok(None);
+        };
         let identity = ctx.copy_retained(identity, "NX datum plane descriptor identity")?;
         let label = ctx.copy_retained(label, "NX datum plane descriptor label")?;
-        let (Ok(identity), Ok(label)) = (String::from_utf8(identity), String::from_utf8(label)) else { return Ok(None); };
-        Ok(Some(Self { identity, schema, label }))
+        let (Ok(identity), Ok(label)) = (String::from_utf8(identity), String::from_utf8(label))
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            identity,
+            schema,
+            label,
+        }))
     }
 
     // This conversion consumes the input carrier at the typed construction boundary.

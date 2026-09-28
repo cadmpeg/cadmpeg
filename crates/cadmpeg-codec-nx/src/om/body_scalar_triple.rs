@@ -56,7 +56,10 @@ pub(crate) fn operation_body_scalar_triples(
     ctx: &DecodeContext<'_>,
     record: OperationBodyInput<'_>,
 ) -> Result<Vec<OperationBodyScalarTriple>, CodecError> {
-    ctx.charge_work(u64_from_index(record.bytes().len()), "scan NX body scalar triples")?;
+    ctx.charge_work(
+        u64_from_index(record.bytes().len()),
+        "scan NX body scalar triples",
+    )?;
     let mut triples = Vec::new();
     for (ordinal, reference) in super::operation_body_reference_candidates(record).enumerate() {
         let parsed = (|| {
@@ -104,18 +107,24 @@ mod tests {
     #[test]
     fn operation_body_scalar_triples_refuse_collection_limit() {
         let error = refusal(|policy| policy.limits.max_collection_items = 0);
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems));
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
     fn operation_body_scalar_triples_refuse_retained_limit() {
         let error = refusal(|policy| policy.limits.max_retained_bytes = 0);
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes));
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]
     fn operation_body_scalar_triples_refuse_work_limit() {
         let error = refusal(|policy| policy.limits.max_work_units = 0);
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits));
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::WorkUnits)
+        );
     }
 }

@@ -66,7 +66,9 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .position(|window| window == [0, 17])
         .expect("fin record");
     put_ref(&mut stream, fin + 18, 1);
-    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
     let mut off_support_ir = ir.clone();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
@@ -187,7 +189,9 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
         .position(|window| window == [0, 16])
         .expect("edge record");
     put_ref(&mut stream, edge + 24, 1);
-    let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
 
@@ -1075,7 +1079,8 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             owner,
             evaluated.get(),
             parameter,
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .expect("charted tolerant intersection inverts");
         assert!((inverted.get() - parameter).abs() < 1.0e-8);
         let points: [Point3; 2] = std::array::from_fn(|side| {

@@ -1158,10 +1158,8 @@ pub(super) fn try_decode_geometry(
                 ctx,
                 &mut ir,
                 &pending_ext11_support_uv,
-                &support_budget,
-                &support_uv_geometry_budget,
-                &coupled_support_budget,
-                &coupled_support_uv_geometry_budget,
+                (&support_budget, &support_uv_geometry_budget),
+                (&coupled_support_budget, &coupled_support_uv_geometry_budget),
                 &mut completed_endpoint_witnesses,
             )?;
         let mut validated_endpoint_witnesses = initial_endpoint_witnesses;
@@ -1341,7 +1339,12 @@ pub(super) fn try_decode_geometry(
     report.losses.extend(carrier_refusals);
     report.losses.extend(topology_losses);
     report.losses.extend(native_losses);
-    report_untransferred_streams(ctx, scan, &mut report, crate::native::TypedNative::Available)?;
+    report_untransferred_streams(
+        ctx,
+        scan,
+        &mut report,
+        crate::native::TypedNative::Available,
+    )?;
     Ok(Some((ir, report, annotations, unknowns)))
 }
 
@@ -1507,7 +1510,6 @@ pub(super) fn topology_body_node_ids(
     let scope = IdScope::stream(stream_index);
     let body_xmts: BTreeSet<_> = graph
         .body_shape_shells()
-        .into_iter()
         .filter_map(|shell| {
             shell
                 .shell_fields()

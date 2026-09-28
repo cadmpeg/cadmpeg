@@ -62,7 +62,10 @@ pub(crate) struct Pcurve {
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
 /// knots, dimensions, control points, and weights are skipped.
-pub(crate) fn surfaces(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(Vec<Surface>, Vec<CarrierRefusal>), CodecError> {
+pub(crate) fn surfaces(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<(Vec<Surface>, Vec<CarrierRefusal>), CodecError> {
     let arrays = arrays(bytes);
     let payloads = surface_payloads(bytes);
     let descriptors = surface_descriptors(bytes);
@@ -193,7 +196,10 @@ fn decode_surfaces(
 
 /// Decode dimension-2 `B_CURVE` families as surface parameter-space curves.
 #[cfg(test)]
-pub(crate) fn pcurves(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(Vec<Pcurve>, Vec<CarrierRefusal>), CodecError> {
+pub(crate) fn pcurves(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<(Vec<Pcurve>, Vec<CarrierRefusal>), CodecError> {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);
@@ -290,7 +296,10 @@ fn decode_pcurves(
 ///
 /// The returned geometry uses millimetre control points. Malformed references,
 /// knots, dimensions, control points, and weights are skipped.
-pub(crate) fn curves(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<(Vec<Curve>, Vec<CarrierRefusal>), CodecError> {
+pub(crate) fn curves(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<(Vec<Curve>, Vec<CarrierRefusal>), CodecError> {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);

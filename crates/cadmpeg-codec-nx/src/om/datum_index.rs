@@ -81,7 +81,10 @@ impl DatumIndexLane<usize> {
 }
 
 /// Decode unique datum-plane index lanes ending at the logical payload boundary.
-pub(crate) fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<DatumIndexLane>, CodecError> {
+pub(crate) fn scan(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<DatumIndexLane>, CodecError> {
     let mut lanes = Vec::new();
     ctx.charge_work(u64_from_index(bytes.len()), "scan NX datum index lanes")?;
     for start in 0..bytes.len().saturating_sub(7) {
@@ -116,17 +119,21 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<DatumInd
             .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
         ctx.charge_retained(member_bytes, operation)?;
         let mut indices = Vec::new();
-        indices.try_reserve_exact(member_count)
+        indices
+            .try_reserve_exact(member_count)
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
         let mut at = start + 2;
         for _ in 0..member_count {
-            let Some(token) = LocatedCompactIndex::read(&bytes[..scan_at], at) else { break; };
+            let Some(token) = LocatedCompactIndex::read(&bytes[..scan_at], at) else {
+                break;
+            };
             at += token.atom.raw().len();
             indices.push(token.atom);
         }
-        if indices.len() != member_count { continue; }
-        let Some(indices) = CountedIndexMembers::new(indices).ok()
-        else {
+        if indices.len() != member_count {
+            continue;
+        }
+        let Some(indices) = CountedIndexMembers::new(indices).ok() else {
             continue;
         };
         let Some(trailer) = View::u32_be_at(bytes, scan_at + 1) else {
@@ -134,8 +141,12 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<DatumInd
         };
         if let Some(lane) = DatumIndexLane::<usize>::new(indices, trailer, start) {
             ctx.charge_collection_items(1, "NX datum index lanes")?;
-            ctx.charge_retained(u64_from_index(std::mem::size_of::<DatumIndexLane>()), "NX datum index lanes")?;
-            lanes.try_reserve(1)
+            ctx.charge_retained(
+                u64_from_index(std::mem::size_of::<DatumIndexLane>()),
+                "NX datum index lanes",
+            )?;
+            lanes
+                .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("NX datum index lanes", 0, 1))?;
             lanes.push(lane);
         }
@@ -147,12 +158,15 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<DatumInd
 mod tests {
     use super::{scan, DatumIndexLane};
 
-    fn datum_index_limit_error(policy: &cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+    fn datum_index_limit_error(
+        policy: &cadmpeg_core::decode::DecodePolicy,
+    ) -> cadmpeg_core::CodecError {
         let bytes = [
             0x80, 0xab, 0x01, 0x04, 0x81, 0x01, 0x01, 0x01, 0x00, 0x12, 0x34, 0x56, 0x78,
         ];
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, policy).unwrap();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, policy).unwrap();
         scan(&ctx, &bytes).expect_err("datum index resource refusal")
     }
 
@@ -160,24 +174,30 @@ mod tests {
     fn om_datum_index_route_refuses_collection_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_collection_items = 0;
-        assert!(matches!(datum_index_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        assert!(
+            matches!(datum_index_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
     }
 
     #[test]
     fn om_datum_index_route_refuses_retained_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_retained_bytes = 0;
-        assert!(matches!(datum_index_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        assert!(
+            matches!(datum_index_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
     }
 
     #[test]
     fn om_datum_index_route_refuses_work_limit() {
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
         policy.limits.max_work_units = 0;
-        assert!(matches!(datum_index_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        assert!(
+            matches!(datum_index_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
     }
 
     #[test]
@@ -194,7 +214,8 @@ mod tests {
                 }
             }
             bytes.extend_from_slice(&[0, 0x12, 0x34, 0x56, 0x78]);
-            let lane = crate::test_support::with_decode_context(|ctx| scan(ctx, &bytes)).unwrap()
+            let lane = crate::test_support::with_decode_context(|ctx| scan(ctx, &bytes))
+                .unwrap()
                 .into_iter()
                 .find(|lane| lane.offset() == 1)
                 .unwrap();
@@ -245,6 +266,10 @@ mod tests {
 
         let mut trailing = bytes.to_vec();
         trailing.push(0);
-        assert!(crate::test_support::with_decode_context(|ctx| scan(ctx, &trailing)).unwrap().is_empty());
+        assert!(
+            crate::test_support::with_decode_context(|ctx| scan(ctx, &trailing))
+                .unwrap()
+                .is_empty()
+        );
     }
 }

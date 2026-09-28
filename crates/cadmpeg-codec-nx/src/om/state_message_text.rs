@@ -39,7 +39,11 @@ impl StateMessageText<&str> {
         ctx.charge_retained(u64_from_index(text.len()), "NX state message text")?;
         let mut owned = String::new();
         owned.try_reserve(text.len()).map_err(|_| {
-            ctx.refuse_codec_limit("NX state message text allocation", 0, u64_from_index(text.len()))
+            ctx.refuse_codec_limit(
+                "NX state message text allocation",
+                0,
+                u64_from_index(text.len()),
+            )
         })?;
         owned.push_str(text);
         Ok(StateMessageText(
@@ -83,7 +87,9 @@ mod tests {
     fn message_text_derives_length_and_preserves_spaces() {
         for text in [" ".to_string(), "x".repeat(253)] {
             let value = crate::test_support::with_decode_context(|ctx| {
-                StateMessageText::new(text.as_str()).unwrap().into_owned(ctx)
+                StateMessageText::new(text.as_str())
+                    .unwrap()
+                    .into_owned(ctx)
             })
             .unwrap();
             assert_eq!(usize::from(value.declared_length()), text.len() + 2);
