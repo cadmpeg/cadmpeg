@@ -74,6 +74,25 @@ fn object_population_selection_refuses_before_indexing_runs() {
 }
 
 #[test]
+fn topology_run_ranges_refuse_each_caller_collection_limit() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
+    for (limit, operation) in [
+        (0, "catia_b5_object_run_ranges"),
+        (1, "catia_b5_topology_run_ranges"),
+    ] {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            topology_root_run_ranges(ctx, &bytes)
+        });
+        assert!(matches!(result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == operation));
+    }
+    let ranges = crate::test_support::with_service_context(|ctx| {
+        topology_root_run_ranges(ctx, &bytes)
+    }).expect("service collection budget");
+    assert_eq!(ranges, vec![0..bytes.len()]);
+}
+
+#[test]
 fn a8_class21_jet_decodes_a_piecewise_quintic_pcurve() {
     let mut payload = a8_class21_test_payload();
 
@@ -395,7 +414,7 @@ fn object_stream_runs_end_at_non_frame_bytes() {
     bytes.extend_from_slice(&second);
 
     assert_eq!(
-        object_stream_run_ranges(&bytes),
+        crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes)).expect("service collection budget"),
         vec![0..first.len(), first.len() + 1..bytes.len()]
     );
 }
@@ -405,14 +424,14 @@ fn object_stream_runs_cross_complete_vertex_allocations() {
     let mut bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5e, 900, &[]);
 
-    assert_eq!(object_stream_run_ranges(&bytes), vec![0..bytes.len()]);
+    assert_eq!(crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes)).expect("service collection budget"), vec![0..bytes.len()]);
 }
 
 #[test]
 fn object_stream_runs_cross_support_bound_external_pole_allocations() {
     let bytes = crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain();
 
-    assert_eq!(object_stream_run_ranges(&bytes), vec![0..bytes.len()]);
+    assert_eq!(crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes)).expect("service collection budget"), vec![0..bytes.len()]);
 }
 
 #[test]
@@ -550,7 +569,7 @@ fn wide_header_loop_is_a_topology_root_for_population_selection() {
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.extend_from_slice(&7u32.to_le_bytes());
 
-    assert_eq!(topology_root_run_ranges(&bytes), vec![0..bytes.len()]);
+    assert_eq!(crate::test_support::with_service_context(|ctx| topology_root_run_ranges(ctx, &bytes)).expect("service collection budget"), vec![0..bytes.len()]);
     let selection = crate::test_support::with_service_context(|ctx|
         select_object_stream_population(ctx, &[bytes], None))
         .expect("service collection budget");

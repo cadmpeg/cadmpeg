@@ -865,9 +865,9 @@ fn topology_runs(
     bytes: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<(Range<usize>, B5Graph)>, CodecError> {
-    let root_runs = topology_root_run_ranges(bytes);
+    let root_runs = topology_root_run_ranges(ctx, bytes)?;
     let candidates = if root_runs.is_empty() {
-        object_stream_run_ranges(bytes)
+        object_stream_run_ranges(ctx, bytes)?
     } else {
         root_runs
     };
@@ -5259,7 +5259,10 @@ pub(in crate::families) fn collect_object_stream_frames(
 }
 
 /// Return maximal contiguous top-level A8/B5 object-frame runs.
-fn object_stream_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
+fn object_stream_run_ranges(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<Range<usize>>, CodecError> {
     let external_grids = crate::families::a5a8::records::a8_external_grid_ranges(bytes);
     let mut ranges = Vec::new();
     let mut position = 0usize;
@@ -5293,20 +5296,25 @@ fn object_stream_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
             };
             position = end;
         }
-        ranges.push(start..position);
+        crate::resource::push(ctx, &mut ranges, start..position,
+            "catia_b5_object_run_ranges")?;
     }
-    ranges
+    Ok(ranges)
 }
 
 /// Return runs that declare at least one face or loop topology root.
-fn topology_root_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
-    object_stream_run_ranges(bytes)
-        .into_iter()
-        .filter(|range| {
-            let run = &bytes[range.clone()];
-            object_stream_frames(run).any(is_topology_root_frame)
-        })
-        .collect()
+fn topology_root_run_ranges(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<Range<usize>>, CodecError> {
+    let mut roots = Vec::new();
+    for range in object_stream_run_ranges(ctx, bytes)? {
+        if object_stream_frames(&bytes[range.clone()]).any(is_topology_root_frame) {
+            crate::resource::push(ctx, &mut roots, range,
+                "catia_b5_topology_run_ranges")?;
+        }
+    }
+    Ok(roots)
 }
 
 fn is_topology_root_frame(frame: ObjectFrame) -> bool {
@@ -5319,8 +5327,8 @@ pub(in crate::families) fn object_stream_populations(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
 ) -> Result<Vec<Vec<u8>>, CodecError> {
-    let runs = object_stream_run_ranges(stream);
-    let topology_runs = topology_root_run_ranges(stream);
+    let runs = object_stream_run_ranges(ctx, stream)?;
+    let topology_runs = topology_root_run_ranges(ctx, stream)?;
     let mut owned_populations = HashMap::new();
     let mut claimed_isolated_ids = HashSet::new();
     for range in &topology_runs {
@@ -5449,7 +5457,7 @@ pub(in crate::families) fn select_object_stream_population(
 ) -> Result<ObjectStreamSelection, CodecError> {
     let mut stream_ranges = Vec::new();
     for stream in streams {
-        crate::resource::push(ctx, &mut stream_ranges, object_stream_run_ranges(stream),
+        crate::resource::push(ctx, &mut stream_ranges, object_stream_run_ranges(ctx, stream)?,
             "catia_b5_selected_stream_ranges")?;
     }
     let run_count = stream_ranges.iter().map(Vec::len).sum();
@@ -5655,7 +5663,7 @@ fn owned_object_stream_population(
             "catia_b5_population_owned_ids")?;
     }
     let mut isolated = HashMap::<u32, Option<(usize, u8, u8, Vec<u8>)>>::new();
-    for range in object_stream_run_ranges(stream) {
+    for range in object_stream_run_ranges(ctx, stream)? {
         if range == topology_run {
             continue;
         }
