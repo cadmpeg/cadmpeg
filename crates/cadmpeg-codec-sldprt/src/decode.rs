@@ -3606,7 +3606,7 @@ fn source_meta(
     add_preview_metadata(ctx, scan, &mut attributes)?;
     add_solidworks_xml_metadata(ctx, scan, &mut attributes)?;
     Ok(SourceMeta::classified(
-        classification.layers().clone(),
+        classification.layers().clone_charged(ctx)?,
         attributes,
     ))
 }
@@ -3934,7 +3934,7 @@ fn build_metadata_ir(
     }
 
     ir.source = Some(SourceMeta::classified(
-        classification.layers().clone(),
+        classification.layers().clone_charged(ctx)?,
         attributes,
     ));
     project_design_history(
