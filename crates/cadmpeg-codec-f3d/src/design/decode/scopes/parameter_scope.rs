@@ -685,6 +685,17 @@ pub(in crate::design::decode) fn payload_prologue(
     at: usize,
     end: usize,
 ) -> Option<usize> {
+    fn graphic_ascii_at(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
+        let length = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
+        if !(1..=64).contains(&length) {
+            return None;
+        }
+        let start = at.checked_add(4)?;
+        let end = start.checked_add(length)?;
+        let raw = bytes.get(start..end)?;
+        raw.iter().all(u8::is_ascii_graphic).then_some((raw, end))
+    }
+
     let mut cursor = at.checked_add(1)?;
     let present = *bytes.get(cursor)?;
     cursor += 1;
@@ -697,11 +708,9 @@ pub(in crate::design::decode) fn payload_prologue(
             }
             cursor += 4;
             for _ in 0..count {
-                let (_key, after_key) =
-                    lp_ascii_filtered(bytes, cursor, 1..=64, u8::is_ascii_graphic)?;
-                let (type_name, after_type) =
-                    lp_ascii_filtered(bytes, after_key, 1..=64, u8::is_ascii_graphic)?;
-                if type_name != "IntrinsicMetaTypeuint64" {
+                let (_key, after_key) = graphic_ascii_at(bytes, cursor)?;
+                let (type_name, after_type) = graphic_ascii_at(bytes, after_key)?;
+                if type_name != b"IntrinsicMetaTypeuint64" {
                     return None;
                 }
                 cursor = after_type.checked_add(8)?;
