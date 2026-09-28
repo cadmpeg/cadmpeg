@@ -110,6 +110,7 @@ impl SupportUvValues {
         self.values.into_iter().map(FiniteReal::get).collect()
     }
 
+    #[cfg(test)]
     pub(super) fn support_uv(&self, sample_count: usize) -> SupportUv {
         let first = self
             .values()
@@ -129,6 +130,48 @@ impl SupportUvValues {
             SupportUvLane::from_checked(first, sample_count),
             second.and_then(|values| SupportUvLane::from_checked(values, sample_count)),
         ]
+    }
+
+    pub(super) fn support_uv_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        sample_count: usize,
+    ) -> Result<SupportUv, CodecError> {
+        let count = self.values.len() / self.packing.width();
+        if count != sample_count {
+            return Ok([None, None]);
+        }
+        let operation = "NX solved support-UV values";
+        let count_u64 = u64_from_index(count);
+        let lane_count = if self.packing == SupportUvPacking::Form4 { 2 } else { 1 };
+        ctx.charge_collection_items(
+            count_u64.checked_mul(lane_count).ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?,
+            operation,
+        )?;
+        let bytes = count_u64
+            .checked_mul(lane_count)
+            .and_then(|slots| slots.checked_mul(u64_from_index(std::mem::size_of::<FiniteVector<2>>())))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        ctx.charge_retained(bytes, operation)?;
+        let mut first = Vec::new();
+        first.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        let mut second = if lane_count == 2 {
+            let mut lane = Vec::new();
+            lane.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+            Some(lane)
+        } else {
+            None
+        };
+        for row in self.values.chunks_exact(self.packing.width()) {
+            first.push(FiniteVector::from([row[0], row[1]]));
+            if let Some(values) = &mut second {
+                values.push(FiniteVector::from([row[2], row[3]]));
+            }
+        }
+        Ok([
+            SupportUvLane::from_checked(first, sample_count),
+            second.and_then(|values| SupportUvLane::from_checked(values, sample_count)),
+        ])
     }
 }
 

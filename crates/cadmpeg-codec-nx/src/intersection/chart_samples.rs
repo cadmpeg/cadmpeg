@@ -48,6 +48,14 @@ impl ChartParameter {
 }
 
 impl ChartSamples {
+    pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let mut values = charged_vec(ctx, self.samples.len(), "NX solved chart sample copy")?;
+        ctx.charge_work(u64_from_index(self.samples.len()), "copy NX solved chart samples")?;
+        values.extend(self.samples.iter().copied());
+        let samples = crate::om::nonempty::NonEmpty::from_vec(values)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX solved chart sample copy", 0, 0))?;
+        Ok(Self { samples })
+    }
     fn from_source_charged(
         ctx: &DecodeContext<'_>,
         points: Vec<FinitePoint3>,

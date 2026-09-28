@@ -40,6 +40,20 @@ pub(crate) type SupportUv = [Option<SupportUvLane>; 2];
 pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
+    fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let count = self.0.len();
+        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+        let operation = "NX solved support-UV lane copy";
+        ctx.charge_collection_items(count_u64, operation)?;
+        let bytes = count_u64
+            .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FiniteVector<2>>()))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        ctx.charge_retained(bytes, operation)?;
+        let mut values = Vec::new();
+        values.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+        values.extend_from_slice(&self.0);
+        Ok(Self(values))
+    }
     pub(crate) fn from_present_values_charged(
         ctx: &DecodeContext<'_>,
         values: Vec<[f64; 2]>,
@@ -368,6 +382,19 @@ enum Rejection {
     EndpointMismatch,
 }
 
+enum EnrichError {
+    Rejected(Rejection),
+    Resource(CodecError),
+}
+
+impl From<Rejection> for EnrichError {
+    fn from(value: Rejection) -> Self { Self::Rejected(value) }
+}
+
+impl From<CodecError> for EnrichError {
+    fn from(value: CodecError) -> Self { Self::Resource(value) }
+}
+
 #[derive(Debug, Clone)]
 struct Chart {
     samples: ChartSamples,
@@ -537,12 +564,12 @@ fn scan_with_auxiliaries(
             }
         });
     for construction in constructions.iter().copied() {
-        match enrich(construction, charts, terms, uv, bridges, graph) {
+        match enrich(ctx, construction, charts, terms, uv, bridges, graph) {
             Ok(curve) => {
                 push_scan_record(ctx, &mut result.constructions, construction, "NX intersection constructions")?;
                 push_scan_record(ctx, &mut result.curves, curve, "NX intersection solved curves")?;
             }
-            Err(rejection)
+            Err(EnrichError::Rejected(rejection))
                 if referenced_curves.contains(&construction.xmt)
                     && construction_supports(construction, uv, bridges, graph).is_some()
                     && construction_has_endpoint_witnesses(construction, terms, graph) =>
@@ -572,10 +599,11 @@ fn scan_with_auxiliaries(
                 }
                 result.rejected.add(rejection);
             }
-            Err(Rejection::MissingSupport) if referenced_curves.contains(&construction.xmt) => {
+            Err(EnrichError::Rejected(Rejection::MissingSupport)) if referenced_curves.contains(&construction.xmt) => {
                 result.rejected.add(Rejection::MissingSupport);
             }
-            Err(_) => {}
+            Err(EnrichError::Rejected(_)) => {}
+            Err(EnrichError::Resource(error)) => return Err(error),
         }
     }
     result.source_constructions = constructions;
@@ -596,13 +624,14 @@ fn push_scan_record<T>(
 }
 
 fn enrich(
+    ctx: &DecodeContext<'_>,
     construction: CompositeCurve,
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
     uv: &BTreeMap<u32, SupportUvValues>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
-) -> Result<IntersectionCurve, Rejection> {
+) -> Result<IntersectionCurve, EnrichError> {
     let chart = construction.references[2]
         .and_then(|target| charts.get(&u32::from(target)))
         .ok_or(Rejection::MissingChart)?;
@@ -622,7 +651,7 @@ fn enrich(
             term.is_some_and(|term| Point3::distance(term, endpoint) > chart.fit_tolerance.get())
         })
     {
-        return Err(Rejection::EndpointMismatch);
+        return Err(Rejection::EndpointMismatch.into());
     }
     if serialized_terms.iter().any(Option::is_none) {
         let topology_endpoints = graph
@@ -647,30 +676,34 @@ fn enrich(
             })
             .count();
         if matching_permutations != 1 {
-            return Err(if serialized_terms[0].is_none() {
+            return Err((if serialized_terms[0].is_none() {
                 Rejection::MissingStartTerm
             } else {
                 Rejection::MissingEndTerm
-            });
+            }).into());
         }
     }
     let (primary_support, secondary_support) =
         construction_supports(construction, uv, bridges, graph).ok_or(Rejection::MissingSupport)?;
-    let support_uv = construction.references[5]
-        .and_then(|target| uv.get(&u32::from(target)))
-        .map_or([None, None], |values| {
-            values.support_uv(chart.samples.len())
-        });
+    let support_uv = match construction.references[5]
+        .and_then(|target| uv.get(&u32::from(target))) {
+        Some(values) => values.support_uv_charged(ctx, chart.samples.len())?,
+        None => [None, None],
+    };
+    let ext_support_uv = [
+        chart.ext_support_uv[0].as_ref().map(|lane| lane.clone_charged(ctx)).transpose()?,
+        chart.ext_support_uv[1].as_ref().map(|lane| lane.clone_charged(ctx)).transpose()?,
+    ];
     Ok(IntersectionCurve {
         references: construction.references,
         xmt: construction.xmt,
         primary_support,
         secondary_support,
         pos: construction.pos,
-        samples: chart.samples.clone(),
+        samples: chart.samples.clone_charged(ctx)?,
         fit_tolerance: chart.fit_tolerance,
         support_uv,
-        ext_support_uv: chart.ext_support_uv.clone(),
+        ext_support_uv,
     })
 }
 
