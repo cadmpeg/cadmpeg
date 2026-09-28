@@ -2811,15 +2811,15 @@ fn append_resolved_consolidated_surface_curves(
                                         .map(|site| site.point.get()),
                                     "catia_freeform_partner_chart_points",
                                 )?;
-                                let Some(chart) =
-                                    resolved.shared_loci.as_deref().and_then(|loci| {
-                                        solve_planar_chart_rechart(
-                                            &partner_points,
-                                            loci,
-                                            standard_partner_geometry,
-                                        )
-                                    })
-                                else {
+                                let Some(chart) = (match resolved.shared_loci.as_deref() {
+                                    Some(loci) => solve_planar_chart_rechart(
+                                        admission.context(),
+                                        &partner_points,
+                                        loci,
+                                        standard_partner_geometry,
+                                    )?,
+                                    None => None,
+                                }) else {
                                     // The free side has no defined chart relation
                                     // to a non-planar or unresolved partner.
                                     return Ok(Some((identity, None)));
@@ -3230,22 +3230,23 @@ const CONSOLIDATED_SITE_TOLERANCE: f64 = 2e-3;
 /// from the index-aligned site correspondence and is accepted only when it
 /// reproduces every site.
 fn solve_planar_chart_rechart(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sites: &[[f64; 2]],
     loci: &[Point3],
     target: &SurfaceGeometry,
-) -> Option<ConsolidatedCarrierChart<'static>> {
+) -> Result<Option<ConsolidatedCarrierChart<'static>>, cadmpeg_core::CodecError> {
     if !matches!(
         target,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ) || sites.len() != loci.len()
     {
-        return None;
+        return Ok(None);
     }
     // Target-chart image of each locus. A locus off the plane has no image,
     // because the plane inverse discards the normal component.
-    let images = loci
-        .iter()
-        .map(|locus| {
+    let images = crate::resource::collect_options(
+        ctx,
+        loci.iter().map(|locus| {
             let uv = cadmpeg_ir::math::Point2::from(cadmpeg_ir::eval::analytic_surface_parameters(
                 target, *locus,
             )?);
@@ -3255,11 +3256,13 @@ fn solve_planar_chart_rechart(
                 .hypot(back.z - locus.z)
                 <= CONSOLIDATED_SITE_TOLERANCE)
                 .then_some([uv.u, uv.v])
-        })
-        .collect::<Option<Vec<_>>>()?;
+        }),
+        "catia_freeform_chart_images",
+    )?;
+    let Some(images) = images else { return Ok(None) };
     let count = images.len();
     if count < 2 {
-        return None;
+        return Ok(None);
     }
     let scale = 1.0 / count as f64;
     let mean = |values: &[[f64; 2]]| {
@@ -3272,19 +3275,20 @@ fn solve_planar_chart_rechart(
     // Two-dimensional orthogonal Procrustes. `dot` and `cross` accumulate the
     // rotation's cosine and sine lanes; the reflected solution swaps the sign
     // of the image's second chart coordinate.
-    let centered = |values: &[[f64; 2]], center: [f64; 2]| -> Option<Vec<[f64; 2]>> {
+    let centered = |values: &[[f64; 2]], center: [f64; 2]| -> Result<Option<Vec<[f64; 2]>>, cadmpeg_core::CodecError> {
         if values
             .iter()
             .flatten()
             .chain(&center)
             .any(|value| !value.is_finite())
         {
-            return None;
+            return Ok(None);
         }
-        let mut offsets = values
-            .iter()
-            .map(|value| [value[0] - center[0], value[1] - center[1]])
-            .collect::<Vec<_>>();
+        let mut offsets = crate::resource::collect_vec(
+            ctx,
+            values.iter().map(|value| [value[0] - center[0], value[1] - center[1]]),
+            "catia_freeform_chart_offsets",
+        )?;
         let mut scale = offsets
             .iter()
             .flatten()
@@ -3295,32 +3299,32 @@ fn solve_planar_chart_rechart(
                 .flatten()
                 .chain(&center)
                 .fold(0.0_f64, |scale, value| scale.max(value.abs()));
-            offsets = values
-                .iter()
-                .map(|value| {
+            offsets = crate::resource::collect_vec(
+                ctx,
+                values.iter().map(|value| {
                     [
                         value[0] / frame - center[0] / frame,
                         value[1] / frame - center[1] / frame,
                     ]
-                })
-                .collect();
+                }),
+                "catia_freeform_chart_rescaled_offsets",
+            )?;
             scale = offsets
                 .iter()
                 .flatten()
                 .fold(0.0_f64, |scale, value| scale.max(value.abs()));
         }
         if scale == 0.0 {
-            return None;
+            return Ok(None);
         }
-        Some(
-            offsets
-                .into_iter()
-                .map(|value| [value[0] / scale, value[1] / scale])
-                .collect(),
-        )
+        Ok(Some(crate::resource::collect_vec(
+            ctx,
+            offsets.into_iter().map(|value| [value[0] / scale, value[1] / scale]),
+            "catia_freeform_chart_normalized_offsets",
+        )?))
     };
-    let stored_offsets = centered(sites, stored_center)?;
-    let image_offsets = centered(&images, image_center)?;
+    let Some(stored_offsets) = centered(sites, stored_center)? else { return Ok(None) };
+    let Some(image_offsets) = centered(&images, image_center)? else { return Ok(None) };
     let (mut dot, mut cross) = (0.0, 0.0);
     let (mut reflected_dot, mut reflected_cross) = (0.0, 0.0);
     for ([su, sv], [iu, iv]) in stored_offsets.into_iter().zip(image_offsets) {
@@ -3330,7 +3334,7 @@ fn solve_planar_chart_rechart(
         reflected_cross += su * iv + sv * iu;
     }
     let candidates = [(dot, cross, 1.0), (reflected_dot, reflected_cross, -1.0)];
-    let mut admissible = Vec::new();
+    let mut admissible = None;
     for (dot, cross, determinant) in candidates {
         let norm = dot.hypot(cross);
         if !norm.is_finite() || norm <= f64::EPSILON {
@@ -3357,14 +3361,13 @@ fn solve_planar_chart_rechart(
             continue;
         }
         if residual <= CONSOLIDATED_SITE_TOLERANCE {
-            admissible.push(chart);
+            if admissible.is_some() {
+                return Ok(None);
+            }
+            admissible = Some(chart);
         }
     }
-    if admissible.len() == 1 {
-        admissible.pop()
-    } else {
-        None
-    }
+    Ok(admissible)
 }
 
 /// Does `pcurve`, mapped through `surface`, reach `endpoints` over `range`?
@@ -3739,7 +3742,7 @@ mod tests {
         append_consolidated_line_profiles, append_freeform_surface_pools,
         append_resolved_consolidated_surface_curves, attach_standalone_wires,
         consolidated_line_profiles, freeform_surface_carriers, pcurve_lift_reaches_endpoints,
-        rechart_equivalent_surface_pcurve, same_surface_locus, solve_planar_chart_rechart,
+        rechart_equivalent_surface_pcurve, same_surface_locus,
         standard_carrier_surface_ids, typed_face_counts, unique_endpoint_pair_match,
         unique_paired_surface_lift_match, ConsolidatedCarrierChart, FreeformSurfacePool,
         RechartFailure,
@@ -3758,6 +3761,17 @@ mod tests {
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::HashMap;
+
+    fn solve_planar_chart_rechart(
+        sites: &[[f64; 2]],
+        loci: &[Point3],
+        target: &SurfaceGeometry,
+    ) -> Option<ConsolidatedCarrierChart<'static>> {
+        crate::test_support::with_service_context(|ctx| {
+            super::solve_planar_chart_rechart(ctx, sites, loci, target)
+        })
+        .expect("service chart resource budget")
+    }
 
     #[test]
     fn consolidated_jet_pcurve_workspace_refuses_materialized_limit() {
@@ -5092,6 +5106,21 @@ mod tests {
     }
 
     #[test]
+    fn planar_rechart_refuses_before_absent_chart_candidate() {
+        let (target, stored, loci) = foreign_plane_chart_sites(0.4, [1.0, 2.0]);
+        let scaled = stored
+            .iter()
+            .map(|[u, v]| [*u * 1.5, *v])
+            .collect::<Vec<_>>();
+        assert!(solve_planar_chart_rechart(&scaled, &loci, &target).is_none());
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            super::solve_planar_chart_rechart(ctx, &scaled, &loci, &target)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_freeform_chart_images"));
+    }
+
+    #[test]
     fn planar_rechart_recovers_a_foreign_consolidated_chart() {
         let angle = 0.7;
         let shift = [12.5, -4.25];
@@ -5501,7 +5530,7 @@ mod tests {
                 [origin, origin - a],
             ];
             let loci = sites.map(|p| Point3::new(p[0], p[1], 0.));
-            let chart = super::solve_planar_chart_rechart(&sites, &loci, &target)
+            let chart = solve_planar_chart_rechart(&sites, &loci, &target)
                 .expect("planar chart for the four sites");
             for point in sites {
                 assert_eq!(chart.point(point), point);
