@@ -1176,11 +1176,22 @@ pub(crate) struct ExternalRelationSymbols {
 }
 
 impl ExternalRelationSymbols {
-    pub(crate) fn observe(&mut self, name: &str, value: Option<CurveExpressionValue>) {
+    pub(crate) fn observe(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut name: String,
+        value: Option<CurveExpressionValue>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
         use std::collections::btree_map::Entry;
 
-        match self.values.entry(expression_identifier_key(name)) {
+        name.make_ascii_lowercase();
+        match self.values.entry(name) {
             Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo external relation symbol nodes")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(entry.key().len()),
+                    "creo external relation symbol names",
+                )?;
                 entry.insert(value);
             }
             Entry::Occupied(mut entry) if entry.get() != &value => {
@@ -1188,6 +1199,7 @@ impl ExternalRelationSymbols {
             }
             Entry::Occupied(_) => {}
         }
+        Ok(())
     }
 }
 

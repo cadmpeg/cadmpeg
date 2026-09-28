@@ -44,6 +44,61 @@ fn numeric_value(value: Option<&CurveExpressionValue>) -> f64 {
     *value
 }
 
+fn observe_relation_symbol(
+    symbols: &mut ExternalRelationSymbols,
+    name: &str,
+    value: Option<CurveExpressionValue>,
+) {
+    crate::decode::with_test_decode_ctx(|ctx| symbols.observe(ctx, name.to_owned(), value))
+        .expect("service profile admits relation symbol");
+}
+
+fn relation_symbol_error(
+    max_collection_items: u64,
+    max_retained_bytes: u64,
+    max_materialized_bytes: u64,
+) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    policy.limits.max_retained_bytes = max_retained_bytes;
+    policy.limits.max_materialized_bytes = max_materialized_bytes;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut symbols = ExternalRelationSymbols::default();
+    let result = (|| -> Result<(), CodecError> {
+        let (name, _reservation) = ctx.format_scoped(
+            format_args!("d{}", 42),
+            "creo relation dimension symbol formatting",
+        )?;
+        symbols.observe(&ctx, name, Some(CurveExpressionValue::Number(2.0)))
+    })();
+    result.expect_err("one relation symbol exceeds limit")
+}
+
+#[test]
+fn relation_dimension_symbol_refuses_temporary_name_bytes() {
+    let error = relation_symbol_error(1, 3, 0);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::MaterializedBytes
+            && resource.operation == "creo relation dimension symbol formatting"));
+}
+
+#[test]
+fn relation_dimension_symbol_refuses_retained_name_bytes() {
+    let error = relation_symbol_error(1, 0, 3);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo external relation symbol names"));
+}
+
+#[test]
+fn relation_dimension_symbol_refuses_map_node() {
+    let error = relation_symbol_error(0, 3, 3);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo external relation symbol nodes"));
+}
+
 #[test]
 fn declares_units_only_on_new_relation_parameters() {
     let lines = [
@@ -381,7 +436,7 @@ fn evaluates_scoped_symbol_targets_without_declaring_local_parameters() {
     })
     .collect::<Vec<_>>();
     let mut external_symbols = ExternalRelationSymbols::default();
-    external_symbols.observe("driver", Some(CurveExpressionValue::Number(2.0)));
+    observe_relation_symbol(&mut external_symbols, "driver", Some(CurveExpressionValue::Number(2.0)));
 
     let assignments = evaluate_expression_program(&lines, None, &external_symbols);
 
@@ -1083,7 +1138,7 @@ fn proves_exists_for_local_and_external_relation_symbols() {
         })
         .collect::<Vec<_>>();
     let mut external_symbols = ExternalRelationSymbols::default();
-    external_symbols.observe("d42", None);
+    observe_relation_symbol(&mut external_symbols, "d42", None);
     let assignments = evaluate_expression_program(&lines, None, &external_symbols);
 
     assert_eq!(assignments.len(), 5);
@@ -1125,7 +1180,7 @@ fn reevaluates_expression_records_after_external_symbols_are_decoded() {
         CurveExpressionActivation::Conditional
     );
     let mut external_symbols = ExternalRelationSymbols::default();
-    external_symbols.observe("d42", None);
+    observe_relation_symbol(&mut external_symbols, "d42", None);
     crate::decode::with_test_decode_ctx(|ctx| {
         reevaluate_expression_records(ctx, &mut records, None, &external_symbols)
     })
@@ -1144,14 +1199,14 @@ fn external_symbol_values_require_agreeing_observations() {
         offset: 0,
     }];
     let mut external_symbols = ExternalRelationSymbols::default();
-    external_symbols.observe("D42", Some(CurveExpressionValue::Number(2.0)));
-    external_symbols.observe("d42", Some(CurveExpressionValue::Number(2.0)));
+    observe_relation_symbol(&mut external_symbols, "D42", Some(CurveExpressionValue::Number(2.0)));
+    observe_relation_symbol(&mut external_symbols, "d42", Some(CurveExpressionValue::Number(2.0)));
     assert_eq!(
         evaluate_expression_program(&lines, None, &external_symbols)[0].value,
         Some(CurveExpressionValue::Number(3.0))
     );
 
-    external_symbols.observe("d42", Some(CurveExpressionValue::Number(4.0)));
+    observe_relation_symbol(&mut external_symbols, "d42", Some(CurveExpressionValue::Number(4.0)));
     assert_eq!(
         evaluate_expression_program(&lines, None, &external_symbols)[0].value,
         None
@@ -1266,7 +1321,7 @@ fn curve_equations_retain_but_do_not_evaluate_prohibited_constructs() {
         .iter()
         .all(|assignment| assignment.value.is_none()));
     let mut symbols = ExternalRelationSymbols::default();
-    symbols.observe("external", Some(CurveExpressionValue::Number(5.0)));
+    observe_relation_symbol(&mut symbols, "external", Some(CurveExpressionValue::Number(5.0)));
     crate::decode::with_test_decode_ctx(|ctx| {
         reevaluate_expression_records(ctx, &mut records, None, &symbols)
     })
