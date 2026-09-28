@@ -3080,9 +3080,10 @@ fn build_geometry_ir(
         &persistent_face_bindings,
     )?;
     let remaining_assignments = crate::tessellation::assign_unique_surface_owners(
+        ctx,
         &mut ir.model,
     )?;
-    ctx.reserve_collection_vec(
+    ctx.reserve_precharged_vec(
         &mut assigned_tessellations,
         remaining_assignments.len(),
         "merge SLDPRT assigned tessellations",
