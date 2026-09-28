@@ -6959,19 +6959,45 @@ fn plane_local_systems_for_rows(
 }
 
 /// Decode plane positional envelope bodies into their two defined layouts.
-pub(crate) fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
-    plane_envelopes_for_rows(payload, &rows(payload))
+pub(crate) fn plane_envelopes(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
+    plane_envelopes_for_rows(ctx, payload, &rows(payload))
 }
 
 /// Decode plane envelopes from a DEPDB cross-section namespace.
 #[must_use]
-pub(crate) fn cross_section_plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
-    plane_envelopes_for_rows(payload, &cross_section_rows(payload))
+pub(crate) fn cross_section_plane_envelopes(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
+    plane_envelopes_for_rows(ctx, payload, &cross_section_rows(payload))
 }
 
-fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<PlaneEnvelopeRecord> {
+fn copied_plane_envelope_tokens(
+    ctx: &DecodeContext<'_>,
+    slots: &[(Option<f64>, Vec<u8>)],
+) -> Result<Vec<Vec<u8>>, CodecError> {
+    let mut tokens = Vec::new();
+    ctx.try_reserve_items(
+        &mut tokens,
+        slots.len(),
+        "creo plane envelope scalar token items",
+    )?;
+    for (_, raw) in slots {
+        tokens.push(ctx.copy_retained(raw, "creo plane envelope scalar token bytes")?);
+    }
+    Ok(tokens)
+}
+
+fn plane_envelopes_for_rows(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    all_rows: &[SurfaceRow],
+) -> Result<Vec<PlaneEnvelopeRecord>, CodecError> {
     const NAMED_OUTLINE: &[u8] = b"outline\0\xf9\x02\x03";
-    let cache = scalar::ScalarCache::from_section(payload);
+    let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let headers = all_rows
         .iter()
         .enumerate()
@@ -6983,8 +7009,7 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
                     .map_or(payload.len(), |next| next.offset);
                 (row, body_start, row_end)
             })
-        })
-        .collect::<Vec<_>>();
+        });
     let mut envelopes = Vec::new();
     for (row, body_start, row_end) in headers {
         let Some(body) = payload.get(body_start..row_end) else {
@@ -6995,22 +7020,19 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
         else {
             continue;
         };
-        let body = payload[body_start..body_end].to_vec();
-        let scalar_tokens;
-        let (envelope, corner_coordinate_equal) = if body.first() == Some(&0x0e) {
+        let body = &payload[body_start..body_end];
+        let (envelope, corner_coordinate_equal, slots) = if body.first() == Some(&0x0e) {
             let Some(slots) = complete_plane_envelope_slots(&body[1..], 9, &cache).or_else(|| {
                 complete_plane_envelope_slots_with_final_positive_dict(&body[1..], 8, &cache)
             }) else {
                 continue;
             };
-            let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
-            scalar_tokens = slots.iter().map(|slot| slot.1.clone()).collect();
             (
                 PlaneEnvelope::Compact {
-                    prefix: [values[0], values[1], values[2]],
+                    prefix: [slots[0].0, slots[1].0, slots[2].0],
                     corners_3d: [
-                        [values[3], values[4], values[5]],
-                        [values[6], values[7], values[8]],
+                        [slots[3].0, slots[4].0, slots[5].0],
+                        [slots[6].0, slots[7].0, slots[8].0],
                     ],
                 },
                 [
@@ -7018,16 +7040,15 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
                     slot_equality(&slots[4], &slots[7]),
                     slot_equality(&slots[5], &slots[8]),
                 ],
+                slots,
             )
         } else if let Some(slots) = complete_plane_compact_scalar_suffix(&body, &cache) {
-            let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
-            scalar_tokens = slots.iter().map(|slot| slot.1.clone()).collect();
             (
                 PlaneEnvelope::Compact {
-                    prefix: [values[0], values[1], values[2]],
+                    prefix: [slots[0].0, slots[1].0, slots[2].0],
                     corners_3d: [
-                        [values[3], values[4], values[5]],
-                        [values[6], values[7], values[8]],
+                        [slots[3].0, slots[4].0, slots[5].0],
+                        [slots[6].0, slots[7].0, slots[8].0],
                     ],
                 },
                 [
@@ -7035,6 +7056,7 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
                     slot_equality(&slots[4], &slots[7]),
                     slot_equality(&slots[5], &slots[8]),
                 ],
+                slots,
             )
         } else {
             let Some(slots) = complete_plane_envelope_slots(&body, 10, &cache).or_else(|| {
@@ -7042,14 +7064,12 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
             }) else {
                 continue;
             };
-            let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
-            scalar_tokens = slots.iter().map(|slot| slot.1.clone()).collect();
             (
                 PlaneEnvelope::Standard {
-                    bounds_2d: [[values[0], values[1]], [values[2], values[3]]],
+                    bounds_2d: [[slots[0].0, slots[1].0], [slots[2].0, slots[3].0]],
                     corners_3d: [
-                        [values[4], values[5], values[6]],
-                        [values[7], values[8], values[9]],
+                        [slots[4].0, slots[5].0, slots[6].0],
+                        [slots[7].0, slots[8].0, slots[9].0],
                     ],
                 },
                 [
@@ -7057,8 +7077,12 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
                     slot_equality(&slots[5], &slots[8]),
                     slot_equality(&slots[6], &slots[9]),
                 ],
+                slots,
             )
         };
+        let scalar_tokens = copied_plane_envelope_tokens(ctx, &slots)?;
+        let body = ctx.copy_retained(body, "creo plane envelope body")?;
+        ctx.try_reserve_items(&mut envelopes, 1, "creo plane envelopes")?;
         envelopes.push(PlaneEnvelopeRecord {
             surface_id: row.id,
             body,
@@ -7113,15 +7137,20 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
         if consumed != field_end - scalar_start {
             continue;
         }
-        let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
+        let scalar_tokens = copied_plane_envelope_tokens(ctx, &slots)?;
+        let body = ctx.copy_retained(
+            &payload[scalar_start..scalar_start + consumed],
+            "creo plane envelope body",
+        )?;
+        ctx.try_reserve_items(&mut envelopes, 1, "creo plane envelopes")?;
         envelopes.push(PlaneEnvelopeRecord {
             surface_id: row.id,
-            body: payload[scalar_start..scalar_start + consumed].to_vec(),
+            body,
             envelope: PlaneEnvelope::Standard {
                 bounds_2d: [[None; 2]; 2],
                 corners_3d: [
-                    [values[0], values[1], values[2]],
-                    [values[3], values[4], values[5]],
+                    [slots[0].0, slots[1].0, slots[2].0],
+                    [slots[3].0, slots[4].0, slots[5].0],
                 ],
             },
             corner_coordinate_equal: [
@@ -7129,13 +7158,13 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
                 slot_equality(&slots[1], &slots[4]),
                 slot_equality(&slots[2], &slots[5]),
             ],
-            scalar_tokens: slots.iter().map(|slot| slot.1.clone()).collect(),
+            scalar_tokens,
             row_offset: row.offset,
             offset: scalar_start,
         });
     }
     envelopes.sort_by_key(|envelope| envelope.offset);
-    envelopes
+    Ok(envelopes)
 }
 
 fn complete_plane_compact_scalar_suffix(
