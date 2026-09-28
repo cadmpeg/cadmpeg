@@ -4416,34 +4416,32 @@ fn mark_active_configuration(ir: &mut CadIr) {
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("sw_configuration_name"))
-        .cloned();
+        .map(String::as_str);
     let active_index = ir
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("active_parasolid_block"))
         .and_then(|section| crate::container::configuration_index(section));
-    let by_name = active_name.as_ref().and_then(|name| {
-        let matches = ir
+    let by_name = active_name.and_then(|name| {
+        let mut matches = ir
             .model
             .configurations
             .iter()
             .enumerate()
-            .filter(|(_, configuration)| configuration.name.as_deref() == Some(name.as_str()))
-            .map(|(position, _)| position)
-            .collect::<Vec<_>>();
-        (matches.len() == 1).then(|| matches[0])
+            .filter(|(_, configuration)| configuration.name.as_deref() == Some(name))
+            .map(|(position, _)| position);
+        matches.next().filter(|_| matches.next().is_none())
     });
     let by_index = active_index.and_then(|index| {
         let index = u32::try_from(index).ok()?;
-        let matches = ir
+        let mut matches = ir
             .model
             .configurations
             .iter()
             .enumerate()
             .filter(|(_, configuration)| configuration.source_index == Some(index))
-            .map(|(position, _)| position)
-            .collect::<Vec<_>>();
-        (matches.len() == 1).then(|| matches[0])
+            .map(|(position, _)| position);
+        matches.next().filter(|_| matches.next().is_none())
     });
     let selected = if active_name.is_some() {
         by_name
