@@ -295,11 +295,9 @@ fn indexed_sketch_text_content_refuses_retained_limit() {
     assert_sketch_text_utf16_refusal(&bytes, 3, maximum);
 }
 
-#[test]
-fn sketch_records_use_the_primary_index_live_copy() {
+fn indexed_sketch_fixture() -> (Vec<u8>, crate::metastream::MetaStream, usize, usize, usize, usize) {
     use crate::metastream::{MetaStream, RecordIndexEntry};
-    use crate::records::{entity_header::SegmentType, sketch_geometry::SketchCurveGeometry};
-    use cadmpeg_ir::math::{Point2, Point3};
+    use crate::records::entity_header::SegmentType;
 
     const PARENT: u64 = 900;
     const POINT: u64 = 50;
@@ -433,7 +431,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     local_reference(&mut companion, POINT);
     bytes.extend_from_slice(&companion);
 
-    let mut meta = MetaStream {
+    let meta = MetaStream {
         types: vec![
             design_type(
                 crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
@@ -500,6 +498,15 @@ fn sketch_records_use_the_primary_index_live_copy() {
         }],
     };
 
+    (bytes, meta, live_point_at, live_curve_at, live_text_at, nested_at)
+}
+
+#[test]
+fn sketch_records_use_the_primary_index_live_copy() {
+    use crate::records::sketch_geometry::SketchCurveGeometry;
+    use cadmpeg_ir::math::{Point2, Point3};
+
+    let (bytes, mut meta, live_point_at, live_curve_at, live_text_at, nested_at) = indexed_sketch_fixture();
     let points = decode_sketch_points_from_stream(
         &bytes,
         &meta,
@@ -583,6 +590,83 @@ fn sketch_records_use_the_primary_index_live_copy() {
         ),
         Err(cadmpeg_core::CodecError::Malformed(_))
     ));
+}
+
+#[test]
+fn sketch_point_indices_and_output_refuse_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
+    for (limit, operation) in [
+        (10, "f3d sketch point frame index"),
+        (15, "f3d sketch point type index"),
+        (20, "f3d sketch point output"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = crate::design::decode::sketch::decode_sketch_points_from_stream(
+            &ctx,
+            &bytes,
+            &meta,
+            "Design/BulkStream.dat",
+        )
+        .expect_err("collection limit must refuse point decode");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == operation));
+    }
+}
+
+#[test]
+fn sketch_curve_output_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 10;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+        &ctx,
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+    )
+    .expect_err("collection limit must refuse curve decode");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d sketch curve output"));
+}
+
+#[test]
+fn sketch_point_and_curve_ids_refuse_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (bytes, meta, _, _, _, _) = indexed_sketch_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = crate::ids::native_scope("Design/BulkStream.dat").len() as u64;
+    for (decode_point, operation) in [
+        (true, "f3d sketch point ID"),
+        (false, "f3d sketch curve ID"),
+    ] {
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = if decode_point {
+            crate::design::decode::sketch::decode_sketch_points_from_stream(
+                &ctx, &bytes, &meta, "Design/BulkStream.dat",
+            ).err()
+        } else {
+            crate::design::decode::sketch::decode_sketch_curve_identities_from_stream(
+                &ctx, &bytes, &meta, "Design/BulkStream.dat",
+            ).err()
+        }
+        .expect("retained limit must refuse sketch record ID");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == operation));
+    }
 }
 
 #[test]

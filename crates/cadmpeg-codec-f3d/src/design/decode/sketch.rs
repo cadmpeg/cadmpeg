@@ -1650,23 +1650,34 @@ fn decode_sketch_points_from_stream(
     stream: &str,
 ) -> Result<Vec<SketchPoint>, CodecError> {
     let frames = design_primary_frames(ctx, bytes, meta)?;
-    let frames_by_entity = frames
-        .iter()
-        .filter_map(|frame| Some((u32::try_from(frame.entity_id).ok()?, frame)))
-        .collect::<HashMap<_, _>>();
-    let types_by_entity = frames
-        .iter()
-        .filter_map(|frame| {
-            Some((
-                u32::try_from(frame.entity_id).ok()?,
-                (
-                    frame.design_type.type_guid.as_str(),
-                    frame.design_type.version,
-                    frame.design_type.module.as_str(),
-                ),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut frames_by_entity = HashMap::new();
+    let mut types_by_entity = HashMap::new();
+    for frame in &frames {
+        let Ok(entity_id) = u32::try_from(frame.entity_id) else {
+            continue;
+        };
+        if !frames_by_entity.contains_key(&entity_id) {
+            ctx.charge_collection_items(1, "f3d sketch point frame index")?;
+            frames_by_entity.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d sketch point frame index allocation", 0, 1)
+            })?;
+        }
+        frames_by_entity.insert(entity_id, frame);
+        if !types_by_entity.contains_key(&entity_id) {
+            ctx.charge_collection_items(1, "f3d sketch point type index")?;
+            types_by_entity.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d sketch point type index allocation", 0, 1)
+            })?;
+        }
+        types_by_entity.insert(
+            entity_id,
+            (
+                frame.design_type.type_guid.as_str(),
+                frame.design_type.version,
+                frame.design_type.module.as_str(),
+            ),
+        );
+    }
     let mut out = Vec::new();
     for frame in &frames {
         if !frame
@@ -1726,9 +1737,20 @@ fn decode_sketch_points_from_stream(
                     "F3D sketch point {record_index} has no valid inverse companion"
                 ))
             })?;
+        ctx.charge_collection_items(1, "f3d sketch point output")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d sketch point output allocation", 0, 1)
+        })?;
         out.push(
             SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
-                id: ids::native_sketch_point_id(stream, frame.start),
+                id: design_record_id_charged(
+                    ctx,
+                    stream,
+                    ":sketch-point#",
+                    frame.start as u64,
+                    "f3d sketch point ID",
+                    "f3d sketch point ID allocation",
+                )?,
                 record_index,
                 owner_reference: decoded.owner_reference,
                 class_tag: frame.class_tag.clone(),
@@ -3079,8 +3101,19 @@ fn decode_sketch_curve_identities_from_stream(
             .map_or((None, geometry_shift + 133), |parsed| {
                 (Some(parsed.geometry), parsed.geometry_offset)
             });
+        ctx.charge_collection_items(1, "f3d sketch curve output")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d sketch curve output allocation", 0, 1)
+        })?;
         out.push(SketchCurveIdentity {
-            id: ids::native_sketch_curve_identity_id(stream, frame.start),
+            id: design_record_id_charged(
+                ctx,
+                stream,
+                ":sketch-curve-identity#",
+                frame.start as u64,
+                "f3d sketch curve ID",
+                "f3d sketch curve ID allocation",
+            )?,
             record_index,
             owner_reference: trailing_sketch_owner_reference(payload),
             class_tag: frame.class_tag,
