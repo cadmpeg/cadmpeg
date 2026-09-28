@@ -556,13 +556,16 @@ fn collect_definition_chain_parameters(
         let Some(candidate) = definition_chain_parameter_candidate(ctx, entity, chain)? else {
             continue;
         };
-        let id = candidate.parameter.id.clone();
+        let id = resource::copy_id(ctx, candidate.parameter.id.as_str(), ParameterId::mint,
+            "catia_formula_chain_index_id")?;
         match candidates.get(&id) {
             None => {
-                candidates.insert(id, candidate);
+                resource::insert_btree_map(ctx, candidates, id, candidate,
+                    "catia_formula_chain_candidates")?;
             }
             Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
-                conflicting_inputs.insert(id);
+                resource::insert_btree_set(ctx, conflicting_inputs, id,
+                    "catia_formula_chain_conflicts")?;
             }
             Some(_) => {}
         }
@@ -694,6 +697,47 @@ enum LegacyModelingScope<'a> {
     Container(&'a crate::native::CatiaOuterContainerBinding),
 }
 
+fn legacy_parameter_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    key: &str,
+) -> Result<ParameterId, cadmpeg_core::CodecError> {
+    let text = resource::format_retained(ctx,
+        format_args!("catia:legacy:parameter#{key}"),
+        "catia_legacy_parameter_id")?;
+    ParameterId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
+}
+
+fn insert_legacy_parameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
+    by_entity: &mut HashMap<u32, Vec<ParameterId>>,
+    by_name: &mut HashMap<String, Vec<ParameterId>>,
+    entity_id: u32,
+    name: &str,
+    id: ParameterId,
+    candidate: FormulaParameterCandidate,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let entity_member = resource::copy_id(ctx, id.as_str(), ParameterId::mint,
+        "catia_legacy_entity_parameter_id")?;
+    let name_member = resource::copy_id(ctx, id.as_str(), ParameterId::mint,
+        "catia_legacy_name_parameter_id")?;
+    resource::insert_btree_map(ctx, candidates, id, candidate,
+        "catia_legacy_parameter_candidates")?;
+    resource::admit_map_entry(ctx, by_entity, &entity_id,
+        "catia_legacy_parameter_entity_index")?;
+    let entity_members = by_entity.entry(entity_id).or_default();
+    resource::push(ctx, entity_members, entity_member,
+        "catia_legacy_parameter_entity_members")?;
+    let name_key = resource::copy_retained_str(ctx, name,
+        "catia_legacy_parameter_name_key")?;
+    resource::admit_map_entry(ctx, by_name, &name_key,
+        "catia_legacy_parameter_name_index")?;
+    let name_members = by_name.entry(name_key).or_default();
+    resource::push(ctx, name_members, name_member,
+        "catia_legacy_parameter_name_members")?;
+    Ok(())
+}
+
 fn collect_legacy_parameters(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     native: &CatiaNative,
@@ -734,12 +778,7 @@ fn collect_legacy_parameters(
             let Some(key) = scalar.id.strip_prefix("catia:legacy:scalar#") else {
                 continue;
             };
-            let key = cadmpeg_ir::ids::IdentityKey::try_new(key)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            let id = ParameterId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "legacy", "parameter"),
-                key,
-            );
+            let id = legacy_parameter_id(ctx, key)?;
             if candidates.contains_key(&id) {
                 continue;
             }
@@ -751,32 +790,33 @@ fn collect_legacy_parameters(
                     (expression, Some(value))
                 }
             };
-            candidates.insert(
-                id.clone(),
+            let parameter_id = resource::copy_id(ctx, id.as_str(), ParameterId::mint,
+                "catia_legacy_scalar_parameter_id")?;
+            let parameter_name = resource::copy_retained_str(ctx, name,
+                "catia_legacy_scalar_name")?;
+            let native_ref = resource::copy_retained_str(ctx, &run.id,
+                "catia_legacy_scalar_native_ref")?;
+            let candidate =
                 FormulaParameterCandidate {
                     parameter: DesignParameter {
-                        id: id.clone(),
+                        id: parameter_id,
                         owner: None,
                         ordinal: 0,
-                        name: name.clone(),
+                        name: parameter_name,
                         expression,
                         display: None,
                         value,
                         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                         properties: parameter_properties(ctx, parameter_type.as_str(), None)?,
                         pmi: None,
-                        native_ref: Some(run.id.clone()),
+                        native_ref: Some(native_ref),
                     },
                     parameter_type,
                     role: FormulaParameterRole::Input,
                     source_order: scalar.byte_offset,
-                },
-            );
-            parameters_by_entity
-                .entry(scalar.entity_id)
-                .or_default()
-                .push(id.clone());
-            parameters_by_name.entry(name.clone()).or_default().push(id);
+                };
+            insert_legacy_parameter(ctx, candidates, &mut parameters_by_entity,
+                &mut parameters_by_name, scalar.entity_id, name, id, candidate)?;
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
@@ -800,43 +840,40 @@ fn collect_legacy_parameters(
             let Some(key) = string.id.strip_prefix("catia:legacy:string#") else {
                 continue;
             };
-            let key = cadmpeg_ir::ids::IdentityKey::try_new(key)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            let id = ParameterId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "legacy", "parameter"),
-                key,
-            );
+            let id = legacy_parameter_id(ctx, key)?;
             if candidates.contains_key(&id) {
                 continue;
             }
             ctx.charge_entities(1, "admit CATIA formula candidate")?;
-            let value = ParameterValue::String(string.value.clone());
-            candidates.insert(
-                id.clone(),
+            let value = ParameterValue::String(resource::copy_retained_str(ctx,
+                &string.value, "catia_legacy_string_value")?);
+            let parameter_id = resource::copy_id(ctx, id.as_str(), ParameterId::mint,
+                "catia_legacy_string_parameter_id")?;
+            let parameter_name = resource::copy_retained_str(ctx, name,
+                "catia_legacy_string_name")?;
+            let native_ref = resource::copy_retained_str(ctx, &run.id,
+                "catia_legacy_string_native_ref")?;
+            let candidate =
                 FormulaParameterCandidate {
                     parameter: DesignParameter {
-                        id: id.clone(),
+                        id: parameter_id,
                         owner: None,
                         ordinal: 0,
-                        name: name.clone(),
+                        name: parameter_name,
                         expression: parameter_expression(ctx, &value)?,
                         display: None,
                         value: Some(value),
                         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                         properties: parameter_properties(ctx, "String", None)?,
                         pmi: None,
-                        native_ref: Some(run.id.clone()),
+                        native_ref: Some(native_ref),
                     },
                     parameter_type: FormulaParameterType::String,
                     role: FormulaParameterRole::Input,
                     source_order: string.byte_offset,
-                },
-            );
-            parameters_by_entity
-                .entry(string.entity_id)
-                .or_default()
-                .push(id.clone());
-            parameters_by_name.entry(name.clone()).or_default().push(id);
+                };
+            insert_legacy_parameter(ctx, candidates, &mut parameters_by_entity,
+                &mut parameters_by_name, string.entity_id, name, id, candidate)?;
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
@@ -860,43 +897,39 @@ fn collect_legacy_parameters(
             let Some(key) = integer.id.strip_prefix("catia:legacy:integer#") else {
                 continue;
             };
-            let key = cadmpeg_ir::ids::IdentityKey::try_new(key)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            let id = ParameterId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "legacy", "parameter"),
-                key,
-            );
+            let id = legacy_parameter_id(ctx, key)?;
             if candidates.contains_key(&id) {
                 continue;
             }
             ctx.charge_entities(1, "admit CATIA formula candidate")?;
             let value = ParameterValue::Integer(i64::from(integer.value));
-            candidates.insert(
-                id.clone(),
+            let parameter_id = resource::copy_id(ctx, id.as_str(), ParameterId::mint,
+                "catia_legacy_integer_parameter_id")?;
+            let parameter_name = resource::copy_retained_str(ctx, name,
+                "catia_legacy_integer_name")?;
+            let native_ref = resource::copy_retained_str(ctx, &run.id,
+                "catia_legacy_integer_native_ref")?;
+            let candidate =
                 FormulaParameterCandidate {
                     parameter: DesignParameter {
-                        id: id.clone(),
+                        id: parameter_id,
                         owner: None,
                         ordinal: 0,
-                        name: name.clone(),
+                        name: parameter_name,
                         expression: parameter_expression(ctx, &value)?,
                         display: None,
                         value: Some(value),
                         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                         properties: parameter_properties(ctx, "Integer", None)?,
                         pmi: None,
-                        native_ref: Some(run.id.clone()),
+                        native_ref: Some(native_ref),
                     },
                     parameter_type: FormulaParameterType::Integer,
                     role: FormulaParameterRole::Input,
                     source_order: integer.byte_offset,
-                },
-            );
-            parameters_by_entity
-                .entry(integer.entity_id)
-                .or_default()
-                .push(id.clone());
-            parameters_by_name.entry(name.clone()).or_default().push(id);
+                };
+            insert_legacy_parameter(ctx, candidates, &mut parameters_by_entity,
+                &mut parameters_by_name, integer.entity_id, name, id, candidate)?;
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
@@ -904,10 +937,11 @@ fn collect_legacy_parameters(
             HashMap::<u32, Vec<&crate::native::CatiaLegacyRelation>>::new();
         for relation in &run.relations {
             if let Some(parameter) = relation.parameter_entity_id {
-                relations_by_parameter
-                    .entry(parameter)
-                    .or_default()
-                    .push(relation);
+                resource::admit_map_entry(ctx, &mut relations_by_parameter, &parameter,
+                    "catia_legacy_relation_index")?;
+                let relations = relations_by_parameter.entry(parameter).or_default();
+                resource::push(ctx, relations, relation,
+                    "catia_legacy_relation_members")?;
             }
         }
         for (entity_id, relations) in relations_by_parameter {
@@ -939,8 +973,20 @@ fn collect_legacy_parameters(
                     continue;
                 }
             }
-            candidate.parameter.expression = evaluation.expression.to_string();
-            candidate.parameter.dependencies = evaluation.dependencies.into_iter().collect();
+            let expression = resource::copy_retained_str(ctx, evaluation.expression,
+                "catia_legacy_formula_expression")?;
+            let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
+            for id in evaluation.dependencies {
+                if !dependencies.contains(&id) {
+                    ctx.charge_collection_items(1, "catia_legacy_formula_dependencies")?;
+                    dependencies.try_reserve(1).map_err(|_|
+                        resource::allocation_failed(dependencies.len(), 0, 1,
+                            "catia_legacy_formula_dependencies"))?;
+                    dependencies.insert(id);
+                }
+            }
+            candidate.parameter.expression = expression;
+            candidate.parameter.dependencies = dependencies;
             candidate.role = FormulaParameterRole::FormulaOutput { fallback: None };
             transfer.formulas += 1;
         }
