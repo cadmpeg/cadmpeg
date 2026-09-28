@@ -1458,10 +1458,10 @@ fn validate_gui_property(
     }
     match type_name {
         "Mesh::PropertyMeshKernel" => {
-            return validate_gui_geometry_value(property, property_name, "Mesh");
+            return validate_gui_geometry_value(ctx, property, property_name, "Mesh");
         }
         "Points::PropertyPointKernel" => {
-            return validate_gui_geometry_value(property, property_name, "Points");
+            return validate_gui_geometry_value(ctx, property, property_name, "Points");
         }
         "TechDraw::PropertyGeomFormatList" => {
             return validate_gui_techdraw_list(
@@ -1568,7 +1568,7 @@ fn validate_gui_property(
                 ))
             })?;
             if is_gui_integer_constraint_type(type_name) {
-                validate_gui_constraint_attributes(root, property_name, true)?;
+                validate_gui_constraint_attributes(ctx, root, property_name, true)?;
             }
             if type_name == "App::PropertyEnumeration" {
                 validate_gui_enumeration(root, second_root, has_more_roots, property_name)?;
@@ -1587,7 +1587,7 @@ fn validate_gui_property(
                 )));
             }
             if is_gui_float_constraint_type(type_name) {
-                validate_gui_constraint_attributes(root, property_name, false)?;
+                validate_gui_constraint_attributes(ctx, root, property_name, false)?;
             }
         }
         GuiValueTag::String
@@ -1603,7 +1603,7 @@ fn validate_gui_property(
             if matches!(tag, GuiValueTag::ColorList | GuiValueTag::MaterialList)
                 && has_nested_gui_elements(root)
             {
-                return Err(gui_nested_value_error(property_name, expected_tag));
+                return Err(gui_nested_value_error(ctx, property_name, expected_tag));
             }
             if type_name == "App::PropertyPersistentObject" {
                 if has_more_roots
@@ -1665,13 +1665,13 @@ fn validate_gui_property(
                 )));
             }
             if has_nested_gui_elements(root) {
-                return Err(gui_nested_value_error(property_name, "BoolList"));
+                return Err(gui_nested_value_error(ctx, property_name, "BoolList"));
             }
         }
-        GuiValueTag::StringList => validate_gui_string_list(root, property_name)?,
-        GuiValueTag::IntegerList => validate_gui_integer_list(root, property_name, false)?,
-        GuiValueTag::IntegerSet => validate_gui_integer_list(root, property_name, true)?,
-        GuiValueTag::Map => validate_gui_map(root, property_name)?,
+        GuiValueTag::StringList => validate_gui_string_list(ctx, root, property_name)?,
+        GuiValueTag::IntegerList => validate_gui_integer_list(ctx, root, property_name, false)?,
+        GuiValueTag::IntegerSet => validate_gui_integer_list(ctx, root, property_name, true)?,
+        GuiValueTag::Map => validate_gui_map(ctx, root, property_name)?,
         GuiValueTag::PropertyMatrix => {
             for row in 1..=4 {
                 for column in 1..=4 {
@@ -1710,7 +1710,7 @@ fn validate_gui_property(
         GuiValueTag::FloatList | GuiValueTag::VectorList | GuiValueTag::PlacementList => {
             scalar("file")?;
             if has_nested_gui_elements(root) {
-                return Err(gui_nested_value_error(property_name, expected_tag));
+                return Err(gui_nested_value_error(ctx, property_name, expected_tag));
             }
         }
         GuiValueTag::FileIncluded => {
@@ -1723,7 +1723,7 @@ fn validate_gui_property(
                 return Err(CodecError::Malformed(message));
             }
             if has_nested_gui_elements(root) {
-                return Err(gui_nested_value_error(property_name, "FileIncluded"));
+                return Err(gui_nested_value_error(ctx, property_name, "FileIncluded"));
             }
         }
     }
@@ -1736,6 +1736,7 @@ fn validate_gui_property(
 }
 
 fn validate_gui_string_list(
+    ctx: &DecodeContext<'_>,
     root: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
@@ -1749,12 +1750,13 @@ fn validate_gui_string_list(
         )));
     }
     if root.children().filter(roxmltree::Node::is_element).any(has_nested_gui_elements) {
-        return Err(gui_nested_value_error(property_name, "StringList value"));
+        return Err(gui_nested_value_error(ctx, property_name, "StringList value"));
     }
     Ok(())
 }
 
 fn validate_gui_integer_list(
+    ctx: &DecodeContext<'_>,
     root: roxmltree::Node<'_, '_>,
     property_name: &str,
     require_sorted_unique: bool,
@@ -1772,7 +1774,7 @@ fn validate_gui_integer_list(
         )));
     }
     if root.children().filter(roxmltree::Node::is_element).any(has_nested_gui_elements) {
-        return Err(gui_nested_value_error(property_name, tag));
+        return Err(gui_nested_value_error(ctx, property_name, tag));
     }
     let mut previous = None;
     for value in root.children().filter(roxmltree::Node::is_element) {
@@ -1799,7 +1801,7 @@ fn validate_gui_integer_list(
     Ok(())
 }
 
-fn validate_gui_map(root: roxmltree::Node<'_, '_>, property_name: &str) -> Result<(), CodecError> {
+fn validate_gui_map(ctx: &DecodeContext<'_>, root: roxmltree::Node<'_, '_>, property_name: &str) -> Result<(), CodecError> {
     let count = gui_list_count(root, property_name, "Map")?;
     if root.children().filter(roxmltree::Node::is_element).count() != count
         || root.children().filter(roxmltree::Node::is_element).any(|value| !value.has_tag_name("Item")) {
@@ -1808,7 +1810,7 @@ fn validate_gui_map(root: roxmltree::Node<'_, '_>, property_name: &str) -> Resul
         )));
     }
     if root.children().filter(roxmltree::Node::is_element).any(has_nested_gui_elements) {
-        return Err(gui_nested_value_error(property_name, "Map item"));
+        return Err(gui_nested_value_error(ctx, property_name, "Map item"));
     }
     let mut previous_key = None;
     for value in root.children().filter(roxmltree::Node::is_element) {
@@ -1855,12 +1857,14 @@ fn has_nested_gui_elements(node: roxmltree::Node<'_, '_>) -> bool {
     node.children().any(|child| child.is_element())
 }
 
-fn gui_nested_value_error(property_name: &str, value_name: &str) -> CodecError {
-    let message = format!("GUI property {property_name} {value_name} has nested element values");
-    CodecError::Malformed(message)
+fn gui_nested_value_error(ctx: &DecodeContext<'_>, property_name: &str, value_name: &str) -> CodecError {
+    crate::resource::malformed_charged(ctx,
+        format_args!("GUI property {property_name} {value_name} has nested element values"),
+        "FCStd GUI nested-value diagnostic")
 }
 
 fn validate_gui_constraint_attributes(
+    ctx: &DecodeContext<'_>,
     root: roxmltree::Node<'_, '_>,
     property_name: &str,
     integer: bool,
@@ -1871,14 +1875,14 @@ fn validate_gui_constraint_attributes(
         };
         if integer {
             value.parse::<i64>().map_err(|_| {
-                gui_constraint_error(property_name, "an invalid integer", attribute)
+                gui_constraint_error(ctx, property_name, "an invalid integer", attribute)
             })?;
         } else {
             let value = value
                 .parse::<f64>()
-                .map_err(|_| gui_constraint_error(property_name, "an invalid float", attribute))?;
+                .map_err(|_| gui_constraint_error(ctx, property_name, "an invalid float", attribute))?;
             if !value.is_finite() {
-                return Err(gui_constraint_error(
+                return Err(gui_constraint_error(ctx,
                     property_name,
                     "a non-finite",
                     attribute,
@@ -1889,9 +1893,10 @@ fn validate_gui_constraint_attributes(
     Ok(())
 }
 
-fn gui_constraint_error(property_name: &str, detail: &str, attribute: &str) -> CodecError {
-    let message = format!("GUI property {property_name} has {detail} {attribute}");
-    CodecError::Malformed(message)
+fn gui_constraint_error(ctx: &DecodeContext<'_>, property_name: &str, detail: &str, attribute: &str) -> CodecError {
+    crate::resource::malformed_charged(ctx,
+        format_args!("GUI property {property_name} has {detail} {attribute}"),
+        "FCStd GUI constraint diagnostic")
 }
 
 fn validate_gui_placement(
@@ -2222,20 +2227,21 @@ fn is_gui_custom_type(type_name: &str) -> bool {
 }
 
 fn validate_gui_geometry_value(
+    ctx: &DecodeContext<'_>,
     property: roxmltree::Node<'_, '_>,
     property_name: &str,
     expected_tag: &str,
 ) -> Result<(), CodecError> {
     let mut roots = property.children().filter(roxmltree::Node::is_element);
     let Some(root) = roots.next().filter(|_| roots.next().is_none()) else {
-        let message =
-            format!("GUI property {property_name} requires exactly one {expected_tag} value");
-        return Err(CodecError::Malformed(message));
+        return Err(crate::resource::malformed_charged(ctx,
+            format_args!("GUI property {property_name} requires exactly one {expected_tag} value"),
+            "FCStd GUI geometry diagnostic"));
     };
     if !root.has_tag_name(expected_tag) {
-        let message =
-            format!("GUI property {property_name} requires a leading {expected_tag} value");
-        return Err(CodecError::Malformed(message));
+        return Err(crate::resource::malformed_charged(ctx,
+            format_args!("GUI property {property_name} requires a leading {expected_tag} value"),
+            "FCStd GUI geometry diagnostic"));
     }
 
     let mut side_references = property
@@ -2256,18 +2262,18 @@ fn validate_gui_geometry_value(
     if first_side_reference.is_some() != direct_file || has_more_side_references
         || first_side_reference.is_some_and(|node| node != root)
     {
-        let message = format!(
-            "GUI property {property_name} {expected_tag} has an unowned side-entry reference"
-        );
-        return Err(CodecError::Malformed(message));
+        return Err(crate::resource::malformed_charged(ctx,
+            format_args!("GUI property {property_name} {expected_tag} has an unowned side-entry reference"),
+            "FCStd GUI geometry diagnostic"));
     }
     if expected_tag == "Points" {
-        validate_gui_points_transform(root, property_name)?;
+        validate_gui_points_transform(ctx, root, property_name)?;
     }
     Ok(())
 }
 
 fn validate_gui_points_transform(
+    ctx: &DecodeContext<'_>,
     root: roxmltree::Node<'_, '_>,
     property_name: &str,
 ) -> Result<(), CodecError> {
@@ -2277,16 +2283,16 @@ fn validate_gui_points_transform(
     let mut count = 0usize;
     let mut finite = true;
     for token in text.split_whitespace() {
-        let value = token.parse::<f64>().map_err(|_| CodecError::Malformed(
-            format!("GUI property {property_name} Points transform has an invalid scalar")
-        ))?;
+        let value = token.parse::<f64>().map_err(|_| crate::resource::malformed_charged(ctx,
+            format_args!("GUI property {property_name} Points transform has an invalid scalar"),
+            "FCStd GUI Points transform diagnostic"))?;
         finite &= value.is_finite();
         count += 1;
     }
     if count != 16 || !finite {
-        let message =
-            format!("GUI property {property_name} Points transform must contain 16 finite scalars");
-        return Err(CodecError::Malformed(message));
+        return Err(crate::resource::malformed_charged(ctx,
+            format_args!("GUI property {property_name} Points transform must contain 16 finite scalars"),
+            "FCStd GUI Points transform diagnostic"));
     }
     Ok(())
 }

@@ -141,6 +141,46 @@ fn gui_property_provenance_tag_refuses_at_matching_retained_limit() {
 }
 
 #[test]
+fn gui_nested_value_diagnostic_refuses_at_matching_retained_limit() {
+    crate::test_support::assert_retained_refusal_at(
+        &[], "FCStd GUI nested-value diagnostic", |ctx| {
+            Err::<(), _>(super::super::gui_nested_value_error(ctx, "Colors", "ColorList"))
+        },
+    );
+}
+
+#[test]
+fn gui_constraint_diagnostic_refuses_at_matching_retained_limit() {
+    crate::test_support::assert_retained_refusal_at(
+        &[], "FCStd GUI constraint diagnostic", |ctx| {
+            Err::<(), _>(super::super::gui_constraint_error(ctx, "Scale", "an invalid float", "min"))
+        },
+    );
+}
+
+#[test]
+fn gui_geometry_diagnostic_refuses_at_matching_retained_limit() {
+    let xml = roxmltree::Document::parse("<Property><Mesh/><Mesh/></Property>")
+        .expect("valid property XML");
+    crate::test_support::assert_retained_refusal_at(
+        &[], "FCStd GUI geometry diagnostic", |ctx| {
+            super::super::validate_gui_geometry_value(ctx, xml.root_element(), "Shape", "Mesh")
+        },
+    );
+}
+
+#[test]
+fn gui_points_transform_diagnostic_refuses_at_matching_retained_limit() {
+    let xml = roxmltree::Document::parse("<Points mtrx='bad'/>")
+        .expect("valid property XML");
+    crate::test_support::assert_retained_refusal_at(
+        &[], "FCStd GUI Points transform diagnostic", |ctx| {
+            super::super::validate_gui_points_transform(ctx, xml.root_element(), "Cloud")
+        },
+    );
+}
+
+#[test]
 fn camera_tokens_refuse_at_matching_collection_limit() {
     crate::test_support::assert_collection_refusal_at(
         &[], "FCStd GUI camera tokens", |ctx| {
