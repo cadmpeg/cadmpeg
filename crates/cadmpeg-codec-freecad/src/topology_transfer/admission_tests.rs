@@ -15,6 +15,19 @@ use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
 
 #[test]
+fn face_ring_diagnostic_refuses_at_matching_retained_limit() {
+    let error = cadmpeg_ir::topology::LoopRing::new(Vec::new(), Vec::new())
+        .expect_err("empty ring is invalid");
+    assert_retained_refusal_at(&[], "FreeCAD face ring diagnostic", |ctx| {
+        Err::<(), _>(crate::resource::malformed_charged(
+            ctx,
+            format_args!("FCStd face {} loop {} has invalid ring: {error}", "face-input", 1),
+            "FreeCAD face ring diagnostic",
+        ))
+    });
+}
+
+#[test]
 fn connected_component_comparison_refuses_at_work_limit() {
     let connected = std::collections::HashSet::from(["edge".to_owned()]);
     let arena = DecodeArena::new();
