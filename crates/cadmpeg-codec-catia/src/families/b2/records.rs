@@ -33,7 +33,8 @@ use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTe
 use crate::native::owner_numeric_tail::CatiaOwnerNumericTail;
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
-    allocation_reference, compact_int, f64_le, f64_point, finite_f64_lane, read_f64_array,
+    allocation_reference, compact_int, f64_le, f64_point, finite_f64_lane,
+    finite_f64_lane_charged, read_f64_array,
     u32_le_24, AllocationReferenceEncoding,
 };
 #[cfg(test)]
@@ -1691,33 +1692,35 @@ pub(crate) fn b2_parameter_points_from_records<'a>(
 #[cfg(test)]
 pub(crate) fn b2_plane_carriers(data: &[u8]) -> Vec<B2PlaneCarrier> {
     let records = consolidated_records(data);
-    b2_plane_carriers_from_records(data, &records)
+    crate::test_support::with_service_context(|ctx| {
+        b2_plane_carriers_from_records(ctx, data, &records).expect("service decode")
+    })
 }
 
 pub(crate) fn b2_plane_carriers_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2PlaneCarrier> {
-    records
-        .iter()
-        .filter(|record| record.family == ConsolidatedFamily::B && record.class == 0x27)
-        .filter_map(|record| {
-            let marker = *data.get(record.payload()?.start)?;
-            let selector = *data.get(record.payload()?.start + 1)?;
-            if marker != 0xb4 {
-                return None;
-            }
-            let lane = data.get(record.payload()?.start + 2..record.payload()?.end)?;
-            let payload = match selector {
+) -> Result<Vec<B2PlaneCarrier>, CodecError> {
+    let mut carriers = Vec::new();
+    for record in records.iter().filter(|record| {
+        record.family == ConsolidatedFamily::B && record.class == 0x27
+    }) {
+        let Some(range) = record.payload() else { continue };
+        let Some(&marker) = data.get(range.start) else { continue };
+        let Some(&selector) = data.get(range.start + 1) else { continue };
+        if marker != 0xb4 { continue; }
+        let Some(lane) = data.get(range.start + 2..range.end) else { continue };
+        let payload = match selector {
                 0xe4 => {
-                    (lane.len() == 7 * size_of::<f64>()).then_some(())?;
-                    let values = read_f64_array::<7>(lane, 0)?;
+                    if lane.len() != 7 * size_of::<f64>() { continue; }
+                    let Some(values) = read_f64_array::<7>(lane, 0) else { continue };
                     let tail = FiniteVector::from([values[4], values[5], values[6]]);
-                    let (origin, frame, _) = b2_plane_chart(
+                    let Some((origin, frame, _)) = b2_plane_chart(
                         [values[0], values[1]],
                         [values[2].get(), values[3].get(), 0.0],
                         tail,
-                    )?;
+                    ) else { continue };
                     B2PlaneCarrierPayload::PointDirection2 {
                         origin,
                         frame,
@@ -1725,14 +1728,14 @@ pub(crate) fn b2_plane_carriers_from_records(
                     }
                 }
                 0xc4 => {
-                    (lane.len() == 8 * size_of::<f64>()).then_some(())?;
-                    let values = read_f64_array::<8>(lane, 0)?;
+                    if lane.len() != 8 * size_of::<f64>() { continue; }
+                    let Some(values) = read_f64_array::<8>(lane, 0) else { continue };
                     let tail = FiniteVector::from([values[5], values[6], values[7]]);
-                    let (origin, frame, direction) = b2_plane_chart(
+                    let Some((origin, frame, direction)) = b2_plane_chart(
                         [values[0], values[1]],
                         [values[2], values[3], values[4]].map(FiniteReal::get),
                         tail,
-                    )?;
+                    ) else { continue };
                     B2PlaneCarrierPayload::PointDirection3 {
                         origin,
                         frame,
@@ -1741,30 +1744,33 @@ pub(crate) fn b2_plane_carriers_from_records(
                     }
                 }
                 0xec => {
-                    let values: [FiniteReal; 6] = finite_f64_lane(lane)?.try_into().ok()?;
+                    if lane.len() != 6 * size_of::<f64>() { continue; }
+                    let Some(values) = read_f64_array::<6>(lane, 0) else { continue };
                     B2PlaneCarrierPayload::PointTail {
                         point: [values[0], values[1]].into(),
                         tail: [values[2], values[3], values[4], values[5]].into(),
                     }
                 }
                 _ => {
-                    let values = finite_f64_lane(lane)?;
+                    let Some(values) = finite_f64_lane_charged(ctx, lane,
+                        "catia_b2_plane_scalar_lane")? else { continue };
                     if values.is_empty() {
-                        return None;
+                        continue;
                     }
                     B2PlaneCarrierPayload::ScalarLane { selector, values }
                 }
             };
-            Some(B2PlaneCarrier {
-                pos: record.byte_offset(),
-                end: record.range()?.end,
-                width: record.width,
-                flag: record.flag,
-                header_token: record.header_token,
-                payload,
-            })
-        })
-        .collect()
+        let Some(record_range) = record.range() else { continue };
+        crate::resource::push(ctx, &mut carriers, B2PlaneCarrier {
+            pos: record.byte_offset(),
+            end: record_range.end,
+            width: record.width,
+            flag: record.flag,
+            header_token: record.header_token,
+            payload,
+        }, "catia_b2_plane_carriers")?;
+    }
+    Ok(carriers)
 }
 
 /// Admit the plane chart of a direction-bearing class-`0x27` layout from its

@@ -152,6 +152,31 @@ fn b2_plane_carrier_parser_retains_unclassified_scalar_lanes() {
 }
 
 #[test]
+fn b2_plane_scalar_lane_and_carrier_refuse_resource_limits() {
+    let values = [1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    let mut bytes = vec![0xb2, 0x03, 0x27, 82, 0x05, 0xb4, 0x40];
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let limited = crate::test_support::with_collection_limit(9, |ctx| {
+        crate::families::b2::records::b2_plane_carriers_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_plane_scalar_lane"));
+    let limited = crate::test_support::with_collection_limit(10, |ctx| {
+        crate::families::b2::records::b2_plane_carriers_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_plane_carriers"));
+    let limited = crate::test_support::with_retained_limit(79, |ctx| {
+        crate::families::b2::records::b2_plane_carriers_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_plane_scalar_lane"));
+}
+
+#[test]
 fn b2_plane_carrier_parser_rejects_open_or_nonfinite_layouts() {
     let valid = b2_plane_carrier_stream();
     let mut invalid_marker = valid.clone();
