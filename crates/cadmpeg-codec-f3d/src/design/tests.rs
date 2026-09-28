@@ -321,13 +321,14 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let placements = [placement("A"), placement("B")];
     let mut points = [point("A"), point("B")];
     let mut relations = [relation("A"), relation("B")];
-    bind_sketch_graph(
+    crate::design::test_support::with_test_decode_context(|ctx| bind_sketch_graph(
+        ctx,
         &[header("A"), header("B")],
         &mut points,
         &mut [],
         &mut [],
         &mut relations,
-    )
+    ))
     .expect("stream-local sketch graphs bind independently");
     assert_eq!(
         relations[0]
@@ -347,13 +348,14 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let mut overflowing_header = header("A");
     overflowing_header.entity_id =
         crate::records::identity::DesignEntityId::from_parts("A", u64::from(u32::MAX) + 101);
-    assert!(bind_sketch_graph(
+    assert!(crate::design::test_support::with_test_decode_context(|ctx| bind_sketch_graph(
+        ctx,
         &[overflowing_header],
         &mut [point("A")],
         &mut [],
         &mut [],
         &mut [relation("A")],
-    )
+    ))
     .is_err());
 
     let (mut sketches, mut entities) =

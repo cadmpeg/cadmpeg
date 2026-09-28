@@ -1103,13 +1103,14 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     second_owner.id = format!("{entity_scope}:sketch-header-conflict#1");
     second_owner.entity_id = crate::records::identity::DesignEntityId::from_parts("0", 278);
     entities.push(second_owner);
-    let error = crate::design::decode::sketch::bind_sketch_graph(
+    let error = crate::design::test_support::with_test_decode_context(|ctx| crate::design::decode::sketch::bind_sketch_graph(
+        ctx,
         &entities,
         &mut points,
         &mut curves,
         &mut [],
         &mut relations,
-    )
+    ))
     .expect_err("typed sketch geometry cannot belong to two sketches");
     assert!(error.to_string().contains("belongs to multiple sketches"));
 }

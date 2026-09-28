@@ -3277,26 +3277,34 @@ pub(crate) fn decode_sketch_surfaces(
 
 /// Bind relation-connected sketch geometry to its unique owning sketch.
 pub(crate) fn bind_sketch_graph(
+    ctx: &DecodeContext<'_>,
     entities: &[DesignEntityHeader],
     points: &mut [SketchPoint],
     curves: &mut [SketchCurveIdentity],
     surfaces: &mut [SketchSurface],
     relations: &mut [SketchRelation],
 ) -> Result<(), CodecError> {
-    let sketch_owners = entities
-        .iter()
-        .filter(|entity| entity.in_sketch_module())
-        .filter_map(|entity| {
-            Some((
-                (
-                    native_stream(&entity.id)?,
-                    u32::try_from(entity.entity_id.suffix()).ok()?,
-                ),
-                entity.entity_id.as_str(),
-            ))
-        })
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut scoped_relations = Vec::with_capacity(relations.len());
+    let mut sketch_owners = HashMap::new();
+    for entity in entities.iter().filter(|entity| entity.in_sketch_module()) {
+        let (Some(scope), Ok(suffix)) = (
+            native_stream(&entity.id),
+            u32::try_from(entity.entity_id.suffix()),
+        ) else {
+            continue;
+        };
+        if !sketch_owners.contains_key(&(scope, suffix)) {
+            ctx.charge_collection_items(1, "f3d sketch graph owner key")?;
+            sketch_owners.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d sketch graph owner map allocation", 0, 1)
+            })?;
+        }
+        sketch_owners.insert((scope, suffix), entity.entity_id.as_str());
+    }
+    ctx.charge_collection_items(relations.len() as u64, "f3d sketch graph scoped relations")?;
+    let mut scoped_relations = Vec::new();
+    scoped_relations.try_reserve_exact(relations.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d sketch graph relation allocation", 0, relations.len() as u64)
+    })?;
     for relation in relations.iter_mut() {
         let scope = native_stream(&relation.id).ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -3312,8 +3320,14 @@ pub(crate) fn bind_sketch_graph(
                     relation.record_index, relation.owner_reference,
                 ))
             })?;
+        ctx.charge_retained(owner.len() as u64, "f3d sketch relation owner text")?;
+        let mut owner_text = String::new();
+        owner_text.try_reserve_exact(owner.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d sketch relation owner text allocation", 0, owner.len() as u64)
+        })?;
+        owner_text.push_str(owner);
         relation.owner_entity_id = Some(
-            cadmpeg_core::text::NonBlankString::new(*owner).ok_or_else(|| {
+            cadmpeg_core::text::NonBlankString::new(owner_text).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "Fusion sketch relation {} has an empty owner_entity_id",
                     relation.record_index,
@@ -3327,7 +3341,7 @@ pub(crate) fn bind_sketch_graph(
             relation.return_members(),
         ));
     }
-    let typed_records = points
+    let typed_record_keys = points
         .iter()
         .filter_map(|point| Some((native_stream(&point.id)?, point.record_index)))
         .chain(
@@ -3340,7 +3354,17 @@ pub(crate) fn bind_sketch_graph(
                 .iter()
                 .filter_map(|surface| Some((native_stream(&surface.id)?, surface.record_index))),
         )
-        .collect::<std::collections::HashSet<_>>();
+        ;
+    let mut typed_records = std::collections::HashSet::new();
+    for key in typed_record_keys {
+        if !typed_records.contains(&key) {
+            ctx.charge_collection_items(1, "f3d sketch graph typed record")?;
+            typed_records.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d sketch graph typed record allocation", 0, 1)
+            })?;
+            typed_records.insert(key);
+        }
+    }
     let mut owners = std::collections::HashMap::new();
     let direct_owners = points
         .iter()
@@ -3357,18 +3381,18 @@ pub(crate) fn bind_sketch_graph(
         )
         .filter_map(|(id, record_index, owner_reference)| {
             Some((
-                native_stream(id)?.to_owned(),
+                native_stream(id)?,
                 record_index,
                 owner_reference?,
             ))
         })
-        .collect::<Vec<_>>();
+        ;
     for (scope, record_index, owner_reference) in direct_owners {
         if let Some((owner_scope, _)) = sketch_owners
             .keys()
             .find(|(owner_scope, owner)| *owner_scope == scope && *owner == owner_reference)
         {
-            owners.insert((*owner_scope, record_index), owner_reference);
+            insert_sketch_owner(ctx, &mut owners, owner_scope, record_index, owner_reference)?;
         }
     }
     for &(scope, owner_reference, members, returned) in &scoped_relations {
@@ -3384,8 +3408,7 @@ pub(crate) fn bind_sketch_graph(
             if !typed_records.contains(&(scope, record_index)) {
                 continue;
             }
-            if owners
-                .insert((scope, record_index), owner_reference)
+            if insert_sketch_owner(ctx, &mut owners, scope, record_index, owner_reference)?
                 .is_some_and(|owner| owner != owner_reference)
             {
                 return Err(CodecError::malformed(format_args!(
@@ -3409,8 +3432,7 @@ pub(crate) fn bind_sketch_graph(
             if !typed_records.contains(&(scope, *record_index)) {
                 continue;
             }
-            if owners
-                .insert((scope, *record_index), suffix)
+            if insert_sketch_owner(ctx, &mut owners, scope, *record_index, suffix)?
                 .is_some_and(|owner| owner != suffix)
             {
                 return Err(CodecError::malformed(format_args!(
@@ -3434,7 +3456,7 @@ pub(crate) fn bind_sketch_graph(
             .and_then(|scope| owners.get(&(scope, surface.record_index)))
             .copied();
     }
-    let operands = points
+    let operand_entries = points
         .iter()
         .filter_map(|point| {
             Some((
@@ -3464,21 +3486,53 @@ pub(crate) fn bind_sketch_graph(
                 },
             ))
         }))
-        .collect::<std::collections::HashMap<_, _>>();
+        ;
+    let mut operands = HashMap::new();
+    for (key, operand) in operand_entries {
+        if !operands.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d sketch graph operand key")?;
+            operands.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d sketch graph operand map allocation", 0, 1)
+            })?;
+        }
+        operands.insert(key, operand);
+    }
     for relation in relations {
-        let id = relation.id.clone();
-        let scope = native_stream(&id).ok_or_else(|| {
-            CodecError::malformed(format_args!("invalid sketch relation id {id}"))
+        let scope = native_stream(&relation.id).ok_or_else(|| {
+            CodecError::malformed(format_args!("invalid sketch relation id {}", relation.id))
         })?;
+        let _scope_reservation =
+            ctx.reserve_scoped(scope.len() as u64, "f3d sketch relation scope text")?;
+        let mut owned_scope = String::new();
+        owned_scope.try_reserve_exact(scope.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d sketch relation scope allocation", 0, scope.len() as u64)
+        })?;
+        owned_scope.push_str(scope);
         let resolve = |record_index| {
             operands
-                .get(&(scope, record_index))
+                .get(&(owned_scope.as_str(), record_index))
                 .cloned()
                 .unwrap_or(SketchRelationOperand::Record { record_index })
         };
         relation.resolve_members(resolve);
     }
     Ok(())
+}
+
+fn insert_sketch_owner<'a>(
+    ctx: &DecodeContext<'_>,
+    owners: &mut HashMap<(&'a str, u32), u32>,
+    scope: &'a str,
+    record_index: u32,
+    owner_reference: u32,
+) -> Result<Option<u32>, CodecError> {
+    if !owners.contains_key(&(scope, record_index)) {
+        ctx.charge_collection_items(1, "f3d sketch graph record owner")?;
+        owners.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d sketch graph record owner allocation", 0, 1)
+        })?;
+    }
+    Ok(owners.insert((scope, record_index), owner_reference))
 }
 
 fn decode_sketch_curve_identity(payload: &[u8]) -> Option<(u64, u64, usize, Option<u64>)> {
