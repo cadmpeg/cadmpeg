@@ -4,6 +4,43 @@ mod pcurves;
 
 mod parameter_ranges;
 
+#[test]
+fn b5_annotation_admits_retained_strings_and_map_entries() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let operations = b5_collection_refusals(|ctx| {
+        super::annotate(
+            ctx,
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            "catia:b5:point#0",
+            "object_stream_b5_03",
+            "05_08_01_vertex",
+            cadmpeg_ir::Exactness::Derived,
+        )
+    });
+    assert!(operations.contains("catia_b5_annotation_provenance"));
+    assert!(operations.contains("catia_b5_annotation_exactness"));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("fixture fits the input limit");
+    let error = super::annotate(
+        &ctx,
+        &mut cadmpeg_ir::AnnotationBuilder::new(),
+        "catia:b5:point#0",
+        "object_stream_b5_03",
+        "05_08_01_vertex",
+        cadmpeg_ir::Exactness::Derived,
+    )
+    .expect_err("an annotation identity must fit the retained byte limit");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "catia_b5_annotation_id"));
+}
+
 fn b5_collection_refusals(
     mut run: impl FnMut(
         &cadmpeg_core::decode::DecodeContext<'_>,

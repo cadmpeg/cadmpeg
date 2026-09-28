@@ -455,12 +455,13 @@ pub(super) fn emit_faces(
             component, id, "catia_b5_region_ids")?;
     }
     annotate(
+        admission.context(),
         annotations,
         &body_id,
         "object_stream_b5_03",
         "single_body",
         Exactness::Inferred,
-    );
+    )?;
     if annotations
         .derived(&body_id, "kind")
         .and_then(|builder| builder.derived(&body_id, "regions"))
@@ -495,12 +496,13 @@ pub(super) fn emit_faces(
             &cadmpeg_ir::identity_namespace!("catia", "b5", "shell"),
             *component_index, ShellId::mint, "catia_b5_shell_id")?;
         annotate(
+            admission.context(),
             annotations,
             &region_id,
             "object_stream_b5_03",
             "derived_region",
             Exactness::Inferred,
-        );
+        )?;
         if annotations
             .derived(&region_id, "body")
             .and_then(|builder| builder.derived(&region_id, "shells"))
@@ -524,12 +526,13 @@ pub(super) fn emit_faces(
             shells: region_shells,
         });
         annotate(
+            admission.context(),
             annotations,
             &shell_id,
             "object_stream_b5_03",
             "derived_shell",
             Exactness::Inferred,
-        );
+        )?;
         if annotations
             .derived(&shell_id, "region")
             .and_then(|builder| builder.derived(&shell_id, "faces"))
@@ -579,12 +582,13 @@ pub(super) fn emit_faces(
             "catia_b5_face_shell_id")?;
         let face_loops = b5_face_loops(admission.context(), ir, graph, face, loop_orientation, surface_ids, pcurve_uses)?;
         annotate(
+            admission.context(),
             annotations,
             &face_id,
             "object_stream_b5_03",
             "5f_face",
             Exactness::Inferred,
-        );
+        )?;
         if annotations
             .derived(&face_id, "shell")
             .and_then(|builder| builder.derived(&face_id, "surface"))
@@ -658,12 +662,13 @@ pub(super) fn emit_faces(
                     }, "catia_b5_loop_vertex_uses")?;
             }
             annotate(
+                admission.context(),
                 annotations,
                 &loop_id,
                 "object_stream_b5_03",
                 "62_loop",
                 Exactness::ByteExact,
-            );
+            )?;
             if annotations
                 .derived(&loop_id, "face")
                 .and_then(|builder| builder.derived(&loop_id, "coedges"))
@@ -698,12 +703,13 @@ pub(super) fn emit_faces(
                     coedge_ids_by_member[member].as_str(), CoedgeId::mint,
                     "catia_b5_coedge_emit_id")?;
                 annotate(
+                    admission.context(),
                     annotations,
                     &id,
                     "object_stream_b5_03",
                     "serialized_loop_member",
                     Exactness::ByteExact,
-                );
+                )?;
                 for field in ["owner_loop", "edge", "radial_next", "sense", "pcurves"] {
                     if annotations.derived(&id, field).is_err() {
                         return Ok(false);

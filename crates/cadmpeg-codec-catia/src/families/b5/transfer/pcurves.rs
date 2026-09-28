@@ -776,12 +776,13 @@ pub(super) fn emit_pcurves(
                 key,
             );
             annotate(
+                admission.context(),
                 annotations,
                 &id,
                 "object_stream_b5_03",
                 "21_pcurve",
                 Exactness::ByteExact,
-            );
+            )?;
             if *cylinder_reparameterized {
                 annotations
                     .derived(&id, "geometry.control_points")

@@ -723,6 +723,7 @@ pub(super) fn emit_surfaces(
                 Some(SurfaceProcedure::Extrusion(_))
             );
         annotate(
+            admission.context(),
             annotations,
             &id,
             "object_stream_b5_03",
@@ -743,7 +744,7 @@ pub(super) fn emit_surfaces(
             } else {
                 Exactness::ByteExact
             },
-        );
+        )?;
         if revolution_cache {
             annotations
                 .derived(&id, "geometry")
@@ -775,12 +776,13 @@ pub(super) fn emit_surfaces(
                     object_id,
                 );
                 annotate(
+                    admission.context(),
                     annotations,
                     &directrix_id,
                     "object_stream_b5_03",
                     "2d_profile_curve",
                     Exactness::Derived,
-                );
+                )?;
                 annotations
                     .derived(&directrix_id, "geometry")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -797,12 +799,13 @@ pub(super) fn emit_surfaces(
                     object_id,
                 );
                 annotate(
+                    admission.context(),
                     annotations,
                     &procedural_id,
                     "object_stream_b5_03",
                     "2d_surface_of_revolution",
                     Exactness::Derived,
-                );
+                )?;
                 admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_b5_emit_procedural_surfaces")?;
                 let _attached = ir.model.add_procedural_surface(
                     id,
@@ -840,12 +843,13 @@ pub(super) fn emit_surfaces(
                     format_args!("result_carrier:{carrier_object_id:08x}"),
                     "catia_b5_rolling_ball_carrier_tag")?;
                 annotate(
+                    admission.context(),
                     annotations,
                     &procedural_id,
                     "object_stream_a8_03_32",
                     &carrier_tag,
                     Exactness::ByteExact,
-                );
+                )?;
                 admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_b5_emit_procedural_surfaces")?;
                 let _attached = ir.model.add_procedural_surface(
                     id,
@@ -873,12 +877,13 @@ pub(super) fn emit_surfaces(
             object_id,
         );
         annotate(
+            admission.context(),
             annotations,
             &procedural_id,
             "object_stream_b5_03",
             "30_offset_surface",
             Exactness::Derived,
-        );
+        )?;
         let record_bounds = super::parameter_record_bounds(offset.parameter_bounds);
         admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_b5_emit_procedural_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
@@ -934,12 +939,13 @@ fn emit_extrusion_procedure(
                 )),
             });
             annotate(
+                admission.context(),
                 annotations,
                 &directrix_id,
                 "object_stream_a8_03_25",
                 "two_support_directrix",
                 Exactness::Unknown,
-            );
+            )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
@@ -951,12 +957,13 @@ fn emit_extrusion_procedure(
                 extrusion.directrix_object_id,
             );
             annotate(
+                admission.context(),
                 annotations,
                 &procedure_id,
                 "object_stream_a8_03_25",
                 "two_surface_pcurve_intersection",
                 Exactness::ByteExact,
-            );
+            )?;
             let procedure = ProceduralCurve::new(
                 procedure_id,
                 ProceduralCurveDefinition::Intersection {
@@ -978,12 +985,13 @@ fn emit_extrusion_procedure(
         }
         super::ResolvedExtrusionDirectrix::SurfaceCurve { curve, .. } => {
             annotate(
+                admission.context(),
                 annotations,
                 &directrix_id,
                 "object_stream_b5_03_24",
                 "support_pcurve_lift",
                 Exactness::Derived,
-            );
+            )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
@@ -1004,12 +1012,13 @@ fn emit_extrusion_procedure(
                 source_object_id,
             );
             annotate(
+                admission.context(),
                 annotations,
                 &source_id,
                 "object_stream_b5_03_24",
                 "support_pcurve_lift",
                 Exactness::Derived,
-            );
+            )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
                 id: source_id.clone(),
@@ -1017,12 +1026,13 @@ fn emit_extrusion_procedure(
                 source_object: Some(cgm_source("curve", source_object_id)),
             });
             annotate(
+                admission.context(),
                 annotations,
                 &directrix_id,
                 "object_stream_b5_03_14",
                 "fixed_direction_offset_curve",
                 Exactness::Unknown,
-            );
+            )?;
             admission.reserve_entity(&mut ir.model.curves, "catia_b5_emit_curves")?;
             ir.model.curves.push(Curve {
                 id: directrix_id.clone(),
@@ -1034,12 +1044,13 @@ fn emit_extrusion_procedure(
                 extrusion.directrix_object_id,
             );
             annotate(
+                admission.context(),
                 annotations,
                 &procedure_id,
                 "object_stream_b5_03_14",
                 "fixed_direction_offset_curve",
                 Exactness::ByteExact,
-            );
+            )?;
             admission.reserve_entity(&mut ir.model.procedural_curves, "catia_b5_emit_procedural_curves")?;
             let _attached = ir.model.add_procedural_curve(
                 directrix_id.clone(),
@@ -1063,12 +1074,13 @@ fn emit_extrusion_procedure(
         surface_object_id,
     );
     annotate(
+        admission.context(),
         annotations,
         &procedure_id,
         "object_stream_b5_03",
         "2c_extrusion_surface",
         Exactness::ByteExact,
-    );
+    )?;
     let record_bounds = super::parameter_record_bounds(extrusion.parameter_bounds);
     admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_b5_emit_procedural_surfaces")?;
     let _attached = ir.model.add_procedural_surface(
