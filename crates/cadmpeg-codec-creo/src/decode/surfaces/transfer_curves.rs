@@ -201,7 +201,7 @@ fn extrusion_plane_boundary_curve(
     refusal: &mut crate::lane_refusal::LaneRefusals,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<(CurveGeometry, NurbsBoundaryKind)>, CodecError> {
-    if let Some(geometry) = nurbs_plane_boundary_curve(nurbs, surface_id, plane, refusal) {
+    if let Some(geometry) = nurbs_plane_boundary_curve(ctx, nurbs, surface_id, plane, refusal)? {
         return Ok(Some((geometry, NurbsBoundaryKind::ExtrusionPlane)));
     }
     let refused = refusal.take_records();
@@ -327,12 +327,13 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(first_nurbs)),
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(second_nurbs)),
             ) => shared_extrusion_generator_curve(
+                ctx,
                 first_nurbs,
                 first.id,
                 second_nurbs,
                 second.id,
                 refusal,
-            )
+            )?
             .map(|geometry| (geometry, NurbsBoundaryKind::SharedExtrusionGenerator)),
             _ => None,
         };
