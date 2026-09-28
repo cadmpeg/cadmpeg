@@ -61,7 +61,7 @@ impl CatiaSchemaConfigurationRowChain {
 }
 
 #[derive(Serialize, Deserialize)]
-struct ChainWire {
+pub(super) struct ChainWire {
     id: String,
     object_graph: String,
     #[serde(default)]
@@ -102,6 +102,27 @@ impl From<CatiaSchemaConfigurationRowChain> for ChainWire {
             object_graph: chain.object_graph,
             links,
         }
+    }
+}
+
+impl ChainWire {
+    pub(super) fn from_charged(
+        ctx: &DecodeContext<'_>,
+        chain: CatiaSchemaConfigurationRowChain,
+    ) -> Result<Self, CodecError> {
+        let mut remaining = chain.links.into_iter().peekable();
+        let mut links = Vec::new();
+        while let Some(link) = remaining.next() {
+            let successor = copy_reference(ctx,
+                remaining.peek().map_or(&chain.terminal, |next| &next.row))?;
+            resource::push(ctx, &mut links, LinkWire {
+                row: link.row,
+                successor_payload_offset: link.successor_payload_offset,
+                successor,
+                intervening_entities: link.intervening_entities,
+            }, "catia_configuration_chain_wire_links")?;
+        }
+        Ok(Self { id: chain.id, object_graph: chain.object_graph, links })
     }
 }
 
@@ -317,6 +338,31 @@ fn charged_entity_reference(
 mod tests {
     use super::super::CatiaEntityReference;
     use super::{CatiaSchemaConfigurationRowChain, CatiaSchemaConfigurationRowChainLink};
+
+    #[test]
+    fn configuration_chain_wire_refuses_before_successor_link_growth() {
+        let chain = CatiaSchemaConfigurationRowChain {
+            id: "chain".to_owned(),
+            object_graph: "graph".to_owned(),
+            links: vec![CatiaSchemaConfigurationRowChainLink {
+                row: CatiaEntityReference::Unresolved { entity_id: 1 },
+                successor_payload_offset: 5,
+                intervening_entities: None,
+            }],
+            terminal: CatiaEntityReference::Unresolved { entity_id: 2 },
+        };
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            super::ChainWire::from_charged(ctx, chain.clone())
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_configuration_chain_wire_links"));
+        let charged = crate::test_support::with_service_context(|ctx| {
+            super::ChainWire::from_charged(ctx, chain.clone())
+        }).expect("service budget admits successor wire");
+        let original: super::ChainWire = chain.into();
+        assert_eq!(serde_json::to_value(charged).expect("charged wire"),
+            serde_json::to_value(original).expect("legacy wire"));
+    }
 
     #[test]
     fn wire_successors_follow_rows_and_keep_the_terminal() {

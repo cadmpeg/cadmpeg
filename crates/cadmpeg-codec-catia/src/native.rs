@@ -7101,6 +7101,9 @@ macro_rules! define_catia_arenas {
     (@native_value $field:ident, $kind:ident, $owner:ident, $nodes:ident) => { $owner.$field };
     (@type consolidated_edge_nodes, $kind:ident, $record:ty) => { Vec<CatiaConsolidatedEdgeNodeWire> };
     (@type entity_records, $kind:ident, $record:ty) => { Vec<CatiaEntityRecordWire> };
+    (@type schema_configuration_row_chains, $kind:ident, $record:ty) => {
+        Vec<schema_configuration_chain::ChainWire>
+    };
     (@prepare $ctx:ident, consolidated_edge_nodes, $native:ident, $kind:ident, $binding:ident) => {
         let $binding = edge_node_wires_charged($ctx, std::mem::take(&mut $native.consolidated_edge_nodes), &$native.consolidated_vertex_identities)?;
     };
@@ -7112,8 +7115,17 @@ macro_rules! define_catia_arenas {
             "catia_native_entity_wires",
         )?;
     };
+    (@prepare $ctx:ident, schema_configuration_row_chains, $native:ident, $kind:ident, $binding:ident) => {
+        let $binding = crate::resource::try_collect_vec(
+            $ctx,
+            std::mem::take(&mut $native.schema_configuration_row_chains).into_iter()
+                .map(|chain| schema_configuration_chain::ChainWire::from_charged($ctx, chain)),
+            "catia_native_configuration_chain_wires",
+        )?;
+    };
     (@stored_value stored, $native:ident, consolidated_edge_nodes, $binding:ident) => { $binding };
     (@stored_value stored, $native:ident, entity_records, $binding:ident) => { $binding };
+    (@stored_value stored, $native:ident, schema_configuration_row_chains, $binding:ident) => { $binding };
     (@type catalogs, $kind:ident, $record:ty) => {
         Vec<CatiaCatalogWire>
     };
