@@ -156,10 +156,11 @@ pub(super) fn classify_members<'a>(
             loss
         }));
         losses.extend(merge_member_layers(
+            ctx,
             &mut layers,
             &member_layers,
             member_path,
-        ));
+        )?);
         members.insert(
             member_path.to_owned(),
             ClassifiedMember::Scanned(Box::new(member_scan)),
@@ -175,31 +176,46 @@ pub(super) fn classify_members<'a>(
 
 /// Attaches one archive member's identity and nested layers to its archive path.
 pub(super) fn merge_member_layers(
+    ctx: &DecodeContext<'_>,
     target: &mut DialectLayers,
     member: &DialectLayers,
     member_path: &str,
-) -> Vec<LossNote> {
+) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
-    for matched in member.iter().cloned() {
-        let instance = matched.instance().map_or_else(
-            || member_path.to_owned(),
-            |nested| format!("{member_path}/{nested}"),
-        );
-        let collision_instance = instance.clone();
-        let mut declared = matched.declared().clone();
-        declared.insert(
-            cadmpeg_core::nonblank_const!(crate::dialect::DECLARED_ARCHIVE_MEMBER),
-            member_path.to_owned(),
-        );
-        let matched = matched.with_declared(declared).with_instance(instance);
-        let format = matched.format().to_owned();
-        if target.insert(matched).is_err() {
-            losses.push(F3dLossCode::DialectLayerCollision.note(format!(
-                "archive member {member_path} produced a duplicate {format} dialect layer at instance {collision_instance}; the later layer was omitted",
-            )));
+    for matched in member.iter() {
+        let matched = matched.clone_charged(ctx, "clone F3Z member dialect layer")?;
+        let instance = match matched.instance() {
+            Some(nested) => crate::container::format_retained(
+                ctx,
+                "retain F3Z dialect layer instance",
+                format_args!("{member_path}/{nested}"),
+            )?,
+            None => copy_member_name(ctx, member_path, "retain F3Z dialect layer instance")?,
+        };
+        let matched = matched
+            .with_declared_entry_charged(
+                ctx,
+                cadmpeg_core::nonblank_const!(crate::dialect::DECLARED_ARCHIVE_MEMBER),
+                member_path,
+                "declare F3Z archive member",
+            )?
+            .with_instance(instance);
+        if let Err(rejected) =
+            target.insert_charged(ctx, matched, "collect F3Z member dialect layers")?
+        {
+            let format = rejected.format();
+            let collision_instance = rejected.instance().unwrap_or("unidentified");
+            super::push_loss(
+                ctx,
+                &mut losses,
+                F3dLossCode::DialectLayerCollision,
+                format_args!(
+                    "archive member {member_path} produced a duplicate {format} dialect layer at instance {collision_instance}; the later layer was omitted"
+                ),
+            )?;
         }
     }
-    losses
+    Ok(losses)
 }
 
 fn model_root_member(
