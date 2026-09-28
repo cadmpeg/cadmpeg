@@ -1140,12 +1140,25 @@ pub(in crate::native) fn feature_pattern_transform_lanes(ctx: &cadmpeg_core::dec
 ) -> Result<Vec<FeaturePatternTransformLane>, cadmpeg_core::CodecError>
 {
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::pattern_payload_transform_lane(record.payload_view())
-            else {
-                return;
+            if failure.is_some() { return; }
+            let lane = match crate::om::pattern_payload_transform_lane(ctx, record.payload_view()) {
+                Ok(Some(lane)) => lane,
+                Ok(None) => return,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let rows = match lane.rows.map_charged(ctx,
+                |selector| crate::om::compact::LocatedCompactIndex {
+                    atom: selector.atom,
+                    offset: entry_offset + selector.offset as u64,
+                },
+                |offset| entry_offset + offset as u64,
+            ) {
+                Ok(rows) => rows,
+                Err(error) => { failure = Some(error); return; }
             };
             lanes.push(FeaturePatternTransformLane {
                 id: format!(
@@ -1155,17 +1168,12 @@ pub(in crate::native) fn feature_pattern_transform_lanes(ctx: &cadmpeg_core::dec
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 row_schema_index: lane.row_schema_index,
-                rows: lane.rows.map(
-                    |selector| crate::om::compact::LocatedCompactIndex {
-                        atom: selector.atom,
-                        offset: entry_offset + selector.offset as u64,
-                    },
-                    |offset| entry_offset + offset as u64,
-                ),
+                rows,
                 source_offset: entry_offset + lane.offset as u64,
             });
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(lanes)
 }
 
