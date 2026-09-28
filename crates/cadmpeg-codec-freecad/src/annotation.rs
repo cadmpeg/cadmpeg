@@ -17,6 +17,10 @@ use crate::native::{
 };
 use crate::resource::{collection_allocation_failed, collection_vec, reserve_vec_items, retained_string, retained_strings};
 
+fn annotation_malformed(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
+    crate::resource::malformed_charged(ctx, message, "fcstd annotation diagnostic")
+}
+
 pub(crate) fn transfer(
     ctx: &DecodeContext<'_>,
     objects: &[ObjectRecord],
@@ -365,7 +369,7 @@ fn annotation_position(
                             "annotation position contains a non-finite coordinate".into(),
                         )
                     }),
-                _ => Err(CodecError::malformed(format_args!(
+                _ => Err(annotation_malformed(ctx, format_args!(
                     "annotation position requires both {x_name} and {y_name}"
                 ))),
             }
@@ -387,7 +391,7 @@ fn optional_scalar_property(
         .get("value")
         .and_then(|value| value.parse::<f64>().ok())
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            annotation_malformed(ctx, format_args!(
                 "annotation property {} is not a scalar",
                 property.id
             ))
@@ -417,7 +421,7 @@ fn optional_vector_property(
         .and_then(|value| value.parse::<f64>().ok());
     match (x, y, z) {
         (Some(x), Some(y), Some(z)) => Ok(Some([x, y, z])),
-        _ => Err(CodecError::malformed(format_args!(
+        _ => Err(annotation_malformed(ctx, format_args!(
             "annotation property {} is not a vector",
             property.id
         ))),
@@ -435,7 +439,7 @@ fn string_property(
     };
     let attributes = direct_value_attributes(ctx, property, "String", &["value"])?;
     attributes.into_iter().find_map(|(name, value)| (name == "value").then_some(value)).map(Some).ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        annotation_malformed(ctx, format_args!(
             "annotation property {} string value is missing value",
             property.id
         ))
@@ -453,7 +457,7 @@ fn typed_property<'a>(
     };
     if !type_names.contains(&property.type_name.as_str()) {
         let expected = type_names.join(" or ");
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {name} has runtime type {}, expected {expected}",
             property.type_name
         )));
@@ -482,39 +486,39 @@ fn direct_value_attributes(
     allowed_attributes: &[&str],
 ) -> Result<BTreeMap<String, String>, CodecError> {
     let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-        CodecError::malformed(format_args!(
+        annotation_malformed(ctx, format_args!(
             "annotation property {} has invalid XML: {error}",
             property.id
         ))
     })?;
     let root = document.root_element();
     if has_non_whitespace_text(root) {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} has unexpected text",
             property.id
         )));
     }
     let mut values = root.children().filter(roxmltree::Node::is_element);
     let Some(value) = values.next() else {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} requires one direct {expected_tag} value",
             property.id
         )));
     };
     if values.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} requires one direct {expected_tag} value",
             property.id
         )));
     }
     if !value.has_tag_name(expected_tag) {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} has root {}, expected {expected_tag}",
             property.id,
             value.tag_name().name()
         )));
     }
-    validate_leaf_value(value, property, allowed_attributes)?;
+    validate_leaf_value(ctx, value, property, allowed_attributes)?;
     let mut attributes = BTreeMap::new();
     for attribute in value.attributes() {
         ctx.charge_collection_items(1, "fcstd annotation value attributes")?;
@@ -532,7 +536,7 @@ fn strict_text_values(
     expected_type: &str,
 ) -> Result<Vec<String>, CodecError> {
     if property.type_name != expected_type {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} has runtime type {}, expected {expected_type}",
             property.id, property.type_name
         )));
@@ -540,7 +544,7 @@ fn strict_text_values(
     if expected_type == "App::PropertyString" {
         let attributes = direct_value_attributes(ctx, property, "String", &["value"])?;
         let value = attributes.into_iter().find_map(|(name, value)| (name == "value").then_some(value)).ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            annotation_malformed(ctx, format_args!(
                 "annotation property {} string value is missing value",
                 property.id
             ))
@@ -553,57 +557,57 @@ fn strict_text_values(
         return Ok(values);
     }
     let document = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-        CodecError::malformed(format_args!(
+        annotation_malformed(ctx, format_args!(
             "annotation property {} has invalid XML: {error}",
             property.id
         ))
     })?;
     let root = document.root_element();
     if has_non_whitespace_text(root) {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} has unexpected text",
             property.id
         )));
     }
     let mut values = root.children().filter(roxmltree::Node::is_element);
     let Some(string_list) = values.next() else {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} requires one direct StringList value",
             property.id
         )));
     };
     if values.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} requires one direct StringList value",
             property.id
         )));
     }
     if !string_list.has_tag_name("StringList") {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} has root {}, expected StringList",
             property.id,
             string_list.tag_name().name()
         )));
     }
-    validate_attributes(string_list, property, &["count"])?;
+    validate_attributes(ctx, string_list, property, &["count"])?;
     let count = string_list
         .attribute("count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            annotation_malformed(ctx, format_args!(
                 "annotation property {} StringList has an invalid count",
                 property.id
             ))
         })?;
     if has_non_whitespace_text(string_list) {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} StringList has unexpected text",
             property.id
         )));
     }
     let found = string_list.children().filter(roxmltree::Node::is_element).count();
     if found != count {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} StringList count={count} but {} direct String values were found",
             property.id,
             found
@@ -612,15 +616,15 @@ fn strict_text_values(
     let mut texts = collection_vec(ctx, count, "fcstd annotation StringList values")?;
     for string in string_list.children().filter(roxmltree::Node::is_element) {
             if !string.has_tag_name("String") {
-                return Err(CodecError::malformed(format_args!(
+                return Err(annotation_malformed(ctx, format_args!(
                     "annotation property {} StringList has an unexpected child {}",
                     property.id,
                     string.tag_name().name()
                 )));
             }
-            validate_leaf_value(string, property, &["value"])?;
+            validate_leaf_value(ctx, string, property, &["value"])?;
             let value = string.attribute("value").ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                annotation_malformed(ctx, format_args!(
                     "annotation property {} String value is missing value",
                     property.id
                 ))
@@ -633,13 +637,14 @@ fn strict_text_values(
 }
 
 fn validate_leaf_value(
+    ctx: &DecodeContext<'_>,
     value: roxmltree::Node<'_, '_>,
     property: &PropertyRecord,
     allowed_attributes: &[&str],
 ) -> Result<(), CodecError> {
-    validate_attributes(value, property, allowed_attributes)?;
+    validate_attributes(ctx, value, property, allowed_attributes)?;
     if value.children().any(|child| child.is_element()) || has_non_whitespace_text(value) {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} value {} has nested content",
             property.id,
             value.tag_name().name()
@@ -649,6 +654,7 @@ fn validate_leaf_value(
 }
 
 fn validate_attributes(
+    ctx: &DecodeContext<'_>,
     value: roxmltree::Node<'_, '_>,
     property: &PropertyRecord,
     allowed_attributes: &[&str],
@@ -657,7 +663,7 @@ fn validate_attributes(
         .attributes()
         .any(|attribute| !allowed_attributes.contains(&attribute.name()))
     {
-        return Err(CodecError::malformed(format_args!(
+        return Err(annotation_malformed(ctx, format_args!(
             "annotation property {} value {} has unsupported attributes",
             property.id,
             value.tag_name().name()
@@ -680,6 +686,17 @@ pub(crate) mod tests {
     use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind as Kind;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
+
+    #[test]
+    fn annotation_diagnostic_refuses_at_matching_retained_limit() {
+        crate::test_support::assert_retained_refusal_at(
+            &[], "fcstd annotation diagnostic", |ctx| {
+                Err::<(), _>(super::annotation_malformed(
+                    ctx, format_args!("annotation property {} has invalid XML", "Note"),
+                ))
+            },
+        );
+    }
 
     #[test]
     fn annotation_record_collection_refuses_at_caller_limit() {
