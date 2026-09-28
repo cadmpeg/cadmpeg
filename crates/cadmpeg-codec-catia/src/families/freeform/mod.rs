@@ -459,11 +459,15 @@ pub(super) fn try_decode_freeform_surfaces(
         } else {
             None
         };
-        let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves_from_records(
+        let b2_nurbs_curves = match crate::families::b2::records::b2_nurbs_curves_from_records(
+            ctx,
             &scan.data,
             &consolidated_records,
             refusal,
-        );
+        ) {
+            Ok(curves) => curves,
+            Err(error) => return Some(Err(error)),
+        };
         let b2_nurbs_curve_count = b2_nurbs_curves.len();
         let a5_nurbs_curves =
             match crate::families::a5a8::records::a5_nurbs_curves_from_records(
