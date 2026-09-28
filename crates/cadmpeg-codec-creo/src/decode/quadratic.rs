@@ -5,6 +5,7 @@
 
 use cadmpeg_ir::math::{multiply_divide, power_of_two_bound, scale_power_of_two};
 use cadmpeg_ir::scalar::FiniteReal;
+use std::ops::{Deref, DerefMut};
 
 /// The relative band inside which a sum of products states zero.
 ///
@@ -24,6 +25,76 @@ use cadmpeg_ir::scalar::FiniteReal;
 /// differences of a cubic extrusion reach four products and the section
 /// equal-length constant four, well inside it.
 const EPS_QUADRATIC_CANCELLATION: f64 = 64.0 * f64::EPSILON;
+
+/// Zero, one, or two finite roots kept in ascending order without heap storage.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct QuadraticRoots {
+    values: [f64; 2],
+    len: usize,
+}
+
+impl QuadraticRoots {
+    fn empty() -> Self {
+        Self {
+            values: [0.0; 2],
+            len: 0,
+        }
+    }
+
+    fn one(value: f64) -> Self {
+        Self {
+            values: [value, 0.0],
+            len: 1,
+        }
+    }
+
+    pub(super) fn as_slice(&self) -> &[f64] {
+        &self.values[..self.len]
+    }
+
+    pub(super) fn retain(&mut self, mut predicate: impl FnMut(&f64) -> bool) {
+        let mut retained = 0;
+        for index in 0..self.len {
+            if predicate(&self.values[index]) {
+                self.values[retained] = self.values[index];
+                retained += 1;
+            }
+        }
+        self.len = retained;
+    }
+
+    pub(super) fn dedup_by(&mut self, same: impl FnOnce(&mut f64, &mut f64) -> bool) {
+        if self.len == 2 {
+            let [first, second] = &mut self.values;
+            if same(second, first) {
+                self.len = 1;
+            }
+        }
+    }
+}
+
+impl Deref for QuadraticRoots {
+    type Target = [f64];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl DerefMut for QuadraticRoots {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.values[..self.len]
+    }
+}
+
+impl IntoIterator for QuadraticRoots {
+    type Item = f64;
+    type IntoIter = std::iter::Take<std::array::IntoIter<f64, 2>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.into_iter().take(self.len)
+    }
+}
 
 /// The bound on the difference between a sum of products computed in f64 and
 /// the exact sum of the exact products.
@@ -100,21 +171,25 @@ pub(super) fn real_roots(
     quadratic: Coefficient,
     linear: Coefficient,
     constant: Coefficient,
-) -> Vec<f64> {
+) -> QuadraticRoots {
     if [quadratic, linear, constant]
         .iter()
         .any(|coefficient| !coefficient.terms.is_finite())
     {
-        return Vec::new();
+        return QuadraticRoots::empty();
     }
     let [Some(quadratic_value), Some(linear_value), Some(_)] =
         [quadratic, linear, constant].map(|coefficient| FiniteReal::new(coefficient.value))
     else {
-        return Vec::new();
+        return QuadraticRoots::empty();
     };
     if quadratic.value == 0.0 {
         let root = -constant.value / linear.value;
-        return root.is_finite().then_some(root).into_iter().collect();
+        return if root.is_finite() {
+            QuadraticRoots::one(root)
+        } else {
+            QuadraticRoots::empty()
+        };
     }
     let exponent = |value: f64| power_of_two_bound(value).unwrap_or(0);
     let variable_exponent = if constant.value != 0.0 {
@@ -138,10 +213,10 @@ pub(super) fn real_roots(
     let mut errors = [0.0; 3];
     for (index, (coefficient, shift)) in coefficients.into_iter().zip(shifts).enumerate() {
         let Some(value) = scale_power_of_two(coefficient.value, shift - scale_exponent) else {
-            return Vec::new();
+            return QuadraticRoots::empty();
         };
         let Some(terms) = scale_power_of_two(coefficient.terms, shift - scale_exponent) else {
-            return Vec::new();
+            return QuadraticRoots::empty();
         };
         values[index] = value.get();
         errors[index] = EPS_QUADRATIC_CANCELLATION * terms.get();
@@ -163,12 +238,11 @@ pub(super) fn real_roots(
         + EPS_QUADRATIC_CANCELLATION * (b * b + product.abs());
     if discriminant.abs() <= error {
         return multiply_divide(linear_value.negated(), FiniteReal::HALF, quadratic_value)
-            .map(FiniteReal::get)
-            .into_iter()
-            .collect();
+            .map(|root| QuadraticRoots::one(root.get()))
+            .unwrap_or_else(QuadraticRoots::empty);
     }
     if discriminant < 0.0 {
-        return Vec::new();
+        return QuadraticRoots::empty();
     }
     let root = discriminant.sqrt();
     let q = -0.5 * (b + root.copysign(b));
@@ -186,15 +260,17 @@ pub(super) fn real_roots(
     // q is in the scaled variable's chart. Combine the chart exponent with
     // each original coefficient before division can overflow or underflow.
     // Original coefficients also retain bits lost by subnormal common scaling.
-    let mut roots = [
+    let candidates = [
         scaled_quotient(q, quadratic.value, scale_exponent - variable_exponent),
         scaled_quotient(constant.value, q, variable_exponent - scale_exponent),
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
+    ];
+    let mut roots = QuadraticRoots::empty();
+    for root in candidates.into_iter().flatten() {
+        roots.values[roots.len] = root;
+        roots.len += 1;
+    }
     roots.sort_by(f64::total_cmp);
-    roots.dedup();
+    roots.dedup_by(|second, first| *second == *first);
     roots
 }
 
@@ -210,7 +286,7 @@ mod tests {
                     Coefficient::single(scale),
                     Coefficient::single(0.0),
                     Coefficient::single(-scale)
-                ),
+                ).as_slice(),
                 [-1.0, 1.0]
             );
             assert!(super::real_roots(
@@ -224,7 +300,7 @@ mod tests {
                     Coefficient::single(0.0),
                     Coefficient::single(scale),
                     Coefficient::single(-scale)
-                ),
+                ).as_slice(),
                 [1.0]
             );
         }
@@ -233,7 +309,7 @@ mod tests {
             Coefficient::single(-1e16),
             Coefficient::single(1.0),
         );
-        assert_eq!(roots, [1e-16, 1e16]);
+        assert_eq!(roots.as_slice(), [1e-16, 1e16]);
     }
     #[test]
     fn numerical_0922b_finite_quadratic_roots() {

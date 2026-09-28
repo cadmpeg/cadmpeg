@@ -8,7 +8,7 @@ use cadmpeg_ir::math::planar::line_circle_intersections;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::PositiveLength;
 
-use crate::decode::quadratic::{cancellation_bound, real_roots, Coefficient};
+use crate::decode::quadratic::{cancellation_bound, real_roots, Coefficient, QuadraticRoots};
 use crate::vecmath::{cross, dot, normalize};
 
 use super::planes::point_on_carrier;
@@ -1259,7 +1259,7 @@ fn refine_plane_conic_tangency(
 /// decision there is the one that constructor made. The two sums formed here
 /// scale that same bar by the powers of `u` they multiply it with, which bounds
 /// each sum against the exact coefficients rather than against the stated ones.
-fn conic_v_roots(conic: PlaneConicEquation, u: f64) -> Vec<f64> {
+fn conic_v_roots(conic: PlaneConicEquation, u: f64) -> QuadraticRoots {
     real_roots(
         conic.vv,
         Coefficient::summed(
