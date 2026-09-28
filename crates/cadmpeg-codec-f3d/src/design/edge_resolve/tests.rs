@@ -27,6 +27,7 @@ mod reference_assignment_allocation;
 mod radius_allocation;
 mod transition_recipe_allocation;
 mod partial_historical_allocation;
+mod context_only_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
@@ -1793,18 +1794,18 @@ fn edge_group_ignores_members_without_changed_edge_candidates() {
             (Some(17), &[17, 18][..]),
             (Some(17), &[17][..]),
             (None, &[][..]),
-        ]),
+        ], None).unwrap(),
         Some(vec![17])
     );
     assert_eq!(
         crate::design::edge_resolve::context_only_edge_group_candidates([
             (Some(17), &[17][..]),
             (None, &[18][..]),
-        ]),
+        ], None).unwrap(),
         None
     );
     assert_eq!(
-        crate::design::edge_resolve::context_only_edge_group_candidates([(None, &[][..])]),
+        crate::design::edge_resolve::context_only_edge_group_candidates([(None, &[][..])], None).unwrap(),
         None
     );
 }

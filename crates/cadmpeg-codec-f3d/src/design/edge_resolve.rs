@@ -1009,7 +1009,7 @@ fn resolved_edge_group_with_transition_chain(
                         resolved_edge_operand(operand),
                         operand.changed_boundary_edge_slots.as_slice(),
                     )
-                }));
+                }), ctx)?;
         }
         if slots.is_none() {
             slots =
@@ -1369,20 +1369,22 @@ fn partial_historical_edge_selection<'a>(
 
 fn context_only_edge_group_candidates<'a>(
     members: impl IntoIterator<Item = (Option<i64>, &'a [i64])>,
-) -> Option<Vec<i64>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<i64>>, CodecError> {
     let mut edges = Vec::new();
     for (resolved, changed_candidates) in members {
         match resolved {
             Some(edge) => {
                 if !edges.contains(&edge) {
-                    edges.push(edge);
+                    push_edge_item(ctx, &mut edges, edge,
+                        "f3d context-only edge candidate")?;
                 }
             }
             None if changed_candidates.is_empty() => {}
-            None => return None,
+            None => return Ok(None),
         }
     }
-    (!edges.is_empty()).then_some(edges)
+    Ok((!edges.is_empty()).then_some(edges))
 }
 
 pub(crate) fn feature_input_topology_id(
