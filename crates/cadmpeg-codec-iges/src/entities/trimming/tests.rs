@@ -187,6 +187,17 @@ fn implicit_outer_surface_attachment_refuses_procedural_slot() {
 }
 
 #[test]
+fn implicit_outer_boundary_refuses_curve_id_storage() {
+    let bytes = trimmed_plane_with_boundaries(
+        "106,1,5,0,0,0,1,0,1,1,0,1,0,0;",
+        "144,1,0,1,,13;",
+    );
+    assert_trimming_collection_refusal(&bytes, "iges implicit boundary curve IDs");
+    assert_trimming_retained_refusal(&bytes, "iges implicit boundary curve ID text");
+    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+}
+
+#[test]
 fn linear_boundary_path_refuses_collection_limit_before_append() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
