@@ -1074,6 +1074,20 @@ fn temporary_bytes<T>(
     Ok(bytes)
 }
 
+pub(crate) fn temporary_vec<'a, T>(
+    ctx: &'a DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<(Vec<T>, ScopedReservation<'a>), CodecError> {
+    let bytes = count.checked_mul(std::mem::size_of::<T>().max(1))
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let reservation = ctx.reserve_scoped(bytes, operation)?;
+    let mut values = Vec::new();
+    reserve_vec(ctx, &mut values, count, operation)?;
+    Ok((values, reservation))
+}
+
 pub(crate) fn temporary_set<'a, T: Eq + Hash>(
     ctx: &'a DecodeContext<'_>,
     count: usize,

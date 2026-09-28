@@ -1813,35 +1813,21 @@ fn consolidated_jet_pcurve(
     chart: &ConsolidatedCarrierChart<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    let mut points = Vec::new();
-    let mut first = Vec::new();
-    let mut second = Vec::new();
-    let mut knots = Vec::new();
     let count = pcurve.sites.len();
-    crate::resource::reserve_vec(ctx, &mut points, count, "catia consolidated pcurve points")?;
-    crate::resource::reserve_vec(
-        ctx,
-        &mut first,
-        count,
-        "catia consolidated pcurve first jets",
-    )?;
-    crate::resource::reserve_vec(
-        ctx,
-        &mut second,
-        count,
-        "catia consolidated pcurve second jets",
-    )?;
-    crate::resource::reserve_vec(ctx, &mut knots, count, "catia consolidated pcurve knots")?;
+    let (mut points, _points_reservation) = crate::resource::temporary_vec(ctx,
+        count, "catia consolidated pcurve points")?;
+    let (mut first, _first_reservation) = crate::resource::temporary_vec(ctx,
+        count, "catia consolidated pcurve first jets")?;
+    let (mut second, _second_reservation) = crate::resource::temporary_vec(ctx,
+        count, "catia consolidated pcurve second jets")?;
+    let (mut knots, _knots_reservation) = crate::resource::temporary_vec(ctx,
+        count, "catia consolidated pcurve knots")?;
     for site in &pcurve.sites {
         points.push(chart.point(site.point.get()));
         first.push(chart.derivative(site.first_derivatives.get()));
         second.push(chart.derivative(site.second_derivatives.get()));
         knots.push(site.knot.get());
     }
-    let record = format!(
-        "consolidated quintic-jet pcurve record at byte {}",
-        pcurve.pos
-    );
     quintic_jet_pcurve(
         ctx,
         crate::wire::records::ConsolidatedPcurve::DEGREE,
@@ -1850,7 +1836,7 @@ fn consolidated_jet_pcurve(
         &first,
         &second,
         refusal,
-        &record,
+        format_args!("consolidated quintic-jet pcurve record at byte {}", pcurve.pos),
     )
 }
 
@@ -3771,6 +3757,37 @@ mod tests {
     use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::HashMap;
+
+    #[test]
+    fn consolidated_jet_pcurve_workspace_refuses_materialized_limit() {
+        use crate::wire::records::{ConsolidatedPcurve, ConsolidatedPcurveSite};
+        let site = |knot, u| ConsolidatedPcurveSite {
+            knot: cadmpeg_ir::scalar::FiniteReal::new(knot).expect("finite knot"),
+            point: cadmpeg_ir::units::FiniteVector::new([u, 0.0]).expect("finite point"),
+            first_derivatives: cadmpeg_ir::units::FiniteVector::new([1.0, 0.0])
+                .expect("finite first jet"),
+            second_derivatives: cadmpeg_ir::units::FiniteVector::new([0.0, 0.0])
+                .expect("finite second jet"),
+        };
+        let pcurve = ConsolidatedPcurve {
+            pos: 16,
+            support_id: 1,
+            extrapolation_sites: 0,
+            sites: vec![site(0.0, 0.0), site(1.0, 1.0)],
+            range: cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0])
+                .expect("increasing range"),
+            tail: Vec::new(),
+        };
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::consolidated_jet_pcurve(ctx, &pcurve,
+                &ConsolidatedCarrierChart::Identity, &mut crate::nurbs::LaneRefusals::new())
+        };
+        assert!(crate::test_support::with_service_context(run)
+            .expect("service profile admits consolidated jet").is_some());
+        assert!(matches!(crate::test_support::with_materialized_limit(0, run),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia consolidated pcurve points"));
+    }
 
     fn with_admission<T>(run: impl FnOnce(&mut super::FamilyEntityAdmission<'_, '_>) -> T) -> T {
         crate::test_support::with_service_context(|ctx| {

@@ -821,7 +821,7 @@ pub(crate) fn quintic_jet_pcurve(
     first: &[[f64; 2]],
     second: &[[f64; 2]],
     refusal: &mut crate::nurbs::LaneRefusals,
-    record: &str,
+    record: impl std::fmt::Display,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
     let Some((full_knots, controls)) =
         crate::nurbs::quintic_jet_bspline(ctx, degree, knots, points, first, second)? else {

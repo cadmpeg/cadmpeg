@@ -2337,14 +2337,14 @@ fn e5_pcurve_on_surface(
         }
         crate::families::e5::graph::E5Pcurve::Jet { sites, range, .. } => {
             let scale = decoded_surface.uv_scale.map(FiniteReal::get);
-            let mut knots = Vec::new();
-            let mut points = Vec::new();
-            let mut first_derivatives = Vec::new();
-            let mut second_derivatives = Vec::new();
-            crate::resource::reserve_vec(ctx, &mut knots, sites.len(), "catia E5 pcurve jet knots")?;
-            crate::resource::reserve_vec(ctx, &mut points, sites.len(), "catia E5 pcurve jet points")?;
-            crate::resource::reserve_vec(ctx, &mut first_derivatives, sites.len(), "catia E5 pcurve first jets")?;
-            crate::resource::reserve_vec(ctx, &mut second_derivatives, sites.len(), "catia E5 pcurve second jets")?;
+            let (mut knots, _knots_reservation) = crate::resource::temporary_vec(ctx,
+                sites.len(), "catia E5 pcurve jet knots")?;
+            let (mut points, _points_reservation) = crate::resource::temporary_vec(ctx,
+                sites.len(), "catia E5 pcurve jet points")?;
+            let (mut first_derivatives, _first_reservation) = crate::resource::temporary_vec(ctx,
+                sites.len(), "catia E5 pcurve first jets")?;
+            let (mut second_derivatives, _second_reservation) = crate::resource::temporary_vec(ctx,
+                sites.len(), "catia E5 pcurve second jets")?;
             let scaled =
                 |values: [FiniteReal; 2]| [values[0].get() * scale[0], values[1].get() * scale[1]];
             for site in sites {
@@ -2375,7 +2375,7 @@ fn e5_pcurve_on_surface(
                 &first_derivatives,
                 &second_derivatives,
                 refusal,
-                &format!(
+                format_args!(
                     "e5 quintic-jet pcurve on surface record {} at byte {}",
                     decoded_surface.record_id, decoded_surface.pos
                 ),
@@ -3271,6 +3271,11 @@ mod route_tests {
         assert!(crate::test_support::with_service_context(run)
             .expect("service resource budget")
             .is_some());
+        assert!(matches!(
+            crate::test_support::with_materialized_limit(0, run),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "catia E5 pcurve jet knots"
+        ));
         for (cap, operation) in [
             (0, "catia E5 pcurve jet knots"),
             (2, "catia E5 pcurve jet points"),
