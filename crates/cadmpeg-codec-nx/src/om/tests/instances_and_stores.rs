@@ -29,6 +29,10 @@ use crate::test_support::test_om::indexed_om_section;
 use crate::test_support::test_om::offset_only_indexed_om_section;
 use cadmpeg_core::decode::View;
 
+fn extrude_payload_32_branch_test(record: crate::om::operation_record::OperationBodyInput<'_>) -> Option<crate::om::extrude_32::Extrude32Frame<()>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::extrude_32::extrude_payload_32_branch(ctx, record)).unwrap()
+}
+
 fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
@@ -1404,7 +1408,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
     let record =
         crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
-    let branch = crate::om::extrude_32::extrude_payload_32_branch(record).unwrap();
+    let branch = extrude_payload_32_branch_test(record).unwrap();
     assert_eq!(branch.origin(), 105);
     assert_eq!(branch.terminal().value(), 115);
     assert!(branch.scalar().value().get().is_finite());
@@ -1478,7 +1482,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
 
     let mut invalid = bytes.to_vec();
     invalid[36] = 0xff;
-    assert!(crate::om::extrude_32::extrude_payload_32_branch(
+    assert!(extrude_payload_32_branch_test(
         crate::om::operation_record::OperationBodyInput::new(
             &invalid,
             record.offset(),
@@ -1491,7 +1495,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
 
     let mut invalid_atom = bytes.to_vec();
     invalid_atom[18] = 0x3c;
-    assert!(crate::om::extrude_32::extrude_payload_32_branch(
+    assert!(extrude_payload_32_branch_test(
         crate::om::operation_record::OperationBodyInput::new(
             &invalid_atom,
             record.offset(),
@@ -1504,7 +1508,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
 
     let mut wrong_terminal_body = bytes.to_vec();
     wrong_terminal_body[43] = 0x72;
-    assert!(crate::om::extrude_32::extrude_payload_32_branch(
+    assert!(extrude_payload_32_branch_test(
         crate::om::operation_record::OperationBodyInput::new(
             &wrong_terminal_body,
             record.offset(),

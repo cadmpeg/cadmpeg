@@ -1374,10 +1374,9 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         feature_extrude_32_constructions(&[unresolved], std::slice::from_ref(&branch),).is_empty()
     );
     let mut unresolved_lane = branch;
-    unresolved_lane.frame =
-        unresolved_lane
-            .frame
-            .map_bindings(|index, binding| if index == 2 { None } else { binding });
+    unresolved_lane.frame = crate::test_support::with_decode_context(|ctx|
+        unresolved_lane.frame.map_bindings(ctx, |index, binding| if index == 2 { None } else { binding })
+    ).unwrap();
     assert!(feature_extrude_32_constructions(
         &[FeatureExtrudeProfileReference {
             id: "profile#0".to_string(),
