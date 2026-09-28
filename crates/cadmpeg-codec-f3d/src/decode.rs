@@ -2428,6 +2428,7 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.design_configurations =
             crate::design::configurations::decode_configurations(scan)?;
         self.ir.model.configurations = crate::design::configurations::project_configurations(
+            Some(self.ctx),
             &self.native.design_configurations,
         )?;
         (self.ir.model.features, self.ir.model.parameters) =

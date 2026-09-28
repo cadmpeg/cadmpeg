@@ -6,13 +6,59 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
 use crate::ids::neutral_configuration_id;
-use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
+use crate::records::configuration::{
+    ConfigurationScalar, DesignConfiguration, DesignConfigurationKind,
+};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::de::{IgnoredAny, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::collections::HashSet;
 use std::fmt;
+
+fn copy_configuration_text(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let Some(ctx) = ctx else { return Ok(value.to_owned()); };
+    let bytes = ctx.copy_retained(value.as_bytes(), operation)?;
+    String::from_utf8(bytes).map_err(|_| CodecError::malformed("validated configuration text is not UTF-8"))
+}
+
+fn configuration_property_key(
+    ctx: Option<&DecodeContext<'_>>,
+    prefix: &'static str,
+    suffix: &str,
+    operation: &'static str,
+) -> Result<cadmpeg_core::text::NonBlankString, CodecError> {
+    let Some(ctx) = ctx else {
+        return cadmpeg_core::text::NonBlankString::new(format!("{prefix}{suffix}"))
+            .ok_or_else(|| CodecError::malformed("configuration property key is blank"));
+    };
+    let len = prefix.len().checked_add(suffix.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit(operation, 0, 1)
+    })?;
+    ctx.charge_retained(u64::try_from(len).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?, operation)?;
+    let mut key = String::new();
+    key.try_reserve(len).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    key.push_str(prefix);
+    key.push_str(suffix);
+    cadmpeg_core::text::NonBlankString::new(key)
+        .ok_or_else(|| CodecError::malformed("configuration property key is blank"))
+}
+
+fn configuration_scalar_text(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &ConfigurationScalar,
+) -> Result<String, CodecError> {
+    match value {
+        ConfigurationScalar::String(text) => {
+            copy_configuration_text(ctx, text, "f3d configuration parameter value")
+        }
+        _ => Ok(value.text()),
+    }
+}
 
 #[derive(Default)]
 struct OrderedVariantNames(Vec<String>);
@@ -124,6 +170,7 @@ pub(crate) fn decode_configurations(
 /// configuration arena. Rule documents remain in the native arena because a
 /// rule is a selector, not a model variant.
 pub(crate) fn project_configurations(
+    ctx: Option<&DecodeContext<'_>>,
     native: &[DesignConfiguration],
 ) -> Result<Vec<cadmpeg_ir::features::DesignConfiguration>, CodecError> {
     use cadmpeg_ir::features::DesignConfiguration as NeutralConfiguration;
@@ -146,27 +193,41 @@ pub(crate) fn project_configurations(
         for (name, definition) in table.variants() {
             let mut properties = BTreeMap::new();
             for (parameter, value) in definition.parameters() {
-                properties.insert(
-                    cadmpeg_core::nonblank_literal!("parameter:{}", parameter),
-                    value.text(),
-                );
+                let key = configuration_property_key(ctx, "parameter:", parameter,
+                    "f3d configuration parameter key")?;
+                let value = configuration_scalar_text(ctx, value)?;
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "f3d configuration parameter property")?;
+                }
+                properties.insert(key, value);
             }
             for feature in definition.suppressed() {
-                properties.insert(
-                    cadmpeg_core::nonblank_literal!("suppressed:{}", feature),
-                    "true".into(),
-                );
+                let key = configuration_property_key(ctx, "suppressed:", feature,
+                    "f3d configuration suppression key")?;
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "f3d configuration suppression property")?;
+                }
+                properties.insert(key, "true".into());
             }
-            let material = definition.material().map(str::to_owned);
+            let material = definition.material().map(|material| {
+                copy_configuration_text(ctx, material, "f3d configuration material")
+            }).transpose()?;
             let ordinal = u32::try_from(projected.len()).map_err(|_| {
                 CodecError::Malformed("F3D configuration ordinal exceeds u32".into())
             })?;
+            let name = copy_configuration_text(ctx, name, "f3d configuration variant name")?;
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d projected configuration")?;
+                projected.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d projected configuration allocation", 0, 1)
+                })?;
+            }
             projected.push(NeutralConfiguration {
-                id: neutral_configuration_id(table.entry_name(), name),
+                id: neutral_configuration_id(table.entry_name(), &name),
                 ordinal,
                 active: active == Some(name.as_str()),
                 source_index: None,
-                name: name.clone().into(),
+                name: Some(name),
                 material,
                 properties,
                 parameter_overrides: BTreeMap::new(),
@@ -193,10 +254,14 @@ pub(crate) fn project_configurations(
         if matches.next().is_some() {
             continue;
         }
-        configuration.properties.insert(
-            cadmpeg_core::nonblank_literal!("activation_rule:{}", rule.entry_name()),
-            condition.to_owned(),
-        );
+        let key = configuration_property_key(ctx, "activation_rule:", rule.entry_name(),
+            "f3d configuration activation rule key")?;
+        let condition = copy_configuration_text(ctx, condition,
+            "f3d configuration activation rule condition")?;
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, "f3d configuration activation rule property")?;
+        }
+        configuration.properties.insert(key, condition);
     }
     projected.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(projected)
@@ -365,7 +430,7 @@ mod tests {
             (payload).as_object().unwrap().clone(),
         )
         .unwrap();
-        let projected = project_configurations(std::slice::from_ref(&table)).unwrap();
+        let projected = project_configurations(None, std::slice::from_ref(&table)).unwrap();
         let mut authored = projected
             .iter()
             .filter_map(|configuration| {
@@ -448,7 +513,7 @@ mod tests {
                 .clone(),
         )
         .unwrap()];
-        let projected = project_configurations(&native).expect("empty rule projection");
+        let projected = project_configurations(None, &native).expect("empty rule projection");
         assert!(projected.is_empty());
         assert_eq!(unresolved_configuration_rule_count(&native, &projected), 1);
     }
@@ -478,7 +543,7 @@ mod tests {
         )
         .unwrap();
         let native = [table("table.dsgcfg", "wide"), rule.clone()];
-        let projected = project_configurations(&native).expect("ordered configuration table");
+        let projected = project_configurations(None, &native).expect("ordered configuration table");
         assert_eq!(
             projected[0].properties["activation_rule:rule.dsgcfgrule"],
             "width > 20 mm"
@@ -490,7 +555,7 @@ mod tests {
             table("second.dsgcfg", "wide"),
             rule,
         ];
-        let error = project_configurations(&ambiguous)
+        let error = project_configurations(None, &ambiguous)
             .expect_err("independent nonempty tables have no shared order");
         assert!(error
             .to_string()
@@ -524,7 +589,7 @@ mod tests {
             pmi: None,
             native_ref: None,
         };
-        let mut projected = project_configurations(&[table]).expect("ordered configuration table");
+        let mut projected = project_configurations(None, &[table]).expect("ordered configuration table");
         bind_configuration_parameter_overrides(None, &mut projected, std::slice::from_ref(&parameter)).unwrap();
         assert_eq!(projected[0].parameter_overrides[&parameter.id], "25 mm");
         assert!(projected[0].properties.is_empty());
@@ -537,7 +602,7 @@ mod tests {
             id: ParameterId::mint("f3d:model:parameter#other-width").expect("identity grammar"),
             ..parameter.clone()
         };
-        let mut ambiguous = project_configurations(&[DesignConfiguration::try_new(
+        let mut ambiguous = project_configurations(None, &[DesignConfiguration::try_new(
             "other.dsgcfg".into(),
             DesignConfigurationKind::Table,
             vec!["wide".into()],
@@ -591,7 +656,7 @@ mod tests {
             ),
             native_ref: None,
         };
-        let mut projected = project_configurations(&[table]).expect("ordered configuration table");
+        let mut projected = project_configurations(None, &[table]).expect("ordered configuration table");
         bind_configuration_suppressed_features(&mut projected, std::slice::from_ref(&feature));
         assert_eq!(
             projected[0].suppressed_features().collect::<Vec<_>>(),
@@ -607,7 +672,7 @@ mod tests {
             id: FeatureId::mint("f3d:model:feature#other-fillet-1").expect("identity grammar"),
             ..feature.clone()
         };
-        let mut ambiguous = project_configurations(&[DesignConfiguration::try_new(
+        let mut ambiguous = project_configurations(None, &[DesignConfiguration::try_new(
             "other.dsgcfg".into(),
             DesignConfigurationKind::Table,
             vec!["alternate".into()],
@@ -660,13 +725,90 @@ mod tests {
             policy.limits.max_retained_bytes = retained;
             policy.limits.max_collection_items = collections;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            let mut projected = project_configurations(std::slice::from_ref(&table)).unwrap();
+            let mut projected = project_configurations(None, std::slice::from_ref(&table)).unwrap();
             assert!(matches!(
                 bind_configuration_parameter_overrides(Some(&ctx), &mut projected, std::slice::from_ref(&parameter)),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == dimension && failure.operation == operation
             ));
             assert!(projected[0].parameter_overrides.is_empty());
+        }
+    }
+
+    #[test]
+    fn configuration_projection_refuses_each_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let table = DesignConfiguration::try_new(
+            "table.dsgcfg".into(), DesignConfigurationKind::Table, vec!["wide".into()],
+            serde_json::json!({"configurations": {"wide": {
+                "parameters": {"width": "25 mm"},
+                "suppressed": ["Fillet 1"],
+                "material": "Steel"
+            }}}).as_object().unwrap().clone(),
+        ).unwrap();
+        let rule = DesignConfiguration::try_new(
+            "rule.dsgcfgrule".into(), DesignConfigurationKind::Rule, Vec::new(),
+            serde_json::json!({"when": "width > 20 mm", "activate": "wide"})
+                .as_object().unwrap().clone(),
+        ).unwrap();
+        for (limit, operation) in [
+            (0, "f3d configuration parameter property"),
+            (1, "f3d configuration suppression property"),
+            (2, "f3d projected configuration"),
+            (3, "f3d configuration activation rule property"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                project_configurations(Some(&ctx), &[table.clone(), rule.clone()]),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation
+            ), "limit {limit}, operation {operation}");
+        }
+    }
+
+    #[test]
+    fn configuration_projection_text_copies_refuse_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        for operation in [
+            "f3d configuration parameter value",
+            "f3d configuration material",
+            "f3d configuration variant name",
+            "f3d configuration activation rule condition",
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = 4;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                super::copy_configuration_text(Some(&ctx), "input", operation),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::RetainedBytes
+                        && failure.operation == operation
+            ));
+        }
+        for (prefix, operation) in [
+            ("parameter:", "f3d configuration parameter key"),
+            ("suppressed:", "f3d configuration suppression key"),
+            ("activation_rule:", "f3d configuration activation rule key"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = 4;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(
+                super::configuration_property_key(Some(&ctx), prefix, "input", operation),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::RetainedBytes
+                        && failure.operation == operation
+            ));
         }
     }
 }
