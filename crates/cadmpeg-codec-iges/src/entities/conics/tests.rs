@@ -53,6 +53,13 @@ fn conic_identity_copies_refuse_retained_byte_limit() {
 }
 
 #[test]
+fn conic_generated_identity_refuses_before_minting() {
+    let bytes = conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;");
+    IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    assert_conic_refusal(&bytes, "iges generated identity", true);
+}
+
+#[test]
 fn conic_indexes_neutral_records_and_wire_edges_refuse_limits() {
     let valid = conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;");
     for operation in [
