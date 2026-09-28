@@ -3318,59 +3318,120 @@ pub(super) fn external_reference_record_string_uses(
 
 /// Bind complete record lanes to their slot-zero name and slot-two directory.
 pub(super) fn external_reference_record_children(
+    ctx: &DecodeContext<'_>,
     records: &[ExternalReferenceRecord],
     references: &[ExternalReference],
     uses: &[ExternalReferenceRecordStringUse],
-) -> Vec<ExternalReferenceRecordChild> {
+) -> Result<Vec<ExternalReferenceRecordChild>, CodecError> {
     let mut references_by_id = BTreeMap::<&str, Option<&ExternalReference>>::new();
+    let index_bytes = references
+        .len()
+        .checked_mul(std::mem::size_of::<(&str, Option<&ExternalReference>)>())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx external reference child index", 0, 1))?;
+    let _index_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(index_bytes),
+        "nx external reference child index",
+    )?;
     for reference in references {
-        references_by_id
-            .entry(reference.id.as_str())
-            .and_modify(|value| *value = None)
-            .or_insert(Some(reference));
+        ctx.charge_work(1, "nx external reference child index")?;
+        if let Some(value) = references_by_id.get_mut(reference.id.as_str()) {
+            *value = None;
+        } else {
+            ctx.charge_collection_items(1, "nx external reference child index")?;
+            references_by_id.insert(reference.id.as_str(), Some(reference));
+        }
     }
-    records
-        .iter()
-        .filter_map(|record| {
-            let mut record_uses = uses
-                .iter()
-                .filter(|use_| use_.external_record == record.id)
-                .collect::<Vec<_>>();
-            record_uses.sort_by_key(|use_| use_.slot);
-            let [slot0, slot1, slot2, slot3] = record_uses.as_slice() else {
-                return None;
-            };
-            if [slot0.slot, slot1.slot, slot2.slot, slot3.slot] != ExtrefSlot::ALL {
-                return None;
+    let mut output = Vec::new();
+    for record in records {
+        let mut record_uses: [Option<&ExternalReferenceRecordStringUse>; 4] = [None; 4];
+        let mut count = 0usize;
+        let mut duplicate = false;
+        for use_ in uses {
+            ctx.charge_work(1, "nx external reference child use scan")?;
+            if use_.external_record != record.id {
+                continue;
             }
-            let resolved = record_uses
-                .iter()
-                .enumerate()
-                .map(|(slot, use_)| {
-                    let reference = references_by_id
-                        .get(use_.external_reference.as_str())
-                        .and_then(|reference| *reference)?;
-                    (use_.string_index == record.id_slots[slot]
-                        && reference.source_entry == record.source_entry
-                        && reference.ordinal == use_.string_index)
-                        .then_some(reference)
-                })
-                .collect::<Option<Vec<_>>>()?;
-            let name = resolved[0];
-            let directory = resolved[2];
-            name.path
-                .to_ascii_lowercase()
-                .ends_with(".prt")
-                .then_some(())?;
-            (!directory.path.is_empty()).then_some(())?;
-            Some(ExternalReferenceRecordChild {
-                id: format!("{}:child", record.id),
-                external_record: record.id.clone(),
-                name_reference: name.id.clone(),
-                directory_reference: directory.id.clone(),
-            })
-        })
-        .collect()
+            count += 1;
+            let slot = &mut record_uses[use_.slot.index()];
+            if slot.is_some() {
+                duplicate = true;
+                break;
+            }
+            *slot = Some(use_);
+        }
+        let [Some(slot0), Some(slot1), Some(slot2), Some(slot3)] = record_uses else {
+            continue;
+        };
+        if duplicate || count != 4 {
+            continue;
+        }
+        let slot_uses = [slot0, slot1, slot2, slot3];
+        let mut resolved = [None; 4];
+        let mut valid = true;
+        for (slot, use_) in slot_uses.into_iter().enumerate() {
+            let Some(reference) = references_by_id
+                .get(use_.external_reference.as_str())
+                .and_then(|reference| *reference)
+            else {
+                valid = false;
+                break;
+            };
+            if use_.string_index != record.id_slots[slot]
+                || reference.source_entry != record.source_entry
+                || reference.ordinal != use_.string_index
+            {
+                valid = false;
+                break;
+            }
+            resolved[slot] = Some(reference);
+        }
+        if !valid {
+            continue;
+        }
+        let (Some(name), Some(directory)) = (resolved[0], resolved[2]) else {
+            continue;
+        };
+        let Some(suffix_start) = name.path.len().checked_sub(4) else {
+            continue;
+        };
+        let Some(suffix) = name.path.get(suffix_start..) else {
+            continue;
+        };
+        if !suffix.eq_ignore_ascii_case(".prt") || directory.path.is_empty() {
+            continue;
+        }
+        ctx.charge_collection_items(1, "nx native external reference children")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ExternalReferenceRecordChild>()),
+            "nx native external reference children",
+        )?;
+        output.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("nx native external reference children", 0, 1)
+        })?;
+        let id_len = record
+            .id
+            .len()
+            .checked_add(":child".len())
+            .ok_or_else(|| ctx.refuse_codec_limit("nx native external reference child id", 0, 1))?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(id_len),
+            "nx native external reference child id",
+        )?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_len).map_err(|_| {
+            ctx.refuse_codec_limit("nx native external reference child id", 0, 1)
+        })?;
+        write!(&mut id, "{}:child", record.id).map_err(|_| {
+            ctx.refuse_codec_limit("nx native external reference child id", 0, 1)
+        })?;
+        output.push(ExternalReferenceRecordChild {
+            id,
+            external_record: copy_om_retained_text(ctx, &record.id, "nx external reference child record")?,
+            name_reference: copy_om_retained_text(ctx, &name.id, "nx external reference child name")?,
+            directory_reference: copy_om_retained_text(ctx, &directory.id, "nx external reference child directory")?,
+        });
+    }
+    Ok(output)
 }
 
 /// Decode the explicit NX arrangement table.

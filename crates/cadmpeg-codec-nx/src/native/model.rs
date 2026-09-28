@@ -1401,10 +1401,11 @@ impl NativeModel {
             &external_references,
         )?;
         let external_reference_record_children = external_reference_record_children(
+            ctx,
             &external_reference_records,
             &external_references,
             &external_reference_record_string_uses,
-        );
+        )?;
         let material_texture_assets = material_texture_assets(ctx, container)?;
         let material_texture_catalog_entries =
             material_texture_catalog_entries(container, &material_texture_assets);
