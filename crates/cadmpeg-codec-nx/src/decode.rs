@@ -133,7 +133,7 @@ fn decoded(
         "admit NX entities",
     )?;
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
-    source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns)?;
+    source_fidelity.attach_native_unknown_records_for_decode(&mut ir, "nx", unknowns, ctx)?;
     Ok(Decoded {
         ir,
         body,
