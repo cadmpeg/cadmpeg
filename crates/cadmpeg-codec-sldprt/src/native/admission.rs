@@ -197,6 +197,24 @@ pub(super) fn admit_temporary_clones<'a, 'ctx, T: Serialize + 'a>(
     }
 }
 
+pub(super) fn collect_temporary_clones<'a, 'ctx, T: Clone + Serialize + 'a>(
+    admission: NativeAdmission<'ctx, '_>,
+    records: impl Iterator<Item = &'a T> + Clone,
+    operation: &'static str,
+) -> Result<(Vec<T>, Option<ScopedReservation<'ctx>>), NativeConvertError> {
+    let count = records.clone().count();
+    let reservation = admit_temporary_clones(admission, records.clone(), operation)?;
+    let Some(ctx) = admission.context() else {
+        return Ok((records.cloned().collect(), reservation));
+    };
+    let mut result = Vec::new();
+    result
+        .try_reserve(count)
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    result.extend(records.cloned());
+    Ok((result, reservation))
+}
+
 /// Admit scratch storage before validation constructs candidate collections.
 pub(super) fn admit_validation_candidates<'ctx>(
     admission: NativeAdmission<'ctx, '_>,
