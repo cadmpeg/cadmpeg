@@ -4512,13 +4512,19 @@ pub(super) fn feature_body_reference_occurrences(ctx: &cadmpeg_core::decode::Dec
 ) -> Result<Vec<FeatureBodyReference>, cadmpeg_core::CodecError>
 {
     let mut references = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() { return; }
+            let rows = match crate::om::operation_body_references(ctx, record.body_view()) {
+                Ok(rows) => rows,
+                Err(error) => { failure = Some(error); return; }
+            };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             references.extend(
-                crate::om::operation_body_references(record.body_view())
+                rows
                     .into_iter()
                     .enumerate()
                     .map(|(ordinal, reference)| FeatureBodyReference {
@@ -4533,6 +4539,7 @@ pub(super) fn feature_body_reference_occurrences(ctx: &cadmpeg_core::decode::Dec
             );
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(references)
 }
 
