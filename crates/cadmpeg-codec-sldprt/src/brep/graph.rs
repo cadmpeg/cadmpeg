@@ -2647,7 +2647,7 @@ fn decode_graph(
             });
         }
     }
-    solve_face_orientation(&mut out);
+    solve_face_orientation(ctx, &mut out)?;
     synthesize_cylinder_seams(ctx, &mut out, &mut annotations, &source_stream)?;
     synthesize_sphere_seams(ctx, &mut out, &mut annotations, &source_stream)?;
     derive_planar_pcurves(ctx, &mut out, &mut annotations, &source_stream)?;
@@ -5980,18 +5980,23 @@ fn ruled_surface_line_pcurve(
     }))
 }
 
-fn solve_face_orientation(out: &mut Brep) {
-    let loop_faces: HashMap<_, _> = out
-        .loops
-        .iter()
-        .map(|lp| (lp.id.clone(), lp.face.clone()))
-        .collect();
+fn solve_face_orientation(
+    ctx: &DecodeContext<'_>,
+    out: &mut Brep,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut loop_faces = HashMap::new();
+    for lp in &out.loops {
+        reserve_graph_map_key(ctx, &mut loop_faces, &lp.id, "index oriented Parasolid loops")?;
+        loop_faces.insert(lp.id.clone(), lp.face.clone());
+    }
     let mut uses: HashMap<EdgeId, Vec<(FaceId, bool)>> = HashMap::new();
     for coedge in &out.coedges {
+        ctx.charge_work(1, "orient Parasolid face uses")?;
         if let Some(face) = loop_faces.get(&coedge.owner_loop) {
-            uses.entry(coedge.edge.clone())
-                .or_default()
-                .push((face.clone(), coedge.sense == Sense::Reversed));
+            reserve_graph_map_key(ctx, &mut uses, &coedge.edge, "index Parasolid edge face uses")?;
+            let edge_uses = uses.entry(coedge.edge.clone()).or_default();
+            ctx.reserve_collection_vec(edge_uses, 1, "collect Parasolid edge face uses")?;
+            edge_uses.push((face.clone(), coedge.sense == Sense::Reversed));
         }
     }
     let mut adjacency: HashMap<FaceId, Vec<(FaceId, bool)>> = HashMap::new();
@@ -5999,32 +6004,38 @@ fn solve_face_orientation(out: &mut Brep) {
         let (a, a_reversed) = &edge_uses[0];
         let (b, b_reversed) = &edge_uses[1];
         let parity = *a_reversed == *b_reversed;
-        adjacency
-            .entry(a.clone())
-            .or_default()
-            .push((b.clone(), parity));
-        adjacency
-            .entry(b.clone())
-            .or_default()
-            .push((a.clone(), parity));
+        for (face, neighbor) in [(a, b), (b, a)] {
+            reserve_graph_map_key(ctx, &mut adjacency, face, "index Parasolid face adjacency")?;
+            let neighbors = adjacency.entry(face.clone()).or_default();
+            ctx.reserve_collection_vec(neighbors, 1, "collect Parasolid face adjacency")?;
+            neighbors.push((neighbor.clone(), parity));
+        }
     }
-    let initial: HashMap<_, _> = out
-        .faces
-        .iter()
-        .map(|face| (face.id.clone(), face.sense == Sense::Reversed))
-        .collect();
+    let mut initial = HashMap::new();
+    for face in &out.faces {
+        reserve_graph_map_key(ctx, &mut initial, &face.id, "index initial Parasolid face senses")?;
+        initial.insert(face.id.clone(), face.sense == Sense::Reversed);
+    }
     let mut solved = HashMap::new();
     for root in out.faces.iter().map(|face| face.id.clone()) {
+        ctx.charge_work(1, "solve Parasolid face senses")?;
         if solved.contains_key(&root) {
             continue;
         }
+        reserve_graph_map_key(ctx, &mut solved, &root, "track solved Parasolid face senses")?;
         solved.insert(root.clone(), initial[&root]);
-        let mut pending = vec![root];
+        let mut pending = Vec::new();
+        ctx.reserve_collection_vec(&mut pending, 1, "walk Parasolid face senses")?;
+        pending.push(root);
         while let Some(face) = pending.pop() {
+            ctx.charge_work(1, "walk Parasolid face senses")?;
             let sense = solved[&face];
             for (neighbor, parity) in adjacency.get(&face).into_iter().flatten() {
+                ctx.charge_work(1, "walk Parasolid face adjacency")?;
                 if !solved.contains_key(neighbor) {
+                    reserve_graph_map_key(ctx, &mut solved, neighbor, "track solved Parasolid face senses")?;
                     solved.insert(neighbor.clone(), sense ^ parity);
+                    ctx.reserve_collection_vec(&mut pending, 1, "walk Parasolid face senses")?;
                     pending.push(neighbor.clone());
                 }
             }
@@ -6037,6 +6048,7 @@ fn solve_face_orientation(out: &mut Brep) {
             Sense::Forward
         };
     }
+    Ok(())
 }
 
 fn synthesize_cylinder_seams(
@@ -7508,13 +7520,15 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             ..Default::default()
         };
 
-        super::solve_face_orientation(&mut brep);
+        with_test_context(|ctx| super::solve_face_orientation(ctx, &mut brep))
+            .expect("orient first face pair");
         assert_eq!(brep.faces[0].sense, Sense::Forward);
         assert_eq!(brep.faces[1].sense, Sense::Reversed);
 
         brep.faces[1].sense = Sense::Reversed;
         brep.coedges[1].sense = Sense::Reversed;
-        super::solve_face_orientation(&mut brep);
+        with_test_context(|ctx| super::solve_face_orientation(ctx, &mut brep))
+            .expect("orient reversed face pair");
         assert_eq!(brep.faces[0].sense, Sense::Forward);
         assert_eq!(brep.faces[1].sense, Sense::Forward);
     }
