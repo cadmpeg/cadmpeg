@@ -2134,7 +2134,7 @@ fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
     unique
 }
 
-fn structured_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
+fn structured_offset_plane_sources(payload: &[u8]) -> impl Iterator<Item = u32> + '_ {
     const RECORD_LEN: usize = 140;
     const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     payload
@@ -2166,10 +2166,9 @@ fn structured_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
                 && bytes.get(132..140) == Some(TERMINATOR))
             .then_some(source)
         })
-        .collect()
 }
 
-fn classed_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
+fn classed_offset_plane_sources(payload: &[u8]) -> impl Iterator<Item = u32> + '_ {
     const TRAILER: &[u8] = b"\xff\xff\x01\x00\x1b\x00moFromSktEnt3IntSurfIdRep_c\x00\x00";
     payload
         .windows(4 + TRAILER.len())
@@ -2177,7 +2176,6 @@ fn classed_offset_plane_sources(payload: &[u8]) -> Vec<u32> {
             let source = View::u32_le_at(bytes, 0)?;
             (bytes.get(4..) == Some(TRAILER)).then_some(source)
         })
-        .collect()
 }
 
 fn offset_plane_reference_source(
@@ -2204,29 +2202,26 @@ fn offset_plane_reference_source(
                 && bytes.get(26..38) == Some(&[0; 12])
                 && bytes.get(38..46) == Some(TERMINATOR))
             .then_some(source)
-        })
-        .collect::<Vec<_>>();
-    let mut sources = typed_sources;
-    sources.extend(
-        compact_offset_plane_source(payload)
-            .filter(|source| Some(*source) != self_source && known_sources.contains(source)),
-    );
-    sources.extend(
-        structured_offset_plane_sources(payload)
-            .into_iter()
-            .filter(|source| Some(*source) != self_source && known_sources.contains(source)),
-    );
-    sources.extend(
-        classed_offset_plane_sources(payload)
-            .into_iter()
-            .filter(|source| Some(*source) != self_source && known_sources.contains(source)),
-    );
-    sources.sort_unstable();
-    sources.dedup();
-    let [source] = sources.as_slice() else {
-        return None;
-    };
-    Some(*source)
+        });
+    let compact_sources = compact_offset_plane_source(payload)
+        .filter(|source| Some(*source) != self_source && known_sources.contains(source));
+    let structured_sources = structured_offset_plane_sources(payload)
+        .filter(|source| Some(*source) != self_source && known_sources.contains(source));
+    let classed_sources = classed_offset_plane_sources(payload)
+        .filter(|source| Some(*source) != self_source && known_sources.contains(source));
+    let mut unique = None;
+    for source in typed_sources
+        .chain(compact_sources)
+        .chain(structured_sources)
+        .chain(classed_sources)
+    {
+        match unique {
+            Some(existing) if existing != source => return None,
+            None => unique = Some(source),
+            Some(_) => {}
+        }
+    }
+    unique
 }
 
 fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u32)> {
