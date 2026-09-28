@@ -916,20 +916,22 @@ impl TryFrom<ExpressionWire> for Expression {
     }
 }
 
-/// Return exact `p<decimal>[_qualifier]` references in formula occurrence order.
-pub(crate) fn expression_parameter_names(expression: &str) -> Vec<&str> {
+/// Iterate exact `p<decimal>[_qualifier]` references in formula occurrence order.
+pub(crate) fn expression_parameter_names(expression: &str) -> impl Iterator<Item = &str> + '_ {
     let bytes = expression.as_bytes();
-    let mut names = Vec::new();
     let mut at = 0usize;
-    while at < bytes.len() {
-        let Some(end) = expression_parameter_reference_end(bytes, at) else {
-            at += 1;
-            continue;
-        };
-        names.push(&expression[at..end]);
-        at = end;
-    }
-    names
+    std::iter::from_fn(move || {
+        while at < bytes.len() {
+            let Some(end) = expression_parameter_reference_end(bytes, at) else {
+                at += 1;
+                continue;
+            };
+            let name = &expression[at..end];
+            at = end;
+            return Some(name);
+        }
+        None
+    })
 }
 
 pub(crate) fn evaluate_parameterized_expression(
@@ -6145,7 +6147,7 @@ mod tests {
         assert_eq!(
             super::expression_parameter_names(
                 "max(p12, p3) + p12 + exp2 + p7_radius + p7_radius + p4bad + p5_"
-            ),
+            ).collect::<Vec<_>>(),
             vec!["p12", "p3", "p12", "p7_radius", "p7_radius"]
         );
     }
@@ -7984,7 +7986,7 @@ mod tests {
             None
         );
         assert_eq!(
-            super::expression_parameter_names(expressions[0].expression),
+            super::expression_parameter_names(expressions[0].expression).collect::<Vec<_>>(),
             vec!["p2", "p7_radius"]
         );
     }
