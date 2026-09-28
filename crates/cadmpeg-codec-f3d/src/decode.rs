@@ -2717,6 +2717,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut extrude_face_resolution,
         );
         self.ir.model.sketch_constraints = crate::design::constraints::project_sketch_constraints(
+            Some(self.ctx),
             &self.native.design_sketch_placements,
             &self.native.design_parameters,
             &self.native.sketch_points,
@@ -2724,7 +2725,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.sketch_texts,
             &self.native.sketch_relations,
             &self.ir.model.sketch_entities,
-        );
+        )?;
         let constraint_inputs = crate::design::dimensions::DimensionConstraintInputs {
             placements: &self.native.design_sketch_placements,
             parameters: &self.native.design_parameters,

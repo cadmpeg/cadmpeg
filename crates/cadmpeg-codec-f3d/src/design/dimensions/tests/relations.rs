@@ -325,7 +325,7 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
         .unwrap(),
     );
     assert_eq!(
-        crate::design::dimensions::exact_coincident_loci(&[&line, &point]),
+        crate::design::dimensions::exact_coincident_loci(&[&line, &point], None).unwrap(),
         Some(SketchConstraintDefinitionInput::CoincidentLoci {
             loci: vec![
                 cadmpeg_ir::sketches::SketchLocus::Start(line.id().clone()),
@@ -342,8 +342,8 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
         })
         .unwrap(),
     );
-    assert!(crate::design::dimensions::exact_coincident_loci(&[&degenerate, &point]).is_none());
-    assert!(crate::design::dimensions::exact_coincident_loci(&[&line, &line]).is_none());
+    assert!(crate::design::dimensions::exact_coincident_loci(&[&degenerate, &point], None).unwrap().is_none());
+    assert!(crate::design::dimensions::exact_coincident_loci(&[&line, &line], None).unwrap().is_none());
     assert!(exact_atomic_constraint(SketchConstraintKind::Coincident, &[&line, &line]).is_none());
 }
 

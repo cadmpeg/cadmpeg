@@ -539,7 +539,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .iter()
         .find(|entity| entity.native_ref.as_deref() == Some("f3d:native:curve#218"))
         .expect("non-clamped NURBS projects");
-    let endpoints = sketch_entity_endpoints(nurbs).expect("non-clamped NURBS endpoints");
+    let endpoints = sketch_entity_endpoints(nurbs, None).unwrap().expect("non-clamped NURBS endpoints");
     assert_eq!(endpoints, [Point2::new(1.0, 0.0), Point2::new(3.0, 2.0)]);
     assert!(point_on_sketch_entity(Point2::new(2.0, 1.0), nurbs, 1.0e-9)
         .expect("resource allocation did not fail"));
@@ -689,6 +689,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     )
     .expect("valid relation definition");
     let constraints = project_sketch_constraints(
+        None,
         &placements,
         &[],
         &points,
@@ -703,7 +704,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             spline_group,
         ],
         &entities,
-    );
+    ).unwrap();
     assert!(matches!(
         constraints[0].definition.kind(),
         SketchConstraintDefinitionInput::Horizontal { .. }
