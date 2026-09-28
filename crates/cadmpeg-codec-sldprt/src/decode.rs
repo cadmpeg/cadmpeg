@@ -319,6 +319,30 @@ fn spatial_sketch_constraint_has_complete_neutral_semantics(
     }
 }
 
+fn count_keys<K: Ord>(
+    ctx: &DecodeContext<'_>,
+    keys: impl IntoIterator<Item = K>,
+    operation: &'static str,
+) -> Result<BTreeMap<K, usize>, CodecError> {
+    let mut counts = BTreeMap::<K, usize>::new();
+    for key in keys {
+        ctx.charge_work(1, operation)?;
+        match counts.entry(key) {
+            Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, operation)?;
+                entry.insert(1);
+            }
+            Entry::Occupied(mut entry) => {
+                let next = entry.get().checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                })?;
+                *entry.get_mut() = next;
+            }
+        }
+    }
+    Ok(counts)
+}
+
 fn append_design_losses(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -396,17 +420,11 @@ fn append_design_losses(
                 "{unresolved_configuration_parameter_lanes} configuration-scoped feature-input lane(s) have duplicate or unresolved configuration identity."
             )));
     }
-    let mut configuration_source_counts = BTreeMap::new();
-    for source_index in ir
-        .model
-        .configurations
-        .iter()
-        .filter_map(|configuration| configuration.source_index)
-    {
-        *configuration_source_counts
-            .entry(source_index)
-            .or_insert(0usize) += 1;
-    }
+    let configuration_source_counts = count_keys(
+        ctx,
+        ir.model.configurations.iter().filter_map(|configuration| configuration.source_index),
+        "count SLDPRT configuration source indices",
+    )?;
     let ambiguous_configuration_sources = configuration_source_counts
         .values()
         .filter(|count| **count > 1)
@@ -423,22 +441,18 @@ fn append_design_losses(
         .iter()
         .filter(|configuration| configuration.name.as_deref().is_none_or(str::is_empty))
         .count();
-    let mut configuration_name_counts = BTreeMap::new();
-    let mut configuration_ordinal_counts = BTreeMap::new();
-    for configuration in &ir.model.configurations {
-        *configuration_ordinal_counts
-            .entry(configuration.ordinal)
-            .or_insert(0usize) += 1;
-    }
-    for name in ir
-        .model
-        .configurations
-        .iter()
-        .filter_map(|configuration| configuration.name.as_deref())
-        .filter(|name| !name.is_empty())
-    {
-        *configuration_name_counts.entry(name).or_insert(0usize) += 1;
-    }
+    let configuration_ordinal_counts = count_keys(
+        ctx,
+        ir.model.configurations.iter().map(|configuration| configuration.ordinal),
+        "count SLDPRT configuration ordinals",
+    )?;
+    let configuration_name_counts = count_keys(
+        ctx,
+        ir.model.configurations.iter()
+            .filter_map(|configuration| configuration.name.as_deref())
+            .filter(|name| !name.is_empty()),
+        "count SLDPRT configuration names",
+    )?;
     let ambiguous_configuration_names = configuration_name_counts
         .values()
         .filter(|count| **count > 1)
@@ -678,18 +692,17 @@ fn append_design_losses(
         .iter()
         .filter(|parameter| parameter.name.is_empty())
         .count();
-    let mut parameter_name_counts = BTreeMap::new();
-    let mut parameter_ordinal_counts = BTreeMap::new();
-    for parameter in &ir.model.parameters {
-        if !parameter.name.is_empty() {
-            *parameter_name_counts
-                .entry((&parameter.owner, parameter.name.as_str()))
-                .or_insert(0usize) += 1;
-        }
-        *parameter_ordinal_counts
-            .entry((&parameter.owner, parameter.ordinal))
-            .or_insert(0usize) += 1;
-    }
+    let parameter_name_counts = count_keys(
+        ctx,
+        ir.model.parameters.iter().filter(|parameter| !parameter.name.is_empty())
+            .map(|parameter| (&parameter.owner, parameter.name.as_str())),
+        "count SLDPRT parameter names",
+    )?;
+    let parameter_ordinal_counts = count_keys(
+        ctx,
+        ir.model.parameters.iter().map(|parameter| (&parameter.owner, parameter.ordinal)),
+        "count SLDPRT parameter ordinals",
+    )?;
     let duplicate_parameter_names = parameter_name_counts
         .values()
         .filter(|count| **count > 1)
@@ -808,12 +821,11 @@ fn append_design_losses(
                 })
         })
         .count();
-    let mut feature_ordinal_counts = BTreeMap::new();
-    for feature in &ir.model.features {
-        *feature_ordinal_counts
-            .entry(feature.ordinal)
-            .or_insert(0usize) += 1;
-    }
+    let feature_ordinal_counts = count_keys(
+        ctx,
+        ir.model.features.iter().map(|feature| feature.ordinal),
+        "count SLDPRT feature ordinals",
+    )?;
     let duplicate_feature_ordinals = feature_ordinal_counts
         .values()
         .filter(|count| **count > 1)
