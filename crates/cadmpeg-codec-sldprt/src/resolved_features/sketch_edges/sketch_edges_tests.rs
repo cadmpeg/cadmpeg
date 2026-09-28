@@ -184,3 +184,63 @@ fn sketch_projection_refuses_work_limit() {
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
     assert_eq!(shared_endpoint_constraints(&DecodePolicy::service()).expect("service budget").len(), 1);
 }
+
+#[test]
+fn sketch_projection_refuses_opaque_curve_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, UnknownId, VertexId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier};
+
+    let curve_id = CurveId::mint("test:model:curve#opaque").expect("curve ID");
+    let start_vertex = VertexId::mint("test:model:vertex#start").expect("start vertex ID");
+    let end_vertex = VertexId::mint("test:model:vertex#end").expect("end vertex ID");
+    let start_point = PointId::mint("test:model:point#start").expect("start point ID");
+    let end_point = PointId::mint("test:model:point#end").expect("end point ID");
+    let edge = Edge {
+        id: EdgeId::mint("test:model:edge#opaque").expect("edge ID"),
+        carrier: EdgeCarrier::unbounded(Some(curve_id.clone())),
+        start: start_vertex.clone(),
+        end: end_vertex.clone(),
+        tolerance: None,
+    };
+    let vertices = HashMap::from([(&start_vertex, &start_point), (&end_vertex, &end_point)]);
+    let points = HashMap::from([
+        (&start_point, Point3::new(0.0, 0.0, 0.0)),
+        (&end_point, Point3::new(1.0, 0.0, 0.0)),
+    ]);
+    let record = format!("test:model:unknown#{}", "x".repeat(128));
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+        record: Some(UnknownId::mint(record).expect("unknown record ID")),
+    });
+    let curves = HashMap::from([(&curve_id, &geometry)]);
+    let frame = super::SketchPlaneFrame {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        v_axis: Vector3::new(0.0, 1.0, 0.0),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = super::project_edge(
+        &limited, &edge, &vertices, &points, &curves, frame,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect_err("opaque curve text exceeds retained limit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT opaque sketch curve"
+    ));
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("empty root");
+    assert!(super::project_edge(
+        &service, &edge, &vertices, &points, &curves, frame,
+        &mut crate::lane_refusal::LaneRefusals::new(),
+    )
+    .expect("service budget")
+    .is_some());
+}

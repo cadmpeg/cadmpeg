@@ -9,6 +9,30 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt;
+
+struct FormattedByteCount(usize);
+
+impl fmt::Write for FormattedByteCount {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
+        Ok(())
+    }
+}
+
+fn retained_curve_debug(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    curve: &CurveGeometry,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let mut count = FormattedByteCount(0);
+    fmt::write(&mut count, format_args!("{curve:?}"))
+        .map_err(|_| ctx.refuse_codec_limit("retain SLDPRT opaque sketch curve", u64::MAX - 1, u64::MAX))?;
+    let mut text = String::new();
+    ctx.reserve_retained_string(&mut text, count.0, "retain SLDPRT opaque sketch curve")?;
+    fmt::write(&mut text, format_args!("{curve:?}"))
+        .map_err(|_| cadmpeg_core::CodecError::malformed("cannot format SLDPRT opaque sketch curve"))?;
+    Ok(text)
+}
 
 fn retained_id_text(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -242,7 +266,19 @@ pub(super) fn project_edge(
             }
         };
     }
-    let projected = (|| match edge.curve().and_then(|id| curves.get(id).copied()) {
+    let curve = edge.curve().and_then(|id| curves.get(id).copied());
+    let native = match curve {
+        Some(CurveGeometry::Solved(
+            SolvedCurveGeometry::Circle(_)
+            | SolvedCurveGeometry::Ellipse(_)
+            | SolvedCurveGeometry::Line(_)
+            | SolvedCurveGeometry::Nurbs(_),
+        ))
+        | None => None,
+        Some(other) => cadmpeg_core::text::NonBlankString::new(retained_curve_debug(ctx, other)?)
+            .map(SketchGeometry::native),
+    };
+    let projected = (|| match curve {
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) => {
             let center = circle_curve.center().get();
             let radius = circle_curve.radius();
@@ -353,9 +389,7 @@ pub(super) fn project_edge(
             SketchGeometry::try_from(SketchGeometryDefinition::Point { position: start }).ok()?,
         ),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_))) | None => line(),
-        Some(other) => Some(SketchGeometry::native(
-            cadmpeg_core::text::NonBlankString::new(format!("{other:?}"))?,
-        )),
+        Some(_) => native,
     })();
     Ok(projected)
 }
