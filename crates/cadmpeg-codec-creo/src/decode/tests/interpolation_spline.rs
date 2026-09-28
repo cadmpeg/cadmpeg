@@ -168,12 +168,14 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
             .push(SketchEntity::new(id, sketch_id.clone(), geometry));
     }
 
-    let profiles = resolved_sketch_profiles(
+    let profiles = crate::decode::with_test_decode_ctx(|ctx| resolved_sketch_profiles(
+        ctx,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         &sketch_id,
         1,
-    )
+    ))
+    .expect("resource admission")
     .expect("spline profile");
     assert_eq!(profiles[0][0].start(), [1.0, 0.0]);
     assert_eq!(profiles[0][0].end(), [0.0, 1.0]);

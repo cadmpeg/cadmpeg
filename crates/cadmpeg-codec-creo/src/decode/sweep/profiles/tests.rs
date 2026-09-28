@@ -114,13 +114,60 @@ fn source_sketch_geometry_drives_profile_analysis_after_millimeter_admission() {
             .expect("service profile vertices"),
         vec![(0, vec![[3.0, 0.0]])]
     );
-    let profiles =
-        super::resolved_sketch_profiles(&ir, &carriers, &sketch_id, 1).expect("source profile");
+    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
+    })
+    .expect("resource admission")
+    .expect("source profile");
     let super::ProfileGeometry::Circle { center, radius } = profiles[0][0].geometry() else {
         panic!("source profile changed family");
     };
     assert_eq!(center.u, 1.0);
     assert_eq!(radius.get(), 2.0);
+}
+
+#[test]
+fn resolved_profile_refuses_entity_and_row_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let sketch_id = SketchId::mint("creo:model:sketch#73").expect("identity grammar");
+    let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#73:1")
+        .expect("identity grammar");
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+        center: Point2::new(1.0, 0.0),
+        radius: cadmpeg_ir::scalar::Length::new(2.0).expect("finite radius"),
+    })
+    .expect("source circle");
+    let mut ir = CadIr::empty();
+    ir.model.sketches.push(sketch(&sketch_id, &entity_id));
+    ir.model.sketch_entities.push(SketchEntity::new(
+        entity_id,
+        sketch_id.clone(),
+        geometry,
+    ));
+    let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+    let arena = DecodeArena::new();
+    for (limit, operation) in [
+        (0, "creo resolved profile entities"),
+        (1, "creo resolved profile rows"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = super::resolved_sketch_profiles(&ctx, &ir, &carriers, &sketch_id, 1)
+            .expect_err("profile collection exceeds its limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == operation), "{error:?}");
+    }
+    let profiles = crate::decode::with_test_decode_ctx(|ctx| {
+        super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)
+    })
+    .expect("service allocation")
+    .expect("closed circle profile");
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles[0].len(), 1);
+    assert_eq!(profiles[0][0].start(), profiles[0][0].end());
 }
 
 #[test]
@@ -170,12 +217,14 @@ fn profile_joins_reject_duplicate_sketch_ids() {
     ))
     .expect("service profile vertices")
     .is_empty());
-    assert!(super::resolved_sketch_profiles(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::resolved_sketch_profiles(
+        ctx,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         &sketch_id,
         1
-    )
+    ))
+    .expect("resource admission")
     .is_none());
 }
 
@@ -199,12 +248,14 @@ fn profile_joins_reject_duplicate_sketch_entity_ids() {
     ))
     .expect("service profile vertices")
     .is_empty());
-    assert!(super::resolved_sketch_profiles(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::resolved_sketch_profiles(
+        ctx,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         &sketch_id,
         1
-    )
+    ))
+    .expect("resource admission")
     .is_none());
 }
 

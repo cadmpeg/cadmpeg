@@ -563,47 +563,63 @@ impl ValidatedProfile {
 pub(in super::super) type ExtrusionProfile = Vec<ProfileEntity>;
 
 pub(in super::super) fn resolved_sketch_profiles(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     sketch_id: &SketchId,
     minimum_entity_count: usize,
-) -> Option<Vec<ExtrusionProfile>> {
-    let sketch = exactly_one(
+) -> Result<Option<Vec<ExtrusionProfile>>, cadmpeg_core::CodecError> {
+    let Some(sketch) = exactly_one(
         ir.model
             .sketches
             .iter()
             .filter(|sketch| sketch.id == *sketch_id),
-    )?;
-    (!sketch.profiles.is_empty()).then_some(())?;
+    ) else {
+        return Ok(None);
+    };
+    if sketch.profiles.is_empty() {
+        return Ok(None);
+    }
     let mut profiles = Vec::new();
     for profile in &sketch.profiles {
         let mut geometries = Vec::new();
         for entity_use in profile {
-            let entity = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
+            let Some(entity) = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
                 entity.sketch == *sketch_id && entity.id() == &entity_use.entity
-            }))?;
-            geometries.push(ProfileEntity::new(
+            })) else {
+                return Ok(None);
+            };
+            let Some(row) = ProfileEntity::new(
                 source_carriers.sketch_geometry(entity).clone(),
                 entity_use.reversed,
-            )?);
+            ) else {
+                return Ok(None);
+            };
+            ctx.try_reserve_items(&mut geometries, 1, "creo resolved profile entities")?;
+            geometries.push(row);
         }
-        (geometries.len() >= minimum_entity_count).then_some(())?;
+        if geometries.len() < minimum_entity_count {
+            return Ok(None);
+        }
         let scale = geometries
             .iter()
             .flat_map(|ProfileEntity { start, end, .. }| start.iter().chain(end))
             .map(|value| value.abs())
             .fold(1.0, f64::max);
-        geometries
+        if !geometries
             .iter()
             .enumerate()
             .all(|(index, ProfileEntity { end, .. })| {
                 let next = geometries[(index + 1) % geometries.len()].start;
                 (end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale
             })
-            .then_some(())?;
+        {
+            return Ok(None);
+        }
+        ctx.try_reserve_items(&mut profiles, 1, "creo resolved profile rows")?;
         profiles.push(geometries);
     }
-    Some(profiles)
+    Ok(Some(profiles))
 }
 
 #[cfg(test)]
