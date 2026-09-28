@@ -198,6 +198,20 @@ fn entity_meta_scope<'a>(
     Ok(Some((reservation, meta_scope)))
 }
 
+fn clone_sketch_entity_id_charged(
+    ctx: &DecodeContext<'_>,
+    entity_id: &crate::records::identity::DesignEntityId,
+) -> Result<crate::records::identity::DesignEntityId, CodecError> {
+    let source = entity_id.as_str();
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(source.len()), "f3d sketch placement entity ID")?;
+    let mut text = String::new();
+    text.try_reserve_exact(source.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d sketch placement entity ID allocation", 0, 1)
+    })?;
+    text.push_str(source);
+    crate::records::identity::DesignEntityId::try_from(text).map_err(CodecError::Malformed)
+}
+
 /// Copy a stream identity for a mutable decode pass under a scoped byte charge.
 pub(in crate::design) fn copy_scoped_stream<'a>(
     ctx: &'a DecodeContext<'_>,
@@ -274,6 +288,24 @@ pub(crate) fn decode_sketch_placements(
 ) -> Result<Vec<DesignSketchPlacement>, CodecError> {
     let mut out = Vec::new();
     let mut record_offsets = HashMap::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let scope = native_scope_charged(ctx, &entry.name)?;
+        if !record_offsets.contains_key(&scope) {
+            ctx.charge_collection_items(1, "f3d sketch placement stream index")?;
+            record_offsets.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d sketch placement stream index allocation", 0, 1)
+            })?;
+        }
+        record_offsets.insert(
+            scope,
+            IndexedRecordOffsets::build(ctx, bytes)?,
+        );
+    }
     let mut visibilities = HashMap::new();
     for entry in scan
         .entries
@@ -281,23 +313,25 @@ pub(crate) fn decode_sketch_placements(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        record_offsets.insert(
-            ids::native_scope(&entry.name),
-            IndexedRecordOffsets::build(ctx, bytes)?,
-        );
         let Some(metadata) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
+        let (_scope_reservation, scope) = native_scope_scoped(ctx, &entry.name)?;
+        let Some((key, _)) = record_offsets.get_key_value(&scope) else {
+            continue;
+        };
         for (entity_suffix, visibility) in decode_sketch_visibilities_in_stream(ctx, bytes, &metadata)? {
-            if visibilities
-                .insert((ids::native_scope(&entry.name), entity_suffix), visibility)
-                .is_some()
-            {
+            if visibilities.contains_key(&(key.as_str(), entity_suffix)) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D Design stream {} repeats sketch visibility for entity {entity_suffix}",
                     entry.name
                 )));
             }
+            ctx.charge_collection_items(1, "f3d sketch placement visibility index")?;
+            visibilities.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d sketch placement visibility index allocation", 0, 1)
+            })?;
+            visibilities.insert((key.as_str(), entity_suffix), visibility);
         }
     }
     for scope in scopes
@@ -308,15 +342,23 @@ pub(crate) fn decode_sketch_placements(
             continue;
         };
         let entity_id = &binding.entity_id;
-        let entry = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, ContainerRole::Bulkstream)
-                && scope.id.starts_with(&ids::native_scope_prefix(&entry.name))
-        });
+        let mut entry = None;
+        for candidate in scan.entries.iter().filter(|candidate| {
+            scan.is_design_stream(candidate, ContainerRole::Bulkstream)
+        }) {
+            let (_reservation, candidate_scope) = native_scope_scoped(ctx, &candidate.name)?;
+            if scope.id.strip_prefix(candidate_scope.as_str())
+                .is_some_and(|tail| tail.starts_with(':')) {
+                entry = Some(candidate);
+                break;
+            }
+        }
         let Some(entry) = entry else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(records) = record_offsets.get(&ids::native_scope(&entry.name)) else {
+        let (_scope_reservation, stream_scope) = native_scope_scoped(ctx, &entry.name)?;
+        let Some(records) = record_offsets.get(&stream_scope) else {
             continue;
         };
         let start = usize::try_from(scope.byte_offset()).ok();
@@ -334,26 +376,41 @@ pub(crate) fn decode_sketch_placements(
                     continue;
                 };
                 if !referenced_indices.contains(&record_index) {
+                    ctx.charge_collection_items(1, "f3d sketch placement reference index")?;
+                    referenced_indices.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("f3d sketch placement reference index allocation", 0, 1)
+                    })?;
                     referenced_indices.push(record_index);
                 }
             }
         }
         let mut candidates = Vec::new();
         for record_index in referenced_indices {
-            candidates.extend(parse_sketch_placement_candidates(
-                bytes,
+            let parsed = parse_sketch_placement_candidates(
+                ctx, bytes,
                 scope.record_index,
                 entity_id,
                 record_index,
                 records,
-            ));
+            )?;
+            ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(parsed.len()),
+                "f3d sketch placement candidate merge")?;
+            candidates.try_reserve(parsed.len()).map_err(|_| {
+                ctx.refuse_codec_limit("f3d sketch placement candidate merge allocation", 0, 1)
+            })?;
+            candidates.extend(parsed);
         }
         if candidates.len() == 1 {
             let Some(mut placement) = candidates.pop() else {
                 continue;
             };
-            placement.id =
-                ids::native_design_sketch_placement_id(&entry.name, placement.byte_offset());
+            placement.id = design_record_id_charged(ctx, &entry.name,
+                ":design-sketch-placement#", placement.byte_offset(),
+                "f3d sketch placement ID", "f3d sketch placement ID allocation")?;
+            ctx.charge_collection_items(1, "f3d sketch placement output")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d sketch placement output allocation", 0, 1)
+            })?;
             out.push(placement);
         }
     }
@@ -362,20 +419,15 @@ pub(crate) fn decode_sketch_placements(
     // 4×4 placement. A localized Sketch scope belongs to the preceding sketch
     // entity interval: it follows that entity and precedes the next sketch
     // entity in the same stream. Some member-run sketches have no scope.
-    let placed = out
-        .iter()
-        .filter_map(|placement| {
-            Some((
-                native_stream(&placement.id)?.to_owned(),
-                placement.entity_id.suffix(),
-            ))
-        })
-        .collect::<std::collections::HashSet<_>>();
+    let initial_placements = out.len();
     for entity in entities.iter().filter(|entity| entity.in_sketch_module()) {
         let Some(stream) = native_stream(&entity.id) else {
             continue;
         };
-        if placed.contains(&(stream.to_owned(), entity.entity_id.suffix())) {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(initial_placements),
+            "f3d sketch placement duplicate search")?;
+        if out.iter().take(initial_placements).any(|placement| native_stream(&placement.id) == Some(stream)
+            && placement.entity_id.suffix() == entity.entity_id.suffix()) {
             continue;
         }
         let Some(entry_name) = stream.strip_prefix(ids::SCHEME_PREFIX) else {
@@ -386,7 +438,7 @@ pub(crate) fn decode_sketch_placements(
             continue;
         };
         let Some(mut placement) =
-            parse_member_run_head_placement(bytes, entity.byte_offset, &entity.entity_id, records)
+            parse_member_run_head_placement(ctx, bytes, entity.byte_offset, &entity.entity_id, records)?
         else {
             continue;
         };
@@ -410,7 +462,13 @@ pub(crate) fn decode_sketch_placements(
         if let (Some(scope), None) = (matching_scopes.next(), matching_scopes.next()) {
             placement.scope_record_index = Some(scope.record_index);
         }
-        placement.id = ids::native_design_sketch_placement_id(entry_name, placement.byte_offset());
+        placement.id = design_record_id_charged(ctx, entry_name,
+            ":design-sketch-placement#", placement.byte_offset(),
+            "f3d sketch placement ID", "f3d sketch placement ID allocation")?;
+        ctx.charge_collection_items(1, "f3d sketch placement output")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d sketch placement output allocation", 0, 1)
+        })?;
         out.push(placement);
     }
     for placement in &mut out {
@@ -418,7 +476,7 @@ pub(crate) fn decode_sketch_placements(
             continue;
         };
         placement.visibility = visibilities
-            .get(&(stream.to_owned(), placement.entity_id.suffix()))
+            .get(&(stream, placement.entity_id.suffix()))
             .copied();
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -583,11 +641,13 @@ const MEMBER_RUN_HEAD_FRAME: usize = 162;
 /// placement. A 162-byte head stores eleven zero bytes and the row-major 4×4
 /// local-to-model transform at offset 22.
 fn parse_member_run_head_placement(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     entity_byte_offset: u64,
     entity_id: &crate::records::identity::DesignEntityId,
     records: &IndexedRecordOffsets,
-) -> Option<DesignSketchPlacement> {
+) -> Result<Option<DesignSketchPlacement>, CodecError> {
+    let parsed = (|| {
     let start = usize::try_from(entity_byte_offset).ok()?;
     // Locate the paired same-index record after the entity header.
     let entity_index = u32::try_from(entity_id.suffix()).ok()?;
@@ -642,26 +702,35 @@ fn parse_member_run_head_placement(
         }
         _ => return None,
     };
-    Some(DesignSketchPlacement {
+    Some((head_at, form, class_tag, paired_class_tag, head_index))
+    })();
+    let Some((head_at, form, class_tag, paired_class_tag, head_index)) = parsed else {
+        return Ok(None);
+    };
+    let Ok(frame) = DesignSketchFrame::new(head_at as u64, form) else {
+        return Ok(None);
+    };
+    Ok(Some(DesignSketchPlacement {
         id: String::new(),
         scope_record_index: None,
-        entity_id: entity_id.clone(),
+        entity_id: clone_sketch_entity_id_charged(ctx, entity_id)?,
 
         visibility: None,
-        frame: DesignSketchFrame::new(head_at as u64, form).ok()?,
+        frame,
         class_tag,
         record_index: head_index,
         paired_class_tag,
-    })
+    }))
 }
 
 fn parse_sketch_placement_candidates(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scope_record_index: u32,
     entity_id: &crate::records::identity::DesignEntityId,
     record_index: u32,
     records: &IndexedRecordOffsets,
-) -> Vec<DesignSketchPlacement> {
+) -> Result<Vec<DesignSketchPlacement>, CodecError> {
     let mut out = Vec::new();
     for pair in records.offsets(record_index).windows(2) {
         let start = pair[0];
@@ -761,10 +830,14 @@ fn parse_sketch_placement_candidates(
         let Ok(frame) = DesignSketchFrame::new(start as u64, form) else {
             continue;
         };
+        ctx.charge_collection_items(1, "f3d sketch placement candidate")?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d sketch placement candidate allocation", 0, 1)
+        })?;
         out.push(DesignSketchPlacement {
             id: String::new(),
             scope_record_index: Some(scope_record_index),
-            entity_id: entity_id.clone(),
+            entity_id: clone_sketch_entity_id_charged(ctx, entity_id)?,
 
             visibility: None,
             frame,
@@ -773,7 +846,7 @@ fn parse_sketch_placement_candidates(
             paired_class_tag,
         });
     }
-    out
+    Ok(out)
 }
 
 /// Decode the persistent u64 point and curve identity references
@@ -1215,12 +1288,13 @@ fn parse_legacy_sketch_container_members(
     if let Some(members) = parse_legacy_sketch_member_run(ctx, bytes, primary_at, entity_suffix)? {
         return Ok(Some(members));
     }
-    Ok((|| {
     let entity_id =
         crate::records::identity::DesignEntityId::from_parts("Sketch", u64::from(entity_suffix));
-    parse_member_run_head_placement(bytes, primary_at as u64, &entity_id, records)?;
-    Some(Vec::new())
-    })())
+    if parse_member_run_head_placement(ctx, bytes, primary_at as u64, &entity_id, records)?.is_some() {
+        Ok(Some(Vec::new()))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Decode every self-validating per-entity design `BulkStream` header (spec
