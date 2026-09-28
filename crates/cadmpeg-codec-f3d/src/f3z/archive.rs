@@ -130,6 +130,7 @@ pub(super) fn classify_members<'a>(
         })?;
         let member_scan = match crate::container::scan(ctx, member_view) {
             Ok(member_scan) => member_scan,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 let message = error.to_string();
                 losses.push(F3dLossCode::XrefMemberUndecoded.note(format!(
