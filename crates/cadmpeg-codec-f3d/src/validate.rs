@@ -970,7 +970,7 @@ fn validate_loaded(
         &locus_pair_companions,
         &locus_group_companions,
     );
-    validate_parameters(&ctx, &mut findings);
+    validate_parameters(&ctx, &mut findings)?;
     validate_entity_headers(&ctx, &mut findings);
     validate_sketch_relations(&ctx, &mut findings);
     validate_sketch_geometry_identities(&ctx, &mut findings);
@@ -7702,22 +7702,38 @@ fn validate_dimension_null_locus_pairs<'a>(
 }
 
 /// Validate parameter record identity uniqueness.
-fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_parameters(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let mut parameter_indices = HashSet::new();
     for parameter in &native.design_parameters {
         let native_stream = design_stream(&parameter.id);
+        let key = (native_stream, parameter.record_index);
+        if !parameter_indices.contains(&key) {
+            ctx.charge_item("index F3D validation parameters")?;
+            parameter_indices.try_reserve(1).map_err(|_| {
+                ctx.decode.map_or_else(
+                    || CodecError::malformed("F3D validation parameter index allocation failed"),
+                    |decode| decode.refuse_codec_limit("index F3D validation parameters", 0, 1),
+                )
+            })?;
+        }
         if !parameter_indices.insert((native_stream, parameter.record_index)) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "Fusion Design parameter has an invalid frame, family discriminator, or owner"
-                        .into(),
-                entity: Some(parameter.id.clone()),
-            });
+            let id = match ctx.decode {
+                Some(decode) => crate::container::format_retained(
+                    decode,
+                    "retain F3D parameter finding entity",
+                    format_args!("{}", parameter.id),
+                )?,
+                None => parameter.id.clone(),
+            };
+            ctx.push_constant_finding(
+                findings,
+                "Fusion Design parameter has an invalid frame, family discriminator, or owner",
+                Some(id),
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Validate design entity reference runs and suffix uniqueness.
