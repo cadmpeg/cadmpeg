@@ -663,25 +663,23 @@ fn reference_point_key(point: &Point3) -> [u64; 3] {
 
 /// Add solved model-space frames to complete coordinate-system history records.
 pub(crate) fn enrich_history_coordinate_systems(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
     let mut candidates =
-        BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3, Vector3)>>::new();
+        BTreeMap::<(usize, usize), Option<(Point3, Vector3, Vector3, Vector3)>>::new();
     for lane in lanes {
-        let mut starts =
-            histories
-                .iter()
-                .enumerate()
-                .flat_map(|(history_index, history)| {
-                    history.features.iter().enumerate().filter_map(
-                        move |(feature_index, feature)| {
-                            feature_object_name(feature, lane)
-                                .map(|name| (name.offset, history_index, feature_index))
-                        },
-                    )
-                })
-                .collect::<Vec<_>>();
+        let mut starts = Vec::new();
+        for (history_index, history) in histories.iter().enumerate() {
+            for (feature_index, feature) in history.features.iter().enumerate() {
+                ctx.charge_work(1, "scan SLDPRT coordinate system features")?;
+                if let Some(name) = feature_object_name(feature, lane) {
+                    ctx.reserve_collection_vec(&mut starts, 1, "collect SLDPRT coordinate system starts")?;
+                    starts.push((name.offset, history_index, feature_index));
+                }
+            }
+        }
         starts.sort_by_key(|start| start.0);
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
@@ -704,35 +702,47 @@ pub(crate) fn enrich_history_coordinate_systems(
                 continue;
             };
             if let Some(frame) = resolved_coordinate_system(record) {
-                candidates
-                    .entry((history_index, feature_index))
-                    .or_default()
-                    .push(frame);
+                let key = (history_index, feature_index);
+                if let Some(existing) = candidates.get_mut(&key) {
+                    if existing.is_some_and(|existing| coordinate_system_frame_key(&existing) != coordinate_system_frame_key(&frame)) {
+                        *existing = None;
+                    }
+                } else {
+                    ctx.charge_collection_items(1, "collect SLDPRT coordinate system candidates")?;
+                    candidates.insert(key, Some(frame));
+                }
             }
         }
     }
 
-    for ((history_index, feature_index), mut frames) in candidates {
-        frames.sort_by_key(coordinate_system_frame_key);
-        frames.dedup_by_key(|frame| coordinate_system_frame_key(frame));
-        let [(origin, x_axis, y_axis, z_axis)] = frames.as_slice() else {
+    for ((history_index, feature_index), frame) in candidates {
+        let Some((origin, x_axis, y_axis, z_axis)) = frame else {
             continue;
         };
         let feature = &mut histories[history_index].features[feature_index];
+        let origin_text = ctx.format_retained(
+            format_args!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+            "retain SLDPRT coordinate system origin",
+        )?;
+        ctx.charge_collection_items(1, "insert SLDPRT coordinate system origin")?;
         feature.properties.insert(
             cadmpeg_core::nonblank_literal!("Origin"),
-            format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+            origin_text,
         );
         for (name, axis) in [
             (cadmpeg_core::nonblank_literal!("XAxis"), x_axis),
             (cadmpeg_core::nonblank_literal!("YAxis"), y_axis),
             (cadmpeg_core::nonblank_literal!("ZAxis"), z_axis),
         ] {
-            feature
-                .properties
-                .insert(name, format!("{},{},{}", axis.x, axis.y, axis.z));
+            let text = ctx.format_retained(
+                format_args!("{},{},{}", axis.x, axis.y, axis.z),
+                "retain SLDPRT coordinate system axis",
+            )?;
+            ctx.charge_collection_items(1, "insert SLDPRT coordinate system axis")?;
+            feature.properties.insert(name, text);
         }
     }
+    Ok(())
 }
 
 fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
@@ -740,32 +750,36 @@ fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3
         return Some(frame);
     }
     let (origin, generation, origin_end) = coordinate_system_origin(record)?;
-    let axes = coordinate_system_line_axes(record, generation, origin_end);
-    if axes.is_empty() {
+    let mut axes = coordinate_system_line_axes(record, generation, origin_end);
+    let Some(first_axis) = axes.next() else {
         let (x_axis, y_axis) = coordinate_system_ordinal_axes(record, origin_end, origin)?;
         return Some((origin, x_axis, y_axis, x_axis.cross(y_axis).unit()?));
+    };
+    let second_axis = axes.next();
+    if axes.next().is_some() {
+        return None;
     }
-    let (mut x_axis, mut y_axis, tail_offsets) = match axes.as_slice() {
-        [(offset, point, direction)] => (
-            *direction,
+    let (mut x_axis, mut y_axis, tail_offsets) = match (first_axis, second_axis) {
+        ((offset, point, direction), None) => (
+            direction,
             Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z),
-            vec![
-                (offset.checked_add(line_axis::LEN)?, false),
-                (offset.checked_add(line_axis::LEN + 2)?, true),
+            [
+                Some((offset.checked_add(line_axis::LEN)?, false)),
+                Some((offset.checked_add(line_axis::LEN + 2)?, true)),
             ],
         ),
-        [(first_offset, _, first_direction), (last_offset, _, last_direction)]
+        ((first_offset, _, first_direction), Some((last_offset, _, last_direction)))
             if first_offset < last_offset =>
         {
             (
-                *first_direction,
-                *last_direction,
-                vec![(last_offset.checked_add(line_axis::LEN)?, false)],
+                first_direction,
+                last_direction,
+                [Some((last_offset.checked_add(line_axis::LEN)?, false)), None],
             )
         }
         _ => return None,
     };
-    let flips = coordinate_system_tail(record, &tail_offsets, origin)?;
+    let flips = coordinate_system_tail(record, tail_offsets.into_iter().flatten(), origin)?;
 
     if flips[0] == 1 {
         x_axis = Vector3::new(-x_axis.x, -x_axis.y, -x_axis.z);
@@ -821,16 +835,16 @@ fn coordinate_system_ordinal_axes(
 
 fn coordinate_system_tail(
     record: &[u8],
-    offsets: &[(usize, bool)],
+    offsets: impl IntoIterator<Item = (usize, bool)>,
     origin: Point3,
 ) -> Option<[u8; 3]> {
-    let candidates = offsets
-        .iter()
+    let mut candidates = offsets
+        .into_iter()
         .filter_map(|(offset, has_zero_gap)| {
-            if *has_zero_gap && record.get(offset.checked_sub(2)?..*offset) != Some(&[0; 2]) {
+            if has_zero_gap && record.get(offset.checked_sub(2)?..offset) != Some(&[0; 2]) {
                 return None;
             }
-            let bytes = record.get(*offset..offset.checked_add(xy_tail::LEN)?)?;
+            let bytes = record.get(offset..offset.checked_add(xy_tail::LEN)?)?;
             let flips: [u8; 3] = bytes.get(..xy_tail::ORIGIN)?.try_into().ok()?;
             if flips.iter().any(|value| !matches!(value, 0 | 1))
                 || flips[2] != 0
@@ -844,12 +858,9 @@ fn coordinate_system_tail(
                 finite_f64(bytes, xy_tail::ORIGIN + 16)? * 1000.0,
             );
             (reference_point_key(&tail_origin) == reference_point_key(&origin)).then_some(flips)
-        })
-        .collect::<Vec<_>>();
-    let [flips] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*flips)
+        });
+    let flips = candidates.next()?;
+    candidates.next().is_none().then_some(flips)
 }
 
 #[derive(Clone, Copy)]
@@ -863,16 +874,17 @@ struct CoordinateSystemOrigin {
 
 fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
     let mut candidates = coordinate_system_origins(record);
-    if candidates.is_empty() {
-        candidates = coordinate_system_endpoint_origins(record);
-    }
-    let [candidate] = candidates.as_slice() else {
-        return None;
+    let candidate = if let Some(candidate) = candidates.next() {
+        candidates.next().is_none().then_some(candidate)?
+    } else {
+        let mut endpoint_candidates = coordinate_system_endpoint_origins(record);
+        let candidate = endpoint_candidates.next()?;
+        endpoint_candidates.next().is_none().then_some(candidate)?
     };
     Some((candidate.point, candidate.generation, candidate.end))
 }
 
-fn coordinate_system_endpoint_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
+fn coordinate_system_endpoint_origins(record: &[u8]) -> impl Iterator<Item = CoordinateSystemOrigin> + '_ {
     const PREFIX: &[u8] = &[
         0x2f, 0x80, 0x02, 0, 0, 0, 0x40, 0, 0, 0x75, 0, 0, 0, 0x75, 0, 0, 0,
     ];
@@ -952,10 +964,9 @@ fn coordinate_system_endpoint_origins(record: &[u8]) -> Vec<CoordinateSystemOrig
                 extended: false,
             })
         })
-        .collect()
 }
 
-fn coordinate_system_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
+fn coordinate_system_origins(record: &[u8]) -> impl Iterator<Item = CoordinateSystemOrigin> + '_ {
     const PREFIX_SUFFIX: &[u8] = &[0x80, 0x02, 0, 0, 0, 0, 0, 0, 0];
     const HANDLES: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     record
@@ -1058,14 +1069,16 @@ fn coordinate_system_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
                 extended,
             })
         })
-        .collect()
 }
 
 fn coordinate_system_two_point_frame(record: &[u8]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
-    let origins = coordinate_system_origins(record);
-    let [origin, axis_point] = origins.as_slice() else {
+    let mut origins = coordinate_system_origins(record);
+    let (Some(origin), Some(axis_point)) = (origins.next(), origins.next()) else {
         return None;
     };
+    if origins.next().is_some() {
+        return None;
+    }
     if !origin.extended || !axis_point.extended || origin.generation != axis_point.generation {
         return None;
     }
@@ -1195,13 +1208,13 @@ fn coordinate_system_line_axes(
     record: &[u8],
     generation: u32,
     origin_end: usize,
-) -> Vec<(usize, Point3, Vector3)> {
+) -> impl Iterator<Item = (usize, Point3, Vector3)> + '_ {
     const PREFIX: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     record
         .windows(PREFIX.len())
         .enumerate()
-        .filter(|(prefix, bytes)| *prefix >= origin_end && *bytes == PREFIX)
-        .filter_map(|(prefix, _)| {
+        .filter(move |(prefix, bytes)| *prefix >= origin_end && *bytes == PREFIX)
+        .filter_map(move |(prefix, _)| {
             if record
                 .get(prefix + line_axis::ZERO_BEFORE_GENERATION..prefix + line_axis::GENERATION)
                 != Some(&[0; 4])
@@ -1243,7 +1256,6 @@ fn coordinate_system_line_axes(
                 && repeated_matches)
                 .then_some((prefix, point, direction))
         })
-        .collect()
 }
 
 fn finite_f64(bytes: &[u8], offset: usize) -> Option<f64> {
