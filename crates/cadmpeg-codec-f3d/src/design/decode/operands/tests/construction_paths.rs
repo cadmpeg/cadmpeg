@@ -6,6 +6,32 @@ use crate::design::decode::operands::parse_construction_operand_transform;
 use crate::design::decode::operands::parse_construction_tracking_path;
 use crate::design::decode::operands::parse_loft_legacy_body_carrier;
 use crate::design::decode::operands::push_loft_legacy_body_carrier;
+use crate::design::decode::operands::push_construction_operand_record;
+
+#[test]
+fn construction_operand_typed_runs_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for operation in [
+        "f3d construction operand trailing transforms",
+        "f3d construction operand trailing dual transforms",
+        "f3d construction operand trailing flags",
+        "f3d construction operand auxiliary paths",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut records = Vec::new();
+        assert!(matches!(
+            push_construction_operand_record(&ctx, &mut records, 1u8, operation),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ));
+        assert!(records.is_empty());
+    }
+}
 
 #[test]
 fn legacy_loft_body_carrier_output_refuses_collection_and_id_limits() {

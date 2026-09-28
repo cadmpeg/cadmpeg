@@ -2658,6 +2658,21 @@ fn legacy_body_group_tail(
     Some((variant, tail, paired_class_tag.to_owned()))
 }
 
+/// Append one admitted construction-operand record to its typed run.
+fn push_construction_operand_record<T>(
+    ctx: &DecodeContext<'_>,
+    records: &mut Vec<T>,
+    record: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    records.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d construction operand record allocation", 0, 1)
+    })?;
+    records.push(record);
+    Ok(())
+}
+
 /// Bind exact typed records selected by construction-group trailing runs.
 pub(crate) fn bind_construction_operand_trailing_records(
     ctx: &DecodeContext<'_>,
@@ -2695,12 +2710,15 @@ pub(crate) fn bind_construction_operand_trailing_records(
                 continue;
             };
             if let Some(transform) = parse_construction_operand_transform(bytes, header) {
-                trailing_transforms.push(transform);
+                push_construction_operand_record(ctx, &mut trailing_transforms, transform,
+                    "f3d construction operand trailing transforms")?;
             } else if let Some(transform) = parse_construction_operand_dual_transform(bytes, header)
             {
-                trailing_dual_transforms.push(transform);
+                push_construction_operand_record(ctx, &mut trailing_dual_transforms, transform,
+                    "f3d construction operand trailing dual transforms")?;
             } else if let Some(flag) = parse_construction_operand_flag(bytes, header) {
-                trailing_flags.push(flag);
+                push_construction_operand_record(ctx, &mut trailing_flags, flag,
+                    "f3d construction operand trailing flags")?;
             }
         }
         group
@@ -2775,7 +2793,8 @@ pub(crate) fn bind_construction_operand_paths(
             if let Some(path) =
                 parse_construction_operand_path(bytes, group.scope_record_index, header)
             {
-                auxiliary_paths.push(path);
+                push_construction_operand_record(ctx, &mut auxiliary_paths, path,
+                    "f3d construction operand auxiliary paths")?;
             }
         }
         group
