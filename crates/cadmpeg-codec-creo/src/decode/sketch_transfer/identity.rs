@@ -298,6 +298,9 @@ pub(in super::super) fn materialized_saved_section_external_ids(
                 internal_id,
             )
         }) {
+            if !external_ids.contains(&external_id) {
+                ctx.charge_collection_items(1, "creo materialized saved-section external ID nodes")?;
+            }
             external_ids.insert(external_id);
         }
     }
@@ -401,6 +404,66 @@ mod tests {
             external_id,
             offset: external_id as usize,
         }
+    }
+
+    #[test]
+    fn materialized_saved_section_external_id_refuses_before_set_node() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let mut definition = definition(None);
+        definition.order_table = Some(crate::feature::definitions::FeatureOrderTable {
+            declared_count: 1,
+            has_prototype: false,
+            entity_ref: None,
+            rows: vec![crate::feature::definitions::FeatureOrderRow {
+                external_id: 42,
+                internal_id: 3,
+                bitmask: 0,
+                offset: 0,
+            }],
+            offset: 0,
+        });
+        definition.saved_section = Some(crate::feature::definitions::FeatureSavedSection {
+            entities: vec![crate::feature::definitions::FeatureSavedEntity::Line(
+                crate::feature::definitions::FeatureSavedLine {
+                    entity_id: 3,
+                    references: Vec::new(),
+                    attributes: Vec::new(),
+                    endpoints: [
+                        [Some(0.0), Some(0.0), None],
+                        [Some(1.0), Some(0.0), None],
+                    ],
+                    body: Vec::new(),
+                    offset: 0,
+                },
+            )],
+            offset: 0,
+        });
+        let arena = DecodeArena::new();
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service)
+            .expect("empty root fits service policy");
+        let ids = super::materialized_saved_section_external_ids(
+            &ctx,
+            &definition,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .expect("one ID fits service policy");
+        assert_eq!(ids, std::collections::BTreeSet::from([42]));
+
+        let mut limited = service;
+        limited.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &limited)
+            .expect("empty root fits collection limit");
+        let error = super::materialized_saved_section_external_ids(
+            &ctx,
+            &definition,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .expect_err("one external ID needs one set node");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo materialized saved-section external ID nodes"));
     }
 
     #[test]
