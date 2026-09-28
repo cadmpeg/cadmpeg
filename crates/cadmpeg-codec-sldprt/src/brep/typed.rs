@@ -169,13 +169,47 @@ type OwnershipMaps = (
 );
 
 impl Facts {
+    pub(super) fn try_clone(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        let mut bodies = Vec::new();
+        ctx.reserve_collection_vec(&mut bodies, self.bodies.len(), "copy typed Parasolid bodies")?;
+        for body in &self.bodies {
+            let mut ownership_refs = Vec::new();
+            ctx.reserve_collection_vec(
+                &mut ownership_refs,
+                body.ownership_refs.len(),
+                "copy typed Parasolid body references",
+            )?;
+            ownership_refs.extend_from_slice(&body.ownership_refs);
+            bodies.push(BodyNode {
+                attr: body.attr,
+                node_id: body.node_id,
+                topology_refs: body.topology_refs,
+                ownership_refs,
+                kind: body.kind,
+                offset: body.offset,
+                end: body.end,
+            });
+        }
+        let mut shells = Vec::new();
+        ctx.reserve_collection_vec(&mut shells, self.shells.len(), "copy typed Parasolid shells")?;
+        shells.extend_from_slice(&self.shells);
+        let mut regions = Vec::new();
+        ctx.reserve_collection_vec(&mut regions, self.regions.len(), "copy typed Parasolid regions")?;
+        regions.extend_from_slice(&self.regions);
+        let mut faces = Vec::new();
+        ctx.reserve_collection_vec(&mut faces, self.faces.len(), "copy typed Parasolid faces")?;
+        faces.extend_from_slice(&self.faces);
+        Ok(Self { bodies, shells, regions, faces })
+    }
+
     /// Add only identities absent from the partition view.  A delta stream is
     /// subordinate to the partition for the same transmit index.
-    pub(super) fn merge_missing(&mut self, other: Self) {
-        merge_nodes(&mut self.bodies, other.bodies, |node| node.attr);
-        merge_nodes(&mut self.shells, other.shells, |node| node.attr);
-        merge_nodes(&mut self.regions, other.regions, |node| node.attr);
-        merge_nodes(&mut self.faces, other.faces, |node| node.attr);
+    pub(super) fn merge_missing(&mut self, ctx: &DecodeContext<'_>, other: Self) -> Result<(), CodecError> {
+        merge_nodes(ctx, &mut self.bodies, other.bodies, |node| node.attr)?;
+        merge_nodes(ctx, &mut self.shells, other.shells, |node| node.attr)?;
+        merge_nodes(ctx, &mut self.regions, other.regions, |node| node.attr)?;
+        merge_nodes(ctx, &mut self.faces, other.faces, |node| node.attr)?;
+        Ok(())
     }
 
     /// Return whether the stream contains a closed typed BODY ownership set.
@@ -539,16 +573,29 @@ pub(in crate::brep) struct Hierarchy {
     pub(super) faces: Vec<(u16, u16)>,
 }
 
-fn merge_nodes<T, F>(target: &mut Vec<T>, source: Vec<T>, key: F)
+fn merge_nodes<T, F>(ctx: &DecodeContext<'_>, target: &mut Vec<T>, source: Vec<T>, key: F) -> Result<(), CodecError>
 where
     F: Fn(&T) -> u16,
 {
-    let present = target.iter().map(&key).collect::<HashSet<_>>();
-    target.extend(
-        source
-            .into_iter()
-            .filter(|node| !present.contains(&key(node))),
-    );
+    let mut present = HashSet::new();
+    for node in target.iter() {
+        let attr = key(node);
+        if !present.contains(&attr) {
+            ctx.charge_collection_items(1, "index typed Parasolid merge identities")?;
+            present.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index typed Parasolid merge identities", u64::MAX - 1, u64::MAX)
+            })?;
+            present.insert(attr);
+        }
+    }
+    for node in source {
+        ctx.charge_work(1, "merge typed Parasolid records")?;
+        if !present.contains(&key(&node)) {
+            ctx.reserve_collection_vec(target, 1, "merge typed Parasolid records")?;
+            target.push(node);
+        }
+    }
+    Ok(())
 }
 
 fn unique_map<T, F>(nodes: &[T], key: F) -> Option<HashMap<u16, T>>
