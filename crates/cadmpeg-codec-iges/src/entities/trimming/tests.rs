@@ -198,6 +198,25 @@ fn implicit_outer_boundary_refuses_curve_id_storage() {
 }
 
 #[test]
+fn trimmed_face_refuses_nested_topology_lanes_and_staging() {
+    let bytes = bounded_plane_file();
+    for operation in [
+        "iges trimming face loop IDs",
+        "iges trimming shell face IDs",
+        "iges trimming region shell IDs",
+        "iges trimming body region IDs",
+        "iges trimming staged candidates",
+        "iges trimming committed vertex derivations",
+    ] {
+        assert_trimming_collection_refusal(&bytes, operation);
+    }
+    assert_trimming_collection_refusal(
+        &trimmed_plane_with_inner_loop_file(), "iges trimming inner loop IDs",
+    );
+    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+}
+
+#[test]
 fn linear_boundary_path_refuses_collection_limit_before_append() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
