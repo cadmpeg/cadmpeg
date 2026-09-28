@@ -16,6 +16,7 @@ use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
 use cadmpeg_ir::units::FiniteVector;
 use std::num::NonZeroU32;
+use std::fmt::Write;
 
 pub(super) mod structured_value_kind;
 use structured_value_kind::StructuredValueKind;
@@ -1466,16 +1467,57 @@ trait ParasolidStreamRecords {
 /// Run the cached-view record skeleton for one family: map every cached row of
 /// every stream to a record, then sort by identity. Non-Parasolid streams hold
 /// empty views, so no per-stream guard is needed.
-fn per_parasolid_stream<P: ParasolidStreamRecords>(parsed: &ParsedStreams) -> Vec<P::Record> {
+fn per_parasolid_stream<P: ParasolidStreamRecords>(
+    ctx: &DecodeContext<'_>,
+    parsed: &ParsedStreams,
+) -> Result<Vec<P::Record>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in parsed.iter() {
+        let ordinal = u32::try_from(stream_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX Parasolid stream ordinal", 0, 1))?;
         for row in P::rows(stream.view_for_records()) {
-            let id = format!("nx:s{stream_ordinal}:{}#{}", P::ID_STEM, P::xmt(row));
-            records.push(P::record(id, stream_ordinal as u32, row));
+            ctx.charge_collection_items(1, "NX Parasolid cached records")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<P::Record>()),
+                "retain NX Parasolid cached records",
+            )?;
+            records.try_reserve_exact(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX Parasolid cached records", 0, 1)
+            })?;
+            let xmt = P::xmt(row);
+            let id_len = "nx:s".len()
+                .checked_add(stream_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+                .and_then(|length| length.checked_add(1 + P::ID_STEM.len() + 1))
+                .and_then(|length| length.checked_add(xmt.checked_ilog10().map_or(1, |digits| digits as usize + 1)))
+                .ok_or_else(|| ctx.refuse_codec_limit("retain NX Parasolid cached record id", 0, 1))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(id_len),
+                "retain NX Parasolid cached record id",
+            )?;
+            let mut id = String::new();
+            id.try_reserve_exact(id_len).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX Parasolid cached record id", 0, 1)
+            })?;
+            write!(&mut id, "nx:s{stream_ordinal}:{}#{xmt}", P::ID_STEM)
+                .map_err(|_| ctx.refuse_codec_limit("write NX Parasolid cached record id", 0, 1))?;
+            records.push(P::record(id, ordinal, row));
         }
     }
+    let sort_factor = if records.len() < 2 {
+        1
+    } else {
+        usize::try_from(records.len().ilog2())
+            .map_err(|_| ctx.refuse_codec_limit("sort NX Parasolid cached records", 0, 1))?
+            + 1
+    };
+    let sort_units = records.len().checked_mul(sort_factor)
+        .ok_or_else(|| ctx.refuse_codec_limit("sort NX Parasolid cached records", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(sort_units),
+        "sort NX Parasolid cached records",
+    )?;
     records.sort_by(|left, right| P::id(left).cmp(P::id(right)));
-    records
+    Ok(records)
 }
 
 /// Shared skeleton for Parasolid record families scanned fresh from each
@@ -1541,9 +1583,10 @@ pub(super) struct ParasolidOffsetSurfaceRecord {
 
 /// Decode complete typed source records for Parasolid offset surfaces.
 pub(super) fn parasolid_offset_surface_records(
+    ctx: &DecodeContext<'_>,
     parsed: &ParsedStreams,
-) -> Vec<ParasolidOffsetSurfaceRecord> {
-    per_parasolid_stream::<ParasolidOffsetSurfaceRecord>(parsed)
+) -> Result<Vec<ParasolidOffsetSurfaceRecord>, CodecError> {
+    per_parasolid_stream::<ParasolidOffsetSurfaceRecord>(ctx, parsed)
 }
 
 impl ParasolidStreamRecords for ParasolidOffsetSurfaceRecord {
@@ -1589,9 +1632,10 @@ pub(super) struct ParasolidTrimmedCurveRecord {
 
 /// Decode complete typed source records for Parasolid trimmed curves.
 pub(super) fn parasolid_trimmed_curve_records(
+    ctx: &DecodeContext<'_>,
     parsed: &ParsedStreams,
-) -> Vec<ParasolidTrimmedCurveRecord> {
-    per_parasolid_stream::<ParasolidTrimmedCurveRecord>(parsed)
+) -> Result<Vec<ParasolidTrimmedCurveRecord>, CodecError> {
+    per_parasolid_stream::<ParasolidTrimmedCurveRecord>(ctx, parsed)
 }
 
 impl ParasolidStreamRecords for ParasolidTrimmedCurveRecord {
@@ -1635,9 +1679,10 @@ pub(super) struct ParasolidSurfaceCurveRecord {
 
 /// Decode complete typed source records for Parasolid surface curves.
 pub(super) fn parasolid_surface_curve_records(
+    ctx: &DecodeContext<'_>,
     parsed: &ParsedStreams,
-) -> Vec<ParasolidSurfaceCurveRecord> {
-    per_parasolid_stream::<ParasolidSurfaceCurveRecord>(parsed)
+) -> Result<Vec<ParasolidSurfaceCurveRecord>, CodecError> {
+    per_parasolid_stream::<ParasolidSurfaceCurveRecord>(ctx, parsed)
 }
 
 impl ParasolidStreamRecords for ParasolidSurfaceCurveRecord {
@@ -1998,9 +2043,10 @@ pub(super) struct ParasolidIntersectionRecord {
 
 /// Decode complete typed source records for retained intersection constructions.
 pub(super) fn parasolid_intersection_records(
+    ctx: &DecodeContext<'_>,
     parsed: &ParsedStreams<'_>,
-) -> Vec<ParasolidIntersectionRecord> {
-    per_parasolid_stream::<ParasolidIntersectionRecord>(parsed)
+) -> Result<Vec<ParasolidIntersectionRecord>, CodecError> {
+    per_parasolid_stream::<ParasolidIntersectionRecord>(ctx, parsed)
 }
 
 impl ParasolidStreamRecords for ParasolidIntersectionRecord {
@@ -3061,9 +3107,10 @@ pub(super) fn parasolid_attribute_field_names(
 
 /// Retain complete typed rolling-ball blend records from all Parasolid streams.
 pub(super) fn parasolid_blend_surface_records(
+    ctx: &DecodeContext<'_>,
     parsed: &ParsedStreams,
-) -> Vec<ParasolidBlendSurfaceRecord> {
-    per_parasolid_stream::<ParasolidBlendSurfaceRecord>(parsed)
+) -> Result<Vec<ParasolidBlendSurfaceRecord>, CodecError> {
+    per_parasolid_stream::<ParasolidBlendSurfaceRecord>(ctx, parsed)
 }
 
 impl ParasolidStreamRecords for ParasolidBlendSurfaceRecord {
@@ -3903,6 +3950,37 @@ mod tests {
     use crate::test_support::test_bytes::put_ref;
     use crate::test_support::test_prt::prt_with_partition;
     use crate::test_support::test_streams::topology_partition_stream;
+
+    #[test]
+    fn parasolid_cached_records_refuse_collection_at_caller_limit() {
+        let bytes = crate::test_support::test_prt::prt_with_partition(
+            &crate::test_support::test_streams::blend_surface_topology_partition_stream(),
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let scan = crate::decode::scan(&ctx, root).unwrap();
+        let parsed = crate::native::substrate::ParsedStreams::parse(&ctx, &scan).unwrap();
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+        limited_policy.limits.max_collection_items = 0;
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &limited_arena,
+            &limited_policy,
+        )
+        .unwrap();
+        let error = super::parasolid_blend_surface_records(&limited_ctx, &parsed)
+            .err()
+            .expect("cached record refusal");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "NX Parasolid cached records"
+        ));
+    }
     #[test]
     fn unicode_record_wire_derives_exact_utf16_and_rejects_disagreement() {
         let wire = r#"{"id":"unicode","stream_ordinal":0,"xmt":2,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
