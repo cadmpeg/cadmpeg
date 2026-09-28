@@ -722,38 +722,50 @@ fn legacy_body_ownership_is_unambiguous(scan: &ContainerScan, component_count: u
 /// a face shell only when exactly one shell touches an endpoint and otherwise
 /// grouped in a wire shell.
 fn split_neutral_component_shells(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     faces: &[u32],
     wire_curves: &BTreeSet<u32>,
     face_adjacency: &BTreeMap<u32, BTreeSet<u32>>,
     face_vertices: &BTreeMap<u32, BTreeSet<u32>>,
     edge_vertices: &BTreeMap<u32, [u32; 2]>,
-) -> Vec<NeutralShellSpec> {
-    let mut remaining_faces = faces.iter().copied().collect::<BTreeSet<_>>();
-    let mut face_groups = Vec::<Vec<u32>>::new();
+) -> Result<Vec<NeutralShellSpec>, cadmpeg_core::CodecError> {
+    let mut remaining_faces = BTreeSet::new();
+    for face_id in faces {
+        if !remaining_faces.contains(face_id) {
+            ctx.charge_collection_items(1, "creo B-rep remaining face nodes")?;
+            remaining_faces.insert(*face_id);
+        }
+    }
+    let mut shell_specs = Vec::new();
     while let Some(start) = remaining_faces.pop_first() {
-        let mut group = BTreeSet::from([start]);
-        let mut pending = vec![start];
+        let mut group = BTreeSet::new();
+        ctx.charge_collection_items(1, "creo B-rep shell group face nodes")?;
+        group.insert(start);
+        let mut pending = Vec::new();
+        ctx.try_reserve_items(&mut pending, 1, "creo B-rep pending shell faces")?;
+        pending.push(start);
         while let Some(face_id) = pending.pop() {
             for neighbour in face_adjacency.get(&face_id).into_iter().flatten().copied() {
                 if remaining_faces.remove(&neighbour) {
+                    ctx.charge_collection_items(1, "creo B-rep shell group face nodes")?;
                     group.insert(neighbour);
+                    ctx.try_reserve_items(&mut pending, 1, "creo B-rep pending shell faces")?;
                     pending.push(neighbour);
                 }
             }
         }
-        face_groups.push(group.into_iter().collect());
-    }
-
-    let mut shell_specs = face_groups
-        .into_iter()
-        .map(|faces| NeutralShellSpec {
-            faces,
+        let mut group_faces = Vec::new();
+        ctx.try_reserve_items(&mut group_faces, group.len(), "creo B-rep shell face IDs")?;
+        group_faces.extend(group);
+        ctx.try_reserve_items(&mut shell_specs, 1, "creo B-rep shell records")?;
+        shell_specs.push(NeutralShellSpec {
+            faces: group_faces,
             wire_curves: BTreeSet::new(),
-        })
-        .collect::<Vec<_>>();
+        });
+    }
     let mut unattached_wire_curves = BTreeSet::new();
     for curve_id in wire_curves {
-        let curve_vertices = edge_vertices[curve_id].into_iter().collect::<BTreeSet<_>>();
+        let curve_vertices = edge_vertices[curve_id];
         let matching_shell = exactly_one(
             shell_specs
                 .iter()
@@ -762,23 +774,30 @@ fn split_neutral_component_shells(
                     shell
                         .faces
                         .iter()
-                        .any(|face_id| !face_vertices[face_id].is_disjoint(&curve_vertices))
+                        .any(|face_id| {
+                            curve_vertices
+                                .iter()
+                                .any(|vertex_id| face_vertices[face_id].contains(vertex_id))
+                        })
                 })
                 .map(|(index, _)| index),
         );
         if let Some(index) = matching_shell {
+            ctx.charge_collection_items(1, "creo B-rep attached wire nodes")?;
             shell_specs[index].wire_curves.insert(*curve_id);
         } else {
+            ctx.charge_collection_items(1, "creo B-rep unattached wire nodes")?;
             unattached_wire_curves.insert(*curve_id);
         }
     }
     if !unattached_wire_curves.is_empty() {
+        ctx.try_reserve_items(&mut shell_specs, 1, "creo B-rep shell records")?;
         shell_specs.push(NeutralShellSpec {
             faces: Vec::new(),
             wire_curves: unattached_wire_curves,
         });
     }
-    shell_specs
+    Ok(shell_specs)
 }
 
 fn component_is_closed(
@@ -2118,12 +2137,13 @@ pub(in super::super) fn transfer_native_brep(
             }
         }
         let shell_specs = split_neutral_component_shells(
+            ctx,
             faces,
             &wire_curves,
             &face_adjacency,
             &face_vertices,
             &edge_vertices,
-        );
+        )?;
 
         let mut face_shell_ids = BTreeMap::<u32, ShellId>::new();
         let mut shell_ids = Vec::new();

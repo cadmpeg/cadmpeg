@@ -24,6 +24,7 @@ use super::{
 
 mod eligible_index;
 mod body_index;
+mod split_shells;
 
 fn brep_edge_index_input() -> (
     Vec<crate::curve::CurveTopologyRow>,
@@ -1167,13 +1168,17 @@ fn partitions_face_shells_and_retains_unattached_wire_curves() {
     ]);
     let edge_vertices = BTreeMap::from([(100, [11, 12]), (101, [40, 41])]);
 
-    let shells = split_neutral_component_shells(
-        &faces,
-        &BTreeSet::from([100, 101]),
-        &face_adjacency,
-        &face_vertices,
-        &edge_vertices,
-    );
+    let shells = crate::decode::with_test_decode_ctx(|ctx| {
+        split_neutral_component_shells(
+            ctx,
+            &faces,
+            &BTreeSet::from([100, 101]),
+            &face_adjacency,
+            &face_vertices,
+            &edge_vertices,
+        )
+    })
+    .expect("service shell partition admitted");
 
     assert_eq!(
         shells,
@@ -1203,13 +1208,17 @@ fn retains_wire_curve_when_shell_attachment_is_ambiguous() {
     let edge_vertices = BTreeMap::from([(100, [10, 20])]);
 
     assert_eq!(
-        split_neutral_component_shells(
-            &faces,
-            &BTreeSet::from([100]),
-            &face_adjacency,
-            &face_vertices,
-            &edge_vertices,
-        ),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            split_neutral_component_shells(
+                ctx,
+                &faces,
+                &BTreeSet::from([100]),
+                &face_adjacency,
+                &face_vertices,
+                &edge_vertices,
+            )
+        })
+        .expect("service ambiguous wire admitted"),
         vec![
             NeutralShellSpec {
                 faces: vec![1],
