@@ -751,10 +751,13 @@ fn bind_occurrences(
             expanded.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("expand F3D xref references", 0, 1)
             })?;
-            let occurrence_id = format!(
-                "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
-                reference.ordinal
-            );
+            let occurrence_id = xref_id_charged(
+                ctx,
+                format_args!(
+                    "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
+                    reference.ordinal
+                ),
+            )?;
             let mut occurrence = copy_reference_charged(ctx, reference, Some(occurrence_id))?;
             occurrence.occurrence_ordinal = ordinal_at(occurrence_ordinal)?;
             occurrence.transform = transform
