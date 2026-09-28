@@ -765,13 +765,13 @@ impl NativeModel {
             parasolid_group_records(ctx, streams, &delta_pairs, &deltas_events.records)?;
         let parasolid_group_members = parasolid_group_members(ctx, streams, &delta_pairs, parsed)?;
         let parasolid_blend_surface_records = parasolid_blend_surface_records(parsed);
-        let parasolid_blend_bound_records = parasolid_blend_bound_records(streams);
+        let parasolid_blend_bound_records = parasolid_blend_bound_records(ctx, streams)?;
         let parasolid_offset_surface_records = parasolid_offset_surface_records(parsed);
         let parasolid_trimmed_curve_records = parasolid_trimmed_curve_records(parsed);
         let parasolid_surface_curve_records = parasolid_surface_curve_records(parsed);
         let parasolid_intersection_records = parasolid_intersection_records(parsed);
-        let parasolid_term_use_records = parasolid_term_use_records(streams);
-        let parasolid_support_uv_records = parasolid_support_uv_records(streams);
+        let parasolid_term_use_records = parasolid_term_use_records(ctx, streams)?;
+        let parasolid_support_uv_records = parasolid_support_uv_records(ctx, streams)?;
         let parasolid_chart_records = parasolid_chart_records(streams);
         let parasolid_attribute_definitions = parasolid_attribute_definitions(streams);
         let parasolid_entity_51_records = parasolid_entity_51_records(streams);

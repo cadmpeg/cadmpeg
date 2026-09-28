@@ -1490,7 +1490,7 @@ trait ParasolidScanRecords {
     /// Identity stem between the `nx:s{ordinal}:` prefix and the `#{xmt}` suffix.
     const ID_STEM: &'static str;
     /// Scan one inflated Parasolid stream into its rows.
-    fn scan(bytes: &[u8]) -> Vec<Self::Row>;
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError>;
     /// Cross-reference index carried into the record identity.
     fn xmt(row: &Self::Row) -> u32;
     /// Build one record from its identity, stream ordinal, and scanned row.
@@ -1501,19 +1501,19 @@ trait ParasolidScanRecords {
 
 /// Run the fresh-scan record skeleton for one family: scan every Parasolid
 /// stream, map each scanned row to a record, then sort by identity.
-fn per_parasolid_scan<P: ParasolidScanRecords>(streams: &[Stream]) -> Vec<P::Record> {
+fn per_parasolid_scan<P: ParasolidScanRecords>(ctx: &DecodeContext<'_>, streams: &[Stream]) -> Result<Vec<P::Record>, CodecError> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
             continue;
         }
-        for row in P::scan(&stream.inflated) {
+        for row in P::scan(ctx, &stream.inflated)? {
             let id = format!("nx:s{stream_ordinal}:{}#{}", P::ID_STEM, P::xmt(&row));
             records.push(P::record(id, stream_ordinal as u32, row));
         }
     }
     records.sort_by(|left, right| P::id(left).cmp(P::id(right)));
-    records
+    Ok(records)
 }
 
 /// Complete typed source record for one Parasolid offset surface.
@@ -1677,16 +1677,16 @@ pub(super) struct ParasolidBlendBoundRecord {
 }
 
 /// Decode complete typed source records for Parasolid blend-bound bridges.
-pub(super) fn parasolid_blend_bound_records(streams: &[Stream]) -> Vec<ParasolidBlendBoundRecord> {
-    per_parasolid_scan::<ParasolidBlendBoundRecord>(streams)
+pub(super) fn parasolid_blend_bound_records(ctx: &DecodeContext<'_>, streams: &[Stream]) -> Result<Vec<ParasolidBlendBoundRecord>, CodecError> {
+    per_parasolid_scan::<ParasolidBlendBoundRecord>(ctx, streams)
 }
 
 impl ParasolidScanRecords for ParasolidBlendBoundRecord {
     type Row = crate::intersection::BlendBound;
     type Record = ParasolidBlendBoundRecord;
     const ID_STEM: &'static str = "blend-bound-record";
-    fn scan(bytes: &[u8]) -> Vec<Self::Row> {
-        crate::intersection::blend_bounds(bytes)
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::intersection::blend_bounds(ctx, bytes)
     }
     fn xmt(row: &Self::Row) -> u32 {
         row.state.xmt()
@@ -1834,16 +1834,16 @@ mod term_use_wire_tests {
 }
 
 /// Decode complete typed source records for Parasolid `term_use` endpoints.
-pub(super) fn parasolid_term_use_records(streams: &[Stream]) -> Vec<ParasolidTermUseRecord> {
-    per_parasolid_scan::<ParasolidTermUseRecord>(streams)
+pub(super) fn parasolid_term_use_records(ctx: &DecodeContext<'_>, streams: &[Stream]) -> Result<Vec<ParasolidTermUseRecord>, CodecError> {
+    per_parasolid_scan::<ParasolidTermUseRecord>(ctx, streams)
 }
 
 impl ParasolidScanRecords for ParasolidTermUseRecord {
     type Row = crate::intersection::TermUse;
     type Record = ParasolidTermUseRecord;
     const ID_STEM: &'static str = "term-use-record";
-    fn scan(bytes: &[u8]) -> Vec<Self::Row> {
-        crate::intersection::term_use_records(bytes)
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::intersection::term_use_records(ctx, bytes)
     }
     fn xmt(row: &Self::Row) -> u32 {
         row.xmt
@@ -1883,16 +1883,16 @@ pub(super) struct ParasolidSupportUvRecord {
 }
 
 /// Decode complete typed source records for Parasolid support-UV arrays.
-pub(super) fn parasolid_support_uv_records(streams: &[Stream]) -> Vec<ParasolidSupportUvRecord> {
-    per_parasolid_scan::<ParasolidSupportUvRecord>(streams)
+pub(super) fn parasolid_support_uv_records(ctx: &DecodeContext<'_>, streams: &[Stream]) -> Result<Vec<ParasolidSupportUvRecord>, CodecError> {
+    per_parasolid_scan::<ParasolidSupportUvRecord>(ctx, streams)
 }
 
 impl ParasolidScanRecords for ParasolidSupportUvRecord {
     type Row = crate::intersection::SupportUvRecord;
     type Record = ParasolidSupportUvRecord;
     const ID_STEM: &'static str = "support-uv-record";
-    fn scan(bytes: &[u8]) -> Vec<Self::Row> {
-        crate::intersection::support_uv_records(bytes)
+    fn scan(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Self::Row>, CodecError> {
+        crate::intersection::support_uv_records(ctx, bytes)
     }
     fn xmt(row: &Self::Row) -> u32 {
         row.xmt
