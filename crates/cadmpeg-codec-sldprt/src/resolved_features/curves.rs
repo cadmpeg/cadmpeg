@@ -1416,26 +1416,30 @@ pub(super) fn fitted_marker_circle(points: &[Point2], tolerance: f64) -> Option<
 }
 
 pub(super) fn sketch_plane_frames(
+    ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
-) -> HashMap<u32, SketchPlaneFrame> {
-    let source_by_feature = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|feature| {
-            Some((
-                features
-                    .iter()
-                    .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))?
-                    .id
-                    .clone(),
-                feature.source_value()?,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let mut frames_by_feature = features
-        .iter()
-        .filter_map(|feature| {
+) -> Result<HashMap<u32, SketchPlaneFrame>, CodecError> {
+    let mut source_by_feature = HashMap::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        let Some((neutral_id, source)) = features
+            .iter()
+            .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))
+            .and_then(|neutral| Some((neutral.id.as_str(), feature.source_value()?)))
+        else {
+            continue;
+        };
+        if !source_by_feature.contains_key(neutral_id) {
+            ctx.charge_collection_items(1, "index SLDPRT sketch plane sources")?;
+            source_by_feature.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT sketch plane sources", u64::MAX - 1, u64::MAX,
+            ))?;
+        }
+        source_by_feature.insert(neutral_id, source);
+    }
+    let mut frames_by_feature = HashMap::new();
+    for feature in features {
+        let frame = (|| {
             let frame = match feature.evaluation.definition() {
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::DatumPrincipalPlane { plane },
@@ -1452,14 +1456,21 @@ pub(super) fn sketch_plane_frames(
                 ),
                 _ => return None,
             };
-            Some((feature.id.clone(), frame))
-        })
-        .collect::<HashMap<_, _>>();
+            Some(frame)
+        })();
+        let Some(frame) = frame else { continue; };
+        if !frames_by_feature.contains_key(feature.id.as_str()) {
+            ctx.charge_collection_items(1, "index SLDPRT resolved sketch planes")?;
+            frames_by_feature.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT resolved sketch planes", u64::MAX - 1, u64::MAX,
+            ))?;
+        }
+        frames_by_feature.insert(feature.id.as_str(), frame);
+    }
     loop {
-        let derived = features
-            .iter()
-            .filter(|feature| !frames_by_feature.contains_key(&feature.id))
-            .filter_map(|feature| {
+        let mut derived = Vec::new();
+        for feature in features.iter().filter(|feature| !frames_by_feature.contains_key(feature.id.as_str())) {
+            let Some(frame) = (|| {
                 let cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::DatumOffsetPlane {
                         reference:
@@ -1472,37 +1483,57 @@ pub(super) fn sketch_plane_frames(
                 else {
                     return None;
                 };
-                let frame = *frames_by_feature.get(reference)?;
-                Some((
-                    feature.id.clone(),
-                    SketchPlaneFrame {
-                        origin: Point3::new(
-                            frame.origin.x + frame.normal.x * distance.get(),
-                            frame.origin.y + frame.normal.y * distance.get(),
-                            frame.origin.z + frame.normal.z * distance.get(),
-                        ),
-                        ..frame
-                    },
-                ))
-            })
-            .collect::<Vec<_>>();
+                let frame = *frames_by_feature.get(reference.as_str())?;
+                Some(SketchPlaneFrame {
+                    origin: Point3::new(
+                        frame.origin.x + frame.normal.x * distance.get(),
+                        frame.origin.y + frame.normal.y * distance.get(),
+                        frame.origin.z + frame.normal.z * distance.get(),
+                    ),
+                    ..frame
+                })
+            })() else {
+                continue;
+            };
+            ctx.reserve_collection_vec(&mut derived, 1, "collect SLDPRT derived sketch planes")?;
+            derived.push((feature.id.as_str(), frame));
+        }
         if derived.is_empty() {
             break;
         }
-        frames_by_feature.extend(derived);
+        for (id, frame) in derived {
+            if !frames_by_feature.contains_key(id) {
+                ctx.charge_collection_items(1, "index SLDPRT derived sketch planes")?;
+                frames_by_feature.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "index SLDPRT derived sketch planes", u64::MAX - 1, u64::MAX,
+                ))?;
+            }
+            frames_by_feature.insert(id, frame);
+        }
     }
-    source_by_feature
-        .into_iter()
-        .filter_map(|(feature, source)| Some((source, *frames_by_feature.get(&feature)?)))
-        .collect()
+    let mut frames = HashMap::new();
+    for (feature, source) in source_by_feature {
+        let Some(frame) = frames_by_feature.get(feature).copied() else {
+            continue;
+        };
+        if !frames.contains_key(&source) {
+            ctx.charge_collection_items(1, "index SLDPRT sketch plane source frames")?;
+            frames.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT sketch plane source frames", u64::MAX - 1, u64::MAX,
+            ))?;
+        }
+        frames.insert(source, frame);
+    }
+    Ok(frames)
 }
 
 pub(super) fn lane_sketch_plane_frames(
+    ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> HashMap<u32, SketchPlaneFrame> {
-    let mut frames = sketch_plane_frames(features, histories);
+) -> Result<HashMap<u32, SketchPlaneFrame>, CodecError> {
+    let mut frames = sketch_plane_frames(ctx, features, histories)?;
     let mut lane_candidates = HashMap::<u32, Vec<SketchPlaneFrame>>::new();
     for native in histories.iter().flat_map(|history| &history.features) {
         let Some(source) = feature_object_name(native, lane)
@@ -1532,7 +1563,15 @@ pub(super) fn lane_sketch_plane_frames(
             }
             _ => continue,
         };
-        lane_candidates.entry(source).or_default().push(frame);
+        if !lane_candidates.contains_key(&source) {
+            ctx.charge_collection_items(1, "index SLDPRT lane sketch plane candidates")?;
+            lane_candidates.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT lane sketch plane candidates", u64::MAX - 1, u64::MAX,
+            ))?;
+        }
+        let candidates = lane_candidates.entry(source).or_default();
+        ctx.reserve_collection_vec(candidates, 1, "collect SLDPRT lane sketch plane candidates")?;
+        candidates.push(frame);
     }
     for (source, mut candidates) in lane_candidates {
         candidates.sort_by_key(|frame| {
@@ -1543,10 +1582,16 @@ pub(super) fn lane_sketch_plane_frames(
         });
         candidates.dedup_by_key(|frame| reference_plane_frame_key(&frame.as_tuple()));
         if let [frame] = candidates.as_slice() {
+            if !frames.contains_key(&source) {
+                ctx.charge_collection_items(1, "index SLDPRT lane sketch plane frames")?;
+                frames.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "index SLDPRT lane sketch plane frames", u64::MAX - 1, u64::MAX,
+                ))?;
+            }
             frames.entry(source).or_insert(*frame);
         }
     }
-    frames
+    Ok(frames)
 }
 
 pub(super) fn ordered_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> {

@@ -2993,7 +2993,7 @@ pub(crate) fn project_hole_axes(
         let Some(ranges) = feature_ranges.get(lane.id.as_str()) else {
             continue;
         };
-        let plane_frames = lane_sketch_plane_frames(model_features, histories, lane);
+        let plane_frames = lane_sketch_plane_frames(ctx, model_features, histories, lane)?;
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         for feature in native_features
             .values()
@@ -4277,7 +4277,7 @@ pub(super) fn sketch_feature_frames(
     let mut candidates = HashMap::<String, Option<(Point3, Vector3, Vector3)>>::new();
     for lane in lanes {
         let ranges = feature_object_byte_ranges(histories, lane);
-        let plane_frames = lane_sketch_plane_frames(features, histories, lane);
+        let plane_frames = lane_sketch_plane_frames(ctx, features, histories, lane)?;
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         for feature in histories
             .iter()

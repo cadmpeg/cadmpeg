@@ -312,7 +312,7 @@ pub(crate) fn project_compact_sketch_profiles(
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
     for lane in lanes {
-        let plane_frames = lane_sketch_plane_frames(features, histories, lane);
+        let plane_frames = lane_sketch_plane_frames(ctx, features, histories, lane)?;
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         let mut objects = native_features
             .values()
@@ -868,7 +868,7 @@ pub(crate) fn project_marker_backed_sketches(
         &feature_frames,
     );
     for lane in lanes {
-        let plane_frames = lane_sketch_plane_frames(features, histories, lane);
+        let plane_frames = lane_sketch_plane_frames(ctx, features, histories, lane)?;
         let plane_index = CompactReferencePlaneIndex::new(ctx, &lane.native_payload)?;
         let mut markers_by_id = HashMap::new();
         for marker in &lane.sketch_entities {

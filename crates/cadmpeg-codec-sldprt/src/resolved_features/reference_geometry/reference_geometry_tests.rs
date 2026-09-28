@@ -928,7 +928,14 @@ fn two_points_axis_data_frame_is_anchored_after_class_name() {
         sketch_entities: Vec::new(),
     };
 
-    super::enrich_history_reference_axes(&mut histories, &[lane]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    super::enrich_history_reference_axes(&ctx, &mut histories, &[lane]).unwrap();
 
     assert_eq!(
         histories[0].features[0].properties.get("Origin"),

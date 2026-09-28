@@ -24,6 +24,63 @@ use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };
 
+#[test]
+fn sketch_plane_frames_refuse_collection_limit() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PrincipalPlane};
+    use std::collections::BTreeMap;
+
+    let native = crate::records::Feature {
+        id: "plane-native".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: crate::records::FeatureSource::from_value(3),
+        ordinal: 0,
+        name: "Top".into(),
+        kind: "Plane".into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = crate::records::FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![native],
+    };
+    let neutral = cadmpeg_ir::features::Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#plane").unwrap(),
+        ordinal: 0,
+        name: Some("Top".into()),
+        suppressed: None,
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
+                plane: PrincipalPlane::Top,
+            }),
+        ),
+        native_ref: Some("plane-native".into()),
+    };
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::sketch_plane_frames(&ctx, &[neutral], &[history]).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "index SLDPRT sketch plane sources"));
+}
+
 fn indexed_rectangle_from_line_cycle(
     payload: &[u8],
     markers: &[&SketchInputEntity],

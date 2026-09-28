@@ -14,7 +14,8 @@ use crate::classification::{
     classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
 use crate::records::{FeatureInputLane, FeatureInputName};
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -1567,9 +1568,10 @@ fn sketch_block_compact_local_id(
 
 /// Add the two serialized construction-plane operands to plane-intersection axes.
 pub(crate) fn enrich_history_reference_axes(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
     let known_sources = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1672,10 +1674,12 @@ pub(crate) fn enrich_history_reference_axes(
         }
     }
 
-    let Ok(projected) = crate::history::project::project_features(histories) else {
-        return;
+    let projected = match crate::history::project::project_features(histories) {
+        Ok(projected) => projected,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(()),
     };
-    let plane_frames = sketch_plane_frames(&projected, histories);
+    let plane_frames = sketch_plane_frames(ctx, &projected, histories)?;
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
@@ -1745,6 +1749,7 @@ pub(crate) fn enrich_history_reference_axes(
             );
         }
     }
+    Ok(())
 }
 
 fn complete_reference_axis_triad(
