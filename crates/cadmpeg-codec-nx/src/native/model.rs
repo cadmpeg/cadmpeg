@@ -1366,10 +1366,11 @@ impl NativeModel {
             fast_load_component_occurrences,
         ) = fast_load_component_roster(container)?;
         let fast_load_component_object_groups = fast_load_component_object_groups(
+            ctx,
             &fast_load_component_uuids,
             fast_load_component_occurrences.as_slice(),
             &object_uuid_values,
-        );
+        )?;
         let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(ctx, container)?;
         Ok(NativeModel {
             display_jt: DisplayJtRecords {

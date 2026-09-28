@@ -89,42 +89,36 @@ pub(in crate::native) fn object_uuid_values(
         let section_ordinal_u32 = u32::try_from(section_ordinal).map_err(|_| {
             ctx.refuse_codec_limit("nx OM UUID section ordinal", 0, u64::MAX)
         })?;
-        values.extend(
-            crate::om::uuid_string_values(ctx, storage, first.offset)?
-                .into_iter()
-                .filter_map(|value| {
-                    let frame_end = value.offset.checked_add(FRAME_LEN)?;
-                    let records = NonEmpty::new(
-                        records
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, record)| {
-                                record.offset < frame_end
-                                    && record
-                                        .offset
-                                        .checked_add(record.bytes.len())
-                                        .is_some_and(|record_end| value.offset < record_end)
-                            })
-                            .map(|(record_ordinal, _)| {
-                                format!(
-                                    "nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"
-                                )
-                            }),
-                    )?;
-                    Some(ObjectUuidValue {
-                        id: format!(
-                            "nx:om-object-uuid-values-{section_ordinal}:value#{}",
-                            value.offset
-                        ),
-                        section_ordinal: section_ordinal_u32,
-                        uuid: value.value.into_owned(),
-                        records,
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset
-                            .checked_add(cadmpeg_core::decode::u64_from_index(value.offset))?,
+        for value in crate::om::uuid_string_values(ctx, storage, first.offset)? {
+            let Some(frame_end) = value.offset.checked_add(FRAME_LEN) else { continue };
+            let Some(records) = NonEmpty::new_charged(
+                ctx,
+                records
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, record)| {
+                        record.offset < frame_end
+                            && record
+                                .offset
+                                .checked_add(record.bytes.len())
+                                .is_some_and(|record_end| value.offset < record_end)
                     })
-                }),
-        );
+                    .map(|(record_ordinal, _)| {
+                        format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}")
+                    }),
+            )? else { continue };
+            let Some(source_offset) = entry_offset
+                .checked_add(cadmpeg_core::decode::u64_from_index(value.offset))
+            else { continue };
+            values.push(ObjectUuidValue {
+                id: format!("nx:om-object-uuid-values-{section_ordinal}:value#{}", value.offset),
+                section_ordinal: section_ordinal_u32,
+                uuid: value.value.into_owned(),
+                records,
+                source_entry: entry.name.clone(),
+                source_offset,
+            });
+        }
     }
     Ok(values)
 }

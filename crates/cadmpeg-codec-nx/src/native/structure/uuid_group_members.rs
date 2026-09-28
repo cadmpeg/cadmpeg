@@ -17,6 +17,17 @@ struct ListSlot {
 pub(super) struct UuidGroupMembers(NonEmpty<ListSlot>);
 
 impl UuidGroupMembers {
+    pub(super) fn new_charged(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        occurrences: Vec<String>,
+        object_uuid_values: Vec<String>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if occurrences.len() != object_uuid_values.len() { return Ok(None) }
+        NonEmpty::new_charged(ctx, occurrences.into_iter().zip(object_uuid_values).map(
+            |(occurrence, object_uuid_value)| ListSlot { occurrence, object_uuid_value },
+        )).map(|members| members.map(Self))
+    }
+
     pub(super) fn new(
         occurrences: Vec<String>,
         object_uuid_values: Vec<String>,
@@ -70,6 +81,26 @@ impl<'de> Deserialize<'de> for UuidGroupMembers {
 #[cfg(test)]
 mod tests {
     use super::UuidGroupMembers;
+
+    fn group_refusal(configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        UuidGroupMembers::new_charged(&ctx, vec!["a".into(), "b".into()], vec!["x".into(), "y".into()]).unwrap_err()
+    }
+
+    #[test]
+    fn uuid_group_members_refuse_collection_limit() {
+        let error = group_refusal(|policy| policy.limits.max_collection_items = 1);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn uuid_group_members_refuse_retained_limit() {
+        let error = group_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
 
     #[test]
     fn group_lists_preserve_each_order_and_require_equal_nonempty_cardinality() {
