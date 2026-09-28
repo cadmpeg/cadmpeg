@@ -294,6 +294,23 @@ fn deltas_walks_complete_entity_value_records() {
 }
 
 #[test]
+fn deltas_value_record_route_refuses_retained_limit() {
+    let mut stream = vec![0, 82];
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&20u16.to_be_bytes());
+    stream.extend_from_slice(&u32::MAX.to_be_bytes());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 11;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
+        .expect("test root is admitted");
+    assert!(matches!(
+        crate::deltas::census::walk(&ctx, &stream),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
 fn deltas_walks_every_transformable_value_family() {
     let mut stream = Vec::new();
     for (kind, count, width) in [(85u8, 1u32, 24usize), (86, 1, 24), (87, 2, 24)] {
