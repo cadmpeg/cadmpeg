@@ -30,6 +30,88 @@ use cadmpeg_ir::features::FaceSelection;
 use cadmpeg_ir::ids::FaceId;
 
 #[test]
+fn operand_recipe_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let recipe = ConstructionRecipe {
+        id: "f3d:design:recipe#1".into(),
+        byte_offset: 0,
+        kind: ConstructionRecipeKind::Face,
+        design: None,
+        recipe_index: 0,
+        record_index: None,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::operands::indexed_operand_recipes(
+            &ctx, std::slice::from_ref(&recipe),
+        ),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d operand recipe index"
+    ));
+}
+
+#[test]
+fn operand_face_candidate_refuses_collection_and_retained_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let face = FaceId::mint("test:model:face#candidate").unwrap();
+    for (collection_limit, retained_limit, dimension, operation) in [
+        (0, u64::MAX, ResourceDimension::CollectionItems, "f3d operand face candidate"),
+        (1, u64::try_from(face.as_str().len() - 1).unwrap(), ResourceDimension::RetainedBytes, "f3d operand face candidate ID"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut candidates = Vec::new();
+        assert!(matches!(
+            crate::design::decode::operands::push_operand_face_candidate(
+                &ctx, &mut candidates, &face,
+            ),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == dimension && limit.operation == operation
+        ));
+        assert!(candidates.is_empty());
+    }
+}
+
+#[test]
+fn referenced_operand_faces_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let reference = DesignRecipeReference {
+        selector: 1,
+        selector_offset: 0,
+        token: "3".into(),
+        token_offset: 0,
+        design_reference: 303,
+        design_reference_offset: 0,
+        candidate_faces: vec![FaceId::mint("test:model:face#candidate").unwrap()],
+        candidate_edges: Vec::new(),
+        alternate_selector_faces: Vec::new(),
+        alternate_selector_edges: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::decode::operands::referenced_operand_faces(
+            &ctx, std::slice::from_ref(&reference), 303,
+        ),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "f3d referenced face candidate"
+    ));
+}
+
+#[test]
 fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
