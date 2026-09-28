@@ -16,9 +16,78 @@ use super::{
     admitted_face_components, component_is_closed, is_neutral_face_reference,
     legacy_body_ownership_is_unambiguous, merge_body_components, native_parameter_loop_polygon,
     ordered_native_parameter_face_loops, split_neutral_component_shells, transfer_native_brep,
-    BrepTransferDiagnostics, FaceAdmissionDetail, FaceAdmissionRejection, NativeBrepCurveEvidence,
+    model_typed_nonlinear_curve_ids, BrepTransferDiagnostics, FaceAdmissionDetail,
+    FaceAdmissionRejection, NativeBrepCurveEvidence,
     NativeCurveEvidence, NeutralShellSpec,
 };
+
+fn typed_curve_id_fixture() -> CadIr {
+    let mut ir = CadIr::empty();
+    let circle = |id: u32| Curve {
+        id: CurveId::mint(format!("creo:visibgeom:curve#{id}"))
+            .expect("fixture curve identity"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .expect("fixture circle"),
+        )),
+        source_object: None,
+    };
+    ir.model.curves.extend([circle(10), circle(10), circle(20)]);
+    ir
+}
+
+#[test]
+fn brep_typed_curve_id_nodes_refuse_collection_limit() {
+    let ir = typed_curve_id_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = model_typed_nonlinear_curve_ids(
+        &ctx,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("first distinct typed curve node refused");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep typed curve ID nodes"));
+}
+
+#[test]
+fn brep_typed_curve_ids_charge_distinct_nodes_and_preserve_order() {
+    let ir = typed_curve_id_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = model_typed_nonlinear_curve_ids(
+        &ctx,
+        &ir,
+        &crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("second distinct typed curve node refused");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep typed curve ID nodes"
+            && resource.used == 1));
+    let ids = crate::decode::with_test_decode_ctx(|ctx| {
+        model_typed_nonlinear_curve_ids(
+            ctx,
+            &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    })
+    .expect("service typed curve nodes admitted");
+    assert_eq!(ids, BTreeSet::from([10, 20]));
+}
 
 fn native_triangle_collection_error(limit: u64, ordered: bool) -> CodecError {
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
