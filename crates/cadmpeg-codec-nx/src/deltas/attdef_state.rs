@@ -26,8 +26,9 @@ impl Serialize for AttdefState {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct AttdefSlots {
-    active: Vec<NonNullXmt>,
-    null_count: u32,
+    references: Vec<u32>,
+    active_count: u32,
+    slot_count: u32,
 }
 impl AttdefState {
     pub(super) fn new(
@@ -73,23 +74,20 @@ impl AttdefSlots {
         {
             return Err("references: inactive slots must be null");
         }
-        let active = references
-            .into_iter()
-            .take(active_len)
-            .map(NonNullXmt::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|_| "references: active slots must be non-null")?;
-        Ok(Self {
-            active,
-            null_count: slot_count - active_count,
-        })
+        if references[..active_len]
+            .iter()
+            .any(|reference| NonNullXmt::try_from(*reference).is_err())
+        {
+            return Err("references: active slots must be non-null");
+        }
+        Ok(Self { references, active_count, slot_count })
     }
     pub(super) fn from_delta_references(references: Vec<u32>) -> Result<Self, &'static str> {
-        let mut references = references.into_iter();
-        if references.next() != Some(1) {
+        if references.first() != Some(&1) {
             return Err("references: ATTDEF_LIST must start with null");
         }
-        let references: Vec<_> = references.collect();
+        let mut references = references;
+        references.remove(0);
         let slot_count =
             u32::try_from(references.len()).map_err(|_| "references: too many slots")?;
         let active_count = references
@@ -99,19 +97,14 @@ impl AttdefSlots {
         Self::new(slot_count, active_count, references)
     }
     fn active_count(&self) -> u32 {
-        self.active.len() as u32
+        self.active_count
     }
     fn slot_count(&self) -> u32 {
-        self.active_count() + self.null_count
+        self.slot_count
     }
-    // This iterator emits null references lazily; it performs no count-sized allocation.
-    #[allow(clippy::disallowed_methods)]
+    // The validated slots stay in their original order.
     pub(super) fn references(&self) -> impl Iterator<Item = u32> + Clone + '_ {
-        self.active
-            .iter()
-            .copied()
-            .map(u32::from)
-            .chain(std::iter::repeat_n(1, self.null_count as usize))
+        self.references.iter().copied()
     }
 }
 #[derive(Serialize, Deserialize)]
