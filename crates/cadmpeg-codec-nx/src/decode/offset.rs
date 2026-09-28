@@ -6,11 +6,14 @@ use super::blend::{
     blend_surface_parameters_for_fit_with_grid_and_budget, BlendParameterGrid,
 };
 use super::geometry_work::GeometryWorkBudget;
+use super::ids::copy_typed_id;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::support_uv::{linear_knots, missing_support_parameter};
 use crate::framing::node_kind::NodeKind;
 use crate::topology::{Graph, Node};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, finite_or_refusal, model_surface_partials_by_id_with_budget,
@@ -44,22 +47,26 @@ const OFFSET_NEWTON_ITERATIONS: usize = 32;
 const MAX_OFFSET_FIT_CACHE_ENTRIES: usize = 4096;
 
 pub(super) fn saved_offset_carriers(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     graph: &Graph,
     offsets: &[crate::topology::OffsetSurface],
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
     tolerance: PositiveLength,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<BTreeMap<u32, (SurfaceId, f64)>, cadmpeg_core::decode::ResourceLimit> {
-    let face_surfaces = graph
+) -> Result<BTreeMap<u32, (SurfaceId, f64)>, CodecError> {
+    let mut face_surfaces = BTreeSet::new();
+    for xmt in graph
         .of_kind(NodeKind::Face)
         .filter_map(Node::face_fields)
         .filter_map(|face| face.surface.map(u32::from))
-        .collect::<BTreeSet<_>>();
-    let candidates = face_surfaces
-        .iter()
-        .filter_map(|xmt| surfaces_by_xmt.get(xmt))
-        .filter_map(|id| {
+    {
+        ctx.charge_collection_items(1, "nx offset face surfaces")?;
+        face_surfaces.insert(xmt);
+    }
+    let mut candidates = Vec::new();
+    for xmt in &face_surfaces {
+        let candidate = surfaces_by_xmt.get(xmt).and_then(|id| {
             let geometry = &ir
                 .model
                 .surfaces
@@ -71,15 +78,20 @@ pub(super) fn saved_offset_carriers(
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
             )
             .then_some((id, geometry))
-        })
-        .collect::<Vec<_>>();
+        });
+        if let Some(candidate) = candidate {
+            ctx.charge_collection_items(1, "nx offset candidates")?;
+            candidates.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx offset candidates", 0, 1))?;
+            candidates.push(candidate);
+        }
+    }
 
-    let mut matches = BTreeMap::<u32, Vec<(SurfaceId, f64)>>::new();
-    let mut candidate_owners = BTreeMap::<SurfaceId, Vec<u32>>::new();
+    let mut matches = BTreeMap::<u32, Vec<(&SurfaceId, f64)>>::new();
+    let mut candidate_owners = BTreeMap::<&SurfaceId, Vec<u32>>::new();
     // A fit depends only on the support, candidate, distance, and tolerance;
     // cap the cache so a large offset roster cannot turn this optimization
     // into unbounded model-sized storage.
-    let mut fit_cache = BTreeMap::<(SurfaceId, SurfaceId, u64, u64), Option<f64>>::new();
+    let mut fit_cache = BTreeMap::<(&SurfaceId, &SurfaceId, u64, u64), Option<f64>>::new();
     for offset in offsets
         .iter()
         .filter(|offset| !face_surfaces.contains(&offset.xmt))
@@ -101,8 +113,8 @@ pub(super) fn saved_offset_carriers(
                 continue;
             }
             let key = (
-                support_id.clone(),
-                (*candidate_id).clone(),
+                support_id,
+                *candidate_id,
                 offset.state.distance().get().to_bits(),
                 tolerance.get().to_bits(),
             );
@@ -117,33 +129,41 @@ pub(super) fn saved_offset_carriers(
                     geometry_budget,
                 )?;
                 if fit_cache.len() < MAX_OFFSET_FIT_CACHE_ENTRIES {
+                    ctx.charge_collection_items(1, "nx offset fit cache")?;
                     fit_cache.insert(key, fit);
                 }
                 fit
             };
             if let Some(fit) = fit {
-                matches
-                    .entry(offset.xmt)
-                    .or_default()
-                    .push(((*candidate_id).clone(), fit));
-                candidate_owners
-                    .entry((*candidate_id).clone())
-                    .or_default()
-                    .push(offset.xmt);
+                if !matches.contains_key(&offset.xmt) {
+                    ctx.charge_collection_items(1, "nx offset match owners")?;
+                }
+                let group = matches.entry(offset.xmt).or_default();
+                ctx.charge_collection_items(1, "nx offset matches")?;
+                group.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx offset matches", 0, 1))?;
+                group.push((*candidate_id, fit));
+                if !candidate_owners.contains_key(*candidate_id) {
+                    ctx.charge_collection_items(1, "nx offset candidate owners")?;
+                }
+                let owners = candidate_owners.entry(*candidate_id).or_default();
+                ctx.charge_collection_items(1, "nx offset candidate owner entries")?;
+                owners.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx offset candidate owner entries", 0, 1))?;
+                owners.push(offset.xmt);
             }
         }
     }
 
-    Ok(matches
-        .into_iter()
-        .filter_map(|(offset, candidates)| {
+    let mut result = BTreeMap::new();
+    for (offset, candidates) in matches {
             let [(candidate, fit)] = candidates.as_slice() else {
-                return None;
+                continue;
             };
-            (candidate_owners.get(candidate).map(Vec::as_slice) == Some(&[offset][..]))
-                .then(|| (offset, (candidate.clone(), *fit)))
-        })
-        .collect())
+            if candidate_owners.get(candidate).map(Vec::as_slice) == Some(&[offset][..]) {
+                ctx.charge_collection_items(1, "nx saved offset carriers")?;
+                result.insert(offset, (copy_typed_id(ctx, candidate.as_str(), "nx saved offset surface identity")?, *fit));
+            }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]

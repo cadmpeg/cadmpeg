@@ -509,6 +509,7 @@ pub(super) fn try_decode_geometry(
             }
         }
         let saved_offset_carriers = saved_offset_carriers(
+            ctx,
             &ir,
             graph,
             &view.offset_surfaces,
