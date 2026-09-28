@@ -48,6 +48,22 @@ fn insert_project_index<K: Eq + Hash, V>(
     Ok(())
 }
 
+fn insert_project_set<T: Eq + Hash>(
+    ctx: Option<&DecodeContext<'_>>,
+    set: &mut HashSet<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !set.contains(&value) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+            set.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        }
+        set.insert(value);
+    }
+    Ok(())
+}
+
 fn collect_project_items<T>(
     ctx: Option<&DecodeContext<'_>>,
     items: impl IntoIterator<Item = T>,
@@ -82,6 +98,18 @@ fn copy_project_text(
     let Some(ctx) = ctx else { return Ok(value.to_owned()); };
     let bytes = ctx.copy_retained(value.as_bytes(), operation)?;
     String::from_utf8(bytes).map_err(|_| CodecError::malformed("validated sketch text is not UTF-8"))
+}
+
+fn copy_project_id<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &str,
+    operation: &'static str,
+) -> Result<T, CodecError>
+where
+    T: TryFrom<String>,
+    T::Error: std::fmt::Display,
+{
+    T::try_from(copy_project_text(ctx, value, operation)?).map_err(CodecError::malformed)
 }
 
 fn record_spline_segment<'a>(
@@ -955,15 +983,20 @@ pub(crate) fn project_spatial_sketch_constraints(
         SpatialSketchGeometry, SpatialSketchGeometryDefinition,
     };
 
-    let spatial_sketches = entities
-        .iter()
-        .map(|entity| entity.sketch.clone())
-        .collect::<HashSet<_>>();
     let mut sketches = HashMap::new();
     for placement in placements {
+        let id = neutral_spatial_sketch_id(placement);
+        if let Some(ctx) = ctx {
+            let work = u64::try_from(entities.len()).map_err(|_| {
+                ctx.refuse_codec_limit("f3d spatial constraint sketch membership work", 0, 1)
+            })?;
+            ctx.charge_work(work, "f3d spatial constraint sketch membership work")?;
+        }
+        if !entities.iter().any(|entity| entity.sketch == id) {
+            continue;
+        }
         let Some((key, value)) = (|| {
-            let id = neutral_spatial_sketch_id(placement);
-            spatial_sketches.contains(&id).then_some((
+            Some((
                 (
                     native_stream(&placement.id)?,
                     u32::try_from(placement.entity_id.suffix()).ok()?,
@@ -994,36 +1027,43 @@ pub(crate) fn project_spatial_sketch_constraints(
         })() else { continue; };
         insert_project_index(ctx, &mut projected, key, value, "f3d spatial constraint entity index")?;
     }
-    let mut constraints = relations
-        .iter()
-        .filter_map(|relation| {
-            let sole_kind = relation.sole_constraint_kind()?;
-            let scope = native_stream(&relation.id)?;
-            let (sketch, placement) = sketches.get(&(scope, relation.owner_reference))?;
+    let mut constraints = Vec::new();
+    for relation in relations {
+        let Some(constraint) = (|| -> Result<Option<SpatialSketchConstraint>, CodecError> {
+            let Some(sole_kind) = relation.sole_constraint_kind() else { return Ok(None); };
+            let Some(scope) = native_stream(&relation.id) else { return Ok(None); };
+            let Some((sketch, placement)) = sketches.get(&(scope, relation.owner_reference)) else {
+                return Ok(None);
+            };
             // The second relation run is the semantic member order. The first
             // run interleaves per-member relation ordinals and has no role
             // order, so it cannot define a neutral spatial constraint.
-            let semantic_entities = relation
-                .return_members()
-                .iter()
-                .map(|member| {
-                    projected
-                        .get(&(scope, member.reference.record_index()))
-                        .copied()
-                })
-                .collect::<Option<Vec<_>>>()?;
-            let members = semantic_entities
-                .iter()
-                .map(|entity| entity.id().clone())
-                .collect::<Vec<_>>();
-            let distinct = members.iter().collect::<HashSet<_>>();
+            let mut semantic_entities = Vec::new();
+            for member in relation.return_members().iter() {
+                let Some(entity) = projected.get(&(scope, member.reference.record_index())).copied() else {
+                    return Ok(None);
+                };
+                push_project_item(ctx, &mut semantic_entities, entity,
+                    "f3d spatial constraint semantic entity")?;
+            }
+            let mut members = Vec::new();
+            for entity in &semantic_entities {
+                let id = copy_project_id(ctx, entity.id().as_str(),
+                    "f3d spatial constraint member id")?;
+                push_project_item(ctx, &mut members, id, "f3d spatial constraint member")?;
+            }
+            let mut distinct = HashSet::new();
+            for member in &members {
+                insert_project_set(ctx, &mut distinct, member,
+                    "f3d spatial constraint distinct member")?;
+            }
             if distinct.len() != members.len() {
-                return None;
+                return Ok(None);
             }
             let definition = match sole_kind {
                 SketchConstraintKind::Coincident => {
                     let [first, second] = semantic_entities.as_slice() else {
-                        return None;
+                        return Ok(None);
                     };
                     let point_on_surface =
                         match (first.geometry.definition(), second.geometry.definition()) {
@@ -1039,8 +1079,8 @@ pub(crate) fn project_spatial_sketch_constraints(
                         };
                     if let Some((point, surface)) = point_on_surface {
                         Definition::PointOnSurface {
-                            point: point.id().clone(),
-                            surface: surface.id().clone(),
+                            point: copy_project_id(ctx, point.id().as_str(), "f3d spatial constraint operand id")?,
+                            surface: copy_project_id(ctx, surface.id().as_str(), "f3d spatial constraint operand id")?,
                         }
                     } else {
                         let (
@@ -1052,7 +1092,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                             },
                         ) = (first.geometry.definition(), second.geometry.definition())
                         else {
-                            return None;
+                            return Ok(None);
                         };
                         let scale = 1.0
                             + first_position
@@ -1070,11 +1110,11 @@ pub(crate) fn project_spatial_sketch_constraints(
                             || (first_position.z - second_position.z).abs()
                                 > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
                         {
-                            return None;
+                            return Ok(None);
                         }
                         Definition::Coincident {
-                            first: first.id().clone(),
-                            second: second.id().clone(),
+                            first: copy_project_id(ctx, first.id().as_str(), "f3d spatial constraint operand id")?,
+                            second: copy_project_id(ctx, second.id().as_str(), "f3d spatial constraint operand id")?,
                         }
                     }
                 }
@@ -1083,7 +1123,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                 }
                 SketchConstraintKind::Tangent => {
                     let [first, second] = semantic_entities.as_slice() else {
-                        return None;
+                        return Ok(None);
                     };
                     let curve = |geometry: &SpatialSketchGeometry| {
                         matches!(
@@ -1095,16 +1135,16 @@ pub(crate) fn project_spatial_sketch_constraints(
                         )
                     };
                     if !curve(&first.geometry) || !curve(&second.geometry) {
-                        return None;
+                        return Ok(None);
                     }
                     Definition::Tangent {
-                        first: first.id().clone(),
-                        second: second.id().clone(),
+                        first: copy_project_id(ctx, first.id().as_str(), "f3d spatial constraint operand id")?,
+                        second: copy_project_id(ctx, second.id().as_str(), "f3d spatial constraint operand id")?,
                     }
                 }
                 SketchConstraintKind::Midpoint => {
                     let [first, second] = semantic_entities.as_slice() else {
-                        return None;
+                        return Ok(None);
                     };
                     let (point, line, position, start, end) =
                         match (first.geometry.definition(), second.geometry.definition()) {
@@ -1116,7 +1156,7 @@ pub(crate) fn project_spatial_sketch_constraints(
                                 SpatialSketchGeometryDefinition::Line { start, end },
                                 SpatialSketchGeometryDefinition::Point { position },
                             ) => (second, first, position, start, end),
-                            _ => return None,
+                            _ => return Ok(None),
                         };
                     let midpoint = Point3::new(
                         (start.x + end.x) * 0.5,
@@ -1131,21 +1171,21 @@ pub(crate) fn project_spatial_sketch_constraints(
                         || (position.z - midpoint.z).abs()
                             > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
                     {
-                        return None;
+                        return Ok(None);
                     }
                     Definition::Midpoint {
-                        point: point.id().clone(),
-                        entity: line.id().clone(),
+                        point: copy_project_id(ctx, point.id().as_str(), "f3d spatial constraint operand id")?,
+                        entity: copy_project_id(ctx, line.id().as_str(), "f3d spatial constraint operand id")?,
                     }
                 }
                 kind @ (SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical) => {
                     let [entity] = semantic_entities.as_slice() else {
-                        return None;
+                        return Ok(None);
                     };
                     let SpatialSketchGeometryDefinition::Line { start, end } =
                         *entity.geometry.definition()
                     else {
-                        return None;
+                        return Ok(None);
                     };
                     let column = usize::from(kind == SketchConstraintKind::Vertical);
                     let direction = Vector3::new(
@@ -1159,26 +1199,30 @@ pub(crate) fn project_spatial_sketch_constraints(
                         || cross.norm()
                             > EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9 * line.norm()
                     {
-                        return None;
+                        return Ok(None);
                     }
                     Definition::ParallelToDirection {
-                        entity: entity.id().clone(),
+                        entity: copy_project_id(ctx, entity.id().as_str(), "f3d spatial constraint operand id")?,
                         direction,
                     }
                 }
-                _ => return None,
+                _ => return Ok(None),
             };
-            Some(SpatialSketchConstraint {
+            let Ok(definition) = cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
+                definition,
+            ) else { return Ok(None); };
+            let sketch = copy_project_id(ctx, sketch.as_str(), "f3d spatial constraint sketch id")?;
+            let native_ref = copy_project_text(ctx, &relation.id, "f3d spatial constraint native reference")?;
+            Ok(Some(SpatialSketchConstraint {
                 id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
-                sketch: sketch.clone(),
-                definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
-                    definition,
-                )
-                .ok()?,
-                native_ref: Some(relation.id.clone()),
-            })
-        })
-        .collect::<Vec<_>>();
+                sketch,
+                definition,
+                native_ref: Some(native_ref),
+            }))
+        })()? else { continue; };
+        push_project_item(ctx, &mut constraints, constraint,
+            "f3d spatial constraint output")?;
+    }
     constraints.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(constraints)
 }

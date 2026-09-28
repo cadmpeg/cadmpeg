@@ -1771,3 +1771,86 @@ fn projected_sketch_entries_refuse_collection_limit() {
         assert!(entries.is_empty());
     }
 }
+
+#[test]
+fn spatial_constraint_sketch_membership_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let placement = owner_limit_placement();
+    let sketch = crate::ids::neutral_spatial_sketch_id(&placement);
+    let entity = cadmpeg_ir::sketches::SpatialSketchEntity::new(
+        crate::ids::neutral_spatial_sketch_record_id(&sketch, 10),
+        sketch,
+        cadmpeg_ir::sketches::SpatialSketchGeometry::try_from(
+            cadmpeg_ir::sketches::SpatialSketchGeometryDefinition::Point {
+                position: Point3::new(0.0, 0.0, 0.0),
+            },
+        ).unwrap(),
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        project_spatial_sketch_constraints(Some(&ctx), std::slice::from_ref(&placement), &[], &[], &[], &[], &[entity]),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::WorkUnits
+                && failure.operation == "f3d spatial constraint sketch membership work"
+    ));
+}
+
+#[test]
+fn spatial_constraint_copies_and_output_refuse_matching_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    for operation in [
+        "f3d spatial constraint member id",
+        "f3d spatial constraint operand id",
+        "f3d spatial constraint sketch id",
+        "f3d spatial constraint native reference",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::copy_project_text(Some(&ctx), "input", operation),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation
+        ));
+    }
+    for operation in [
+        "f3d spatial constraint semantic entity",
+        "f3d spatial constraint member",
+        "f3d spatial constraint output",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut items = Vec::new();
+        assert!(matches!(
+            super::push_project_item(Some(&ctx), &mut items, 1, operation),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ));
+    }
+    for operation in ["f3d spatial constraint distinct member"] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut members = std::collections::HashSet::new();
+        assert!(matches!(
+            super::insert_project_set(Some(&ctx), &mut members, 1, operation),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ));
+        assert!(members.is_empty());
+    }
+}
