@@ -1487,6 +1487,33 @@ fn parasolid_record_id(
     Ok(id)
 }
 
+fn parasolid_offset_record_id(
+    ctx: &DecodeContext<'_>,
+    stream_ordinal: usize,
+    stem: &'static str,
+    xmt: u32,
+    offset: usize,
+) -> Result<String, CodecError> {
+    let id_len = "nx:s".len()
+        .checked_add(stream_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+        .and_then(|length| length.checked_add(1 + stem.len() + 1))
+        .and_then(|length| length.checked_add(xmt.checked_ilog10().map_or(1, |digits| digits as usize + 1)))
+        .and_then(|length| length.checked_add(1))
+        .and_then(|length| length.checked_add(offset.checked_ilog10().map_or(1, |digits| digits as usize + 1)))
+        .ok_or_else(|| ctx.refuse_codec_limit("retain NX Parasolid offset record id", 0, 1))?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(id_len),
+        "retain NX Parasolid offset record id",
+    )?;
+    let mut id = String::new();
+    id.try_reserve_exact(id_len).map_err(|_| {
+        ctx.refuse_codec_limit("allocate NX Parasolid offset record id", 0, 1)
+    })?;
+    write!(&mut id, "nx:s{stream_ordinal}:{stem}#{xmt}-{offset}")
+        .map_err(|_| ctx.refuse_codec_limit("write NX Parasolid offset record id", 0, 1))?;
+    Ok(id)
+}
+
 /// Run the cached-view record skeleton for one family: map every cached row of
 /// every stream to a record, then sort by identity. Non-Parasolid streams hold
 /// empty views, so no per-stream guard is needed.
@@ -3048,30 +3075,49 @@ pub(super) fn parasolid_attribute_definitions(
 }
 
 /// Decode every counted type-99 attribute field-name record.
-pub(super) fn parasolid_field_names_records(streams: &[Stream]) -> Vec<ParasolidFieldNamesRecord> {
-    let mut records = streams
-        .iter()
-        .enumerate()
-        .filter(|(_, stream)| stream.kind().is_parasolid())
-        .flat_map(|(stream_ordinal, stream)| {
-            crate::parasolid::field_names_records(&stream.inflated)
-                .into_iter()
-                .map(move |record| ParasolidFieldNamesRecord {
-                    id: format!(
-                        "nx:s{stream_ordinal}:field-names#{}-{}",
-                        u32::from(record.xmt),
-                        record.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
-                    xmt: record.xmt,
-                    name_xmts: record.name_xmts,
-                    byte_len: record.byte_len as u64,
-                    inflated_offset: record.offset as u64,
-                })
-        })
-        .collect::<Vec<_>>();
+pub(super) fn parasolid_field_names_records(
+    ctx: &DecodeContext<'_>,
+    streams: &[Stream],
+) -> Result<Vec<ParasolidFieldNamesRecord>, CodecError> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind().is_parasolid() {
+            continue;
+        }
+        let ordinal = u32::try_from(stream_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX field names stream ordinal", 0, 1))?;
+        for record in crate::parasolid::field_names_records(&stream.inflated) {
+            ctx.charge_collection_items(1, "NX field names records")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidFieldNamesRecord>()),
+                "retain NX field names records",
+            )?;
+            records.try_reserve_exact(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX field names records", 0, 1)
+            })?;
+            let id = parasolid_offset_record_id(
+                ctx,
+                stream_ordinal,
+                "field-names",
+                u32::from(record.xmt),
+                record.offset,
+            )?;
+            records.push(ParasolidFieldNamesRecord {
+                id,
+                stream_ordinal: ordinal,
+                xmt: record.xmt,
+                name_xmts: record.name_xmts,
+                byte_len: cadmpeg_core::decode::u64_from_index(record.byte_len),
+                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
+            });
+        }
+    }
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(records.len()),
+        "sort NX field names records",
+    )?;
     records.sort_by(|first, second| first.id.cmp(&second.id));
-    records
+    Ok(records)
 }
 
 /// Resolve complete type-80 field-name lists through type-99 and character records.
@@ -3264,33 +3310,52 @@ pub(super) fn parasolid_topology_attribute_list_references(
 }
 
 /// Decode every framed type-81 entity/attribute-list record.
-pub(super) fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51Record> {
-    let mut records = streams
-        .iter()
-        .enumerate()
-        .filter(|(_, stream)| stream.kind().is_parasolid())
-        .flat_map(|(stream_ordinal, stream)| {
-            crate::parasolid::entity_51_records(&stream.inflated)
-                .into_iter()
-                .map(move |record| ParasolidEntity51Record {
-                    id: format!(
-                        "nx:s{stream_ordinal}:entity-51#{}-{}",
-                        u32::from(record.xmt),
-                        record.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
-                    xmt: record.xmt,
-                    sequence: record.sequence,
-                    definition_xmt: record.definition_xmt,
-                    leading_references: record.leading_references,
-                    trailing_references: record.trailing_references,
-                    byte_len: record.byte_len as u64,
-                    inflated_offset: record.offset as u64,
-                })
-        })
-        .collect::<Vec<_>>();
+pub(super) fn parasolid_entity_51_records(
+    ctx: &DecodeContext<'_>,
+    streams: &[Stream],
+) -> Result<Vec<ParasolidEntity51Record>, CodecError> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind().is_parasolid() {
+            continue;
+        }
+        let ordinal = u32::try_from(stream_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX entity 51 stream ordinal", 0, 1))?;
+        for record in crate::parasolid::entity_51_records(&stream.inflated) {
+            ctx.charge_collection_items(1, "NX entity 51 records")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidEntity51Record>()),
+                "retain NX entity 51 records",
+            )?;
+            records.try_reserve_exact(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX entity 51 records", 0, 1)
+            })?;
+            let id = parasolid_offset_record_id(
+                ctx,
+                stream_ordinal,
+                "entity-51",
+                u32::from(record.xmt),
+                record.offset,
+            )?;
+            records.push(ParasolidEntity51Record {
+                id,
+                stream_ordinal: ordinal,
+                xmt: record.xmt,
+                sequence: record.sequence,
+                definition_xmt: record.definition_xmt,
+                leading_references: record.leading_references,
+                trailing_references: record.trailing_references,
+                byte_len: cadmpeg_core::decode::u64_from_index(record.byte_len),
+                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
+            });
+        }
+    }
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(records.len()),
+        "sort NX entity 51 records",
+    )?;
     records.sort_by(|first, second| first.id.cmp(&second.id));
-    records
+    Ok(records)
 }
 
 /// Decode value records from their retained deltas or attribute owners.
@@ -4124,6 +4189,74 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                     && limit.operation == "NX attribute definitions"
+        ));
+    }
+
+    #[test]
+    fn parasolid_field_names_refuse_collection_at_caller_limit() {
+        let mut stream = crate::test_support::test_streams::parasolid_entity_records_stream();
+        stream.extend_from_slice(&[
+            0x00, 0x63, 0x00, 0x00, 0x00, 0x03, 0x00, 0x19, 0x00, 0x1c, 0x00, 0x1d, 0x00, 0x1e,
+        ]);
+        let bytes = crate::test_support::test_prt::prt_with_partition(&stream);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let scan = crate::decode::scan(&ctx, root).unwrap();
+        assert!(!super::parasolid_field_names_records(&ctx, &scan.streams)
+            .unwrap()
+            .is_empty());
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+        limited_policy.limits.max_collection_items = 0;
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &limited_arena,
+            &limited_policy,
+        )
+        .unwrap();
+        let error = super::parasolid_field_names_records(&limited_ctx, &scan.streams)
+            .err()
+            .expect("field names collection refusal");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "NX field names records"
+        ));
+    }
+
+    #[test]
+    fn parasolid_entity_51_refuses_collection_at_caller_limit() {
+        let bytes = crate::test_support::test_prt::prt_with_partition(
+            &crate::test_support::test_streams::parasolid_entity_records_stream(),
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let scan = crate::decode::scan(&ctx, root).unwrap();
+        assert!(!super::parasolid_entity_51_records(&ctx, &scan.streams)
+            .unwrap()
+            .is_empty());
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+        limited_policy.limits.max_collection_items = 0;
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &bytes,
+            &limited_arena,
+            &limited_policy,
+        )
+        .unwrap();
+        let error = super::parasolid_entity_51_records(&limited_ctx, &scan.streams)
+            .err()
+            .expect("entity 51 collection refusal");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "NX entity 51 records"
         ));
     }
     #[test]

@@ -778,7 +778,7 @@ impl NativeModel {
         let parasolid_support_uv_records = parasolid_support_uv_records(ctx, streams)?;
         let parasolid_chart_records = parasolid_chart_records(ctx, streams)?;
         let parasolid_attribute_definitions = parasolid_attribute_definitions(ctx, streams)?;
-        let parasolid_entity_51_records = parasolid_entity_51_records(streams);
+        let parasolid_entity_51_records = parasolid_entity_51_records(ctx, streams)?;
         let value_records = parasolid_entity_value_records(streams, &deltas_events.records);
         // A value-record frame that passes its family validation and then does
         // not materialize is a disagreement inside the reader, not a record
@@ -793,7 +793,7 @@ impl NativeModel {
         let parasolid_entity_57_axis_records = value_records.axes;
         let parasolid_entity_58_tag_records = value_records.tags;
         let parasolid_entity_62_unicode_records = value_records.unicode;
-        let parasolid_field_names_records = parasolid_field_names_records(streams);
+        let parasolid_field_names_records = parasolid_field_names_records(ctx, streams)?;
         let parasolid_attribute_field_names = parasolid_attribute_field_names(
             &parasolid_attribute_definitions,
             &parasolid_field_names_records,
