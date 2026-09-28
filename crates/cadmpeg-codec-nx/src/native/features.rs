@@ -3746,11 +3746,16 @@ pub(super) fn feature_operation_labels(ctx: &cadmpeg_core::decode::DecodeContext
 pub(super) fn feature_boolean_operations(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<FeatureBooleanOperation>, cadmpeg_core::CodecError>
 {
     let mut operations = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(operation) = section
-                .boolean_operations()
+            if failure.is_some() { return; }
+            let candidates = match section.boolean_operations(ctx) {
+                Ok(candidates) => candidates,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let Some(operation) = candidates
                 .into_iter()
                 .find(|operation| operation.offset == record.label().header.end_offset())
             else {
@@ -3783,6 +3788,7 @@ pub(super) fn feature_boolean_operations(ctx: &cadmpeg_core::decode::DecodeConte
             });
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(operations)
 }
 
