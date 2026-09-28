@@ -21,6 +21,54 @@ use crate::test_support::test_object_graph::{
 use crate::CatiaCodec;
 
 #[test]
+fn native_constraint_and_range_values_refuse_retained_catalog_copies() {
+    let mut constraint_suffix = vec![0x84, 0x96, 0x82, 0xc1, 0xe6];
+    constraint_suffix.extend_from_slice(&128.0_f64.to_bits().to_le_bytes());
+    let constraint_native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_two_selector_value(
+            "Range", "CstAttr_Dimension", &constraint_suffix));
+    let constraint_entity = &constraint_native.entity_records[0];
+    assert!(constraint_entity.constraint_range().is_some());
+    let fields = crate::test_support::with_service_context(|ctx| {
+        constraint_entity.value_fields_charged(ctx)
+    }).expect("service profile admits constraint fields");
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::value_production(ctx, constraint_entity,
+            &constraint_native.object_graphs[0].records, &fields)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_value_schema_entry"));
+
+    let mut encoded_range = vec![0x87, 0xe8, 0xe0, 0x07, 0x37, 0x83, 0x81, 0xe6];
+    encoded_range.extend_from_slice(&(-0.2032_f64).to_bits().to_le_bytes());
+    encoded_range.push(0xe6);
+    encoded_range.extend_from_slice(&0.2032_f64.to_bits().to_le_bytes());
+    encoded_range.extend_from_slice(&[0xfe, 0xfe]);
+    let mut nominal_suffix = vec![0x84, 0x96, 0x82, 0xdc, 0xe6];
+    nominal_suffix.extend_from_slice(&6.35_f64.to_bits().to_le_bytes());
+    nominal_suffix.extend_from_slice(&[0x81, 0xdb]);
+    let range_native = crate::native::CatiaNative::decode(
+        &standard_catpart_with_range_interval(&encoded_range, &nominal_suffix));
+    let range_entity = &range_native.entity_records[0];
+    assert!(range_entity.range_interval.is_some());
+    let range_refusal = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::range_interval(ctx, range_entity.value_payload(),
+            &range_entity.value_schema_selections, range_entity.suffix_value(),
+            &range_native.object_graphs[0].records, &range_entity.object_graph,
+            range_entity.entity_id)
+    });
+    assert!(matches!(range_refusal, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_value_schema_entry"));
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::range_interval(ctx, range_entity.value_payload(),
+            &range_entity.value_schema_selections, range_entity.suffix_value(),
+            &range_native.object_graphs[0].records, &range_entity.object_graph,
+            range_entity.entity_id)
+    }).expect("service profile admits range interval");
+    assert_eq!(service, range_entity.range_interval);
+}
+
+#[test]
 fn native_namespace_types_dimension_constraint_ranges() {
     use crate::native::{CatiaConstraintRangeFraming, CatiaEntityEvaluation};
 

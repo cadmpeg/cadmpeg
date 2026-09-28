@@ -282,11 +282,12 @@ impl CatiaNative {
                         })
                     })
                     || graph_entities.iter().any(|entity| {
-                        let fields = crate::test_support::with_service_context(|ctx| {
-                            entity.value_fields_charged(ctx)
+                        let expected = crate::test_support::with_service_context(|ctx| {
+                            let fields = entity.value_fields_charged(ctx)?;
+                            value_production(ctx, entity, &graph.records, &fields)
                         });
-                        fields.as_ref().map_or(true, |fields| {
-                            entity.value_production != value_production(entity, &graph.records, fields)
+                        expected.as_ref().map_or(true, |production| {
+                            entity.value_production != *production
                         })
                     })
                     || graph_entities.iter().any(|entity| {
@@ -310,8 +311,9 @@ impl CatiaNative {
                         })
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.range_interval
-                            != range_interval(
+                        let expected = crate::test_support::with_service_context(|ctx| {
+                            range_interval(
+                                ctx,
                                 entity.value_payload(),
                                 &entity.value_schema_selections,
                                 entity.suffix_value(),
@@ -319,6 +321,8 @@ impl CatiaNative {
                                 &graph.id,
                                 entity.entity_id,
                             )
+                        });
+                        expected.as_ref().map_or(true, |interval| entity.range_interval != *interval)
                     })
                     || graph_entities.iter().any(|entity| {
                         let object = graph
