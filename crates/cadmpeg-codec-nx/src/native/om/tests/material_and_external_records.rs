@@ -66,6 +66,82 @@ fn store_header_route_refuses_work_limit() {
         if limit.dimension == ResourceDimension::WorkUnits));
 }
 
+fn indexed_om_projection_error(
+    configure: impl FnOnce(&mut DecodePolicy),
+    project: impl FnOnce(&DecodeContext<'_>, &container::Container) -> Result<(), CodecError>,
+) -> CodecError {
+    let file = prt_with_indexed_om_section();
+    let scan_arena = DecodeArena::new();
+    let scan_policy = DecodePolicy::service();
+    let (scan_ctx, _) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
+    let container = container::scan_bytes(&scan_ctx, file.as_slice()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    project(&ctx, &container).unwrap_err()
+}
+
+#[test]
+fn native_string_value_route_refuses_collection_limit() {
+    let error = indexed_om_projection_error(
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx, container| super::super::string_values(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn native_string_value_route_refuses_retained_limit() {
+    let error = indexed_om_projection_error(
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx, container| super::super::string_values(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn native_string_value_route_refuses_work_limit() {
+    let error = indexed_om_projection_error(
+        |policy| policy.limits.max_work_units = 0,
+        |ctx, container| super::super::string_values(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn native_object_reference_route_refuses_collection_limit() {
+    let error = indexed_om_projection_error(
+        |policy| policy.limits.max_collection_items = 0,
+        |ctx, container| super::super::object_references(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn native_object_reference_route_refuses_retained_limit() {
+    let error = indexed_om_projection_error(
+        |policy| policy.limits.max_retained_bytes = 0,
+        |ctx, container| super::super::object_references(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn native_object_reference_route_refuses_work_limit() {
+    let error = indexed_om_projection_error(
+        |policy| policy.limits.max_work_units = 0,
+        |ctx, container| super::super::object_references(ctx, container).map(|_| ()),
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
 fn assert_fastload_limit(error: &CodecError, dimension: ResourceDimension, operation: &str) {
     let CodecError::ResourceLimit(limit) = error else {
         panic!("FastLoad must return a resource refusal: {error}");
