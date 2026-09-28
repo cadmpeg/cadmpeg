@@ -79,3 +79,14 @@ fn nonnull_arena_preserves_pair_wire() {
     assert_eq!(serde_json::to_string(&arena).unwrap(), format!("[{entry}]"));
     assert_eq!(F3dNative::load(&namespace).unwrap(), native);
 }
+
+#[test]
+fn null_locus_borrowed_wire_matches_owned_wire_bytes() {
+    let pair = pair(true);
+    let owned = crate::records::dimension_null_locus_wire::Wire::from(&pair);
+    let borrowed = crate::records::dimension_null_locus_wire::BorrowedWire::from(&pair);
+    assert_eq!(
+        serde_json::to_vec(&borrowed).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}

@@ -421,7 +421,10 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .enumerate()
         .map(|(index, body)| {
             Tessellation::new(
-                format!("synthetic:test:tessellation#{index}"),
+                cadmpeg_ir::tessellation::TessellationId::mint(format!(
+                    "synthetic:test:tessellation#{index}"
+                ))
+                .expect("valid identity"),
                 cadmpeg_ir::tessellation::TessellationMesh::from_strip_lanes(
                     vec![
                         Point3::new(0.0, 0.0, 0.0),
@@ -1083,7 +1086,8 @@ fn semantic_writer_preserves_sheet_body_classification() {
         ))
         .expect("a finite position is a point"),
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();
@@ -1497,7 +1501,8 @@ fn semantic_writer_preserves_unbound_material_definition() {
         ))
         .expect("a finite position is a point"),
     );
-    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 
     let mut encoded = Vec::new();

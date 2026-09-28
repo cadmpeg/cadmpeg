@@ -2045,7 +2045,7 @@ fn try_decode_text_model(
         // Facts for the report and source attributes. The header carries the
         // stream's own unit; the decoded token values are already in the
         // centimetre convention.
-        let mut header = stream.header.as_kernel_header();
+        let mut header = stream.header.as_kernel_header(ctx)?;
         header.scale = Some(stream.header.scale().get());
         parts.push((
             BrepFacts {
@@ -2065,11 +2065,11 @@ fn try_decode_text_model(
     for (facts, mut part) in parts {
         if qualify {
             let namespace = facts.name.rsplit('/').next().unwrap_or(&facts.name);
-            part.qualify_ids(crate::ids::ID_FORMAT, namespace)?;
+            part.qualify_ids(ctx, crate::ids::ID_FORMAT, namespace)?;
         }
         match &mut merged {
             None => merged = Some((facts, part)),
-            Some((_, whole)) => whole.append(part),
+            Some((_, whole)) => whole.append(ctx, part)?,
         }
     }
     Ok(merged)
@@ -3089,7 +3089,7 @@ fn decode_scanned_document<'a>(
             };
             let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
             if let Some(keys) = selected_body_keys.get(blob_name) {
-                part.retain_body_keys(keys)?;
+                part.retain_body_keys(ctx, keys)?;
             }
             let mut body_selectors = match selected_body_keys.get(blob_name) {
                 Some(keys) => part.body_selectors_for(keys)?,
@@ -3109,7 +3109,7 @@ fn decode_scanned_document<'a>(
                         candidate.name
                     ))
                 })?;
-                part.qualify_ids(crate::ids::ID_FORMAT, namespace)?;
+                part.qualify_ids(ctx, crate::ids::ID_FORMAT, namespace)?;
                 body_selectors = match selected_body_keys.get(blob_name) {
                     Some(keys) => part.body_selectors_for(keys)?,
                     None => part.body_selectors(),
@@ -3139,7 +3139,7 @@ fn decode_scanned_document<'a>(
                     });
                 }
             }
-            brep.append(part);
+            brep.append(ctx, part)?;
             decoded_brep_count += 1;
         }
         if decoded_brep_count != 0 {
@@ -3358,7 +3358,8 @@ fn project_mesh_bodies(
         // corner-normal channel, so the lane arrives absent, never empty.
         let record = id.clone();
         let tessellation = cadmpeg_ir::tessellation::Tessellation::from_parts(
-            id,
+            cadmpeg_ir::tessellation::TessellationId::mint(id)
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
             cadmpeg_ir::tessellation::TessellationMesh::from_corner_lanes(
                 body.vertices,
                 body.triangles,
@@ -3850,6 +3851,7 @@ fn decode_result(
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
     let mut source = crate::report::classify_document(
+        ctx,
         scan,
         report_scope,
         retained.source_attributes,
@@ -4305,7 +4307,8 @@ fn extend_related_design_records(
         scan,
         &native.design_parameter_scopes,
     )?;
-    native.design_feature_timelines = crate::design::decode::meta::decode_feature_timelines(scan)?;
+    native.design_feature_timelines =
+        crate::design::decode::meta::decode_feature_timelines(ctx, scan)?;
     native.design_component_naming_spaces =
         crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     native.design_canvas_images =

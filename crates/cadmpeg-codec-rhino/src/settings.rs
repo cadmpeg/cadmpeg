@@ -2,7 +2,7 @@
 //! Bounded Rhino document properties, settings, units, and layer metadata.
 
 use crate::loss::Diagnostics;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -910,7 +910,7 @@ fn utf8(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
         .map_err(|_| FramingError::structural(reader.position(), "invalid UTF-8 string"))
 }
 
-pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
+fn utf16_payload<'a>(reader: &mut BoundedReader<'a>) -> Result<&'a [u8], FramingError> {
     let count_offset = reader.position();
     let count = usize::try_from(reader.u32()?)
         .map_err(|_| FramingError::structural(reader.position(), "UTF-16 count overflow"))?;
@@ -921,7 +921,7 @@ pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingErr
         ));
     }
     if count == 0 {
-        return Ok(String::new());
+        return Ok(&[]);
     }
     let bytes = reader.take(count.saturating_mul(2))?;
     if View::u16_le_at(bytes, count.saturating_sub(1).saturating_mul(2)) != Some(0) {
@@ -930,11 +930,98 @@ pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingErr
             "UTF-16 string is missing NUL terminator",
         ));
     }
-    View::utf16le_at(bytes, 0, count.saturating_sub(1))
+    Ok(&bytes[..bytes.len() - 2])
+}
+
+pub(crate) fn utf16(reader: &mut BoundedReader<'_>) -> Result<String, FramingError> {
+    let bytes = utf16_payload(reader)?;
+    if bytes.is_empty() {
+        return Ok(String::new());
+    }
+    View::utf16le_at(bytes, 0, bytes.len() / 2)
         .map(|(value, _)| value)
         .ok_or_else(|| {
             FramingError::structural(reader.position(), "invalid UTF-16 surrogate sequence")
         })
+}
+
+fn visit_utf16(
+    bytes: &[u8],
+    error_offset: usize,
+    mut visit: impl FnMut(char) -> Result<(), FramingError>,
+) -> Result<(), FramingError> {
+    let invalid = || FramingError::structural(error_offset, "invalid UTF-16 surrogate sequence");
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let unit = View::u16_le_at(bytes, offset).ok_or_else(invalid)?;
+        offset += 2;
+        let scalar = if (0xd800..=0xdbff).contains(&unit) {
+            let low = View::u16_le_at(bytes, offset).ok_or_else(invalid)?;
+            if !(0xdc00..=0xdfff).contains(&low) {
+                return Err(invalid());
+            }
+            offset += 2;
+            0x10000 + ((u32::from(unit - 0xd800) << 10) | u32::from(low - 0xdc00))
+        } else if (0xdc00..=0xdfff).contains(&unit) {
+            return Err(invalid());
+        } else {
+            u32::from(unit)
+        };
+        visit(char::from_u32(scalar).ok_or_else(invalid)?)?;
+    }
+    Ok(())
+}
+
+/// Decodes a retained UTF-16 string after charging its exact UTF-8 byte count.
+pub(crate) fn utf16_retained(
+    ctx: &DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    operation: &'static str,
+) -> Result<String, FramingError> {
+    utf16_deferred(reader)?.admit(ctx, operation)
+}
+
+/// Validates UTF-16 bytes and measures their UTF-8 length without allocating.
+pub(crate) struct DeferredUtf16<'a> {
+    bytes: &'a [u8],
+    length: usize,
+    error_offset: usize,
+}
+
+pub(crate) fn utf16_deferred<'a>(
+    reader: &mut BoundedReader<'a>,
+) -> Result<DeferredUtf16<'a>, FramingError> {
+    let bytes = utf16_payload(reader)?;
+    let error_offset = reader.position();
+    let mut length = 0_usize;
+    visit_utf16(bytes, error_offset, |character| {
+        length = length
+            .checked_add(character.len_utf8())
+            .ok_or(FramingError::Overflow {
+                offset: error_offset,
+            })?;
+        Ok(())
+    })?;
+    Ok(DeferredUtf16 {
+        bytes,
+        length,
+        error_offset,
+    })
+}
+
+impl DeferredUtf16<'_> {
+    pub(crate) fn admit(
+        self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<String, FramingError> {
+        let mut value = crate::wire::admitted_retained_string(ctx, self.length, operation)?;
+        visit_utf16(self.bytes, self.error_offset, |character| {
+            value.push(character);
+            Ok(())
+        })?;
+        Ok(value)
+    }
 }
 
 fn color(reader: &mut BoundedReader<'_>) -> Result<[u8; 4], FramingError> {
@@ -1180,7 +1267,11 @@ fn short_index(record: &Record, label: &str) -> Result<i64, FramingError> {
         })
 }
 
-fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, FramingError> {
+fn parse_revision(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: &Record,
+) -> Result<RevisionHistory, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
@@ -1193,9 +1284,9 @@ fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, Frami
         source: SourceRange {
             range: record.range.clone(),
         },
-        created_by: utf16(&mut reader)?,
+        created_by: utf16_retained(ctx, &mut reader, "Rhino revision creator")?,
         created: times(&mut reader)?,
-        last_edited_by: utf16(&mut reader)?,
+        last_edited_by: utf16_retained(ctx, &mut reader, "Rhino revision editor")?,
         last_edited: times(&mut reader)?,
         revision_count: reader.i32()?,
     };
@@ -1203,7 +1294,11 @@ fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, Frami
     Ok(value)
 }
 
-fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
+fn parse_notes(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: &Record,
+) -> Result<Notes, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
@@ -1213,7 +1308,7 @@ fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
         ));
     }
     let html = reader.i32()? != 0;
-    let text = utf16(&mut reader)?;
+    let text = utf16_retained(ctx, &mut reader, "Rhino document notes")?;
     let visible = reader.i32()? != 0;
     let rectangle = [reader.i32()?, reader.i32()?, reader.i32()?, reader.i32()?];
     let locked = version.1 >= 1 && reader.bool()?;
@@ -1231,16 +1326,20 @@ fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
     Ok(value)
 }
 
-fn parse_application(data: &[u8], record: &Record) -> Result<Application, FramingError> {
+fn parse_application(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: &Record,
+) -> Result<Application, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     packed(&mut reader)?;
     let value = Application {
         source: SourceRange {
             range: record.range.clone(),
         },
-        name: utf16(&mut reader)?,
-        url: utf16(&mut reader)?,
-        details: utf16(&mut reader)?,
+        name: utf16_retained(ctx, &mut reader, "Rhino application name")?,
+        url: utf16_retained(ctx, &mut reader, "Rhino application URL")?,
+        details: utf16_retained(ctx, &mut reader, "Rhino application details")?,
     };
     reader.skip_remaining()?;
     Ok(value)
@@ -1250,12 +1349,20 @@ pub(crate) fn standard_scale(value: i32) -> Option<f64> {
     StandardUnit::from_value(value).map(StandardUnit::millimeters_per_unit)
 }
 
-fn parse_units(data: &[u8], record: &Record) -> Result<UnitsAndTolerances, FramingError> {
+fn parse_units(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: &Record,
+) -> Result<UnitsAndTolerances, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
-    parse_units_reader(&mut reader)
+    parse_units_reader(ctx, &mut reader, true)
 }
 
-fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndTolerances, FramingError> {
+fn parse_units_reader(
+    ctx: &DecodeContext<'_>,
+    reader: &mut BoundedReader<'_>,
+    retain_custom_name: bool,
+) -> Result<UnitsAndTolerances, FramingError> {
     let version = reader.i32()?;
     let legacy = version == 1;
     if !legacy && !(100..200).contains(&version) {
@@ -1305,7 +1412,9 @@ fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndToleranc
         None
     };
     let custom = if !legacy && version >= 102 {
-        Some((reader.f64()?, utf16(reader)?))
+        let scale = reader.f64()?;
+        let name = utf16_deferred(reader)?;
+        Some((scale, name))
     } else {
         None
     };
@@ -1315,6 +1424,11 @@ fn parse_units_reader(reader: &mut BoundedReader<'_>) -> Result<UnitsAndToleranc
             let (scale, name) = custom.ok_or_else(|| {
                 FramingError::structural(reader.position(), "custom unit has no scale")
             })?;
+            let name = if retain_custom_name {
+                name.admit(ctx, "Rhino custom unit name")?
+            } else {
+                String::new()
+            };
             UnitSystem::custom(scale, name).ok_or_else(|| {
                 FramingError::structural(reader.position(), "custom unit scale is invalid")
             })?
@@ -1388,11 +1502,11 @@ fn parse_plugin_reference<'a>(
     uuid(&mut payload)?;
     payload.i32()?;
     for _ in 0..3 {
-        utf16(&mut payload)?;
+        utf16_deferred(&mut payload)?;
     }
     if version.1 >= 1 {
         for _ in 0..8 {
-            utf16(&mut payload)?;
+            utf16_deferred(&mut payload)?;
         }
         if version.1 >= 2 {
             for _ in 0..3 {
@@ -1450,7 +1564,7 @@ fn parse_earth_anchor<'a>(
         payload.i32()?;
         uuid(&mut payload)?;
         for _ in 0..4 {
-            utf16(&mut payload)?;
+            utf16_deferred(&mut payload)?;
         }
         if version.1 >= 2 {
             payload.i32()?;
@@ -1587,6 +1701,7 @@ pub(crate) fn parse_mesh_parameters<'a>(
 }
 
 fn parse_settings_attributes(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
@@ -1608,7 +1723,7 @@ fn parse_settings_attributes(
         let (mut payload, _) =
             anonymous_payload(data, &mut reader, archive, "settings-attributes page units")?;
         anonymous_version(&mut payload, "settings-attributes page-units wrapper")?;
-        parse_units_reader(&mut payload)?;
+        parse_units_reader(ctx, &mut payload, false)?;
     }
     if version.1 >= 2 {
         uuid(&mut reader)?;
@@ -1654,6 +1769,7 @@ pub(crate) enum RenderingAttributesKind {
 
 /// Parses and consumes one bounded rendering-attributes payload.
 pub(crate) fn parse_rendering_attributes(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -1686,7 +1802,8 @@ pub(crate) fn parse_rendering_attributes(
         payload.position(),
     )?;
     let count = count_bytes;
-    let mut children = Vec::with_capacity(count);
+    let mut children =
+        crate::chunks::admitted_vec(ctx, count, "Rhino rendering material references")?;
     for _ in 0..count {
         let material =
             crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
@@ -1714,7 +1831,11 @@ pub(crate) fn parse_rendering_attributes(
             MAX_ARRAY_ITEMS,
             material_payload.position(),
         )?;
-        let mut obsolete_mappings = Vec::with_capacity(obsolete_mapping_count);
+        let mut obsolete_mappings = crate::chunks::admitted_vec(
+            ctx,
+            obsolete_mapping_count,
+            "Rhino obsolete rendering mappings",
+        )?;
         for _ in 0..obsolete_mapping_count {
             let mapping = crate::chunks::chunk_at(
                 data,
@@ -1730,7 +1851,11 @@ pub(crate) fn parse_rendering_attributes(
                 ));
             }
             if let Some(warning) = checksum_warning(data, &mapping)? {
-                warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+                warnings.push_coded_admitted(
+                    ctx,
+                    crate::loss::RhinoLossCode::IntegrityFailure,
+                    format_args!("{warning}"),
+                )?;
             }
             let mut mapping_payload =
                 BoundedReader::new(data, mapping.body().start, mapping.body().end)?;
@@ -1756,7 +1881,11 @@ pub(crate) fn parse_rendering_attributes(
         }
         material_payload.skip_remaining()?;
         if let Some(warning) = checksum_warning_excluding(data, &material, &obsolete_mappings)? {
-            warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+            warnings.push_coded_admitted(
+                ctx,
+                crate::loss::RhinoLossCode::IntegrityFailure,
+                format_args!("{warning}"),
+            )?;
         }
         children.push(material.range());
         payload.skip(material.next_offset() - payload.position())?;
@@ -1796,7 +1925,11 @@ pub(crate) fn parse_rendering_attributes(
                 MAX_ARRAY_ITEMS,
                 mapping_payload.position(),
             )?;
-            let mut channels = Vec::with_capacity(channel_count);
+            let mut channels = crate::chunks::admitted_vec(
+                ctx,
+                channel_count,
+                "Rhino rendering mapping channels",
+            )?;
             for _ in 0..channel_count {
                 let channel = crate::chunks::chunk_at(
                     data,
@@ -1812,7 +1945,11 @@ pub(crate) fn parse_rendering_attributes(
                     ));
                 }
                 if let Some(warning) = checksum_warning(data, &channel)? {
-                    warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+                    warnings.push_coded_admitted(
+                        ctx,
+                        crate::loss::RhinoLossCode::IntegrityFailure,
+                        format_args!("{warning}"),
+                    )?;
                 }
                 let mut channel_payload =
                     BoundedReader::new(data, channel.body().start, channel.body().end)?;
@@ -1839,7 +1976,11 @@ pub(crate) fn parse_rendering_attributes(
             }
             mapping_payload.skip_remaining()?;
             if let Some(warning) = checksum_warning_excluding(data, &mapping, &channels)? {
-                warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+                warnings.push_coded_admitted(
+                    ctx,
+                    crate::loss::RhinoLossCode::IntegrityFailure,
+                    format_args!("{warning}"),
+                )?;
             }
             children.push(mapping.range());
             payload.skip(mapping.next_offset() - payload.position())?;
@@ -1854,7 +1995,11 @@ pub(crate) fn parse_rendering_attributes(
     }
     payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{warning}"),
+        )?;
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(start..reader.position())
@@ -1879,6 +2024,7 @@ fn begin_direct_object<'a>(
 }
 
 fn skip_model_attributes(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     payload: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -1892,7 +2038,11 @@ fn skip_model_attributes(
         ));
     }
     if let Some(warning) = checksum_warning(data, &chunk)? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{warning}"),
+        )?;
     }
     payload.skip(chunk.next_offset() - payload.position())?;
     Ok(chunk.range())
@@ -1923,6 +2073,7 @@ fn read_segments(payload: &mut BoundedReader<'_>) -> Result<(), FramingError> {
 
 /// Parses one direct embedded linetype object.
 pub(crate) fn parse_direct_linetype<'a>(
+    ctx: &DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -1941,13 +2092,20 @@ pub(crate) fn parse_direct_linetype<'a>(
     }
     if version.0 == 1 {
         payload.i32()?;
-        utf16(&mut payload)?;
+        utf16_deferred(&mut payload)?;
         read_segments(&mut payload)?;
         if version.1 >= 1 {
             uuid(&mut payload)?;
         }
     } else {
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut children,
+            1,
+            "Rhino embedded linetype checksum children",
+        )?;
         children.push(skip_model_attributes(
+            ctx,
             data,
             &mut payload,
             archive,
@@ -2003,7 +2161,11 @@ pub(crate) fn parse_direct_linetype<'a>(
     }
     payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{warning}"),
+        )?;
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(EmbeddedDescriptor {
@@ -2016,6 +2178,7 @@ pub(crate) fn parse_direct_linetype<'a>(
 
 /// Parses one direct embedded section-style object.
 pub(crate) fn parse_direct_section_style<'a>(
+    ctx: &DecodeContext<'_>,
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
@@ -2029,12 +2192,20 @@ pub(crate) fn parse_direct_section_style<'a>(
             "unsupported embedded section-style version",
         ));
     }
-    let mut children = vec![skip_model_attributes(
+    let mut children = Vec::new();
+    crate::chunks::reserve_admitted_vec(
+        ctx,
+        &mut children,
+        1,
+        "Rhino embedded section-style checksum children",
+    )?;
+    children.push(skip_model_attributes(
+        ctx,
         data,
         &mut payload,
         archive,
         warnings,
-    )?];
+    )?);
     // ON_SectionStyle::Read() is an ordered cascade, not a general item
     // loop. Each recognized item reads the next item ID and only the later
     // IDs in the cascade can consume it. A duplicate or out-of-order ID has
@@ -2099,8 +2270,14 @@ pub(crate) fn parse_direct_section_style<'a>(
         item = payload.u8()?;
     }
     if item == 11 {
+        crate::chunks::reserve_admitted_vec(
+            ctx,
+            &mut children,
+            1,
+            "Rhino embedded section-style checksum children",
+        )?;
         children.push(
-            parse_direct_linetype(data, &mut payload, archive, warnings)?
+            parse_direct_linetype(ctx, data, &mut payload, archive, warnings)?
                 .source
                 .range,
         );
@@ -2115,7 +2292,11 @@ pub(crate) fn parse_direct_section_style<'a>(
     // result because the cascade has passed it.
     payload.skip_remaining()?;
     if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
-        warnings.push_coded(crate::loss::RhinoLossCode::IntegrityFailure, warning);
+        warnings.push_coded_admitted(
+            ctx,
+            crate::loss::RhinoLossCode::IntegrityFailure,
+            format_args!("{warning}"),
+        )?;
     }
     reader.skip(chunk.next_offset() - reader.position())?;
     Ok(EmbeddedDescriptor {
@@ -2154,6 +2335,16 @@ fn checksum_warning_excluding(
     }
 }
 
+fn push_layer_extension_item(
+    ctx: &DecodeContext<'_>,
+    items: &mut Vec<u8>,
+    item: u8,
+) -> Result<(), FramingError> {
+    crate::chunks::reserve_admitted_vec(ctx, items, 1, "Rhino layer extension items")?;
+    items.push(item);
+    Ok(())
+}
+
 fn parse_layer(
     ctx: &DecodeContext<'_>,
     data: &[u8],
@@ -2164,7 +2355,7 @@ fn parse_layer(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(LayerRecord, bool), FramingError> {
     let (class, userdata) =
-        parse_class_wrapper_with_userdata(data, record.body(), archive, warnings)?;
+        parse_class_wrapper_with_userdata(ctx, data, record.body(), archive, warnings)?;
     if class.class_uuid != ON_LAYER_UUID {
         return Err(FramingError::Structural {
             offset: record.range.start,
@@ -2193,7 +2384,7 @@ fn parse_layer(
     let _obsolete_line_style_index = reader.i16()?;
     let _obsolete_thickness = read_finite(&mut reader, "layer thickness")?;
     let _obsolete_scale = read_finite(&mut reader, "layer scale")?;
-    let name = utf16(&mut reader)?;
+    let name = utf16_retained(ctx, &mut reader, "Rhino layer name")?;
     let visible = if version.1 >= 1 {
         reader.bool_with_writer_version(writer_version)?
     } else {
@@ -2218,9 +2409,13 @@ fn parse_layer(
     let id = serialized_id.filter(|id| !id.is_nil());
     let parent_compatible = writer_version.is_some_and(|version| version > 200_505_110);
     if version.1 >= 6 && writer_version.is_none() {
-        losses.push(crate::loss::writer_stamp_unverified(
-            "layer parent link and expanded state were not read because the archive has no writer-version stamp",
-        ));
+        crate::wire::reserve_collection(ctx, losses, 1, "Rhino layer losses")?;
+        losses.push(crate::wire::admitted_loss(
+            ctx,
+            crate::loss::RhinoLossCode::SourceWriterStampUnverified,
+            format_args!("layer parent link and expanded state were not read because the archive has no writer-version stamp"),
+            "Rhino layer loss text",
+        )?);
     }
     let hierarchy = if version.1 >= 6 && parent_compatible {
         Some(LayerHierarchy {
@@ -2233,14 +2428,16 @@ fn parse_layer(
     let rendering_range = if version.1 >= 7 {
         Some(
             parse_rendering_attributes(
+                ctx,
                 data,
                 &mut reader,
                 archive,
                 RenderingAttributesKind::Layer,
                 warnings,
             )
-            .map_err(|error| {
-                FramingError::structural(reader.position(), format!("rendering: {error}"))
+            .map_err(|error| match error {
+                FramingError::Resource(_) => error,
+                other => FramingError::structural(reader.position(), format!("rendering: {other}")),
             })?,
         )
     } else {
@@ -2302,12 +2499,16 @@ fn parse_layer(
             layer.hierarchy.map(|hierarchy| hierarchy.parent_id),
         ) {
             Ok(settings) => layer.per_viewport_settings = settings,
+            Err(FramingError::Resource(limit)) => return Err(FramingError::Resource(limit)),
             Err(error) => {
                 source_requires_opaque = true;
-                warnings.push(format!(
+                warnings.push_admitted(
+                    ctx,
+                    format_args!(
                     "layer per-viewport userdata at offset {} could not be transferred: {error}",
                     descriptor.range.start
-                ));
+                ),
+                )?;
             }
         }
     }
@@ -2317,37 +2518,42 @@ fn parse_layer(
         // consumed only as an ID; its value has no generic width.
         let mut item = reader.u8()?;
         if item == 28 {
-            layer.extension_items.push(item);
+            push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
             layer.no_clipping_planes = Some(reader.bool_with_writer_version(writer_version)?);
-            read_uuid_list(&mut reader, archive)?;
+            read_uuid_list(ctx, &mut reader, archive)?;
             item = reader.u8()?;
         }
         if version.1 > 10 {
             if item == 29 {
-                layer.extension_items.push(item);
+                push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
                 reader.skip(4)?;
                 item = reader.u8()?;
             }
             if item == 30 {
-                layer.extension_items.push(item);
+                push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
                 read_finite(&mut reader, "layer extension value")?;
                 item = reader.u8()?;
             }
             if item == 31 {
-                layer.extension_items.push(item);
+                push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
                 read_finite(&mut reader, "layer extension value")?;
                 item = reader.u8()?;
             }
         }
         if version.1 > 11 && item == 32 {
-            layer.extension_items.push(item);
+            push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
             reader.skip(1)?;
             item = reader.u8()?;
         }
         if version.1 > 12 && item == 33 {
-            layer.extension_items.push(item);
-            layer.embedded_linetype =
-                Some(parse_direct_linetype(data, &mut reader, archive, warnings)?);
+            push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
+            layer.embedded_linetype = Some(parse_direct_linetype(
+                ctx,
+                data,
+                &mut reader,
+                archive,
+                warnings,
+            )?);
             // The direct linetype has no neutral CADIR owner. Preserve the
             // complete layer record so its segment tags and other fields
             // remain available through source fidelity.
@@ -2355,14 +2561,15 @@ fn parse_layer(
             item = reader.u8()?;
         }
         if version.1 > 13 && item == 34 {
-            layer.extension_items.push(item);
+            push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
             layer.visible_in_new_details = Some(reader.bool_with_writer_version(writer_version)?);
             item = reader.u8()?;
         }
         if version.1 > 14 {
             if item == 35 {
-                layer.extension_items.push(item);
+                push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
                 layer.embedded_section_style = Some(parse_direct_section_style(
+                    ctx,
                     data,
                     &mut reader,
                     archive,
@@ -2373,28 +2580,31 @@ fn parse_layer(
                 item = reader.u8()?;
             }
             if item == 36 {
-                layer.extension_items.push(item);
+                push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
                 reader.skip(1)?;
                 item = reader.u8()?;
             }
             if item == 37 {
-                layer.extension_items.push(item);
-                let description = utf16(&mut reader)?;
-                let description = description
-                    .trim_matches(|character: char| {
-                        matches!(
-                            character as u32,
-                            0x0001..=0x0020
-                                | 0x007f
-                                | 0x0080..=0x009f
-                                | 0x00a0
-                                | 0x2000..=0x200b
-                                | 0x200e..=0x200f
-                                | 0x2028..=0x202f
-                                | 0x2066..=0x2069
-                        )
-                    })
-                    .to_owned();
+                push_layer_extension_item(ctx, &mut layer.extension_items, item)?;
+                let mut description = utf16_retained(ctx, &mut reader, "Rhino layer description")?;
+                let trim = |character: char| {
+                    matches!(
+                        character as u32,
+                        0x0001..=0x0020
+                            | 0x007f
+                            | 0x0080..=0x009f
+                            | 0x00a0
+                            | 0x2000..=0x200b
+                            | 0x200e..=0x200f
+                            | 0x2028..=0x202f
+                            | 0x2066..=0x2069
+                    )
+                };
+                let trimmed = description.trim_matches(trim);
+                let prefix = description.len() - description.trim_start_matches(trim).len();
+                let end = prefix + trimmed.len();
+                description.truncate(end);
+                description.drain(..prefix);
                 layer.description = (!description.is_empty()).then_some(description);
                 let _next_item = reader.u8()?;
             }
@@ -2413,9 +2623,12 @@ pub(crate) fn parse_metadata(
     warnings: &mut Diagnostics,
 ) -> Result<DocumentMetadata, CodecError> {
     let mut metadata = DocumentMetadata::default();
-    let mut ids = BTreeSet::new();
-    let mut property_singletons = BTreeSet::new();
-    let mut setting_singletons = BTreeSet::new();
+    let mut ids = HashSet::<Uuid>::new();
+    let mut property_singletons = HashSet::<u32>::new();
+    let mut setting_singletons = HashSet::<u32>::new();
+    let mut id_workspace = ctx.reserve_scoped(0, "Rhino layer UUID workspace")?;
+    let mut property_workspace = ctx.reserve_scoped(0, "Rhino property singleton workspace")?;
+    let mut setting_workspace = ctx.reserve_scoped(0, "Rhino setting singleton workspace")?;
     let mut opaque_records = Vec::new();
     for table in tables {
         let table_type = table.typecode & !0x0000_8000;
@@ -2456,15 +2669,21 @@ pub(crate) fn parse_metadata(
                         }
                         Ok(())
                     }
-                    REVISION_HISTORY => parse_revision(data, record)
+                    REVISION_HISTORY => parse_revision(ctx, data, record)
                         .map(|value| metadata.properties.revision_history = Some(value)),
-                    NOTES => parse_notes(data, record)
+                    NOTES => parse_notes(ctx, data, record)
                         .map(|value| metadata.properties.notes = Some(value)),
-                    APPLICATION => parse_application(data, record)
+                    APPLICATION => parse_application(ctx, data, record)
                         .map(|value| metadata.properties.application = Some(value)),
-                    AS_FILE_NAME => utf16_record(data, record)
+                    AS_FILE_NAME => utf16_record(ctx, data, record, "Rhino as-file name")
                         .map(|value| metadata.properties.as_file_name = Some(value)),
                     PREVIEW | COMPRESSED_PREVIEW => {
+                        crate::wire::reserve_collection(
+                            ctx,
+                            &mut metadata.properties.previews,
+                            1,
+                            "Rhino property previews",
+                        )?;
                         metadata.properties.previews.push(PreviewDescriptor {
                             source: SourceRange {
                                 range: record.range.clone(),
@@ -2476,7 +2695,7 @@ pub(crate) fn parse_metadata(
                     _ => Ok(()),
                 }
             } else if table_type == SETTINGS {
-                parse_setting(data, record, &mut metadata.settings, archive)
+                parse_setting(ctx, data, record, &mut metadata.settings, archive)
             } else if table_type == LAYER && record.typecode == LAYER_RECORD {
                 let writer_version = metadata.properties.writer_version;
                 match parse_layer(
@@ -2490,17 +2709,41 @@ pub(crate) fn parse_metadata(
                 ) {
                     Ok((layer, source_requires_opaque)) => {
                         if let Some(id) = layer.id {
-                            if !ids.insert(id) {
-                                warnings.push_coded(
+                            if ids.contains(&id) {
+                                warnings.push_coded_admitted(
+                                    ctx,
                                     crate::loss::RhinoLossCode::DuplicateRecordResolved,
-                                    format!(
+                                    format_args!(
                                     "duplicate layer UUID {id}; first record owns archive identity"
                                 ),
-                                );
+                                )?;
+                            } else {
+                                id_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                                    std::mem::size_of::<Uuid>(),
+                                ))?;
+                                crate::wire::reserve_hash_set(
+                                    ctx,
+                                    &mut ids,
+                                    1,
+                                    "Rhino layer UUID keys",
+                                )?;
+                                ids.insert(id);
                             }
                         }
+                        crate::wire::reserve_collection(
+                            ctx,
+                            &mut metadata.layers,
+                            1,
+                            "Rhino metadata layers",
+                        )?;
                         metadata.layers.push(layer);
                         if source_requires_opaque {
+                            crate::wire::reserve_collection(
+                                ctx,
+                                &mut opaque_records,
+                                1,
+                                "Rhino metadata opaque records",
+                            )?;
                             opaque_records.push(OpaqueRecord {
                                 table_typecode: table.typecode,
                                 record: record.clone(),
@@ -2515,22 +2758,41 @@ pub(crate) fn parse_metadata(
             };
             if result.is_ok() && singleton {
                 match table_type {
-                    PROPERTIES => {
+                    PROPERTIES if !property_singletons.contains(&record.typecode) => {
+                        property_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                            std::mem::size_of::<u32>(),
+                        ))?;
+                        crate::wire::reserve_hash_set(
+                            ctx,
+                            &mut property_singletons,
+                            1,
+                            "Rhino property singleton keys",
+                        )?;
                         property_singletons.insert(record.typecode);
                     }
-                    SETTINGS => {
+                    SETTINGS if !setting_singletons.contains(&record.typecode) => {
+                        setting_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                            std::mem::size_of::<u32>(),
+                        ))?;
+                        crate::wire::reserve_hash_set(
+                            ctx,
+                            &mut setting_singletons,
+                            1,
+                            "Rhino setting singleton keys",
+                        )?;
                         setting_singletons.insert(record.typecode);
                     }
                     _ => {}
                 }
                 if duplicate_singleton {
-                    warnings.push_coded(
+                    warnings.push_coded_admitted(
+                        ctx,
                         crate::loss::RhinoLossCode::DuplicateRecordResolved,
-                        format!(
+                        format_args!(
                             "duplicate singleton metadata record {:#x}; later record wins",
                             record.typecode
                         ),
-                    );
+                    )?;
                 }
             }
             if let Err(error) = result {
@@ -2540,42 +2802,80 @@ pub(crate) fn parse_metadata(
                 if matches!(table_type, PROPERTIES | SETTINGS | LAYER)
                     && (table_type != LAYER || record.typecode == LAYER_RECORD)
                 {
+                    crate::wire::reserve_collection(
+                        ctx,
+                        &mut opaque_records,
+                        1,
+                        "Rhino metadata opaque records",
+                    )?;
                     opaque_records.push(OpaqueRecord {
                         table_typecode: table.typecode,
                         record: record.clone(),
                     });
                 }
-                warnings.push(format!(
-                    "metadata record {:#x} at {} degraded: {}",
-                    record.typecode, record.range.start, error
-                ));
+                warnings.push_admitted(
+                    ctx,
+                    format_args!(
+                        "metadata record {:#x} at {} degraded: {}",
+                        record.typecode, record.range.start, error
+                    ),
+                )?;
             }
         }
     }
-    let mut layer_index_counts = BTreeMap::<i32, usize>::new();
+    let mut layer_index_counts = Vec::<(i32, usize)>::new();
+    let mut index_workspace = ctx.reserve_scoped(0, "Rhino layer index workspace")?;
     for layer in &metadata.layers {
-        *layer_index_counts.entry(layer.index).or_default() += 1;
+        match layer_index_counts.binary_search_by_key(&layer.index, |(index, _)| *index) {
+            Ok(position) => layer_index_counts[position].1 += 1,
+            Err(position) => {
+                index_workspace.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(i32, usize)>(),
+                ))?;
+                crate::wire::reserve_collection(
+                    ctx,
+                    &mut layer_index_counts,
+                    1,
+                    "Rhino layer index counts",
+                )?;
+                layer_index_counts.insert(position, (layer.index, 1));
+            }
+        }
     }
     for (index, count) in layer_index_counts {
         if count > 1 {
-            warnings.push_coded(
+            warnings.push_coded_admitted(ctx,
                 crate::loss::RhinoLossCode::DuplicateRecordResolved,
-                format!(
+                format_args!(
                     "duplicate layer index {index} occurs {count} times; raw indexes preserved and object bindings withheld"
                 ),
-            );
+            )?;
         }
     }
     metadata.opaque_records = opaque_records;
-    report_layer_parent_references(&metadata.layers, warnings);
+    report_layer_parent_references(ctx, &metadata.layers, warnings)?;
     Ok(metadata)
 }
 
-fn report_layer_parent_references(layers: &[LayerRecord], warnings: &mut Diagnostics) {
-    let mut id_counts = BTreeMap::<Uuid, usize>::new();
+fn report_layer_parent_references(
+    ctx: &DecodeContext<'_>,
+    layers: &[LayerRecord],
+    warnings: &mut Diagnostics,
+) -> Result<(), CodecError> {
+    let mut id_counts = HashMap::<Uuid, usize>::new();
+    let mut workspace = ctx.reserve_scoped(0, "Rhino layer parent workspace")?;
     for layer in layers {
         if let Some(id) = layer.id.filter(|id| !id.is_nil()) {
-            *id_counts.entry(id).or_default() += 1;
+            if let Some(count) = id_counts.get_mut(&id) {
+                *count += 1;
+            } else {
+                workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                    Uuid,
+                    usize,
+                )>()))?;
+                crate::wire::reserve_hash_map(ctx, &mut id_counts, 1, "Rhino layer parent counts")?;
+                id_counts.insert(id, 1);
+            }
         }
     }
     for layer in layers {
@@ -2587,30 +2887,37 @@ fn report_layer_parent_references(layers: &[LayerRecord], warnings: &mut Diagnos
             continue;
         };
         match id_counts.get(&parent).copied() {
-            None => warnings.push(format!(
+            None => warnings.push_admitted(ctx, format_args!(
                 "layer {} references missing parent UUID {parent}",
                 layer.index
-            )),
+            ))?,
             Some(1) => {}
-            Some(count) => warnings.push_coded(
+            Some(count) => warnings.push_coded_admitted(ctx,
                 crate::loss::RhinoLossCode::DuplicateRecordResolved,
-                format!(
+                format_args!(
                     "layer {} references ambiguous parent UUID {parent}; {count} layer records carry that UUID",
                     layer.index
                 ),
-            ),
+            )?,
         }
     }
+    Ok(())
 }
 
-fn utf16_record(data: &[u8], record: &Record) -> Result<String, FramingError> {
+fn utf16_record(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    record: &Record,
+    operation: &'static str,
+) -> Result<String, FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
-    let value = utf16(&mut reader)?;
+    let value = utf16_retained(ctx, &mut reader, operation)?;
     reader.skip_remaining()?;
     Ok(value)
 }
 
 fn parse_setting(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     record: &Record,
     settings: &mut DocumentSettings,
@@ -2618,9 +2925,9 @@ fn parse_setting(
 ) -> Result<(), FramingError> {
     match record.typecode {
         PLUGIN_LIST => parse_plugin_list(data, record, archive),
-        UNITS => parse_units(data, record).map(|value| settings.units = Some(value)),
+        UNITS => parse_units(ctx, data, record).map(|value| settings.units = Some(value)),
         RENDER_MESH | ANALYSIS_MESH => parse_mesh_record(data, record, archive),
-        ATTRIBUTES => parse_settings_attributes(data, record, archive),
+        ATTRIBUTES => parse_settings_attributes(ctx, data, record, archive),
         CURRENT_LAYER => {
             settings.current_layer = Some(short_index(record, "current layer")?);
             Ok(())
@@ -2667,8 +2974,15 @@ fn parse_setting(
             settings.current_dimstyle = Some(short_index(record, "current dimstyle")?);
             Ok(())
         }
-        MODEL_URL => utf16_record(data, record).map(|value| settings.model_url = Some(value)),
+        MODEL_URL => utf16_record(ctx, data, record, "Rhino model URL")
+            .map(|value| settings.model_url = Some(value)),
         _ => {
+            crate::wire::reserve_collection(
+                ctx,
+                &mut settings.unsupported,
+                1,
+                "Rhino unsupported settings",
+            )?;
             settings.unsupported.push(SettingDescriptor {
                 typecode: record.typecode,
                 source: SourceRange {

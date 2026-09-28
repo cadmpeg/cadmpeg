@@ -1,14 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
+use super::admission::{admit_temporary_clones, admit_validation_candidates};
 use super::SldprtNative;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
+use cadmpeg_core::decode::DecodeContext;
 
-pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConvertError> {
+pub(super) fn admit(
+    native: &SldprtNative,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for lane in &native.feature_input_lanes {
-        let expected_classes =
-            crate::resolved_features::names::class_declarations(&lane.native_payload, &lane.id);
-        if lane.classes != expected_classes {
+        if !crate::resolved_features::names::class_declarations_match(
+            &lane.native_payload,
+            &lane.id,
+            &lane.classes,
+        ) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "SolidWorks feature-input class index does not match its native payload".into(),
             ));
@@ -17,35 +24,24 @@ pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConve
         // payload bytes at `offset`. A rename is a write-side input, never an
         // edit of a stored lane, so any disagreement here is a false statement
         // about the payload and is refused.
-        let expected_names =
-            crate::resolved_features::names::object_names(&lane.native_payload, &lane.id);
-        if lane.names.len() != expected_names.len()
-            || lane
-                .names
-                .iter()
-                .zip(&expected_names)
-                .any(|(actual, expected)| {
-                    actual.id != expected.id
-                        || actual.parent != expected.parent
-                        || actual.ordinal != expected.ordinal
-                        || actual.offset != expected.offset
-                        || actual.object_id != expected.object_id
-                })
-        {
+        if !crate::resolved_features::names::object_names_structure_match(
+            &lane.native_payload,
+            &lane.id,
+            &lane.names,
+        ) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "SolidWorks feature-input name structure does not match its native payload".into(),
             ));
         }
         if let Some((index, actual, expected)) =
-            lane.names.iter().zip(&expected_names).enumerate().find_map(
-                |(index, (actual, expected))| {
-                    (actual.value != expected.value).then_some((index, actual, expected))
-                },
+            crate::resolved_features::names::first_object_name_value_mismatch(
+                &lane.native_payload,
+                &lane.names,
             )
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "SolidWorks feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
-                lane.id, actual.value, expected.value
+                lane.id, actual.value, expected
             )));
         }
         let mut entities = lane.sketch_entities.iter();
@@ -79,6 +75,43 @@ pub(super) fn admit(native: &SldprtNative) -> Result<(), cadmpeg_ir::NativeConve
             ));
         }
     }
+    let _expected_lanes_reservation = admit_temporary_clones(
+        ctx,
+        native.feature_input_lanes.iter(),
+        "validate SLDPRT expected lane copies",
+    )?;
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(
+            u64::try_from(native.feature_input_lanes.len()).map_err(|_| {
+                ctx.refuse_codec_limit("SLDPRT expected lane pairs", u64::MAX - 1, u64::MAX)
+            })?,
+            "validate SLDPRT expected lane pairs",
+        )?;
+    }
+    let validation_source_bytes = native
+        .feature_input_lanes
+        .iter()
+        .try_fold(0usize, |bytes, lane| {
+            bytes.checked_add(lane.native_payload.len())
+        })
+        .ok_or_else(|| {
+            ctx.map_or_else(
+                || {
+                    cadmpeg_ir::NativeConvertError::InvalidOwner(
+                        "SLDPRT lane validation byte count overflows".into(),
+                    )
+                },
+                |ctx| {
+                    ctx.refuse_codec_limit("validate SLDPRT derived lanes", u64::MAX - 1, u64::MAX)
+                        .into()
+                },
+            )
+        })?;
+    let _derived_reservation = admit_validation_candidates(
+        ctx,
+        validation_source_bytes,
+        "validate SLDPRT derived lanes",
+    )?;
     for (lane, expected_lane) in expected_lanes(native) {
         if !crate::resolved_features::scalars::scalar_indices_match(
             &lane.scalars,

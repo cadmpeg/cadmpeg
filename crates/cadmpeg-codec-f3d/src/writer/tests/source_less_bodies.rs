@@ -504,7 +504,8 @@ fn generated_source_less_writes_two_independent_cube_bodies() {
             .rows()[0][3],
         30.0
     );
-    let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -595,8 +596,11 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .expect("history-record arena")[0];
     let mut orphan_fields = orphan.fields();
     orphan_fields.insert("parent".into(), serde_json::json!("missing-state"));
-    *orphan = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields)
-        .expect("valid native identity");
+    *orphan = cadmpeg_ir::NativeRecord::new(
+        cadmpeg_ir::ids::Identity::new(orphan.id()).expect("valid identity"),
+        orphan_fields,
+    )
+    .expect("valid native identity");
     let error = F3dCodec
         .plan(EncodeInput::new(&orphaned, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))

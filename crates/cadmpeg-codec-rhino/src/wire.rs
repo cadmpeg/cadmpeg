@@ -2,9 +2,14 @@
 //! Archive-wide wire primitives and checked numeric conversions.
 #![deny(clippy::disallowed_methods)]
 
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::hash::Hash;
 
-use cadmpeg_core::decode::BoundedCount;
+use cadmpeg_core::decode::{
+    u64_from_index, BoundedCount, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -22,14 +27,395 @@ pub(crate) struct ExactVec<T> {
     capacity: usize,
 }
 
-impl<T> ExactVec<T> {
-    /// Allocates storage for a count already bounded by the input window.
-    pub(crate) fn new(count: BoundedCount) -> Result<Self, CodecError> {
-        let capacity = count.get();
+/// Charges and reserves a decoded collection before it grows.
+pub(crate) fn reserve_collection<T>(
+    ctx: &DecodeContext<'_>,
+    values: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(u64_from_index(additional), operation)?;
+    values.try_reserve(additional).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::CollectionItems,
+            reason: ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: u64_from_index(additional),
+            operation,
+        })
+    })
+}
+
+/// Charges and reserves entries before a decoded hash map grows.
+pub(crate) fn reserve_hash_map<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashMap<K, V>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(u64_from_index(additional), operation)?;
+    values.try_reserve(additional).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::CollectionItems,
+            reason: ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: u64_from_index(additional),
+            operation,
+        })
+    })
+}
+
+/// Charges and reserves entries before a decoded hash set grows.
+pub(crate) fn reserve_hash_set<T: Eq + Hash>(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashSet<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(u64_from_index(additional), operation)?;
+    values.try_reserve(additional).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::CollectionItems,
+            reason: ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: u64_from_index(additional),
+            operation,
+        })
+    })
+}
+
+/// Creates a count-driven vector through the active decode session.
+pub(crate) fn admitted_collection<T>(
+    ctx: &DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut values = Vec::new();
+    reserve_collection(ctx, &mut values, count, operation)?;
+    Ok(values)
+}
+
+/// Reserves a retained string after charging its known byte length.
+pub(crate) fn admitted_retained_string(
+    ctx: &DecodeContext<'_>,
+    length: usize,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    ctx.charge_retained(u64_from_index(length), operation)?;
+    let mut value = String::new();
+    value.try_reserve_exact(length).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::RetainedBytes,
+            reason: ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: u64_from_index(length),
+            operation,
+        })
+    })?;
+    Ok(value)
+}
+
+/// Copies UTF-8 text into session-retained storage.
+pub(crate) fn copy_retained_string(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
+        .map_err(|error| CodecError::malformed(error.to_string()))
+}
+
+/// Formats retained text after measuring and charging its exact byte length.
+pub(crate) fn admitted_format(
+    ctx: &DecodeContext<'_>,
+    arguments: fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    struct ByteCount(usize);
+
+    impl fmt::Write for ByteCount {
+        fn write_str(&mut self, value: &str) -> fmt::Result {
+            self.0 = self.0.checked_add(value.len()).ok_or(fmt::Error)?;
+            Ok(())
+        }
+    }
+
+    let mut bytes = ByteCount(0);
+    fmt::write(&mut bytes, arguments)
+        .map_err(|_| CodecError::malformed("retained text length overflow"))?;
+    let mut text = admitted_retained_string(ctx, bytes.0, operation)?;
+    fmt::write(&mut text, arguments)
+        .map_err(|_| CodecError::malformed("retained text formatting failed"))?;
+    Ok(text)
+}
+
+/// Admits both the formatted source text and the loss note's retained copy.
+pub(crate) fn admitted_loss(
+    ctx: &DecodeContext<'_>,
+    code: crate::loss::RhinoLossCode,
+    arguments: fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::report::loss::LossNote, CodecError> {
+    let message = admitted_format(ctx, arguments, operation)?;
+    ctx.charge_retained(u64_from_index(message.len()), operation)?;
+    Ok(code.note(&message))
+}
+
+/// Serializes retained JSON after measuring and admitting its exact bytes.
+pub(crate) fn admitted_json(
+    ctx: &DecodeContext<'_>,
+    value: &impl serde::Serialize,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    struct ByteCount(usize);
+
+    impl std::io::Write for ByteCount {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self
+                .0
+                .checked_add(bytes.len())
+                .ok_or(std::io::ErrorKind::OutOfMemory)?;
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut count = ByteCount(0);
+    serde_json::to_writer(&mut count, value)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    ctx.charge_retained(u64_from_index(count.0), operation)?;
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(count.0).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit {
+            dimension: ResourceDimension::RetainedBytes,
+            reason: ResourceFailure::AllocationFailed,
+            limit: u64::MAX,
+            used: 0,
+            additional: u64_from_index(count.0),
+            operation,
+        })
+    })?;
+    serde_json::to_writer(&mut bytes, value)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    String::from_utf8(bytes).map_err(|error| CodecError::malformed(error.to_string()))
+}
+
+/// Preserves the sorted object-key order of `serde_json::Value` without building
+/// an uncharged intermediate tree.
+pub(crate) fn admitted_canonical_json(
+    ctx: &DecodeContext<'_>,
+    value: &impl serde::Serialize,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    struct ByteCount(usize);
+    impl std::io::Write for ByteCount {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self
+                .0
+                .checked_add(bytes.len())
+                .ok_or(std::io::ErrorKind::OutOfMemory)?;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut count = ByteCount(0);
+    serde_json::to_writer(&mut count, value)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    let _temporary = ctx.reserve_scoped(u64_from_index(count.0), operation)?;
+    let mut raw = Vec::new();
+    raw.try_reserve_exact(count.0).map_err(|_| {
+        allocation_failure(ResourceDimension::MaterializedBytes, count.0, operation)
+    })?;
+    serde_json::to_writer(&mut raw, value)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    let _tree = ctx.reserve_scoped(u64_from_index(count.0), operation)?;
+    let failure = RefCell::new(None);
+    let seed = CanonicalSeed {
+        ctx,
+        operation,
+        failure: &failure,
+    };
+    let mut decoder = serde_json::Deserializer::from_slice(&raw);
+    let canonical =
+        serde::de::DeserializeSeed::deserialize(seed, &mut decoder).map_err(|error| {
+            failure
+                .into_inner()
+                .unwrap_or_else(|| CodecError::malformed(error.to_string()))
+        })?;
+    decoder
+        .end()
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    admitted_json(ctx, &canonical, operation)
+}
+
+fn allocation_failure(
+    dimension: ResourceDimension,
+    amount: usize,
+    operation: &'static str,
+) -> CodecError {
+    CodecError::ResourceLimit(ResourceLimit {
+        dimension,
+        reason: ResourceFailure::AllocationFailed,
+        limit: u64::MAX,
+        used: 0,
+        additional: u64_from_index(amount),
+        operation,
+    })
+}
+
+#[derive(Clone, Copy)]
+struct CanonicalSeed<'a, 'b> {
+    ctx: &'a DecodeContext<'a>,
+    operation: &'static str,
+    failure: &'b RefCell<Option<CodecError>>,
+}
+
+impl<'de> serde::de::DeserializeSeed<'de> for CanonicalSeed<'_, '_> {
+    type Value = serde_json::Value;
+    fn deserialize<D: serde::Deserializer<'de>>(self, decoder: D) -> Result<Self::Value, D::Error> {
+        decoder.deserialize_any(CanonicalVisitor(self))
+    }
+}
+
+struct CanonicalVisitor<'a, 'b>(CanonicalSeed<'a, 'b>);
+
+impl<'de> serde::de::Visitor<'de> for CanonicalVisitor<'_, '_> {
+    type Value = serde_json::Value;
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a JSON value")
+    }
+    fn visit_bool<E: serde::de::Error>(self, value: bool) -> Result<Self::Value, E> {
+        Ok(value.into())
+    }
+    fn visit_i64<E: serde::de::Error>(self, value: i64) -> Result<Self::Value, E> {
+        Ok(value.into())
+    }
+    fn visit_u64<E: serde::de::Error>(self, value: u64) -> Result<Self::Value, E> {
+        Ok(value.into())
+    }
+    fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<Self::Value, E> {
+        Ok(serde_json::Number::from_f64(value)
+            .map_or(serde_json::Value::Null, serde_json::Value::Number))
+    }
+    fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+        Ok(serde_json::Value::Null)
+    }
+    fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+        Ok(serde_json::Value::Null)
+    }
+    fn visit_some<D: serde::Deserializer<'de>>(self, decoder: D) -> Result<Self::Value, D::Error> {
+        serde::de::DeserializeSeed::deserialize(self.0, decoder)
+    }
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        let mut copy = String::new();
+        copy.try_reserve_exact(value.len()).map_err(|_| {
+            self.0.fail(allocation_failure(
+                ResourceDimension::MaterializedBytes,
+                value.len(),
+                self.0.operation,
+            ))
+        })?;
+        copy.push_str(value);
+        Ok(serde_json::Value::String(copy))
+    }
+    fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+        Ok(serde_json::Value::String(value))
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(
+        self,
+        mut sequence: A,
+    ) -> Result<Self::Value, A::Error> {
         let mut values = Vec::new();
-        values
-            .try_reserve_exact(capacity)
-            .map_err(|_| CodecError::Io(std::io::Error::other("allocation failed")))?;
+        while let Some(value) = sequence.next_element_seed(self.0)? {
+            reserve_collection(self.0.ctx, &mut values, 1, self.0.operation)
+                .map_err(|error| self.0.fail(error))?;
+            values.push(value);
+        }
+        Ok(serde_json::Value::Array(values))
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        let mut values = serde_json::Map::new();
+        while let Some(key) = map.next_key_seed(CanonicalKeySeed(self.0))? {
+            self.0
+                .ctx
+                .charge_collection_items(1, self.0.operation)
+                .map_err(|error| self.0.fail(error))?;
+            let value = map.next_value_seed(self.0)?;
+            values.insert(key, value);
+        }
+        Ok(serde_json::Value::Object(values))
+    }
+}
+
+struct CanonicalKeySeed<'a, 'b>(CanonicalSeed<'a, 'b>);
+
+impl<'de> serde::de::DeserializeSeed<'de> for CanonicalKeySeed<'_, '_> {
+    type Value = String;
+    fn deserialize<D: serde::Deserializer<'de>>(self, decoder: D) -> Result<Self::Value, D::Error> {
+        decoder.deserialize_string(CanonicalKeyVisitor(self.0))
+    }
+}
+
+struct CanonicalKeyVisitor<'a, 'b>(CanonicalSeed<'a, 'b>);
+
+impl serde::de::Visitor<'_> for CanonicalKeyVisitor<'_, '_> {
+    type Value = String;
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("a JSON object key")
+    }
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        let mut copy = String::new();
+        copy.try_reserve_exact(value.len()).map_err(|_| {
+            self.0.fail(allocation_failure(
+                ResourceDimension::MaterializedBytes,
+                value.len(),
+                self.0.operation,
+            ))
+        })?;
+        copy.push_str(value);
+        Ok(copy)
+    }
+    fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+        Ok(value)
+    }
+}
+
+impl CanonicalSeed<'_, '_> {
+    fn fail<E: serde::de::Error>(&self, error: CodecError) -> E {
+        *self.failure.borrow_mut() = Some(error);
+        E::custom("JSON allocation refused")
+    }
+}
+
+impl<T> ExactVec<T> {
+    /// Charges and allocates storage for a count bounded by the input window.
+    pub(crate) fn new(
+        ctx: &DecodeContext<'_>,
+        count: BoundedCount,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        let capacity = count.get();
+        ctx.charge_collection_items(u64_from_index(capacity), operation)?;
+        let mut values = Vec::new();
+        values.try_reserve_exact(capacity).map_err(|_| {
+            CodecError::ResourceLimit(ResourceLimit {
+                dimension: ResourceDimension::CollectionItems,
+                reason: ResourceFailure::AllocationFailed,
+                limit: u64::MAX,
+                used: 0,
+                additional: u64_from_index(capacity),
+                operation,
+            })
+        })?;
         Ok(Self { values, capacity })
     }
 
@@ -131,30 +517,11 @@ impl fmt::Display for UuidTail {
     }
 }
 
-impl Uuid {
-    /// Renders the UUID as a source identifier, which always has a leading hex digit.
-    pub(crate) fn to_nonempty(self) -> cadmpeg_core::text::NonBlankString {
-        cadmpeg_core::text::NonBlankString::prefixed(
-            cadmpeg_core::text::NonWhitespaceChar::hex_digit(self.bytes[0] >> 4),
-            UuidTail(self.bytes),
-        )
-    }
-}
-
 impl fmt::Display for Uuid {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let leading = HEX_DIGITS[usize::from(self.bytes[0] >> 4)];
         write!(formatter, "{leading}{}", UuidTail(self.bytes))
     }
-}
-
-/// Render comma-separated native property values in their stored order.
-pub(crate) fn comma_list<T: ToString>(values: impl IntoIterator<Item = T>) -> String {
-    values
-        .into_iter()
-        .map(|value| value.to_string())
-        .collect::<Vec<_>>()
-        .join(",")
 }
 
 /// Reads one mixed-endian UUID from the bounded reader.

@@ -139,8 +139,9 @@ impl DesignDecalAsset {
 }
 
 /// Exact image and target binding owned by one Design `Decal` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignDecalImageWire", into = "DesignDecalImageWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignDecalImageWire")]
 pub(crate) struct DesignDecalImage {
     /// Globally unique native binding identity.
     pub(crate) id: String,
@@ -151,6 +152,25 @@ pub(crate) struct DesignDecalImage {
     pub(crate) target_group_record_index: u32,
     /// Consecutive asset and image-name records.
     pub(crate) asset: DesignDecalAsset,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static DECAL_IMAGE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignDecalImage {
+    fn clone(&self) -> Self {
+        DECAL_IMAGE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            scope: self.scope,
+            mapping_mode: self.mapping_mode,
+            target_group_record_index: self.target_group_record_index,
+            asset: self.asset.clone(),
+        }
+    }
 }
 
 impl DesignDecalImage {
@@ -235,6 +255,57 @@ struct DesignDecalImageWire {
     asset_name_offset: u64,
 }
 
+#[derive(Serialize)]
+struct DesignDecalImageWireRef<'a> {
+    id: &'a str,
+    scope_record_index: u32,
+    asset_reference_offset: u64,
+    mapping_mode: DesignDecalMappingMode,
+    mapping_mode_offset: u64,
+    target_group_record_index: u32,
+    target_group_reference_offset: u64,
+    asset_class_tag: &'a str,
+    asset_record_index: u32,
+    asset_byte_offset: u64,
+    asset_frame_length: u64,
+    asset_entity_suffix: u32,
+    asset_entity_reference_offset: u64,
+    name_class_tag: &'a str,
+    name_record_index: u32,
+    name_byte_offset: u64,
+    name_frame_length: u64,
+    asset_name: &'a str,
+    asset_name_offset: u64,
+}
+
+impl Serialize for DesignDecalImage {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let [asset_class_tag, name_class_tag] = &self.asset.class_tags;
+        DesignDecalImageWireRef {
+            id: &self.id,
+            scope_record_index: self.scope_record_index(),
+            asset_reference_offset: self.asset_reference_offset(),
+            mapping_mode: self.mapping_mode,
+            mapping_mode_offset: self.mapping_mode_offset(),
+            target_group_record_index: self.target_group_record_index,
+            target_group_reference_offset: self.target_group_reference_offset(),
+            asset_class_tag,
+            asset_record_index: self.asset.record_index,
+            asset_byte_offset: self.asset.byte_offset,
+            asset_frame_length: DesignDecalAsset::primary_frame_length(),
+            asset_entity_suffix: self.asset.entity_suffix,
+            asset_entity_reference_offset: self.asset.entity_reference_offset(),
+            name_class_tag,
+            name_record_index: self.asset.name_record_index(),
+            name_byte_offset: self.asset.name_byte_offset(),
+            name_frame_length: self.asset.name_frame_length(),
+            asset_name: &self.asset.name,
+            asset_name_offset: self.asset.name_offset(),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
     type Error = String;
     fn try_from(wire: DesignDecalImageWire) -> Result<Self, Self::Error> {
@@ -304,6 +375,7 @@ impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
     }
 }
 
+#[cfg(test)]
 impl From<DesignDecalImage> for DesignDecalImageWire {
     fn from(value: DesignDecalImage) -> Self {
         let scope_record_index = value.scope_record_index();

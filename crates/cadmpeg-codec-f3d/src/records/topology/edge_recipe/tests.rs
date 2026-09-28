@@ -1,6 +1,136 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edge-recipe selector contexts, recipe structures and their sidecar counts.
 
+#[derive(serde::Serialize)]
+struct NestedRecord<'a, T: serde::Serialize> {
+    id: &'static str,
+    value: &'a T,
+}
+
+fn selector_context() -> super::DesignEdgeRecipeSelectorContext {
+    serde_json::from_value(serde_json::json!({
+        "selector": 3,
+        "clause_entries": [null],
+        "clause_triplet_edge_slots": [null],
+        "incidence_matching_edge_slots": [7],
+        "unique_incidence_edge_slot": 7,
+        "boundary_count_matching_edge_slots": [7, 8]
+    }))
+    .unwrap()
+}
+
+fn surface_patch_clause() -> super::DesignSurfacePatchRecipeClause {
+    serde_json::from_str(r#"{"fields":[[0],[0],[2,0],[0,0],[0],[0,0]],"face_reference_ordinals":[0,0],"edge_reference_ordinals":[0,0],"payload_entry_count":0,"entries":[]}"#).unwrap()
+}
+
+fn topology_recipe_side() -> super::DesignTopologyRecipeSide {
+    serde_json::from_str(r#"{"field_count":2,"header_value":1,"scalars":[0],"payload_prefix":[0],"payload_entry_count":0,"entries":[]}"#).unwrap()
+}
+
+#[test]
+fn edge_recipe_selector_context_borrowed_wire_matches_owned_wire_bytes() {
+    let context = selector_context();
+    let owned = super::DesignEdgeRecipeSelectorContextWire::from(context.clone());
+    assert_eq!(
+        serde_json::to_vec(&context).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn edge_recipe_selector_context_native_retained_limit_refuses_before_clone() {
+    let context = selector_context();
+    let record = NestedRecord {
+        id: "f3d:native:selector-context#0",
+        value: &context,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::EDGE_RECIPE_SELECTOR_CONTEXT_CLONE_COUNT.with(|count| count.set(0)),
+        || super::EDGE_RECIPE_SELECTOR_CONTEXT_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
+fn surface_patch_structure_borrowed_wire_matches_owned_wire_bytes() {
+    let structure = super::DesignSurfacePatchRecipeStructure {
+        clauses: [surface_patch_clause(), surface_patch_clause()],
+    };
+    let owned = super::DesignSurfacePatchRecipeStructureWire::from(structure.clone());
+    assert_eq!(
+        serde_json::to_vec(&structure).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn surface_patch_structure_native_retained_limit_refuses_before_clone() {
+    let structure = super::DesignSurfacePatchRecipeStructure {
+        clauses: [surface_patch_clause(), surface_patch_clause()],
+    };
+    let record = NestedRecord {
+        id: "f3d:native:surface-patch-structure#0",
+        value: &structure,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::SURFACE_PATCH_STRUCTURE_CLONE_COUNT.with(|count| count.set(0)),
+        || super::SURFACE_PATCH_STRUCTURE_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
+fn surface_patch_clause_borrowed_wire_matches_owned_wire_bytes() {
+    let clause = surface_patch_clause();
+    let owned = super::DesignSurfacePatchRecipeClauseWire::from(clause.clone());
+    assert_eq!(
+        serde_json::to_vec(&clause).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn surface_patch_clause_native_retained_limit_refuses_before_clone() {
+    let clause = surface_patch_clause();
+    let record = NestedRecord {
+        id: "f3d:native:surface-patch-clause#0",
+        value: &clause,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::SURFACE_PATCH_CLAUSE_CLONE_COUNT.with(|count| count.set(0)),
+        || super::SURFACE_PATCH_CLAUSE_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
+fn topology_recipe_side_borrowed_wire_matches_owned_wire_bytes() {
+    let side = topology_recipe_side();
+    let owned = super::DesignTopologyRecipeSideWire::from(side.clone());
+    assert_eq!(
+        serde_json::to_vec(&side).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn topology_recipe_side_native_retained_limit_refuses_before_clone() {
+    let side = topology_recipe_side();
+    let record = NestedRecord {
+        id: "f3d:native:topology-recipe-side#0",
+        value: &side,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::TOPOLOGY_RECIPE_SIDE_CLONE_COUNT.with(|count| count.set(0)),
+        || super::TOPOLOGY_RECIPE_SIDE_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
 #[test]
 fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
     let entry = super::DesignTopologyRecipeEntry {
@@ -18,7 +148,7 @@ fn selector_context_wire_rejects_partial_clauses_and_derives_singleton() {
     for edges in [vec![], vec![7], vec![7, 8]] {
         for count in [0, 1, 3] {
             let entries: Vec<_> = (0..count)
-                .map(|index| (index % 2 == 0).then(|| entry.clone()))
+                .map(|index| (index % 2 == 0).then_some(entry))
                 .collect();
             let slots: Vec<_> = (0..count)
                 .map(|index| (index % 2 == 0).then(|| [vec![7, 8], vec![7]]))
@@ -88,7 +218,7 @@ fn topology_recipe_derived_ordinals_preserve_wire_and_reject_conflicts() {
         let triplet: super::DesignTopologyRecipeTriplet = serde_json::from_str(&wire).unwrap();
         assert_eq!(triplet.vertex_ordinal(), vertex);
         assert_eq!(serde_json::to_string(&triplet).unwrap(), wire);
-        let mut invalid = serde_json::to_value(&triplet).unwrap();
+        let mut invalid = serde_json::to_value(triplet).unwrap();
         invalid["vertex_ordinal"] = serde_json::json!(outer);
         assert!(
             serde_json::from_value::<super::DesignTopologyRecipeTriplet>(invalid)

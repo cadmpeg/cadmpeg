@@ -50,7 +50,7 @@ cadmpeg_core::named_optional_field!(
     "stitch_tolerance_scope"
 );
 /// Exact construction carried by a Mirror scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignMirrorConstructionWire",
     into = "DesignMirrorConstructionWire"
@@ -84,7 +84,7 @@ pub(crate) struct DesignMirrorConstruction {
 }
 
 /// Native carrier of a Mirror stitch tolerance.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum DesignMirrorToleranceSource {
     Owner { record_index: u32 },
     Scope(DesignMirrorScopeTolerance),
@@ -240,7 +240,7 @@ impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
 }
 
 /// Exact inline carrier for a legacy Mirror stitch tolerance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignMirrorScopeToleranceWire",
     into = "DesignMirrorScopeToleranceWire"

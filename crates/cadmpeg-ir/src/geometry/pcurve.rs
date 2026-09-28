@@ -1691,7 +1691,7 @@ impl PolarPcurveNurbs {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_collection_items(u64_from_index(self.knots.len()), operation)?;
+        super::charge_decode_copy::<f64>(self.knots.len(), ctx, operation)?;
         let knots = self
             .knots
             .try_clone()
@@ -1921,7 +1921,7 @@ impl PcurveNurbs {
         ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        ctx.charge_collection_items(u64_from_index(self.knots.len()), operation)?;
+        super::charge_decode_copy::<f64>(self.knots.len(), ctx, operation)?;
         let knots = self
             .knots
             .try_clone()
@@ -1939,6 +1939,31 @@ impl PcurveNurbs {
             knots,
             poles,
             periodic: self.periodic,
+        })
+    }
+
+    /// Build from admitted knot and pole rows without copying either lane.
+    ///
+    /// # Errors
+    ///
+    /// Refuses inconsistent cardinalities or a zero degree.
+    pub fn from_admitted_rows(
+        degree: u32,
+        knots: KnotVector,
+        poles: PcurveNurbsPoles<FinitePoint2>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        if degree == 0 {
+            return Err(NurbsError::Structure(
+                "pcurve NURBS degree must be positive".into(),
+            ));
+        }
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
         })
     }
 
@@ -2293,7 +2318,7 @@ impl PcurveGeometry {
                 nurbs: nurbs.try_clone_for_decode(ctx, operation)?,
             },
             Self::Transformed(value) => {
-                ctx.charge_collection_items(1, operation)?;
+                super::charge_decode_copy::<Self>(1, ctx, operation)?;
                 Self::Transformed(PlacedPcurve {
                     basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
                     transform: value.transform,
@@ -2301,7 +2326,7 @@ impl PcurveGeometry {
                 })
             }
             Self::Trimmed(value) => {
-                ctx.charge_collection_items(1, operation)?;
+                super::charge_decode_copy::<Self>(1, ctx, operation)?;
                 Self::Trimmed(TrimmedPcurve {
                     parameter_range: value.parameter_range,
                     same_sense: value.same_sense,
@@ -2310,7 +2335,7 @@ impl PcurveGeometry {
                 })
             }
             Self::Offset(value) => {
-                ctx.charge_collection_items(1, operation)?;
+                super::charge_decode_copy::<Self>(1, ctx, operation)?;
                 Self::Offset(OffsetPcurve {
                     distance: value.distance,
                     basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),

@@ -420,7 +420,10 @@ fn numerical_followup_mesh_volume_and_centroid_are_translation_invariant() {
         )
         .unwrap();
         let mut tessellation = Tessellation::new(
-            "test:step:tessellation#numerical-followup",
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "test:step:tessellation#numerical-followup",
+            )
+            .expect("valid identity"),
             mesh,
             Vec::new(),
         )
@@ -465,7 +468,10 @@ fn numerical_seventh_mesh_mass_properties_preserve_uniform_scale() {
         )
         .unwrap();
         let mut tessellation = Tessellation::new(
-            "test:step:tessellation#numerical-followup",
+            cadmpeg_ir::tessellation::TessellationId::mint(
+                "test:step:tessellation#numerical-followup",
+            )
+            .expect("valid identity"),
             mesh,
             Vec::new(),
         )

@@ -83,6 +83,13 @@ fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
 
 #[test]
 fn fixed_arity_law_operators_decode_at_both_integer_widths() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = Vec::new();
         push_string(&mut bytes, "SET");
@@ -102,9 +109,18 @@ fn fixed_arity_law_operators_decode_at_both_integer_widths() {
 
         let toks = lex_test_span(&bytes, int_width).expect("valid single-record byte fixture");
         let mut cur = crate::nurbs::toks::Cur::at(&toks, 0);
-        let set = crate::nurbs::proc_surface::law_expression(&mut cur, 0).unwrap();
-        let rotate = crate::nurbs::proc_surface::law_expression(&mut cur, 0).unwrap();
-        let term = crate::nurbs::proc_surface::law_expression(&mut cur, 0).unwrap();
+        let set = crate::nurbs::proc_surface::law_expression(&resource_ctx, &mut cur, 0)
+            .transpose()
+            .expect("resource allocation")
+            .unwrap();
+        let rotate = crate::nurbs::proc_surface::law_expression(&resource_ctx, &mut cur, 0)
+            .transpose()
+            .expect("resource allocation")
+            .unwrap();
+        let term = crate::nurbs::proc_surface::law_expression(&resource_ctx, &mut cur, 0)
+            .transpose()
+            .expect("resource allocation")
+            .unwrap();
         assert_eq!(cur.pos(), toks.len());
         assert!(matches!(
             set,
@@ -126,6 +142,13 @@ fn fixed_arity_law_operators_decode_at_both_integer_widths() {
 
 #[test]
 fn law_surface_layout_decodes_at_both_integer_widths() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "law_spl_sur");
@@ -158,8 +181,11 @@ fn law_surface_layout_decodes_at_both_integer_widths() {
         bytes.push(0x10);
 
         let decoded = crate::nurbs::proc_surface::law_spl_sur(
+            &resource_ctx,
             &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation")
         .unwrap_or_else(|| panic!("law surface at width {int_width}"));
         let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
         let (definition, _) = decoded.into_parts();
@@ -176,6 +202,13 @@ fn law_surface_layout_decodes_at_both_integer_widths() {
 
 #[test]
 fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut bytes = vec![0x0f];
         push_ident(&mut bytes, "lawsur");
@@ -192,8 +225,11 @@ fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
         bytes.push(0x10);
 
         let decoded = crate::nurbs::proc_surface::law_spl_sur(
+            &resource_ctx,
             &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation")
         .unwrap_or_else(|| panic!("legacy law surface at width {int_width}"));
         let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
         let (definition, _) = decoded.into_parts();
@@ -214,6 +250,13 @@ fn legacy_law_surface_uses_implicit_full_tail_at_both_integer_widths() {
 
 #[test]
 fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for selector in 1..=4 {
             let mut bytes = vec![0x0f];
@@ -251,8 +294,11 @@ fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
             bytes.push(0x10);
 
             let decoded = crate::nurbs::proc_surface::law_spl_sur(
+                &resource_ctx,
                 &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
             )
+            .transpose()
+            .expect("resource allocation")
             .unwrap_or_else(|| panic!("law tail {selector} at integer width {int_width}"));
             let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
             let (definition, _) = decoded.into_parts();
@@ -273,6 +319,13 @@ fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
 
 #[test]
 fn sub_surface_layout_decodes_at_both_integer_widths() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["sub_spl_sur", "subsur"] {
             let mut bytes = vec![0x0f];
@@ -288,8 +341,11 @@ fn sub_surface_layout_decodes_at_both_integer_widths() {
             bytes.push(0x10);
 
             let decoded = crate::nurbs::proc_surface::sub_spl_sur(
+                &resource_ctx,
                 &lex_test_span(&bytes, int_width).expect("valid single-record byte fixture"),
             )
+            .transpose()
+            .expect("resource allocation")
             .unwrap_or_else(|| panic!("{name} at integer width {int_width}"));
             let cache_fit_tolerance = decoded.legacy_cache_fit_tolerance();
             let (definition, _) = decoded.into_parts();
@@ -327,7 +383,9 @@ fn rolling_ball_layout_walks_both_integer_widths() {
         push_int(&mut bytes, 0x15, -1, int_width);
         bytes.push(0x10);
 
-        let layout = rolling_ball_patch_layout(&bytes, int_width).transpose().expect("resource allocation did not fail")
+        let layout = rolling_ball_patch_layout(&bytes, int_width)
+            .transpose()
+            .expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("rolling-ball layout at width {int_width}"));
         let values = layout
             .radii
@@ -346,7 +404,9 @@ fn rolling_ball_layout_walks_both_integer_widths() {
         push_f64(&mut compact, -2.5);
         push_int(&mut compact, 0x15, -1, int_width);
         compact.push(0x10);
-        let layout = rolling_ball_patch_layout(&compact, int_width).transpose().expect("resource allocation did not fail")
+        let layout = rolling_ball_patch_layout(&compact, int_width)
+            .transpose()
+            .expect("resource allocation did not fail")
             .unwrap_or_else(|| panic!("compact rolling-ball layout at width {int_width}"));
         let values = layout
             .radii
@@ -357,6 +417,13 @@ fn rolling_ball_layout_walks_both_integer_widths() {
 
 #[test]
 fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let mut straight = Vec::new();
         push_ident(&mut straight, "straight");
@@ -421,7 +488,7 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         let tokens = lex_test_span(&intcurve, int_width).expect("framed intcurve reference");
         let mut cur = Cur::at(&tokens, 0);
         assert!(matches!(
-            crate::nurbs::blend::rolling_ball_curve(&mut cur, Some(&table)).transpose().expect("resource allocation did not fail"),
+            crate::nurbs::blend::rolling_ball_curve(&resource_ctx, &mut cur, Some(&table)).transpose().expect("resource allocation did not fail"),
             Some(RollingBallSupportCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 parameter_range: [None, None],

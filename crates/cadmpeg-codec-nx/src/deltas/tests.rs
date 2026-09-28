@@ -28,6 +28,10 @@ use crate::test_support::test_streams::partial_ext11_charted_intersection_curve_
 use crate::test_support::test_streams::topology_partition_stream;
 use crate::test_support::test_streams::two_support_ext11_charted_intersection_curve_stream;
 
+fn analytic_points(stream: &[u8]) -> Vec<crate::geometry::DecodedPoint> {
+    crate::test_support::with_decode_context(|ctx| crate::geometry::points(ctx, stream).unwrap())
+}
+
 fn deltas_body_revision(node_id: u32) -> Vec<u8> {
     let mut revision = Vec::with_capacity(32);
     revision.extend_from_slice(&12u16.to_be_bytes());
@@ -1572,7 +1576,7 @@ fn merged_deltas_full_record_replaces_partition_node() {
     let mut deltas = status_framed_deltas_point_stream();
     deltas[2..4].copy_from_slice(&11u16.to_be_bytes());
     let merged = crate::deltas::merge_full_records(&partition, &deltas);
-    let points = crate::geometry::points(&merged);
+    let points = analytic_points(&merged);
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].position.x, 12.5);
     assert_eq!(points[0].position.y, -2.0);
@@ -1597,7 +1601,7 @@ fn merged_tombstone_preserves_a_topology_referenced_carrier() {
     assert!(crate::topology::Graph::parse(&merged)
         .get(NodeKind::Point, 11)
         .is_some());
-    assert_eq!(crate::geometry::points(&merged)[0].position.x, 10.0);
+    assert_eq!(analytic_points(&merged)[0].position.x, 10.0);
 }
 
 #[test]
@@ -1622,12 +1626,12 @@ fn merged_deltas_uses_last_full_or_tombstone_event() {
     let mut delete_then_replace = tombstone.to_vec();
     delete_then_replace.extend_from_slice(&full);
     let merged = crate::deltas::merge_full_records(&partition, &delete_then_replace);
-    assert_eq!(crate::geometry::points(&merged)[0].position.x, 12.5);
+    assert_eq!(analytic_points(&merged)[0].position.x, 12.5);
 
     let mut replace_then_delete = full;
     replace_then_delete.extend_from_slice(&tombstone);
     let merged = crate::deltas::merge_full_records(&partition, &replace_then_delete);
-    assert_eq!(crate::geometry::points(&merged)[0].position.x, 10.0);
+    assert_eq!(analytic_points(&merged)[0].position.x, 10.0);
 }
 
 #[test]
@@ -1668,7 +1672,7 @@ fn body_revision_scopes_keep_each_monotonic_sequence_current() {
     let graph = crate::topology::Graph::parse(&merged);
     assert!(graph.get(NodeKind::Point, 50).is_some());
     assert!(graph.get(NodeKind::Point, 51).is_some());
-    let points = crate::geometry::points(&merged);
+    let points = analytic_points(&merged);
     assert!(points
         .iter()
         .any(|point| (point.position.x - 2.0).abs() <= 1.0e-12));
@@ -1698,7 +1702,7 @@ fn body_revision_scopes_accept_reverse_serialized_counter_direction() {
     let graph = crate::topology::Graph::parse(&merged);
     assert!(graph.get(NodeKind::Point, 50).is_some());
     assert!(graph.get(NodeKind::Point, 51).is_some());
-    let points = crate::geometry::points(&merged);
+    let points = analytic_points(&merged);
     assert!(points
         .iter()
         .any(|point| (point.position.x - 2.0).abs() <= 1.0e-12));

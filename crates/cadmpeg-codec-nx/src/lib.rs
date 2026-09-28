@@ -82,6 +82,7 @@ mod dialect;
 mod evaluation;
 mod framing;
 mod geometry;
+mod inspect;
 mod intersection;
 mod iter_wire;
 mod jt;
@@ -97,6 +98,7 @@ mod om_tokens;
 mod parasolid;
 mod payload_text;
 mod printable_string;
+mod scan_notes;
 mod topology;
 mod vec3_at;
 
@@ -111,13 +113,8 @@ pub use evaluation::{
     saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, UnsupportedBodyCensusReason,
 };
 
-use crate::framing::node_kind::NodeKind;
-use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
-
-use std::collections::BTreeMap;
-
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::{CodecError, ContainerEntry};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
@@ -171,184 +168,12 @@ impl CodecBackend for NxCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = decode::scan(ctx, root)?;
-        Ok(summarize(&scan))
+        inspect::summarize(ctx, &scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root)
     }
-}
-
-/// Build the container summary: one entry per catalogued directory stream, plus
-/// one per embedded Parasolid stream, and the shared container notes.
-fn summarize(scan: &decode::Scan) -> ContainerSummary {
-    let mut entries = Vec::new();
-    let semantic_streams = native::substrate::topology_streams(scan);
-
-    for entry in &scan.container.entries {
-        let mut attributes = BTreeMap::new();
-        attributes.insert("region".to_string(), entry.region.label().to_string());
-        let storage = match entry.file_span() {
-            Some((off, size)) => {
-                attributes.insert("file_offset".to_string(), off.to_string());
-                EntryStorage::verbatim(VerbatimLabel::None, size)
-            }
-            None => {
-                attributes.insert("kind".to_string(), "directory".to_string());
-                EntryStorage::Directory
-            }
-        };
-        entries.push(ContainerEntry {
-            name: entry.name.clone(),
-            role: entry.content().role(),
-            storage,
-            attributes,
-        });
-    }
-
-    let mut storage_notes: Vec<String> = Vec::new();
-    for (si, stream) in scan.streams.iter().enumerate() {
-        let mut attributes = BTreeMap::new();
-        attributes.insert("file_offset".to_string(), stream.file_offset.to_string());
-        attributes.insert("kind".to_string(), stream.kind().label().to_string());
-        if let Some(schema) = stream.schema_token() {
-            attributes.insert("schema".to_string(), schema.value().to_owned());
-        }
-        if stream.kind().is_parasolid() {
-            let graph = topology::Graph::parse(&stream.inflated);
-            for (kind, name) in [
-                (NodeKind::Body, "body"),
-                (NodeKind::Shell, "shell"),
-                (NodeKind::Face, "face"),
-                (NodeKind::Loop, "loop"),
-                (NodeKind::Edge, "edge"),
-                (NodeKind::Fin, "fin"),
-                (NodeKind::Vertex, "vertex"),
-                (NodeKind::Region, "region"),
-            ] {
-                attributes.insert(
-                    format!("records.{name}"),
-                    graph.of_kind(kind).count().to_string(),
-                );
-            }
-            if stream.kind() == parasolid::StreamKind::Partition {
-                let graph = topology::Graph::parse(&semantic_streams[si]);
-                for (kind, name) in [
-                    (NodeKind::Body, "body"),
-                    (NodeKind::Shell, "shell"),
-                    (NodeKind::Face, "face"),
-                    (NodeKind::Loop, "loop"),
-                    (NodeKind::Edge, "edge"),
-                    (NodeKind::Fin, "fin"),
-                    (NodeKind::Vertex, "vertex"),
-                    (NodeKind::Region, "region"),
-                ] {
-                    attributes.insert(
-                        format!("records.live.{name}"),
-                        graph.of_kind(kind).count().to_string(),
-                    );
-                }
-            } else if stream.kind() == parasolid::StreamKind::Deltas {
-                let census = deltas::census::walk(&stream.inflated);
-                if census.transmit_header.is_some() {
-                    attributes.insert(
-                        "records.delta.transmit_headers".to_string(),
-                        "1".to_string(),
-                    );
-                }
-                if !census.body_revisions.is_empty() {
-                    attributes.insert(
-                        "records.delta.body_revisions".to_string(),
-                        census.body_revisions.len().to_string(),
-                    );
-                }
-                if !census.term_use_numeric_tails.is_empty() {
-                    attributes.insert(
-                        "records.delta.term_use_numeric_tails".to_string(),
-                        census.term_use_numeric_tails.len().to_string(),
-                    );
-                }
-                if !census.tagged_reference_lanes.is_empty() {
-                    attributes.insert(
-                        "records.delta.tagged_reference_lanes".to_string(),
-                        census.tagged_reference_lanes.len().to_string(),
-                    );
-                }
-                if !census.reference_type_maps.is_empty() {
-                    attributes.insert(
-                        "records.delta.reference_type_maps".to_string(),
-                        census.reference_type_maps.len().to_string(),
-                    );
-                }
-                if !census.reference_state_packets.is_empty() {
-                    attributes.insert(
-                        "records.delta.reference_state_packets".to_string(),
-                        census.reference_state_packets.len().to_string(),
-                    );
-                }
-                if !census.reference_marker_packets.is_empty() {
-                    attributes.insert(
-                        "records.delta.reference_marker_packets".to_string(),
-                        census.reference_marker_packets.len().to_string(),
-                    );
-                }
-                if !census.inline_schema_declarations.is_empty() {
-                    attributes.insert(
-                        "records.delta.inline_schema_declarations".to_string(),
-                        census.inline_schema_declarations.len().to_string(),
-                    );
-                }
-                for (family, count) in census.full_counts() {
-                    attributes.insert(
-                        format!("records.delta.full.{}", family.to_ascii_lowercase()),
-                        count.to_string(),
-                    );
-                }
-                for (family, count) in census.tombstone_counts() {
-                    attributes.insert(
-                        format!("records.delta.tombstone.{}", family.to_ascii_lowercase()),
-                        count.to_string(),
-                    );
-                }
-            }
-        }
-        let inflated_len = stream.inflated.len() as u64;
-        let storage = match scan.container.layout {
-            container::ContainerLayout::Modern { .. } => EntryStorage::Compressed {
-                method: CompressionMethod::Zlib,
-                stored: None,
-                expanded: Some(inflated_len),
-            },
-            container::ContainerLayout::LegacyCfb { .. } => {
-                match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
-                    Ok(storage) => storage,
-                    Err(message) => {
-                        storage_notes.push(format!(
-                            "parasolid#{si}: {message}: {}/{inflated_len}",
-                            stream.consumed
-                        ));
-                        EntryStorage::payload_only(VerbatimLabel::Stored, inflated_len)
-                    }
-                }
-            }
-        };
-        entries.push(ContainerEntry {
-            name: format!("parasolid#{si}"),
-            role: if stream.kind().is_parasolid() {
-                ContainerRole::ParasolidStream
-            } else {
-                ContainerRole::Preview
-            },
-            storage,
-            attributes,
-        });
-    }
-
-    let (classification, mut notes) = decode::summarize(scan);
-    notes.extend(storage_notes);
-    let container_kind = classification.container_kind();
-    let (dialects, dialect_losses) = classification.into_report_parts();
-    ContainerSummary::classified(dialects, container_kind, entries, dialect_losses, notes)
 }
 
 #[cfg(test)]
