@@ -429,6 +429,68 @@ fn feature_dependency_lookup_refuses_collection_limit() {
 }
 
 #[test]
+fn native_operation_owned_object_rows_refuse_collection_limit() {
+    let object = design_object("synthetic:test:object#operation", None);
+    let objects = HashMap::from([(object.id.as_str(), &object)]);
+    let records = HashMap::new();
+    let entities = HashMap::new();
+    let operation_ids = HashSet::new();
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        super::native_operation_definition_properties(ctx, &object, &records,
+            &entities, &objects, &operation_ids)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_operation_owned_objects"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::native_operation_definition_properties(ctx, &object, &records,
+            &entities, &objects, &operation_ids)
+    }).expect("service profile admits operation owner rows");
+    assert!(admitted.source_properties.is_empty());
+}
+
+#[test]
+fn native_operation_property_values_refuse_retained_limit() {
+    let value = crate::native::CatiaEntitySchemaValue {
+        offset: 7,
+        ordinal: 1,
+        entry: "catalog-entry".to_string(),
+        value: "Length".to_string(),
+    };
+    let prefix = cadmpeg_core::nonblank_literal!("catia_definition_value_0");
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::insert_schema_value_properties(ctx, &mut BTreeMap::new(), &prefix, &value)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_property_key"));
+    let properties = crate::test_support::with_service_context(|ctx| {
+        let mut properties = BTreeMap::new();
+        super::insert_schema_value_properties(ctx, &mut properties, &prefix, &value)
+            .expect("service profile admits operation properties");
+        properties
+    });
+    assert_eq!(properties.get("catia_definition_value_0_entry").map(String::as_str),
+        Some("catalog-entry"));
+    assert_eq!(properties.get("catia_definition_value_0_value").map(String::as_str),
+        Some("Length"));
+}
+
+#[test]
+fn native_sweep_unresolved_references_refuse_retained_limit() {
+    let refused = crate::test_support::with_retained_limit(0, |ctx| {
+        super::native_operation_definition(ctx,
+            super::NativeOperationClass::SweepThickThin1, "synthetic:test:object#sweep")
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_feature_sweep_shape_ref"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::native_operation_definition(ctx,
+            super::NativeOperationClass::SweepThickThin1, "synthetic:test:object#sweep")
+    }).expect("service profile admits unresolved sweep refs");
+    assert!(matches!(admitted,
+        FeatureDefinition::Operation(FeatureOperation::Sweep { .. })));
+}
+
+#[test]
 fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     let mut source = design_object("synthetic:test:object#source-object", None);
     let mut unresolved = payload_relation("unresolved-object", 6);
