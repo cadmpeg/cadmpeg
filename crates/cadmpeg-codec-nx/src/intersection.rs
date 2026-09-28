@@ -1158,7 +1158,7 @@ pub(crate) fn support_uv_records(ctx: &DecodeContext<'_>, stream: &[u8]) -> Resu
     let mut tag = 0usize;
     while tag.saturating_add(2) <= stream.len() {
         if stream.get(tag..tag + 2) == Some(&[0, 204]) {
-            if let Some((record, end)) = support_uv_record_at(stream, tag) {
+            if let Some((record, end)) = support_uv_record_at(ctx, stream, tag)? {
                 insert_unique_charged(ctx, &mut reservation, &mut out, &mut duplicates, record.xmt, record)?;
                 // A complete counted UV lane owns its scalar payload. Do not
                 // rescan payload bytes as nested support arrays.
@@ -1177,7 +1177,7 @@ pub(crate) fn support_uv_records(ctx: &DecodeContext<'_>, stream: &[u8]) -> Resu
         let tail = label + b"values".len();
         if stream.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             let pos = tail + INLINE_UV_TAIL.len();
-            if let Some((record, end)) = uv_at(stream, pos, SupportUvFraming::DescriptorInline, pos)
+            if let Some((record, end)) = uv_at(ctx, stream, pos, SupportUvFraming::DescriptorInline, pos)?
             {
                 insert_unique_charged(ctx, &mut reservation, &mut out, &mut duplicates, record.xmt, record)?;
                 label_start = end;
@@ -1189,8 +1189,14 @@ pub(crate) fn support_uv_records(ctx: &DecodeContext<'_>, stream: &[u8]) -> Resu
     unique_values_charged(ctx, out, "NX support-UV records")
 }
 
-pub(crate) fn support_uv_record_at(stream: &[u8], tag: usize) -> Option<(SupportUvRecord, usize)> {
-    (stream.get(tag..tag + 2) == Some(&[0, 204])).then_some(())?;
+pub(crate) fn support_uv_record_at(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    tag: usize,
+) -> Result<Option<(SupportUvRecord, usize)>, CodecError> {
+    if stream.get(tag..tag + 2) != Some(&[0, 204]) {
+        return Ok(None);
+    }
     for escape in [0usize, 1] {
         if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
             continue;
@@ -1201,39 +1207,50 @@ pub(crate) fn support_uv_record_at(stream: &[u8], tag: usize) -> Option<(Support
         } else {
             SupportUvFraming::Escaped
         };
-        if let Some(record) = uv_at(stream, base, framing, tag) {
-            return Some(record);
+        if let Some(record) = uv_at(ctx, stream, base, framing, tag)? {
+            return Ok(Some(record));
         }
     }
-    None
+    Ok(None)
 }
 
 fn uv_at(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     base: usize,
     framing: SupportUvFraming,
     pos: usize,
-) -> Option<(SupportUvRecord, usize)> {
-    let count = View::over_retained(stream)
-        .child(base, stream.len())?
-        .u32_be()?;
-    let count_usize = count as usize;
-    let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
-    let payload = base + 4 + xmt_len;
-    let packing = SupportUvPacking::try_from(*stream.get(payload)?).ok()?;
-    let values = View::over_retained(stream)
-        .child(payload + 1, stream.len())?
-        .read_counted(count as u64, 8, View::f64_be)?;
-    let values = SupportUvValues::new(packing, values).ok()?;
-    Some((
+) -> Result<Option<(SupportUvRecord, usize)>, CodecError> {
+    let Some(count) = View::over_retained(stream)
+        .child(base, stream.len())
+        .and_then(|mut view| view.u32_be()) else { return Ok(None); };
+    let Ok(count_usize) = usize::try_from(count) else { return Ok(None); };
+    let Some((xmt, xmt_len)) = read_xmt(stream, base + 4) else { return Ok(None); };
+    let Some(payload) = base.checked_add(4).and_then(|at| at.checked_add(xmt_len)) else { return Ok(None); };
+    let Some(packing) = stream.get(payload).and_then(|marker| SupportUvPacking::try_from(*marker).ok()) else { return Ok(None); };
+    let Some(value_start) = payload.checked_add(1) else { return Ok(None); };
+    let Some(value_end) = count_usize.checked_mul(8).and_then(|bytes| value_start.checked_add(bytes)) else { return Ok(None); };
+    let Some(mut view) = View::over_retained(stream).child(value_start, value_end) else { return Ok(None); };
+    let count_u64 = u64::from(count);
+    let operation = "NX support-UV scalar lane";
+    ctx.charge_collection_items(count_u64, operation)?;
+    let _reservation = ctx.reserve_scoped(count_u64.checked_mul(8).ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count_u64))?, operation)?;
+    let mut scalars = Vec::new();
+    scalars.try_reserve_exact(count_usize).map_err(|_| ctx.refuse_codec_limit(operation, 0, count_u64))?;
+    for _ in 0..count_usize {
+        let Some(value) = view.f64_be() else { return Ok(None); };
+        scalars.push(value);
+    }
+    let Some(values) = SupportUvValues::new_charged(ctx, packing, scalars)? else { return Ok(None); };
+    Ok(Some((
         SupportUvRecord {
             xmt,
             values,
             framing,
             pos,
         },
-        payload.checked_add(1 + count_usize.checked_mul(8)?)?,
-    ))
+        value_end,
+    )))
 }
 
 fn find_tags(stream: &[u8], tag: [u8; 2]) -> impl Iterator<Item = usize> + '_ {

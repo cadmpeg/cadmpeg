@@ -986,8 +986,11 @@ fn deltas_walks_complete_intersection_auxiliary_records() {
     let term_pos = crate::test_support::with_decode_context(|ctx| crate::intersection::term_use_records(ctx, &source)).unwrap()[0].pos;
     let (_, term_end) = crate::intersection::term_use_at(&source, term_pos).expect("term use");
     let support_uv_pos = crate::test_support::with_decode_context(|ctx| crate::intersection::support_uv_records(ctx, &source)).unwrap()[0].pos;
-    let (_, support_uv_end) =
-        crate::intersection::support_uv_record_at(&source, support_uv_pos).expect("support UV");
+    let (_, support_uv_end) = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::support_uv_record_at(ctx, &source, support_uv_pos)
+    })
+    .unwrap()
+    .expect("support UV");
     let blend_bound_pos = crate::test_support::with_decode_context(|ctx| crate::intersection::blend_bounds(ctx, &blend_source)).unwrap()[0].pos;
     let (_, blend_bound_end) =
         crate::intersection::blend_bound_at(&blend_source, blend_bound_pos).expect("blend bound");
@@ -1015,6 +1018,31 @@ fn deltas_walks_complete_intersection_auxiliary_records() {
         assert!(residual[..bytes.len()].iter().all(|byte| *byte == 0xff));
         assert!(residual.ends_with(bytes));
     }
+}
+
+#[test]
+fn deltas_support_uv_route_refuses_scoped_limit() {
+    let source = ext11_charted_intersection_curve_stream();
+    let record = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::support_uv_records(ctx, &source)
+    })
+    .unwrap()
+    .remove(0);
+    let (_, end) = crate::test_support::with_decode_context(|ctx| {
+        crate::intersection::support_uv_record_at(ctx, &source, record.pos)
+    })
+    .unwrap()
+    .expect("support UV");
+    let stream = &source[record.pos..end];
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(stream, &arena, &policy)
+        .unwrap();
+    assert!(matches!(crate::deltas::census::walk(&ctx, stream),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "NX support-UV scalar lane"));
 }
 
 #[test]

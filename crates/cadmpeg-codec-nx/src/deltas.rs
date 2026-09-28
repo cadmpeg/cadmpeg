@@ -1730,15 +1730,16 @@ fn merged_event_spans(
 }
 
 fn consume_shared_record(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     offset: usize,
     records: &[Record],
     intersection_schema_anchor_seen: bool,
-) -> Option<Record> {
-    let previous = records.last()?;
-    (previous.end == offset && has_shareable_terminal(stream, previous)).then_some(())?;
-    let record_offset = offset.checked_sub(1)?;
-    if let Some(record) = consume_intersection_auxiliary(stream, record_offset)
+) -> Result<Option<Record>, CodecError> {
+    let Some(previous) = records.last() else { return Ok(None); };
+    if previous.end != offset || !has_shareable_terminal(stream, previous) { return Ok(None); }
+    let Some(record_offset) = offset.checked_sub(1) else { return Ok(None); };
+    if let Some(record) = consume_intersection_auxiliary(ctx, stream, record_offset)?
         .or_else(|| consume_nurbs_auxiliary(stream, record_offset))
         .or_else(|| consume_type_141(stream, record_offset))
         .or_else(|| consume_type_45(stream, record_offset))
@@ -1749,12 +1750,12 @@ fn consume_shared_record(
             consume_intersection_data(stream, record_offset, intersection_schema_anchor_seen)
         })
     {
-        return Some(record);
+        return Ok(Some(record));
     }
-    let kind = u16::from(*stream.get(offset)?);
-    fixed_signature(kind)
+    let Some(kind) = stream.get(offset).copied().map(u16::from) else { return Ok(None); };
+    Ok(fixed_signature(kind)
         .and_then(|signature| consume_fixed(stream, record_offset, kind, signature))
-        .or_else(|| consume_variable(stream, record_offset, kind))
+        .or_else(|| consume_variable(stream, record_offset, kind)))
 }
 
 fn has_shareable_terminal(stream: &[u8], record: &Record) -> bool {
@@ -2996,7 +2997,11 @@ fn consume_intersection_data(
 
 // Names follow the ordered source slots in this fixed-width lane.
 #[allow(clippy::many_single_char_names)]
-fn consume_intersection_auxiliary(stream: &[u8], offset: usize) -> Option<Record> {
+fn consume_intersection_auxiliary(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+) -> Result<Option<Record>, CodecError> {
     let (family, xmt, end) = if let Some((chart, end)) = crate::intersection::chart_source_record_at(
         stream,
         offset,
@@ -3022,16 +3027,18 @@ fn consume_intersection_auxiliary(stream: &[u8], offset: usize) -> Option<Record
             end,
         )
     } else {
-        let (support_uv, end) = crate::intersection::support_uv_record_at(stream, offset)?;
+        let Some((support_uv, end)) = crate::intersection::support_uv_record_at(ctx, stream, offset)? else { return Ok(None); };
         (RecordFamily::SupportUv, support_uv.xmt, end)
     };
-    Some(Record {
+    let Some(bytes) = stream.get(offset..end) else { return Ok(None); };
+    let canonical_bytes = ctx.copy_retained(bytes, "NX deltas intersection auxiliary bytes")?;
+    Ok(Some(Record {
         family,
         xmt,
-        canonical_bytes: stream.get(offset..end)?.to_vec(),
+        canonical_bytes,
         offset,
         end,
-    })
+    }))
 }
 
 fn consume_nurbs_auxiliary(stream: &[u8], offset: usize) -> Option<Record> {
