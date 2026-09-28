@@ -254,6 +254,31 @@ fn brep_index_key_copies_refuse_retained_budget_before_allocation() {
 }
 
 #[test]
+fn brep_topology_identity_copies_refuse_before_retaining_text() {
+    let bytes = explicit_vertex_loop_file();
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match IgesCodec.decode(
+            &mut Cursor::new(&bytes),
+            &DecodeOptions { policy, ..DecodeOptions::default() },
+        ) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == "iges B-rep identity copy" {
+                    IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+                    return;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            other => panic!("expected B-rep identity refusal: {other:?}"),
+        }
+    }
+    panic!("B-rep identity copy was not reached");
+}
+
+#[test]
 fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
     let mut ir = CadIr::empty();

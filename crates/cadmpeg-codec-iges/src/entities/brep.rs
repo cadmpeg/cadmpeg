@@ -138,7 +138,7 @@ fn topology_vertex(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<VertexId>, CodecError> {
     if let Some(existing) = vertex_ids.get(&(list, index)) {
-        return Ok(Some(existing.clone()));
+        return Ok(Some(crate::decode_resource::clone_optional_identity(Some(ctx), existing, "iges B-rep identity copy")?));
     }
     let Some(position) = FinitePoint3::new(vertex_lists[&list][index]) else {
         return Ok(None);
@@ -149,18 +149,22 @@ fn topology_vertex(
         ctx.charge_collection_items(1, "iges B-rep topology vertex index")?;
     }
     let point_id = crate::ids::point(&stem.child(list).slot(index + 1));
-    let point = Point::new(point_id.clone(), position, None);
+    let point = Point::new(crate::decode_resource::clone_optional_identity(Some(ctx), &point_id, "iges B-rep identity copy")?, position, None);
     sequences.record_point(&point_id, stem, Some(ctx))?;
     let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
     candidate.model_mut().points.push(point);
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
     candidate.model_mut().vertices.push(Vertex {
-        id: vertex_id.clone(),
+        id: crate::decode_resource::clone_optional_identity(Some(ctx), &vertex_id, "iges B-rep identity copy")?,
         point: point_id,
         tolerance: None,
     });
-    Ok(Some(vertex_ids.entry((list, index)).or_insert(vertex_id).clone()))
+    Ok(Some(crate::decode_resource::clone_optional_identity(
+        Some(ctx),
+        vertex_ids.entry((list, index)).or_insert(vertex_id),
+        "iges B-rep identity copy",
+    )?))
 }
 
 fn source_edge_for_vertices<'a>(
@@ -227,7 +231,7 @@ fn project_pcurve_uses(
         let id = crate::ids::pcurve(&id_stem.slot(index));
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
         candidate.model_mut().pcurves.push(Pcurve {
-            id: id.clone(),
+            id: crate::decode_resource::clone_optional_identity(Some(ctx), &id, "iges B-rep identity copy")?,
             geometry,
             metadata: PcurveMetadata::general(None, Some(parameter_range), checked_tolerance),
         });
@@ -849,9 +853,9 @@ pub(super) fn project(
         for (shell_sequence, shell_sense) in definition.shells.iter().copied() {
             let shell_definition = &shell_definitions[&shell_sequence];
             let shell_stem = if shell_sequence == entry.sequence && definition.shells.len() == 1 {
-                stem.clone()
+                std::borrow::Cow::Borrowed(&stem)
             } else {
-                stem.child(shell_sequence)
+                std::borrow::Cow::Owned(stem.child(shell_sequence))
             };
             let shell_id = crate::ids::shell(&shell_stem);
             let mut shell_faces = reserve_vec(ctx, shell_definition.faces.len(), "iges B-rep shell face ids")?;
@@ -882,7 +886,7 @@ pub(super) fn project(
                         if matches!(use_, LoopUse::Edge { .. }) {
                             edge_use_indices.push(index);
                             let coedge_id = crate::ids::coedge(&shell_stem.child(loop_sequence).slot(index));
-                            insert_optional_btree_map(Some(ctx), &mut coedge_by_use, index, coedge_id.clone(), "iges B-rep coedge use nodes")?;
+                            insert_optional_btree_map(Some(ctx), &mut coedge_by_use, index, crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges B-rep identity copy")?, "iges B-rep coedge use nodes")?;
                             coedge_ids.push(coedge_id);
                         }
                     }
@@ -1031,7 +1035,7 @@ pub(super) fn project(
                             break;
                         };
                         let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
-                            id.clone()
+                            crate::decode_resource::clone_optional_identity(Some(ctx), id, "iges B-rep identity copy")?
                         } else {
                             let curve_id = crate::ids::curve(&crate::ids::Stem::directory(
                                 edge_definition.curve,
@@ -1103,17 +1107,21 @@ pub(super) fn project(
                             reserve_vec_growth(ctx, &mut candidate.model_mut().edges, 1, "iges B-rep topology edges")?;
                             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
                             candidate.model_mut().edges.push(Edge {
-                                id: id.clone(),
+                                id: crate::decode_resource::clone_optional_identity(Some(ctx), &id, "iges B-rep identity copy")?,
                                 carrier,
-                                start: vertex_ids
-                                    [&(edge_definition.start_list, edge_definition.start_index)]
-                                    .clone(),
-                                end: vertex_ids
-                                    [&(edge_definition.end_list, edge_definition.end_index)]
-                                    .clone(),
+                                start: crate::decode_resource::clone_optional_identity(
+                                    Some(ctx),
+                                    &vertex_ids[&(edge_definition.start_list, edge_definition.start_index)],
+                                    "iges B-rep identity copy",
+                                )?,
+                                end: crate::decode_resource::clone_optional_identity(
+                                    Some(ctx),
+                                    &vertex_ids[&(edge_definition.end_list, edge_definition.end_index)],
+                                    "iges B-rep identity copy",
+                                )?,
                                 tolerance: None,
                             });
-                            insert_optional_btree_map(Some(ctx), &mut edge_ids, edge_key, id.clone(), "iges B-rep topology edge index")?;
+                            insert_optional_btree_map(Some(ctx), &mut edge_ids, edge_key, crate::decode_resource::clone_optional_identity(Some(ctx), &id, "iges B-rep identity copy")?, "iges B-rep topology edge index")?;
                             id
                         };
                         let projected = match project_pcurve_uses(
@@ -1139,21 +1147,23 @@ pub(super) fn project(
                             valid = false;
                             break;
                         };
-                        let coedge_id = coedge_ids[coedge_position].clone();
+                        let coedge_id = crate::decode_resource::clone_optional_identity(
+                            Some(ctx), &coedge_ids[coedge_position], "iges B-rep identity copy",
+                        )?;
                         let radial_key = (shell_sequence, edge_key.0, edge_key.1);
                         if !radial.contains_key(&radial_key) {
                             ctx.charge_collection_items(1, "iges B-rep radial index nodes")?;
                         }
                         let ring = radial.entry(radial_key).or_default();
                         reserve_vec_growth(ctx, ring, 1, "iges B-rep radial coedge ids")?;
-                        ring.push(coedge_id.clone());
+                        ring.push(crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges B-rep identity copy")?);
                         reserve_vec_growth(ctx, &mut candidate.model_mut().coedges, 1, "iges B-rep topology coedges")?;
                         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
                         candidate.model_mut().coedges.push(Coedge {
-                            id: coedge_id.clone(),
-                            owner_loop: loop_id.clone(),
+                            id: crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges B-rep identity copy")?,
+                            owner_loop: crate::decode_resource::clone_optional_identity(Some(ctx), &loop_id, "iges B-rep identity copy")?,
                             edge: edge_id,
-                            radial_next: coedge_id.clone(),
+                            radial_next: crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges B-rep identity copy")?,
                             sense: *sense,
                             pcurves: projected,
                             use_curve: None,
@@ -1163,15 +1173,18 @@ pub(super) fn project(
                         break;
                     }
                     let boundary = if coedge_ids.is_empty() {
-                        let [(vertex, None, pcurves)] = loop_vertex_uses.as_slice() else {
+                        let mut uses = loop_vertex_uses.into_iter();
+                        let Some((vertex, None, pcurves)) = uses.next() else {
                             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
                             valid = false;
                             break;
                         };
-                        LoopBoundary::Vertex {
-                            vertex: vertex.clone(),
-                            pcurves: pcurves.clone(),
+                        if uses.next().is_some() {
+                            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "vertex-only loop does not contain exactly one unanchored vertex"))?;
+                            valid = false;
+                            break;
                         }
+                        LoopBoundary::Vertex { vertex, pcurves }
                     } else {
                         let Some(vertex_uses) = crate::decode_resource::collect_optional_vec(ctx, loop_vertex_uses
                             .into_iter()
@@ -1202,8 +1215,8 @@ pub(super) fn project(
                     reserve_vec_growth(ctx, &mut candidate.model_mut().loops, 1, "iges B-rep topology loops")?;
                     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
                     candidate.model_mut().loops.push(Loop {
-                        id: loop_id.clone(),
-                        face: face_id.clone(),
+                        id: crate::decode_resource::clone_optional_identity(Some(ctx), &loop_id, "iges B-rep identity copy")?,
+                        face: crate::decode_resource::clone_optional_identity(Some(ctx), &face_id, "iges B-rep identity copy")?,
                         boundary,
                     });
                     insert_optional_btree_set(Some(ctx), &mut consumed, loop_sequence, "iges B-rep consumed loop nodes")?;
@@ -1228,8 +1241,8 @@ pub(super) fn project(
                 reserve_vec_growth(ctx, &mut candidate.model_mut().faces, 1, "iges B-rep topology faces")?;
                 crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
                 candidate.model_mut().faces.push(Face {
-                    id: face_id.clone(),
-                    shell: shell_id.clone(),
+                    id: crate::decode_resource::clone_optional_identity(Some(ctx), &face_id, "iges B-rep identity copy")?,
+                    shell: crate::decode_resource::clone_optional_identity(Some(ctx), &shell_id, "iges B-rep identity copy")?,
                     surface: surface_id,
                     sense: face_sense,
                     loops: face_loops,
@@ -1247,8 +1260,8 @@ pub(super) fn project(
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
             candidate.model_mut().shells.push(
                 match Shell::new(
-                    shell_id.clone(),
-                    region_id.clone(),
+                    crate::decode_resource::clone_optional_identity(Some(ctx), &shell_id, "iges B-rep identity copy")?,
+                    crate::decode_resource::clone_optional_identity(Some(ctx), &region_id, "iges B-rep identity copy")?,
                     shell_faces,
                     Vec::new(),
                     Vec::new(),
@@ -1299,15 +1312,17 @@ pub(super) fn project(
                     .iter_mut()
                     .find(|coedge| coedge.id == *id)
                 {
-                    coedge.radial_next = ring[(index + 1) % ring.len()].clone();
+                    coedge.radial_next = crate::decode_resource::clone_optional_identity(
+                        Some(ctx), &ring[(index + 1) % ring.len()], "iges B-rep identity copy",
+                    )?;
                 }
             }
         }
         reserve_vec_growth(ctx, &mut candidate.model_mut().regions, 1, "iges B-rep topology regions")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
         candidate.model_mut().regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
+            id: crate::decode_resource::clone_optional_identity(Some(ctx), &region_id, "iges B-rep identity copy")?,
+            body: crate::decode_resource::clone_optional_identity(Some(ctx), &body_id, "iges B-rep identity copy")?,
             shells: region_shells,
         });
         let mut body_regions = reserve_vec(ctx, 1, "iges B-rep body region ids")?;
