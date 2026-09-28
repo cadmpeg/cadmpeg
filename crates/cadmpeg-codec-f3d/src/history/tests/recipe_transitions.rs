@@ -10,8 +10,10 @@ use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::HashMap;
 
-#[test]
-fn split_face_targets_bind_from_a_transition_predecessor() {
+fn split_face_case(max_items: u64) -> Result<
+    (Vec<cadmpeg_ir::features::Feature>, cadmpeg_ir::ids::FaceId, String),
+    cadmpeg_core::CodecError,
+> {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
     use crate::records::{
         feature::scope::DesignParameterScope,
@@ -184,7 +186,12 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         native_ref: Some(scope_id),
     }];
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     super::super::bind_feature_face_selections(
+        &ctx,
         &mut features,
         &mut [],
         &[scope],
@@ -193,8 +200,21 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         &[],
         &[],
         &[history],
-    );
+    )?;
 
+    Ok((features, face_id, group_id))
+}
+
+#[test]
+fn split_face_binding_refuses_collection_limit() {
+    let result = split_face_case(0);
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+}
+
+#[test]
+fn split_face_targets_bind_from_a_transition_predecessor() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    let (features, face_id, group_id) = split_face_case(u64::MAX).unwrap();
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
@@ -816,8 +836,14 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     );
 }
 
-#[test]
-fn hole_face_selection_binds_to_the_feature_input_topology() {
+fn hole_face_case(max_items: u64) -> Result<
+    (
+        cadmpeg_ir::features::Feature,
+        Vec<cadmpeg_ir::features::FeatureInputTopology>,
+        cadmpeg_ir::features::FeatureId,
+    ),
+    cadmpeg_core::CodecError,
+> {
     use crate::history_records::{
         AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
     };
@@ -989,7 +1015,12 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         ],
     };
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     bind_feature_face_selections(
+        &ctx,
         std::slice::from_mut(&mut feature),
         &mut input_topologies,
         &[scope],
@@ -998,8 +1029,22 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         &[],
         &[],
         &[history],
-    );
+    )?;
 
+    Ok((feature, input_topologies, feature_id))
+}
+
+#[test]
+fn hole_face_binding_refuses_collection_limit() {
+    let result = hole_face_case(0);
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit { .. })));
+}
+
+#[test]
+fn hole_face_selection_binds_to_the_feature_input_topology() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    let (feature, input_topologies, feature_id) = hole_face_case(u64::MAX).unwrap();
+    let scope_id = "f3d:Design/BulkStream.dat:scope#42";
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         face:
             Some(FaceSelection::Historical {

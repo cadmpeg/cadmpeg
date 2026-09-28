@@ -2896,6 +2896,7 @@ fn body_revision_without_topology_change(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn bind_feature_face_selections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
@@ -2904,11 +2905,17 @@ pub(crate) fn bind_feature_face_selections(
     entity_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     body_recipe_operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         let feature_id = &feature.id;
+        let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
+        macro_rules! admitted {
+            ($value:expr) => {
+                if let Err(error) = $value { edit_result = Err(error); return; }
+            };
+        }
         'feature_edit: {
             let Some(native_ref) = native_ref else {
                 break 'feature_edit;
@@ -2947,14 +2954,16 @@ pub(crate) fn bind_feature_face_selections(
                     cadmpeg_ir::features::FeatureOperation::Extrude { start, extent, .. },
                 ) => {
                     if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
-                        bind_face_selection(
+                        admitted!(bind_face_selection(
+                            ctx,
                             face,
                             scope,
                             groups,
                             operands,
                             &transition.topology.faces.updated,
-                        );
-                        bind_entity_face_selection(
+                        ));
+                        admitted!(bind_entity_face_selection(
+                            ctx,
                             face,
                             &feature_id,
                             previous_state_id,
@@ -2963,7 +2972,7 @@ pub(crate) fn bind_feature_face_selections(
                             groups,
                             entity_operands,
                             input_topologies,
-                        );
+                        ));
                     }
                     let sides = match extent {
                         cadmpeg_ir::features::ExtrudeExtent::OneSided { side }
@@ -2976,13 +2985,14 @@ pub(crate) fn bind_feature_face_selections(
                         if let cadmpeg_ir::features::LinearTermination::ToFace { face, .. } =
                             &mut side.termination
                         {
-                            bind_face_selection(
+                            admitted!(bind_face_selection(
+                                ctx,
                                 face,
                                 scope,
                                 groups,
                                 operands,
                                 &transition.topology.faces.updated,
-                            );
+                            ));
                         }
                     }
                 }
@@ -2993,14 +3003,16 @@ pub(crate) fn bind_feature_face_selections(
                         let cadmpeg_ir::features::patterns::PatternSeed::Faces(faces) = seed else {
                             continue;
                         };
-                        bind_face_selection(
+                        admitted!(bind_face_selection(
+                            ctx,
                             faces,
                             scope,
                             groups,
                             operands,
                             &transition.topology.faces.updated,
-                        );
-                        bind_entity_face_selection(
+                        ));
+                        admitted!(bind_entity_face_selection(
+                            ctx,
                             faces,
                             &feature_id,
                             previous_state_id,
@@ -3009,43 +3021,47 @@ pub(crate) fn bind_feature_face_selections(
                             groups,
                             entity_operands,
                             input_topologies,
-                        );
+                        ));
                     }
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::MoveFace { faces, .. },
                 ) => {
-                    bind_face_selection(
+                    admitted!(bind_face_selection(
+                        ctx,
                         faces,
                         scope,
                         groups,
                         operands,
                         &transition.topology.faces.updated,
-                    );
+                    ));
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Thicken { faces, .. },
                 ) => {
-                    bind_face_selection(
+                    admitted!(bind_face_selection(
+                        ctx,
                         faces,
                         scope,
                         groups,
                         operands,
                         &transition.topology.faces.updated,
-                    );
-                    bind_body_recipe_face_selection(
+                    ));
+                    admitted!(bind_body_recipe_face_selection(
+                        ctx,
                         faces,
                         &feature_id,
                         previous_state_id,
                         scope,
                         groups,
                         body_recipe_operands,
-                    );
+                    ));
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::KnitSurface { faces, .. },
                 ) => {
-                    bind_surface_stitch_face_selection(
+                    admitted!(bind_surface_stitch_face_selection(
+                        ctx,
                         faces,
                         &feature_id,
                         previous_state_id,
@@ -3054,42 +3070,47 @@ pub(crate) fn bind_feature_face_selections(
                         groups,
                         entity_operands,
                         input_topologies,
-                    );
+                    ));
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::SplitFace { targets, .. },
                 ) => {
-                    bind_face_selection(
+                    admitted!(bind_face_selection(
+                        ctx,
                         targets,
                         scope,
                         groups,
                         operands,
                         &transition.topology.faces.updated,
-                    );
+                    ));
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Hole {
                         face: Some(face), ..
                     },
                 ) => {
-                    bind_hole_face_selection(
+                    admitted!(bind_hole_face_selection(
+                        ctx,
                         face,
                         &feature_id,
                         previous_state_id,
                         &history.id,
                         scope,
                         input_topologies,
-                    );
+                    ));
                 }
                 _ => {}
             }
         }
         });
+        edit_result?;
     }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
 fn bind_entity_face_selection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
@@ -3098,12 +3119,12 @@ fn bind_entity_face_selection(
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::FaceSelection;
 
     let group_id = match selection {
-        FaceSelection::Native(group_id) => group_id.clone(),
-        _ => return,
+        FaceSelection::Native(group_id) => group_id.as_str(),
+        _ => return Ok(()),
     };
     let stream = crate::ids::native_stream(&scope.id);
     let mut matching_groups = groups.iter().filter(|group| {
@@ -3112,14 +3133,15 @@ fn bind_entity_face_selection(
             && crate::ids::native_stream(&group.id) == stream
     });
     let Some(group) = matching_groups.next() else {
-        return;
+        return Ok(());
     };
     if matching_groups.next().is_some() || group.members().is_empty() {
-        return;
+        return Ok(());
     }
     bind_entity_face_groups(
+        ctx,
         selection,
-        &group_id,
+        &group.id,
         feature_id,
         previous_state_id,
         operation_history_id,
@@ -3127,13 +3149,14 @@ fn bind_entity_face_selection(
         std::slice::from_ref(&group),
         operands,
         input_topologies,
-    );
+    )
 }
 
 // Keep the serialized-selection context explicit at this boundary so every
 // admission input remains visible to the strict all-members proof.
 #[allow(clippy::too_many_arguments)]
 fn bind_surface_stitch_face_selection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
@@ -3142,31 +3165,29 @@ fn bind_surface_stitch_face_selection(
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let native_id = match selection {
-        cadmpeg_ir::features::FaceSelection::Native(native_id) => native_id.clone(),
-        _ => return,
+        cadmpeg_ir::features::FaceSelection::Native(native_id) => native_id.as_str(),
+        _ => return Ok(()),
     };
     if native_id != scope.id {
-        return;
+        return Ok(());
     }
     let Some(input_end) = scope.reference_members().len().checked_sub(2) else {
-        return;
+        return Ok(());
     };
     if input_end == 0 || !input_end.is_multiple_of(2) {
-        return;
+        return Ok(());
     }
     let stream = crate::ids::native_stream(&scope.id);
-    let mut matching_groups = groups
-        .iter()
+    let mut matching_groups = history_collect(Some(ctx), groups.iter()
         .filter(|group| {
             crate::ids::native_stream(&group.id) == stream
                 && group.scope_record_index == scope.record_index
                 && group.role() == DesignOperandRole::ROLE_0X5
                 && group.extrude_role().is_none()
                 && group.extrude_face_role().is_none()
-        })
-        .collect::<Vec<_>>();
+        }), "collect F3D Stitch face groups")?;
     matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
     if matching_groups.len().checked_mul(2) != Some(input_end)
         || matching_groups
@@ -3189,11 +3210,12 @@ fn bind_surface_stitch_face_selection(
                         .eq([*member_reference])
             })
     {
-        return;
+        return Ok(());
     }
     bind_entity_face_groups(
+        ctx,
         selection,
-        &native_id,
+        &scope.id,
         feature_id,
         previous_state_id,
         operation_history_id,
@@ -3201,13 +3223,14 @@ fn bind_surface_stitch_face_selection(
         &matching_groups,
         operands,
         input_topologies,
-    );
+    )
 }
 
 // Keep the shared selection-binding inputs explicit; this helper is the
 // single admission point for both one-group and SurfaceStitch selections.
 #[allow(clippy::too_many_arguments)]
 fn bind_entity_face_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
     native_id: &str,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -3217,17 +3240,17 @@ fn bind_entity_face_groups(
     groups: &[&crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::FaceSelection;
 
     if groups.is_empty() {
-        return;
+        return Ok(());
     }
     let mut selected = Vec::<(&str, i64, bool)>::new();
     let stream = crate::ids::native_stream(&scope.id);
     for group in groups {
         if group.members().is_empty() {
-            return;
+            return Ok(());
         }
         for (ordinal, record_index) in group
             .members()
@@ -3236,7 +3259,7 @@ fn bind_entity_face_groups(
             .enumerate()
         {
             let Ok(ordinal) = u32::try_from(ordinal) else {
-                return;
+                return Ok(());
             };
             let mut matches = operands.iter().filter(|operand| {
                 operand.scope_record_index == scope.record_index
@@ -3246,116 +3269,135 @@ fn bind_entity_face_groups(
                     && crate::ids::native_stream(&operand.id) == stream
             });
             let Some(operand) = matches.next() else {
-                return;
+                return Ok(());
             };
             let [candidate] = operand.historical_face_candidates.as_slice() else {
-                return;
+                return Ok(());
             };
             if matches.next().is_some() {
-                return;
+                return Ok(());
             }
             let local = candidate.history_id == operation_history_id
                 && candidate.historical.state_ids.contains(&previous_state_id);
             let Some(source) = historical_brep_source(&candidate.history_id) else {
-                return;
+                return Ok(());
             };
             if !selected.contains(&(source, candidate.face_slot, local)) {
+                ctx.charge_collection_items(1, "collect F3D entity face candidates")?;
+                selected.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "collect F3D entity face candidates", 0, 1))?;
                 selected.push((source, candidate.face_slot, local));
             }
         }
     }
-    let state_id =
-        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id);
+    let state_id = crate::ids::history_input_state_id_charged(
+        ctx, feature_id, previous_state_id)?;
     let mut topologies = input_topologies
         .iter_mut()
         .filter(|topology| topology.id == state_id && topology.input_of == *feature_id);
     let Some(topology) = topologies.next() else {
-        return;
+        return Ok(());
     };
     if topologies.next().is_some() {
-        return;
+        return Ok(());
     }
-    let prefix = feature_input_prefix(feature_id, previous_state_id);
-    let faces = selected
-        .into_iter()
-        .map(|(source, face, local)| {
-            let discriminator = if local {
-                cadmpeg_ir::ids::IdentityKey::from(face)
-            } else {
-                let source = cadmpeg_ir::ids::IdentityKeyTail::try_new(source)?;
-                cadmpeg_ir::ids::IdentityKey::from(source.as_str().len())
-                    .then(cadmpeg_ir::identity_key!(":"))
-                    .with_tail(&source)
-                    .colon(face)
-            };
-            Ok(crate::ids::history_input_face_id(&prefix, discriminator))
-        })
-        .collect::<Result<Vec<_>, cadmpeg_ir::ids::IdentityError>>();
-    let Ok(faces) = faces else {
-        return;
-    };
+    let mut faces = Vec::new();
+    for (source, face, local) in selected {
+        if !local && (source.contains('#') || source.chars().any(char::is_whitespace)) {
+            return Ok(());
+        }
+        let id = if local {
+            crate::ids::history_input_face_id_charged(ctx, feature_id, previous_state_id, face)?
+        } else {
+            crate::ids::history_input_face_id_charged(ctx, feature_id, previous_state_id,
+                format_args!("{}:{source}:{face}", source.len()))?
+        };
+        ctx.charge_collection_items(1, "collect F3D historical entity faces")?;
+        faces.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "collect F3D historical entity faces", 0, 1))?;
+        faces.push(id);
+    }
     for face in &faces {
-        topology.faces.insert(face.clone());
+        if !topology.faces.contains(face) {
+            ctx.charge_collection_items(1, "index F3D historical entity faces")?;
+            let retained = cadmpeg_ir::ids::HistoricalFaceId::mint(copy_history_string(
+                ctx, face.as_str(), "copy F3D historical topology face identity")?)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            topology.faces.insert(retained);
+        }
     }
-    *selection = FaceSelection::historical(state_id, faces, native_id.to_owned())
-        .unwrap_or_else(|_| FaceSelection::Native(native_id.to_owned()));
+    let native = copy_history_string(ctx, native_id, "copy F3D historical face selection identity")?;
+    ctx.charge_collection_items(u64::try_from(faces.len()).map_err(|_|
+        ctx.refuse_codec_limit("validate F3D historical entity faces", 0, u64::MAX))?,
+        "validate F3D historical entity faces")?;
+    if let Ok(historical) = FaceSelection::historical(state_id, faces, native) {
+        *selection = historical;
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
 fn bind_hole_face_selection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     operation_history_id: &str,
     scope: &crate::records::feature::scope::DesignParameterScope,
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::FaceSelection;
 
     let FaceSelection::Native(native_id) = selection else {
-        return;
+        return Ok(());
     };
     let Some(construction) = scope.hole_construction() else {
-        return;
+        return Ok(());
     };
     let Some(face_selection) = &construction.face_selection else {
-        return;
+        return Ok(());
     };
     let [candidate] = face_selection.historical_face_candidates.as_slice() else {
-        return;
+        return Ok(());
     };
     let local = candidate.history_id == operation_history_id
         && candidate.historical.state_ids.contains(&previous_state_id);
     let Some(source) = historical_brep_source(&candidate.history_id) else {
-        return;
+        return Ok(());
     };
-    let state_id =
-        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id);
+    let state_id = crate::ids::history_input_state_id_charged(ctx, feature_id, previous_state_id)?;
     let mut topologies = input_topologies
         .iter_mut()
         .filter(|topology| topology.id == state_id && topology.input_of == *feature_id);
     let Some(topology) = topologies.next() else {
-        return;
+        return Ok(());
     };
     if topologies.next().is_some() {
-        return;
+        return Ok(());
     }
-    let prefix = feature_input_prefix(feature_id, previous_state_id);
-    let discriminator = if local {
-        cadmpeg_ir::ids::IdentityKey::from(candidate.face_slot)
+    if !local && (source.contains('#') || source.chars().any(char::is_whitespace)) {
+        return Ok(());
+    }
+    let face = if local {
+        crate::ids::history_input_face_id_charged(
+            ctx, feature_id, previous_state_id, candidate.face_slot)?
     } else {
-        let Ok(source) = cadmpeg_ir::ids::IdentityKeyTail::try_new(source) else {
-            return;
-        };
-        cadmpeg_ir::ids::IdentityKey::from(source.as_str().len())
-            .then(cadmpeg_ir::identity_key!(":"))
-            .with_tail(&source)
-            .colon(candidate.face_slot)
+        crate::ids::history_input_face_id_charged(ctx, feature_id, previous_state_id,
+            format_args!("{}:{source}:{}", source.len(), candidate.face_slot))?
     };
-    let face = crate::ids::history_input_face_id(&prefix, discriminator);
-    topology.faces.insert(face.clone());
-    *selection = FaceSelection::historical(state_id, vec![face], native_id.clone())
-        .unwrap_or_else(|_| FaceSelection::Native(native_id.clone()));
+    if !topology.faces.contains(&face) {
+        ctx.charge_collection_items(1, "index F3D historical hole face")?;
+        let retained = cadmpeg_ir::ids::HistoricalFaceId::mint(copy_history_string(
+            ctx, face.as_str(), "copy F3D historical hole topology face")?)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        topology.faces.insert(retained);
+    }
+    let native = copy_history_string(ctx, native_id, "copy F3D historical hole identity")?;
+    ctx.charge_collection_items(1, "validate F3D historical hole face")?;
+    if let Ok(historical) = FaceSelection::historical(state_id, vec![face], native) {
+        *selection = historical;
+    }
+    Ok(())
 }
 
 pub(crate) fn bind_feature_path_selections(
@@ -7467,14 +7509,15 @@ fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Option<i64>]) 
 }
 
 fn bind_face_selection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::face::DesignFaceOperand],
     updated_face_slots: &[i64],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
-        return;
+        return Ok(());
     };
     if native == &scope.id {
         if let Some(resolved) =
@@ -7484,17 +7527,17 @@ fn bind_face_selection(
                 *selection = resolved;
             }
         }
-        return;
+        return Ok(());
     }
     let mut matching_groups = groups.iter().filter(|group| group.id == *native);
     let Some(group) = matching_groups.next() else {
-        return;
+        return Ok(());
     };
     if matching_groups.next().is_some()
         || group.scope_record_index != scope.record_index
         || crate::ids::native_stream(&group.id) != crate::ids::native_stream(&scope.id)
     {
-        return;
+        return Ok(());
     }
     if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
@@ -7506,10 +7549,10 @@ fn bind_face_selection(
         )
     {
         *selection = resolved;
-        return;
+        return Ok(());
     }
     let Some(stream) = crate::ids::native_stream(&scope.id) else {
-        return;
+        return Ok(());
     };
     let mut faces = Vec::new();
     for record_index in group.members().iter().map(|member| &member.value) {
@@ -7519,17 +7562,17 @@ fn bind_face_selection(
                 && operand.record_index() == *record_index
         });
         let Some(operand) = matches.next() else {
-            return;
+            return Ok(());
         };
         if matches.next().is_some() {
-            return;
+            return Ok(());
         }
         let previous_candidates = &operand.preceding_candidate_faces;
         let candidate = match previous_candidates.as_slice() {
             [face] => face,
             _ => {
                 let [face] = operand.changed_candidate_faces.as_slice() else {
-                    return;
+                    return Ok(());
                 };
                 face
             }
@@ -7538,30 +7581,38 @@ fn bind_face_selection(
             continue;
         }
         if !operand.candidate_faces.contains(candidate) {
-            return;
+            return Ok(());
         }
-        faces.push(candidate.clone());
+        ctx.charge_collection_items(1, "collect F3D resolved face selection")?;
+        faces.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "collect F3D resolved face selection", 0, 1))?;
+        let face = cadmpeg_ir::ids::FaceId::mint(copy_history_string(ctx,
+            candidate.as_str(), "copy F3D resolved face identity")?)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        faces.push(face);
     }
     if !faces.is_empty() {
         *selection = cadmpeg_ir::features::FaceSelection::Resolved {
             faces,
-            native: native.clone(),
+            native: copy_history_string(ctx, native, "copy F3D resolved face selection identity")?,
         };
     }
+    Ok(())
 }
 
 fn bind_body_recipe_face_selection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::FaceSelection;
 
     let FaceSelection::Native(native) = selection else {
-        return;
+        return Ok(());
     };
     let mut matching_groups = groups.iter().filter(|group| {
         group.id == *native
@@ -7570,10 +7621,10 @@ fn bind_body_recipe_face_selection(
             && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
     });
     let Some(group) = matching_groups.next() else {
-        return;
+        return Ok(());
     };
     if matching_groups.next().is_some() || group.members().is_empty() {
-        return;
+        return Ok(());
     }
     let stream = crate::ids::native_stream(&scope.id);
     let mut slots = Vec::new();
@@ -7584,7 +7635,7 @@ fn bind_body_recipe_face_selection(
         .enumerate()
     {
         let Ok(ordinal) = u32::try_from(ordinal) else {
-            return;
+            return Ok(());
         };
         let mut matching_operands = operands.iter().filter(|operand| {
             operand.owner.group() == Some((group.record_index, ordinal))
@@ -7592,28 +7643,38 @@ fn bind_body_recipe_face_selection(
                 && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
-            return;
+            return Ok(());
         };
         if matching_operands.next().is_some() {
-            return;
+            return Ok(());
         }
         let Some(slot) = operand.resolved_face_slot else {
-            return;
+            return Ok(());
         };
         if !slots.contains(&slot) {
+            ctx.charge_collection_items(1, "collect F3D body recipe face slots")?;
+            slots.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "collect F3D body recipe face slots", 0, 1))?;
             slots.push(slot);
         }
     }
-    let prefix = feature_input_prefix(feature_id, previous_state_id);
-    *selection = FaceSelection::historical(
-        crate::design::edge_resolve::feature_input_topology_id(feature_id, previous_state_id),
-        slots
-            .into_iter()
-            .map(|slot| crate::ids::history_input_face_id(&prefix, slot))
-            .collect(),
-        native.clone(),
-    )
-    .unwrap_or_else(|_| FaceSelection::Native(native.clone()));
+    let state = crate::ids::history_input_state_id_charged(ctx, feature_id, previous_state_id)?;
+    let mut faces = Vec::new();
+    for slot in slots {
+        let face = crate::ids::history_input_face_id_charged(ctx, feature_id, previous_state_id, slot)?;
+        ctx.charge_collection_items(1, "collect F3D body recipe face identities")?;
+        faces.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "collect F3D body recipe face identities", 0, 1))?;
+        faces.push(face);
+    }
+    let native = copy_history_string(ctx, native, "copy F3D body recipe face selection identity")?;
+    ctx.charge_collection_items(u64::try_from(faces.len()).map_err(|_|
+        ctx.refuse_codec_limit("validate F3D body recipe faces", 0, u64::MAX))?,
+        "validate F3D body recipe faces")?;
+    if let Ok(historical) = FaceSelection::historical(state, faces, native) {
+        *selection = historical;
+    }
+    Ok(())
 }
 
 fn faces_in_topology(
