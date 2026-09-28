@@ -31,7 +31,7 @@ use crate::history::literals::parse_positive_angle_rad;
 use crate::history::project::pattern::parse_count;
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::index_from_u64;
-use cadmpeg_core::decode::{u64_from_index, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
@@ -1329,7 +1329,39 @@ pub(super) fn bind_detached_legacy_sketch_objects(
 }
 
 pub(super) fn spatial_relation_manager_ranges(lane: &FeatureInputLane) -> Vec<(u64, u64)> {
-    let mut ranges = lane
+    let mut ranges = spatial_relation_manager_candidates(lane).collect::<Vec<_>>();
+    ranges.sort_unstable();
+    ranges.dedup();
+    ranges
+}
+
+pub(super) fn spatial_relation_manager_ranges_charged(
+    ctx: &DecodeContext<'_>,
+    lane: &FeatureInputLane,
+) -> Result<Vec<(u64, u64)>, cadmpeg_core::CodecError> {
+    let scan_steps = lane.classes.len().checked_mul(lane.classes.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit("scan SLDPRT spatial relation classes", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_work(
+        u64::try_from(scan_steps).map_err(|_| {
+            ctx.refuse_codec_limit("scan SLDPRT spatial relation classes", u64::MAX - 1, u64::MAX)
+        })?,
+        "scan SLDPRT spatial relation classes",
+    )?;
+    let mut ranges = Vec::new();
+    for range in spatial_relation_manager_candidates(lane) {
+        ctx.reserve_collection_vec(&mut ranges, 1, "collect SLDPRT spatial relation ranges")?;
+        ranges.push(range);
+    }
+    ranges.sort_unstable();
+    ranges.dedup();
+    Ok(ranges)
+}
+
+fn spatial_relation_manager_candidates(
+    lane: &FeatureInputLane,
+) -> impl Iterator<Item = (u64, u64)> + '_ {
+    lane
         .classes
         .iter()
         .filter(|class| class.name == "sg3DPlaneHandle")
@@ -1348,10 +1380,6 @@ pub(super) fn spatial_relation_manager_ranges(lane: &FeatureInputLane) -> Vec<(u
                 .offset;
             (start < plane.offset && plane.offset < end).then_some((start, end))
         })
-        .collect::<Vec<_>>();
-    ranges.sort_unstable();
-    ranges.dedup();
-    ranges
 }
 
 fn bind_detached_spatial_relation_objects(
