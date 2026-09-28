@@ -10,9 +10,9 @@ use crate::feature::definitions::saved_circular_entities;
 use crate::feature::definitions::saved_conic_entities;
 use crate::feature::definitions::saved_line_entities;
 use crate::feature::definitions::saved_positional_generated_entities;
-use crate::feature::definitions::saved_section;
+use crate::feature::definitions::saved_section as parse_saved_section;
 use crate::feature::definitions::saved_section_scalar;
-use crate::feature::definitions::saved_spline_entities;
+use crate::feature::definitions::saved_spline_entities as parse_saved_spline_entities;
 use crate::feature::definitions::saved_spline_parameter;
 use crate::feature::definitions::variable_table as parse_variable_table;
 use crate::feature::definitions::FeatureOrderRow;
@@ -28,6 +28,122 @@ use crate::feature::operations::FeatureReferenceName;
 use crate::feature::rows::FeatureFieldValue;
 use crate::psb;
 use crate::scalar;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+
+fn saved_section(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+    order_table: Option<&FeatureOrderTable>,
+    segments: Option<&FeatureSegmentTable>,
+) -> Option<crate::feature::definitions::FeatureSavedSection> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_saved_section(ctx, payload, start, end, cache, order_table, segments)
+    })
+    .expect("saved section admitted")
+}
+
+fn saved_spline_entities(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Vec<FeatureSavedEntity> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_saved_spline_entities(ctx, payload, start, end, cache)
+    })
+    .expect("saved spline entities admitted")
+}
+
+const SAVED_SPLINE_LIMIT_INPUT: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0\xe3\
+    \xe0\x01id\0\x07\
+    \xe0\x02i_pnts\0\xf9\x02\x03\
+    \xe4\x0f\x0d\x0f\xe4\x0f\
+    \xe0\x02end_tangts\0\xf9\x02\x03\
+    \xe4\x0f\x0f\xe4\x0f\x0f\
+    \xe0\x02params\0\xf8\x02\x0f\xe4\
+    \xe0\x01tan_cond\0\x00";
+
+fn saved_spline_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(SAVED_SPLINE_LIMIT_INPUT, &arena, &policy)
+        .expect("spline input fits root policy");
+    parse_saved_spline_entities(
+        &ctx,
+        SAVED_SPLINE_LIMIT_INPUT,
+        0,
+        SAVED_SPLINE_LIMIT_INPUT.len(),
+        &scalar::ScalarCache::default(),
+    )
+}
+
+macro_rules! saved_spline_collection_limit_test {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(saved_spline_with_limits($limit, u64::MAX),
+                Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == $operation));
+            assert_eq!(saved_spline_with_limits(5, u64::MAX).expect("spline admitted").len(), 1);
+        }
+    };
+}
+
+saved_spline_collection_limit_test!(saved_spline_points_refuse_before_reserve, 1, "creo saved spline points");
+saved_spline_collection_limit_test!(saved_spline_parameters_refuse_before_reserve, 3, "creo saved spline parameters");
+saved_spline_collection_limit_test!(saved_spline_entity_refuses_before_append, 4, "creo saved spline entities");
+
+macro_rules! saved_spline_retained_limit_test {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(saved_spline_with_limits(u64::MAX, $limit),
+                Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == $operation));
+            assert_eq!(saved_spline_with_limits(u64::MAX, 22).expect("spline admitted").len(), 1);
+        }
+    };
+}
+
+saved_spline_retained_limit_test!(saved_spline_point_body_refuses_before_copy, 8, "creo saved spline point body");
+saved_spline_retained_limit_test!(saved_spline_tangent_body_refuses_before_copy, 17, "creo saved spline tangent body");
+saved_spline_retained_limit_test!(saved_spline_parameter_body_refuses_before_copy, 21, "creo saved spline parameter body");
+
+#[test]
+fn saved_section_entity_refuses_before_aggregate_growth() {
+    let mut payload = b"\xe0\x00p_saved_result\0".to_vec();
+    payload.extend_from_slice(SAVED_SPLINE_LIMIT_INPUT);
+    let run = |limit| {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("saved section fits root policy");
+        parse_saved_section(
+            &ctx,
+            &payload,
+            0,
+            payload.len(),
+            &scalar::ScalarCache::default(),
+            None,
+            None,
+        )
+    };
+    assert!(matches!(run(5), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo saved section entities"));
+    assert_eq!(run(6).expect("section admitted").expect("section present").entities.len(), 1);
+}
 
 fn variable_table(
     payload: &[u8],
