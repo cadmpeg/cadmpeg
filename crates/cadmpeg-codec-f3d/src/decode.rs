@@ -2924,6 +2924,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.ir.model.bodies,
         )?;
         crate::history::bind_feature_body_selections(
+            ctx,
             &mut self.ir.model.features,
             &crate::history::FeatureBodySelectionInputs {
                 scopes: &self.native.design_parameter_scopes,

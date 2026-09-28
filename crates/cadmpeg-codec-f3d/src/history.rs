@@ -1438,6 +1438,7 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
 }
 
 pub(crate) fn bind_feature_body_selections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -1451,7 +1452,7 @@ pub(crate) fn bind_feature_body_selections(
     let regions = inputs.regions;
     let shells = inputs.shells;
 
-    bind_pattern_body_selections(features, inputs);
+    bind_pattern_body_selections(ctx, features, inputs)?;
     let pattern_body_slots = features
         .iter()
         .filter_map(|feature| {
@@ -2072,9 +2073,10 @@ fn historical_body_slot(id: &str) -> Option<i64> {
 }
 
 fn bind_pattern_body_selections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{
         patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
     };
@@ -2084,57 +2086,82 @@ fn bind_pattern_body_selections(
     let body_recipe_operands = inputs.body_recipe_operands;
 
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
             let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
-                &mut definition
+                feature.evaluation.definition()
             else {
-                break 'feature_edit;
+                continue;
             };
             let Some(native_ref) = feature.native_ref.as_deref() else {
-                break 'feature_edit;
+                continue;
             };
-            let matching_scopes = scopes
-                .iter()
-                .filter(|scope| scope.id == native_ref)
-                .collect::<Vec<_>>();
-            let [scope] = matching_scopes.as_slice() else {
-                break 'feature_edit;
+            let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+            let Some(scope) = matching_scopes.next() else {
+                continue;
             };
+            if matching_scopes.next().is_some() {
+                continue;
+            }
             let stream = crate::ids::native_stream(&scope.id);
-            let matching_groups = groups
+            let mut matching_groups = groups
                 .iter()
                 .filter(|group| {
                     group.scope_record_index == scope.record_index
                         && group.role() == DesignOperandRole::BODIES_B
                         && !group.members().is_empty()
                         && crate::ids::native_stream(&group.id) == stream
-                })
-                .collect::<Vec<_>>();
-            let [group] = matching_groups.as_slice() else {
-                break 'feature_edit;
+                });
+            let Some(group) = matching_groups.next() else {
+                continue;
             };
-            if seeds.is_empty() {
-                seeds.push(PatternSeed::Bodies(BodySelection::Native(group.id.clone())));
+            if matching_groups.next().is_some() {
+                continue;
             }
-            let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() else {
-                break 'feature_edit;
-            };
-            if let Some(previous_state_id) = scope.previous_history_state_id() {
-                bind_body_recipe_body_selection(
-                    selection,
-                    &feature.id,
-                    previous_state_id,
-                    scope,
-                    groups,
-                    body_recipe_operands,
-                );
+            let mut seed = if seeds.is_empty() {
+                ctx.charge_collection_items(1, "collect F3D pattern body seeds")?;
+                Some(PatternSeed::Bodies(BodySelection::Native(copy_history_string(
+                    ctx, &group.id, "copy F3D pattern seed native identity",
+                )?)))
             } else {
-                bind_direct_body_recipe_body_selection(selection, scope, inputs);
+                None
+            };
+            let feature_id = &feature.id;
+            let mut reserve_error = None;
+            feature.evaluation.edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+                    definition
+                else {
+                    return;
+                };
+                if let Some(seed) = seed.take() {
+                    if seeds.try_reserve(1).is_err() {
+                        reserve_error = Some(ctx.refuse_codec_limit(
+                            "collect F3D pattern body seeds", 0, 1,
+                        ));
+                        return;
+                    }
+                    seeds.push(seed);
+                }
+                let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() else {
+                    return;
+                };
+                if let Some(previous_state_id) = scope.previous_history_state_id() {
+                    bind_body_recipe_body_selection(
+                        selection,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                } else {
+                    bind_direct_body_recipe_body_selection(selection, scope, inputs);
+                }
+            });
+            if let Some(error) = reserve_error {
+                return Err(error);
             }
-        }
-        feature.evaluation.set_definition(definition);
     }
+    Ok(())
 }
 
 fn unique_external_body_candidate(
