@@ -4211,45 +4211,71 @@ pub(super) fn parasolid_attribute_field_uses(
 
 /// Whether a concrete topology-owned attribute field lacks its exact value relation.
 pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
+    ctx: &DecodeContext<'_>,
     definitions: &[ParasolidAttributeDefinition],
     entities: &[ParasolidEntity51Record],
     field_uses: &[ParasolidAttributeFieldUse],
     topology_class_uses: &[ParasolidTopologyAttributeClassUse],
-) -> bool {
-    let mut definitions_by_id = BTreeMap::<&str, Vec<&ParasolidAttributeDefinition>>::new();
+) -> Result<bool, CodecError> {
+    let mut definitions_by_id = BTreeMap::<&str, Option<&ParasolidAttributeDefinition>>::new();
+    let mut definitions_guard = ctx.reserve_scoped(0, "NX topology attribute definition index")?;
     for definition in definitions {
-        definitions_by_id
-            .entry(definition.id.as_str())
-            .or_default()
-            .push(definition);
+        match definitions_by_id.entry(definition.id.as_str()) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX topology attribute definition index")?;
+                definitions_guard.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(&str, Option<&ParasolidAttributeDefinition>)>() * 4,
+                ))?;
+                entry.insert(Some(definition));
+            }
+        }
     }
-    let mut fields_by_identity = BTreeMap::<(&str, u32), Vec<&ParasolidAttributeFieldUse>>::new();
+    let mut fields_by_identity = BTreeMap::<(&str, u32), Option<&ParasolidAttributeFieldUse>>::new();
+    let mut fields_guard = ctx.reserve_scoped(0, "NX topology attribute field index")?;
     for field_use in field_uses {
-        fields_by_identity
-            .entry((
-                field_use.entity_51_record.as_str(),
-                field_use.position.field_ordinal(),
-            ))
-            .or_default()
-            .push(field_use);
+        let key = (field_use.entity_51_record.as_str(), field_use.position.field_ordinal());
+        match fields_by_identity.entry(key) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX topology attribute field index")?;
+                fields_guard.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<((&str, u32), Option<&ParasolidAttributeFieldUse>)>() * 4,
+                ))?;
+                entry.insert(Some(field_use));
+            }
+        }
     }
 
-    let mut entities_by_id = BTreeMap::<&str, Vec<&ParasolidEntity51Record>>::new();
+    let mut entities_by_id = BTreeMap::<&str, Option<&ParasolidEntity51Record>>::new();
+    let mut entities_guard = ctx.reserve_scoped(0, "NX topology attribute entity index")?;
     for entity in entities {
-        entities_by_id
-            .entry(entity.id.as_str())
-            .or_default()
-            .push(entity);
+        match entities_by_id.entry(entity.id.as_str()) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX topology attribute entity index")?;
+                entities_guard.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(&str, Option<&ParasolidEntity51Record>)>() * 4,
+                ))?;
+                entry.insert(Some(entity));
+            }
+        }
     }
 
-    topology_class_uses.iter().any(|topology_class_use| {
+    let work = topology_class_uses.iter().try_fold(0usize, |total, use_| {
+        let fields = definitions_by_id.get(use_.attribute_definition.as_str())
+            .and_then(|definition| *definition)
+            .map_or(0, |definition| definition.field_codes.len());
+        total.checked_add(fields.checked_add(1)?)
+    }).ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute field validation work", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX topology attribute field validation work")?;
+    Ok(topology_class_uses.iter().any(|topology_class_use| {
         let entity_id = topology_class_use.entity_51_record.as_str();
-        let Some([entity]) = entities_by_id.get(entity_id).map(Vec::as_slice) else {
+        let Some(Some(entity)) = entities_by_id.get(entity_id) else {
             return true;
         };
-        let Some([definition]) = definitions_by_id
+        let Some(Some(definition)) = definitions_by_id
             .get(topology_class_use.attribute_definition.as_str())
-            .map(Vec::as_slice)
         else {
             return true;
         };
@@ -4276,14 +4302,9 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
                 let Ok(field_ordinal) = u32::try_from(field_ordinal) else {
                     return true;
                 };
-                !matches!(
-                    fields_by_identity
-                        .get(&(entity.id.as_str(), field_ordinal))
-                        .map(Vec::as_slice),
-                    Some([_])
-                )
+                !matches!(fields_by_identity.get(&(entity.id.as_str(), field_ordinal)), Some(Some(_)))
             })
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -5875,6 +5896,9 @@ mod tests {
 
     #[test]
     fn attribute_loss_requires_concrete_unresolved_references() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let definition = |field_names_xmt, field_codes: Vec<u8>| ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 0,
@@ -5949,47 +5973,52 @@ mod tests {
         // An unused declaration carries no value-loss evidence.
         assert!(
             !parasolid_topology_attribute_fields_have_untransferred_values(
+                &ctx,
                 &[definition(1, vec![4])],
                 &[],
                 &[],
                 &[],
-            )
+            ).unwrap()
         );
         // A non-null instance reference must have exactly one resolved field use.
         assert!(
             parasolid_topology_attribute_fields_have_untransferred_values(
+                &ctx,
                 &[definition(1, vec![4])],
                 std::slice::from_ref(&entity),
                 &[],
                 std::slice::from_ref(&topology_class_use),
-            )
+            ).unwrap()
         );
         assert!(
             !parasolid_topology_attribute_fields_have_untransferred_values(
+                &ctx,
                 &[definition(1, vec![4])],
                 std::slice::from_ref(&entity),
                 std::slice::from_ref(&field_use),
                 std::slice::from_ref(&topology_class_use),
-            )
+            ).unwrap()
         );
         // Null values and always-empty pointer fields require no value relation.
         let mut null_entity = entity.clone();
         null_entity.trailing_references.values_mut()[0] = 1;
         assert!(
             !parasolid_topology_attribute_fields_have_untransferred_values(
+                &ctx,
                 &[definition(1, vec![4])],
                 &[null_entity],
                 &[],
                 std::slice::from_ref(&topology_class_use),
-            )
+            ).unwrap()
         );
         assert!(
             !parasolid_topology_attribute_fields_have_untransferred_values(
+                &ctx,
                 &[definition(1, vec![9])],
                 std::slice::from_ref(&entity),
                 &[],
                 std::slice::from_ref(&topology_class_use),
-            )
+            ).unwrap()
         );
 
         let named_definition = definition(22, vec![4]);
@@ -5997,20 +6026,87 @@ mod tests {
         // deterministic ordinal/code fallback and does not lose the value.
         assert!(
             !parasolid_topology_attribute_fields_have_untransferred_values(
+                &ctx,
                 std::slice::from_ref(&named_definition),
                 std::slice::from_ref(&entity),
                 std::slice::from_ref(&field_use),
                 std::slice::from_ref(&topology_class_use),
-            )
+            ).unwrap()
         );
         assert!(
             parasolid_topology_attribute_fields_have_untransferred_values(
+                &ctx,
                 &[named_definition],
                 std::slice::from_ref(&entity),
                 &[],
                 std::slice::from_ref(&topology_class_use),
-            )
+            ).unwrap()
         );
+    }
+
+    fn topology_attribute_validation_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> CodecError {
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(), stream_ordinal: 0,
+            xmt: NonNullXmt::try_from(20).unwrap(),
+            next_definition_xmt: None,
+            identifier_xmt: NonNullXmt::try_from(21).unwrap(),
+            identifier_inflated_offset: 10,
+            name: PrintableString::new("CLASS".to_owned()).unwrap(),
+            type_id: NonZeroU32::new(8000).unwrap(),
+            action_codes: [AttributeAction::Code0; 8],
+            field_names_xmt: None,
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([false; 16]),
+            field_codes: vec![AttributeField::Point],
+            inflated_offset: 20,
+        };
+        let entity = ParasolidEntity51Record {
+            id: "entity".into(), stream_ordinal: 0,
+            xmt: NonNullXmt::try_from(30).unwrap(),
+            sequence: NonZeroU32::new(1).unwrap(),
+            definition_xmt: 20,
+            leading_references: [1; 5],
+            trailing_references: EntityReferences::new(vec![40]).unwrap(),
+            byte_len: 32, inflated_offset: 30,
+        };
+        let class_use = ParasolidTopologyAttributeClassUse {
+            id: "topology-class-use".into(),
+            topology_attribute_reference: "topology-reference".into(),
+            entity_51_record: entity.id.clone(),
+            attribute_class_use: "class-use".into(),
+            definition_xmt: definition.xmt,
+            attribute_definition: definition.id.clone(),
+            stream_ordinal: 0, inflated_offset: 30,
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        parasolid_topology_attribute_fields_have_untransferred_values(
+            &ctx, &[definition], &[entity], &[], &[class_use],
+        ).err().expect("topology attribute validation limit refusal")
+    }
+
+    #[test]
+    fn topology_attribute_validation_refuses_collection_limit() {
+        let error = topology_attribute_validation_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn topology_attribute_validation_refuses_scoped_limit() {
+        let error = topology_attribute_validation_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn topology_attribute_validation_refuses_work_limit() {
+        let error = topology_attribute_validation_limit_error(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
 
     #[test]

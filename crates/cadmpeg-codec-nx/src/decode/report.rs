@@ -76,7 +76,7 @@ pub(super) fn build_geometry_report(
     dialect_losses: &[LossNote],
     notes: &[String],
 ) -> Result<DecodeBody, cadmpeg_core::CodecError> {
-    let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
+    let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields(ctx)?;
     let mut losses = Vec::new();
 
     losses.push(NxLossCode::CarrierAnalyticCensus.note(format!(
