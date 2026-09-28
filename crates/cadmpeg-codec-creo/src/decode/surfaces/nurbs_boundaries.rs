@@ -564,13 +564,66 @@ fn unit_interval_parameter(root: f64) -> Option<f64> {
     Some(root)
 }
 
+/// At most four stationary parameters and three interval roots of a cubic.
+#[derive(Debug)]
+pub(in super::super) struct CubicRoots {
+    values: [f64; 7],
+    len: usize,
+}
+
+impl CubicRoots {
+    fn new() -> Self {
+        Self {
+            values: [0.0; 7],
+            len: 0,
+        }
+    }
+
+    fn push(&mut self, value: f64) {
+        if let Some(slot) = self.values.get_mut(self.len) {
+            *slot = value;
+            self.len += 1;
+        }
+    }
+
+    fn sort_and_dedup(&mut self) {
+        self.values[..self.len].sort_by(f64::total_cmp);
+        let mut unique = 0;
+        for index in 0..self.len {
+            if unique == 0
+                || !((self.values[index] - self.values[unique - 1]).abs() <= EPS_CUBIC_PARAM)
+            {
+                self.values[unique] = self.values[index];
+                unique += 1;
+            }
+        }
+        self.len = unique;
+    }
+
+    pub(in super::super) fn as_slice(&self) -> &[f64] {
+        &self.values[..self.len]
+    }
+
+    pub(in super::super) fn len(&self) -> usize {
+        self.len
+    }
+}
+
+impl std::ops::Index<usize> for CubicRoots {
+    type Output = f64;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.as_slice()[index]
+    }
+}
+
 pub(in super::super) fn cubic_unit_interval_roots(
     cubic: Coefficient,
     quadratic: Coefficient,
     linear: Coefficient,
     constant: Coefficient,
     value_tolerance: f64,
-) -> Vec<f64> {
+) -> CubicRoots {
     let [cubic_value, quadratic_value, linear_value, constant_value] =
         [cubic, quadratic, linear, constant].map(Coefficient::stated);
     let scale = cubic_value
@@ -579,7 +632,7 @@ pub(in super::super) fn cubic_unit_interval_roots(
         .max(linear_value.abs())
         .max(constant_value.abs());
     if scale <= value_tolerance {
-        return Vec::new();
+        return CubicRoots::new();
     }
     let evaluate = |parameter: f64| {
         ((cubic_value * parameter + quadratic_value) * parameter + linear_value) * parameter
@@ -590,35 +643,37 @@ pub(in super::super) fn cubic_unit_interval_roots(
     // terms, and the problem is then the quadratic the remaining coefficients
     // state.
     if cubic_value == 0.0 {
-        let mut roots = real_roots(quadratic, linear, constant)
-            .into_iter()
-            .filter_map(|root| {
-                let parameter = unit_interval_parameter(root)?;
-                (evaluate(root).abs() <= value_tolerance).then_some(parameter)
-            })
-            .collect::<Vec<_>>();
-        roots.sort_by(f64::total_cmp);
-        roots.dedup_by(|left, right| (*left - *right).abs() <= EPS_CUBIC_PARAM);
+        let mut roots = CubicRoots::new();
+        for root in real_roots(quadratic, linear, constant) {
+            if let Some(parameter) = unit_interval_parameter(root) {
+                if evaluate(root).abs() <= value_tolerance {
+                    roots.push(parameter);
+                }
+            }
+        }
+        roots.sort_and_dedup();
         return roots;
     }
-    let mut stations = vec![0.0, 1.0];
-    stations.extend(
-        real_roots(
+    let mut stations = CubicRoots::new();
+    stations.push(0.0);
+    stations.push(1.0);
+    for root in real_roots(
             Coefficient::summed(3.0 * cubic_value, 3.0 * cubic.terms()),
             Coefficient::summed(2.0 * quadratic_value, 2.0 * quadratic.terms()),
             linear,
-        )
-        .into_iter()
-        .filter(|root| *root > EPS_CUBIC_PARAM && *root < 1.0 - EPS_CUBIC_PARAM),
-    );
-    stations.sort_by(f64::total_cmp);
-    stations.dedup_by(|left, right| (*left - *right).abs() <= EPS_CUBIC_PARAM);
-    let mut roots = stations
-        .iter()
-        .copied()
-        .filter(|station| evaluate(*station).abs() <= value_tolerance)
-        .collect::<Vec<_>>();
-    for interval in stations.windows(2) {
+        ) {
+        if root > EPS_CUBIC_PARAM && root < 1.0 - EPS_CUBIC_PARAM {
+            stations.push(root);
+        }
+    }
+    stations.sort_and_dedup();
+    let mut roots = CubicRoots::new();
+    for &station in stations.as_slice() {
+        if evaluate(station).abs() <= value_tolerance {
+            roots.push(station);
+        }
+    }
+    for interval in stations.as_slice().windows(2) {
         let [mut left, mut right] = *interval else {
             continue;
         };
@@ -647,8 +702,7 @@ pub(in super::super) fn cubic_unit_interval_roots(
         }
         roots.push(f64::midpoint(left, right));
     }
-    roots.sort_by(f64::total_cmp);
-    roots.dedup_by(|left, right| (*left - *right).abs() <= EPS_CUBIC_PARAM);
+    roots.sort_and_dedup();
     roots
 }
 
@@ -1044,7 +1098,8 @@ mod tests {
             [20.700_000_000_000_003, -8.9]
         );
         assert_eq!(
-            super::cubic_unit_interval_roots(cubic, quadratic, linear, constant, EPS_TEST_VALUE),
+            super::cubic_unit_interval_roots(cubic, quadratic, linear, constant, EPS_TEST_VALUE)
+                .as_slice(),
             [-constant.stated() / linear.stated()]
         );
 
