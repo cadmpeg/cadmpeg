@@ -1676,22 +1676,21 @@ fn envelope_reconciled_plane_candidate(
         .flatten()
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    let nonzero = supports
+    let mut nonzero = supports
         .into_iter()
         .filter_map(|support| {
             let magnitude = dot(support, support).sqrt();
             (magnitude > EPS_AGREE * support_scale).then_some((support, magnitude))
-        })
-        .collect::<Vec<_>>();
-    let [first, second] = nonzero.as_slice() else {
+        });
+    let (Some(first), Some(second), None) = (nonzero.next(), nonzero.next(), nonzero.next()) else {
         return None;
     };
-    let role = |(support, magnitude): &([f64; 3], f64)| {
-        let alignment = dot(*support, normal).abs() / *magnitude;
+    let role = |(support, magnitude): ([f64; 3], f64)| {
+        let alignment = dot(support, normal).abs() / magnitude;
         if alignment <= EPS_AGREE {
-            Some((false, support.map(|value| value / *magnitude)))
+            Some((false, support.map(|value| value / magnitude)))
         } else if (alignment - 1.0).abs() <= EPS_AGREE {
-            Some((true, support.map(|value| value / *magnitude)))
+            Some((true, support.map(|value| value / magnitude)))
         } else {
             None
         }
@@ -1717,23 +1716,22 @@ fn envelope_reconciled_plane_candidate(
 
 fn held_coordinate_plane(envelope: &crate::surface::PlaneEnvelopeRecord) -> Option<PlaneEquation> {
     let corners = plane_envelope_corners(&envelope.envelope)?;
-    let held = envelope
+    let mut held = envelope
         .corner_coordinate_equal
         .iter()
         .enumerate()
-        .filter_map(|(axis, equal)| (*equal == Some(true)).then_some(axis))
-        .collect::<Vec<_>>();
-    let [axis] = held.as_slice() else {
+        .filter_map(|(axis, equal)| (*equal == Some(true)).then_some(axis));
+    let (Some(axis), None) = (held.next(), held.next()) else {
         return None;
     };
     envelope
         .corner_coordinate_equal
         .iter()
         .enumerate()
-        .all(|(candidate, equal)| candidate == *axis || *equal == Some(false))
+        .all(|(candidate, equal)| candidate == axis || *equal == Some(false))
         .then_some(())?;
     let mut normal = [0.0; 3];
-    normal[*axis] = 1.0;
+    normal[axis] = 1.0;
     Some(PlaneEquation {
         origin: corners[0],
         normal,
