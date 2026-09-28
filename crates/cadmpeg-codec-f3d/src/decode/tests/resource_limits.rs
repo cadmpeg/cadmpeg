@@ -305,6 +305,61 @@ fn native_annotation_route_refuses_collection_limit() {
         if limit.operation == "collect source provenance"));
 }
 
+fn annotation_placement() -> crate::records::sketch_placement::DesignSketchPlacement {
+    crate::records::sketch_placement::DesignSketchPlacement {
+        id: "f3d:test/BulkStream.dat:design-sketch-placement#4".into(),
+        scope_record_index: None,
+        entity_id: crate::records::identity::DesignEntityId::from_parts("sketch", 7),
+        visibility: None,
+        class_tag: "330".to_owned().try_into().unwrap(),
+        record_index: 4,
+        paired_class_tag: "330".to_owned().try_into().unwrap(),
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
+            0, crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+        ).unwrap(),
+    }
+}
+
+#[test]
+fn sketch_annotation_id_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::ids::neutral_sketch_id_charged(&ctx, &annotation_placement()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn spatial_sketch_annotation_id_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::ids::neutral_spatial_sketch_id_charged(&ctx, &annotation_placement()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn sketch_constraint_annotation_id_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::ids::neutral_sketch_constraint_id_charged(&ctx, &annotation_placement().id, 4).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn charged_sketch_annotation_ids_preserve_identity_text() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    let placement = annotation_placement();
+    assert_eq!(crate::ids::neutral_sketch_id_charged(&ctx, &placement).unwrap(), crate::ids::neutral_sketch_id(&placement));
+    assert_eq!(crate::ids::neutral_spatial_sketch_id_charged(&ctx, &placement).unwrap(), crate::ids::neutral_spatial_sketch_id(&placement));
+    assert_eq!(crate::ids::neutral_sketch_constraint_id_charged(&ctx, &placement.id, 4).unwrap(), crate::ids::neutral_sketch_constraint_id(&placement.id, 4));
+}
+
 macro_rules! append_refuses_collection_limit {
     ($name:ident, $operation:literal) => {
         #[test]
