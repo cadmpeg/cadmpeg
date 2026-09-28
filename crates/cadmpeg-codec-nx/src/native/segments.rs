@@ -667,12 +667,18 @@ pub(super) fn segment_om_links(
         return Ok(Vec::new());
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-    let sections = container
-        .om_sections(ctx)?
-        .into_iter()
-        .filter(|(candidate, _)| candidate.name == entry.name)
-        .map(|(_, section)| (section.offset, classify_om_schema_role(&section)))
-        .collect::<std::collections::BTreeMap<_, _>>();
+    let sections = container.om_sections(ctx)?;
+    let type_count = sections.iter().try_fold(0usize, |count, (_, section)| {
+        count.checked_add(section.types.len())
+    }).ok_or_else(|| ctx.refuse_codec_limit("scan NX segment OM links", 0, 1))?;
+    let per_lookup = type_count.checked_mul(4)
+        .and_then(|count| count.checked_add(sections.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX segment OM links", 0, 1))?;
+    let work = index.rows().count().checked_mul(3)
+        .and_then(|count| count.checked_mul(2))
+        .and_then(|count| count.checked_mul(per_lookup))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX segment OM links", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "scan NX segment OM links")?;
     let mut links = Vec::new();
     for (row_ordinal, row) in index.rows().enumerate() {
         for (slot, relative) in [
@@ -680,7 +686,8 @@ pub(super) fn segment_om_links(
             (SegmentIndexSlot::SubtypeCode, row.subtype_code),
             (SegmentIndexSlot::Value, row.value),
         ] {
-            let relative = relative as usize;
+            let relative = usize::try_from(relative)
+                .map_err(|_| ctx.refuse_codec_limit("NX segment OM relative offset", 0, u64::from(relative)))?;
             let Some(relative_u64) = u64::try_from(relative).ok() else {
                 continue;
             };
@@ -688,25 +695,36 @@ pub(super) fn segment_om_links(
                 .checked_add(relative_u64)
                 .and_then(|offset| container.bounded_entry_bytes(offset, 4))
                 .is_some_and(|bytes| bytes == [0xc0, 0xd1, 0xf1, 0xed]);
-            let (separator_byte_len, schema_role) = if let Some(role) = sections.get(&relative) {
-                (0usize, *role)
+            let role_at = |offset| sections.iter().rev()
+                .find(|(candidate, section)| candidate.name == entry.name && section.offset == offset)
+                .map(|(_, section)| classify_om_schema_role(section));
+            let (separator_byte_len, schema_role) = if let Some(role) = role_at(relative) {
+                (0usize, role)
             } else if separated_marker {
-                let Some(role) = sections.get(&(relative + 4)) else {
+                let Some(offset) = relative.checked_add(4) else {
                     continue;
                 };
-                (4, *role)
+                let Some(role) = role_at(offset) else {
+                    continue;
+                };
+                (4, role)
             } else {
                 continue;
             };
             let Some(location) = entry_offset
-                .checked_add(relative as u64)
+                .checked_add(relative_u64)
                 .and_then(|offset| OmLocation::new(offset, separator_byte_len as u32))
             else {
                 continue;
             };
+            ctx.charge_collection_items(1, "NX segment OM links")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SegmentOmLink>()), "retain NX segment OM links")?;
+            links.try_reserve_exact(1).map_err(|_| ctx.refuse_codec_limit("allocate NX segment OM links", 0, 1))?;
+            let id = segment_link_identity(ctx, "nx:segment-om-links:link#", links.len())?;
+            let row = segment_link_identity(ctx, "nx:segment-index:row#", row_ordinal)?;
             links.push(SegmentOmLink {
-                id: format!("nx:segment-om-links:link#{}", links.len()),
-                row: format!("nx:segment-index:row#{row_ordinal}"),
+                id,
+                row,
                 slot,
                 schema_role,
                 location,
@@ -714,6 +732,18 @@ pub(super) fn segment_om_links(
         }
     }
     Ok(links)
+}
+
+fn segment_link_identity(ctx: &DecodeContext<'_>, prefix: &str, ordinal: usize) -> Result<String, CodecError> {
+    let length = prefix.len().checked_add(decimal_digits(ordinal))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX segment link identity length", 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "retain NX segment link identity")?;
+    let mut identity = String::new();
+    identity.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX segment link identity", 0, 1))?;
+    write!(identity, "{prefix}{ordinal}")
+        .map_err(|_| ctx.refuse_codec_limit("write NX segment link identity", 0, 1))?;
+    Ok(identity)
 }
 
 /// Resolve segment-index words that point to validated compressed wrappers.
@@ -922,6 +952,7 @@ pub(super) fn segment_body_bindings(
 
 #[cfg(test)]
 mod tests {
+    mod om_links;
     use crate::test_support::test_om::segment_body_binding_payload;
     use crate::test_support::test_om::segment_body_binding_repeated_link_payload;
     use crate::test_support::test_om::segment_extended_wrapper_payload;
