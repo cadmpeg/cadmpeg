@@ -6938,11 +6938,16 @@ pub(super) fn feature_swp104_leading_branches(ctx: &cadmpeg_core::decode::Decode
 {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut branches = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(branch) = crate::om::swp104_payload_leading_branch(record.payload_view())
-            else {
+            if failure.is_some() { return; }
+            let branch = match crate::om::swp104_payload_leading_branch(ctx, record.payload_view()) {
+                Ok(branch) => branch,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let Some(branch) = branch else {
                 return;
             };
             let operation_key = format!("{section_key}-{operation_ordinal:010}");
@@ -6961,6 +6966,7 @@ pub(super) fn feature_swp104_leading_branches(ctx: &cadmpeg_core::decode::Decode
             }
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(branches)
 }
 
