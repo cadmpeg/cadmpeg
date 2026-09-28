@@ -452,13 +452,84 @@ fn decode_grouped_recipe_references<A: RecipeReferenceAllocation>(
 }
 
 pub(in crate::design) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool {
-    View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT) == Some(2)
-        && !decode_recipe_references(prefix, 0).is_empty()
+    if !recipe_reference_header(prefix) || View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT) != Some(2) {
+        return false;
+    }
+    let Some(pair_count) = View::u32_le_at(prefix, 18).map(index_from_u32) else {
+        return false;
+    };
+    if pair_count == 0 || pair_count > prefix.len().saturating_sub(22) / 42 {
+        return false;
+    }
+    let mut at = 22usize;
+    for _ in 0..pair_count {
+        let Some(packed) = scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Packed) else {
+            return false;
+        };
+        let Some(length_prefixed) = scan_recipe_reference_operand(
+            prefix, packed.next, RecipeReferenceTokenFrame::LengthPrefixed,
+        ) else {
+            return false;
+        };
+        if packed.selector != length_prefixed.selector
+            || packed.reference_count != length_prefixed.reference_count
+            || (0..packed.reference_count).any(|ordinal| {
+                let offset = ordinal * 4;
+                View::u32_le_at(prefix, packed.references_at + offset)
+                    != View::u32_le_at(prefix, length_prefixed.references_at + offset)
+            })
+        {
+            return false;
+        }
+        at = length_prefixed.next;
+    }
+    at == prefix.len()
 }
 
 pub(crate) fn is_grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
-    View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT).is_some_and(|group_count| group_count >= 4)
-        && !decode_recipe_references(prefix, 0).is_empty()
+    if !recipe_reference_header(prefix) {
+        return false;
+    }
+    let Some(group_count) = View::u32_le_at(prefix, grouped_recipe::GROUP_COUNT)
+        .filter(|count| *count >= 4)
+        .map(index_from_u32) else {
+        return false;
+    };
+    let Some(available) = prefix.len().checked_sub(grouped_recipe::LEN) else {
+        return false;
+    };
+    let Some(required) = group_count.checked_mul(21) else {
+        return false;
+    };
+    if required > available {
+        return false;
+    }
+    let mut at = grouped_recipe::LEN;
+    for _ in 0..group_count {
+        let Some(operand_count) = View::u32_le_at(prefix, at).map(index_from_u32) else {
+            return false;
+        };
+        let Some(next) = at.checked_add(4) else {
+            return false;
+        };
+        at = next;
+        if operand_count == 0 || operand_count > prefix.len().saturating_sub(at) / 17 {
+            return false;
+        }
+        for _ in 0..operand_count {
+            let Some(operand) = scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Packed) else {
+                return false;
+            };
+            at = operand.next;
+        }
+    }
+    prefix.get(at..) == Some(&[0, 0, 0, 0])
+}
+
+fn recipe_reference_header(prefix: &[u8]) -> bool {
+    prefix.get(..10).is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+        && View::u32_le_at(prefix, 10) == Some(1)
+        && View::u32_le_at(prefix, 18).is_some_and(|value| value != 0)
 }
 
 #[derive(Clone, Copy)]
@@ -468,16 +539,20 @@ enum RecipeReferenceTokenFrame {
     LengthPrefixed,
 }
 
-fn decode_recipe_reference_operand<A: RecipeReferenceAllocation>(
-    allocation: &A,
+struct ScannedRecipeReferenceOperand<'a> {
+    selector: u32,
+    token: &'a str,
+    token_at: usize,
+    references_at: usize,
+    reference_count: usize,
+    next: usize,
+}
+
+fn scan_recipe_reference_operand(
     prefix: &[u8],
-    prefix_offset: u64,
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
-) -> Option<Result<(
-    Vec<crate::records::dimensions::DesignRecipeReference>,
-    usize,
-), A::Error>> {
+) -> Option<ScannedRecipeReferenceOperand<'_>> {
     let selector = View::u32_le_at(prefix, at).filter(|value| *value != 0)?;
     let token_encoding_at = at.checked_add(4)?;
     let length_prefixed = (!matches!(token_frame, RecipeReferenceTokenFrame::Packed))
@@ -523,21 +598,41 @@ fn decode_recipe_reference_operand<A: RecipeReferenceAllocation>(
             references_end.checked_add(4)?
         }
     };
-    let selector_offset = prefix_offset.checked_add(u64::try_from(at).ok()?)?;
-    let token_offset = prefix_offset.checked_add(u64::try_from(token_at).ok()?)?;
-    let mut references = Vec::new();
     for reference_ordinal in 0..reference_count {
         let design_reference_at = references_at.checked_add(reference_ordinal.checked_mul(4)?)?;
+        View::u32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
+    }
+    Some(ScannedRecipeReferenceOperand {
+        selector, token, token_at, references_at, reference_count, next,
+    })
+}
+
+fn decode_recipe_reference_operand<A: RecipeReferenceAllocation>(
+    allocation: &A,
+    prefix: &[u8],
+    prefix_offset: u64,
+    at: usize,
+    token_frame: RecipeReferenceTokenFrame,
+) -> Option<Result<(
+    Vec<crate::records::dimensions::DesignRecipeReference>,
+    usize,
+), A::Error>> {
+    let scanned = scan_recipe_reference_operand(prefix, at, token_frame)?;
+    let selector_offset = prefix_offset.checked_add(u64::try_from(at).ok()?)?;
+    let token_offset = prefix_offset.checked_add(u64::try_from(scanned.token_at).ok()?)?;
+    let mut references = Vec::new();
+    for reference_ordinal in 0..scanned.reference_count {
+        let design_reference_at = scanned.references_at.checked_add(reference_ordinal.checked_mul(4)?)?;
         let design_reference =
             View::u32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
         let design_reference_offset =
             prefix_offset.checked_add(u64::try_from(design_reference_at).ok()?)?;
-        let token_copy = match allocation.copy_text(token) {
+        let token_copy = match allocation.copy_text(scanned.token) {
             Ok(token) => token,
             Err(error) => return Some(Err(error)),
         };
         let reference = crate::records::dimensions::DesignRecipeReference {
-            selector: i64::from(selector),
+            selector: i64::from(scanned.selector),
             selector_offset,
             token: token_copy,
             token_offset,
@@ -555,7 +650,7 @@ fn decode_recipe_reference_operand<A: RecipeReferenceAllocation>(
             return Some(Err(error));
         }
     }
-    Some(Ok((references, next)))
+    Some(Ok((references, scanned.next)))
 }
 
 fn is_decimal_integer_token(token: &[u8]) -> bool {
