@@ -46,6 +46,21 @@ pub(crate) fn build_decode_report(
     })
 }
 
+fn append_losses(
+    ctx: &DecodeContext<'_>,
+    target: &mut Vec<LossNote>,
+    mut incoming: Vec<LossNote>,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let count = u64::try_from(incoming.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)?;
+    target.try_reserve(incoming.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    target.append(&mut incoming);
+    Ok(())
+}
+
 /// Constructs the document's source metadata once from route-owned identity.
 ///
 /// A standalone document classifies its own layers and charges classification
@@ -61,8 +76,19 @@ pub(crate) fn classify_document(
     let dialects = match scope {
         ReportScope::Standalone => {
             let (dialects, mut losses) = crate::dialect::classify_layers(ctx, scan)?;
-            losses.extend(crate::dialect::dialect_losses(ctx, &dialects)?);
-            body.losses.splice(0..0, losses);
+            append_losses(
+                ctx,
+                &mut losses,
+                crate::dialect::dialect_losses(ctx, &dialects)?,
+                "append F3D dialect losses",
+            )?;
+            append_losses(
+                ctx,
+                &mut losses,
+                std::mem::take(&mut body.losses),
+                "prepend F3D dialect losses",
+            )?;
+            body.losses = losses;
             dialects
         }
         ReportScope::ArchiveMember(dialects) => dialects,
@@ -79,11 +105,13 @@ pub(crate) fn build_inspection_summary(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<ContainerSummary, cadmpeg_core::CodecError> {
-    let (layers, classification_losses) = crate::dialect::classify_layers(ctx, scan)?;
-    let losses = classification_losses
-        .into_iter()
-        .chain(crate::dialect::dialect_losses(ctx, &layers)?)
-        .collect::<Vec<_>>();
+    let (layers, mut losses) = crate::dialect::classify_layers(ctx, scan)?;
+    append_losses(
+        ctx,
+        &mut losses,
+        crate::dialect::dialect_losses(ctx, &layers)?,
+        "append F3D inspection dialect losses",
+    )?;
     let mut summary = crate::container::summarize(ctx, scan, layers)?;
     summary.losses = losses;
     Ok(summary)
@@ -96,6 +124,34 @@ mod tests {
     use super::{build_decode_report, classify_document, ReportScope};
     use crate::test_support::zip_test::synthetic_f3d;
     use std::collections::BTreeMap;
+
+    fn assert_loss_append_refuses(operation: &'static str) {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let incoming = vec![
+            crate::loss::F3dLossCode::DialectLayerCollision.note("duplicate layer"),
+        ];
+        let error = super::append_losses(&ctx, &mut Vec::new(), incoming, operation).unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation));
+    }
+
+    #[test]
+    fn report_dialect_loss_append_refuses_collection_limit() {
+        assert_loss_append_refuses("append F3D dialect losses");
+    }
+
+    #[test]
+    fn report_route_loss_reorder_refuses_collection_limit() {
+        assert_loss_append_refuses("prepend F3D dialect losses");
+    }
+
+    #[test]
+    fn inspection_dialect_loss_append_refuses_collection_limit() {
+        assert_loss_append_refuses("append F3D inspection dialect losses");
+    }
 
     #[test]
     fn decode_report_includes_a_kernel_identity_collision_loss() {
