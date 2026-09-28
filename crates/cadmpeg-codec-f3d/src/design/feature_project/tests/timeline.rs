@@ -96,7 +96,7 @@ fn history_state_predecessors_are_component_qualified() {
         naming_space(10, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"),
         naming_space(20, "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"),
     ];
-    let graph = ScopeHistoryGraph::new(&scopes, &[], &[], &naming_spaces, &[]);
+    let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &naming_spaces, &[]).unwrap();
 
     let predecessor = graph
         .predecessor(&second, |_| true)

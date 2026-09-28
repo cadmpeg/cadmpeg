@@ -35,6 +35,70 @@ use crate::history_records::{
 use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+fn scoped_history_with_limits(
+    max_items: u64,
+    max_retained_bytes: u64,
+) -> Result<HashMap<String, String>, cadmpeg_core::CodecError> {
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:native:scope#1",
+        crate::records::feature::scope::DesignFeatureKind::BaseFlange,
+        1,
+    );
+    scope.try_edit(|draft| draft.history_state_id = Some(1)).unwrap();
+    let history = AsmHistory {
+        id: "f3d:history".into(),
+        byte_offset: 0,
+        preamble: None,
+        record_table_binding_budget_exceeded: false,
+        states: vec![AsmDeltaState {
+            id: "f3d:history:state#1".into(),
+            parent: "f3d:history".into(),
+            byte_offset: 0,
+            state_id: 1,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 1,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(
+                AsmHistoricalTopology::default()),
+            transition: None,
+        }],
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained_bytes;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    bind_scope_histories(Some(&ctx), &[scope], &[], &[], &[history])
+}
+
+#[test]
+fn scope_history_candidate_refuses_collection_limit() {
+    let error = scoped_history_with_limits(0, u64::MAX).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D matching scope histories"));
+}
+
+#[test]
+fn scope_history_binding_refuses_collection_limit() {
+    let error = scoped_history_with_limits(2, u64::MAX).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D scope history bindings"));
+}
+
+#[test]
+fn scope_history_identity_refuses_retained_limit() {
+    let error = scoped_history_with_limits(u64::MAX, 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D bound scope identity"));
+}
+
 #[test]
 fn state_pairs_are_resolved_within_one_reachable_history() {
     let state = |history: &str, state_id: i64, previous_state_id: Option<i64>| AsmDeltaState {
@@ -182,7 +246,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     })
     .unwrap();
     let scopes = vec![scope.clone(), next_scope];
-    let bindings = bind_scope_histories(&scopes, std::slice::from_ref(&binding), &[], &histories);
+    let bindings = bind_scope_histories(None, &scopes, std::slice::from_ref(&binding), &[], &histories).unwrap();
     assert_eq!(bindings[&scope.id], histories[1].id);
     assert_eq!(
         bound_scope_history(&scope.id, &bindings, &histories)
@@ -237,7 +301,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         },
     )
     .unwrap();
-    let bindings = bind_scope_histories(&scopes, &[], std::slice::from_ref(&operand), &histories);
+    let bindings = bind_scope_histories(None, &scopes, &[], std::slice::from_ref(&operand), &histories).unwrap();
     assert_eq!(bindings[&scope.id], histories[1].id);
 }
 
@@ -320,7 +384,7 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         })
         .unwrap();
     let scopes = vec![root, successor];
-    let bindings = bind_scope_histories(&scopes, &[], &[], &histories);
+    let bindings = bind_scope_histories(None, &scopes, &[], &[], &histories).unwrap();
     assert_eq!(bindings.len(), 2);
     assert_eq!(bindings["f3d:native:scope#1"], "history");
     assert_eq!(bindings["f3d:native:scope#2"], "history");
