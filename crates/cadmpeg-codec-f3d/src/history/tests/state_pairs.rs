@@ -1309,7 +1309,9 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         });
     }
 
-    let topology = historical_topology(&brep).expect("stable historical topology");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let topology = historical_topology(&ctx, &brep).expect("topology budget")
+        .expect("stable historical topology");
     assert_eq!(topology.body_regions[0].member_refs, [2]);
     assert_eq!(topology.region_shells[0].member_refs, [3]);
     assert_eq!(topology.shell_faces[0].member_refs, [4]);

@@ -145,12 +145,12 @@ fn history_topology_decode_matches_full_brep_graph() {
         let full_brep = crate::brep::decode(&ctx, &records, &bytes, "full", crate::ids::ID_FORMAT)
             .expect("valid BREP tolerances");
         let full =
-            crate::history::historical_topology_with_tags(&full_brep).expect("full topology");
+            crate::history::historical_topology_with_tags(&ctx, &full_brep).expect("topology budget").expect("full topology");
         let history_brep =
             crate::brep::decode_history_topology(&ctx, &records, &bytes, crate::ids::ID_FORMAT)
                 .expect("valid BREP tolerances");
         let history =
-            crate::history::historical_topology_with_tags(&history_brep).expect("history topology");
+            crate::history::historical_topology_with_tags(&ctx, &history_brep).expect("topology budget").expect("history topology");
 
         assert_eq!(history, full);
         assert_eq!(history.persistent_subentity_tags.len(), expected_tag_count);

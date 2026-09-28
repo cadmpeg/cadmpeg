@@ -17,5 +17,6 @@ mod recipes;
 mod selections;
 mod state_pairs;
 mod surface_stitch;
+mod topology_budget;
 
 mod recipe_transitions;
