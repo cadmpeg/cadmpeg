@@ -20,6 +20,7 @@ use super::{
 mod surface_patch_allocation;
 mod edge_flange_allocation;
 mod treatment_allocation;
+mod partition_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
@@ -1593,30 +1594,30 @@ fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
     let member = |identity, resolved_edge| crate::design::edge_resolve::EdgeGroupMember {
         identity,
         resolved_edge,
-        deleted_boundary_edges: deleted.clone(),
+        deleted_boundary_edges: &deleted,
     };
     let groups = vec![
         vec![member(10, Some(17)), member(11, Some(19))],
         vec![member(12, None), member(13, None)],
     ];
     assert_eq!(
-        crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &groups),
+        crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &groups, None).unwrap(),
         Some(vec![18, 20])
     );
     assert_eq!(
-        crate::design::edge_resolve::partition_unique_incomplete_edge_group(0, &groups),
+        crate::design::edge_resolve::partition_unique_incomplete_edge_group(0, &groups, None).unwrap(),
         None
     );
     let mut two_incomplete = groups.clone();
     two_incomplete[0][0].resolved_edge = None;
     assert_eq!(
-        crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &two_incomplete),
+        crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &two_incomplete, None).unwrap(),
         None
     );
     let mut duplicate_identity = groups;
     duplicate_identity[1][0].identity = 11;
     assert_eq!(
-        crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &duplicate_identity),
+        crate::design::edge_resolve::partition_unique_incomplete_edge_group(1, &duplicate_identity, None).unwrap(),
         None
     );
 }
