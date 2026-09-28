@@ -4361,7 +4361,7 @@ fn dimension_reference_table(
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
         let reference_start = cursor + 1;
         let (value, next) = psb::reference_id(payload, reference_start).ok()?;
-        reference_bytes = payload.get(reference_start..next).map(<[u8]>::to_vec);
+        reference_bytes = payload.get(reference_start..next);
         cursor = next;
         Some(value)
     } else {
@@ -4404,12 +4404,14 @@ fn dimension_reference_table(
             offset: table,
         });
     };
-    let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
-    prototype_separator.extend_from_slice(&reference_bytes);
-    prototype_separator.push(0xe2);
-    if payload.get(prototype_end..prototype_end + prototype_separator.len())
-        != Some(prototype_separator.as_slice())
-    {
+    let separator_len = reference_bytes.len() + 3;
+    let separator_matches = |offset, prefix| {
+        payload.get(offset..offset + 2) == Some(&[prefix, psb::token::ENTITY_REF])
+            && payload.get(offset + 2..offset + 2 + reference_bytes.len())
+                == Some(reference_bytes)
+            && payload.get(offset + separator_len - 1) == Some(&0xe2)
+    };
+    if !separator_matches(prototype_end, 0xf1) {
         return Some(FeatureDimensionReferenceTable {
             declared_count,
             entity_ref,
@@ -4417,7 +4419,7 @@ fn dimension_reference_table(
             offset: table,
         });
     }
-    cursor = prototype_end + prototype_separator.len();
+    cursor = prototype_end + separator_len;
 
     let row_limit = index_from_u32(declared_count);
     while rows.len() < row_limit && cursor < end {
@@ -4441,13 +4443,10 @@ fn dimension_reference_table(
         if rows.len() == row_limit {
             break;
         }
-        let mut row_separator = vec![0xf3, psb::token::ENTITY_REF];
-        row_separator.extend_from_slice(&reference_bytes);
-        row_separator.push(0xe2);
-        if payload.get(cursor..cursor + row_separator.len()) != Some(row_separator.as_slice()) {
+        if !separator_matches(cursor, 0xf3) {
             break;
         }
-        cursor += row_separator.len();
+        cursor += separator_len;
     }
     Some(FeatureDimensionReferenceTable {
         declared_count,
@@ -4727,11 +4726,7 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
         return Vec::new();
     }
     cursor += 2;
-    let mut trailer = Vec::with_capacity(class_encoding.len() + 2);
-    trailer.push(0xf3);
-    trailer.extend_from_slice(class_encoding);
-    trailer.push(0xe2);
-    let Some(prototype_end) = find_bytes(payload, &trailer, cursor, end) else {
+    let Some(prototype_end) = find_class_close(payload, cursor, end, 0xf3, class_encoding) else {
         return Vec::new();
     };
     let named_item = (|| {
@@ -4754,13 +4749,15 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
         return Vec::new();
     };
     let item_class_encoding = &payload[item_class_start..after_item_class];
-    let mut item_close = Vec::with_capacity(item_class_encoding.len() + 2);
-    item_close.push(0xf1);
-    item_close.extend_from_slice(item_class_encoding);
-    item_close.push(0xe2);
-    let named_item_end = find_bytes(payload, &item_close, after_item_class, prototype_end);
+    let named_item_end = find_class_close(
+        payload,
+        after_item_class,
+        prototype_end,
+        0xf1,
+        item_class_encoding,
+    );
     let (named_item_end, named_item_close_len) = match named_item_end {
-        Some(offset) => (offset, item_close.len()),
+        Some(offset) => (offset, item_class_encoding.len() + 2),
         None if prototype_item_count == 1 && named_item.is_some() => {
             // Some named prototypes store the one named item directly in the
             // array body. The outer table trailer closes both the prototype
@@ -4798,7 +4795,7 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
         return Vec::new();
     };
     let mut rows = vec![prototype];
-    cursor = prototype_end + trailer.len();
+    cursor = prototype_end + class_encoding.len() + 2;
     'rows: while rows.len() < index_from_u32(declared_count) {
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
@@ -4855,8 +4852,8 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
                 cursor += 1;
             }
         }
-        if payload.get(cursor..cursor + trailer.len()) == Some(trailer.as_slice()) {
-            cursor += trailer.len();
+        if class_close_at(payload, cursor, 0xf3, class_encoding) {
+            cursor += class_encoding.len() + 2;
         } else if payload.get(cursor) == Some(&0xe2) {
             cursor += 1;
         } else if payload.get(cursor) == Some(&0xe0) {
@@ -4931,13 +4928,13 @@ fn positional_solver_table_header(
     })
 }
 
-fn positional_array_header(
-    payload: &[u8],
+fn positional_array_header<'a>(
+    payload: &'a [u8],
     start: usize,
     end: usize,
     table_class: u32,
-) -> Option<(usize, u32, usize, Vec<u8>)> {
-    let candidates = (start..end)
+) -> Option<(usize, u32, usize, &'a [u8])> {
+    let mut candidates = (start..end)
         .filter_map(|offset| {
             (payload.get(offset) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
             let (count, after_count) = psb::compact_int(payload, offset + 1);
@@ -4946,20 +4943,37 @@ fn positional_array_header(
             let (class, after_class) = psb::reference_id(payload, reference_start).ok()?;
             (class == table_class
                 && payload.get(after_class..after_class + 2) == Some(&[0xfb, 0xe2]))
-            .then(|| {
-                (
-                    offset,
-                    count,
-                    after_class + 2,
-                    payload[after_count..after_class].to_vec(),
-                )
-            })
-        })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
+            .then(|| (offset, count, after_class + 2, &payload[after_count..after_class]))
+        });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
+fn class_close_at(payload: &[u8], offset: usize, prefix: u8, class: &[u8]) -> bool {
+    let Some(length) = class.len().checked_add(2) else {
+        return false;
     };
-    Some(candidate.clone())
+    let Some(close) = offset.checked_add(length) else {
+        return false;
+    };
+    payload.get(offset..close).is_some_and(|window| {
+        window.first() == Some(&prefix)
+            && window.get(1..length - 1) == Some(class)
+            && window.last() == Some(&0xe2)
+    })
+}
+
+fn find_class_close(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    prefix: u8,
+    class: &[u8],
+) -> Option<usize> {
+    payload.get(start..end)?;
+    let length = class.len().checked_add(2)?;
+    let last = end.checked_sub(length)?;
+    (start..=last).find(|&offset| class_close_at(payload, offset, prefix, class))
 }
 
 fn consume_positional_separator(
@@ -5001,7 +5015,7 @@ fn positional_feature_skamps(
     };
     cursor = after_row_class;
     let mut rows = Vec::new();
-    let mut item_classes = None::<(Vec<u8>, Vec<u8>)>;
+    let mut item_classes = None::<(&[u8], &[u8])>;
     'rows: while rows.len() < index_from_u32(count) {
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
@@ -5021,9 +5035,9 @@ fn positional_feature_skamps(
                 payload,
                 cursor,
                 end,
-                &table_class_encoding,
-                item_classes.as_ref().map(|classes| classes.0.as_slice()),
-                item_classes.as_ref().map(|classes| classes.1.as_slice()),
+                table_class_encoding,
+                item_classes.as_ref().map(|classes| classes.0),
+                item_classes.as_ref().map(|classes| classes.1),
             )
         else {
             break;
@@ -5044,7 +5058,7 @@ fn positional_feature_skamps(
                     payload,
                     cursor,
                     end,
-                    classes.0.as_slice(),
+                    classes.0,
                     &[0xf1],
                 ) else {
                     break 'rows;
@@ -5062,7 +5076,7 @@ fn positional_feature_skamps(
         };
         if rows.len() + 1 < index_from_u32(count) {
             let Some(next) =
-                consume_positional_separator(payload, cursor, end, &table_class_encoding, &[0xf3])
+                consume_positional_separator(payload, cursor, end, table_class_encoding, &[0xf3])
             else {
                 break;
             };
@@ -5073,19 +5087,15 @@ fn positional_feature_skamps(
     rows
 }
 
-fn positional_skamp_item_array(
-    payload: &[u8],
+fn positional_skamp_item_array<'a>(
+    payload: &'a [u8],
     start: usize,
     end: usize,
     outer_table_class: &[u8],
     expected_table_class: Option<&[u8]>,
     expected_row_class: Option<&[u8]>,
-) -> Option<(u32, usize, Vec<u8>, Vec<u8>)> {
-    let mut row_separator = Vec::with_capacity(outer_table_class.len() + 2);
-    row_separator.push(0xf3);
-    row_separator.extend_from_slice(outer_table_class);
-    row_separator.push(0xe2);
-    let row_end = find_bytes(payload, &row_separator, start, end).unwrap_or(end);
+) -> Option<(u32, usize, &'a [u8], &'a [u8])> {
+    let row_end = find_class_close(payload, start, end, 0xf3, outer_table_class).unwrap_or(end);
     let candidate = (start..row_end).find_map(|array| {
         positional_skamp_item_array_candidate(
             payload,
@@ -5096,7 +5106,7 @@ fn positional_skamp_item_array(
         )
     })?;
     let item_end =
-        positional_skamp_item_array_body_end(payload, candidate.1, candidate.0, &candidate.2, end)?;
+        positional_skamp_item_array_body_end(payload, candidate.1, candidate.0, candidate.2, end)?;
     if payload.get(item_end) == Some(&psb::token::ARRAY_OPEN)
         && positional_skamp_item_array_candidate(
             payload,
@@ -5106,7 +5116,7 @@ fn positional_skamp_item_array(
             expected_row_class,
         )
         .is_some_and(|second| {
-            positional_skamp_item_array_body_end(payload, second.1, second.0, &second.2, end)
+            positional_skamp_item_array_body_end(payload, second.1, second.0, second.2, end)
                 .is_some()
         })
     {
@@ -5116,20 +5126,20 @@ fn positional_skamp_item_array(
         payload,
         candidate.1,
         candidate.0,
-        &candidate.2,
+        candidate.2,
         outer_table_class,
         end,
     )?;
     Some(candidate)
 }
 
-fn positional_skamp_item_array_candidate(
-    payload: &[u8],
+fn positional_skamp_item_array_candidate<'a>(
+    payload: &'a [u8],
     array: usize,
     end: usize,
     expected_table_class: Option<&[u8]>,
     expected_row_class: Option<&[u8]>,
-) -> Option<(u32, usize, Vec<u8>, Vec<u8>)> {
+) -> Option<(u32, usize, &'a [u8], &'a [u8])> {
     (payload.get(array) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
     let (count, after_count) = psb::compact_int(payload, array + 1);
     (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
@@ -5150,8 +5160,8 @@ fn positional_skamp_item_array_candidate(
     Some((
         count,
         after_row_class,
-        table_class.to_vec(),
-        row_class.to_vec(),
+        table_class,
+        row_class,
     ))
 }
 
@@ -5186,14 +5196,10 @@ fn positional_skamp_item_array_has_valid_boundary(
     cursor =
         positional_skamp_item_array_body_end(payload, cursor, item_count, item_table_class, end)?;
 
-    let mut row_separator = Vec::with_capacity(outer_table_class.len() + 2);
-    row_separator.push(0xf3);
-    row_separator.extend_from_slice(outer_table_class);
-    row_separator.push(0xe2);
     if cursor == end {
         return Some(());
     }
-    if payload.get(cursor..cursor + row_separator.len()) == Some(row_separator.as_slice()) {
+    if class_close_at(payload, cursor, 0xf3, outer_table_class) {
         return Some(());
     }
     if payload.get(cursor) == Some(&0xe2) {
@@ -5363,7 +5369,7 @@ fn positional_relation_triples(
         };
         if rows.len() + 1 < index_from_u32(count) {
             let Some(next) =
-                consume_positional_separator(payload, cursor, end, &class_encoding, &[0xf1])
+                consume_positional_separator(payload, cursor, end, class_encoding, &[0xf1])
             else {
                 break;
             };
