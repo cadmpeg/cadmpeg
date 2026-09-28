@@ -430,7 +430,7 @@ pub(crate) fn decode_parameter_scopes(
                 alignment.form = Some(form);
             }
             {
-                let construction = exact_component_insert_construction(bytes, &records, &scope);
+                let construction = exact_component_insert_construction(ctx, bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
