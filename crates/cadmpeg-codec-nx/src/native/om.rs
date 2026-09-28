@@ -4727,20 +4727,16 @@ fn control_index_data_block(
 }
 
 fn column_storage_block_at(
-    section_ordinal: usize,
     records: &[crate::om::EntityRecord<'_>],
     offset: usize,
-) -> Option<(String, u32)> {
+) -> Option<(usize, u32)> {
     records.iter().enumerate().find_map(|(ordinal, record)| {
         let block_offset = offset.checked_sub(record.offset)?;
         if block_offset >= record.bytes.len() {
             return None;
         }
         let block_offset = u32::try_from(block_offset).ok()?;
-        Some((
-            format!("nx:om-data-blocks-{section_ordinal}:block#{}", ordinal + 1),
-            block_offset,
-        ))
+        Some((ordinal.checked_add(1)?, block_offset))
     })
 }
 
