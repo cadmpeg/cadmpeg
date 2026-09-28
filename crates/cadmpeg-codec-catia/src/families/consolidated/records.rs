@@ -263,36 +263,39 @@ impl TryFrom<Class25ScalarSegmentWire> for Class25ScalarSegment {
     type Error = String;
     fn try_from(wire: Class25ScalarSegmentWire) -> Result<Self, Self::Error> {
         fn with_arity<const N: usize>(
-            lane: &[FiniteReal],
+            lane: Vec<FiniteReal>,
             constructor: fn(Box<[FiniteReal; N]>) -> Class25ScalarSegment,
         ) -> Option<Class25ScalarSegment> {
-            Some(constructor(Box::new(lane.try_into().ok()?)))
+            Some(constructor(lane.into_boxed_slice().try_into().ok()?))
         }
 
-        let lane = wire.trailing.as_slice();
-        match wire.marker {
-            Class25ScalarMarker::M82 => with_arity(lane, Self::M82Five)
-                .or_else(|| with_arity(lane, Self::M82Six))
-                .or_else(|| with_arity(lane, Self::M82Seven)),
-            Class25ScalarMarker::M83 => {
-                with_arity(lane, Self::M83Eight).or_else(|| with_arity(lane, Self::M83Nine))
-            }
-            Class25ScalarMarker::M89 => with_arity(lane, Self::M89),
-            Class25ScalarMarker::M8b => with_arity(lane, Self::M8b),
+        match (wire.marker, wire.trailing.len()) {
+            (Class25ScalarMarker::M82, 5) => with_arity(wire.trailing, Self::M82Five),
+            (Class25ScalarMarker::M82, 6) => with_arity(wire.trailing, Self::M82Six),
+            (Class25ScalarMarker::M82, 7) => with_arity(wire.trailing, Self::M82Seven),
+            (Class25ScalarMarker::M83, 8) => with_arity(wire.trailing, Self::M83Eight),
+            (Class25ScalarMarker::M83, 9) => with_arity(wire.trailing, Self::M83Nine),
+            (Class25ScalarMarker::M89, 20) => with_arity(wire.trailing, Self::M89),
+            (Class25ScalarMarker::M8b, 24) => with_arity(wire.trailing, Self::M8b),
+            _ => None,
         }
         .ok_or_else(|| "trailing arity does not match marker".to_owned())
     }
 }
 impl From<Class25ScalarSegment> for Class25ScalarSegmentWire {
     fn from(value: Class25ScalarSegment) -> Self {
+        fn into_vec<const N: usize>(lane: Box<[FiniteReal; N]>) -> Vec<FiniteReal> {
+            let lane: Box<[FiniteReal]> = lane;
+            lane.into_vec()
+        }
         let (marker, trailing) = match value {
-            Class25ScalarSegment::M82Five(lane) => (Class25ScalarMarker::M82, lane.to_vec()),
-            Class25ScalarSegment::M82Six(lane) => (Class25ScalarMarker::M82, lane.to_vec()),
-            Class25ScalarSegment::M82Seven(lane) => (Class25ScalarMarker::M82, lane.to_vec()),
-            Class25ScalarSegment::M83Eight(lane) => (Class25ScalarMarker::M83, lane.to_vec()),
-            Class25ScalarSegment::M83Nine(lane) => (Class25ScalarMarker::M83, lane.to_vec()),
-            Class25ScalarSegment::M89(lane) => (Class25ScalarMarker::M89, lane.to_vec()),
-            Class25ScalarSegment::M8b(lane) => (Class25ScalarMarker::M8b, lane.to_vec()),
+            Class25ScalarSegment::M82Five(lane) => (Class25ScalarMarker::M82, into_vec(lane)),
+            Class25ScalarSegment::M82Six(lane) => (Class25ScalarMarker::M82, into_vec(lane)),
+            Class25ScalarSegment::M82Seven(lane) => (Class25ScalarMarker::M82, into_vec(lane)),
+            Class25ScalarSegment::M83Eight(lane) => (Class25ScalarMarker::M83, into_vec(lane)),
+            Class25ScalarSegment::M83Nine(lane) => (Class25ScalarMarker::M83, into_vec(lane)),
+            Class25ScalarSegment::M89(lane) => (Class25ScalarMarker::M89, into_vec(lane)),
+            Class25ScalarSegment::M8b(lane) => (Class25ScalarMarker::M8b, into_vec(lane)),
         };
         Self { marker, trailing }
     }
