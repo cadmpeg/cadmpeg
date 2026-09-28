@@ -761,13 +761,14 @@ fn encode_sketch_nurbs(
 
 fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
     let decoded = crate::design::decode::sketch::decode_sketch_text_record(
+        None,
         &text.raw_bytes,
         "Design/BulkStream.dat",
         text.class_tag.clone(),
         text.class_version,
         text.record_index,
         0,
-    )
+    )?
     .ok_or_else(|| {
         CodecError::malformed(format_args!("invalid raw sketch-text record {}", text.id))
     })?;

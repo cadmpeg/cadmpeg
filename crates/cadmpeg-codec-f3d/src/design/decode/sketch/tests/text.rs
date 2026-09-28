@@ -196,6 +196,52 @@ fn sketch_text_output_refuses_collection_limit() {
     ));
 }
 
+fn sketch_text_with_retained_limit(bytes: &[u8], maximum: u64) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = maximum;
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    crate::design::decode::sketch::decode_sketch_text_record(
+        Some(&ctx),
+        bytes,
+        "Design/BulkStream.dat",
+        crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
+        3,
+        304,
+        7,
+    )
+    .unwrap_err()
+}
+
+#[test]
+fn sketch_text_identifier_refuses_retained_limit() {
+    let bytes = indexed_sketch_text_record(1);
+    let id_len = crate::ids::native_sketch_text_id("Design/BulkStream.dat", 7).len();
+    let error = sketch_text_with_retained_limit(&bytes, u64::try_from(id_len - 1).unwrap());
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "f3d sketch text identifier"
+    ));
+}
+
+#[test]
+fn sketch_text_raw_bytes_refuse_retained_limit() {
+    let bytes = indexed_sketch_text_record(1);
+    let id_len = crate::ids::native_sketch_text_id("Design/BulkStream.dat", 7).len();
+    let maximum = u64::try_from(id_len + bytes.len() - 1).unwrap();
+    let error = sketch_text_with_retained_limit(&bytes, maximum);
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "f3d sketch text raw bytes"
+    ));
+}
+
 #[test]
 fn sketch_records_use_the_primary_index_live_copy() {
     use crate::metastream::{MetaStream, RecordIndexEntry};
@@ -976,6 +1022,7 @@ fn decode_sketch_text_at(
     class_version: u32,
 ) -> Option<crate::records::sketch_geometry::SketchText> {
     crate::design::decode::sketch::decode_sketch_text_record(
+        None,
         bytes,
         "Design/BulkStream.dat",
         crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
@@ -983,6 +1030,7 @@ fn decode_sketch_text_at(
         304,
         7,
     )
+    .unwrap()
 }
 
 /// Decode one sketch-text record at the class version that writes an identity
