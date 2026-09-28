@@ -829,11 +829,6 @@ native_record_id!(
     "design-decal-image"
 );
 native_record_id!(
-    /// The native design-dimension-annotation-frame record key.
-    native_design_dimension_annotation_frame_id,
-    "design-dimension-annotation-frame"
-);
-native_record_id!(
     /// The native design-dimension-presentation-frame record key.
     native_design_dimension_presentation_frame_id,
     "design-dimension-presentation-frame"

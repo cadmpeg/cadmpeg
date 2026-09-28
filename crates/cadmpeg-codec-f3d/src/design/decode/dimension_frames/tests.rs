@@ -1181,6 +1181,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     bytes.resize(paired_byte_offset + 59, 0);
 
     let frame = parse_dimension_annotation_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         Some(383),
@@ -1188,7 +1189,8 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
         &HashSet::from([354, 376]),
         &HashSet::from([201]),
     )
-    .expect("annotated dimension frame");
+    .expect("annotated dimension frame")
+    .expect("admitted annotation frame");
     assert_eq!(frame.companion_record_index, Some(383));
     assert_eq!(frame.governing_companion_record_index, 391);
     assert_eq!(frame.entity_genesis, 0x202);
@@ -1215,6 +1217,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     assert_eq!(frame.owner_reference, 201);
 
     let leading = parse_dimension_annotation_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         None,
@@ -1222,9 +1225,32 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
         &HashSet::from([354, 376]),
         &HashSet::from([201]),
     )
-    .expect("scope-prefix dimension frame");
+    .expect("scope-prefix dimension frame")
+    .expect("admitted scope-prefix frame");
     assert_eq!(leading.companion_record_index, None);
     assert_eq!(leading.governing_owner_record_index, 390);
+
+    for (items, retained, operation) in [
+        (2, u64::MAX, "f3d dimension annotation operands"),
+        (3, u64::MAX, "f3d dimension annotation return members"),
+        (u64::MAX, 2, "f3d dimension annotation bytes"),
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = items;
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        ).unwrap();
+        assert!(matches!(
+            parse_dimension_annotation_frame(
+                &ctx, &bytes, 0, Some(383), &HashMap::from([(390, 391)]),
+                &HashSet::from([354, 376]), &HashSet::from([201]),
+            ),
+            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
+                if failure.operation == operation
+        ));
+    }
 }
 
 #[test]
