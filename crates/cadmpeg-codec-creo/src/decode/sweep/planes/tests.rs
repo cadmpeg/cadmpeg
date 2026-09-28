@@ -216,6 +216,37 @@ fn generated_arc_cylinder_id_nodes_refuse_collection_limit() {
             && resource.operation == "creo generated arc cylinder ID nodes"));
 }
 
+#[test]
+fn available_positional_cylinder_frames_refuse_collection_limit() {
+    let frame = crate::surface::PositionalCylinderFrame::new(
+        [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], 0.75, Some(2.0),
+    ).expect("cylinder frame");
+    let parameters = [crate::surface::SurfaceParameterRecord {
+        surface_id: 1,
+        body: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+            crate::surface::InlineSurfaceCarrier::Cylinder { frame, split_bounds: None },
+        ),
+        boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+        offset: 0,
+        body_offset: 0,
+    }];
+    let ids = std::collections::BTreeSet::from([1]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::unique_available_positional_cylinder_frame_records(&ctx, &ids, &parameters)
+        .expect_err("frame item exceeds limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo available positional cylinder frames"));
+}
+
 fn cylinder_surface(id: u32, origin: Point3, axis: Vector3) -> Surface {
     Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),

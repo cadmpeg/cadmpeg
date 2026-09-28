@@ -3,6 +3,8 @@
 
 use crate::decode::axis::Axis;
 use crate::vecmath::unit_length;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::holes::HoleForm;
@@ -403,12 +405,14 @@ pub(in crate::decode) fn simple_drilled_hole_placement(
 }
 
 pub(in crate::decode) fn simple_drilled_hole_axis_placement(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     table: &crate::feature::entity::FeatureEntityTable,
     diameter: f64,
-) -> Option<cadmpeg_ir::features::holes::HolePlacement> {
+) -> Result<Option<cadmpeg_ir::features::holes::HolePlacement>, CodecError> {
     let feature_id = table.feature_id;
-    let cylinder_ids = table
+    let mut cylinder_ids = BTreeSet::new();
+    for surface_id in table
         .surface_ids_iter()
         .filter(|surface_id| {
             crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_some_and(
@@ -418,15 +422,23 @@ pub(in crate::decode) fn simple_drilled_hole_axis_placement(
                 },
             )
         })
-        .collect::<BTreeSet<_>>();
-    let frames = unique_available_positional_cylinder_frame_records(
+    {
+        if !cylinder_ids.contains(&surface_id) {
+            ctx.charge_collection_items(1, "creo drilled cylinder ID nodes")?;
+            cylinder_ids.insert(surface_id);
+        }
+    }
+    let Some(frame_records) = unique_available_positional_cylinder_frame_records(
+        ctx,
         &cylinder_ids,
         &scan.surfaces.parameters,
-    )?
-    .into_iter()
-    .map(|(_, frame)| frame)
-    .collect::<Vec<_>>();
-    simple_drilled_axis_placement_from_frames(&frames, diameter)
+    )? else {
+        return Ok(None);
+    };
+    let mut frames = Vec::new();
+    ctx.try_reserve_items(&mut frames, frame_records.len(), "creo drilled cylinder frame copies")?;
+    frames.extend(frame_records.into_iter().map(|(_, frame)| frame));
+    Ok(simple_drilled_axis_placement_from_frames(&frames, diameter))
 }
 
 pub(in crate::decode) fn simple_drilled_axis_placement_from_frames(
@@ -910,4 +922,80 @@ pub(in crate::decode) fn dimension_pair_matches_envelope_spans(
         }
     }
     false
+}
+
+#[cfg(test)]
+mod resource_tests {
+    use super::*;
+
+    fn axis_placement_with_limit(
+        limit: u64,
+    ) -> Result<Option<cadmpeg_ir::features::holes::HolePlacement>, CodecError> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id: 1,
+            kind: crate::surface::SurfaceKind::Cylinder,
+            feature_id: 7,
+            reversed: false,
+            boundary_type: crate::surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: 0,
+        });
+        let frame = crate::surface::PositionalCylinderFrame::new(
+            [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], 0.75, Some(2.0),
+        ).expect("cylinder frame");
+        scan.surfaces.parameters.push(crate::surface::SurfaceParameterRecord {
+            surface_id: 1,
+            body: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+                crate::surface::InlineSurfaceCarrier::Cylinder { frame, split_bounds: None },
+            ),
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 0,
+            body_offset: 0,
+        });
+        let table = crate::feature::entity::FeatureEntityTable::new(
+            7, 29, vec![crate::feature::entity::dummy_table_entry(1)], &BTreeSet::new(), 0,
+        ).with_surface_ids([1]);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        simple_drilled_hole_axis_placement(&ctx, &scan, &table, 1.5)
+    }
+
+    fn axis_placement_limit_error(limit: u64) -> CodecError {
+        axis_placement_with_limit(limit).expect_err("next collection exceeds limit")
+    }
+
+    #[test]
+    fn drilled_axis_placement_preserves_service_carrier() {
+        assert!(matches!(axis_placement_with_limit(3).expect("service resources"),
+            Some(cadmpeg_ir::features::holes::HolePlacement::Axis { .. })));
+    }
+
+    #[test]
+    fn drilled_cylinder_id_nodes_refuse_collection_limit() {
+        assert!(matches!(axis_placement_limit_error(0), CodecError::ResourceLimit(resource)
+            if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && resource.operation == "creo drilled cylinder ID nodes"));
+    }
+
+    #[test]
+    fn drilled_available_frames_refuse_collection_limit() {
+        assert!(matches!(axis_placement_limit_error(1), CodecError::ResourceLimit(resource)
+            if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && resource.operation == "creo available positional cylinder frames"));
+    }
+
+    #[test]
+    fn drilled_frame_copies_refuse_collection_limit() {
+        assert!(matches!(axis_placement_limit_error(2), CodecError::ResourceLimit(resource)
+            if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && resource.operation == "creo drilled cylinder frame copies"));
+    }
 }

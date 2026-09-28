@@ -473,12 +473,15 @@ pub(in super::super) fn schema_feature_definition(
                         if (FiniteReal::new(length.get())).zip(FiniteReal::new(*drilled_depth)).is_some_and(|(first, second)| approximately_equal(first, second)))
                     })
             });
-        let drilled_axis = (drilled_placement.is_none())
-            .then(|| {
-                let (recipe, (diameter, _, _)) = drilled_recipe.zip(drilled_dimensions)?;
-                simple_drilled_hole_axis_placement(scan, recipe.table, diameter)
-            })
-            .flatten();
+        let drilled_axis = if drilled_placement.is_none() {
+            if let Some((recipe, (diameter, _, _))) = drilled_recipe.zip(drilled_dimensions) {
+                simple_drilled_hole_axis_placement(ctx, scan, recipe.table, diameter)?
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let placement_candidates = position
             .zip(direction)
             .map(|(position, direction)| HolePlacement::Directed {
