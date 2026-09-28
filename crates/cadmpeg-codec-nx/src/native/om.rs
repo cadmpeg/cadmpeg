@@ -4911,6 +4911,57 @@ pub(super) fn data_block_control_handle_pairs(
     Ok(pairs)
 }
 
+/// Add one borrowed target to the scoped lookup index.
+fn push_data_block_target<'a>(
+    ctx: &DecodeContext<'_>,
+    index: &mut BTreeMap<(&'a str, u32), Vec<&'a str>>,
+    source: &'a str,
+    object: u32,
+    id: &'a str,
+) -> Result<(), CodecError> {
+    if !index.contains_key(&(source, object)) {
+        ctx.charge_collection_items(1, "NX data block target index keys")?;
+    }
+    let candidates = index.entry((source, object)).or_default();
+    ctx.charge_collection_items(1, "NX data block target index members")?;
+    candidates.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX data block target index", 0, 1))?;
+    candidates.push(id);
+    Ok(())
+}
+
+fn data_block_reference_id(
+    ctx: &DecodeContext<'_>,
+    section: usize,
+    block: usize,
+    ordinal: usize,
+) -> Result<String, CodecError> {
+    fn digits(mut value: usize) -> usize {
+        let mut count = 1;
+        while value >= 10 {
+            value /= 10;
+            count += 1;
+        }
+        count
+    }
+    let operation = "NX data block reference id";
+    let length = "nx:om-data-block-references-".len()
+        .checked_add(digits(section))
+        .and_then(|length| length.checked_add(1))
+        .and_then(|length| length.checked_add(digits(block)))
+        .and_then(|length| length.checked_add(":reference#".len()))
+        .and_then(|length| length.checked_add(digits(ordinal)))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
+    let mut id = String::new();
+    id.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    write!(&mut id, "nx:om-data-block-references-{section}-{block}:reference#{ordinal}")
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(id)
+}
+
 /// Decode framed object references from offset-only OM data blocks.
 pub(super) fn data_block_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -4918,20 +4969,27 @@ pub(super) fn data_block_references(
     object_records: &[ObjectRecord],
     expression_declarations: &[ExpressionDeclaration],
 ) -> Result<Vec<DataBlockReference>, cadmpeg_core::CodecError> {
-    let mut target_records = BTreeMap::<(String, u32), Vec<String>>::new();
+    let index_items = object_records.len()
+        .checked_add(expression_declarations.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX data block target index size", 0, 1))?;
+    let map_node_bytes = std::mem::size_of::<((&str, u32), Vec<&str>)>()
+        .checked_mul(4)
+        .and_then(|bytes| bytes.checked_add(std::mem::size_of::<&str>().checked_mul(4)?))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX data block target index size", 0, 1))?;
+    let index_bytes = index_items.checked_mul(map_node_bytes)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX data block target index size", 0, 1))?;
+    let _index_guard = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(index_bytes),
+        "NX data block target index",
+    )?;
+    let mut target_records = BTreeMap::<(&str, u32), Vec<&str>>::new();
     for record in object_records {
         let (object_id, _) = record.object_id;
-        target_records
-            .entry((record.source_entry.clone(), object_id))
-            .or_default()
-            .push(record.id.clone());
+        push_data_block_target(ctx, &mut target_records, &record.source_entry, object_id, &record.id)?;
     }
-    let mut declarations = BTreeMap::<(String, u32), Vec<String>>::new();
+    let mut declarations = BTreeMap::<(&str, u32), Vec<&str>>::new();
     for declaration in expression_declarations {
-        declarations
-            .entry((declaration.source_entry.clone(), declaration.object_id))
-            .or_default()
-            .push(declaration.id.clone());
+        push_data_block_target(ctx, &mut declarations, &declaration.source_entry, declaration.object_id, &declaration.id)?;
     }
     let mut output = Vec::new();
     for (section_ordinal, (entry, section)) in
@@ -4946,21 +5004,34 @@ pub(super) fn data_block_references(
                 .into_iter()
                 .enumerate()
             {
-                let key = (entry.name.clone(), reference.object_index.value());
-                let unique = |candidates: Option<&Vec<String>>| {
-                    let [target] = candidates?.as_slice() else {
-                        return None;
+                let ordinal_u32 = u32::try_from(ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX data block reference ordinal", 0, 1))?;
+                let key = (entry.name.as_str(), reference.object_index.value());
+                let unique = |candidates: Option<&Vec<&str>>| -> Result<Option<String>, CodecError> {
+                    let Some([target]) = candidates.map(Vec::as_slice) else {
+                        return Ok(None);
                     };
-                    Some(target.clone())
+                    copy_om_retained_text(ctx, target, "NX data block reference target").map(Some)
                 };
+                let source_offset = entry_offset
+                    .checked_add(cadmpeg_core::decode::u64_from_index(block.offset))
+                    .and_then(|offset| offset.checked_add(cadmpeg_core::decode::u64_from_index(reference.offset)))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX data block reference source offset", 0, 1))?;
+                ctx.charge_collection_items(1, "NX data block references")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockReference>()),
+                    "retain NX data block reference",
+                )?;
+                output.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX data block reference", 0, 1))?;
                 output.push(DataBlockReference {
-                    id: format!("nx:om-data-block-references-{section_ordinal}-{block_ordinal}:reference#{ordinal}"),
-                    data_block: format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
-                    ordinal: ordinal as u32,
+                    id: data_block_reference_id(ctx, section_ordinal, block_ordinal, ordinal)?,
+                    data_block: retained_om_index_id(ctx, "nx:om-data-blocks-", section_ordinal, ":block#", cadmpeg_core::decode::u64_from_index(block_ordinal), "NX data block reference block")?,
+                    ordinal: ordinal_u32,
                     object: reference.object_index,
-                    target_record: unique(target_records.get(&key)),
-                    target_expression_declaration: unique(declarations.get(&key)),
-                    source_offset: entry_offset + block.offset as u64 + reference.offset as u64,
+                    target_record: unique(target_records.get(&key))?,
+                    target_expression_declaration: unique(declarations.get(&key))?,
+                    source_offset,
                 });
             }
         }
@@ -6822,6 +6893,70 @@ mod tests {
             .expect("empty test root");
         super::data_block_control_class_references(&ctx, &container)
             .expect_err("control class resource refusal")
+    }
+
+    fn data_block_reference_route_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, file)
+        }).expect("data block reference fixture");
+        let record = super::ObjectRecord {
+            id: "test-record".to_owned(),
+            object_id: (42, 0),
+            section_ordinal: 0,
+            record_ordinal: 0,
+            section_offset: 0,
+            byte_len: 0,
+            sha256: crate::native::hex::Sha256Hex::digest(&[]),
+            stable_identity: None,
+            dependencies: Vec::new(),
+            dependents: Vec::new(),
+            source_entry: "/Root/UG_PART/UG_PART".to_owned(),
+            source_offset: 0,
+        };
+        let records = [record];
+        let references = crate::test_support::with_decode_context(|ctx| {
+            super::data_block_references(ctx, &container, &records, &[])
+        }).expect("data block reference projection");
+        assert_eq!(references.len(), 1);
+        assert_eq!(references[0].target_record.as_deref(), Some("test-record"));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        super::data_block_references(&ctx, &container, &records, &[])
+            .expect_err("data block reference resource refusal")
+    }
+
+    #[test]
+    fn data_block_reference_route_refuses_collection_limit() {
+        let error = data_block_reference_route_refusal(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems), "{error:?}");
+    }
+
+    #[test]
+    fn data_block_reference_route_refuses_retained_limit() {
+        let error = data_block_reference_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes), "{error:?}");
+    }
+
+    #[test]
+    fn data_block_reference_route_refuses_scoped_limit() {
+        let error = data_block_reference_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes), "{error:?}");
+    }
+
+    #[test]
+    fn data_block_reference_route_refuses_work_limit() {
+        let error = data_block_reference_route_refusal(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits), "{error:?}");
     }
 
     #[test]
