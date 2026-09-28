@@ -25,23 +25,65 @@ const EPS_METRIC_AGREEMENT: f64 = 1.0e-10;
 const EPS_DETERMINANT: f64 = 1.0e-12;
 const EPS_PARAMETER_DEDUP: f64 = 1.0e-9;
 
+/// Bounded candidate roots held without a heap allocation. Every producer in
+/// this module examines at most four algebraic roots.
+#[derive(Debug)]
+pub(in super::super) struct FixedCandidates<T, const N: usize> {
+    slots: [Option<T>; N],
+}
+
+impl<T, const N: usize> Default for FixedCandidates<T, N> {
+    fn default() -> Self {
+        Self {
+            slots: std::array::from_fn(|_| None),
+        }
+    }
+}
+
+impl<T, const N: usize> FixedCandidates<T, N> {
+    pub(in super::super) fn len(&self) -> usize {
+        self.slots.iter().filter(|slot| slot.is_some()).count()
+    }
+
+}
+
+impl<T, const N: usize> FromIterator<T> for FixedCandidates<T, N> {
+    fn from_iter<I: IntoIterator<Item = T>>(source: I) -> Self {
+        let mut source = source.into_iter();
+        let slots = std::array::from_fn(|_| source.next());
+        debug_assert!(source.next().is_none(), "candidate root bound exceeded");
+        Self { slots }
+    }
+}
+
+impl<T, const N: usize> IntoIterator for FixedCandidates<T, N> {
+    type Item = T;
+    type IntoIter = std::iter::Flatten<std::array::IntoIter<Option<T>, N>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.slots.into_iter().flatten()
+    }
+}
+
+type GeometryCandidates = FixedCandidates<(CurveGeometry, &'static str), 4>;
+
 pub(in super::super) fn parallel_plane_cylinder_generator_candidates(
     first: CarrierEquation,
     second: CarrierEquation,
-) -> Vec<(CurveGeometry, &'static str)> {
+) -> GeometryCandidates {
     let ((CarrierEquation::Plane(plane), CarrierEquation::Cylinder(cylinder))
     | (CarrierEquation::Cylinder(cylinder), CarrierEquation::Plane(plane))) = (first, second)
     else {
-        return Vec::new();
+        return GeometryCandidates::default();
     };
     let Some(normal) = normalize(plane.normal) else {
-        return Vec::new();
+        return GeometryCandidates::default();
     };
     let Some(axis) = normalize(cylinder.axis) else {
-        return Vec::new();
+        return GeometryCandidates::default();
     };
     if dot(normal, axis).abs() > EPS_AXIS_ORTHO || cylinder.radius <= 0.0 {
-        return Vec::new();
+        return GeometryCandidates::default();
     }
     let signed_distance = dot(
         normal,
@@ -52,12 +94,12 @@ pub(in super::super) fn parallel_plane_cylinder_generator_candidates(
     let distance = signed_distance / scale;
     let offset_squared = (radius - distance.abs()) * (radius + distance.abs());
     if offset_squared <= EPS_PLANE_CYLINDER_SECANT_SQUARED {
-        return Vec::new();
+        return GeometryCandidates::default();
     }
     let closest: [f64; 3] =
         std::array::from_fn(|index| cylinder.origin[index] - signed_distance * normal[index]);
     let Some(transverse) = normalize(cross(axis, normal)) else {
-        return Vec::new();
+        return GeometryCandidates::default();
     };
     let offset = offset_squared.sqrt() * scale;
     [-1.0, 1.0]
