@@ -183,17 +183,21 @@ pub(crate) fn global_parameter_owners(
 ) -> HashSet<FeatureId> {
     features
         .iter()
-        .filter(|feature| match feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => {
-                kind.as_str().eq_ignore_ascii_case(EQUATION_DRIVEN_TOKEN)
-            }
-            FeatureDefinition::Operation(FeatureOperation::TreeNode { role, .. }) => {
-                *role == FeatureTreeNodeRole::Equations
-            }
-            _ => false,
-        })
+        .filter(|feature| is_global_parameter_owner(feature))
         .map(|feature| feature.id.clone())
         .collect()
+}
+
+pub(crate) fn is_global_parameter_owner(feature: &cadmpeg_ir::features::Feature) -> bool {
+    match feature.evaluation.definition() {
+        FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) => {
+            kind.as_str().eq_ignore_ascii_case(EQUATION_DRIVEN_TOKEN)
+        }
+        FeatureDefinition::Operation(FeatureOperation::TreeNode { role, .. }) => {
+            *role == FeatureTreeNodeRole::Equations
+        }
+        _ => false,
+    }
 }
 
 /// Replace evaluable expressions with canonical literals in a temporary history projection.
