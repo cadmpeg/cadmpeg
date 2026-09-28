@@ -751,19 +751,26 @@ fn legacy_reference_axis_triad_requires_consecutive_native_records() {
         .map(|index| feature(10 + index, 40 + index, "moRefPlane_c"))
         .chain((0..3).map(|index| feature(13 + index, 43 + index, "moRefAxis_c")))
         .collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     assert_eq!(
-        legacy_reference_axis_triads(&features),
+        legacy_reference_axis_triads(&ctx, &features).unwrap(),
         vec![([3, 4, 5], [[40, 41], [40, 42], [42, 41]])]
     );
 
     features.insert(3, feature(99, 4, "moRefPlane_c"));
     assert_eq!(
-        legacy_reference_axis_triads(&features),
+        legacy_reference_axis_triads(&ctx, &features).unwrap(),
         vec![([4, 5, 6], [[40, 41], [40, 42], [42, 41]])]
     );
 
     features[5].source_id = FeatureSource::from_value(99);
-    assert!(legacy_reference_axis_triads(&features).is_empty());
+    assert!(legacy_reference_axis_triads(&ctx, &features).unwrap().is_empty());
 }
 
 #[test]
@@ -884,6 +891,44 @@ fn reference_axis_enrichment_refuses_collection_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
             && limit.operation == "index SLDPRT reference axis sources"));
+}
+
+#[test]
+fn reference_axis_enrichment_refuses_work_limit() {
+    let feature = Feature {
+        id: "axis".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(2080),
+        ordinal: 0,
+        name: "Axis1".into(),
+        kind: String::new(),
+        input_class: Some("moRefAxis_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature],
+    };
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = super::enrich_history_reference_axes(&ctx, &mut [history], &[]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "scan SLDPRT reference axis triad candidates"));
 }
 
 #[test]

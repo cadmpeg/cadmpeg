@@ -1685,7 +1685,7 @@ pub(crate) fn enrich_history_reference_axes(
     }
 
     for history in histories.iter_mut() {
-        for (axes, pairs) in legacy_reference_axis_triads(&history.features) {
+        for (axes, pairs) in legacy_reference_axis_triads(ctx, &history.features)? {
             for (axis_index, planes) in axes.into_iter().zip(pairs) {
                 let axis = &mut history.features[axis_index];
                 if !axis.properties.contains_key("Planes") {
@@ -1743,7 +1743,7 @@ pub(crate) fn enrich_history_reference_axes(
 
     for history in histories {
         let mut completions = Vec::new();
-        for (indices, _) in legacy_reference_axis_triads(&history.features) {
+        for (indices, _) in legacy_reference_axis_triads(ctx, &history.features)? {
             let Some(completion) = (|| {
                 let frames = indices.map(|index| {
                     let feature = &history.features[index];
@@ -1950,63 +1950,69 @@ fn reference_axis_frame_key((origin, direction): &(Point3, Vector3)) -> [u64; 6]
 }
 
 fn legacy_reference_axis_triads(
+    ctx: &DecodeContext<'_>,
     features: &[crate::records::Feature],
-) -> Vec<([usize; 3], [[u32; 2]; 3])> {
+) -> Result<Vec<([usize; 3], [[u32; 2]; 3])>, CodecError> {
     let mut by_source = HashMap::<u32, Option<usize>>::new();
     for (index, feature) in features.iter().enumerate() {
         let Some(source) = feature.source_value() else {
             continue;
         };
-        by_source
-            .entry(source)
-            .and_modify(|index| *index = None)
-            .or_insert(Some(index));
+        if let Some(existing) = by_source.get_mut(&source) {
+            *existing = None;
+        } else {
+            ctx.charge_collection_items(1, "index SLDPRT reference axis triad sources")?;
+            by_source.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "index SLDPRT reference axis triad sources", u64::MAX - 1, u64::MAX,
+            ))?;
+            by_source.insert(source, Some(index));
+        }
     }
-    features
-        .iter()
-        .filter_map(|first| {
-            let source = first.source_value()?;
-            let indices = (0..6)
-                .map(|offset| {
-                    by_source
-                        .get(&source.checked_add(offset)?)
-                        .copied()
-                        .flatten()
-                })
-                .collect::<Option<Vec<_>>>()?;
-            let records = indices
-                .iter()
-                .map(|index| &features[*index])
-                .collect::<Vec<_>>();
-            let classes = records
-                .iter()
-                .map(|feature| {
-                    native_object_class(feature.input_class.as_deref().unwrap_or_default())
-                })
-                .collect::<Vec<_>>();
-            if classes[..3]
-                .iter()
-                .any(|class| *class != NativeClassKind::ReferencePlane)
-                || classes[3..]
-                    .iter()
-                    .any(|class| *class != NativeClassKind::ReferenceAxis)
-            {
-                return None;
-            }
-            let sources = records
-                .iter()
-                .map(|feature| feature.source_value())
-                .collect::<Option<Vec<_>>>()?;
-            Some((
+    let mut triads = Vec::new();
+    for first in features {
+        ctx.charge_work(1, "scan SLDPRT reference axis triad candidates")?;
+        let Some(source) = first.source_value() else { continue; };
+        let mut indices = [0usize; 6];
+        let mut complete = true;
+        for (offset, index) in indices.iter_mut().enumerate() {
+            let Some(candidate_source) = u32::try_from(offset).ok().and_then(|offset| source.checked_add(offset)) else {
+                complete = false;
+                break;
+            };
+            let Some(candidate_index) = by_source.get(&candidate_source).copied().flatten() else {
+                complete = false;
+                break;
+            };
+            *index = candidate_index;
+        }
+        if !complete
+            || indices[..3].iter().any(|index| native_object_class(
+                features[*index].input_class.as_deref().unwrap_or_default(),
+            ) != NativeClassKind::ReferencePlane)
+            || indices[3..].iter().any(|index| native_object_class(
+                features[*index].input_class.as_deref().unwrap_or_default(),
+            ) != NativeClassKind::ReferenceAxis)
+        {
+            continue;
+        }
+        let [Some(first_source), Some(second_source), Some(third_source)] = [
+            features[indices[0]].source_value(),
+            features[indices[1]].source_value(),
+            features[indices[2]].source_value(),
+        ] else {
+            continue;
+        };
+        ctx.reserve_collection_vec(&mut triads, 1, "collect SLDPRT reference axis triads")?;
+        triads.push((
                 [indices[3], indices[4], indices[5]],
                 [
-                    [sources[0], sources[1]],
-                    [sources[0], sources[2]],
-                    [sources[2], sources[1]],
+                    [first_source, second_source],
+                    [first_source, third_source],
+                    [third_source, second_source],
                 ],
-            ))
-        })
-        .collect()
+            ));
+    }
+    Ok(triads)
 }
 
 fn plane_intersection_axis_frame(
