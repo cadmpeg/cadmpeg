@@ -1109,11 +1109,14 @@ fn owner_chart_bridge(
     record: &ConsolidatedRecord,
     carrier: B2OwnerChartCarrier,
 ) -> Option<B2OwnerChartBridge> {
-    let frames =
+    let mut frames =
         family_frames_from_records(std::slice::from_ref(record), ConsolidatedFamily::B, 0x37);
-    let [frame] = frames.as_slice() else {
+    let Some(frame) = frames.next() else {
         return None;
     };
+    if frames.next().is_some() {
+        return None;
+    }
     if frame.header_token != 5 {
         return None;
     }
