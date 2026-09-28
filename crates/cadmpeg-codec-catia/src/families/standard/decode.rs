@@ -10205,15 +10205,14 @@ fn build_standard_edge_curve(
             let radius = admitted_radius.get();
             let start = ir.model.points[points[0]].position().get();
             let end = ir.model.points[points[1]].position().get();
-            let mut axes: Vec<UnitVector3> = support
-                .faces
-                .iter()
-                .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
-                .filter_map(|surface| {
-                    standard_circle_axis_from_carrier(center, radius, &surface.geometry)
-                })
-                .collect();
-            axes.extend(native_support.into_iter().flat_map(|native| {
+            let mut axes = crate::resource::collect_vec(
+                ctx,
+                support.faces.iter()
+                    .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
+                    .filter_map(|surface| standard_circle_axis_from_carrier(center, radius, &surface.geometry)),
+                "catia_standard_edge_circle_axes",
+            )?;
+            for axis in native_support.into_iter().flat_map(|native| {
                 native.carriers.iter().filter_map(|carrier| {
                     let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) =
                         carrier
@@ -10222,9 +10221,13 @@ fn build_standard_edge_curve(
                     };
                     standard_circle_axis_from_carrier(center, radius, surface)
                 })
-            }));
+            }) {
+                crate::resource::push(ctx, &mut axes, axis, "catia_standard_edge_circle_axes")?;
+            }
             if axes.is_empty() {
-                axes.extend(circle_axis_from_endpoints(center, radius, start, end));
+                if let Some(axis) = circle_axis_from_endpoints(center, radius, start, end) {
+                    crate::resource::push(ctx, &mut axes, axis, "catia_standard_edge_circle_axes")?;
+                }
             }
             let axis = axes.first().copied();
             let conflicting_axes = axis.is_some_and(|axis| {
@@ -11335,20 +11338,16 @@ fn attach_standard_circles(
         let admitted_radius = radius;
         let center = center.get();
         let radius = radius.get();
-        let axes: Vec<UnitVector3> = support
-            .faces
-            .iter()
-            .filter_map(|face| bindings.get(*face))
-            .filter_map(|(surface_id, _, _)| {
-                ir.model
-                    .surfaces
-                    .iter()
-                    .find(|surface| surface.id == *surface_id)
-            })
-            .filter_map(|surface| {
-                standard_circle_axis_from_carrier(center, radius, &surface.geometry)
-            })
-            .collect();
+        let axes = crate::resource::collect_vec(
+            admission.context(),
+            support.faces.iter()
+                .filter_map(|face| bindings.get(*face))
+                .filter_map(|(surface_id, _, _)| {
+                    ir.model.surfaces.iter().find(|surface| surface.id == *surface_id)
+                })
+                .filter_map(|surface| standard_circle_axis_from_carrier(center, radius, &surface.geometry)),
+            "catia_standard_attached_circle_axes",
+        )?;
         let Some(axis) = axes.first().copied() else {
             continue;
         };
