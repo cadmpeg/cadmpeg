@@ -3097,24 +3097,7 @@ pub(crate) fn decode_sketch_curve_identities(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
-    let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
-            continue;
-        };
-        out.extend(decode_sketch_curve_identities_from_stream(
-            ctx,
-            bytes,
-            &meta,
-            &entry.name,
-        )?);
-    }
-    Ok(out)
+    decode_sketch_streams(ctx, scan, decode_sketch_curve_identities_from_stream)
 }
 
 #[derive(Debug)]
@@ -4788,9 +4771,22 @@ fn decode_sketch_streams<T>(
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        out.extend(decode(ctx, bytes, &meta, &entry.name)?);
+        extend_sketch_stream(ctx, &mut out, decode(ctx, bytes, &meta, &entry.name)?)?;
     }
     Ok(out)
+}
+
+fn extend_sketch_stream<T>(
+    ctx: &DecodeContext<'_>,
+    out: &mut Vec<T>,
+    mut decoded: Vec<T>,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(decoded.len() as u64, "f3d sketch stream output")?;
+    out.try_reserve(decoded.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d sketch stream output allocation", 0, decoded.len() as u64)
+    })?;
+    out.append(&mut decoded);
+    Ok(())
 }
 
 #[cfg(test)]
