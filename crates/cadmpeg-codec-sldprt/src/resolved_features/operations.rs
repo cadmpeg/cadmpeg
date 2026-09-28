@@ -528,23 +528,26 @@ fn operation_carrier_present(
     lane: &FeatureInputLane,
     form_padding: Option<usize>,
 ) -> bool {
-    let source_matches = feature
-        .source_value()
-        .map(|source_id| {
-            lane.names
-                .iter()
-                .filter(|name| name.object_id.and_then(ObjectId::value) == Some(source_id))
-                .collect::<Vec<_>>()
+    let source_id = feature.source_value();
+    let mut source_matches = lane.names.iter().filter(|name| {
+        source_id.is_some_and(|source_id| {
+            name.object_id.and_then(ObjectId::value) == Some(source_id)
         })
-        .filter(|matches| !matches.is_empty());
-    let candidates = source_matches.unwrap_or_else(|| {
-        lane.names
-            .iter()
-            .filter(|name| name.value == feature.name)
-            .collect::<Vec<_>>()
     });
-    let [name] = candidates.as_slice() else {
-        return candidates.len() > 1;
+    let name = if let Some(first) = source_matches.next() {
+        if source_matches.next().is_some() {
+            return true;
+        }
+        first
+    } else {
+        let mut name_matches = lane.names.iter().filter(|name| name.value == feature.name);
+        let Some(first) = name_matches.next() else {
+            return false;
+        };
+        if name_matches.next().is_some() {
+            return true;
+        }
+        first
     };
     if matches!(kind, OperationKind::Extrusion)
         && feature_inline_operation_fields(lane, name).is_some()
