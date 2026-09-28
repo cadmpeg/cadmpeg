@@ -779,7 +779,7 @@ impl NativeModel {
         let parasolid_chart_records = parasolid_chart_records(ctx, streams)?;
         let parasolid_attribute_definitions = parasolid_attribute_definitions(ctx, streams)?;
         let parasolid_entity_51_records = parasolid_entity_51_records(ctx, streams)?;
-        let value_records = parasolid_entity_value_records(streams, &deltas_events.records);
+        let value_records = parasolid_entity_value_records(ctx, streams, &deltas_events.records)?;
         // A value-record frame that passes its family validation and then does
         // not materialize is a disagreement inside the reader, not a record
         // the decoder may drop in silence.
