@@ -2621,6 +2621,7 @@ impl<'a> F3dDecodeSession<'a> {
             },
         );
         crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
+            ctx,
             scan,
             &self.native.design_construction_operand_groups,
             &self.native.design_record_headers,

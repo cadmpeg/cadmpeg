@@ -2403,6 +2403,7 @@ fn spatial_profile_containing_entity(
 }
 
 pub(crate) fn bind_loft_and_revolve_sketch_selections(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
@@ -2436,12 +2437,13 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         };
         let Some(profile) = parse_sketch_profile(
+            ctx,
             bytes,
             stream,
             group.scope_reference_ordinal,
             header,
             resolution.entities,
-        ) else {
+        ).transpose()? else {
             continue;
         };
         let matches = resolution
