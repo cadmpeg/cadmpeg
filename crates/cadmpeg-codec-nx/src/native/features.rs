@@ -4197,19 +4197,21 @@ pub(super) fn feature_operation_object_references(ctx: &cadmpeg_core::decode::De
     };
     let indexed = container.indexed_om_sections(ctx)?;
     let mut references = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            if failure.is_some() { return; }
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, reference) in
-                crate::om::direct_reference::operation_reference_fields(record.payload_view(), kind)
-                    .into_iter()
-                    .enumerate()
-            {
+            let fields = match crate::om::direct_reference::operation_reference_fields(ctx, record.payload_view(), kind) {
+                Ok(fields) => fields,
+                Err(error) => { failure = Some(error); return; }
+            };
+            for (ordinal, reference) in fields.into_iter().enumerate() {
                 let Some(offset) = entry_offset.checked_add(reference.offset() as u64) else {
                     continue;
                 };
@@ -4233,6 +4235,7 @@ pub(super) fn feature_operation_object_references(ctx: &cadmpeg_core::decode::De
             }
         },
     )?;
+    if let Some(error) = failure { return Err(error); }
     Ok(references)
 }
 
