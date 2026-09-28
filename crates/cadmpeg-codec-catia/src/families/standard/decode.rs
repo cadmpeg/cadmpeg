@@ -4073,7 +4073,7 @@ pub(super) fn standard_object_evidence_from_streams(
                 .or_insert(Some(evidence));
         }
         let stream_edge_faces =
-            crate::families::b5::graph::edge_face_references_from_frames(&stream, &frames);
+            crate::families::b5::graph::edge_face_references_from_frames(ctx, &stream, &frames)?;
         for (edge, owners) in stream_edge_faces {
             crate::resource::admit_map_entry(ctx, &mut edge_face_candidates, &edge,
                 "catia_standard_edge_face_candidates")?;

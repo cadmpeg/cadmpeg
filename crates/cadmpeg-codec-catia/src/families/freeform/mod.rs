@@ -369,8 +369,12 @@ pub(super) fn try_decode_freeform_surfaces(
         let typed_face_counts = if let Some(graph) = &b5_graph {
             Some(typed_face_counts(&graph.face_records, &graph.faces))
         } else {
-            let records =
-                crate::families::b5::graph::typed_face_records_from_records(&census_object_records);
+            let records = match crate::families::b5::graph::typed_face_records_from_records(
+                ctx, &census_object_records,
+            ) {
+                Ok(records) => records,
+                Err(error) => return Some(Err(error)),
+            };
             (!records.is_empty()).then(|| typed_face_counts(&records, &[]))
         };
         let typed_multi_surface_face_count = b5_graph
