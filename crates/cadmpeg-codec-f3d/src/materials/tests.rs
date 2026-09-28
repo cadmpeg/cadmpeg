@@ -904,6 +904,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     ]);
 
     crate::decode::resolve_face_appearance_bindings(
+        &cadmpeg_test_support::service_decode_context(),
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
             face_guid: face_guid.into(),
@@ -957,6 +958,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         "cccccccc-1111-2222-3333-dddddddddddd".into(),
     ));
     let error = crate::decode::resolve_face_appearance_bindings(
+        &cadmpeg_test_support::service_decode_context(),
         &mut ir,
         &[crate::materials::FaceAppearanceAssignment {
             face_guid: face_guid.into(),
@@ -1024,7 +1026,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
     };
 
     let mut ir = make_ir();
-    crate::decode::resolve_face_appearance_bindings(&mut ir, std::slice::from_ref(&assignment))
+    crate::decode::resolve_face_appearance_bindings(&cadmpeg_test_support::service_decode_context(), &mut ir, std::slice::from_ref(&assignment))
         .expect("legacy face assignment");
     assert_eq!(ir.model.faces[0].color, Some(assignment_color));
     assert_eq!(ir.model.appearance_bindings.len(), 1);
@@ -1032,6 +1034,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
     let mut explicit = make_ir();
     explicit.model.faces[0].color = Some(explicit_color);
     crate::decode::resolve_face_appearance_bindings(
+        &cadmpeg_test_support::service_decode_context(),
         &mut explicit,
         std::slice::from_ref(&assignment),
     )
@@ -1041,6 +1044,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
     let mut no_asset = make_ir();
     no_asset.model.appearances.clear();
     crate::decode::resolve_face_appearance_bindings(
+        &cadmpeg_test_support::service_decode_context(),
         &mut no_asset,
         std::slice::from_ref(&assignment),
     )
@@ -1065,6 +1069,7 @@ fn duplicate_face_assignments_reject_conflicting_colors() {
     };
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let error = crate::decode::resolve_face_appearance_bindings(
+        &cadmpeg_test_support::service_decode_context(),
         &mut ir,
         &[assignment(0.25), assignment(0.75)],
     )
