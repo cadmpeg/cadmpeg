@@ -5825,7 +5825,7 @@ pub(super) fn feature_sketch_payload_scalar_lanes(ctx: &DecodeContext<'_>,
         container,
         payloads,
         |payload| payload.content.blocks(),
-        |bytes| Ok(crate::om::sketch_payload_scalar_lanes(bytes)),
+        |bytes| crate::om::sketch_payload_scalar_lanes(ctx, bytes),
         |payload, ordinal, lane, source_offset| {
             let header_source = source_offset(lane.offset() as usize)?;
             let terminator_source = source_offset(lane.end() as usize)?;

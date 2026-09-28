@@ -2376,33 +2376,36 @@ pub(crate) fn datum_plane_descriptor_block(
 /// Decode every complete scalar-vector frame in a reconstructed sketch
 /// payload.
 pub(crate) fn sketch_payload_scalar_lanes(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Vec<FramedScalarRun<SketchScalarLaneForm, ()>> {
-    let mut lanes = [SketchScalarLaneForm::Form03, SketchScalarLaneForm::Form07]
-        .into_iter()
-        .flat_map(|form| {
-            let discriminator = form.discriminator();
-            bytes
-                .windows(discriminator.len())
-                .enumerate()
-                .filter_map(move |(offset, window)| {
-                    (window == discriminator).then_some(())?;
-                    let mut at = offset + discriminator.len();
-                    let mut values = Vec::new();
-                    loop {
-                        if bytes.get(at) == Some(&0x00) {
-                            break;
-                        }
-                        let scalar = ShiftedScalar::read(bytes.get(at..)?)?;
-                        at += scalar.raw().len();
-                        values.push((scalar, ()));
-                    }
-                    FramedScalarRun::new(form, offset as u64, NonEmpty::new(values)?).ok()
-                })
-        })
-        .collect::<Vec<_>>();
+) -> Result<Vec<FramedScalarRun<SketchScalarLaneForm, ()>>, CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(bytes.len()).checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX sketch scalar lanes", 0, cadmpeg_core::decode::u64_from_index(bytes.len())))?;
+    ctx.charge_work(work, "scan NX sketch scalar lanes")?;
+    let mut lanes = Vec::new();
+    for form in [SketchScalarLaneForm::Form03, SketchScalarLaneForm::Form07] {
+        let discriminator = form.discriminator();
+        for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
+            if window != discriminator { continue; }
+            let mut at = offset + discriminator.len();
+            let mut values = Vec::new();
+            let complete = loop {
+                ctx.charge_work(1, "scan NX sketch scalar atoms")?;
+                if bytes.get(at) == Some(&0x00) { break true; }
+                let Some(scalar) = bytes.get(at..).and_then(ShiftedScalar::read) else { break false; };
+                at += scalar.raw().len();
+                reserve_om_retained_item(ctx, &mut values, "NX sketch scalar atoms")?;
+                values.push((scalar, ()));
+            };
+            if !complete { continue; }
+            let Some(values) = NonEmpty::from_vec(values) else { continue; };
+            let Ok(lane) = FramedScalarRun::new(form, cadmpeg_core::decode::u64_from_index(offset), values) else { continue; };
+            reserve_om_retained_item(ctx, &mut lanes, "NX sketch scalar lanes")?;
+            lanes.push(lane);
+        }
+    }
     lanes.sort_by_key(FramedScalarRun::offset);
-    lanes
+    Ok(lanes)
 }
 
 /// Decode every exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
