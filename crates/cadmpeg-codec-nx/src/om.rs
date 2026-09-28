@@ -1003,40 +1003,55 @@ impl<'a> IndexedSection<'a> {
     }
 
     /// Decode explicit numeric-expression text within bounded entity records.
-    pub(crate) fn numeric_expressions(&self) -> Vec<NumericExpression<'a>> {
-        self.numeric_expression_records()
-            .into_iter()
-            .map(|(_, expression)| expression)
-            .collect()
+    pub(crate) fn numeric_expressions(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<NumericExpression<'a>>, CodecError> {
+        let records = self.numeric_expression_records(ctx)?;
+        let mut expressions = Vec::new();
+        for (_, expression) in records {
+            reserve_om_retained_item(ctx, &mut expressions, "nx indexed numeric expressions")?;
+            expressions.push(expression);
+        }
+        Ok(expressions)
     }
 
     /// Decode expressions together with their owning record ordinal.
-    pub(crate) fn numeric_expression_records(&self) -> Vec<(usize, NumericExpression<'a>)> {
-        let records: Vec<(usize, &'a [u8], Option<u32>)> = match &self.store {
-            IndexedStore::Fixed { records } => records
-                .iter()
-                .map(|record| (record.offset, record.bytes, Some(record.object_id.0)))
-                .collect(),
-            IndexedStore::OffsetOnly { records, .. } => records
-                .iter()
-                .map(|record| (record.offset, record.bytes, None))
-                .collect(),
-        };
+    pub(crate) fn numeric_expression_records(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(usize, NumericExpression<'a>)>, CodecError> {
+        let mut temporary = ctx.reserve_scoped(0, "nx indexed numeric record scan")?;
+        let mut records: Vec<(usize, &'a [u8], Option<u32>)> = Vec::new();
+        match &self.store {
+            IndexedStore::Fixed { records: source } => {
+                for record in source.iter() {
+                    reserve_om_scoped_item(ctx, &mut temporary, &mut records, "nx indexed numeric record scan")?;
+                    records.push((record.offset, record.bytes, Some(record.object_id.0)));
+                }
+            }
+            IndexedStore::OffsetOnly { records: source, .. } => {
+                for record in source.iter() {
+                    reserve_om_scoped_item(ctx, &mut temporary, &mut records, "nx indexed numeric record scan")?;
+                    records.push((record.offset, record.bytes, None));
+                }
+            }
+        }
         if !records.iter().any(|(_, bytes, _)| {
             bytes
                 .windows(b"hostglobalvariables".len())
                 .any(|window| window == b"hostglobalvariables")
         }) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
-        records
-            .into_iter()
-            .enumerate()
-            .filter_map(|(record_ordinal, (offset, bytes, object_id))| {
-                numeric_expression_at(bytes, offset, object_id)
-                    .map(|expression| (record_ordinal, expression))
-            })
-            .collect()
+        let mut expressions = Vec::new();
+        for (record_ordinal, (offset, bytes, object_id)) in records.into_iter().enumerate() {
+            if let Some(expression) = numeric_expression_at(bytes, offset, object_id) {
+                reserve_om_retained_item(ctx, &mut expressions, "nx indexed numeric expression records")?;
+                expressions.push((record_ordinal, expression));
+            }
+        }
+        Ok(expressions)
     }
 }
 

@@ -4517,7 +4517,7 @@ pub(super) fn expressions(ctx: &DecodeContext<'_>, container: &Container) -> Res
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections(ctx)?.into_iter().enumerate()
     {
-        for (record_ordinal, expression) in section.numeric_expression_records() {
+        for (record_ordinal, expression) in section.numeric_expression_records(ctx)? {
             let Some(object_id) = expression.object_id else {
                 continue;
             };
