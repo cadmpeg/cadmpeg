@@ -285,3 +285,107 @@ fn sketch_geometry_alias_finding_refuses_collection_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings"));
 }
+
+fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
+    use crate::records::bodies::{DesignBodyBinding, DesignBodyBindingWire, DesignBodyBounds, DesignBodyBoundsWire};
+    use crate::records::entity_header::{DesignEntityHeader, DesignEntityRegistration, DESIGN_MODULE_BODY};
+    use crate::records::identity::{DesignEntityId, ReferenceRun};
+
+    let binding_id = "f3d:Design/BulkStream.dat:body-binding#1";
+    let bounds = DesignBodyBounds::try_from(DesignBodyBoundsWire {
+        id: "f3d:Design/BulkStream.dat:body-bounds#1".into(),
+        entity_suffix: 1,
+        entity_byte_offset: 10,
+        record_indices: [2, 3, 4],
+        record_byte_offsets: [20, 30, 40],
+        value_byte_offsets: [21, 31, 41],
+        body_binding_ids: with_binding.then(|| vec![binding_id.into()]).unwrap_or_default(),
+        maximum: cadmpeg_ir::math::Point3::new(1.0, 1.0, 1.0),
+        minimum: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+    }).unwrap();
+    let mut native = crate::native::F3dNative::default();
+    native.design_body_bounds.push(bounds);
+    if with_binding {
+        native.design_body_bindings.push(DesignBodyBinding::try_from(DesignBodyBindingWire {
+            id: binding_id.into(),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 1,
+            asm_body_key_offset: 50,
+            entity_suffix: 1,
+            entity_suffix_offset: 58,
+            blob_name: "BREP.body".into(),
+            blob_name_offset: 60,
+            body: None,
+        }).unwrap());
+        native.design_entity_headers.push(DesignEntityHeader {
+            id: "f3d:Design/BulkStream.dat:entity-header#1".into(),
+            byte_offset: 10,
+            entity_id: DesignEntityId::from_parts("body", 1),
+            class_tag: crate::records::references::DesignClassTag::try_from("112".to_owned()).unwrap(),
+            optional_slot_present: false,
+            registration: DesignEntityRegistration::new(
+                Some(DESIGN_MODULE_BODY.into()),
+                None,
+                ReferenceRun::unlocated(Vec::new()),
+            ).unwrap(),
+        });
+    }
+    native
+}
+
+fn body_bounds_error(
+    native: crate::native::F3dNative,
+    max_items: u64,
+    max_retained: u64,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained;
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    ctx.decode = Some(&decode);
+    super::super::validate_body_bounds(&ctx, &mut Vec::new()).unwrap_err()
+}
+
+#[test]
+fn body_bounds_binding_collection_refuses_collection_limit() {
+    let error = body_bounds_error(validation_body_bounds(true), 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D expected body bounds bindings"));
+}
+
+#[test]
+fn body_bounds_index_refuses_collection_limit() {
+    let error = body_bounds_error(validation_body_bounds(true), 1, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D bounded bodies"));
+}
+
+#[test]
+fn body_bounds_finding_refuses_collection_limit() {
+    let error = body_bounds_error(validation_body_bounds(false), 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn body_bounds_entity_refuses_retained_limit() {
+    let error = body_bounds_error(validation_body_bounds(false), u64::MAX, 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity"));
+}
+
+#[test]
+fn body_bounds_valid_binding_order_has_no_finding() {
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let native = validation_body_bounds(true);
+    let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    let mut findings = Vec::new();
+    super::super::validate_body_bounds(&ctx, &mut findings).unwrap();
+    assert!(findings.is_empty());
+}
