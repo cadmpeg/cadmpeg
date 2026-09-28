@@ -825,9 +825,10 @@ impl NativeModel {
             &parasolid_entity_62_unicode_records,
         )?;
         let parasolid_attribute_class_uses = parasolid_attribute_class_uses(
+            ctx,
             &parasolid_entity_51_records,
             &parasolid_attribute_definitions,
-        );
+        )?;
         let parasolid_attribute_field_uses = parasolid_attribute_field_uses(
             &parasolid_attribute_class_uses,
             &parasolid_attribute_definitions,
