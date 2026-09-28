@@ -35,6 +35,20 @@ fn pattern_scalar(name: &str, value: f64) -> PropertyRecord {
 }
 
 #[test]
+fn mirrored_pattern_plane_identity_refuses_at_retained_limit() {
+    let plane = super::linked_property("mirror", "MirrorPlane", "mirror-plane-property");
+    let properties_by_owner = std::collections::HashMap::new();
+    let sources = crate::design::PatternSources {
+        objects: &[], properties_by_owner: &properties_by_owner, entries: &[],
+    };
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd mirrored pattern plane identity", |ctx| {
+        crate::design::pattern_kind::<cadmpeg_ir::features::patterns::NoNestedComposite>(
+            ctx, "PartDesign::Mirrored", &[&plane], sources,
+        )
+    });
+}
+
+#[test]
 fn pattern_seed_vectors_and_identities_refuse_at_matching_limits() {
     let originals = super::linked_property("pattern", "Originals", "original-seed");
     let factor = super::scalar_property("pattern", "Factor", "2");

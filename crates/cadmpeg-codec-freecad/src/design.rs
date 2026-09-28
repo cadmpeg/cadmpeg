@@ -6349,26 +6349,19 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
         entries,
     } = sources;
     if kind.ends_with("Mirrored") {
-        return Ok((|| {
-            Some(
-                if let Some((plane_origin, plane_normal)) =
-                    plane_reference(properties, "MirrorPlane", objects, properties_by_owner)
-                {
-                    PatternKind::new(PatternTransform::Mirror {
-                        plane_origin: cadmpeg_ir::features::FinitePoint3::new(plane_origin)?,
-                        plane_normal: cadmpeg_ir::features::FeatureDirection3::from(plane_normal),
-                    })
-                    .ok()?
-                } else {
-                    PatternKind::new(PatternTransform::MirrorReference {
-                        plane: cadmpeg_ir::features::FaceSelection::Native(
-                            property(properties, "MirrorPlane")?.id.clone(),
-                        ),
-                    })
-                    .ok()?
-                },
-            )
-        })());
+        if let Some((plane_origin, plane_normal)) =
+            plane_reference(properties, "MirrorPlane", objects, properties_by_owner)
+        {
+            let Some(plane_origin) = cadmpeg_ir::features::FinitePoint3::new(plane_origin) else { return Ok(None); };
+            return Ok(PatternKind::new(PatternTransform::Mirror {
+                plane_origin,
+                plane_normal: cadmpeg_ir::features::FeatureDirection3::from(plane_normal),
+            }).ok());
+        }
+        let Some(plane) = property(properties, "MirrorPlane") else { return Ok(None); };
+        return Ok(PatternKind::new(PatternTransform::MirrorReference {
+            plane: cadmpeg_ir::features::FaceSelection::Native(retained_string(ctx, &plane.id, "fcstd mirrored pattern plane identity")?),
+        }).ok());
     }
 
     let Some(count) = (if kind.ends_with("Scaled") {
