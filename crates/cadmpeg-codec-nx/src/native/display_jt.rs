@@ -5821,33 +5821,46 @@ struct JtPathLookup<'a, 'b> {
     materials: &'a [&'b DisplayJtMaterialAttribute],
 }
 
+macro_rules! propagate_display_refusal {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+}
+
 fn resolve_display_jt_node_paths(
     ctx: &DecodeContext<'_>,
     object_id: u32,
     lookup: &JtPathLookup<'_, '_>,
     visiting: &mut BTreeSet<u32>,
-) -> Option<Vec<DisplayJtPath>> {
-    let _depth = ctx.enter_nested("resolve JT node path").ok()?;
+) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
+    let decoded: Option<Result<_, CodecError>> = (|| {
+    let _depth = propagate_display_refusal!(ctx.enter_nested("resolve JT node path"));
     let base = lookup.by_object.get(&object_id)?;
     if base.flags & 1 != 0 {
-        return Some(Vec::new());
+        return Some(Ok(Vec::new()));
     }
     if visiting.contains(&object_id) {
         return None;
     }
-    ctx.charge_collection_items(1, "nx JT visiting nodes")
-        .ok()?;
+    propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT visiting nodes"));
     visiting.insert(object_id);
     let mut parent_states = Vec::new();
     if let Some(ids) = lookup.parents.get(&object_id) {
-        ctx.charge_work(u64::try_from(ids.len()).ok()?, "resolve JT parent paths")
-            .ok()?;
+        propagate_display_refusal!(ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(ids.len()),
+            "resolve JT parent paths",
+        ));
         for id in ids {
-            let paths = resolve_display_jt_node_paths(ctx, *id, lookup, visiting)?;
+            let paths = propagate_display_refusal!(resolve_display_jt_node_paths(ctx, *id, lookup, visiting))?;
             let count = paths.len();
-            ctx.charge_collection_items(u64::try_from(count).ok()?, "nx JT parent path states")
-                .ok()?;
-            parent_states
+            propagate_display_refusal!(ctx.charge_collection_items(
+                cadmpeg_core::decode::u64_from_index(count),
+                "nx JT parent path states",
+            ));
+            propagate_display_refusal!(parent_states
                 .try_reserve(count)
                 .map_err(|_| {
                     ctx.refuse_codec_limit(
@@ -5855,12 +5868,13 @@ fn resolve_display_jt_node_paths(
                         0,
                         cadmpeg_core::decode::u64_from_index(count),
                     )
-                })
-                .ok()?;
+                }));
             parent_states.extend(paths);
         }
     } else {
-        reserve_jt_retained_vec(ctx, &mut parent_states, 1, "nx JT root path state").ok()?;
+        propagate_display_refusal!(reserve_jt_retained_vec(
+            ctx, &mut parent_states, 1, "nx JT root path state"
+        ));
         parent_states.push(DisplayJtPath {
             matrix: [
                 [1.0, 0.0, 0.0, 0.0],
@@ -5879,11 +5893,10 @@ fn resolve_display_jt_node_paths(
     visiting.remove(&object_id);
     let mut results = Vec::new();
     for mut path in parent_states {
-        ctx.charge_work(
-            u64::try_from(base.attribute_object_ids.len()).ok()?,
+        propagate_display_refusal!(ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(base.attribute_object_ids.len()),
             "resolve JT path attributes",
-        )
-        .ok()?;
+        ));
         for attribute_id in &base.attribute_object_ids {
             let mut matching_transforms = lookup
                 .transforms
@@ -5918,27 +5931,28 @@ fn resolve_display_jt_node_paths(
             }
         }
         if let Some(instance_id) = lookup.instance_ids.get(&object_id) {
-            ctx.charge_collection_items(1, "nx JT instance path nodes")
-                .ok()?;
-            path.instance_path
+            propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT instance path nodes"));
+            propagate_display_refusal!(path.instance_path
                 .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx JT instance path nodes", 0, 1))
-                .ok()?;
+                .map_err(|_| ctx.refuse_codec_limit("nx JT instance path nodes", 0, 1)));
             path.instance_path.push(
-                retain_jt_text_parts(ctx, &[instance_id], "nx JT instance path identity").ok()?,
+                propagate_display_refusal!(retain_jt_text_parts(
+                    ctx, &[instance_id], "nx JT instance path identity"
+                )),
             );
         }
-        ctx.charge_collection_items(1, "nx JT node path nodes")
-            .ok()?;
-        path.node_path
+        propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT node path nodes"));
+        propagate_display_refusal!(path.node_path
             .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx JT node path nodes", 0, 1))
-            .ok()?;
+            .map_err(|_| ctx.refuse_codec_limit("nx JT node path nodes", 0, 1)));
         path.node_path.push(object_id);
-        reserve_jt_retained_vec(ctx, &mut results, 1, "nx JT resolved paths").ok()?;
+        propagate_display_refusal!(reserve_jt_retained_vec(ctx, &mut results, 1, "nx JT resolved paths"));
         results.push(path);
     }
-    Some(results)
+    Some(Ok(results))
+
+    })();
+    decoded.transpose()
 }
 
 fn display_jt_node_paths(
@@ -5946,7 +5960,8 @@ fn display_jt_node_paths(
     scene_segment: &str,
     shape_object_id: u32,
     inputs: &DisplayJtTessellationInputs<'_>,
-) -> Option<Vec<DisplayJtPath>> {
+) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
+    let decoded: Option<Result<_, CodecError>> = (|| {
     let in_scene = |element_id: &str| {
         inputs
             .compressed_elements
@@ -5961,7 +5976,9 @@ fn display_jt_node_paths(
         .count();
     let mut scoped = Vec::new();
     let _scoped_reservation =
-        reserve_jt_scratch_vec(ctx, &mut scoped, scoped_count, "nx JT scoped base nodes").ok()?;
+        propagate_display_refusal!(reserve_jt_scratch_vec(
+            ctx, &mut scoped, scoped_count, "nx JT scoped base nodes"
+        ));
     scoped.extend(
         inputs
             .base_nodes
@@ -5973,7 +5990,7 @@ fn display_jt_node_paths(
         if by_object.contains_key(&base.object_id) {
             return None;
         }
-        ctx.charge_collection_items(1, "nx JT node index").ok()?;
+        propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT node index"));
         by_object.insert(base.object_id, *base);
     }
     by_object.get(&shape_object_id)?;
@@ -5983,13 +6000,12 @@ fn display_jt_node_paths(
         .filter(|attribute| in_scene(&attribute.element))
         .count();
     let mut scoped_transforms = Vec::new();
-    let _transform_reservation = reserve_jt_scratch_vec(
+    let _transform_reservation = propagate_display_refusal!(reserve_jt_scratch_vec(
         ctx,
         &mut scoped_transforms,
         transform_count,
         "nx JT scoped transforms",
-    )
-    .ok()?;
+    ));
     scoped_transforms.extend(
         inputs
             .transforms
@@ -6002,13 +6018,12 @@ fn display_jt_node_paths(
         .filter(|attribute| in_scene(&attribute.element))
         .count();
     let mut scoped_materials = Vec::new();
-    let _material_reservation = reserve_jt_scratch_vec(
+    let _material_reservation = propagate_display_refusal!(reserve_jt_scratch_vec(
         ctx,
         &mut scoped_materials,
         material_count,
         "nx JT scoped materials",
-    )
-    .ok()?;
+    ));
     scoped_materials.extend(
         inputs
             .materials
@@ -6024,9 +6039,10 @@ fn display_jt_node_paths(
         if instance_ids.contains_key(&node.object_id) {
             return None;
         }
-        ctx.charge_collection_items(1, "nx JT instance index")
-            .ok()?;
-        let id = retain_jt_text_parts(ctx, &[&node.id], "nx JT instance identity").ok()?;
+        propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT instance index"));
+        let id = propagate_display_refusal!(retain_jt_text_parts(
+            ctx, &[&node.id], "nx JT instance identity"
+        ));
         instance_ids.insert(node.object_id, id);
     }
     for (object_id, base) in &by_object {
@@ -6052,14 +6068,12 @@ fn display_jt_node_paths(
         for &child in children {
             by_object.get(&child)?;
             if !parents.contains_key(&child) {
-                ctx.charge_collection_items(1, "nx JT parent index").ok()?;
+                propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT parent index"));
             }
             let ids = parents.entry(child).or_default();
-            ctx.charge_collection_items(1, "nx JT parent references")
-                .ok()?;
-            ids.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx JT parent references", 0, 1))
-                .ok()?;
+            propagate_display_refusal!(ctx.charge_collection_items(1, "nx JT parent references"));
+            propagate_display_refusal!(ids.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx JT parent references", 0, 1)));
             ids.push(*object_id);
         }
     }
@@ -6070,7 +6084,11 @@ fn display_jt_node_paths(
         transforms: &scoped_transforms,
         materials: &scoped_materials,
     };
-    resolve_display_jt_node_paths(ctx, shape_object_id, &lookup, &mut BTreeSet::new())
+    let paths = propagate_display_refusal!(resolve_display_jt_node_paths(ctx, shape_object_id, &lookup, &mut BTreeSet::new()))?;
+    Some(Ok(paths))
+
+    })();
+    decoded.transpose()
 }
 
 fn transform_jt_point(matrix: [[f64; 4]; 4], point: [f32; 3]) -> Option<FinitePoint3> {
@@ -6123,9 +6141,7 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<UnitVe
 /// Every Display-JT tessellation the shape graph states.
 ///
 /// A record the graph does not shape as a mesh yields no tessellation and is
-/// not an error; a mesh whose lanes do not pair is. The refusal travels in
-/// `refusal` because the walk itself answers absence, and
-/// [`display_jt_tessellations`] turns it into the codec's error.
+/// not an error; a mesh whose lanes do not pair is.
 ///
 /// # Errors
 ///
@@ -6135,20 +6151,16 @@ pub(super) fn display_jt_tessellations(
     ctx: &DecodeContext<'_>,
     inputs: &DisplayJtTessellationInputs<'_>,
 ) -> Result<Vec<(Tessellation, u64)>, CodecError> {
-    let mut refusal = None;
-    let rows = display_jt_tessellation_rows(ctx, inputs, &mut refusal);
+    let rows = display_jt_tessellation_rows(ctx, inputs)?;
     ctx.charge_work(0, "complete JT tessellation decode")?;
-    match refusal {
-        Some(error) => Err(error),
-        None => Ok(rows.unwrap_or_default()),
-    }
+    Ok(rows.unwrap_or_default())
 }
 
 fn display_jt_tessellation_rows(
     ctx: &DecodeContext<'_>,
     inputs: &DisplayJtTessellationInputs<'_>,
-    refusal: &mut Option<CodecError>,
-) -> Option<Vec<(Tessellation, u64)>> {
+) -> Result<Option<Vec<(Tessellation, u64)>>, CodecError> {
+    let decoded: Option<Result<_, CodecError>> = (|| {
     let DisplayJtTessellationInputs {
         meshes,
         coordinates,
@@ -6201,7 +6213,7 @@ fn display_jt_tessellation_rows(
             return None;
         }
         let paths =
-            display_jt_node_paths(ctx, &binding.scene_segment, shape_node.object_id, inputs)?;
+            propagate_display_refusal!(display_jt_node_paths(ctx, &binding.scene_segment, shape_node.object_id, inputs))?;
         let mut rendered = Vec::new();
         let render_count = mesh
             .polygons
@@ -6209,8 +6221,7 @@ fn display_jt_tessellation_rows(
             .filter(|polygon| polygon.group >= 0)
             .count();
         let _render_reservation =
-            reserve_jt_scratch_vec(ctx, &mut rendered, render_count, "nx JT rendered triangles")
-                .ok()?;
+            propagate_display_refusal!(reserve_jt_scratch_vec(ctx, &mut rendered, render_count, "nx JT rendered triangles"));
         for polygon in &mesh.polygons {
             if polygon.group < 0 {
                 continue;
@@ -6250,13 +6261,12 @@ fn display_jt_tessellation_rows(
             .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
             .count();
         let mut texture_arrays = Vec::new();
-        let _texture_array_reservation = reserve_jt_scratch_vec(
+        let _texture_array_reservation = propagate_display_refusal!(reserve_jt_scratch_vec(
             ctx,
             &mut texture_arrays,
             texture_channels,
             "nx JT texture array references",
-        )
-        .ok()?;
+        ));
         for channel in (0..8_u8)
             .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
         {
@@ -6284,7 +6294,7 @@ fn display_jt_tessellation_rows(
                 None
             };
             let instance_path = path.instance_path;
-            let node_path = retain_jt_node_path(ctx, &path.node_path).ok()?;
+            let node_path = propagate_display_refusal!(retain_jt_node_path(ctx, &path.node_path));
             let convert_point = |index: u32| {
                 let point = coordinates.points_m.get(usize::try_from(index).ok()?)?;
                 transform_jt_point(transform, point.map(FiniteBinary32::get))
@@ -6296,52 +6306,47 @@ fn display_jt_tessellation_rows(
             let (vertices, triangles, normal_vectors, channels) = if has_vertex_attributes {
                 let triangle_vertex_count = rendered.len().checked_mul(3)?;
                 let mut vertices = Vec::new();
-                reserve_jt_retained_vec(
+                propagate_display_refusal!(reserve_jt_retained_vec(
                     ctx,
                     &mut vertices,
                     triangle_vertex_count,
                     "nx JT tessellation vertices",
-                )
-                .ok()?;
+                ));
                 let mut triangles = Vec::new();
-                reserve_jt_retained_vec(
+                propagate_display_refusal!(reserve_jt_retained_vec(
                     ctx,
                     &mut triangles,
                     rendered.len(),
                     "nx JT tessellation triangles",
-                )
-                .ok()?;
+                ));
                 // An unshaded mesh is stated by absence: no normal record, no
                 // normal lane.
                 let mut normal_vectors = normal_array.is_some().then(Vec::new);
                 if let Some(normal_vectors) = normal_vectors.as_mut() {
-                    reserve_jt_retained_vec(
+                    propagate_display_refusal!(reserve_jt_retained_vec(
                         ctx,
                         normal_vectors,
                         triangle_vertex_count,
                         "nx JT tessellation normals",
-                    )
-                    .ok()?;
+                    ));
                 }
                 let mut color_data = Vec::new();
                 if color_array.is_some() {
                     let color_byte_count = triangle_vertex_count.checked_mul(16)?;
-                    reserve_jt_retained_bytes(
+                    propagate_display_refusal!(reserve_jt_retained_bytes(
                         ctx,
                         &mut color_data,
                         color_byte_count,
                         "nx JT tessellation colors",
-                    )
-                    .ok()?;
+                    ));
                 }
                 let mut texture_component_counts = Vec::new();
-                let _texture_count_reservation = reserve_jt_scratch_vec(
+                let _texture_count_reservation = propagate_display_refusal!(reserve_jt_scratch_vec(
                     ctx,
                     &mut texture_component_counts,
                     texture_arrays.len(),
                     "nx JT texture component counts",
-                )
-                .ok()?;
+                ));
                 for array in &texture_arrays {
                     let count = array.values.first()?.len();
                     if !(1..=4).contains(&count)
@@ -6352,37 +6357,34 @@ fn display_jt_tessellation_rows(
                     texture_component_counts.push(count);
                 }
                 let mut texture_data = Vec::new();
-                reserve_jt_retained_vec(
+                propagate_display_refusal!(reserve_jt_retained_vec(
                     ctx,
                     &mut texture_data,
                     texture_component_counts.len(),
                     "nx JT tessellation texture buffers",
-                )
-                .ok()?;
+                ));
                 for component_count in &texture_component_counts {
                     let byte_count = triangle_vertex_count
                         .checked_mul(*component_count)?
                         .checked_mul(4)?;
                     let mut data = Vec::new();
-                    reserve_jt_retained_bytes(
+                    propagate_display_refusal!(reserve_jt_retained_bytes(
                         ctx,
                         &mut data,
                         byte_count,
                         "nx JT tessellation texture bytes",
-                    )
-                    .ok()?;
+                    ));
                     texture_data.push(data);
                 }
                 let mut vertex_flag_data = Vec::new();
                 if vertex_flag_array.is_some() {
                     let flag_byte_count = triangle_vertex_count.checked_mul(4)?;
-                    reserve_jt_retained_bytes(
+                    propagate_display_refusal!(reserve_jt_retained_bytes(
                         ctx,
                         &mut vertex_flag_data,
                         flag_byte_count,
                         "nx JT tessellation flag bytes",
-                    )
-                    .ok()?;
+                    ));
                 }
                 for (triangle, attributes) in rendered.iter().copied() {
                     let base = u32::try_from(vertices.len()).ok()?;
@@ -6419,13 +6421,12 @@ fn display_jt_tessellation_rows(
                 let channel_count = usize::from(color_array.is_some())
                     .checked_add(texture_arrays.len())?
                     .checked_add(usize::from(vertex_flag_array.is_some()))?;
-                reserve_jt_retained_vec(
+                propagate_display_refusal!(reserve_jt_retained_vec(
                     ctx,
                     &mut channels,
                     channel_count,
                     "nx JT tessellation channels",
-                )
-                .ok()?;
+                ));
                 if color_array.is_some() {
                     channels.push(
                         TessellationChannel::new(
@@ -6473,71 +6474,61 @@ fn display_jt_tessellation_rows(
                 (vertices, triangles, normal_vectors, channels)
             } else {
                 let mut vertices = Vec::new();
-                reserve_jt_retained_vec(
+                propagate_display_refusal!(reserve_jt_retained_vec(
                     ctx,
                     &mut vertices,
                     coordinates.points_m.len(),
                     "nx JT tessellation vertices",
-                )
-                .ok()?;
+                ));
                 for index in 0..coordinates.points_m.len() {
                     vertices.push(convert_point(u32::try_from(index).ok()?)?);
                 }
                 let mut triangles = Vec::new();
-                reserve_jt_retained_vec(
+                propagate_display_refusal!(reserve_jt_retained_vec(
                     ctx,
                     &mut triangles,
                     rendered.len(),
                     "nx JT tessellation triangles",
-                )
-                .ok()?;
+                ));
                 triangles.extend(rendered.iter().map(|(triangle, _)| *triangle));
                 (vertices, triangles, None, Vec::new())
             };
-            admit_jt_record_slot(ctx, &mut tessellations, "nx JT tessellations").ok()?;
+            propagate_display_refusal!(admit_jt_record_slot(ctx, &mut tessellations, "nx JT tessellations"));
+            let tessellation_id = propagate_display_refusal!(retain_jt_tessellation_id(
+                ctx,
+                shape_element.source_offset,
+                shape_element.object_id,
+                (path.node_path.len() != 1).then_some(node_path.as_str()),
+            ));
+            let mesh = match cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
+                vertices,
+                triangles,
+                normal_vectors,
+            ) {
+                Ok(mesh) => mesh,
+                Err(error) => {
+                    return Some(Err(CodecError::malformed(format_args!(
+                        "display-jt tessellation: {error}"
+                    ))));
+                }
+            };
+            let tessellation = propagate_display_refusal!(Tessellation::from_parts(
+                tessellation_id,
+                mesh,
+                channels,
+            )
+            .map_err(|error| CodecError::malformed(format_args!(
+                "display-jt tessellation: {error}"
+            ))));
             tessellations.push((
-                Tessellation::from_parts(
-                    retain_jt_tessellation_id(
-                        ctx,
-                        shape_element.source_offset,
-                        shape_element.object_id,
-                        (path.node_path.len() != 1).then_some(node_path.as_str()),
-                    )
-                    .map_err(|error| {
-                        *refusal = Some(error);
-                    })
-                    .ok()?,
-                    match cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
-                        vertices,
-                        triangles,
-                        normal_vectors,
-                    ) {
-                        Ok(mesh) => mesh,
-                        Err(error) => {
-                            *refusal = Some(CodecError::malformed(format_args!(
-                                "display-jt tessellation: {error}"
-                            )));
-                            return None;
-                        }
-                    },
-                    channels,
-                )
-                .map_err(|error| {
-                    CodecError::malformed(format_args!("display-jt tessellation: {error}"))
-                })
-                .map_err(|error| {
-                    *refusal = Some(error);
-                })
-                .ok()?
-                .with_source_object(Some(SourceObjectAssociation {
+                tessellation.with_source_object(Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
                     object_id: cadmpeg_core::text::NonBlankString::new(
-                        retain_jt_text_parts(
+                        propagate_display_refusal!(retain_jt_text_parts(
                             ctx,
                             &[&shape_node.id],
                             "nx JT tessellation source identity",
-                        )
-                        .ok()?,
+                        )),
                     )?,
                     name: None,
                     color,
@@ -6549,11 +6540,62 @@ fn display_jt_tessellation_rows(
             ));
         }
     }
-    Some(tessellations)
+    Some(Ok(tessellations))
+
+    })();
+    decoded.transpose()
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn jt_node_path_refuses_nesting_without_erasing_resource_error() {
+        use std::collections::{BTreeMap, BTreeSet};
+
+        let base = super::DisplayJtBaseNodeData {
+            id: "base".into(),
+            element: "scene".into(),
+            object_type_id: [0; 16],
+            object_id: 7,
+            version: 1,
+            flags: 0,
+            attribute_object_ids: Vec::new(),
+            family_data_byte_len: 0,
+            family_data_sha256: "00".repeat(32).try_into().expect("valid digest"),
+            source_offset: 0,
+        };
+        let mut by_object = BTreeMap::new();
+        by_object.insert(7, &base);
+        let parents = BTreeMap::new();
+        let instance_ids = BTreeMap::new();
+        let lookup = super::JtPathLookup {
+            by_object: &by_object,
+            parents: &parents,
+            instance_ids: &instance_ids,
+            transforms: &[],
+            materials: &[],
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_recursion_depth = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        let error = super::resolve_display_jt_node_paths(
+            &ctx,
+            7,
+            &lookup,
+            &mut BTreeSet::new(),
+        )
+        .err()
+        .expect("node path exceeds the nesting limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+                    && limit.operation == "resolve JT node path"
+        ));
+    }
+
     fn with_jt_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
