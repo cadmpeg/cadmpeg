@@ -852,3 +852,66 @@ fn staged_bodies_refuse_collection_limit() {
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_staged_bodies"));
 }
+
+fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=OPEN_SHELL('',(#2));#2=FACE('',());#3=SHELL_BASED_SURFACE_MODEL('',(#1));ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid shell model references");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
+        .expect("empty carrier index fits policy");
+    let shells = BTreeMap::from([(1, super::super::ShellDef {
+        base: 1,
+        forward: true,
+        typed: std::collections::HashSet::new(),
+    })]);
+    let region = cadmpeg_ir::ids::RegionId::mint("step:data:region#3")
+        .expect("valid region identity");
+    super::super::build_one(
+        3,
+        exchange.records().get(&3).expect("model"),
+        &exchange,
+        &cadmpeg_ir::CadIr::empty(),
+        &BTreeMap::new(), &BTreeMap::new(), &BTreeMap::new(), &shells,
+        &std::collections::BTreeSet::new(), &carriers, &[1],
+        body_id(), &region, false, false, false,
+        &mut Vec::new(), &mut None, &ctx,
+    )
+    .err()
+    .expect("builder exceeds limit")
+}
+
+#[test]
+fn brep_typed_refuses_collection_limit() {
+    assert!(matches!(brep_builder_refusal(0),
+        super::super::BuildError::Resource(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_brep_typed"));
+}
+
+#[test]
+fn brep_body_regions_refuse_collection_limit() {
+    assert!(matches!(brep_builder_refusal(1),
+        super::super::BuildError::Resource(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_brep_body_regions"));
+}
+
+#[test]
+fn brep_used_shells_refuse_collection_limit() {
+    assert!(matches!(brep_builder_refusal(2),
+        super::super::BuildError::Resource(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_brep_used_shells"));
+}
+
+#[test]
+fn brep_used_faces_refuse_collection_limit() {
+    assert!(matches!(brep_builder_refusal(3),
+        super::super::BuildError::Resource(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_brep_used_faces"));
+}
