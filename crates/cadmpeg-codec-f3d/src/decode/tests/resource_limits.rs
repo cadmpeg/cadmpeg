@@ -106,6 +106,21 @@ fn asm_history_collection_refuses_collection_limit() {
 }
 
 #[test]
+fn source_image_copy_refuses_retained_limit() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let (scan_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(bytes.len()).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::preserve_source_image(&limited, &scan).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D source image"));
+}
+
+#[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();
