@@ -4341,26 +4341,30 @@ pub(crate) fn bind_body_recipe_operand_candidates(
 /// Resolve selection-member local identities against persistent point and
 /// curve identities owned by the Extrude scope's selected Sketch.
 pub(crate) fn bind_extrude_selection_geometry(
+    ctx: &DecodeContext<'_>,
     members: &mut [DesignExtrudeSelectionMember],
     groups: &[DesignExtrudeSelectionGroup],
     scopes: &[DesignParameterScope],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
-) {
-    let selected_sketches = groups
-        .iter()
-        .filter_map(|group| {
-            let stream = native_stream(&group.id)?;
-            let scope = scopes.iter().find(|scope| {
+) -> Result<(), CodecError> {
+    let mut selected_sketches = HashMap::new();
+    for group in groups {
+        let Some(stream) = native_stream(&group.id) else { continue; };
+        let Some(scope) = scopes.iter().find(|scope| {
                 native_stream(&scope.id) == Some(stream)
                     && scope.record_index == group.scope_record_index
+            }) else { continue; };
+        let Some(profile) = scope.extrude_profile() else { continue; };
+        let key = (stream, group.record_index);
+        if !selected_sketches.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d selected Extrude sketch index")?;
+            selected_sketches.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d selected Extrude sketch allocation", 0, 1)
             })?;
-            Some((
-                (stream, group.record_index),
-                scope.extrude_profile()?.entity_id.suffix(),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+        }
+        selected_sketches.insert(key, profile.entity_id.suffix());
+    }
     for member in members {
         let Some(stream) = native_stream(&member.id) else {
             continue;
@@ -4392,26 +4396,27 @@ pub(crate) fn bind_extrude_selection_geometry(
                     secondary_id: curve.secondary_id,
                 })
         });
-        let matches = point_operands.chain(curve_operands).collect::<Vec<_>>();
-        if let [resolved] = matches.as_slice() {
-            member.resolved_geometry = Some(resolved.clone());
+        let mut matches = point_operands.chain(curve_operands);
+        if let (Some(resolved), None) = (matches.next(), matches.next()) {
+            member.resolved_geometry = Some(resolved);
         }
     }
+    Ok(())
 }
 
 /// Bind selection members to construction-operand identity chains that
 /// terminate at the same fixed persistent identity record.
 pub(crate) fn bind_extrude_selection_identities(
+    ctx: &DecodeContext<'_>,
     members: &mut [DesignExtrudeSelectionMember],
     identities: &[DesignConstructionOperandIdentity],
-) {
+) -> Result<(), CodecError> {
     for member in members {
         let Some(stream) = native_stream(&member.id) else {
             continue;
         };
-        let mut matches = identities
-            .iter()
-            .filter(|identity| {
+        let mut matches = Vec::new();
+        for identity in identities.iter().filter(|identity| {
                 native_stream(&identity.id) == Some(stream)
                     && identity.following_record_index() == member.record_index()
                     && identity.following_byte_offset() == member.byte_offset()
@@ -4420,19 +4425,33 @@ pub(crate) fn bind_extrude_selection_identities(
                             && persistent.asset_id == member.asset_id
                             && persistent.context_id == member.context_id
                     })
-            })
-            .collect::<Vec<_>>();
+            }) {
+            ctx.charge_collection_items(1, "f3d Extrude identity matches")?;
+            matches.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d Extrude identity match allocation", 0, 1)
+            })?;
+            matches.push(identity);
+        }
         matches.sort_by_key(|identity| {
             identity
                 .wrappers()
                 .first()
                 .map(|wrapper| wrapper.byte_offset)
         });
-        member.operand_identity_ids = matches
-            .into_iter()
-            .map(|identity| identity.id.clone())
-            .collect();
+        let count = u64::try_from(matches.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d Extrude identity ID count", 0, 1)
+        })?;
+        ctx.charge_collection_items(count, "f3d Extrude identity IDs")?;
+        let mut ids = Vec::new();
+        ids.try_reserve(matches.len()).map_err(|_| {
+            ctx.refuse_codec_limit("f3d Extrude identity ID allocation", 0, 1)
+        })?;
+        for identity in matches {
+            ids.push(copy_ascii_retained(ctx, &identity.id, "f3d Extrude identity ID text")?);
+        }
+        member.operand_identity_ids = ids;
     }
+    Ok(())
 }
 
 fn parse_extrude_selection_member(
