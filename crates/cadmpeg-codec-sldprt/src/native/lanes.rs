@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::admission::{admit_temporary_clones, admit_validation_candidates, invalid_owner, NativeAdmission};
 use super::SldprtNative;
+use cadmpeg_core::decode::DecodeContext;
 use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
@@ -137,7 +138,11 @@ pub(super) fn admit(
         validation_source_bytes,
         "validate SLDPRT derived lanes",
     )?;
-    for (lane, expected_lane) in expected_lanes(native) {
+    let expected = match admission {
+        NativeAdmission::Decode(ctx) => expected_lanes_charged(ctx, native)?,
+        NativeAdmission::Cadir => expected_lanes(native),
+    };
+    for (lane, expected_lane) in expected {
         if !crate::resolved_features::scalars::scalar_indices_match(
             &lane.scalars,
             &expected_lane.scalars,
@@ -189,18 +194,76 @@ pub(super) fn admit(
 }
 
 pub(crate) fn expected_lanes(native: &SldprtNative) -> Vec<(&FeatureInputLane, FeatureInputLane)> {
-    let mut expected_primary_lanes = native
+    let expected_primary_lanes = native
         .feature_input_lanes
         .iter()
         .filter(|lane| !is_supplemental_config_lane(lane))
         .cloned()
         .collect::<Vec<_>>();
-    let mut expected_supplemental_lanes = native
+    let expected_supplemental_lanes = native
         .feature_input_lanes
         .iter()
         .filter(|lane| is_supplemental_config_lane(lane))
         .cloned()
         .collect::<Vec<_>>();
+    expected_lane_pairs(native, expected_primary_lanes, expected_supplemental_lanes).collect()
+}
+
+fn expected_lanes_charged<'a>(
+    ctx: &DecodeContext<'_>,
+    native: &'a SldprtNative,
+) -> Result<Vec<(&'a FeatureInputLane, FeatureInputLane)>, cadmpeg_ir::NativeConvertError> {
+    let primary_count = native
+        .feature_input_lanes
+        .iter()
+        .filter(|lane| !is_supplemental_config_lane(lane))
+        .count();
+    let mut expected_primary_lanes = Vec::new();
+    ctx.reserve_precharged_vec(
+        &mut expected_primary_lanes,
+        primary_count,
+        "validate SLDPRT expected primary lanes",
+    )?;
+    expected_primary_lanes.extend(
+        native
+            .feature_input_lanes
+            .iter()
+            .filter(|lane| !is_supplemental_config_lane(lane))
+            .cloned(),
+    );
+    let supplemental_count = native.feature_input_lanes.len() - primary_count;
+    let mut expected_supplemental_lanes = Vec::new();
+    ctx.reserve_precharged_vec(
+        &mut expected_supplemental_lanes,
+        supplemental_count,
+        "validate SLDPRT expected supplemental lanes",
+    )?;
+    expected_supplemental_lanes.extend(
+        native
+            .feature_input_lanes
+            .iter()
+            .filter(|lane| is_supplemental_config_lane(lane))
+            .cloned(),
+    );
+    let mut expected = Vec::new();
+    ctx.reserve_precharged_vec(
+        &mut expected,
+        native.feature_input_lanes.len(),
+        "validate SLDPRT expected lane pairs",
+    )?;
+    expected.extend(expected_lane_pairs(
+        native,
+        expected_primary_lanes,
+        expected_supplemental_lanes,
+    ));
+    Ok(expected)
+}
+
+fn expected_lane_pairs<'a>(
+    native: &'a SldprtNative,
+    mut expected_primary_lanes: Vec<FeatureInputLane>,
+    mut expected_supplemental_lanes: Vec<FeatureInputLane>,
+) -> impl Iterator<Item = (&'a FeatureInputLane, FeatureInputLane)> + 'a {
     for lane in expected_primary_lanes
         .iter_mut()
         .chain(&mut expected_supplemental_lanes)
@@ -268,5 +331,4 @@ pub(crate) fn expected_lanes(native: &SldprtNative) -> Vec<(&FeatureInputLane, F
                 .filter(|lane| is_supplemental_config_lane(lane))
                 .zip(expected_supplemental_lanes),
         )
-        .collect()
 }
