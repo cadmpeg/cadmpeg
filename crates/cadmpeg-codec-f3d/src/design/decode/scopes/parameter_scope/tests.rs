@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::named_parameter_scope_tail_is_valid;
+use super::{copy_sketch_entity_id, first_marked_reference_offsets};
 use crate::test_support::lp_utf16;
 
 fn named_scope_tail(lane_value: u64) -> Vec<u8> {
@@ -74,4 +75,49 @@ fn named_scope_tail_refuses_temporary_text_limit() {
             if failure.dimension == ResourceDimension::MaterializedBytes
                 && failure.operation == "f3d Design temporary UTF-16 text"
     ));
+}
+
+#[test]
+fn sketch_scope_reference_offsets_refuse_second_unique_marker() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut frame = vec![0; 24];
+    for (at, suffix) in [(0, 42u32), (12, 43)] {
+        frame[at] = 1;
+        frame[at + 1..at + 5].copy_from_slice(&suffix.to_le_bytes());
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = first_marked_reference_offsets(&ctx, &frame);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d Sketch scope reference offsets"
+    ));
+    let admitted = first_marked_reference_offsets(&cadmpeg_test_support::service_decode_context(), &frame).unwrap();
+    assert_eq!(admitted.get(&42), Some(&0));
+    assert_eq!(admitted.get(&43), Some(&12));
+}
+
+#[test]
+fn sketch_scope_entity_id_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let source = crate::records::identity::DesignEntityId::try_from("entity_42".to_owned()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = source.as_str().len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = copy_sketch_entity_id(&ctx, &source);
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::RetainedBytes
+                && failure.operation == "f3d Sketch scope entity ID"
+    ));
+    let copied = copy_sketch_entity_id(&cadmpeg_test_support::service_decode_context(), &source).unwrap();
+    assert_eq!(copied, source);
 }
