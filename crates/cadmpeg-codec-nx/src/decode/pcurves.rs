@@ -90,18 +90,34 @@ pub(super) fn ordered_parameter_range(mut range: [f64; 2]) -> Option<[f64; 2]> {
     Some(range)
 }
 
-fn charge_derived_param_range(
+fn charge_derived_field(
     ctx: &DecodeContext<'_>,
-    id: &EdgeId,
+    id: &str,
+    field: &str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let bytes = id.as_str().len().checked_add("param_range".len()).ok_or_else(|| {
-        ctx.refuse_codec_limit("nx derived edge parameter text", 0, u64::MAX)
+    let bytes = id.len().checked_add(field.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit("nx derived annotation text", 0, u64::MAX)
     })?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(bytes),
-        "nx derived edge parameter text",
+        "nx derived annotation text",
     )?;
-    ctx.charge_collection_items(2, "nx derived edge parameter annotations")
+    ctx.charge_collection_items(2, "nx derived annotations")
+}
+
+fn charge_annotation_note(
+    ctx: &DecodeContext<'_>,
+    id: &str,
+    tag: &str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let bytes = id.len().checked_add(tag.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit("nx pcurve annotation text", 0, u64::MAX)
+    })?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "nx pcurve annotation text",
+    )?;
+    ctx.charge_collection_items(1, "nx pcurve provenance annotations")
 }
 
 fn vertex_point_positions(
@@ -691,7 +707,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
                 std::mem::swap(&mut edge.start, &mut edge.end);
             }
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
-            charge_derived_param_range(ctx, &edge.id)?;
+            charge_derived_field(ctx, edge.id.as_str(), "param_range")?;
             annotations
                 .derived(&edge.id, "param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -1729,7 +1745,7 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
         };
         if let Some(edge) = ir.model.edges.get_mut(*edge_index) {
             edge.set_param_range(Some(cadmpeg_ir::topology::ParameterInterval::from(range)));
-            charge_derived_param_range(ctx, &edge.id)?;
+            charge_derived_field(ctx, edge.id.as_str(), "param_range")?;
             annotations
                 .derived(&edge.id, "param_range")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -3801,8 +3817,11 @@ pub(super) fn attach_tolerant_edge_intersections(
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).expect("test context");
     let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
     attach_tolerant_edge_intersections_with_budget(
+        &ctx,
         ir,
         graph,
         edges,
@@ -3815,6 +3834,7 @@ pub(super) fn attach_tolerant_edge_intersections(
 }
 
 pub(super) fn attach_tolerant_edge_intersections_with_budget(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     graph: &Graph,
     edges: &BTreeMap<u32, EdgeId>,
@@ -3824,9 +3844,9 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let candidates = {
-        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-        let mut endpoint_surface_fits = BTreeMap::<(SurfaceId, [u64; 3], u64), bool>::new();
-        let mut nurbs_surface_bounds = BTreeMap::<SurfaceId, Option<([f64; 3], [f64; 3])>>::new();
+        let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+        let mut endpoint_surface_fits = BTreeMap::<(&SurfaceId, [u64; 3], u64), bool>::new();
+        let mut nurbs_surface_bounds = BTreeMap::<&SurfaceId, Option<([f64; 3], [f64; 3])>>::new();
         let mut blend_parameter_grids = BlendParameterGridCache::new();
         let mut candidates = Vec::new();
         for (&xmt, edge_id) in edges {
@@ -3865,20 +3885,26 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             if edge.curve().is_some() {
                 continue;
             }
-            let support = |fin_xmt: Option<crate::framing::xmt_reference::XmtTarget>| {
-                let fin_xmt = u32::from(fin_xmt?);
-                let coedge_id: CoedgeId =
-                    scope.id(&cadmpeg_ir::identity_component!("fin"), fin_xmt);
-                let coedge = model_index.coedges(coedge_id.as_str())?;
-                (&coedge.edge == edge_id).then_some(())?;
-                let loop_ = model_index.loops(coedge.owner_loop.as_str())?;
-                let face = model_index.faces(loop_.face.as_str())?;
-                Some(face.surface.clone())
+            let support = |fin_xmt: Option<crate::framing::xmt_reference::XmtTarget>| -> Result<Option<&SurfaceId>, cadmpeg_core::CodecError> {
+                let Some(fin_xmt) = fin_xmt else {
+                    return Ok(None);
+                };
+                let coedge_id: CoedgeId = scope.id_charged(ctx, &cadmpeg_ir::identity_component!("fin"), u32::from(fin_xmt))?;
+                let Some(coedge) = model_index.coedges(coedge_id.as_str()) else {
+                    return Ok(None);
+                };
+                if &coedge.edge != edge_id {
+                    return Ok(None);
+                }
+                let Some(loop_) = model_index.loops(coedge.owner_loop.as_str()) else {
+                    return Ok(None);
+                };
+                Ok(model_index.faces(loop_.face.as_str()).map(|face| &face.surface))
             };
-            let Some(first_support) = support(edge_fields.fin) else {
+            let Some(first_support) = support(edge_fields.fin)? else {
                 continue;
             };
-            let Some(second_support) = support(first_fin.other) else {
+            let Some(second_support) = support(first_fin.other)? else {
                 continue;
             };
             if first_support == second_support {
@@ -3897,7 +3923,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             'supports: for surface in &supports {
                 for point in &endpoints {
                     let key = (
-                        (*surface).clone(),
+                        *surface,
                         [point.x.to_bits(), point.y.to_bits(), point.z.to_bits()],
                         tolerance.to_bits(),
                     );
@@ -3908,26 +3934,19 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                         }
                         continue;
                     }
-                    let outside_nurbs_bounds =
-                        model_index
-                            .surfaces(surface.as_str())
-                            .is_some_and(|carrier| {
-                                let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) =
-                                    carrier.geometry.solved()
-                                else {
-                                    return false;
-                                };
-                                let bounds = nurbs_surface_bounds
-                                    .entry((*surface).clone())
-                                    .or_insert_with(|| nurbs_surface_control_bounds(nurbs));
-                                bounds.as_ref().is_some_and(|bounds| {
-                                    point_outside_nurbs_control_bounds(
-                                        *point,
-                                        edge_tolerance,
-                                        *bounds,
-                                    )
-                                })
-                            });
+                    let outside_nurbs_bounds = if let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) =
+                        model_index.surfaces(surface.as_str()).and_then(|carrier| carrier.geometry.solved())
+                    {
+                        ctx.charge_collection_items(1, "nx tolerant edge NURBS bounds")?;
+                        let bounds = nurbs_surface_bounds
+                            .entry(*surface)
+                            .or_insert_with(|| nurbs_surface_control_bounds(nurbs));
+                        bounds.as_ref().is_some_and(|bounds| {
+                            point_outside_nurbs_control_bounds(*point, edge_tolerance, *bounds)
+                        })
+                    } else {
+                        false
+                    };
                     let fits = if outside_nurbs_bounds {
                         false
                     } else {
@@ -3957,6 +3976,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
                             Point3::distance(*point, support_point) <= tolerance
                         })
                     };
+                    ctx.charge_collection_items(1, "nx tolerant edge endpoint fits")?;
                     endpoint_surface_fits.insert(key, fits);
                     if !fits {
                         endpoints_bound_supports = false;
@@ -3967,7 +3987,18 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             if !endpoints_bound_supports {
                 continue;
             }
-            candidates.push((xmt, edge_id.clone(), supports, endpoints, tolerance));
+            ctx.charge_collection_items(1, "nx tolerant edge candidates")?;
+            candidates.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx tolerant edge candidates", 0, 1))?;
+            candidates.push((
+                xmt,
+                copy_typed_id(ctx, edge_id.as_str(), "nx tolerant edge candidate identity")?,
+                [
+                    copy_typed_id(ctx, supports[0].as_str(), "nx tolerant first support identity")?,
+                    copy_typed_id(ctx, supports[1].as_str(), "nx tolerant second support identity")?,
+                ],
+                endpoints,
+                tolerance,
+            ));
         }
         candidates
     };
@@ -3980,13 +4011,13 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         else {
             continue;
         };
-        let curve_id: CurveId = scope.id(&cadmpeg_ir::identity_component!("tolerant-curve"), xmt);
-        let procedural_id: ProceduralCurveId = scope.id(
+        let curve_id: CurveId = scope.id_charged(ctx, &cadmpeg_ir::identity_component!("tolerant-curve"), xmt)?;
+        let procedural_id: ProceduralCurveId = scope.id_charged(ctx,
             &cadmpeg_ir::identity_component!("tolerant-intersection"),
             xmt,
-        );
+        )?;
         let procedural = ProceduralCurve::new(
-            procedural_id.clone(),
+            copy_typed_id(ctx, procedural_id.as_str(), "nx tolerant procedural identity")?,
             ProceduralCurveDefinition::TolerantIntersection {
                 construction: admitted_intersection,
                 parameterization: None,
@@ -4001,33 +4032,42 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
         else {
             continue;
         };
-        edge.set_curve(Some(curve_id.clone()))
+        edge.set_curve(Some(copy_typed_id(ctx, curve_id.as_str(), "nx tolerant edge curve identity")?))
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        charge_derived_field(ctx, edge_id.as_str(), "curve")?;
         annotations
             .derived(&edge_id, "curve")
             .map_err(cadmpeg_core::CodecError::malformed)?;
         if let Some(node) = graph.get(NodeKind::Edge, xmt) {
+            charge_annotation_note(ctx, curve_id.as_str(), "TOLERANT_EDGE_INTERSECTION")?;
             annotations
                 .note(&curve_id, source_stream, node.pos as u64)
                 .tag("TOLERANT_EDGE_INTERSECTION");
+            charge_annotation_note(ctx, procedural_id.as_str(), "TOLERANT_EDGE_INTERSECTION")?;
             annotations
                 .note(&procedural_id, source_stream, node.pos as u64)
                 .tag("TOLERANT_EDGE_INTERSECTION");
         }
+        charge_derived_field(ctx, curve_id.as_str(), "geometry")?;
         annotations
             .derived(&curve_id, "geometry")
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        charge_derived_field(ctx, procedural_id.as_str(), "definition")?;
         annotations
             .derived(&procedural_id, "definition")
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        ctx.charge_collection_items(1, "nx tolerant edge curves")?;
+        ir.model.curves.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx tolerant edge curves", 0, 1))?;
         ir.model.curves.push(Curve {
-            id: curve_id.clone(),
+            id: copy_typed_id(ctx, curve_id.as_str(), "nx tolerant carrier identity")?,
             geometry: CurveGeometry::Procedural {
-                construction: procedural_id.clone(),
+                construction: copy_typed_id(ctx, procedural_id.as_str(), "nx tolerant construction identity")?,
                 cache: None,
             },
             source_object: None,
         });
+        ctx.charge_collection_items(1, "nx tolerant procedural curves")?;
+        ir.model.procedural_curves.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("nx tolerant procedural curves", 0, 1))?;
         let _attached = ir.model.add_procedural_curve(curve_id, procedural);
     }
     Ok(())
@@ -4317,6 +4357,53 @@ mod tests {
         )
         .expect_err("branch completion retained refusal");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    fn tolerant_edge_attachment_limit_error(
+        policy: &cadmpeg_core::decode::DecodePolicy,
+    ) -> cadmpeg_core::CodecError {
+        let mut ir = CadIr::empty();
+        ir.model.points.push(cadmpeg_ir::topology::Point::new(
+            cadmpeg_ir::ids::PointId::mint("nx:test:point#0").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
+                .expect("finite point"),
+            None,
+        ));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
+            .expect("test context");
+        let geometry_budget = super::GeometryWorkBudget::from_context(&ctx, 100);
+        super::attach_tolerant_edge_intersections_with_budget(
+            &ctx,
+            &mut ir,
+            &crate::topology::Graph::default(),
+            &std::collections::BTreeMap::new(),
+            &crate::decode::ids::IdScope::stream(0),
+            &cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("nx:test")),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &geometry_budget,
+        )
+        .expect_err("tolerant edge attachment limit refusal")
+    }
+
+    #[test]
+    fn tolerant_edge_attachment_route_refuses_collection_limit() {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(
+            tolerant_edge_attachment_limit_error(&policy),
+            cadmpeg_core::CodecError::ResourceLimit(_)
+        ));
+    }
+
+    #[test]
+    fn tolerant_edge_attachment_route_refuses_retained_limit() {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        assert!(matches!(
+            tolerant_edge_attachment_limit_error(&policy),
+            cadmpeg_core::CodecError::ResourceLimit(_)
+        ));
     }
 
     #[test]
