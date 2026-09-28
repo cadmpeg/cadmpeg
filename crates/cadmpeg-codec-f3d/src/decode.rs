@@ -272,8 +272,9 @@ fn join_text_brep_names(
 }
 
 fn container_only_dimension_parameters(
+    ctx: &DecodeContext<'_>,
     native: &F3dNative,
-) -> std::collections::HashSet<cadmpeg_ir::features::ParameterId> {
+) -> Result<std::collections::HashSet<cadmpeg_ir::features::ParameterId>, CodecError> {
     let container_only = crate::design::dimensions::container_only_dimension_companions(
         &native.design_dimension_locus_pairs,
         &native.design_dimension_null_locus_pairs,
@@ -281,14 +282,17 @@ fn container_only_dimension_parameters(
         &native.design_dimension_locus_groups,
         &native.design_dimension_recipe_records,
     );
-    native
-        .design_parameter_owners
-        .iter()
-        .filter_map(|owner| {
+    let container_only_index = collect_decode_set(
+        ctx,
+        container_only.iter().map(|(stream, index)| (stream.as_str(), *index)),
+        "index F3D container-only dimension companions",
+    )?;
+    let mut parameters_by_id = std::collections::HashSet::new();
+    for owner in &native.design_parameter_owners {
             let stream =
                 crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
-            if !container_only.contains(&(stream.to_owned(), owner.companion_record_index())) {
-                return None;
+            if !container_only_index.contains(&(stream, owner.companion_record_index())) {
+                continue;
             }
             let mut parameters = native.design_parameters.iter().filter(|parameter| {
                 crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM)
@@ -297,13 +301,15 @@ fn container_only_dimension_parameters(
                     && parameter.kind()
                         == crate::records::parameters::DesignParameterKind::Dimension
             });
-            let parameter = parameters.next()?;
-            parameters
-                .next()
-                .is_none()
-                .then(|| crate::ids::neutral_parameter_id(parameter))
-        })
-        .collect()
+            let Some(parameter) = parameters.next() else {
+                continue;
+            };
+            if parameters.next().is_none() {
+                let id = crate::ids::neutral_parameter_id_charged(ctx, parameter)?;
+                insert_decode_set(ctx, &mut parameters_by_id, id, "collect F3D container-only dimension parameters")?;
+            }
+    }
+    Ok(parameters_by_id)
 }
 
 fn unresolved_dimension_companion_count(
@@ -1604,7 +1610,7 @@ fn design_projection_gaps(
             .filter(|relation| !projected_constraint_refs.contains(relation.id.as_str()))
             .count(),
         unprojected_dimensions: {
-            let container_only = container_only_dimension_parameters(native);
+            let container_only = container_only_dimension_parameters(ctx, native)?;
             let relation_bearing_companions = collect_decode_set(
                 ctx,
                 native.design_parameter_companions
