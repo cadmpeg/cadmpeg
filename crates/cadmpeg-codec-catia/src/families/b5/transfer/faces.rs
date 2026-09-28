@@ -187,10 +187,12 @@ pub(super) fn orient_loop_members(
         let node = node_by_loop[loop_id];
         for (member, &sense) in graph.loops[loop_id].members.iter().zip(&reversed[loop_id]) {
             if !uses.contains_key(&member.edge) {
-                charge_collection(ctx, 1, "catia b5 orientation edge keys")?;
+                crate::resource::insert_map(ctx, &mut uses, member.edge, Vec::new(),
+                    "catia b5 orientation edge keys")?;
             }
-            charge_collection(ctx, 1, "catia b5 orientation edge uses")?;
-            uses.entry(member.edge).or_default().push((node, sense));
+            let Some(occurrences) = uses.get_mut(&member.edge) else { return Ok(None) };
+            crate::resource::push(ctx, occurrences, (node, sense),
+                "catia b5 orientation edge uses")?;
         }
     }
     let mut constraints = ctx.alloc_filled(
@@ -208,9 +210,10 @@ pub(super) fn orient_loop_members(
                 return Ok(None);
             }
         } else {
-            charge_collection(ctx, 2, "catia b5 orientation adjacent loops")?;
-            constraints[*left].push((*right, parity));
-            constraints[*right].push((*left, parity));
+            crate::resource::push(ctx, &mut constraints[*left], (*right, parity),
+                "catia b5 orientation adjacent loops")?;
+            crate::resource::push(ctx, &mut constraints[*right], (*left, parity),
+                "catia b5 orientation adjacent loops")?;
         }
     }
 
@@ -224,8 +227,9 @@ pub(super) fn orient_loop_members(
             continue;
         }
         flips[root] = Some(false);
-        charge_collection(ctx, 1, "catia b5 orientation pending loops")?;
-        let mut pending = vec![(root, false)];
+        let mut pending = Vec::new();
+        crate::resource::push(ctx, &mut pending, (root, false),
+            "catia b5 orientation pending loops")?;
         while let Some((node, flip)) = pending.pop() {
             for &(neighbor, parity) in &constraints[node] {
                 let required = flip ^ parity;
@@ -234,8 +238,8 @@ pub(super) fn orient_loop_members(
                     Some(_) => {}
                     None => {
                         flips[neighbor] = Some(required);
-                        charge_collection(ctx, 1, "catia b5 orientation pending loops")?;
-                        pending.push((neighbor, required));
+                        crate::resource::push(ctx, &mut pending, (neighbor, required),
+                            "catia b5 orientation pending loops")?;
                     }
                 }
             }
