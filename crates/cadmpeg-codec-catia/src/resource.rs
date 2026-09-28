@@ -2,8 +2,8 @@
 //! Charged fallible growth for CATIA decode collections.
 
 use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet, VecDeque};
-use std::hash::Hash;
 use std::fmt::Write;
+use std::hash::Hash;
 
 use cadmpeg_core::decode::{
     DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation,
@@ -185,6 +185,39 @@ pub(crate) fn copy_retained_str(
     Ok(text)
 }
 
+pub(crate) fn format_retained(
+    ctx: &DecodeContext<'_>,
+    args: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    struct ByteCount(Option<usize>);
+    impl Write for ByteCount {
+        fn write_str(&mut self, value: &str) -> std::fmt::Result {
+            self.0 = self.0.and_then(|bytes| bytes.checked_add(value.len()));
+            if self.0.is_some() {
+                Ok(())
+            } else {
+                Err(std::fmt::Error)
+            }
+        }
+    }
+    let mut count = ByteCount(Some(0));
+    if std::fmt::write(&mut count, args).is_err() {
+        return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
+    }
+    let Some(length) = count.0 else {
+        return Err(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX));
+    };
+    let bytes =
+        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    ctx.charge_retained(bytes, operation)?;
+    let mut text = String::new();
+    text.try_reserve(length)
+        .map_err(|_| allocation_failed(0, text.capacity(), length, operation))?;
+    std::fmt::write(&mut text, args).map_err(CodecError::malformed)?;
+    Ok(text)
+}
+
 pub(crate) fn extend_retained_bytes(
     ctx: &DecodeContext<'_>,
     target: &mut Vec<u8>,
@@ -195,7 +228,8 @@ pub(crate) fn extend_retained_bytes(
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     ctx.charge_collection_items(count, operation)?;
     ctx.charge_retained(count, operation)?;
-    target.try_reserve(source.len())
+    target
+        .try_reserve(source.len())
         .map_err(|_| allocation_failed(target.len(), target.capacity(), source.len(), operation))?;
     target.extend_from_slice(source);
     Ok(())
@@ -214,18 +248,39 @@ pub(crate) fn format_usize_id(
         number /= 10;
         digits += 1;
     }
-    let length = prefix.len().checked_add(digits.max(minimum_digits))
+    let length = prefix
+        .len()
+        .checked_add(digits.max(minimum_digits))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-    let bytes = u64::try_from(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let bytes =
+        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     ctx.charge_retained(bytes, operation)?;
     let mut id = String::new();
     id.try_reserve(length)
         .map_err(|_| allocation_failed(0, id.capacity(), length, operation))?;
     id.push_str(prefix);
-    write!(&mut id, "{value:0minimum_digits$}")
-        .map_err(CodecError::malformed)?;
+    write!(&mut id, "{value:0minimum_digits$}").map_err(CodecError::malformed)?;
     Ok(id)
+}
+
+pub(crate) fn compose_index_id<T>(
+    ctx: &DecodeContext<'_>,
+    namespace: &cadmpeg_ir::ids::IdentityNamespace,
+    index: usize,
+    construct: impl FnOnce(String) -> Result<T, cadmpeg_ir::ids::IdentityError>,
+    operation: &'static str,
+) -> Result<T, CodecError> {
+    let id = format_retained(
+        ctx,
+        format_args!(
+            "{}:{}:{}#{index}",
+            namespace.format(),
+            namespace.scope(),
+            namespace.kind()
+        ),
+        operation,
+    )?;
+    construct(id).map_err(CodecError::malformed)
 }
 
 #[cfg(test)]
@@ -241,7 +296,10 @@ mod id_format_tests {
                 "catia_native_owner_packet_id",
             )
         });
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+        assert!(matches!(
+            limited,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
         let id = crate::test_support::with_service_context(|ctx| {
             super::format_usize_id(
                 ctx,
@@ -283,7 +341,8 @@ pub(crate) fn copy_retained_set<T: Copy + Eq + Hash>(
     values: &HashSet<T>,
     operation: &'static str,
 ) -> Result<HashSet<T>, CodecError> {
-    let Some(bytes) = values.len()
+    let Some(bytes) = values
+        .len()
         .checked_mul(std::mem::size_of::<T>().max(1))
         .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<T>>()))
         .and_then(|bytes| u64::try_from(bytes).ok())
@@ -305,7 +364,8 @@ pub(crate) fn copy_knot_vector(
     let count = u64::try_from(knots.len())
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     ctx.charge_collection_items(count, operation)?;
-    let bytes = count.checked_mul(std::mem::size_of::<f64>() as u64)
+    let bytes = count
+        .checked_mul(std::mem::size_of::<f64>() as u64)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     ctx.charge_retained(bytes, operation)?;
     knots
@@ -329,8 +389,125 @@ pub(crate) fn copy_nurbs_curve(
             points: copy_retained_slice(ctx, points, operation)?,
         },
     };
-    NurbsCurve::new(curve.degree(), knots, poles, curve.periodic())
-        .map_err(CodecError::malformed)
+    NurbsCurve::new(curve.degree(), knots, poles, curve.periodic()).map_err(CodecError::malformed)
+}
+
+pub(crate) fn copy_pcurve_geometry(
+    ctx: &DecodeContext<'_>,
+    geometry: &cadmpeg_ir::geometry::pcurve::PcurveGeometry,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::geometry::pcurve::PcurveGeometry, CodecError> {
+    use cadmpeg_ir::geometry::pcurve::{
+        OffsetPcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, PlacedPcurve, PolarNurbsPoles,
+        PolarPcurveNurbs, TrimmedPcurve,
+    };
+
+    Ok(match geometry {
+        PcurveGeometry::Nurbs { nurbs } => {
+            let knots = copy_knot_vector(ctx, nurbs.knots(), operation)?;
+            let poles = match nurbs.pole_rows() {
+                PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
+                    points: copy_retained_slice(ctx, points, operation)?,
+                },
+                PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
+                    points: copy_retained_slice(ctx, points, operation)?,
+                },
+            };
+            PcurveGeometry::Nurbs {
+                nurbs: PcurveNurbs::from_admitted_parts(
+                    nurbs.degree(),
+                    knots,
+                    poles,
+                    nurbs.periodic(),
+                )
+                .map_err(CodecError::malformed)?,
+            }
+        }
+        PcurveGeometry::PolarNurbs { nurbs } => {
+            let knots = copy_knot_vector(ctx, nurbs.knots(), operation)?;
+            let poles = match nurbs.pole_rows() {
+                PolarNurbsPoles::Polynomial { poles } => PolarNurbsPoles::Polynomial {
+                    poles: copy_retained_slice(ctx, poles, operation)?,
+                },
+                PolarNurbsPoles::Rational { poles } => PolarNurbsPoles::Rational {
+                    poles: copy_retained_slice(ctx, poles, operation)?,
+                },
+            };
+            PcurveGeometry::PolarNurbs {
+                nurbs: PolarPcurveNurbs::from_admitted_parts(
+                    nurbs.degree(),
+                    knots,
+                    poles,
+                    nurbs.periodic(),
+                )
+                .map_err(CodecError::malformed)?,
+            }
+        }
+        PcurveGeometry::Transformed(placed) => {
+            let _depth = ctx.enter_nested(operation)?;
+            ctx.charge_retained(size_of::<PcurveGeometry>() as u64, operation)?;
+            let basis = Box::new(copy_pcurve_geometry(ctx, placed.basis(), operation)?);
+            PcurveGeometry::Transformed(
+                PlacedPcurve::try_new(basis, *placed.transform()).map_err(CodecError::malformed)?,
+            )
+        }
+        PcurveGeometry::Trimmed(trimmed) => {
+            let _depth = ctx.enter_nested(operation)?;
+            ctx.charge_retained(size_of::<PcurveGeometry>() as u64, operation)?;
+            let basis = Box::new(copy_pcurve_geometry(ctx, trimmed.basis(), operation)?);
+            PcurveGeometry::Trimmed(
+                TrimmedPcurve::try_new(
+                    trimmed.parameter_range().endpoints(),
+                    trimmed.same_sense(),
+                    basis,
+                )
+                .map_err(CodecError::malformed)?,
+            )
+        }
+        PcurveGeometry::Offset(offset) => {
+            let _depth = ctx.enter_nested(operation)?;
+            ctx.charge_retained(size_of::<PcurveGeometry>() as u64, operation)?;
+            let basis = Box::new(copy_pcurve_geometry(ctx, offset.basis(), operation)?);
+            PcurveGeometry::Offset(
+                OffsetPcurve::from_finite_parts(offset.distance(), basis)
+                    .map_err(CodecError::malformed)?,
+            )
+        }
+        other => other.clone(),
+    })
+}
+
+#[cfg(test)]
+mod pcurve_copy_tests {
+    use super::copy_pcurve_geometry;
+    use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
+    use cadmpeg_ir::math::Point2;
+
+    #[test]
+    fn copied_nurbs_pcurve_refuses_knot_and_pole_collection_limit() {
+        let geometry = PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+                None,
+                false,
+            )
+            .expect("valid pcurve fixture"),
+        };
+        let refused = crate::test_support::with_collection_limit(5, |ctx| {
+            copy_pcurve_geometry(ctx, &geometry, "catia_test_pcurve_copy")
+        });
+        assert!(matches!(
+            refused,
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+        let copy = crate::test_support::with_service_context(|ctx| {
+            copy_pcurve_geometry(ctx, &geometry, "catia_test_pcurve_copy")
+        })
+        .expect("service budget");
+        assert_eq!(copy, geometry);
+    }
 }
 
 pub(crate) fn copy_nurbs_surface(
@@ -344,23 +521,37 @@ pub(crate) fn copy_nurbs_surface(
     let (rows, poles, pole_bytes) = match surface.pole_grid() {
         NurbsPoleGrid::Polynomial { rows } => (
             rows.len(),
-            rows.iter().try_fold(0usize, |total, row| total.checked_add(row.len())),
+            rows.iter()
+                .try_fold(0usize, |total, row| total.checked_add(row.len())),
             std::mem::size_of::<cadmpeg_ir::features::FinitePoint3>(),
         ),
         NurbsPoleGrid::Rational { rows } => (
             rows.len(),
-            rows.iter().try_fold(0usize, |total, row| total.checked_add(row.len())),
-            std::mem::size_of::<cadmpeg_ir::geometry::nurbs::WeightedPole3<cadmpeg_ir::features::FinitePoint3>>(),
+            rows.iter()
+                .try_fold(0usize, |total, row| total.checked_add(row.len())),
+            std::mem::size_of::<
+                cadmpeg_ir::geometry::nurbs::WeightedPole3<cadmpeg_ir::features::FinitePoint3>,
+            >(),
         ),
     };
     let Some((count, bytes)) = knots
-        .and_then(|knots| knots.checked_add(rows).zip(knots.checked_mul(size_of::<f64>())))
+        .and_then(|knots| {
+            knots
+                .checked_add(rows)
+                .zip(knots.checked_mul(size_of::<f64>()))
+        })
         .and_then(|(count, knot_bytes)| {
             poles.and_then(|poles| {
-                count.checked_add(poles).zip(
-                    rows.checked_mul(size_of::<Vec<usize>>())
-                        .and_then(|row_bytes| poles.checked_mul(pole_bytes).and_then(|pole_bytes| knot_bytes.checked_add(row_bytes)?.checked_add(pole_bytes))),
-                )
+                count
+                    .checked_add(poles)
+                    .zip(
+                        rows.checked_mul(size_of::<Vec<usize>>())
+                            .and_then(|row_bytes| {
+                                poles.checked_mul(pole_bytes).and_then(|pole_bytes| {
+                                    knot_bytes.checked_add(row_bytes)?.checked_add(pole_bytes)
+                                })
+                            }),
+                    )
             })
         })
         .and_then(|(count, bytes)| Some((u64::try_from(count).ok()?, u64::try_from(bytes).ok()?)))
@@ -369,24 +560,41 @@ pub(crate) fn copy_nurbs_surface(
     };
     ctx.charge_collection_items(count, operation)?;
     ctx.charge_retained(bytes, operation)?;
-    surface.try_clone().map_err(|_| allocation_failed(0, 0, usize::try_from(count).unwrap_or(usize::MAX), operation))
+    surface.try_clone().map_err(|_| {
+        allocation_failed(
+            0,
+            0,
+            usize::try_from(count).unwrap_or(usize::MAX),
+            operation,
+        )
+    })
 }
 
 #[cfg(test)]
 mod nurbs_copy_tests {
     use super::{copy_nurbs_curve, copy_nurbs_surface};
-    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::geometry::nurbs::{
+        NurbsCurve, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+    };
     use cadmpeg_ir::math::Point3;
 
     #[test]
     fn nurbs_curve_copy_refuses_before_knot_and_pole_lanes() {
         use cadmpeg_core::CodecError;
 
-        let curve = NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)], None, false)
-            .expect("valid line NURBS");
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid line NURBS");
         crate::test_support::with_service_context(|ctx| {
-            assert_eq!(copy_nurbs_curve(ctx, &curve, "catia_nurbs_curve_copy").expect("service budget"), curve);
+            assert_eq!(
+                copy_nurbs_curve(ctx, &curve, "catia_nurbs_curve_copy").expect("service budget"),
+                curve
+            );
         });
         assert!(matches!(
             crate::test_support::with_collection_limit(0, |ctx| copy_nurbs_curve(ctx, &curve, "catia_nurbs_curve_copy")),
@@ -419,8 +627,12 @@ mod nurbs_copy_tests {
         )
         .expect("valid surface");
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| copy_nurbs_surface(ctx, &surface, "catia_nurbs_surface_copy"))
-                .expect("service resource budget"),
+            crate::test_support::with_service_context(|ctx| copy_nurbs_surface(
+                ctx,
+                &surface,
+                "catia_nurbs_surface_copy"
+            ))
+            .expect("service resource budget"),
             surface
         );
         assert!(matches!(

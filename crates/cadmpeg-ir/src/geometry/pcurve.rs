@@ -1643,6 +1643,30 @@ impl<P: Copy, S: Copy> PolarNurbsPoles<P, S> {
 }
 
 impl PolarPcurveNurbs {
+    /// Assemble admitted lanes without copying their allocations.
+    ///
+    /// # Errors
+    /// Refuses a degree or lane count that does not define a polar NURBS.
+    pub fn from_admitted_parts(
+        degree: u32,
+        knots: KnotVector,
+        poles: PolarNurbsPoles<FinitePoint2, FiniteReal>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "poles")?;
+        if degree == 0 {
+            return Err(NurbsError::Structure(
+                "polar NURBS degree must be positive".into(),
+            ));
+        }
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
+        })
+    }
+
     /// Build a polar NURBS from its pole rows.
     ///
     /// A pole is one row carrying its radial and axial halves together, so
@@ -1805,6 +1829,30 @@ pub struct PcurveNurbs {
 }
 
 impl PcurveNurbs {
+    /// Assemble admitted lanes without copying their allocations.
+    ///
+    /// # Errors
+    /// Refuses a degree or lane count that does not define a pcurve NURBS.
+    pub fn from_admitted_parts(
+        degree: u32,
+        knots: KnotVector,
+        poles: PcurveNurbsPoles<FinitePoint2>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        if degree == 0 {
+            return Err(NurbsError::Structure(
+                "pcurve NURBS degree must be positive".into(),
+            ));
+        }
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
+        })
+    }
+
     /// Build a parameter-space NURBS with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a

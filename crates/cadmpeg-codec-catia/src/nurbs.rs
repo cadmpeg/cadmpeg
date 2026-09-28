@@ -26,9 +26,12 @@ const EPS_HELIX_PITCH_ALIGNMENT: f64 = EPS_NURBS_GEOMETRY;
 const EPS_RELATIVE_TOLERANCE: f64 = EPS_NURBS_COARSE_GEOMETRY;
 
 fn pcurve_weights_are_positive(nurbs: &PcurveNurbs) -> bool {
-    nurbs
-        .weights()
-        .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
+    match nurbs.pole_rows() {
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { .. } => true,
+        cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Rational { points } => {
+            points.iter().all(|pole| pole.weight.get() > 0.0)
+        }
+    }
 }
 
 /// Sink for carrier records whose lanes the IR carrier refuses.
@@ -682,14 +685,29 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
     {
         return Ok(None);
     }
-    let control_count = knots.len().checked_sub(1).and_then(|count| count.checked_mul(6))
+    let control_count = knots
+        .len()
+        .checked_sub(1)
+        .and_then(|count| count.checked_mul(6))
         .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet controls", u64::MAX, u64::MAX))?;
-    let full_knot_count = knots.len().checked_mul(6)
+    let full_knot_count = knots
+        .len()
+        .checked_mul(6)
         .ok_or_else(|| ctx.refuse_codec_limit("catia quintic jet knots", u64::MAX, u64::MAX))?;
     let mut controls = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut controls, control_count, "catia quintic jet controls")?;
+    crate::resource::reserve_vec(
+        ctx,
+        &mut controls,
+        control_count,
+        "catia quintic jet controls",
+    )?;
     let mut full_knots = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut full_knots, full_knot_count, "catia quintic jet knots")?;
+    crate::resource::reserve_vec(
+        ctx,
+        &mut full_knots,
+        full_knot_count,
+        "catia quintic jet knots",
+    )?;
     full_knots.extend([knots[0]; 6]);
     for index in 0..knots.len() - 1 {
         let h = knots[index + 1] - knots[index];
@@ -738,7 +756,12 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
         return Ok(None);
     }
     let mut finite_controls = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut finite_controls, controls.len(), "catia quintic jet finite controls")?;
+    crate::resource::reserve_vec(
+        ctx,
+        &mut finite_controls,
+        controls.len(),
+        "catia quintic jet finite controls",
+    )?;
     for control in controls {
         let Some(control) = FiniteVector::new(control) else {
             return Ok(None);
@@ -1276,7 +1299,8 @@ mod tests {
             &[[f64::MAX, 0.0], [f64::MAX, 0.0]],
             &[[0.0, 0.0], [0.0, 0.0]],
         )
-        .expect("service resource budget").is_none());
+        .expect("service resource budget")
+        .is_none());
         assert!(quintic_jet_bspline(
             &ctx,
             5,
@@ -1285,7 +1309,8 @@ mod tests {
             &[[1.0, 0.0], [1.0, 0.0]],
             &[[0.0, 0.0], [0.0, 0.0]],
         )
-        .expect("service resource budget").is_none());
+        .expect("service resource budget")
+        .is_none());
     }
 
     #[test]
