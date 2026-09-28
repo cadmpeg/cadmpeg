@@ -1389,24 +1389,24 @@ fn profile_use_polyline(
     } else {
         256
     };
+    let mut points = Vec::new();
     if let Some(ctx) = ctx {
         ctx.charge_collection_items((count + 1) as u64, "f3d profile use polyline")?;
+        points.try_reserve(count + 1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d profile use polyline allocation", 0, 1)
+        })?;
     }
-    let points = (0..=count)
-        .map(|index| {
-            let fraction = index as f64 / count as f64;
-            let ordinary = range[0] + (range[1] - range[0]) * fraction;
-            let parameter = if ordinary.is_finite() {
-                ordinary
-            } else {
-                cadmpeg_ir::math::interpolate(range[0], range[1], fraction)?.get()
-            };
-            sketch_geometry_point(&entity.geometry, parameter)
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(mut points) = points else {
-        return Ok(None);
-    };
+    for index in 0..=count {
+        let fraction = index as f64 / count as f64;
+        let ordinary = range[0] + (range[1] - range[0]) * fraction;
+        let parameter = if ordinary.is_finite() {
+            ordinary
+        } else {
+            geometric!(cadmpeg_ir::math::interpolate(range[0], range[1], fraction)).get()
+        };
+        let point = geometric!(sketch_geometry_point(&entity.geometry, parameter));
+        points.push(point);
+    }
     if reversed {
         points.reverse();
     }
