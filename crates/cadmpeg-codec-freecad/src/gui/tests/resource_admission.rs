@@ -132,6 +132,15 @@ fn gui_topology_color_loss_refuses_at_matching_limits() {
 }
 
 #[test]
+fn gui_property_provenance_tag_refuses_at_matching_retained_limit() {
+    crate::test_support::assert_retained_refusal_at(
+        &[], "FCStd GUI property provenance tag", |ctx| {
+            super::super::gui_provider_property_provenance(ctx, "Shape", "DiffuseColor", 19)
+        },
+    );
+}
+
+#[test]
 fn camera_tokens_refuse_at_matching_collection_limit() {
     crate::test_support::assert_collection_refusal_at(
         &[], "FCStd GUI camera tokens", |ctx| {
