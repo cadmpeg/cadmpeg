@@ -19,7 +19,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::BodyId;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 fn copy_brep_text(
     ctx: &DecodeContext<'_>,
@@ -46,6 +46,39 @@ fn push_brep_item<T>(
     items.try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
     items.push(value);
+    Ok(())
+}
+
+fn append_brep_items<T>(
+    ctx: &DecodeContext<'_>,
+    target: &mut Vec<T>,
+    source: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = u64::try_from(source.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)?;
+    target.try_reserve(source.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    target.append(source);
+    Ok(())
+}
+
+fn merge_brep_counts(
+    ctx: &DecodeContext<'_>,
+    target: &mut BTreeMap<String, usize>,
+    source: BTreeMap<String, usize>,
+) -> Result<(), CodecError> {
+    use std::collections::btree_map::Entry;
+    for (kind, count) in source {
+        match target.entry(kind) {
+            Entry::Occupied(mut entry) => *entry.get_mut() += count,
+            Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "merge F3D BREP statistic kinds")?;
+                entry.insert(count);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -322,19 +355,49 @@ impl Brep {
     }
 
     /// Append a disjoint, already-qualified BREP graph.
-    pub(crate) fn append(&mut self, mut other: Self) {
-        self.asm.append(other.asm);
+    pub(crate) fn append(&mut self, ctx: &DecodeContext<'_>, other: Self) -> Result<(), CodecError> {
+        let mut asm = other.asm;
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
-                $(self.$field.append(&mut other.$field);)+
+                $(append_brep_items(ctx, &mut self.asm.$field, &mut asm.$field,
+                    concat!("merge F3D BREP ", stringify!($field)))?;)+
             };
         }
         append_vecs!(
+            bodies, regions, shells, faces, loops, coedges, edges, vertices, points,
+            surfaces, curves, pcurves, procedural_surfaces, procedural_curves,
+            edge_continuities, edge_ownerships, vertex_ownerships, face_sidedness,
+            face_native_keys, tolerant_coedge_parameters, tolerant_edge_tails,
+            tolerant_vertex_tails, mesh_surface_sentinels, transform_hints,
+            body_native_keys, wire_topologies, attributes, unknowns, annotation_records,
+        );
+        self.asm.stats.mesh_surface_faces += asm.stats.mesh_surface_faces;
+        self.asm.stats.nurbs_surfaces += asm.stats.nurbs_surfaces;
+        self.asm.stats.nurbs_curves += asm.stats.nurbs_curves;
+        self.asm.stats.partial_procedural_supports += asm.stats.partial_procedural_supports;
+        macro_rules! merge_count_maps {
+            ($($field:ident),+ $(,)?) => {
+                $(merge_brep_counts(ctx, &mut self.asm.stats.$field, std::mem::take(&mut asm.stats.$field))?;)+
+            };
+        }
+        merge_count_maps!(
+            missing_face_surface_kinds, unknown_surface_kinds,
+            procedural_curve_kinds, undecoded_pcurve_kinds, other_record_kinds,
+        );
+        let mut other = Self { asm, ..other };
+        macro_rules! append_derived {
+            ($($field:ident),+ $(,)?) => {
+                $(append_brep_items(ctx, &mut self.$field, &mut other.$field,
+                    concat!("merge F3D BREP ", stringify!($field)))?;)+
+            };
+        }
+        append_derived!(
             sketch_curve_links,
             persistent_design_links,
             persistent_subentity_tags,
             creation_timestamps,
         );
+        Ok(())
     }
 }
 
@@ -1328,5 +1391,38 @@ mod tests {
         });
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "index F3D selected BREP bodies"));
+    }
+
+    #[test]
+    fn brep_append_refuses_body_collection_limit() {
+        let mut target = Brep::default();
+        let source = Brep {
+            asm: AsmBrep {
+                bodies: vec![Body {
+                    id: BodyId::mint("f3d:brep:entity#1").unwrap(),
+                    kind: BodyKind::default(),
+                    regions: Vec::new(),
+                    transform: None,
+                    name: None,
+                    color: None,
+                    visible: None,
+                }],
+                ..AsmBrep::default()
+            },
+            ..Brep::default()
+        };
+        let error = with_limits(0, u64::MAX, |ctx| target.append(ctx, source).unwrap_err());
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "merge F3D BREP bodies"));
+    }
+
+    #[test]
+    fn brep_append_refuses_statistic_index_limit() {
+        let mut target = Brep::default();
+        let mut source = Brep::default();
+        source.asm.stats.missing_face_surface_kinds.insert("plane".into(), 1);
+        let error = with_limits(0, u64::MAX, |ctx| target.append(ctx, source).unwrap_err());
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "merge F3D BREP statistic kinds"));
     }
 }

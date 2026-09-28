@@ -2176,7 +2176,7 @@ fn try_decode_text_model(
         }
         match &mut merged {
             None => merged = Some((facts, part)),
-            Some((_, whole)) => whole.append(part),
+            Some((_, whole)) => whole.append(ctx, part)?,
         }
     }
     Ok(merged)
@@ -3266,7 +3266,7 @@ fn decode_scanned_document<'a>(
                     });
                 }
             }
-            brep.append(part);
+            brep.append(ctx, part)?;
             decoded_brep_count += 1;
         }
         if decoded_brep_count != 0 {
