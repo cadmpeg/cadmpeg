@@ -27,12 +27,6 @@ impl<S: AsRef<str>> CanonicalUuid<S> {
     }
 }
 
-impl CanonicalUuid<&str> {
-    pub(crate) fn into_owned(self) -> CanonicalUuid<String> {
-        CanonicalUuid(self.0.to_owned())
-    }
-}
-
 impl<'de> serde::Deserialize<'de> for CanonicalUuid<String> {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let value = <String as serde::Deserialize>::deserialize(deserializer)?;
@@ -50,7 +44,7 @@ mod tests {
             "01234567-89ab-cdef-0123-456789abcdef",
             "00000000-0000-0000-0000-000000000000",
         ] {
-            let value = CanonicalUuid::new(text).unwrap().into_owned();
+            let value = CanonicalUuid::new(text.to_owned()).unwrap();
             let json = serde_json::to_string(text).unwrap();
             assert_eq!(serde_json::to_string(&value).unwrap(), json);
             assert_eq!(
