@@ -1680,3 +1680,121 @@ fn closed_sketch_profile_id_copies_refuse_retained_limit() {
 }
 
 mod predicates;
+
+macro_rules! branched_collection_refusal_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            use cadmpeg_core::decode::ResourceDimension;
+            use cadmpeg_core::CodecError;
+
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = 0;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let mut items = Vec::new();
+            assert!(matches!(
+                super::push_geometry_item(Some(&ctx), &mut items, 1, $operation),
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == $operation
+            ));
+        }
+    };
+}
+
+branched_collection_refusal_test!(branched_profile_start_refuses_limit,
+    "f3d branched profile start half-edge");
+branched_collection_refusal_test!(branched_profile_member_refuses_limit,
+    "f3d branched profile member");
+branched_collection_refusal_test!(branched_profile_output_refuses_limit,
+    "f3d branched profile output");
+
+#[test]
+fn branched_profile_component_refuses_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut items = std::collections::HashSet::new();
+    assert!(matches!(
+        super::insert_geometry_set(Some(&ctx), &mut items, 1,
+            "f3d branched profile component edge"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d branched profile component edge"
+    ));
+}
+
+#[test]
+fn branched_profile_visited_refuses_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut items = std::collections::HashSet::new();
+    assert!(matches!(
+        super::insert_geometry_set(Some(&ctx), &mut items, 1,
+            "f3d branched profile visited half-edge"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d branched profile visited half-edge"
+    ));
+}
+
+#[test]
+fn branched_profile_outgoing_node_refuses_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
+    assert!(matches!(
+        super::push_geometry_index(Some(&ctx), &mut index, 1, 2,
+            "f3d branched profile outgoing node", "f3d branched profile outgoing edge"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d branched profile outgoing node"
+    ));
+}
+
+#[test]
+fn branched_profile_outgoing_edge_refuses_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
+    assert!(matches!(
+        super::push_geometry_index(Some(&ctx), &mut index, 1, 2,
+            "f3d branched profile outgoing node", "f3d branched profile outgoing edge"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d branched profile outgoing edge"
+    ));
+}
+
+#[test]
+fn branched_profile_next_refuses_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut items = std::collections::HashMap::new();
+    assert!(matches!(
+        super::insert_geometry_map(Some(&ctx), &mut items, 1, 2,
+            "f3d branched profile next half-edge"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d branched profile next half-edge"
+    ));
+}
+
+#[test]
+fn branched_profile_entity_id_refuses_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::copy_geometry_id::<SketchEntityId>(Some(&ctx),
+            "synthetic:test:id#edge", "f3d branched profile entity id"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d branched profile entity id"
+    ));
+}

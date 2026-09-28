@@ -98,6 +98,24 @@ fn insert_geometry_set<T: Eq + Hash>(
     Ok(items.insert(item))
 }
 
+fn insert_geometry_map<K: Eq + Hash, V>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !items.contains_key(&key) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+            items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        }
+    }
+    // discarded-value: duplicate half-edge keys keep the last traversal predecessor.
+    let _ = items.insert(key, value);
+    Ok(())
+}
+
 fn copy_geometry_id<T>(
     ctx: Option<&DecodeContext<'_>>,
     value: &str,
@@ -2972,7 +2990,7 @@ pub(super) fn closed_sketch_profiles(
                 )
             }) {
                 let branched_profiles =
-                    branched_line_profiles(&component, &edges, &edge_nodes, linear_tolerance);
+                    branched_line_profiles(ctx, &component, &edges, &edge_nodes, linear_tolerance)?;
                 if branched_profiles.is_empty() {
                     if let Some(profile) = tangent_nested_line_profile(
                         &component,
@@ -3039,24 +3057,25 @@ pub(super) fn closed_sketch_profiles(
 /// is the only adjacency this walk needs: it is built here from `edge_nodes`,
 /// so every half-edge reaches its twin by construction.
 fn branched_line_profiles(
+    ctx: Option<&DecodeContext<'_>>,
     component: &[usize],
     edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
     edge_nodes: &[[usize; 2]],
     linear_tolerance: f64,
-) -> Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
+) -> Result<Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>, CodecError> {
     use cadmpeg_ir::sketches::SketchEntityUse;
 
-    let component = component.iter().copied().collect::<HashSet<_>>();
+    let mut component_set = HashSet::new();
+    for edge in component.iter().copied() {
+        insert_geometry_set(ctx, &mut component_set, edge,
+            "f3d branched profile component edge")?;
+    }
     let mut outgoing = HashMap::<usize, Vec<usize>>::new();
-    for edge in &component {
-        outgoing
-            .entry(edge_nodes[*edge][0])
-            .or_default()
-            .push(edge * 2);
-        outgoing
-            .entry(edge_nodes[*edge][1])
-            .or_default()
-            .push(edge * 2 + 1);
+    for edge in &component_set {
+        push_geometry_index(ctx, &mut outgoing, edge_nodes[*edge][0], edge * 2,
+            "f3d branched profile outgoing node", "f3d branched profile outgoing edge")?;
+        push_geometry_index(ctx, &mut outgoing, edge_nodes[*edge][1], edge * 2 + 1,
+            "f3d branched profile outgoing node", "f3d branched profile outgoing edge")?;
     }
     for half_edges in outgoing.values_mut() {
         half_edges.sort_by(|first, second| {
@@ -3080,16 +3099,20 @@ fn branched_line_profiles(
     let mut next = HashMap::new();
     for around in outgoing.values() {
         for (&previous, &twin) in around.iter().zip(around.iter().cycle().skip(1)) {
-            next.insert(twin ^ 1, previous);
+            insert_geometry_map(ctx, &mut next, twin ^ 1, previous,
+                "f3d branched profile next half-edge")?;
         }
     }
 
     let mut profiles = Vec::new();
     let mut visited = HashSet::new();
-    let mut starts = component
-        .iter()
-        .flat_map(|edge| [edge * 2, edge * 2 + 1])
-        .collect::<Vec<_>>();
+    let mut starts = Vec::new();
+    for edge in &component_set {
+        push_geometry_item(ctx, &mut starts, edge * 2,
+            "f3d branched profile start half-edge")?;
+        push_geometry_item(ctx, &mut starts, edge * 2 + 1,
+            "f3d branched profile start half-edge")?;
+    }
     starts.sort_by(|a, b| (edges[*a / 2].0.id(), *a % 2).cmp(&(edges[*b / 2].0.id(), *b % 2)));
     for start in starts {
         if visited.contains(&start) {
@@ -3099,7 +3122,8 @@ fn branched_line_profiles(
         let mut profile = Vec::new();
         let mut twice_area = 0.0;
         loop {
-            if !visited.insert(current) {
+            if !insert_geometry_set(ctx, &mut visited, current,
+                "f3d branched profile visited half-edge")? {
                 if current != start {
                     profile.clear();
                 }
@@ -3114,18 +3138,19 @@ fn branched_line_profiles(
                 (stored_start, stored_end)
             };
             twice_area += from.u * to.v - from.v * to.u;
-            profile.push(SketchEntityUse {
-                entity: edges[edge].0.id().clone(),
-                reversed,
-            });
+            let id = copy_geometry_id(ctx, edges[edge].0.id().as_str(),
+                "f3d branched profile entity id")?;
+            push_geometry_item(ctx, &mut profile, SketchEntityUse { entity: id, reversed },
+                "f3d branched profile member")?;
             current = next[&current];
         }
         if !profile.is_empty() && twice_area > 2.0 * linear_tolerance * linear_tolerance {
-            profiles.push(profile);
+            push_geometry_item(ctx, &mut profiles, profile,
+                "f3d branched profile output")?;
         }
     }
 
-    profiles
+    Ok(profiles)
 }
 
 /// Resolve a tangent nested pair that has one shared corner.
