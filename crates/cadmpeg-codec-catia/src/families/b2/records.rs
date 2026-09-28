@@ -678,16 +678,16 @@ fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
 #[cfg(test)]
 pub(in crate::families) fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
     let records = consolidated_records(data);
-    b2_edge_nodes_from_records(data, &records)
+    b2_edge_nodes_from_records(data, &records).collect()
 }
 
-pub(crate) fn b2_edge_nodes_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<B2EdgeNode> {
+pub(crate) fn b2_edge_nodes_from_records<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2EdgeNode> + 'a {
     family_frames_from_records(records, ConsolidatedFamily::B, 0x5e)
         .into_iter()
-        .filter_map(|frame| {
+        .filter_map(move |frame| {
             let token_start = frame.pos.checked_add(4)?;
             let mut token_end = token_start;
             let header_value = compact_int(data, &mut token_end)?;
@@ -702,10 +702,13 @@ pub(crate) fn b2_edge_nodes_from_records(
                 return None;
             }
             let mut at = frame.payload;
-            let references = (0..5)
-                .map(|_| allocation_reference(data, &mut at))
-                .collect::<Option<Vec<_>>>()?;
-            let references: [_; 5] = references.try_into().ok()?;
+            let references = [
+                allocation_reference(data, &mut at)?,
+                allocation_reference(data, &mut at)?,
+                allocation_reference(data, &mut at)?,
+                allocation_reference(data, &mut at)?,
+                allocation_reference(data, &mut at)?,
+            ];
             let [curve_ref, start_vertex_ref, end_vertex_ref, start_parameter_ref, end_parameter_ref] =
                 references.map(|reference| reference.value);
             let reference_encodings = references.map(|reference| reference.encoding);
@@ -733,7 +736,6 @@ pub(crate) fn b2_edge_nodes_from_records(
                     tail,
                 })
         })
-        .collect()
 }
 
 /// Decode width-coded `b2/b3/b4 03 3b` cone-face descriptors.
