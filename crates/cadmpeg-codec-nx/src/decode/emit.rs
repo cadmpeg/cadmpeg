@@ -26,9 +26,9 @@ use cadmpeg_ir::eval::{curve_point_with_budget, finite_or_refusal};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
-    pcurve::Pcurve, Curve, CurveGeometry, FitTolerance, IntcurveSupportContext, IntcurveSupportSide,
-    ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceCurveFamily, SurfaceGeometry,
+    pcurve::Pcurve, Curve, CurveGeometry, FitTolerance, IntcurveSupportContext,
+    IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256;
 use cadmpeg_ir::ids::{
@@ -45,6 +45,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Display, Write as _};
 
 const EPS_EMIT_CANONICAL_TRIM_RANGE_E6: f64 = 1.0e-6;
+
+type IntersectionPcurveIndex =
+    BTreeMap<(CurveId, SurfaceId), (PcurveGeometry, [f64; 2], Option<FitTolerance>)>;
 
 /// A face whose non-loop fields are decoded, held until its loops resolve so
 /// the face is constructed once with its complete boundary.
@@ -171,15 +174,26 @@ pub(super) fn emit_topology(
                 .shell_fields()
                 .is_some_and(|fields| fields.body.map(u32::from) == Some(body_xmt))
         }) {
-            super::annotations::note(ctx, annotations, id.as_str(), source_stream, shell.pos as u64, "UNRESOLVED_BODY_REFERENCE")?;
+            super::annotations::note(
+                ctx,
+                annotations,
+                id.as_str(),
+                source_stream,
+                shell.pos as u64,
+                "UNRESOLVED_BODY_REFERENCE",
+            )?;
             super::annotations::exactness(ctx, annotations, id.as_str(), Exactness::Unknown)?;
         }
         ctx.charge_collection_items(1, "nx emitted body index")?;
-        bodies.insert(body_xmt, copy_typed_id(ctx, id.as_str(), "nx emitted body identity")?);
+        bodies.insert(
+            body_xmt,
+            copy_typed_id(ctx, id.as_str(), "nx emitted body identity")?,
+        );
         ctx.charge_collection_items(1, "nx emitted bodies")?;
-        ir.model.bodies.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("nx emitted bodies", 0, 1)
-        })?;
+        ir.model
+            .bodies
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx emitted bodies", 0, 1))?;
         ir.model.bodies.push(Body {
             id,
             kind: cadmpeg_ir::topology::BodyKind::Solid,
@@ -216,16 +230,36 @@ pub(super) fn emit_topology(
             let region: RegionId =
                 scope.id_charged(ctx, &cadmpeg_ir::identity_component!("region"), region_xmt)?;
             if let Some(region_node) = graph.get(NodeKind::Region, region_xmt) {
-                annotate_node(ctx, annotations, region.as_str(), source_stream, region_node, "REGION")?;
+                annotate_node(
+                    ctx,
+                    annotations,
+                    region.as_str(),
+                    source_stream,
+                    region_node,
+                    "REGION",
+                )?;
             } else {
-                super::annotations::note(ctx, annotations, region.as_str(), source_stream, node.pos as u64, "UNRESOLVED_REGION_REFERENCE")?;
-                super::annotations::exactness(ctx, annotations, region.as_str(), Exactness::Unknown)?;
+                super::annotations::note(
+                    ctx,
+                    annotations,
+                    region.as_str(),
+                    source_stream,
+                    node.pos as u64,
+                    "UNRESOLVED_REGION_REFERENCE",
+                )?;
+                super::annotations::exactness(
+                    ctx,
+                    annotations,
+                    region.as_str(),
+                    Exactness::Unknown,
+                )?;
             }
             super::annotations::derived(ctx, annotations, region.as_str(), "body")?;
             ctx.charge_collection_items(1, "nx emitted regions")?;
-            ir.model.regions.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx emitted regions", 0, 1)
-            })?;
+            ir.model
+                .regions
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx emitted regions", 0, 1))?;
             ir.model.regions.push(Region {
                 id: copy_typed_id(ctx, region.as_str(), "nx region identity copy")?,
                 body: copy_typed_id(ctx, body.as_str(), "nx region body identity")?,
@@ -238,9 +272,10 @@ pub(super) fn emit_topology(
                 .find(|candidate| candidate.id == body)
             {
                 ctx.charge_collection_items(1, "nx body regions")?;
-                parent.regions.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx body regions", 0, 1)
-                })?;
+                parent
+                    .regions
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("nx body regions", 0, 1))?;
                 parent.regions.push(copy_typed_id(
                     ctx,
                     region.as_str(),
@@ -259,7 +294,14 @@ pub(super) fn emit_topology(
         };
         let shell_id: ShellId =
             scope.id_charged(ctx, &cadmpeg_ir::identity_component!("shell"), node.xmt)?;
-        annotate_node(ctx, annotations, shell_id.as_str(), source_stream, node, "SHELL")?;
+        annotate_node(
+            ctx,
+            annotations,
+            shell_id.as_str(),
+            source_stream,
+            node,
+            "SHELL",
+        )?;
         let mut shell_faces = Vec::new();
         for face in graph
             .of_kind(NodeKind::Face)
@@ -276,9 +318,9 @@ pub(super) fn emit_topology(
                 continue;
             }
             ctx.charge_collection_items(1, "nx shell faces")?;
-            shell_faces.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx shell faces", 0, 1)
-            })?;
+            shell_faces
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx shell faces", 0, 1))?;
             shell_faces.push(scope.id_charged::<FaceId>(
                 ctx,
                 &cadmpeg_ir::identity_component!("face"),
@@ -286,9 +328,10 @@ pub(super) fn emit_topology(
             )?);
         }
         ctx.charge_collection_items(1, "nx emitted shells")?;
-        ir.model.shells.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("nx emitted shells", 0, 1)
-        })?;
+        ir.model
+            .shells
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx emitted shells", 0, 1))?;
         ir.model.shells.push(
             Shell::new(
                 copy_typed_id(ctx, shell_id.as_str(), "nx shell identity copy")?,
@@ -306,9 +349,10 @@ pub(super) fn emit_topology(
             .find(|candidate| candidate.id == region_id)
         {
             ctx.charge_collection_items(1, "nx region shells")?;
-            parent.shells.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx region shells", 0, 1)
-            })?;
+            parent
+                .shells
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx region shells", 0, 1))?;
             parent.shells.push(copy_typed_id(
                 ctx,
                 shell_id.as_str(),
@@ -349,16 +393,24 @@ pub(super) fn emit_topology(
         let tolerance = decoded_tolerance(fields.tolerance);
         let vertex: VertexId =
             scope.id_charged(ctx, &cadmpeg_ir::identity_component!("vertex"), node.xmt)?;
-        annotate_node(ctx, annotations, vertex.as_str(), source_stream, node, "VERTEX")?;
+        annotate_node(
+            ctx,
+            annotations,
+            vertex.as_str(),
+            source_stream,
+            node,
+            "VERTEX",
+        )?;
         if tolerance.is_some() {
             annotations
                 .derived(&vertex, "tolerance")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ctx.charge_collection_items(1, "nx emitted vertices")?;
-        ir.model.vertices.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("nx emitted vertices", 0, 1)
-        })?;
+        ir.model
+            .vertices
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx emitted vertices", 0, 1))?;
         ir.model.vertices.push(Vertex {
             id: copy_typed_id(ctx, vertex.as_str(), "nx vertex identity copy")?,
             point: copy_typed_id(ctx, point_ref.as_str(), "nx vertex point identity")?,
@@ -434,40 +486,66 @@ pub(super) fn emit_topology(
         let mut param_range = curve_xmt.and_then(|xmt| trim_ranges.get(&xmt)).copied();
         if curve.is_none() {
             let lifted = (|| -> Result<Option<_>, CodecError> {
-                    let Some(xmt) = curve_xmt else { return Ok(None); };
-                    let Some(pcurve_id) = pcurves.get(&xmt) else { return Ok(None); };
-                    let Some(pcurve_index) = pcurve_indices.get(pcurve_id) else { return Ok(None); };
-                    let Some(pcurve) = ir.model.pcurves.get(*pcurve_index) else { return Ok(None); };
-                    let Some(surface_ref) = pcurve_supports.get(&xmt) else { return Ok(None); };
-                    let surface = copy_typed_id(ctx, surface_ref.as_str(), "nx parametric edge surface")?;
-                    let parameter_range = pcurve
-                        .parameter_range()
-                        .map(cadmpeg_ir::units::FiniteVector::get)
-                        .or(param_range)
-                        .or_else(|| pcurve_parameter_range(&pcurve.geometry));
-                    let Some(parameter_range) = parameter_range.and_then(ordered_parameter_range) else { return Ok(None); };
-                    Ok(Some((
-                        surface,
-                        pcurve.geometry.try_clone_for_decode(ctx, "nx parametric edge pcurve")?,
-                        parameter_range,
-                        pcurve.fit_tolerance(),
-                    )))
-                })()?;
+                let Some(xmt) = curve_xmt else {
+                    return Ok(None);
+                };
+                let Some(pcurve_id) = pcurves.get(&xmt) else {
+                    return Ok(None);
+                };
+                let Some(pcurve_index) = pcurve_indices.get(pcurve_id) else {
+                    return Ok(None);
+                };
+                let Some(pcurve) = ir.model.pcurves.get(*pcurve_index) else {
+                    return Ok(None);
+                };
+                let Some(surface_ref) = pcurve_supports.get(&xmt) else {
+                    return Ok(None);
+                };
+                let surface =
+                    copy_typed_id(ctx, surface_ref.as_str(), "nx parametric edge surface")?;
+                let parameter_range = pcurve
+                    .parameter_range()
+                    .map(cadmpeg_ir::units::FiniteVector::get)
+                    .or(param_range)
+                    .or_else(|| pcurve_parameter_range(&pcurve.geometry));
+                let Some(parameter_range) = parameter_range.and_then(ordered_parameter_range)
+                else {
+                    return Ok(None);
+                };
+                Ok(Some((
+                    surface,
+                    pcurve
+                        .geometry
+                        .try_clone_for_decode(ctx, "nx parametric edge pcurve")?,
+                    parameter_range,
+                    pcurve.fit_tolerance(),
+                )))
+            })()?;
             if let Some((surface, pcurve, parameter_range, _fit_tolerance)) = lifted {
-                let carrier: CurveId = scope.id_charged(ctx,
+                let carrier: CurveId = scope.id_charged(
+                    ctx,
                     &cadmpeg_ir::identity_component!("edge-parametric-curve"),
                     node.xmt,
                 )?;
-                let construction: ProceduralCurveId = scope.id_charged(ctx,
+                let construction: ProceduralCurveId = scope.id_charged(
+                    ctx,
                     &cadmpeg_ir::identity_component!("edge-parametric-construction"),
                     node.xmt,
                 )?;
-                super::annotations::note(ctx, annotations, carrier.as_str(), source_stream, node.pos as u64, "PARAMETRIC_SURFACE_CURVE")?;
+                super::annotations::note(
+                    ctx,
+                    annotations,
+                    carrier.as_str(),
+                    source_stream,
+                    node.pos as u64,
+                    "PARAMETRIC_SURFACE_CURVE",
+                )?;
                 super::annotations::derived(ctx, annotations, carrier.as_str(), "geometry")?;
                 ctx.charge_collection_items(1, "nx parametric edge curves")?;
-                ir.model.curves.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx parametric edge curves", 0, 1)
-                })?;
+                ir.model
+                    .curves
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("nx parametric edge curves", 0, 1))?;
                 ir.model.curves.push(Curve {
                     id: copy_typed_id(ctx, carrier.as_str(), "nx parametric edge carrier")?,
                     geometry: CurveGeometry::Procedural {
@@ -574,7 +652,11 @@ pub(super) fn emit_topology(
             // forward/backward links. Its endpoint is the same analytic point
             // as the current FIN's synthesized start, even when `end_fin` is a
             // distinct radial partner record.
-            end = Some(copy_typed_id(ctx, start.as_str(), "nx closed edge end vertex")?);
+            end = Some(copy_typed_id(
+                ctx,
+                start.as_str(),
+                "nx closed edge end vertex",
+            )?);
         }
         let Some(end) = end else {
             continue;
@@ -630,9 +712,10 @@ pub(super) fn emit_topology(
             }
         }
         ctx.charge_collection_items(1, "nx emitted edges")?;
-        ir.model.edges.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("nx emitted edges", 0, 1)
-        })?;
+        ir.model
+            .edges
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx emitted edges", 0, 1))?;
         ir.model.edges.push(Edge {
             id: copy_typed_id(ctx, id.as_str(), "nx edge identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
@@ -684,9 +767,9 @@ pub(super) fn emit_topology(
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         ctx.charge_collection_items(1, "nx pending faces")?;
-        pending_faces.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("nx pending faces", 0, 1)
-        })?;
+        pending_faces
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx pending faces", 0, 1))?;
         pending_faces.push(PendingFace {
             xmt: node.xmt,
             id: copy_typed_id(ctx, id.as_str(), "nx pending face identity")?,
@@ -707,10 +790,7 @@ pub(super) fn emit_topology(
         let Some(fields) = node.loop_fields() else {
             continue;
         };
-        let Some(face_ref) = fields
-            .face
-            .and_then(|target| faces.get(&u32::from(target)))
-        else {
+        let Some(face_ref) = fields.face.and_then(|target| faces.get(&u32::from(target))) else {
             continue;
         };
         let id: LoopId =
@@ -727,9 +807,9 @@ pub(super) fn emit_topology(
         });
         if !ring_resolves {
             ctx.charge_collection_items(1, "nx topology losses")?;
-            topology_losses.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx topology losses", 0, 1)
-            })?;
+            topology_losses
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx topology losses", 0, 1))?;
             super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyLoopRingUnresolved)?;
             topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
                 render_retained_text(
@@ -776,35 +856,34 @@ pub(super) fn emit_topology(
     // intersection candidate consumed by the later attachment pass. A valid
     // unrelated coedge pcurve must not become a general admission shortcut.
     let mut endpoint_witnesses = EndpointWitnesses::new();
-    let mut intersection_pcurves: BTreeMap<
-        (CurveId, SurfaceId),
-        (PcurveGeometry, [f64; 2], Option<FitTolerance>),
-    > = BTreeMap::new();
+    let mut intersection_pcurves = IntersectionPcurveIndex::new();
     for procedural in &ir.model.procedural_curves {
-            let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
-            else {
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
+            continue;
+        };
+        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+            continue;
+        };
+        for side in context.sides() {
+            let (Some(surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
                 continue;
             };
-            let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
-                continue;
-            };
-            for side in context.sides() {
-                let (Some(surface), Some(pcurve)) = (&side.surface, &side.pcurve) else {
-                    continue;
-                };
-                ctx.charge_collection_items(1, "nx intersection pcurve index")?;
-                intersection_pcurves.insert(
-                    (
-                        copy_typed_id(ctx, owner.as_str(), "nx intersection pcurve owner")?,
-                        copy_typed_id(ctx, surface.as_str(), "nx intersection pcurve support")?,
-                    ),
-                    (
-                        pcurve.geometry.try_clone_for_decode(ctx, "nx intersection pcurve geometry")?,
-                        context.parameter_range().endpoints(),
-                        procedural.cache_fit_tolerance(),
-                    ),
-                );
-            }
+            ctx.charge_collection_items(1, "nx intersection pcurve index")?;
+            intersection_pcurves.insert(
+                (
+                    copy_typed_id(ctx, owner.as_str(), "nx intersection pcurve owner")?,
+                    copy_typed_id(ctx, surface.as_str(), "nx intersection pcurve support")?,
+                ),
+                (
+                    pcurve
+                        .geometry
+                        .try_clone_for_decode(ctx, "nx intersection pcurve geometry")?,
+                    context.parameter_range().endpoints(),
+                    procedural.cache_fit_tolerance(),
+                ),
+            );
+        }
     }
     let (valid_pcurve_fins, fallback_pcurves) = {
         let index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
@@ -864,12 +943,10 @@ pub(super) fn emit_topology(
                 let Some(parameter_range) = parameter_range else {
                     return Ok(None);
                 };
-                let Some((candidate_geometry, candidate_range, _)) =
-                    intersection_pcurves.get(&(
-                        copy_typed_id(ctx, curve.as_str(), "nx witness lookup curve")?,
-                        copy_typed_id(ctx, support.as_str(), "nx witness lookup support")?,
-                    ))
-                else {
+                let Some((candidate_geometry, candidate_range, _)) = intersection_pcurves.get(&(
+                    copy_typed_id(ctx, curve.as_str(), "nx witness lookup curve")?,
+                    copy_typed_id(ctx, support.as_str(), "nx witness lookup support")?,
+                )) else {
                     return Ok(Some(*fin_xmt));
                 };
                 if *candidate_geometry != carrier.geometry || *candidate_range != parameter_range {
@@ -887,11 +964,13 @@ pub(super) fn emit_topology(
                     }
                 };
                 ctx.charge_collection_items(1, "nx endpoint witnesses")?;
-                witnesses.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx endpoint witnesses", 0, 1)
-                })?;
+                witnesses
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("nx endpoint witnesses", 0, 1))?;
                 witnesses.push((
-                    carrier.geometry.try_clone_for_decode(ctx, "nx endpoint witness pcurve")?,
+                    carrier
+                        .geometry
+                        .try_clone_for_decode(ctx, "nx endpoint witness pcurve")?,
                     parameter_range,
                     endpoints,
                 ));
@@ -911,10 +990,16 @@ pub(super) fn emit_topology(
                     return Ok(None);
                 }
                 let candidate = (|| -> Result<Option<_>, CodecError> {
-                    let Some(fields) = graph.get(NodeKind::Fin, *fin_xmt).and_then(Node::fin_fields) else { return Ok(None); };
-                    let Some(edge) = fields
-                        .edge
-                        .and_then(|target| edges.get(&u32::from(target))) else { return Ok(None); };
+                    let Some(fields) = graph
+                        .get(NodeKind::Fin, *fin_xmt)
+                        .and_then(Node::fin_fields)
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(edge) = fields.edge.and_then(|target| edges.get(&u32::from(target)))
+                    else {
+                        return Ok(None);
+                    };
                     let Some(support_ref) = graph
                         .get_target(NodeKind::Loop, fields.loop_xmt)
                         .and_then(Node::loop_fields)
@@ -923,14 +1008,23 @@ pub(super) fn emit_topology(
                         .and_then(|face| {
                             face.surface
                                 .and_then(|target| surfaces.get(&u32::from(target)))
-                        }) else { return Ok(None); };
-                    let Some(carrier) = edge_curves_by_id.get(edge) else { return Ok(None); };
-                    let support: SurfaceId = copy_typed_id(ctx, support_ref.as_str(), "nx fallback support identity")?;
+                        })
+                    else {
+                        return Ok(None);
+                    };
+                    let Some(carrier) = edge_curves_by_id.get(edge) else {
+                        return Ok(None);
+                    };
+                    let support: SurfaceId =
+                        copy_typed_id(ctx, support_ref.as_str(), "nx fallback support identity")?;
                     let Some((geometry, parameter_range, fit_tolerance)) = intersection_pcurves
                         .get(&(
                             copy_typed_id(ctx, carrier.as_str(), "nx fallback lookup curve")?,
                             copy_typed_id(ctx, support.as_str(), "nx fallback lookup support")?,
-                        )) else { return Ok(None); };
+                        ))
+                    else {
+                        return Ok(None);
+                    };
                     Ok(Some((
                         edge,
                         support,
@@ -980,10 +1074,7 @@ pub(super) fn emit_topology(
         else {
             continue;
         };
-        let Some(edge_ref) = fields
-            .edge
-            .and_then(|target| edges.get(&u32::from(target)))
-        else {
+        let Some(edge_ref) = fields.edge.and_then(|target| edges.get(&u32::from(target))) else {
             continue;
         };
         let Some(id_ref) = fin_ids.get(&node.xmt) else {
@@ -1054,20 +1145,39 @@ pub(super) fn emit_topology(
             if let Some((_support, geometry, parameter_range, fit_tolerance)) =
                 fallback_pcurves.get(&fin_xmt)
             {
-                let pcurve_id: PcurveId = scope.id_charged(ctx,
+                let pcurve_id: PcurveId = scope.id_charged(
+                    ctx,
                     &cadmpeg_ir::identity_component!("intersection-pcurve"),
                     fin_xmt,
                 )?;
-                super::annotations::note(ctx, annotations, pcurve_id.as_str(), source_stream, node.pos as u64, "INTERSECTION_PCURVE")?;
+                super::annotations::note(
+                    ctx,
+                    annotations,
+                    pcurve_id.as_str(),
+                    source_stream,
+                    node.pos as u64,
+                    "INTERSECTION_PCURVE",
+                )?;
                 super::annotations::derived(ctx, annotations, pcurve_id.as_str(), "geometry")?;
-                super::annotations::derived(ctx, annotations, pcurve_id.as_str(), "parameter_range")?;
+                super::annotations::derived(
+                    ctx,
+                    annotations,
+                    pcurve_id.as_str(),
+                    "parameter_range",
+                )?;
                 if fit_tolerance.is_some() {
-                    super::annotations::derived(ctx, annotations, pcurve_id.as_str(), "fit_tolerance")?;
+                    super::annotations::derived(
+                        ctx,
+                        annotations,
+                        pcurve_id.as_str(),
+                        "fit_tolerance",
+                    )?;
                 }
                 ctx.charge_collection_items(1, "nx fallback pcurves")?;
-                ir.model.pcurves.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx fallback pcurves", 0, 1)
-                })?;
+                ir.model
+                    .pcurves
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("nx fallback pcurves", 0, 1))?;
                 ir.model.pcurves.push(Pcurve {
                     id: copy_typed_id(ctx, pcurve_id.as_str(), "nx fallback pcurve identity")?,
                     geometry: geometry.try_clone_for_decode(ctx, "nx attached fallback pcurve")?,
@@ -1085,15 +1195,16 @@ pub(super) fn emit_topology(
             }
         }
         ctx.charge_collection_items(1, "nx emitted coedges")?;
-        ir.model.coedges.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("nx emitted coedges", 0, 1)
-        })?;
+        ir.model
+            .coedges
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx emitted coedges", 0, 1))?;
         let mut pcurve_uses = Vec::new();
         if let Some(pcurve) = pcurve {
             ctx.charge_collection_items(1, "nx coedge pcurve uses")?;
-            pcurve_uses.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx coedge pcurve uses", 0, 1)
-            })?;
+            pcurve_uses
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx coedge pcurve uses", 0, 1))?;
             pcurve_uses.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve,
                 isoparametric: None,
@@ -1127,22 +1238,25 @@ pub(super) fn emit_topology(
                     break;
                 };
                 ctx.charge_collection_items(1, "nx loop coedges")?;
-                coedges.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx loop coedges", 0, 1)
-                })?;
-                coedges.push(copy_typed_id(ctx, fin_id.as_str(), "nx loop coedge identity")?);
+                coedges
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("nx loop coedges", 0, 1))?;
+                coedges.push(copy_typed_id(
+                    ctx,
+                    fin_id.as_str(),
+                    "nx loop coedge identity",
+                )?);
             }
             let ring = if all_resolved {
-                LoopRing::try_new_for_decode(ctx, coedges, Vec::new())
-                    ?.ok()
+                LoopRing::try_new_for_decode(ctx, coedges, Vec::new())?.ok()
             } else {
                 None
             };
             let Some(ring) = ring else {
                 ctx.charge_collection_items(1, "nx topology losses")?;
-                topology_losses.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("nx topology losses", 0, 1)
-                })?;
+                topology_losses
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("nx topology losses", 0, 1))?;
                 super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyLoopRingUnresolved)?;
                 topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
                     render_retained_text(
@@ -1156,9 +1270,10 @@ pub(super) fn emit_topology(
                 continue;
             };
             ctx.charge_collection_items(1, "nx emitted loops")?;
-            ir.model.loops.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx emitted loops", 0, 1)
-            })?;
+            ir.model
+                .loops
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx emitted loops", 0, 1))?;
             ir.model.loops.push(Loop {
                 id: copy_typed_id(ctx, id.as_str(), "nx emitted loop identity")?,
                 face: copy_typed_id(ctx, face.as_str(), "nx emitted loop face identity")?,
@@ -1173,18 +1288,18 @@ pub(super) fn emit_topology(
                 }
             };
             ctx.charge_collection_items(1, "nx face loops")?;
-            loops.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx face loops", 0, 1)
-            })?;
+            loops
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx face loops", 0, 1))?;
             loops.push(copy_typed_id(ctx, id.as_str(), "nx face loop identity")?);
         }
     }
     for pending in pending_faces {
         if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
             ctx.charge_collection_items(1, "nx topology losses")?;
-            topology_losses.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("nx topology losses", 0, 1)
-            })?;
+            topology_losses
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx topology losses", 0, 1))?;
             super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyFaceLoopUnresolved)?;
             topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
                 render_retained_text(
@@ -1199,9 +1314,10 @@ pub(super) fn emit_topology(
         }
         let loops = face_loops.remove(&pending.id).unwrap_or_default();
         ctx.charge_collection_items(1, "nx emitted faces")?;
-        ir.model.faces.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("nx emitted faces", 0, 1)
-        })?;
+        ir.model
+            .faces
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx emitted faces", 0, 1))?;
         ir.model.faces.push(Face {
             id: pending.id,
             shell: pending.shell,
@@ -1218,8 +1334,7 @@ pub(super) fn emit_topology(
         ir,
         graph,
         &edges,
-        &scope,
-        source_stream,
+        (&scope, source_stream),
         annotations,
         adaptive_geometry_budget,
     )?;
@@ -1253,7 +1368,11 @@ pub(super) fn emit_topology(
     let mut owned_edges: BTreeSet<EdgeId> = BTreeSet::new();
     for coedge in &ir.model.coedges {
         ctx.charge_collection_items(1, "nx owned edge index")?;
-        owned_edges.insert(copy_typed_id(ctx, coedge.edge.as_str(), "nx owned edge identity")?);
+        owned_edges.insert(copy_typed_id(
+            ctx,
+            coedge.edge.as_str(),
+            "nx owned edge identity",
+        )?);
     }
     let mut candidate_edges = BTreeSet::new();
     for edge in edges.into_values() {
@@ -1309,16 +1428,25 @@ pub(super) fn retain_unresolved_topology_carriers(
         if surface_xmt <= 1 || surfaces.contains_key(&surface_xmt) {
             continue;
         }
-        let id: SurfaceId = scope.id_charged(ctx,
+        let id: SurfaceId = scope.id_charged(
+            ctx,
             &cadmpeg_ir::identity_component!("surface"),
             format_args!("unknown-{surface_xmt}"),
         )?;
-        super::annotations::note(ctx, annotations, id.as_str(), source_stream, face.pos as u64, "UNRESOLVED_SURFACE_REFERENCE")?;
+        super::annotations::note(
+            ctx,
+            annotations,
+            id.as_str(),
+            source_stream,
+            face.pos as u64,
+            "UNRESOLVED_SURFACE_REFERENCE",
+        )?;
         super::annotations::exactness(ctx, annotations, id.as_str(), Exactness::Unknown)?;
         ctx.charge_collection_items(1, "nx unresolved surfaces")?;
-        ir.model.surfaces.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("nx unresolved surfaces", 0, 1)
-        })?;
+        ir.model
+            .surfaces
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx unresolved surfaces", 0, 1))?;
         ir.model.surfaces.push(Surface {
             id: copy_typed_id(ctx, id.as_str(), "nx unresolved surface identity")?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
@@ -1344,16 +1472,25 @@ pub(super) fn retain_unresolved_topology_carriers(
         if curve_xmt <= 1 || curves.contains_key(&curve_xmt) || pcurves.contains_key(&curve_xmt) {
             continue;
         }
-        let id: CurveId = scope.id_charged(ctx,
+        let id: CurveId = scope.id_charged(
+            ctx,
             &cadmpeg_ir::identity_component!("curve"),
             format_args!("unknown-{curve_xmt}"),
         )?;
-        super::annotations::note(ctx, annotations, id.as_str(), source_stream, edge.pos as u64, "UNRESOLVED_CURVE_REFERENCE")?;
+        super::annotations::note(
+            ctx,
+            annotations,
+            id.as_str(),
+            source_stream,
+            edge.pos as u64,
+            "UNRESOLVED_CURVE_REFERENCE",
+        )?;
         super::annotations::exactness(ctx, annotations, id.as_str(), Exactness::Unknown)?;
         ctx.charge_collection_items(1, "nx unresolved curves")?;
-        ir.model.curves.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("nx unresolved curves", 0, 1)
-        })?;
+        ir.model
+            .curves
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("nx unresolved curves", 0, 1))?;
         ir.model.curves.push(Curve {
             id: copy_typed_id(ctx, id.as_str(), "nx unresolved curve identity")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
@@ -1452,31 +1589,49 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     }) else {
         return Ok(None);
     };
-    let point: PointId = scope.id_charged(ctx,
+    let point: PointId = scope.id_charged(
+        ctx,
         &cadmpeg_ir::identity_component!("point"),
         format_args!("closed-edge-{}", edge.xmt),
     )?;
-    let vertex: VertexId = scope.id_charged(ctx,
+    let vertex: VertexId = scope.id_charged(
+        ctx,
         &cadmpeg_ir::identity_component!("vertex"),
         format_args!("closed-edge-{}", edge.xmt),
     )?;
-    super::annotations::note(ctx, annotations, point.as_str(), source_stream, edge.pos as u64, "CLOSED_EDGE_POINT")?;
+    super::annotations::note(
+        ctx,
+        annotations,
+        point.as_str(),
+        source_stream,
+        edge.pos as u64,
+        "CLOSED_EDGE_POINT",
+    )?;
     super::annotations::exactness(ctx, annotations, point.as_str(), Exactness::Inferred)?;
-    super::annotations::note(ctx, annotations, vertex.as_str(), source_stream, edge.pos as u64, "CLOSED_EDGE_VERTEX")?;
+    super::annotations::note(
+        ctx,
+        annotations,
+        vertex.as_str(),
+        source_stream,
+        edge.pos as u64,
+        "CLOSED_EDGE_VERTEX",
+    )?;
     super::annotations::exactness(ctx, annotations, vertex.as_str(), Exactness::Inferred)?;
     ctx.charge_collection_items(1, "nx closed edge points")?;
-    ir.model.points.try_reserve(1).map_err(|_| {
-        ctx.refuse_codec_limit("nx closed edge points", 0, 1)
-    })?;
+    ir.model
+        .points
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("nx closed edge points", 0, 1))?;
     ir.model.points.push(Point::new(
         copy_typed_id(ctx, point.as_str(), "nx closed edge point identity")?,
         position,
         None,
     ));
     ctx.charge_collection_items(1, "nx closed edge vertices")?;
-    ir.model.vertices.try_reserve(1).map_err(|_| {
-        ctx.refuse_codec_limit("nx closed edge vertices", 0, 1)
-    })?;
+    ir.model
+        .vertices
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("nx closed edge vertices", 0, 1))?;
     ir.model.vertices.push(Vertex {
         id: copy_typed_id(ctx, vertex.as_str(), "nx closed edge vertex identity")?,
         point,
@@ -1527,8 +1682,7 @@ pub(super) fn orient_edge_range(
             ir,
             curve,
             range,
-            start,
-            end,
+            (start, end),
             edge_tolerance,
             &geometry_budget,
         )
@@ -1541,8 +1695,7 @@ fn orient_edge_range_with_budget(
     ir: &CadIr,
     curve: &CurveId,
     range: [f64; 2],
-    start: &VertexId,
-    end: &VertexId,
+    (start, end): (&VertexId, &VertexId),
     edge_tolerance: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<([f64; 2], bool)> {

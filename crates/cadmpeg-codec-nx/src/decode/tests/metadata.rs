@@ -58,16 +58,15 @@ fn metadata_source_refuses_retained_attribute_limit() {
         },
         streams: Vec::new(),
     };
-    let (dialects, _) = crate::test_support::with_decode_context(|ctx| {
-        crate::dialect::classify_layers(ctx, &scan)
-    })
-    .expect("empty scan dialect")
-    .into_report_parts();
+    let (dialects, _) =
+        crate::test_support::with_decode_context(|ctx| crate::dialect::classify_layers(ctx, &scan))
+            .expect("empty scan dialect")
+            .into_report_parts();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, root) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let error = super::super::build_metadata_ir(&ctx, root, &scan, &dialects)
         .expect_err("source attribute needs retained bytes");
     assert!(matches!(
@@ -93,8 +92,8 @@ fn metadata_unknown_stream_refuses_work_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
-        .expect("root input fits policy");
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root input fits policy");
     let error = super::super::build_metadata_ir(&ctx, root, &scan, &dialects)
         .expect_err("one unknown stream needs digest work");
     assert!(matches!(
@@ -133,8 +132,8 @@ fn untransferred_stream_report_refuses_loss_code_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let error = super::super::report_untransferred_streams(
         &ctx,
         &scan,
@@ -179,8 +178,8 @@ fn untransferred_stream_report_refuses_loss_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let error = super::super::report_untransferred_streams(
         &ctx,
         &scan,
@@ -212,8 +211,8 @@ fn container_body_refuses_loss_code_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let error = super::super::build_container_body(&ctx, &scan, Vec::new(), Vec::new())
         .expect_err("loss code needs retained bytes");
     assert!(matches!(
@@ -241,8 +240,8 @@ fn container_body_refuses_loss_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let error = super::super::build_container_body(&ctx, &scan, Vec::new(), Vec::new())
         .expect_err("one loss needs one collection item");
     assert!(matches!(
@@ -267,8 +266,7 @@ fn decoded_unknown_limit_error(policy: &DecodePolicy) -> cadmpeg_core::CodecErro
     )
     .expect("prior unknown record");
     let unknown = cadmpeg_ir::UnknownRecord::retained(
-        cadmpeg_ir::ids::UnknownId::mint("test:model:entity#incoming")
-            .expect("identity grammar"),
+        cadmpeg_ir::ids::UnknownId::mint("test:model:entity#incoming").expect("identity grammar"),
         0,
         vec![1],
         Vec::new(),
@@ -281,8 +279,8 @@ fn decoded_unknown_limit_error(policy: &DecodePolicy) -> cadmpeg_core::CodecErro
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     };
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, policy).expect("empty root fits policy");
     match super::super::decoded(
         &ctx,
         ir,

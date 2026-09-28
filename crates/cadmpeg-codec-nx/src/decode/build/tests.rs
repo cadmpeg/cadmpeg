@@ -20,17 +20,9 @@ fn geometry_route_limit_error(policy: &DecodePolicy) -> cadmpeg_core::CodecError
         .expect("classified topology input")
         .into_report_parts();
     let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, policy)
-        .expect("root input fits policy");
-    match super::try_decode_geometry(
-        &ctx,
-        root,
-        &scan,
-        &dialects,
-        &[],
-        &[],
-        &mut 0,
-    ) {
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, policy).expect("root input fits policy");
+    match super::try_decode_geometry(&ctx, root, &scan, &dialects, &[], &[], &mut 0) {
         Err(error) => error,
         Ok(_) => panic!("geometry route must refuse the low limit"),
     }

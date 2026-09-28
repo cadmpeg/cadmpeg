@@ -14,9 +14,10 @@ pub(super) fn note(
     offset: u64,
     tag: &str,
 ) -> Result<(), CodecError> {
-    let bytes = id.len().checked_add(tag.len()).ok_or_else(|| {
-        ctx.refuse_codec_limit("nx annotation provenance text", 0, u64::MAX)
-    })?;
+    let bytes = id
+        .len()
+        .checked_add(tag.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx annotation provenance text", 0, u64::MAX))?;
     ctx.charge_retained(u64_from_index(bytes), "nx annotation provenance text")?;
     ctx.charge_collection_items(1, "nx annotation provenance node")?;
     annotations.note(id, stream, offset).tag(tag);
@@ -29,12 +30,15 @@ pub(super) fn derived(
     id: &str,
     field: &str,
 ) -> Result<(), CodecError> {
-    let bytes = id.len().checked_add(field.len()).ok_or_else(|| {
-        ctx.refuse_codec_limit("nx annotation exactness text", 0, u64::MAX)
-    })?;
+    let bytes = id
+        .len()
+        .checked_add(field.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx annotation exactness text", 0, u64::MAX))?;
     ctx.charge_retained(u64_from_index(bytes), "nx annotation exactness text")?;
     ctx.charge_collection_items(2, "nx annotation exactness nodes")?;
-    annotations.derived(id, field).map_err(CodecError::malformed)?;
+    annotations
+        .derived(id, field)
+        .map_err(CodecError::malformed)?;
     Ok(())
 }
 

@@ -142,8 +142,9 @@ fn charged_unknown_limit_error(
         "synthetic",
         &[crate::NativeUnknownRecord {
             id: id("prior"),
-            links: vec![crate::ids::Identity::new(id("target").to_string())
-                .expect("identity grammar")],
+            links: vec![
+                crate::ids::Identity::new(id("target").to_string()).expect("identity grammar")
+            ],
         }],
     )
     .expect("prior native unknown");

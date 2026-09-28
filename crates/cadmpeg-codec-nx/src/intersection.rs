@@ -433,8 +433,16 @@ impl CurveScan {
             });
         }
         Ok(Self {
-            source_constructions: copy_records(ctx, &self.source_constructions, "NX source intersection copy")?,
-            constructions: copy_records(ctx, &self.constructions, "NX intersection construction copy")?,
+            source_constructions: copy_records(
+                ctx,
+                &self.source_constructions,
+                "NX source intersection copy",
+            )?,
+            constructions: copy_records(
+                ctx,
+                &self.constructions,
+                "NX intersection construction copy",
+            )?,
             curves,
             uncharted: copy_records(ctx, &self.uncharted, "NX uncharted intersection copy")?,
             rejected: self.rejected,

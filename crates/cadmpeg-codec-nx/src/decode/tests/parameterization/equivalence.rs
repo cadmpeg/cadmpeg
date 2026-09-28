@@ -201,10 +201,9 @@ fn cyclic_offset_supports_are_not_parameterization_equivalent() {
     ];
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     for (index, surface) in surfaces.iter().enumerate() {
-        let construction = ProceduralSurfaceId::mint(format!(
-            "test:model:entity#cycle-construction-{index}"
-        ))
-        .expect("identity grammar");
+        let construction =
+            ProceduralSurfaceId::mint(format!("test:model:entity#cycle-construction-{index}"))
+                .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
@@ -264,8 +263,8 @@ fn equivalent_support_completion_refuses_model_index_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("bounded test input");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("bounded test input");
 
     assert!(matches!(
         complete_parameterization_equivalent_support_uv(&ctx, &mut ir),

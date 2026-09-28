@@ -183,24 +183,32 @@ fn report_untransferred_streams(
     for (index, stream) in scan.streams.iter().enumerate() {
         if !stream.kind().is_parasolid() {
             charge_loss_code(ctx, NxLossCode::NonParasolidStreamOmitted)?;
-            push_loss(ctx, body, NxLossCode::NonParasolidStreamOmitted.note(render_retained_text(
+            push_loss(
                 ctx,
-                format_args!(
-                    "Non-Parasolid {} stream #{index} was classified but not transferred.",
-                    stream.kind().label()
-                ),
-                "nx omitted stream loss text",
-            )?))?;
+                body,
+                NxLossCode::NonParasolidStreamOmitted.note(render_retained_text(
+                    ctx,
+                    format_args!(
+                        "Non-Parasolid {} stream #{index} was classified but not transferred.",
+                        stream.kind().label()
+                    ),
+                    "nx omitted stream loss text",
+                )?),
+            )?;
         }
     }
     Ok(())
 }
 
 fn charge_loss_code(ctx: &DecodeContext<'_>, code: NxLossCode) -> Result<(), CodecError> {
-    let bytes = "nx".len().checked_add(code.code().len()).ok_or_else(|| {
-        ctx.refuse_codec_limit("nx loss code text", 0, u64::MAX)
-    })?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "nx loss code text")
+    let bytes = "nx"
+        .len()
+        .checked_add(code.code().len())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx loss code text", 0, u64::MAX))?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "nx loss code text",
+    )
 }
 
 fn push_loss(
@@ -332,7 +340,12 @@ fn build_metadata_ir(
                 stream.file_offset as u64,
                 stream.kind().label(),
             )?;
-            annotations::exactness(ctx, &mut annotations, unknown.id().as_str(), Exactness::Derived)?;
+            annotations::exactness(
+                ctx,
+                &mut annotations,
+                unknown.id().as_str(),
+                Exactness::Derived,
+            )?;
             unknowns.push(unknown);
         }
     }
@@ -374,7 +387,6 @@ fn build_container_body(
     dialect_losses: Vec<LossNote>,
     notes: Vec<String>,
 ) -> Result<DecodeBody, CodecError> {
-
     let assembly = scan
         .container
         .entries

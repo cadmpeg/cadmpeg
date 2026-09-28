@@ -579,16 +579,25 @@ impl DialectMatch {
         let dialect = DialectId {
             value: match &self.dialect.value {
                 Cow::Borrowed(value) => Cow::Borrowed(value),
-                Cow::Owned(value) => Cow::Owned(copy_decode_text(ctx, value, "dialect identity copy")?),
+                Cow::Owned(value) => {
+                    Cow::Owned(copy_decode_text(ctx, value, "dialect identity copy")?)
+                }
             },
             namespace_len: self.dialect.namespace_len,
         };
         let mut declared = BTreeMap::new();
         for (key, value) in &self.declared {
             ctx.charge_collection_items(1, "dialect declaration copies")?;
-            let key = NonBlankString::new(copy_decode_text(ctx, key.as_str(), "dialect declaration key")?)
-                .ok_or_else(|| crate::CodecError::malformed("dialect declaration key is blank"))?;
-            declared.insert(key, copy_decode_text(ctx, value, "dialect declaration value")?);
+            let key = NonBlankString::new(copy_decode_text(
+                ctx,
+                key.as_str(),
+                "dialect declaration key",
+            )?)
+            .ok_or_else(|| crate::CodecError::malformed("dialect declaration key is blank"))?;
+            declared.insert(
+                key,
+                copy_decode_text(ctx, value, "dialect declaration value")?,
+            );
         }
         let instance = self
             .instance
@@ -600,11 +609,20 @@ impl DialectMatch {
             Admission::Residual => Admission::Residual,
             Admission::Refused => Admission::Refused,
             Admission::Unverified { using } => Admission::Unverified {
-                using: Grammar::parse(copy_decode_text(ctx, using.as_str(), "dialect grammar copy")?)
-                    .map_err(|_| crate::CodecError::malformed("dialect grammar is invalid"))?,
+                using: Grammar::parse(copy_decode_text(
+                    ctx,
+                    using.as_str(),
+                    "dialect grammar copy",
+                )?)
+                .map_err(|_| crate::CodecError::malformed("dialect grammar is invalid"))?,
             },
         };
-        Ok(Self { dialect, declared, instance, admission })
+        Ok(Self {
+            dialect,
+            declared,
+            instance,
+            admission,
+        })
     }
 
     fn with_admission(dialect: DialectId, admission: Admission) -> Self {
