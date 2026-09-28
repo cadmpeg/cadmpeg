@@ -162,13 +162,15 @@ mod tests {
         for index in 0..MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
             let surface = SurfaceId::mint(format!("test:model:entity#surface-{index}"))
                 .expect("identity grammar");
-            cache.remember(&surface, index as f64, false, frame);
+            cache.remember(&surface, index as f64, false, frame, &GeometryWorkBudget::new(100))
+                .expect("cache allocation succeeds");
         }
         let first = SurfaceId::mint("test:model:entity#surface-0").expect("identity grammar");
         assert_eq!(cache.get(&first, 0.0, false), Some(frame));
 
         let newest = SurfaceId::mint("test:model:entity#surface-newest").expect("identity grammar");
-        cache.remember(&newest, 0.0, false, frame);
+        cache.remember(&newest, 0.0, false, frame, &GeometryWorkBudget::new(100))
+            .expect("cache allocation succeeds");
         assert!(cache.get(&first, 0.0, false).is_none());
         assert_eq!(cache.get(&newest, 0.0, false), Some(frame));
         assert!(cache.get(&newest, -0.0, false).is_none());
@@ -181,7 +183,8 @@ mod tests {
         for index in 0..MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
             let surface = SurfaceId::mint(format!("test:model:entity#boundary-surface-{index}"))
                 .expect("identity grammar");
-            cache.remember_boundary_point(&surface, index as f64, index % 2, point);
+            cache.remember_boundary_point(&surface, index as f64, index % 2, point, &GeometryWorkBudget::new(100))
+                .expect("cache allocation succeeds");
         }
 
         let first =
@@ -190,11 +193,62 @@ mod tests {
 
         let newest =
             SurfaceId::mint("test:model:entity#boundary-surface-newest").expect("identity grammar");
-        cache.remember_boundary_point(&newest, 0.0, 1, point);
+        cache.remember_boundary_point(&newest, 0.0, 1, point, &GeometryWorkBudget::new(100))
+            .expect("cache allocation succeeds");
         assert!(cache.get_boundary_point(&first, 0.0, 0).is_none());
         assert_eq!(cache.get_boundary_point(&newest, 0.0, 1), Some(point));
         assert!(cache.get_boundary_point(&newest, 0.0, 0).is_none());
         assert!(cache.get_boundary_point(&newest, -0.0, 1).is_none());
+    }
+
+    #[test]
+    fn blend_frame_cache_refuses_retained_identity_at_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits service policy");
+        let budget = GeometryWorkBudget::from_context(&ctx, 100);
+        let surface = SurfaceId::mint("test:model:entity#blend-frame").expect("identity grammar");
+        let frame = (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.0,
+        );
+        let limit = BlendSurfaceFrameCache::default()
+            .remember(&surface, 0.0, false, frame, &budget)
+            .expect_err("frame identity exceeds retained limit");
+        assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(limit.operation, "nx blend frame cache identity");
+    }
+
+    #[test]
+    fn blend_frame_cache_refuses_entry_at_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits service policy");
+        let budget = GeometryWorkBudget::from_context(&ctx, 100);
+        let surface = SurfaceId::mint("test:model:entity#blend-frame").expect("identity grammar");
+        let frame = (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.0,
+        );
+        let limit = BlendSurfaceFrameCache::default()
+            .remember(&surface, 0.0, false, frame, &budget)
+            .expect_err("frame entry exceeds collection limit");
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "nx blend frame cache entries");
     }
 
     #[test]
@@ -237,12 +291,12 @@ mod tests {
         for parameter in 0..(MAX_BLEND_CONTACT_SEEDS + 4) {
             let parameter = parameter as f64;
             cache.remember(BlendContactSeed {
-                support: support.clone(),
-                spine: spine.clone(),
+                support: support.as_str().to_owned(),
+                spine: spine.as_str().to_owned(),
                 parameter,
-                offset_surface: offset_surface.clone(),
+                offset_surface: offset_surface.as_str().to_owned(),
                 parameters: Point2::new(parameter, -parameter),
-            });
+            }, &GeometryWorkBudget::new(100)).expect("cache allocation succeeds");
         }
 
         assert_eq!(cache.entries.len(), MAX_BLEND_CONTACT_SEEDS);
@@ -1333,17 +1387,15 @@ type BlendSurfaceFrame = (Point3, Vector3, Vector3, Vector3, f64);
 const MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES: usize = 512;
 const MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES: usize = 2_048;
 
-#[derive(Clone)]
 struct BlendSurfaceFrameCacheEntry {
-    surface: SurfaceId,
+    surface: String,
     parameter_bits: u64,
     allow_offset_contact: bool,
     frame: BlendSurfaceFrame,
 }
 
-#[derive(Clone)]
 struct BlendBoundaryPointCacheEntry {
-    surface: SurfaceId,
+    surface: String,
     parameter_bits: u64,
     boundary: usize,
     point: Point3,
@@ -1378,7 +1430,7 @@ impl BlendSurfaceFrameCache {
         self.entries
             .iter()
             .find(|entry| {
-                entry.surface == *surface
+                entry.surface == surface.as_str()
                     && entry.parameter_bits == parameter.to_bits()
                     && entry.allow_offset_contact == allow_offset_contact
             })
@@ -1391,24 +1443,28 @@ impl BlendSurfaceFrameCache {
         parameter: f64,
         allow_offset_contact: bool,
         frame: BlendSurfaceFrame,
-    ) {
+        geometry_budget: &GeometryWorkBudget<'_>,
+    ) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
         if let Some(entry) = self.entries.iter_mut().find(|entry| {
-            entry.surface == *surface
+            entry.surface == surface.as_str()
                 && entry.parameter_bits == parameter.to_bits()
                 && entry.allow_offset_contact == allow_offset_contact
         }) {
             entry.frame = frame;
-            return;
+            return Ok(());
         }
+        let surface = geometry_budget.copy_retained_text(surface.as_str(), "nx blend frame cache identity")?;
+        geometry_budget.charge_collection_items(1, "nx blend frame cache entries")?;
         if self.entries.len() == MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
             self.entries.pop_front();
         }
         self.entries.push_back(BlendSurfaceFrameCacheEntry {
-            surface: surface.clone(),
+            surface,
             parameter_bits: parameter.to_bits(),
             allow_offset_contact,
             frame,
         });
+        Ok(())
     }
 
     fn get_boundary_point(
@@ -1420,7 +1476,7 @@ impl BlendSurfaceFrameCache {
         self.boundary_points
             .iter()
             .find(|entry| {
-                entry.surface == *surface
+                entry.surface == surface.as_str()
                     && entry.parameter_bits == parameter.to_bits()
                     && entry.boundary == boundary
             })
@@ -1433,25 +1489,29 @@ impl BlendSurfaceFrameCache {
         parameter: f64,
         boundary: usize,
         point: Point3,
-    ) {
+        geometry_budget: &GeometryWorkBudget<'_>,
+    ) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
         if let Some(entry) = self.boundary_points.iter_mut().find(|entry| {
-            entry.surface == *surface
+            entry.surface == surface.as_str()
                 && entry.parameter_bits == parameter.to_bits()
                 && entry.boundary == boundary
         }) {
             entry.point = point;
-            return;
+            return Ok(());
         }
+        let surface = geometry_budget.copy_retained_text(surface.as_str(), "nx blend boundary cache identity")?;
+        geometry_budget.charge_collection_items(1, "nx blend boundary cache entries")?;
         if self.boundary_points.len() == MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
             self.boundary_points.pop_front();
         }
         self.boundary_points
             .push_back(BlendBoundaryPointCacheEntry {
-                surface: surface.clone(),
+                surface,
                 parameter_bits: parameter.to_bits(),
                 boundary,
                 point,
             });
+        Ok(())
     }
 
     pub(super) fn clear(&mut self) {
@@ -1462,12 +1522,11 @@ impl BlendSurfaceFrameCache {
 
 const MAX_BLEND_CONTACT_SEEDS: usize = 8;
 
-#[derive(Clone)]
 struct BlendContactSeed {
-    support: SurfaceId,
-    spine: CurveId,
+    support: String,
+    spine: String,
     parameter: f64,
-    offset_surface: SurfaceId,
+    offset_surface: String,
     parameters: Point2,
 }
 
@@ -1500,9 +1559,9 @@ impl BlendContactSeedCache {
         self.entries
             .iter()
             .filter(|seed| {
-                seed.support == *support
-                    && seed.spine == *spine
-                    && seed.offset_surface == *offset_surface
+                seed.support == support.as_str()
+                    && seed.spine == spine.as_str()
+                    && seed.offset_surface == offset_surface.as_str()
                     && seed.parameter.is_finite()
             })
             .min_by(|first, second| {
@@ -1513,7 +1572,11 @@ impl BlendContactSeedCache {
             .map(|seed| seed.parameters)
     }
 
-    fn remember(&mut self, seed: BlendContactSeed) {
+    fn remember(
+        &mut self,
+        seed: BlendContactSeed,
+        geometry_budget: &GeometryWorkBudget<'_>,
+    ) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
         if let Some(existing) = self.entries.iter_mut().find(|existing| {
             existing.support == seed.support
                 && existing.spine == seed.spine
@@ -1521,11 +1584,12 @@ impl BlendContactSeedCache {
                 && existing.parameter.to_bits() == seed.parameter.to_bits()
         }) {
             *existing = seed;
-            return;
+            return Ok(());
         }
         if self.entries.len() < MAX_BLEND_CONTACT_SEEDS {
+            geometry_budget.charge_collection_items(1, "nx blend contact seed cache entries")?;
             self.entries.push(seed);
-            return;
+            return Ok(());
         }
         let Some(replacement) = self
             .entries
@@ -1538,9 +1602,10 @@ impl BlendContactSeedCache {
             })
             .map(|(index, _)| index)
         else {
-            return;
+            return Ok(());
         };
         self.entries[replacement] = seed;
+        Ok(())
     }
 }
 
@@ -1910,7 +1975,8 @@ fn blend_surface_frame_with_index_and_budget_and_options(
                 u,
                 allow_offset_contact,
                 frame,
-            );
+                geometry_budget,
+            )?;
         }
     }
     Ok(frame)
@@ -1991,7 +2057,7 @@ fn blend_boundary_point_with_index_and_budget(
         geometry_budget
             .blend_frame_cache()
             .borrow_mut()
-            .remember_boundary_point(surface, parameter, boundary, point);
+            .remember_boundary_point(surface, parameter, boundary, point, geometry_budget)?;
     }
     Ok(point)
 }
@@ -3552,20 +3618,31 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
                 if radial.dot(tangent).abs() > angular_tolerance {
                     continue;
                 }
-                let contact_seed = BlendContactSeed {
-                    support: support.clone(),
-                    spine: spine.clone(),
-                    parameter,
-                    offset_surface: (*offset_surface).clone(),
-                    parameters,
-                };
-                candidates.push((reproduced, contact_seed));
+                candidates.push((reproduced, (*offset_surface, parameters)));
             }
         }
-        let [(candidate, contact_seed)] = candidates.as_slice() else {
+        let [(candidate, (offset_surface, parameters))] = candidates.as_slice() else {
             return None;
         };
-        contact_seeds.remember(contact_seed.clone());
+        let contact_seed = BlendContactSeed {
+            support: match geometry_budget.copy_retained_text(support.as_str(), "nx blend contact support identity") {
+                Ok(value) => value,
+                Err(limit) => return Some(Err(limit)),
+            },
+            spine: match geometry_budget.copy_retained_text(spine.as_str(), "nx blend contact spine identity") {
+                Ok(value) => value,
+                Err(limit) => return Some(Err(limit)),
+            },
+            parameter,
+            offset_surface: match geometry_budget.copy_retained_text(offset_surface.as_str(), "nx blend contact offset identity") {
+                Ok(value) => value,
+                Err(limit) => return Some(Err(limit)),
+            },
+            parameters: *parameters,
+        };
+        if let Err(limit) = contact_seeds.remember(contact_seed, geometry_budget) {
+            return Some(Err(limit));
+        }
         Some(Ok(*candidate))
     })()
     .transpose()
