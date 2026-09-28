@@ -358,7 +358,7 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction =
-                    exact_assembly_alignment(bytes, &records, &scope, parameter_owners);
+                    exact_assembly_alignment(ctx, bytes, &records, &scope, parameter_owners)?;
                 if let scope::DesignScopePayloadMut::Assemble(slot)
                 | scope::DesignScopePayloadMut::AsBuilt(slot) = scope.payload_mut()
                 {
