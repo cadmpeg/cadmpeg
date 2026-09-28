@@ -1312,6 +1312,39 @@ fn composite_index_lookups_match_the_unindexed_scan() {
 }
 
 #[test]
+fn composite_scanned_edges_admit_slots_and_endpoint_ids() {
+    let decoded = IgesCodec.decode(&mut Cursor::new(composite_curve_file()), &DecodeOptions::default()).unwrap();
+    let ir = decoded.ir();
+    let curve_id = ir.model.edges.iter().find_map(|edge| edge.curve()).unwrap();
+    for (retained, operation) in [
+        (false, "iges composite scanned edge candidates"),
+        (true, "iges composite scanned edge start ID"),
+        (true, "iges composite scanned edge end ID"),
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            if retained { policy.limits.max_retained_bytes = cap; }
+            else { policy.limits.max_collection_items = cap; }
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match super::bounded_edge_for_curve(ir, curve_id, 0.0, None, Some(&ctx)) {
+                Err(CodecError::ResourceLimit(limit)) => {
+                    let dimension = if retained { ResourceDimension::RetainedBytes } else { ResourceDimension::CollectionItems };
+                    assert_eq!(limit.dimension, dimension);
+                    if limit.operation == operation { found = true; break; }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("scanned edge succeeded before {operation} at cap {cap}"),
+                Err(error) => panic!("unexpected scanned edge error: {error}"),
+            }
+        }
+        assert!(found, "scanned edge admission was not reached: {operation}");
+    }
+}
+
+#[test]
 fn rational_linear_degree_elevation_preserves_the_curve() {
     let mut curve = test_nurbs(
         1,
