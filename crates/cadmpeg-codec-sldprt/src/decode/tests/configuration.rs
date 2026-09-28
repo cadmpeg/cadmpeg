@@ -241,6 +241,41 @@ fn duplicate_configuration_partition_identities_are_reported() {
 }
 
 #[test]
+fn configuration_loss_counting_refuses_caller_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut ir = CadIr::empty();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
+        ordinal: 0,
+        active: true,
+        source_index: Some(5),
+        name: Some("Default".into()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: Some("native:configuration".into()),
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits policy");
+    let mut report = super::empty_report(true);
+    let error = append_design_losses(&ctx, &ir, &mut report)
+        .expect_err("configuration source index consumes one collection item");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "count SLDPRT configuration source indices"
+    ));
+}
+
+#[test]
 fn incomplete_configuration_names_are_reported() {
     let mut ir = CadIr::empty();
     for (position, (ordinal, name)) in [(0, ""), (1, "Shared"), (2, "Shared"), (2, "Unique")]
