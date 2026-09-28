@@ -12,9 +12,9 @@
 
 use std::{collections::HashSet, ops::Range};
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::geometry::nurbs::knots_strictly_increasing;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
@@ -58,19 +58,45 @@ pub(crate) struct ConsolidatedPcurve {
 
 /// Decode class-`0x20` UV jets from one framed record family.
 pub(crate) fn family_pcurves_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     family: ConsolidatedFamily,
-) -> Vec<ConsolidatedPcurve> {
-    family_frames_from_records(records, family, 0x20)
-        .into_iter()
-        .filter_map(|frame| parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end))
-        .collect()
+) -> Result<Vec<ConsolidatedPcurve>, CodecError> {
+    let mut pcurves = Vec::new();
+    for frame in family_frames_from_records(records, family, 0x20) {
+        if let Some(pcurve) = parse_consolidated_pcurve(ctx, data, frame.pos, frame.payload, frame.end)? {
+            crate::resource::push(ctx, &mut pcurves, pcurve, "catia_consolidated_pcurves")?;
+        }
+    }
+    Ok(pcurves)
 }
 
 impl ConsolidatedPcurve {
     pub(crate) const DEGREE: u32 = 5;
 
+    pub(crate) fn native_lanes(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(Vec<FiniteReal>, Vec<FiniteVector<2>>, Vec<FiniteVector<2>>, Vec<FiniteVector<2>>), CodecError> {
+        let mut knots = Vec::new();
+        let mut points = Vec::new();
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut knots, self.sites.len(), "catia_native_pcurve_knots")?;
+        crate::resource::reserve_vec(ctx, &mut points, self.sites.len(), "catia_native_pcurve_points")?;
+        crate::resource::reserve_vec(ctx, &mut first, self.sites.len(), "catia_native_pcurve_first_derivatives")?;
+        crate::resource::reserve_vec(ctx, &mut second, self.sites.len(), "catia_native_pcurve_second_derivatives")?;
+        for site in &self.sites {
+            knots.push(site.knot);
+            points.push(site.point);
+            first.push(site.first_derivatives);
+            second.push(site.second_derivatives);
+        }
+        Ok((knots, points, first, second))
+    }
+
+    #[cfg(test)]
     pub(crate) fn knots(&self) -> Vec<FiniteReal> {
         self.sites.iter().map(|site| site.knot).collect()
     }
@@ -79,13 +105,7 @@ impl ConsolidatedPcurve {
         self.sites.iter().map(|site| site.point).collect()
     }
 
-    pub(crate) fn first_derivatives(&self) -> Vec<FiniteVector<2>> {
-        self.sites
-            .iter()
-            .map(|site| site.first_derivatives)
-            .collect()
-    }
-
+    #[cfg(test)]
     pub(crate) fn second_derivatives(&self) -> Vec<FiniteVector<2>> {
         self.sites
             .iter()
@@ -95,11 +115,47 @@ impl ConsolidatedPcurve {
 }
 
 fn parse_consolidated_pcurve(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     pos: usize,
     payload: usize,
     end: usize,
-) -> Option<ConsolidatedPcurve> {
+) -> Result<Option<ConsolidatedPcurve>, CodecError> {
+    let Some((support_id, count, extrapolation_sites, lanes, range, tail_at)) =
+        pcurve_layout(data, payload, end)
+    else {
+        return Ok(None);
+    };
+    let mut sites = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut sites, count, "catia_consolidated_pcurve_sites")?;
+    for index in 0..count {
+        let offset = index * 8;
+        let values = lanes.map(|lane| f64_le(data, lane + offset));
+        let [Some(knot), Some(u), Some(v), Some(du), Some(dv), Some(ddu), Some(ddv)] = values else {
+            return Ok(None);
+        };
+        sites.push(ConsolidatedPcurveSite {
+            knot,
+            point: [u, v].into(),
+            first_derivatives: [du, dv].into(),
+            second_derivatives: [ddu, ddv].into(),
+        });
+    }
+    Ok(Some(ConsolidatedPcurve {
+        pos,
+        support_id,
+        extrapolation_sites,
+        sites,
+        range,
+        tail: crate::resource::copy_retained_slice(ctx, &data[tail_at..end], "catia_consolidated_pcurve_tail")?,
+    }))
+}
+
+fn pcurve_layout(
+    data: &[u8],
+    payload: usize,
+    end: usize,
+) -> Option<(u32, usize, u32, [usize; 7], IncreasingParameterInterval, usize)> {
     let mut at = payload;
     let support_id = compact_int(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
@@ -126,15 +182,8 @@ fn parse_consolidated_pcurve(
     if at.checked_add(knot_bytes.checked_add(20)?)? > end {
         return None;
     }
-    let read = |at: &mut usize| -> Option<Vec<FiniteReal>> {
-        let mut values = Vec::with_capacity(count);
-        for _ in 0..count {
-            values.push(f64_le(data, *at)?);
-            *at += 8;
-        }
-        Some(values)
-    };
-    let knots = read(&mut at)?;
+    let knot_at = at;
+    at += knot_bytes;
     if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
         return None;
     }
@@ -146,46 +195,44 @@ fn parse_consolidated_pcurve(
     if at.checked_add(remaining_array_bytes.checked_add(18)?)? > end {
         return None;
     }
-    let u = read(&mut at)?;
-    let v = read(&mut at)?;
-    let du = read(&mut at)?;
-    let dv = read(&mut at)?;
+    let u_at = at;
+    at += knot_bytes;
+    let v_at = at;
+    at += knot_bytes;
+    let du_at = at;
+    at += knot_bytes;
+    let dv_at = at;
+    at += knot_bytes;
     if data.get(at) != Some(&0x05) {
         return None;
     }
     at += 1;
-    let ddu = read(&mut at)?;
-    let ddv = read(&mut at)?;
+    let ddu_at = at;
+    at += knot_bytes;
+    let ddv_at = at;
+    at += knot_bytes;
     let range =
         IncreasingParameterInterval::new([f64_le(data, at)?.get(), f64_le(data, at + 8)?.get()])?;
     at += 16;
+    let lanes = [knot_at, u_at, v_at, du_at, dv_at, ddu_at, ddv_at];
     if at > end
         || !matches!(&data[at..end], [0x07] | [0x07, 0x00])
-        || !knots_strictly_increasing(&FiniteReal::raw_lane(&knots))
     {
         return None;
     }
-    Some(ConsolidatedPcurve {
-        pos,
-        support_id,
-        extrapolation_sites,
-        sites: knots
-            .into_iter()
-            .zip(u.into_iter().zip(v))
-            .zip(du.into_iter().zip(dv))
-            .zip(ddu.into_iter().zip(ddv))
-            .map(
-                |(((knot, (u, v)), (du, dv)), (ddu, ddv))| ConsolidatedPcurveSite {
-                    knot,
-                    point: [u, v].into(),
-                    first_derivatives: [du, dv].into(),
-                    second_derivatives: [ddu, ddv].into(),
-                },
-            )
-            .collect(),
-        range,
-        tail: data[at..end].to_vec(),
-    })
+    let mut previous = None;
+    for index in 0..count {
+        let offset = index * 8;
+        for lane in lanes {
+            f64_le(data, lane + offset)?;
+        }
+        let knot = f64_le(data, knot_at + offset)?.get();
+        if previous.is_some_and(|value| value >= knot) {
+            return None;
+        }
+        previous = Some(knot);
+    }
+    Some((support_id, count, extrapolation_sites, lanes, range, at))
 }
 
 /// Header-token width of a length-closed A/B-family frame.
@@ -824,6 +871,59 @@ mod tests {
         ConsolidatedFamily, ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedPlacement,
         ConsolidatedRecord,
     };
+
+    #[test]
+    fn consolidated_pcurve_sites_tail_and_outer_collection_refuse_limits() {
+        let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = consolidated_records(&bytes);
+        for (limit, operation) in [
+            (1, "catia_consolidated_pcurve_sites"),
+            (2, "catia_consolidated_pcurve_tail"),
+            (3, "catia_consolidated_pcurves"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+            });
+            assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation), "limit {limit}");
+        }
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_consolidated_pcurve_tail"));
+        let pcurves = crate::test_support::with_service_context(|ctx| {
+            super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+        }).expect("service decode");
+        assert_eq!(pcurves.len(), 1);
+        assert_eq!(pcurves[0].sites.len(), 2);
+        assert_eq!(pcurves[0].tail, [0x07]);
+    }
+
+    #[test]
+    fn consolidated_pcurve_native_lanes_refuse_each_materialization() {
+        let bytes = crate::test_support::test_a5a8::a5_pcurve_stream();
+        let records = consolidated_records(&bytes);
+        let pcurves = crate::test_support::with_service_context(|ctx| {
+            super::family_pcurves_from_records(ctx, &bytes, &records, ConsolidatedFamily::A)
+        }).expect("service decode");
+        let pcurve = &pcurves[0];
+        for (limit, operation) in [
+            (1, "catia_native_pcurve_knots"),
+            (3, "catia_native_pcurve_points"),
+            (5, "catia_native_pcurve_first_derivatives"),
+            (7, "catia_native_pcurve_second_derivatives"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                pcurve.native_lanes(ctx)
+            });
+            assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation), "limit {limit}");
+        }
+        let lanes = crate::test_support::with_service_context(|ctx| pcurve.native_lanes(ctx))
+            .expect("service decode");
+        assert_eq!((lanes.0.len(), lanes.1.len(), lanes.2.len(), lanes.3.len()), (2, 2, 2, 2));
+    }
 
     #[test]
     fn frame_states_admit_only_defined_widths_and_flags() {
