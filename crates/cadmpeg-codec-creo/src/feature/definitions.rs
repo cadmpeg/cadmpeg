@@ -7600,58 +7600,65 @@ pub(crate) fn bind_definition_owners(
 /// entities copied into the owning feature's generated-entity table. Schema
 /// identifiers remain unchanged; only the omitted canonical owner is filled.
 pub(crate) fn bind_trimmed_definition_owners(
-    definitions: Vec<FeatureDefinition>,
+    ctx: &DecodeContext<'_>,
+    mut definitions: Vec<FeatureDefinition>,
     entity_tables: &[FeatureEntityTable],
-) -> Vec<FeatureDefinition> {
-    let claimed_owner_ids = definitions
+) -> Result<Vec<FeatureDefinition>, CodecError> {
+    let mut claimed_owner_ids = BTreeSet::new();
+    for owner in definitions
         .iter()
         .filter_map(|definition| definition.identity.owner_feature_id())
-        .collect::<BTreeSet<_>>();
-    let candidates = definitions
-        .iter()
-        .map(|definition| {
-            let external_ids = unique_trimmed_external_ids(definition);
-            if definition.identity.owner_feature_id().is_some() || external_ids.is_empty() {
-                return BTreeSet::new();
+    {
+        if !claimed_owner_ids.contains(&owner) {
+            ctx.charge_collection_items(1, "creo trimmed claimed owner nodes")?;
+            claimed_owner_ids.insert(owner);
+        }
+    }
+    let mut candidates = Vec::new();
+    for definition in &definitions {
+        let external_ids = unique_trimmed_external_ids(definition);
+        let mut owners = BTreeSet::new();
+        if definition.identity.owner_feature_id().is_none() && !external_ids.is_empty() {
+            for table in entity_tables {
+                let owner = table.feature_id;
+                if claimed_owner_ids.contains(&owner) {
+                    continue;
+                }
+                let source_ids = generated_class_200_source_entity_ids(ctx, table)?;
+                if source_ids.len() == external_ids.len()
+                    && source_ids.iter().copied().eq(external_ids.iter().copied())
+                    && !owners.contains(&owner)
+                {
+                    ctx.charge_collection_items(1, "creo trimmed owner candidate nodes")?;
+                    owners.insert(owner);
+                }
             }
-            entity_tables
-                .iter()
-                .filter_map(|table| {
-                    let owner = table.feature_id;
-                    if claimed_owner_ids.contains(&owner) {
-                        return None;
-                    }
-                    let source_ids = generated_class_200_source_entity_ids(table);
-                    (source_ids == external_ids).then_some(owner)
-                })
-                .collect::<BTreeSet<_>>()
-        })
-        .collect::<Vec<_>>();
+        }
+        ctx.try_reserve_items(&mut candidates, 1, "creo trimmed owner candidate rows")?;
+        candidates.push(owners);
+    }
     let mut owner_candidate_counts = BTreeMap::new();
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
+        if !owner_candidate_counts.contains_key(owner) {
+            ctx.charge_collection_items(1, "creo trimmed owner count nodes")?;
+        }
         *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
     }
-    definitions
-        .into_iter()
-        .zip(candidates)
-        .map(|(definition, owners)| {
-            let Some(owner) = owners
-                .first()
-                .copied()
-                .filter(|_| owners.len() == 1)
-                .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
-            else {
-                return definition;
-            };
-            FeatureDefinition {
-                identity: DefinitionIdentity::Parsed {
-                    schema_id: definition.identity.schema_id(),
-                    owner_feature_id: Some(owner),
-                },
-                ..definition
-            }
-        })
-        .collect()
+    for (definition, owners) in definitions.iter_mut().zip(candidates) {
+        let Some(owner) = owners
+            .first()
+            .copied()
+            .filter(|_| owners.len() == 1)
+            .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
+        else {
+            continue;
+        };
+        definition.identity = DefinitionIdentity::Parsed {
+            schema_id: definition.identity.schema_id(),
+            owner_feature_id: Some(owner),
+        };
+    }
+    Ok(definitions)
 }
 
 /// Bind unlabeled positional definitions through section-entity IDs in the
@@ -7659,93 +7666,92 @@ pub(crate) fn bind_trimmed_definition_owners(
 /// exact; otherwise the generated IDs must be a nonempty subset of the order
 /// table. Empty and non-unique joins remain unbound.
 pub(crate) fn bind_replay_definition_owners(
-    definitions: Vec<FeatureDefinition>,
+    ctx: &DecodeContext<'_>,
+    mut definitions: Vec<FeatureDefinition>,
     entity_tables: &[FeatureEntityTable],
     claimed_owner_ids: &BTreeSet<u32>,
-) -> Vec<FeatureDefinition> {
-    let candidates = definitions
-        .iter()
-        .map(|definition| {
-            if definition.identity.owner_feature_id().is_some() {
-                return BTreeSet::new();
-            }
+) -> Result<Vec<FeatureDefinition>, CodecError> {
+    let mut candidates = Vec::new();
+    for definition in &definitions {
+        let mut owners = BTreeSet::new();
+        if definition.identity.owner_feature_id().is_none() {
             let trimmed_external_ids = unique_trimmed_external_ids(definition);
-            let order_external_ids = definition
-                .order_table
-                .as_ref()
-                .map(|table| {
-                    table
-                        .rows
-                        .iter()
-                        .map(|row| row.external_id)
-                        .collect::<BTreeSet<_>>()
-                })
-                .unwrap_or_default();
-            if trimmed_external_ids.is_empty() && order_external_ids.is_empty() {
-                return BTreeSet::new();
+            let mut order_external_ids = BTreeSet::new();
+            if let Some(table) = &definition.order_table {
+                for row in &table.rows {
+                    if !order_external_ids.contains(&row.external_id) {
+                        ctx.charge_collection_items(1, "creo replay order entity ID nodes")?;
+                        order_external_ids.insert(row.external_id);
+                    }
+                }
             }
-            let exact_candidates = entity_tables
-                .iter()
-                .filter_map(|table| {
+            if !trimmed_external_ids.is_empty() || !order_external_ids.is_empty() {
+                for table in entity_tables {
                     let owner = table.feature_id;
                     if claimed_owner_ids.contains(&owner) {
-                        return None;
+                        continue;
                     }
-                    let source_ids = generated_class_200_source_entity_ids(table);
-                    (!trimmed_external_ids.is_empty() && source_ids == trimmed_external_ids)
-                        .then_some(owner)
-                })
-                .collect::<BTreeSet<_>>();
-            if !exact_candidates.is_empty() {
-                return exact_candidates;
+                    let source_ids = generated_class_200_source_entity_ids(ctx, table)?;
+                    if !trimmed_external_ids.is_empty()
+                        && source_ids.len() == trimmed_external_ids.len()
+                        && source_ids.iter().copied().eq(trimmed_external_ids.iter().copied())
+                        && !owners.contains(&owner)
+                    {
+                        ctx.charge_collection_items(1, "creo replay exact owner nodes")?;
+                        owners.insert(owner);
+                    }
+                }
+                if owners.is_empty() {
+                    for table in entity_tables {
+                        let owner = table.feature_id;
+                        if claimed_owner_ids.contains(&owner) {
+                            continue;
+                        }
+                        let source_ids = generated_class_200_source_entity_ids(ctx, table)?;
+                        if !source_ids.is_empty()
+                            && source_ids.is_subset(&order_external_ids)
+                            && !owners.contains(&owner)
+                        {
+                            ctx.charge_collection_items(1, "creo replay subset owner nodes")?;
+                            owners.insert(owner);
+                        }
+                    }
+                }
             }
-            entity_tables
-                .iter()
-                .filter_map(|table| {
-                    let owner = table.feature_id;
-                    if claimed_owner_ids.contains(&owner) {
-                        return None;
-                    }
-                    let source_ids = generated_class_200_source_entity_ids(table);
-                    (!source_ids.is_empty() && source_ids.is_subset(&order_external_ids))
-                        .then_some(owner)
-                })
-                .collect()
-        })
-        .collect::<Vec<_>>();
+        }
+        ctx.try_reserve_items(&mut candidates, 1, "creo replay owner candidate rows")?;
+        candidates.push(owners);
+    }
     let mut owner_candidate_counts = BTreeMap::new();
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
+        if !owner_candidate_counts.contains_key(owner) {
+            ctx.charge_collection_items(1, "creo replay owner count nodes")?;
+        }
         *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
     }
-    definitions
-        .into_iter()
-        .zip(candidates)
-        .map(|(definition, owners)| {
-            let Some(owner) = owners
-                .first()
-                .copied()
-                .filter(|_| owners.len() == 1)
-                .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
-            else {
-                return definition;
-            };
-            FeatureDefinition {
-                identity: DefinitionIdentity::BoundOwner {
-                    schema_id: definition.identity.schema_id(),
-                    owner_feature_id: owner,
-                },
-                ..definition
-            }
-        })
-        .collect()
+    for (definition, owners) in definitions.iter_mut().zip(candidates) {
+        let Some(owner) = owners
+            .first()
+            .copied()
+            .filter(|_| owners.len() == 1)
+            .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
+        else {
+            continue;
+        };
+        definition.identity = DefinitionIdentity::BoundOwner {
+            schema_id: definition.identity.schema_id(),
+            owner_feature_id: owner,
+        };
+    }
+    Ok(definitions)
 }
 
-fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> BTreeSet<u32> {
+fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> &[u32] {
     definition
         .trim_entities
         .as_ref()
         .filter(|table| table.has_unique_external_ids())
-        .map(|table| table.rows.iter().map(|row| row.external_id).collect())
+        .map(|table| table.solved_external_ids.as_slice())
         .unwrap_or_default()
 }
 

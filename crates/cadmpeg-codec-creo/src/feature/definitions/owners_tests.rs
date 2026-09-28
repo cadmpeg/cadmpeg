@@ -209,11 +209,11 @@ fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable 
 #[test]
 fn binds_replay_owner_from_unique_source_entity_subset() {
     let definitions = [pending_replay(&[10, 11, 12])];
-    let definitions = bind_replay_definition_owners(
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| bind_replay_definition_owners(ctx,
         definitions.into(),
         &[generated_entity_table(42, &[10, 12])],
         &BTreeSet::new(),
-    );
+    )).expect("service owner binding");
 
     assert_eq!(definitions[0].identity.id(), 42);
     assert_eq!(definitions[0].identity.owner_feature_id(), Some(42));
@@ -228,11 +228,11 @@ fn replay_binding_retains_the_inherited_schema_identifier() {
         },
         ..pending_replay(&[10, 11, 12])
     };
-    let definitions = bind_replay_definition_owners(
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| bind_replay_definition_owners(ctx,
         vec![definition],
         &[generated_entity_table(42, &[10, 12])],
         &BTreeSet::new(),
-    );
+    )).expect("service owner binding");
 
     assert_eq!(definitions[0].identity.id(), 42);
     assert_eq!(definitions[0].identity.owner_feature_id(), Some(42));
@@ -251,14 +251,14 @@ fn binds_replay_owner_from_exact_trimmed_entity_set() {
     };
     definition.order_table = pending_replay(&[10, 11, 12]).order_table;
     let definitions = [definition];
-    let definitions = bind_replay_definition_owners(
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| bind_replay_definition_owners(ctx,
         definitions.into(),
         &[
             generated_entity_table(42, &[12, 11, 10, 9]),
             generated_entity_table(43, &[10]),
         ],
         &BTreeSet::new(),
-    );
+    )).expect("service owner binding");
 
     assert_eq!(definitions[0].identity.id(), 42);
     assert_eq!(definitions[0].identity.owner_feature_id(), Some(42));
@@ -273,11 +273,11 @@ fn falls_back_to_replay_order_when_trimmed_entities_do_not_join() {
     };
     definition.order_table = pending_replay(&[10, 11, 12]).order_table;
     let definitions = [definition];
-    let definitions = bind_replay_definition_owners(
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| bind_replay_definition_owners(ctx,
         definitions.into(),
         &[generated_entity_table(42, &[10, 12])],
         &BTreeSet::new(),
-    );
+    )).expect("service owner binding");
 
     assert_eq!(definitions[0].identity.id(), 42);
     assert_eq!(definitions[0].identity.owner_feature_id(), Some(42));
@@ -292,11 +292,11 @@ fn falls_back_to_replay_order_for_duplicate_trimmed_entity_ids() {
     };
     definition.order_table = pending_replay(&[9]).order_table;
     let definitions = [definition];
-    let definitions = bind_replay_definition_owners(
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| bind_replay_definition_owners(ctx,
         definitions.into(),
         &[generated_entity_table(42, &[9])],
         &BTreeSet::new(),
-    );
+    )).expect("service owner binding");
 
     assert_eq!(definitions[0].identity.id(), 42);
     assert_eq!(definitions[0].identity.owner_feature_id(), Some(42));
@@ -305,10 +305,10 @@ fn falls_back_to_replay_order_for_duplicate_trimmed_entity_ids() {
 #[test]
 fn binds_saved_section_owner_from_exact_trimmed_entity_set() {
     let definitions = [pending_trimmed_definition(&[9, 10, 11, 14, 21])];
-    let definitions = bind_trimmed_definition_owners(
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| bind_trimmed_definition_owners(ctx,
         definitions.into(),
         &[generated_entity_table(667, &[14, 21, 11, 10, 9])],
-    );
+    )).expect("service owner binding");
 
     assert_eq!(definitions[0].identity.id(), 917);
     assert_eq!(definitions[0].identity.owner_feature_id(), Some(667));
@@ -318,7 +318,7 @@ fn binds_saved_section_owner_from_exact_trimmed_entity_set() {
 fn withholds_saved_section_owner_for_partial_reused_or_duplicate_entity_sets() {
     let partial = [pending_trimmed_definition(&[9, 10, 11])];
     let partial =
-        bind_trimmed_definition_owners(partial.into(), &[generated_entity_table(667, &[9, 10])]);
+        crate::decode::with_test_decode_ctx(|ctx| bind_trimmed_definition_owners(ctx, partial.into(), &[generated_entity_table(667, &[9, 10])])).expect("service owner binding");
     assert_eq!(partial[0].identity.owner_feature_id(), None);
 
     let reused = [
@@ -326,14 +326,14 @@ fn withholds_saved_section_owner_for_partial_reused_or_duplicate_entity_sets() {
         pending_trimmed_definition(&[9, 10]),
     ];
     let reused =
-        bind_trimmed_definition_owners(reused.into(), &[generated_entity_table(667, &[9, 10])]);
+        crate::decode::with_test_decode_ctx(|ctx| bind_trimmed_definition_owners(ctx, reused.into(), &[generated_entity_table(667, &[9, 10])])).expect("service owner binding");
     assert!(reused
         .iter()
         .all(|definition| definition.identity.owner_feature_id().is_none()));
 
     let duplicate = [pending_trimmed_definition(&[9, 9])];
     let duplicate =
-        bind_trimmed_definition_owners(duplicate.into(), &[generated_entity_table(667, &[9])]);
+        crate::decode::with_test_decode_ctx(|ctx| bind_trimmed_definition_owners(ctx, duplicate.into(), &[generated_entity_table(667, &[9])])).expect("service owner binding");
     assert_eq!(duplicate[0].identity.owner_feature_id(), None);
 }
 
@@ -349,48 +349,150 @@ fn saved_section_owner_uses_only_class_200_source_ids() {
     });
     let definitions = [pending_trimmed_definition(&[9, 10])];
 
-    let definitions = bind_trimmed_definition_owners(definitions.into(), &[table]);
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| bind_trimmed_definition_owners(ctx, definitions.into(), &[table])).expect("service owner binding");
 
     assert_eq!(definitions[0].identity.owner_feature_id(), None);
 }
 
 #[test]
+fn trimmed_owner_binding_refuses_each_collection_boundary() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let table = generated_entity_table(667, &[9]);
+    let candidate = pending_trimmed_definition(&[9]);
+    let mut claimed = candidate.clone();
+    claimed.identity = DefinitionIdentity::Parsed {
+        schema_id: std::num::NonZeroU32::new(917),
+        owner_feature_id: Some(667),
+    };
+    let arena = DecodeArena::new();
+    for (limit, definition, operation) in [
+        (0, claimed, "creo trimmed claimed owner nodes"),
+        (0, candidate.clone(), "creo generated source entity ID nodes"),
+        (1, candidate.clone(), "creo trimmed owner candidate nodes"),
+        (2, candidate.clone(), "creo trimmed owner candidate rows"),
+        (3, candidate.clone(), "creo trimmed owner count nodes"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = super::bind_trimmed_definition_owners(
+            &ctx,
+            vec![definition],
+            std::slice::from_ref(&table),
+        )
+        .expect_err("collection limit refuses trimmed owner binding");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == operation), "{error:?}");
+    }
+    let bound = crate::decode::with_test_decode_ctx(|ctx| {
+        super::bind_trimmed_definition_owners(ctx, vec![candidate], &[table])
+    })
+    .expect("service trimmed owner binding");
+    assert_eq!(bound[0].identity.owner_feature_id(), Some(667));
+}
+
+#[test]
+fn replay_owner_binding_refuses_each_collection_boundary() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let exact_candidate = pending_trimmed_definition(&[9]);
+    let exact_table = generated_entity_table(42, &[9]);
+    let subset_candidate = pending_replay(&[10]);
+    let subset_table = generated_entity_table(43, &[10]);
+    let arena = DecodeArena::new();
+    for (limit, operation) in [
+        (0, "creo generated source entity ID nodes"),
+        (1, "creo replay exact owner nodes"),
+        (2, "creo replay owner candidate rows"),
+        (3, "creo replay owner count nodes"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = super::bind_replay_definition_owners(
+            &ctx,
+            vec![exact_candidate.clone()],
+            std::slice::from_ref(&exact_table),
+            &BTreeSet::new(),
+        )
+        .expect_err("collection limit refuses exact replay owner binding");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == operation), "{error:?}");
+    }
+    for (limit, operation) in [
+        (0, "creo replay order entity ID nodes"),
+        (1, "creo generated source entity ID nodes"),
+        (2, "creo generated source entity ID nodes"),
+        (3, "creo replay subset owner nodes"),
+        (4, "creo replay owner candidate rows"),
+        (5, "creo replay owner count nodes"),
+    ] {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = super::bind_replay_definition_owners(
+            &ctx,
+            vec![subset_candidate.clone()],
+            std::slice::from_ref(&subset_table),
+            &BTreeSet::new(),
+        )
+        .expect_err("collection limit refuses subset replay owner binding");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == operation), "{error:?}");
+    }
+    let exact = crate::decode::with_test_decode_ctx(|ctx| {
+        super::bind_replay_definition_owners(ctx, vec![exact_candidate], &[exact_table], &BTreeSet::new())
+    })
+    .expect("service exact replay owner binding");
+    let subset = crate::decode::with_test_decode_ctx(|ctx| {
+        super::bind_replay_definition_owners(ctx, vec![subset_candidate], &[subset_table], &BTreeSet::new())
+    })
+    .expect("service subset replay owner binding");
+    assert_eq!(exact[0].identity.owner_feature_id(), Some(42));
+    assert_eq!(subset[0].identity.owner_feature_id(), Some(43));
+}
+
+#[test]
 fn withholds_replay_owner_for_empty_or_ambiguous_source_joins() {
     let empty = [pending_replay(&[10])];
-    let empty = bind_replay_definition_owners(
+    let empty = crate::decode::with_test_decode_ctx(|ctx| bind_replay_definition_owners(ctx,
         empty.into(),
         &[generated_entity_table(42, &[])],
         &BTreeSet::new(),
-    );
+    )).expect("service owner binding");
     assert_eq!(empty[0].identity.owner_feature_id(), None);
 
     let ambiguous = [pending_replay(&[10, 11])];
-    let ambiguous = bind_replay_definition_owners(
+    let ambiguous = crate::decode::with_test_decode_ctx(|ctx| bind_replay_definition_owners(ctx,
         ambiguous.into(),
         &[
             generated_entity_table(42, &[10]),
             generated_entity_table(43, &[11]),
         ],
         &BTreeSet::new(),
-    );
+    )).expect("service owner binding");
     assert_eq!(ambiguous[0].identity.owner_feature_id(), None);
 
     let repeated_owner = [pending_replay(&[10]), pending_replay(&[10, 11])];
-    let repeated_owner = bind_replay_definition_owners(
+    let repeated_owner = crate::decode::with_test_decode_ctx(|ctx| bind_replay_definition_owners(ctx,
         repeated_owner.into(),
         &[generated_entity_table(42, &[10])],
         &BTreeSet::new(),
-    );
+    )).expect("service owner binding");
     assert!(repeated_owner
         .iter()
         .all(|definition| definition.identity.owner_feature_id().is_none()));
 
     let claimed = [pending_replay(&[10])];
-    let claimed = bind_replay_definition_owners(
+    let claimed = crate::decode::with_test_decode_ctx(|ctx| bind_replay_definition_owners(ctx,
         claimed.into(),
         &[generated_entity_table(42, &[10])],
         &BTreeSet::from([42]),
-    );
+    )).expect("service owner binding");
     assert_eq!(claimed[0].identity.owner_feature_id(), None);
 
     let mut exact_ambiguous = pending_trimmed_definition(&[9, 10]);
@@ -400,14 +502,14 @@ fn withholds_replay_owner_for_empty_or_ambiguous_source_joins() {
     };
     exact_ambiguous.order_table = pending_replay(&[9]).order_table;
     let exact_ambiguous = [exact_ambiguous];
-    let exact_ambiguous = bind_replay_definition_owners(
+    let exact_ambiguous = crate::decode::with_test_decode_ctx(|ctx| bind_replay_definition_owners(ctx,
         exact_ambiguous.into(),
         &[
             generated_entity_table(42, &[9, 10]),
             generated_entity_table(43, &[10, 9]),
         ],
         &BTreeSet::new(),
-    );
+    )).expect("service owner binding");
     assert_eq!(exact_ambiguous[0].identity.owner_feature_id(), None);
 }
 

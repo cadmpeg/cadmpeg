@@ -343,12 +343,22 @@ pub(crate) struct FeatureEntityReference {
 }
 
 /// Source section identifiers carried by class-200 generated entries.
-pub(super) fn generated_class_200_source_entity_ids(table: &FeatureEntityTable) -> BTreeSet<u32> {
-    table
+pub(super) fn generated_class_200_source_entity_ids(
+    ctx: &DecodeContext<'_>,
+    table: &FeatureEntityTable,
+) -> Result<BTreeSet<u32>, CodecError> {
+    let mut ids = BTreeSet::new();
+    for id in table
         .entries
         .iter()
         .filter_map(FeatureEntityTableEntry::source_entity_id)
-        .collect()
+    {
+        if !ids.contains(&id) {
+            ctx.charge_collection_items(1, "creo generated source entity ID nodes")?;
+            ids.insert(id);
+        }
+    }
+    Ok(ids)
 }
 
 /// Decode the implicit named-record entity table and every canonical `f7`
