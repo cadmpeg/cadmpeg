@@ -97,6 +97,20 @@ fn trimmed_topology_identity_copies_refuse_before_retaining_text() {
 }
 
 #[test]
+fn trimmed_support_nurbs_copy_refuses_nested_storage() {
+    let bytes = subrange_nurbs_surface_boundary_file(2);
+    IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    for operation in [
+        "iges copied support u knots",
+        "iges copied support v knots",
+        "iges copied support pole rows",
+        "iges copied support pole row",
+    ] {
+        assert_trimming_collection_refusal(&bytes, operation);
+    }
+}
+
+#[test]
 fn trimming_projection_refuses_counted_boundary_vectors() {
     for (bytes, operation) in [
         (bounded_plane_file(), "iges Type141 boundary segments"),

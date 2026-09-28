@@ -62,6 +62,16 @@ pub struct PolygonalSurface {
 }
 
 impl PolygonalSurface {
+    /// Admitted polygon vertices in source order.
+    pub fn vertices(&self) -> &[FinitePoint3] {
+        &self.vertices
+    }
+
+    /// Triangle vertex indexes in source order.
+    pub fn triangles(&self) -> &[[u32; 3]] {
+        &self.triangles
+    }
+
     /// Build a polygonal surface whose triangle indices address `vertices`.
     pub fn new(
         vertices: Vec<Point3>,

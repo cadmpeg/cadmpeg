@@ -2113,11 +2113,12 @@ pub(super) fn project(
         }
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(surface_sequence));
         let Some(support_geometry) = carrier_index.surfaces(surface_id.as_str()).map(|surface| {
-            surface.geometry.solved_cache().map_or_else(
-                || surface.geometry.clone(),
-                |cache| SurfaceGeometry::Solved(cache.clone()),
-            )
-        }) else {
+            if let Some(cache) = surface.geometry.solved_cache() {
+                super::geometry_copy::copy_solved_surface(cache, Some(ctx)).map(SurfaceGeometry::Solved)
+            } else {
+                super::geometry_copy::copy_surface_geometry(&surface.geometry, Some(ctx))
+            }
+        }).transpose()? else {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface support carrier is missing"))?;
             continue;
         };
