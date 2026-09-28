@@ -3500,33 +3500,56 @@ pub(super) fn configurations(container: &Container) -> Vec<Configuration> {
 
 /// Join the two independently framed active-arrangement declarations.
 pub(super) fn configuration_attribute_uses(
+    ctx: &DecodeContext<'_>,
     configurations: &[Configuration],
     attributes: &[PartAttribute],
-) -> Vec<ConfigurationAttributeUse> {
-    let active = configurations
-        .iter()
-        .filter(|configuration| configuration.is_default)
-        .collect::<Vec<_>>();
-    let declarations = attributes
-        .iter()
-        .filter(|attribute| {
-            attribute.owner == "part"
-                && attribute.title == "NX_Arrangement"
-                && attribute.value_type == "StringAttributeType"
-        })
-        .collect::<Vec<_>>();
-    let ([configuration], [attribute]) = (active.as_slice(), declarations.as_slice()) else {
-        return Vec::new();
+) -> Result<Vec<ConfigurationAttributeUse>, CodecError> {
+    let mut active = None;
+    for configuration in configurations {
+        ctx.charge_work(1, "nx active configuration join")?;
+        if configuration.is_default {
+            if active.replace(configuration).is_some() {
+                return Ok(Vec::new());
+            }
+        }
+    }
+    let mut declaration = None;
+    for attribute in attributes {
+        ctx.charge_work(1, "nx active configuration join")?;
+        if attribute.owner == "part"
+            && attribute.title == "NX_Arrangement"
+            && attribute.value_type == "StringAttributeType"
+            && declaration.replace(attribute).is_some()
+        {
+            return Ok(Vec::new());
+        }
+    }
+    let (Some(configuration), Some(attribute)) = (active, declaration) else {
+        return Ok(Vec::new());
     };
     if configuration.name != attribute.value {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    vec![ConfigurationAttributeUse {
-        id: "nx:arrangements:active-attribute-use#0".to_string(),
-        configuration: configuration.id.clone(),
-        part_attribute: attribute.id.clone(),
-        name: configuration.name.clone(),
-    }]
+    ctx.charge_collection_items(1, "nx active configuration attribute uses")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ConfigurationAttributeUse>()),
+        "nx active configuration attribute uses",
+    )?;
+    let mut output = Vec::new();
+    output.try_reserve_exact(1).map_err(|_| {
+        ctx.refuse_codec_limit("nx active configuration attribute uses", 0, 1)
+    })?;
+    output.push(ConfigurationAttributeUse {
+        id: copy_om_retained_text(
+            ctx,
+            "nx:arrangements:active-attribute-use#0",
+            "nx active configuration attribute use id",
+        )?,
+        configuration: copy_om_retained_text(ctx, &configuration.id, "nx active configuration link")?,
+        part_attribute: copy_om_retained_text(ctx, &attribute.id, "nx active attribute link")?,
+        name: copy_om_retained_text(ctx, &configuration.name, "nx active configuration name")?,
+    });
+    Ok(output)
 }
 
 /// Decode the typed part-attribute XML stream atomically.
@@ -7576,10 +7599,18 @@ mod tests {
             .expect("required invariant");
         let mut mismatch = attributes.clone();
         mismatch[0].value = "Other".to_string();
-        assert!(super::configuration_attribute_uses(&configurations, &mismatch).is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            super::configuration_attribute_uses(ctx, &configurations, &mismatch)
+        })
+        .expect("mismatched configuration join")
+        .is_empty());
         let mut duplicate = attributes.clone();
         duplicate.push(attributes[0].clone());
-        assert!(super::configuration_attribute_uses(&configurations, &duplicate).is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            super::configuration_attribute_uses(ctx, &configurations, &duplicate)
+        })
+        .expect("duplicate configuration join")
+        .is_empty());
         let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
             .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "findings: {:?}", validation.findings);

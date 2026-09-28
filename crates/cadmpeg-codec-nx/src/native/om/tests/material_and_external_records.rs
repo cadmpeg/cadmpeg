@@ -2,6 +2,7 @@ use crate::container;
 use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::test_support::test_bytes::zlib_compress;
 use crate::test_support::test_prt::assembly_with_external_paths;
+use crate::test_support::test_prt::prt_with_arrangements;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::test_support::test_prt::prt_with_two_bodies_and_rmfastload;
 use crate::test_support::test_prt::rmfastload_prt;
@@ -592,6 +593,58 @@ fn native_external_children_route_refuses_work_limit() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "nx external reference child index"), "{error:?}");
+}
+
+fn active_configuration_join_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ConfigurationAttributeUse>, CodecError> {
+    let file = prt_with_arrangements();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("arrangement container");
+    let configurations = super::super::configurations(&container);
+    let attributes = super::super::part_attributes(&container);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    super::super::configuration_attribute_uses(&ctx, &configurations, &attributes)
+}
+
+#[test]
+fn active_configuration_join_route_preserves_relation() {
+    let uses = active_configuration_join_result(|_| {}).expect("active configuration use");
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].name, "Model");
+}
+
+#[test]
+fn active_configuration_join_route_refuses_collection_limit() {
+    let error = active_configuration_join_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("active relation exceeds collection budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx active configuration attribute uses"), "{error:?}");
+}
+
+#[test]
+fn active_configuration_join_route_refuses_retained_limit() {
+    let error = active_configuration_join_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("active relation exceeds retained budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx active configuration attribute uses"), "{error:?}");
+}
+
+#[test]
+fn active_configuration_join_route_refuses_work_limit() {
+    let error = active_configuration_join_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("active relation exceeds work budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "nx active configuration join"), "{error:?}");
 }
 
 #[test]

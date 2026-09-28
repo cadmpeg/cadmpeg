@@ -1386,7 +1386,7 @@ impl NativeModel {
         let configurations = configurations(container);
         let part_attributes = part_attributes(container);
         let configuration_attribute_uses =
-            configuration_attribute_uses(&configurations, &part_attributes);
+            configuration_attribute_uses(ctx, &configurations, &part_attributes)?;
         let external_references = external_references(ctx, container)?;
         let external_reference_records = external_reference_records(ctx, container)?;
         let external_reference_indexed_records =
