@@ -7,7 +7,6 @@ use crate::om::boolean_operations_with_labels;
 use crate::om::extrude_payload_header;
 use crate::om::identical_instance_output_payload_lane;
 use crate::om::indexed_sections;
-use crate::om::multi_instance_output_payload_lane;
 use crate::om::offset_store_control_class_ordinals;
 use crate::om::offset_store_control_form;
 use crate::om::offset_store_control_values;
@@ -38,6 +37,52 @@ fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("test decode context");
     run(&ctx)
+}
+
+fn multi_instance_output_payload_lane(
+    record: crate::om::operation_record::OperationPayload<'_>,
+) -> Option<crate::om::MultiInstanceOutputPayloadLane> {
+    with_test_ctx(|ctx| crate::om::multi_instance_output_payload_lane(ctx, record)).unwrap()
+}
+
+fn one_multi_instance_output_payload() -> Vec<u8> {
+    b"\x3a\x00\x00\x01\x00\x00\x00\x00\x25\x01\x02\x26\x27\x01\x02\x65\x01\x02\x07\x28\x02\x02\x00\x3b\x09\x01\x02".to_vec()
+}
+
+#[test]
+fn om_multi_instance_output_lane_refuses_collection_limit() {
+    let bytes = one_multi_instance_output_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let record = crate::om::operation_record::OperationPayload::new(&bytes, 0, "Multi Instance Output").unwrap();
+    let error = crate::om::multi_instance_output_payload_lane(&ctx, record).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn om_multi_instance_output_lane_refuses_retained_limit() {
+    let bytes = one_multi_instance_output_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let record = crate::om::operation_record::OperationPayload::new(&bytes, 0, "Multi Instance Output").unwrap();
+    let error = crate::om::multi_instance_output_payload_lane(&ctx, record).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn om_multi_instance_output_lane_refuses_work_limit() {
+    let bytes = one_multi_instance_output_payload();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let record = crate::om::operation_record::OperationPayload::new(&bytes, 0, "Multi Instance Output").unwrap();
+    let error = crate::om::multi_instance_output_payload_lane(&ctx, record).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 fn fixed_indexed_section_with_embedded_section(adjust_outer_bounds: bool) -> Vec<u8> {
