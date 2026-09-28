@@ -825,6 +825,19 @@ const QUARTIC_RESULTANT_PERMUTATIONS: [([usize; 4], f64); 24] = [
     ([3, 2, 1, 0], 1.0),
 ];
 
+/// A fixed coefficient slice for one Sylvester matrix entry.
+#[derive(Clone, Copy)]
+struct SylvesterEntry {
+    coefficients: [f64; 3],
+    len: usize,
+}
+
+impl SylvesterEntry {
+    fn as_slice(&self) -> &[f64] {
+        &self.coefficients[..self.len]
+    }
+}
+
 /// The Sylvester matrix of the two conics read as quadratics in v, with each
 /// entry taken from its coefficient by `entry`.
 ///
@@ -838,32 +851,50 @@ fn sylvester_matrix(
     first: PlaneConicEquation,
     second: PlaneConicEquation,
     entry: impl Fn(Coefficient) -> f64,
-) -> [[Option<Vec<f64>>; 4]; 4] {
+) -> [[Option<SylvesterEntry>; 4]; 4] {
     let zero = None;
-    let first_y2 = vec![entry(first.vv)];
-    let first_y = vec![entry(first.v), entry(first.uv)];
-    let first_constant = vec![entry(first.constant), entry(first.u), entry(first.uu)];
-    let second_y2 = vec![entry(second.vv)];
-    let second_y = vec![entry(second.v), entry(second.uv)];
-    let second_constant = vec![entry(second.constant), entry(second.u), entry(second.uu)];
+    let first_y2 = SylvesterEntry {
+        coefficients: [entry(first.vv), 0.0, 0.0],
+        len: 1,
+    };
+    let first_y = SylvesterEntry {
+        coefficients: [entry(first.v), entry(first.uv), 0.0],
+        len: 2,
+    };
+    let first_constant = SylvesterEntry {
+        coefficients: [entry(first.constant), entry(first.u), entry(first.uu)],
+        len: 3,
+    };
+    let second_y2 = SylvesterEntry {
+        coefficients: [entry(second.vv), 0.0, 0.0],
+        len: 1,
+    };
+    let second_y = SylvesterEntry {
+        coefficients: [entry(second.v), entry(second.uv), 0.0],
+        len: 2,
+    };
+    let second_constant = SylvesterEntry {
+        coefficients: [entry(second.constant), entry(second.u), entry(second.uu)],
+        len: 3,
+    };
     [
         [
-            Some(first_y2.clone()),
-            Some(first_y.clone()),
-            Some(first_constant.clone()),
-            zero.clone(),
+            Some(first_y2),
+            Some(first_y),
+            Some(first_constant),
+            zero,
         ],
         [
-            zero.clone(),
+            zero,
             Some(first_y2),
             Some(first_y),
             Some(first_constant),
         ],
         [
-            Some(second_y2.clone()),
-            Some(second_y.clone()),
-            Some(second_constant.clone()),
-            zero.clone(),
+            Some(second_y2),
+            Some(second_y),
+            Some(second_constant),
+            zero,
         ],
         [zero, Some(second_y2), Some(second_y), Some(second_constant)],
     ]
@@ -882,7 +913,7 @@ fn sylvester_matrix(
 /// `conic_resultant_is_a_quartic` pins.
 fn sylvester_polynomial(
     ctx: &DecodeContext<'_>,
-    matrix: &[[Option<Vec<f64>>; 4]; 4],
+    matrix: &[[Option<SylvesterEntry>; 4]; 4],
     sign: impl Fn(f64) -> f64,
 ) -> Result<Vec<f64>, CodecError> {
     let mut determinant = Vec::new();
@@ -891,7 +922,7 @@ fn sylvester_polynomial(
             continue;
         }
         let mut term = ctx.alloc_filled(1, 1.0, "creo polynomial identity")?;
-        for factor in (0..4).filter_map(|row| matrix[row][permutation[row]].as_deref()) {
+        for factor in (0..4).filter_map(|row| matrix[row][permutation[row]].as_ref().map(SylvesterEntry::as_slice)) {
             term = polynomial_product(ctx, &term, factor)?;
         }
         if determinant.len() < term.len() {
@@ -1935,7 +1966,12 @@ mod tests {
     #[test]
     fn polynomial_determinant_refuses_before_growth() {
         let matrix = std::array::from_fn(|row| {
-            std::array::from_fn(|column| (row == column).then(|| vec![1.0]))
+            std::array::from_fn(|column| {
+                (row == column).then_some(super::SylvesterEntry {
+                    coefficients: [1.0, 0.0, 0.0],
+                    len: 1,
+                })
+            })
         });
         let arena = DecodeArena::new();
         let service = DecodePolicy::service();
