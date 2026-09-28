@@ -31,7 +31,12 @@ fn source(stream: &str) -> SourceFidelity {
 fn source_rescoping_preserves_bytes_extent_tag_and_exactness() {
     let input = source("member");
     let original = input.retained_record(ID).unwrap().clone();
-    let output = rescope_fidelity(input.clone(), "part/occurrence-0").unwrap();
+    let output = rescope_fidelity(
+        &cadmpeg_test_support::service_decode_context(),
+        input.clone(),
+        "part/occurrence-0",
+    )
+    .unwrap();
     let id = "f3d:xref/part/occurrence-0/native:record#one";
     let retained = output.retained_record(id).unwrap();
     assert_eq!(retained.data(), original.data());
@@ -51,9 +56,10 @@ fn source_rescoping_preserves_bytes_extent_tag_and_exactness() {
 
 #[test]
 fn occurrence_and_stream_boundaries_cannot_alias() {
-    let first = rescope_fidelity(source("b/c"), "a").unwrap();
-    let second = rescope_fidelity(source("c"), "a/b").unwrap();
-    let escaped = rescope_fidelity(source("c"), "a%2Fb").unwrap();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let first = rescope_fidelity(&ctx, source("b/c"), "a").unwrap();
+    let second = rescope_fidelity(&ctx, source("c"), "a/b").unwrap();
+    let escaped = rescope_fidelity(&ctx, source("c"), "a%2Fb").unwrap();
     let owner = |fidelity: &SourceFidelity| {
         fidelity
             .retained_records()
@@ -66,4 +72,28 @@ fn occurrence_and_stream_boundaries_cannot_alias() {
     assert_eq!(owner(&first), "f3d:xref/a/b/c");
     assert_eq!(owner(&second), "f3d:xref/a%2Fb/c");
     assert_eq!(owner(&escaped), "f3d:xref/a%252Fb/c");
+}
+
+#[test]
+fn source_rescoping_refuses_annotation_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = rescope_fidelity(&ctx, source("member"), "part").unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index remapped annotation identities"));
+}
+
+#[test]
+fn source_rescoping_refuses_identity_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = rescope_fidelity(&ctx, source("member"), "part").unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "rescope F3Z identity"));
 }
