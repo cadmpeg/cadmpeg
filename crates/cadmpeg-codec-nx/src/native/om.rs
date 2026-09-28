@@ -5707,16 +5707,28 @@ pub(super) fn expression_declarations(
             else {
                 continue;
             };
+            let source_offset = entry_offset
+                .checked_add(cadmpeg_core::decode::u64_from_index(record.offset))
+                .and_then(|offset| offset.checked_add(cadmpeg_core::decode::u64_from_index(declaration.offset)))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX declaration source offset", 0, 1))?;
+            let name = copy_om_retained_text(ctx, declaration.name.as_str(), "NX declaration name")?;
+            let name = ParameterName::<String, u32>::parse(name)
+                .ok_or_else(|| ctx.refuse_codec_limit("validate NX declaration name", 0, 1))?;
+            let literal = declaration.literal
+                .map(|literal| copy_om_retained_text(ctx, literal, "NX declaration literal"))
+                .transpose()?;
+            ctx.charge_collection_items(1, "NX expression declarations")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ExpressionDeclaration>()), "retain NX expression declaration")?;
+            declarations.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX expression declarations", 0, 1))?;
             declarations.push(ExpressionDeclaration {
-                id: format!(
-                    "nx:om-expression-declarations-{section_ordinal}:declaration#{record_ordinal}"
-                ),
+                id: retained_om_index_id(ctx, "nx:om-expression-declarations-", section_ordinal, ":declaration#", cadmpeg_core::decode::u64_from_index(record_ordinal), "NX declaration id")?,
                 object_id: record.object_id.0,
-                record: format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
-                name: declaration.name.into_owned(),
-                literal: declaration.literal.map(str::to_string),
-                source_entry: entry.name.clone(),
-                source_offset: entry_offset + record.offset as u64 + declaration.offset as u64,
+                record: retained_om_index_id(ctx, "nx:om-record-directory-", section_ordinal, ":entry#", cadmpeg_core::decode::u64_from_index(record_ordinal), "NX declaration record id")?,
+                name,
+                literal,
+                source_entry: copy_om_retained_text(ctx, &entry.name, "NX declaration source entry")?,
+                source_offset,
             });
         }
     }
@@ -8325,6 +8337,7 @@ mod tests {
         }
     }
     mod material_and_external_records;
+    mod expression_admission;
 }
 
 #[cfg(test)]
