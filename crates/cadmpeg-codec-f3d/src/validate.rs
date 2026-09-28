@@ -5500,12 +5500,20 @@ fn validate_body_recipe_operands<'a>(
     let operand_groups_by_index = &ctx.operand_groups_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let mut expected_operands = native.design_body_recipe_operands.clone();
-    design::decode::operands::bind_body_recipe_operand_candidates(
+    if let Err(error) = design::decode::operands::bind_body_recipe_operand_candidates(
+        None,
         &mut expected_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
         &native.design_parameter_scopes,
-    );
+    ) {
+        findings.push(Finding {
+            check: Check::NativeLinks,
+            severity: Severity::Error,
+            message: format!("Fusion Design body-recipe candidate binding failed: {error}"),
+            entity: None,
+        });
+    }
     history::bind_body_recipe_operand_history_candidates(
         &mut expected_operands,
         &native.construction_recipes,

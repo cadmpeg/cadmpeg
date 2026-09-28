@@ -4477,19 +4477,27 @@ fn parse_body_recipe_operand_frame_with_index(
 
 /// Join body-recipe Design references to solved persistent face tags.
 pub(crate) fn bind_body_recipe_operand_candidates(
+    ctx: Option<&DecodeContext<'_>>,
     operands: &mut [DesignBodyRecipeOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
     scopes: &[DesignParameterScope],
-) {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut recipes_by_id = HashMap::<_, Option<&ConstructionRecipe>>::new();
     for recipe in recipes {
-        recipes_by_id
-            .entry(recipe.id.as_str())
-            .and_modify(|recipe| *recipe = None)
-            .or_insert(Some(recipe));
+        if let Some(existing) = recipes_by_id.get_mut(recipe.id.as_str()) {
+            *existing = None;
+        } else {
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "f3d body recipe candidate index")?;
+                recipes_by_id.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d body recipe candidate index allocation", 0, 1)
+                })?;
+            }
+            recipes_by_id.insert(recipe.id.as_str(), Some(recipe));
+        }
     }
     for operand in operands {
         // The recipe selector is a persistent-tag selector for Combine's
@@ -4511,32 +4519,38 @@ pub(crate) fn bind_body_recipe_operand_candidates(
             .and_then(|recipe| *recipe)
             .and_then(|recipe| recipe.design.as_ref()?.selector)
             .map(|selector| i64::from(selector.value));
-        let operand_id = operand.id.clone();
-        for reference in operand.reference_bindings_mut() {
+        let operand_id = if let Some(ctx) = ctx {
+            copy_ascii_retained(ctx, &operand.id, "f3d body recipe candidate operand ID")?
+        } else {
+            operand.id.clone()
+        };
+        for mut reference in operand.reference_bindings_mut() {
             reference.candidate_faces.clear();
             let Ok(design_reference) = i64::try_from(reference.design_reference) else {
                 continue;
             };
-            *reference.candidate_faces = tags
-                .iter()
-                .filter(|tag| {
+            for tag in tags.iter().filter(|tag| {
                     crate::ids::same_native_occurrence(&tag.id, &operand_id)
                         && tag.design_references.contains(&design_reference)
                         && (reference.form != 3
                             || !form_three_uses_recipe_selector
                             || tag_selector == Some(tag.selector))
-                })
-                .filter_map(|tag| match &tag.target {
-                    AttributeTarget::Face(face) => Some(face.clone()),
-                    _ => None,
-                })
-                .collect();
+                }) {
+                if let AttributeTarget::Face(face) = &tag.target {
+                    if let Some(ctx) = ctx {
+                        push_operand_face_candidate(ctx, &mut reference.candidate_faces, face)?;
+                    } else {
+                        reference.candidate_faces.push(face.clone());
+                    }
+                }
+            }
             reference
                 .candidate_faces
                 .sort_by(|left, right| left.as_str().cmp(right.as_str()));
             reference.candidate_faces.dedup();
         }
     }
+    Ok(())
 }
 
 /// Resolve selection-member local identities against persistent point and
