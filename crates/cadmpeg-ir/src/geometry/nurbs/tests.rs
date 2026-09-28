@@ -6,6 +6,81 @@ use crate::{
 };
 
 #[test]
+fn consumed_nurbs_parts_keep_knot_and_pole_storage() {
+    use crate::geometry::nurbs::NurbsPoles3;
+
+    let curve = curve();
+    let knot_storage = curve.knots().as_slice().as_ptr();
+    let NurbsPoles3::Rational { points } = curve.pole_rows() else {
+        panic!("fixture must be rational");
+    };
+    let pole_storage = points.as_ptr();
+    let (degree, knots, poles, periodic) = curve.into_parts();
+    assert_eq!(degree, 1);
+    assert!(periodic);
+    assert_eq!(knots.as_slice().as_ptr(), knot_storage);
+    let NurbsPoles3::Rational { points } = poles else {
+        panic!("consumed poles must remain rational");
+    };
+    assert_eq!(points.as_ptr(), pole_storage);
+}
+
+#[test]
+fn admitted_nurbs_curve_keeps_pole_storage() {
+    use crate::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+
+    let original = curve();
+    let (degree, knots, poles, periodic) = original.clone().into_parts();
+    let NurbsPoles3::Rational { points } = &poles else {
+        panic!("fixture must be rational");
+    };
+    let pole_storage = points.as_ptr();
+    let rebuilt = NurbsCurve::new(degree, knots, poles, periodic).unwrap();
+    let NurbsPoles3::Rational { points } = rebuilt.pole_rows() else {
+        panic!("rebuilt curve must remain rational");
+    };
+    assert_eq!(points.as_ptr(), pole_storage);
+    assert_eq!(rebuilt, original);
+}
+
+#[test]
+fn admitted_nurbs_surface_keeps_outer_and_inner_pole_storage() {
+    use crate::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+
+    let original = surface();
+    let grid = original.pole_grid().clone();
+    let NurbsPoleGrid::Rational { rows } = &grid else {
+        panic!("fixture must be rational");
+    };
+    let outer_storage = rows.as_ptr();
+    let inner_storage = rows.iter().map(Vec::as_ptr).collect::<Vec<_>>();
+    let rebuilt = NurbsSurface::new(
+        NurbsSurfaceAxis::new(
+            original.u_degree(),
+            original.u_knots().clone(),
+            original.u_periodic(),
+        ),
+        NurbsSurfaceAxis::new(
+            original.v_degree(),
+            original.v_knots().clone(),
+            original.v_periodic(),
+        ),
+        grid,
+        original.normal_reversed(),
+    )
+    .unwrap();
+    let NurbsPoleGrid::Rational { rows } = rebuilt.pole_grid() else {
+        panic!("rebuilt surface must remain rational");
+    };
+    assert_eq!(rows.as_ptr(), outer_storage);
+    assert_eq!(
+        rows.iter().map(Vec::as_ptr).collect::<Vec<_>>(),
+        inner_storage
+    );
+    assert_eq!(rebuilt, original);
+}
+
+#[test]
 fn nurbs_curve_copy_refuses_knot_and_pole_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

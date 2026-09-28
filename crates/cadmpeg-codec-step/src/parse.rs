@@ -7,10 +7,11 @@
 //! decode policy. Ambiguous records and duplicate names remain parse errors.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 use std::mem::size_of;
 use std::num::NonZeroUsize;
 use std::ops::Range;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -60,6 +61,96 @@ pub(crate) enum Value {
     Typed(String, Box<Value>),
 }
 
+fn copy_parser_text(
+    value: &str,
+    budget: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut copied = String::new();
+    copied
+        .try_reserve_exact(value.len())
+        .map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
+    copied.push_str(value);
+    Ok(copied)
+}
+
+fn copy_parser_bytes(
+    value: &[u8],
+    budget: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<Vec<u8>, CodecError> {
+    if let Some(ctx) = budget {
+        ctx.charge_collection_items(u64_from_index(value.len()), operation)?;
+    }
+    let mut copied = Vec::new();
+    copied
+        .try_reserve_exact(value.len())
+        .map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
+    copied.extend_from_slice(value);
+    Ok(copied)
+}
+
+fn parser_copy_refusal(
+    budget: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+    requested: usize,
+) -> CodecError {
+    budget.map_or_else(
+        || cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(requested)),
+        |ctx| ctx.refuse_codec_limit(operation, 0, u64_from_index(requested)),
+    )
+}
+
+fn try_clone_value(
+    value: &Value,
+    budget: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+) -> Result<Value, CodecError> {
+    let _depth = budget
+        .map(|ctx| ctx.enter_nested("step_value_copy_depth"))
+        .transpose()?;
+    Ok(match value {
+        Value::Reference(id) => Value::Reference(*id),
+        Value::ValueReference(id) => Value::ValueReference(*id),
+        Value::ConstantEntity(text) => {
+            Value::ConstantEntity(copy_parser_text(text, budget, operation)?)
+        }
+        Value::ConstantValue(text) => {
+            Value::ConstantValue(copy_parser_text(text, budget, operation)?)
+        }
+        Value::Integer(value) => Value::Integer(*value),
+        Value::Real(value) => Value::Real(*value),
+        Value::Enumeration(text) => Value::Enumeration(copy_parser_text(text, budget, operation)?),
+        Value::String(bytes) => Value::String(copy_parser_bytes(bytes, budget, operation)?),
+        Value::Binary(binary) => Value::Binary(binary.try_clone_for_decode(budget, operation)?),
+        Value::Resource(text) => Value::Resource(copy_parser_text(text, budget, operation)?),
+        Value::Omitted => Value::Omitted,
+        Value::Derived => Value::Derived,
+        Value::List(values) => {
+            if let Some(ctx) = budget {
+                ctx.charge_collection_items(u64_from_index(values.len()), operation)?;
+            }
+            let mut copied = Vec::new();
+            copied
+                .try_reserve_exact(values.len())
+                .map_err(|_| parser_copy_refusal(budget, operation, values.len()))?;
+            for value in values {
+                copied.push(try_clone_value(value, budget, operation)?);
+            }
+            Value::List(copied)
+        }
+        Value::Typed(name, nested) => {
+            if let Some(ctx) = budget {
+                ctx.charge_collection_items(1, operation)?;
+            }
+            Value::Typed(
+                copy_parser_text(name, budget, operation)?,
+                Box::new(try_clone_value(nested, budget, operation)?),
+            )
+        }
+    })
+}
+
 /// One simple entity leaf within an entity instance.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PartialRecord {
@@ -70,7 +161,7 @@ pub(crate) struct PartialRecord {
 }
 
 pub(crate) mod partials {
-    use super::PartialRecord;
+    use super::{DecodeContext, ParseError, PartialRecord};
 
     /// The nonempty partial population of one entity instance.
     #[derive(Debug, Clone, PartialEq)]
@@ -78,13 +169,27 @@ pub(crate) mod partials {
 
     impl RecordPartials {
         /// Builds the population of one simple entity instance.
+        #[cfg(test)]
         pub(crate) fn single(first: PartialRecord) -> Self {
             Self(vec![first])
         }
 
+        pub(super) fn single_charged(
+            first: PartialRecord,
+            budget: Option<&DecodeContext<'_>>,
+        ) -> Result<Self, ParseError> {
+            let mut records = Vec::new();
+            super::push_charged(budget, &mut records, first, "step_parse_record_partials")?;
+            Ok(Self(records))
+        }
+
         /// Append a partial without changing the nonempty population invariant.
-        pub(super) fn push(&mut self, partial: PartialRecord) {
-            self.0.push(partial);
+        pub(super) fn push_charged(
+            &mut self,
+            partial: PartialRecord,
+            budget: Option<&DecodeContext<'_>>,
+        ) -> Result<(), ParseError> {
+            super::push_charged(budget, &mut self.0, partial, "step_parse_record_partials")
         }
 
         /// Compact retained storage and report its allocation charge.
@@ -225,45 +330,65 @@ pub(crate) struct Exchange {
     entity_ids: EntityIndex,
 }
 
-type EntityUnionCache = Mutex<HashMap<Vec<String>, Arc<[u64]>>>;
-
-#[derive(Debug, Default)]
-struct EntityIndex(
-    OnceLock<HashMap<String, Vec<u64>>>,
-    OnceLock<EntityUnionCache>,
-);
-
-const EMPTY_ENTITY_IDS: &[u64] = &[];
-
-enum EntityIdIter<'a> {
-    Borrowed(std::slice::Iter<'a, u64>),
-    Shared { ids: Arc<[u64]>, at: usize },
-}
-
-impl Iterator for EntityIdIter<'_> {
-    type Item = u64;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Borrowed(ids) => ids.next().copied(),
-            Self::Shared { ids, at } => {
-                let id = ids.get(*at).copied();
-                *at += usize::from(id.is_some());
-                id
-            }
-        }
-    }
-}
-
-impl Clone for EntityIndex {
-    fn clone(&self) -> Self {
-        Self::default()
-    }
-}
+#[derive(Debug, Clone, Default)]
+struct EntityIndex(Arc<HashMap<String, Vec<u64>>>);
 
 impl PartialEq for EntityIndex {
     fn eq(&self, _other: &Self) -> bool {
         true
+    }
+}
+
+impl EntityIndex {
+    fn build(
+        records: &BTreeMap<u64, RawRecord>,
+        budget: Option<&DecodeContext<'_>>,
+    ) -> Result<Self, ParseError> {
+        let mut index = HashMap::<String, Vec<u64>>::new();
+        for (&id, record) in records {
+            for partial in &record.partials {
+                if let Some(ids) = index.get_mut(partial.name.as_str()) {
+                    if let Some(ctx) = budget {
+                        ctx.charge_collection_items(1, "step_entity_index_ids")?;
+                    }
+                    ids.try_reserve(1).map_err(|_| {
+                        ParseError::Resource(refuse_index(budget, "step_entity_index_ids"))
+                    })?;
+                    ids.push(id);
+                } else {
+                    if let Some(ctx) = budget {
+                        ctx.charge_collection_items(1, "step_entity_index_names")?;
+                        ctx.charge_collection_items(1, "step_entity_index_ids")?;
+                        ctx.charge_retained(
+                            u64_from_index(partial.name.len()),
+                            "step_entity_index_name_storage",
+                        )?;
+                    }
+                    let mut name = String::new();
+                    name.try_reserve_exact(partial.name.len()).map_err(|_| {
+                        ParseError::Resource(refuse_index(budget, "step_entity_index_names"))
+                    })?;
+                    name.push_str(&partial.name);
+                    let mut ids = Vec::new();
+                    ids.try_reserve_exact(1).map_err(|_| {
+                        ParseError::Resource(refuse_index(budget, "step_entity_index_ids"))
+                    })?;
+                    ids.push(id);
+                    index.try_reserve(1).map_err(|_| {
+                        ParseError::Resource(refuse_index(budget, "step_entity_index_names"))
+                    })?;
+                    index.insert(name, ids);
+                }
+            }
+        }
+        Ok(Self(Arc::new(index)))
+    }
+}
+
+fn refuse_index(budget: Option<&DecodeContext<'_>>, operation: &'static str) -> CodecError {
+    match budget {
+        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
     }
 }
 
@@ -299,18 +424,51 @@ impl Exchange {
     }
 
     /// Header-admitted `FILE_SCHEMA` identifiers in source order.
-    pub(crate) fn schema_identifiers(&self) -> Vec<String> {
+    pub(crate) fn schema_identifiers(&self) -> impl Iterator<Item = &str> {
         self.schema_identifiers
             .iter()
-            .map(|identifier| identifier.text().to_owned())
-            .collect()
+            .map(AdmittedSchemaIdentifier::text)
+    }
+
+    pub(crate) fn joined_schema_identifiers(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<String, CodecError> {
+        let operation = "step_schema_identifier_list";
+        let len = self.schema_identifiers.iter().enumerate().try_fold(
+            0usize,
+            |sum, (index, identifier)| {
+                sum.checked_add(identifier.text().len())
+                    .and_then(|sum| sum.checked_add(usize::from(index != 0)))
+            },
+        );
+        let len = len.ok_or_else(|| refuse_index(ctx, operation))?;
+        if let Some(ctx) = ctx {
+            ctx.charge_retained(u64_from_index(len), operation)?;
+        }
+        let mut joined = String::new();
+        joined
+            .try_reserve_exact(len)
+            .map_err(|_| refuse_index(ctx, operation))?;
+        for identifier in self.schema_identifiers() {
+            if !joined.is_empty() {
+                joined.push(',');
+            }
+            joined.push_str(identifier);
+        }
+        Ok(joined)
     }
 
     /// Numeric object-identifier components for the primary schema identifier.
-    pub(crate) fn primary_schema_object_identifier(&self) -> Option<Vec<u64>> {
+    pub(crate) fn primary_schema_object_identifier(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Option<Vec<u64>>, CodecError> {
         self.schema_identifiers
             .first()
-            .and_then(AdmittedSchemaIdentifier::numeric_object_identifier)
+            .map_or(Ok(None), |identifier| {
+                identifier.numeric_object_identifier(ctx)
+            })
     }
 
     /// Verbatim `FILE_DESCRIPTION` implementation-level declaration.
@@ -318,11 +476,18 @@ impl Exchange {
         self.implementation_level.text()
     }
 
-    pub(crate) fn decode_string(
+    pub(crate) fn decode_string_with_context(
         &self,
         bytes: &[u8],
-    ) -> Result<String, crate::strings::StringError> {
-        crate::strings::decode_with_level(bytes, self.implementation_level.level())
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<String, crate::strings::StringDecodeFailure> {
+        match ctx {
+            Some(ctx) => {
+                crate::strings::decode_with_context(bytes, self.implementation_level.level(), ctx)
+            }
+            None => crate::strings::decode_with_level(bytes, self.implementation_level.level())
+                .map_err(crate::strings::StringDecodeFailure::Invalid),
+        }
     }
 
     /// Release the source graph and transfer its signature extents for retention.
@@ -337,26 +502,9 @@ impl Exchange {
         std::mem::take(&mut self.signatures)
     }
 
-    // The record graph is immutable while these indexes exist. Every indexed ID
-    // therefore owns a record; release_source_graph clears both together.
+    // The record graph is immutable while its charged name index exists.
     fn entity_ids(&self) -> &HashMap<String, Vec<u64>> {
-        self.entity_ids.0.get_or_init(|| {
-            let mut entity_ids = HashMap::<String, Vec<u64>>::new();
-            for (&id, record) in &self.records {
-                for partial in &record.partials {
-                    if let Some(ids) = entity_ids.get_mut(partial.name.as_str()) {
-                        ids.push(id);
-                    } else {
-                        entity_ids.insert(partial.name.clone(), vec![id]);
-                    }
-                }
-            }
-            entity_ids
-        })
-    }
-
-    fn entity_unions(&self) -> &EntityUnionCache {
-        self.entity_ids.1.get_or_init(|| Mutex::new(HashMap::new()))
+        &self.entity_ids.0
     }
 
     pub(crate) fn has_entity(&self, name: &str) -> bool {
@@ -367,16 +515,17 @@ impl Exchange {
         self.entity_ids().keys().any(|name| matches(name))
     }
 
-    pub(crate) fn matching_entity_ids(&self, matches: impl Fn(&str) -> bool) -> Vec<u64> {
-        let mut ids = self
-            .entity_ids()
-            .iter()
-            .filter(|(name, _)| matches(name))
-            .flat_map(|(_, ids)| ids.iter().copied())
-            .collect::<Vec<_>>();
-        ids.sort_unstable();
-        ids.dedup();
-        ids
+    pub(crate) fn matching_entity_ids<'a>(
+        &'a self,
+        matches: impl Fn(&str) -> bool + 'a,
+    ) -> impl Iterator<Item = u64> + 'a {
+        self.records.iter().filter_map(move |(&id, record)| {
+            record
+                .partials
+                .iter()
+                .any(|partial| matches(&partial.name))
+                .then_some(id)
+        })
     }
 
     pub(crate) fn entities(&self, name: &str) -> impl Iterator<Item = (u64, &RawRecord)> {
@@ -389,51 +538,15 @@ impl Exchange {
 
     pub(crate) fn entities_any<'a>(
         &'a self,
-        names: &[&str],
-    ) -> impl Iterator<Item = (u64, &'a RawRecord)> {
-        let ids = if let [name] = names {
-            let ids = self
-                .entity_ids()
-                .get(*name)
-                .map_or(EMPTY_ENTITY_IDS, Vec::as_slice);
-            EntityIdIter::Borrowed(ids.iter())
-        } else {
-            let mut key = names
+        names: &'a [&str],
+    ) -> impl Iterator<Item = (u64, &'a RawRecord)> + 'a {
+        self.records.iter().filter_map(move |(&id, record)| {
+            record
+                .partials
                 .iter()
-                .map(|name| (*name).to_owned())
-                .collect::<Vec<_>>();
-            key.sort_unstable();
-            key.dedup();
-            // This map is a derived index. A panic while populating it can poison
-            // the lock. Entries are inserted only after their sorted union is
-            // complete, so every retained entry is safe to reuse.
-            let mut unions = match self.entity_unions().lock() {
-                Ok(unions) => unions,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            let ids = unions
-                .entry(key.clone())
-                .or_insert_with(|| {
-                    let capacity = key
-                        .iter()
-                        .filter_map(|name| self.entity_ids().get(name))
-                        .map(Vec::len)
-                        .sum();
-                    let mut ids = Vec::with_capacity(capacity);
-                    ids.extend(
-                        key.iter()
-                            .filter_map(|name| self.entity_ids().get(name))
-                            .flatten()
-                            .copied(),
-                    );
-                    ids.sort_unstable();
-                    ids.dedup();
-                    Arc::from(ids.into_boxed_slice())
-                })
-                .clone();
-            EntityIdIter::Shared { ids, at: 0 }
-        };
-        ids.map(|id| (id, &self.records[&id]))
+                .any(|partial| names.contains(&partial.name.as_str()))
+                .then_some((id, record))
+        })
     }
 }
 
@@ -483,6 +596,7 @@ pub(crate) struct ParseDiagnostic {
 }
 
 /// Parse one complete clear-text exchange structure and resolve DATA references.
+#[cfg(test)]
 pub(crate) fn parse(input: &[u8]) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
     parse_inner(input, None)
 }
@@ -499,8 +613,11 @@ fn parse_inner(
     input: &[u8],
     budget: Option<&DecodeContext<'_>>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
-    let mut lexer = Lexer::new(input);
-    lexer.set_context(budget);
+    let lexer = if let Some(ctx) = budget {
+        Lexer::with_context(input, ctx)
+    } else {
+        Lexer::new(input)
+    };
     let mut parser = Parser {
         current: None,
         lexer,
@@ -532,6 +649,53 @@ struct Parser<'input, 'ctx, 'arena> {
     diagnostics: Vec<ParseDiagnostic>,
     omitted_entity_names: Option<(usize, NonZeroUsize)>,
     budget: Option<&'ctx DecodeContext<'arena>>,
+}
+
+fn push_charged<T>(
+    budget: Option<&DecodeContext<'_>>,
+    values: &mut Vec<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), ParseError> {
+    if let Some(ctx) = budget {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    values.try_reserve(1).map_err(|_| {
+        ParseError::Resource(match budget {
+            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+        })
+    })?;
+    values.push(value);
+    Ok(())
+}
+
+struct PartialNameList<'a>(&'a partials::RecordPartials);
+
+impl fmt::Display for PartialNameList<'_> {
+    fn fmt(&self, output: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, part) in self.0.iter().enumerate() {
+            if index != 0 {
+                output.write_str(", ")?;
+            }
+            output.write_str(&part.name)?;
+        }
+        Ok(())
+    }
+}
+
+struct SortedPartialNameList<'a>(&'a [&'a str]);
+
+impl fmt::Display for SortedPartialNameList<'_> {
+    fn fmt(&self, output: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (index, name) in self.0.iter().enumerate() {
+            if index != 0 {
+                output.write_str(", ")?;
+            }
+            output.write_str(name)?;
+        }
+        Ok(())
+    }
 }
 
 struct HeaderAdmission {
@@ -683,34 +847,57 @@ impl Parser<'_, '_, '_> {
             let parameters = self.parameters()?;
             self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
             self.punct(&TokenKind::Semicolon)?;
-            header.push(HeaderRecord {
-                name,
-                parameters,
-                offset,
-            });
+            push_charged(
+                self.budget,
+                &mut header,
+                HeaderRecord {
+                    name,
+                    parameters,
+                    offset,
+                },
+                "step_parse_header_records",
+            )?;
         }
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
-        let (header_admission, header_diagnostic) = match validate_header(&header) {
+        let (header_admission, header_diagnostic) = match validate_header(&header, self.budget) {
             Ok(admitted) => admitted,
-            Err(message) => return self.err(message),
+            Err(ValidationError::Invalid(message)) => return self.err(message),
+            Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         };
         let implementation_level = header_admission.implementation_level.level();
-        self.diagnostics.extend(header_diagnostic);
-        self.diagnostics
-            .extend(schema_object_identifier_diagnostics(
-                &header_admission.schema_identifiers,
-                header[2].offset,
-            ));
+        if let Some(diagnostic) = header_diagnostic {
+            push_charged(
+                self.budget,
+                &mut self.diagnostics,
+                diagnostic,
+                "step_parse_diagnostics",
+            )?;
+        }
+        for diagnostic in schema_object_identifier_diagnostics(
+            &header_admission.schema_identifiers,
+            header[2].offset,
+            self.budget,
+        ) {
+            let diagnostic = diagnostic?;
+            push_charged(
+                self.budget,
+                &mut self.diagnostics,
+                diagnostic,
+                "step_parse_diagnostics",
+            )?;
+        }
         let schema_names_for_matching =
-            schema_names_for_matching(&header_admission.schema_identifiers);
+            schema_names_for_matching(&header_admission.schema_identifiers, self.budget)?;
         let header_data_references = match validate_header_sections(
             implementation_level,
             &header,
             &schema_names_for_matching,
+            self.budget,
         ) {
             Ok(references) => references,
-            Err(message) => return self.err(message),
+            Err(ValidationError::Invalid(message)) => return self.err(message),
+            Err(ValidationError::Resource(error)) => return Err(ParseError::Resource(error)),
         };
         let mut anchors = Vec::new();
         if let Some(level) = implementation_level.edition3_sections_forbidden_by() {
@@ -748,12 +935,22 @@ impl Parser<'_, '_, '_> {
                         return self.err("invalid anchor tag item");
                     }
                     self.punct(&TokenKind::RBrace)?;
-                    tags.push(AnchorTag { name, value });
+                    push_charged(
+                        self.budget,
+                        &mut tags,
+                        AnchorTag { name, value },
+                        "step_parse_anchor_tags",
+                    )?;
                 }
                 tags.shrink_to_fit();
                 self.charge_vec_storage(&tags, "step_anchor_tag_storage")?;
                 self.punct(&TokenKind::Semicolon)?;
-                anchors.push(AnchorEntry { name, value, tags });
+                push_charged(
+                    self.budget,
+                    &mut anchors,
+                    AnchorEntry { name, value, tags },
+                    "step_parse_anchors",
+                )?;
             }
             self.next_kind()?;
             self.lexer.set_allow_print_controls(true);
@@ -782,9 +979,13 @@ impl Parser<'_, '_, '_> {
                     ),
                     _ => return self.err("expected reference name"),
                 };
-                if !same_kind.insert(id) {
+                if same_kind.contains(&id) {
                     return self.err("duplicate reference name");
                 }
+                if let Some(ctx) = self.budget {
+                    ctx.charge_collection_items(1, "step_parse_external_reference_ids")?;
+                }
+                same_kind.insert(id);
                 if other_kind.contains(&id) {
                     return self.err("duplicate external occurrence integer");
                 }
@@ -794,7 +995,12 @@ impl Parser<'_, '_, '_> {
                 };
                 self.charge_string_storage(&uri, "step_parse_reference_storage")?;
                 self.punct(&TokenKind::Semicolon)?;
-                reference_entries.push(ReferenceEntry { name, uri });
+                push_charged(
+                    self.budget,
+                    &mut reference_entries,
+                    ReferenceEntry { name, uri },
+                    "step_parse_reference_entries",
+                )?;
             }
             self.next_kind()?;
             self.lexer.set_allow_print_controls(true);
@@ -825,8 +1031,14 @@ impl Parser<'_, '_, '_> {
                     &schema_names_for_matching,
                     implementation_level,
                     &mut data_section_names,
+                    self.budget,
                 ) {
-                    return self.err(message);
+                    match message {
+                        ValidationError::Invalid(message) => return self.err(message),
+                        ValidationError::Resource(error) => {
+                            return Err(ParseError::Resource(error))
+                        }
+                    }
                 }
                 parameters
             } else {
@@ -843,19 +1055,28 @@ impl Parser<'_, '_, '_> {
                     btree_node_storage::<u64, RawRecord>(),
                     "step_parse_record_table_storage",
                 )?;
-                if records.insert(id, record).is_some() {
+                if records.contains_key(&id) {
                     return self.err("duplicate instance name");
                 }
-                ids.push(id);
+                if let Some(ctx) = self.budget {
+                    ctx.charge_collection_items(1, "step_parse_record_table_items")?;
+                }
+                records.insert(id, record);
+                push_charged(self.budget, &mut ids, id, "step_parse_section_ids")?;
             }
             self.name("ENDSEC")?;
             self.punct(&TokenKind::Semicolon)?;
             ids.shrink_to_fit();
             self.charge_vec_storage(&ids, "step_parse_section_storage")?;
-            data.push(DataSection {
-                parameters,
-                records: ids,
-            });
+            push_charged(
+                self.budget,
+                &mut data,
+                DataSection {
+                    parameters,
+                    records: ids,
+                },
+                "step_parse_data_sections",
+            )?;
         }
         if !implementation_level.is_edition3() && data.is_empty() {
             return self.err("historical implementation levels require one DATA section");
@@ -896,8 +1117,13 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
             let span = start..self.previous_end();
             let payload = payload_start..payload_end;
-            crate::signature::decode_payload(self.lexer.input(), &payload)?;
-            signatures.push(span);
+            crate::signature::decode_payload(self.lexer.input(), &payload, self.budget)?;
+            push_charged(
+                self.budget,
+                &mut signatures,
+                span,
+                "step_parse_signature_spans",
+            )?;
         }
         if self.current.is_some() {
             return self.err("tokens after exchange terminator");
@@ -915,14 +1141,26 @@ impl Parser<'_, '_, '_> {
             for anchor in &anchors {
                 self.charge_string_storage(&anchor.name, "step_anchor_binding_storage")?;
                 self.charge_retained(
+                    value_storage_bytes(&anchor.value),
+                    "step_anchor_binding_value_copy",
+                )?;
+                if let Some(ctx) = self.budget {
+                    ctx.charge_collection_items(1, "step_anchor_binding_items")?;
+                }
+                self.charge_retained(
                     btree_node_storage::<String, Value>(),
                     "step_anchor_binding_storage",
                 )?;
             }
-            let anchor_bindings = anchors
-                .iter()
-                .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
-                .collect::<BTreeMap<_, _>>();
+            let mut anchor_bindings = BTreeMap::new();
+            for anchor in &anchors {
+                anchor_bindings.insert(
+                    copy_parser_text(&anchor.name, self.budget, "step_anchor_binding_name_copy")
+                        .map_err(ParseError::Resource)?,
+                    try_clone_value(&anchor.value, self.budget, "step_anchor_binding_value_copy")
+                        .map_err(ParseError::Resource)?,
+                );
+            }
             if anchor_bindings.len() != anchors.len() {
                 return self.err("duplicate anchor name");
             }
@@ -973,19 +1211,26 @@ impl Parser<'_, '_, '_> {
             .map_err(|error| error.into_parse_error(0))?;
         for record in records.values_mut() {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
-                let previous_capacity = record.partials[0].parameters.capacity();
+                let parameters = &mut record.partials[0].parameters;
+                if let Some(ctx) = self.budget {
+                    ctx.charge_collection_items(1, "step_omitted_name_recovery_item")?;
+                    if parameters.len() == parameters.capacity() {
+                        ctx.charge_retained(
+                            u64_from_index(size_of::<Value>()),
+                            "step_omitted_name_recovery_storage",
+                        )?;
+                    }
+                }
+                parameters.try_reserve_exact(1).map_err(|_| {
+                    ParseError::Resource(refuse_index(
+                        self.budget,
+                        "step_omitted_name_recovery_storage",
+                    ))
+                })?;
                 record.partials[0]
                     .parameters
                     .insert(0, Value::String(Vec::new()));
                 record.partials[0].parameters.shrink_to_fit();
-                let added_capacity = record.partials[0]
-                    .parameters
-                    .capacity()
-                    .saturating_sub(previous_capacity);
-                self.charge_retained(
-                    allocation_bytes(added_capacity, size_of::<Value>()),
-                    "step_omitted_name_recovery_storage",
-                )?;
                 match &mut self.omitted_entity_names {
                     Some((_, count)) => *count = count.saturating_add(1),
                     None => {
@@ -999,7 +1244,7 @@ impl Parser<'_, '_, '_> {
         for anchor in &anchors {
             refs.clear();
             value_refs.clear();
-            references(&anchor.value, &mut refs, &mut value_refs);
+            references(&anchor.value, &mut refs, &mut value_refs, self.budget)?;
             if refs
                 .iter()
                 .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
@@ -1015,7 +1260,7 @@ impl Parser<'_, '_, '_> {
             for tag in &anchor.tags {
                 refs.clear();
                 value_refs.clear();
-                references(&tag.value, &mut refs, &mut value_refs);
+                references(&tag.value, &mut refs, &mut value_refs, self.budget)?;
                 if refs
                     .iter()
                     .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
@@ -1035,7 +1280,7 @@ impl Parser<'_, '_, '_> {
             value_refs.clear();
             for partial in &record.partials {
                 for value in &partial.parameters {
-                    references(value, &mut refs, &mut value_refs);
+                    references(value, &mut refs, &mut value_refs, self.budget)?;
                 }
             }
             if refs
@@ -1067,13 +1312,18 @@ impl Parser<'_, '_, '_> {
             return self.err("resource values are only valid in edition-3 anchor items");
         }
         if let Some((offset, count)) = self.omitted_entity_names {
-            self.diagnostics.push(ParseDiagnostic {
-                offset,
-                kind: ParseDiagnosticKind::OmittedEntityName,
-                message: format!(
-                    "recovered {count} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name"
-                ),
-            });
+            push_charged(
+                self.budget,
+                &mut self.diagnostics,
+                ParseDiagnostic {
+                    offset,
+                    kind: ParseDiagnosticKind::OmittedEntityName,
+                    message: format!(
+                        "recovered {count} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name"
+                    ),
+                },
+                "step_parse_diagnostics",
+            )?;
         }
         for capacity in [
             compact_vec(&mut header),
@@ -1084,6 +1334,7 @@ impl Parser<'_, '_, '_> {
         ] {
             self.charge_retained(capacity, "step_parse_exchange_storage")?;
         }
+        let entity_ids = EntityIndex::build(&records, self.budget)?;
         Ok((
             Exchange {
                 header,
@@ -1094,7 +1345,7 @@ impl Parser<'_, '_, '_> {
                 records,
                 schema_identifiers: header_admission.schema_identifiers,
                 implementation_level: header_admission.implementation_level,
-                entity_ids: EntityIndex::default(),
+                entity_ids,
             },
             self.diagnostics,
         ))
@@ -1109,15 +1360,22 @@ impl Parser<'_, '_, '_> {
         self.charge_entities(1, "step_parse_record")?;
         let mut partials = if self.peek(&TokenKind::LParen) {
             self.next_kind()?;
-            let mut parts = partials::RecordPartials::single(self.partial()?);
+            let first = self.partial()?;
+            let mut parts = partials::RecordPartials::single_charged(first, self.budget)?;
             while !self.peek(&TokenKind::RParen) {
-                parts.push(self.partial()?);
+                let partial = self.partial()?;
+                parts.push_charged(partial, self.budget)?;
             }
             self.next_kind()?;
-            let mut canonical_names = parts
-                .iter()
-                .map(|part| part.name.clone())
-                .collect::<Vec<_>>();
+            let mut canonical_names = Vec::new();
+            for part in &parts {
+                push_charged(
+                    self.budget,
+                    &mut canonical_names,
+                    part.name.as_str(),
+                    "step_parse_canonical_partial_names",
+                )?;
+            }
             canonical_names.sort_unstable();
             if canonical_names
                 .windows(2)
@@ -1129,23 +1387,30 @@ impl Parser<'_, '_, '_> {
                 .windows(2)
                 .all(|window| window[0].name < window[1].name)
             {
-                let observed = parts
-                    .iter()
-                    .map(|part| part.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                self.diagnostics.push(ParseDiagnostic {
-                    offset: start,
-                    kind: ParseDiagnosticKind::ComplexPartialsNotAlphabetical,
-                    message: format!(
-                        "complex partial records are not alphabetical: observed ({observed}), expected ({})",
-                        canonical_names.join(", ")
+                let message = format_parser_text(
+                    self.budget,
+                    "step_parse_complex_partial_diagnostic_text",
+                    format_args!(
+                        "complex partial records are not alphabetical: observed ({}), expected ({})",
+                        PartialNameList(&parts),
+                        SortedPartialNameList(&canonical_names),
                     ),
-                });
+                )?;
+                push_charged(
+                    self.budget,
+                    &mut self.diagnostics,
+                    ParseDiagnostic {
+                        offset: start,
+                        kind: ParseDiagnosticKind::ComplexPartialsNotAlphabetical,
+                        message,
+                    },
+                    "step_parse_diagnostics",
+                )?;
             }
             parts
         } else {
-            partials::RecordPartials::single(self.partial()?)
+            let first = self.partial()?;
+            partials::RecordPartials::single_charged(first, self.budget)?
         };
         self.charge_retained(partials.compact_storage(), "step_parse_record_storage")?;
         self.punct(&TokenKind::Semicolon)?;
@@ -1193,8 +1458,8 @@ impl Parser<'_, '_, '_> {
             return Ok(values);
         }
         loop {
-            self.charge_collection_items(1, "step_parse_parameter")?;
-            values.push(self.value()?);
+            let value = self.value()?;
+            push_charged(self.budget, &mut values, value, "step_parse_parameter")?;
             if self.peek(&TokenKind::Comma) {
                 self.next_kind()?;
             } else {
@@ -1238,7 +1503,11 @@ impl Parser<'_, '_, '_> {
                 TokenKind::Omitted => Value::Omitted,
                 TokenKind::Derived => Value::Derived,
                 TokenKind::Name(name) => self.typed_parameter(name)?,
-                TokenKind::UserName(name) => self.typed_parameter(format!("!{name}"))?,
+                TokenKind::UserName(name) => self.typed_parameter(format_parser_text(
+                    self.budget,
+                    "step_parse_user_name_prefix",
+                    format_args!("!{name}"),
+                )?)?,
                 _ => return self.err("expected parameter value"),
             }
         };
@@ -1264,7 +1533,11 @@ impl Parser<'_, '_, '_> {
     fn take_name(&mut self) -> Result<String, ParseError> {
         match self.next_kind()? {
             TokenKind::Name(name) => Ok(name),
-            TokenKind::UserName(name) => Ok(format!("!{name}")),
+            TokenKind::UserName(name) => Ok(format_parser_text(
+                self.budget,
+                "step_parse_user_name_prefix",
+                format_args!("!{name}"),
+            )?),
             _ => self.err("expected name"),
         }
     }
@@ -1273,7 +1546,15 @@ impl Parser<'_, '_, '_> {
         if actual == expected {
             Ok(())
         } else {
-            self.err(&format!("expected {expected}, found {actual}"))
+            let message = format_parser_text(
+                self.budget,
+                "step_parse_expected_name_error",
+                format_args!("expected {expected}, found {actual}"),
+            )?;
+            Err(ParseError::Syntax {
+                offset: self.current_offset(),
+                message,
+            })
         }
     }
     fn punct(&mut self, expected: &TokenKind) -> Result<(), ParseError> {
@@ -1315,15 +1596,6 @@ impl Parser<'_, '_, '_> {
     fn charge_entities(&self, count: u64, operation: &'static str) -> Result<(), ParseError> {
         self.budget
             .map_or(Ok(()), |ctx| ctx.charge_entities(count, operation))
-            .map_err(ParseError::Resource)
-    }
-    fn charge_collection_items(
-        &self,
-        count: u64,
-        operation: &'static str,
-    ) -> Result<(), ParseError> {
-        self.budget
-            .map_or(Ok(()), |ctx| ctx.charge_collection_items(count, operation))
             .map_err(ParseError::Resource)
     }
     fn charge_retained(&self, bytes: u64, operation: &'static str) -> Result<(), ParseError> {
@@ -1426,64 +1698,128 @@ fn value_storage_bytes(value: &Value) -> u64 {
 
 /// Validate the three required header records, and admit the `FILE_SCHEMA`
 /// identifier list.
+enum ValidationError {
+    Invalid(&'static str),
+    Resource(CodecError),
+}
+
+impl From<CodecError> for ValidationError {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
+}
+
+impl ValidationError {
+    fn with_message(self, message: &'static str) -> Self {
+        match self {
+            Self::Invalid(_) => Self::Invalid(message),
+            Self::Resource(error) => Self::Resource(error),
+        }
+    }
+}
+
+fn invalid<T>(message: &'static str) -> Result<T, ValidationError> {
+    Err(ValidationError::Invalid(message))
+}
+
+fn format_parser_text(
+    budget: Option<&DecodeContext<'_>>,
+    operation: &'static str,
+    arguments: fmt::Arguments<'_>,
+) -> Result<String, CodecError> {
+    match budget {
+        Some(ctx) => crate::decode_alloc::charged_format(ctx, operation, arguments),
+        None => Ok(arguments.to_string()),
+    }
+}
+
+fn push_validated<T>(
+    budget: Option<&DecodeContext<'_>>,
+    values: &mut Vec<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), ValidationError> {
+    push_charged(budget, values, value, operation)
+        .map_err(|error| ValidationError::Resource(error.into_codec_error()))
+}
+
 fn validate_header(
     header: &[HeaderRecord],
-) -> Result<(HeaderAdmission, Option<ParseDiagnostic>), &'static str> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<(HeaderAdmission, Option<ParseDiagnostic>), ValidationError> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
     let [description_record, file_name_record, schema_record, ..] = header else {
-        return Err("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
+        return invalid("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
     };
     if [description_record, file_name_record, schema_record]
         .iter()
         .zip(REQUIRED)
         .any(|(record, expected)| record.name != expected)
     {
-        return Err("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
+        return invalid("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
     }
     if REQUIRED
         .iter()
         .any(|name| header.iter().filter(|record| record.name == *name).count() != 1)
     {
-        return Err("HEADER contains a duplicate required entity");
+        return invalid("HEADER contains a duplicate required entity");
     }
 
     let [description_strings, implementation_level_value @ Value::String(implementation_level_bytes)] =
         description_record.parameters.as_slice()
     else {
-        return Err("FILE_DESCRIPTION has invalid parameters");
+        return invalid("FILE_DESCRIPTION has invalid parameters");
     };
     if !is_string_list(Some(description_strings)) {
-        return Err("FILE_DESCRIPTION has invalid parameters");
+        return invalid("FILE_DESCRIPTION has invalid parameters");
     }
-    let Ok(implementation_level_text) = crate::strings::decode(implementation_level_bytes) else {
-        return Err("FILE_DESCRIPTION has an unsupported implementation level");
+    let Some(implementation_level_text) = decoded_bytes(
+        implementation_level_bytes,
+        ImplementationLevel::LegacyEdition1,
+        budget,
+    )?
+    else {
+        return invalid("FILE_DESCRIPTION has an unsupported implementation level");
     };
     let declaration = DeclaredImplementationLevel::new(implementation_level_text);
-    let implementation_diagnostic = declaration.is_unverified().then(|| ParseDiagnostic {
-        offset: description_record.offset,
-        kind: ParseDiagnosticKind::ImplementationLevelUnverified,
-        message: format!(
-            "FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar",
-            declaration.text()
-        ),
-    });
+    let implementation_diagnostic = if declaration.is_unverified() {
+        Some(ParseDiagnostic {
+            offset: description_record.offset,
+            kind: ParseDiagnosticKind::ImplementationLevelUnverified,
+            message: format_parser_text(
+                budget,
+                "step_implementation_level_diagnostic_text",
+                format_args!(
+                    "FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar",
+                    declaration.text()
+                ),
+            )?,
+        })
+    } else {
+        None
+    };
     let implementation_level = declaration.level();
-    if !is_decodable_string_list(Some(description_strings), implementation_level)
-        || !is_decodable_string(implementation_level_value, implementation_level)
+    if !is_decodable_string_list(Some(description_strings), implementation_level, budget)?
+        || !is_decodable_string(implementation_level_value, implementation_level, budget)?
     {
-        return Err("FILE_DESCRIPTION has invalid string encoding");
+        return invalid("FILE_DESCRIPTION has invalid string encoding");
     }
-    if !string_list_within_limit(Some(description_strings), implementation_level, 256)
-        || !string_within_limit(implementation_level_value, implementation_level, 256)
+    if !string_list_within_limit(Some(description_strings), implementation_level, 256, budget)?
+        || !string_within_limit(
+            implementation_level_value,
+            implementation_level,
+            256,
+            budget,
+        )?
     {
-        return Err("FILE_DESCRIPTION contains a string longer than 256 characters");
+        return invalid("FILE_DESCRIPTION contains a string longer than 256 characters");
     }
 
     // Producer metadata after the author and organization lists may be unset.
     let [file_name_value, file_name_timestamp, authors, organizations, preprocessor, originating_system, authorization] =
         file_name_record.parameters.as_slice()
     else {
-        return Err("FILE_NAME has invalid parameters");
+        return invalid("FILE_NAME has invalid parameters");
     };
     if !matches!(file_name_value, Value::String(_))
         || !matches!(file_name_timestamp, Value::String(_))
@@ -1493,57 +1829,67 @@ fn validate_header(
         || !is_string_or_omitted(Some(originating_system))
         || !is_string_or_omitted(Some(authorization))
     {
-        return Err("FILE_NAME has invalid parameters");
+        return invalid("FILE_NAME has invalid parameters");
     }
-    let Some(time_stamp) = decoded_string(file_name_timestamp, implementation_level) else {
-        return Err("FILE_NAME has invalid string encoding");
+    let Some(time_stamp) = decoded_string(file_name_timestamp, implementation_level, budget)?
+    else {
+        return invalid("FILE_NAME has invalid string encoding");
     };
-    if !is_decodable_string(file_name_value, implementation_level)
-        || !is_decodable_string_list(Some(authors), implementation_level)
-        || !is_decodable_string_list(Some(organizations), implementation_level)
-        || !is_decodable_string_or_omitted(preprocessor, implementation_level)
-        || !is_decodable_string_or_omitted(originating_system, implementation_level)
-        || !is_decodable_string_or_omitted(authorization, implementation_level)
+    if !is_decodable_string(file_name_value, implementation_level, budget)?
+        || !is_decodable_string_list(Some(authors), implementation_level, budget)?
+        || !is_decodable_string_list(Some(organizations), implementation_level, budget)?
+        || !is_decodable_string_or_omitted(preprocessor, implementation_level, budget)?
+        || !is_decodable_string_or_omitted(originating_system, implementation_level, budget)?
+        || !is_decodable_string_or_omitted(authorization, implementation_level, budget)?
     {
-        return Err("FILE_NAME has invalid string encoding");
+        return invalid("FILE_NAME has invalid string encoding");
     }
-    if !string_within_limit(file_name_value, implementation_level, 256)
-        || !string_within_limit(file_name_timestamp, implementation_level, 256)
-        || !string_list_within_limit(Some(authors), implementation_level, 256)
-        || !string_list_within_limit(Some(organizations), implementation_level, 256)
-        || !string_or_omitted_within_limit(preprocessor, implementation_level, 256)
-        || !string_or_omitted_within_limit(originating_system, implementation_level, 256)
-        || !string_or_omitted_within_limit(authorization, implementation_level, 256)
+    if !string_within_limit(file_name_value, implementation_level, 256, budget)?
+        || !string_within_limit(file_name_timestamp, implementation_level, 256, budget)?
+        || !string_list_within_limit(Some(authors), implementation_level, 256, budget)?
+        || !string_list_within_limit(Some(organizations), implementation_level, 256, budget)?
+        || !string_or_omitted_within_limit(preprocessor, implementation_level, 256, budget)?
+        || !string_or_omitted_within_limit(originating_system, implementation_level, 256, budget)?
+        || !string_or_omitted_within_limit(authorization, implementation_level, 256, budget)?
     {
-        return Err("FILE_NAME contains a string longer than 256 characters");
+        return invalid("FILE_NAME contains a string longer than 256 characters");
     }
     if !time_stamp.is_empty() && !valid_timestamp_text(&time_stamp) {
-        return Err("FILE_NAME has an invalid timestamp");
+        return invalid("FILE_NAME has an invalid timestamp");
     }
 
     let schema = &schema_record.parameters;
     let Some(Value::List(identifiers)) = schema.first() else {
-        return Err("FILE_SCHEMA must contain one schema identifier list");
+        return invalid("FILE_SCHEMA must contain one schema identifier list");
     };
     if schema.len() != 1 || identifiers.is_empty() {
-        return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
     }
-    let mut admitted = Vec::with_capacity(identifiers.len());
+    let mut admitted = Vec::new();
     let mut normalized_identifiers = BTreeSet::new();
     for value in identifiers {
         let Value::String(bytes) = value else {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        let Ok(identifier) = crate::strings::decode_with_level(bytes, implementation_level) else {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        let Some(identifier) = decoded_bytes(bytes, implementation_level, budget)? else {
+            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        if !normalized_identifiers.insert(identifier.trim().to_ascii_uppercase()) {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        let trimmed = identifier.trim();
+        if let Some(ctx) = budget {
+            ctx.charge_retained(
+                u64_from_index(trimmed.len()),
+                "step_schema_identifier_normalized",
+            )?;
+            ctx.charge_collection_items(1, "step_schema_identifier_names")?;
+        }
+        let normalized = trimmed.to_ascii_uppercase();
+        if !normalized_identifiers.insert(normalized) {
+            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         }
         let Some(identifier) = AdmittedSchemaIdentifier::admit(identifier) else {
-            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+            return invalid("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
-        admitted.push(identifier);
+        push_validated(budget, &mut admitted, identifier, "step_schema_identifiers")?;
     }
     Ok((
         HeaderAdmission {
@@ -1556,25 +1902,30 @@ fn validate_header(
 
 /// One diagnostic for each `FILE_SCHEMA` identifier that the header admits
 /// under its schema name alone.
-fn schema_object_identifier_diagnostics(
-    admitted: &[AdmittedSchemaIdentifier],
+fn schema_object_identifier_diagnostics<'a>(
+    admitted: &'a [AdmittedSchemaIdentifier],
     offset: usize,
-) -> Vec<ParseDiagnostic> {
+    budget: Option<&'a DecodeContext<'_>>,
+) -> impl Iterator<Item = Result<ParseDiagnostic, CodecError>> + 'a {
     admitted
         .iter()
-        .filter_map(|identifier| match identifier {
+        .filter_map(move |identifier| match identifier {
             AdmittedSchemaIdentifier::Valid { .. } => None,
             AdmittedSchemaIdentifier::ObjectIdentifierOutOfRange {
                 name, component, ..
-            } => Some(ParseDiagnostic {
-                offset,
-                kind: ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange,
-                message: format!(
+            } => Some(format_parser_text(
+                budget,
+                "step_schema_oid_diagnostic_text",
+                format_args!(
                     "FILE_SCHEMA identifier {name} has an out-of-range object identifier component {component}; the object identifier is not admitted"
                 ),
-            }),
+            )
+            .map(|message| ParseDiagnostic {
+                offset,
+                kind: ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange,
+                message,
+            })),
         })
-        .collect()
 }
 
 enum HeaderDataReferences {
@@ -1586,23 +1937,24 @@ fn validate_header_sections(
     implementation_level: ImplementationLevel,
     header: &[HeaderRecord],
     schema_identifiers: &[String],
-) -> Result<Vec<HeaderDataReferences>, &'static str> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Vec<HeaderDataReferences>, ValidationError> {
     let has = |name: &str| header.iter().any(|record| record.name == name);
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("FILE_POPULATION") {
-        return Err("2;1 forbids FILE_POPULATION in HEADER");
+        return invalid("2;1 forbids FILE_POPULATION in HEADER");
     }
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("SECTION_LANGUAGE") {
-        return Err("2;1 forbids SECTION_LANGUAGE in HEADER");
+        return invalid("2;1 forbids SECTION_LANGUAGE in HEADER");
     }
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("SECTION_CONTEXT") {
-        return Err("2;1 forbids SECTION_CONTEXT in HEADER");
+        return invalid("2;1 forbids SECTION_CONTEXT in HEADER");
     }
     match implementation_level {
         ImplementationLevel::LegacyEdition2 if has("SCHEMA_POPULATION") => {
-            return Err("3;1 forbids SCHEMA_POPULATION in HEADER");
+            return invalid("3;1 forbids SCHEMA_POPULATION in HEADER");
         }
         ImplementationLevel::Edition3Class1 if has("SCHEMA_POPULATION") => {
-            return Err("4;1 forbids SCHEMA_POPULATION in HEADER");
+            return invalid("4;1 forbids SCHEMA_POPULATION in HEADER");
         }
         _ => {}
     }
@@ -1618,16 +1970,16 @@ fn validate_header_sections(
             continue;
         }
         if user_defined {
-            return Err("built-in HEADER entities must precede user-defined entities");
+            return invalid("built-in HEADER entities must precede user-defined entities");
         }
         match record.name.as_str() {
             "SCHEMA_POPULATION" => {
                 if schema_population_seen {
-                    return Err("HEADER contains duplicate SCHEMA_POPULATION");
+                    return invalid("HEADER contains duplicate SCHEMA_POPULATION");
                 }
                 schema_population_seen = true;
-                if !valid_schema_population(&record.parameters, implementation_level) {
-                    return Err("SCHEMA_POPULATION has invalid parameters");
+                if !valid_schema_population(&record.parameters, implementation_level, budget)? {
+                    return invalid("SCHEMA_POPULATION has invalid parameters");
                 }
             }
             "FILE_POPULATION" => {
@@ -1635,27 +1987,77 @@ fn validate_header_sections(
                     &record.parameters,
                     schema_identifiers,
                     implementation_level,
+                    budget,
                 )
-                .map_err(|()| "FILE_POPULATION has invalid parameters")?;
-                references.push(HeaderDataReferences::FilePopulation(sections));
+                .map_err(|error| error.with_message("FILE_POPULATION has invalid parameters"))?;
+                push_validated(
+                    budget,
+                    &mut references,
+                    HeaderDataReferences::FilePopulation(sections),
+                    "step_header_data_references",
+                )?;
             }
             "SECTION_LANGUAGE" => {
-                let section = valid_section_language(&record.parameters, implementation_level)
-                    .map_err(|()| "SECTION_LANGUAGE has invalid parameters")?;
-                if !language_sections.insert(section.clone()) {
-                    return Err("HEADER contains duplicate SECTION_LANGUAGE section");
+                let section =
+                    valid_section_language(&record.parameters, implementation_level, budget)
+                        .map_err(|error| {
+                            error.with_message("SECTION_LANGUAGE has invalid parameters")
+                        })?;
+                if let Some(ctx) = budget {
+                    ctx.charge_collection_items(1, "step_section_language_names")?;
+                    ctx.charge_retained(
+                        u64_from_index(section.as_ref().map_or(0, String::len)),
+                        "step_section_language_name_copy",
+                    )?;
                 }
-                references.extend(section.map(HeaderDataReferences::Section));
+                let section_copy = section
+                    .as_deref()
+                    .map(|value| copy_parser_text(value, budget, "step_section_language_name_copy"))
+                    .transpose()
+                    .map_err(ValidationError::Resource)?;
+                if !language_sections.insert(section_copy) {
+                    return invalid("HEADER contains duplicate SECTION_LANGUAGE section");
+                }
+                if let Some(section) = section {
+                    push_validated(
+                        budget,
+                        &mut references,
+                        HeaderDataReferences::Section(section),
+                        "step_header_data_references",
+                    )?;
+                }
             }
             "SECTION_CONTEXT" => {
-                let section = valid_section_context(&record.parameters, implementation_level)
-                    .map_err(|()| "SECTION_CONTEXT has invalid parameters")?;
-                if !context_sections.insert(section.clone()) {
-                    return Err("HEADER contains duplicate SECTION_CONTEXT section");
+                let section =
+                    valid_section_context(&record.parameters, implementation_level, budget)
+                        .map_err(|error| {
+                            error.with_message("SECTION_CONTEXT has invalid parameters")
+                        })?;
+                if let Some(ctx) = budget {
+                    ctx.charge_collection_items(1, "step_section_context_names")?;
+                    ctx.charge_retained(
+                        u64_from_index(section.as_ref().map_or(0, String::len)),
+                        "step_section_context_name_copy",
+                    )?;
                 }
-                references.extend(section.map(HeaderDataReferences::Section));
+                let section_copy = section
+                    .as_deref()
+                    .map(|value| copy_parser_text(value, budget, "step_section_context_name_copy"))
+                    .transpose()
+                    .map_err(ValidationError::Resource)?;
+                if !context_sections.insert(section_copy) {
+                    return invalid("HEADER contains duplicate SECTION_CONTEXT section");
+                }
+                if let Some(section) = section {
+                    push_validated(
+                        budget,
+                        &mut references,
+                        HeaderDataReferences::Section(section),
+                        "step_header_data_references",
+                    )?;
+                }
             }
-            _ => return Err("HEADER contains an unsupported entity"),
+            _ => return invalid("HEADER contains an unsupported entity"),
         }
     }
     Ok(references)
@@ -1664,163 +2066,210 @@ fn validate_header_sections(
 fn valid_schema_population(
     parameters: &[Value],
     implementation_level: ImplementationLevel,
-) -> bool {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     let [Value::List(identifications)] = parameters else {
-        return false;
+        return Ok(false);
     };
-    !identifications.is_empty()
-        && identifications.iter().all(|identification| {
-            let Value::List(values) = identification else {
-                return false;
-            };
-            let [Value::String(address), time_stamp, digest] = values.as_slice() else {
-                return false;
-            };
-            decoded_bytes(address, implementation_level).is_some()
-                && valid_optional_timestamp(time_stamp, implementation_level)
-                && valid_optional_base64(digest, implementation_level)
-        })
+    if identifications.is_empty() {
+        return Ok(false);
+    }
+    for identification in identifications {
+        let Value::List(values) = identification else {
+            return Ok(false);
+        };
+        let [Value::String(address), time_stamp, digest] = values.as_slice() else {
+            return Ok(false);
+        };
+        if decoded_bytes(address, implementation_level, budget)?.is_none()
+            || !valid_optional_timestamp(time_stamp, implementation_level, budget)?
+            || !valid_optional_base64(digest, implementation_level, budget)?
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn admit_file_population(
     parameters: &[Value],
     schema_identifiers: &[String],
     implementation_level: ImplementationLevel,
-) -> Result<BTreeSet<String>, ()> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<BTreeSet<String>, ValidationError> {
     let [Value::String(schema), Value::String(determination), governed_sections] = parameters
     else {
-        return Err(());
+        return invalid("FILE_POPULATION has invalid parameters");
     };
-    let schema = decoded_bytes(schema, implementation_level).ok_or(())?;
+    let Some(schema) = decoded_bytes(schema, implementation_level, budget)? else {
+        return invalid("FILE_POPULATION has invalid parameters");
+    };
     if !valid_schema_identifier(&schema)
-        || decoded_bytes(determination, implementation_level).is_none()
-        || !schema_identifier_matches(schema_identifiers, &schema)
+        || decoded_bytes(determination, implementation_level, budget)?.is_none()
+        || !schema_identifier_matches(schema_identifiers, &schema, budget)?
     {
-        return Err(());
+        return invalid("FILE_POPULATION has invalid parameters");
     }
     match governed_sections {
         Value::Omitted => Ok(BTreeSet::new()),
         Value::List(sections) if !sections.is_empty() => {
             let mut names = BTreeSet::new();
             for section in sections {
-                let section = decoded_string(section, implementation_level).ok_or(())?;
+                let Some(section) = decoded_string(section, implementation_level, budget)? else {
+                    return invalid("FILE_POPULATION has invalid parameters");
+                };
+                if let Some(ctx) = budget {
+                    ctx.charge_collection_items(1, "step_file_population_sections")?;
+                }
                 if !names.insert(section) {
-                    return Err(());
+                    return invalid("FILE_POPULATION has invalid parameters");
                 }
             }
             Ok(names)
         }
-        _ => Err(()),
+        _ => invalid("FILE_POPULATION has invalid parameters"),
     }
 }
 
 fn valid_section_language(
     parameters: &[Value],
     implementation_level: ImplementationLevel,
-) -> Result<Option<String>, ()> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, ValidationError> {
     let [section, language] = parameters else {
-        return Err(());
+        return invalid("SECTION_LANGUAGE has invalid parameters");
     };
-    let Some(language) = decoded_string(language, implementation_level) else {
-        return Err(());
+    let Some(language) = decoded_string(language, implementation_level, budget)? else {
+        return invalid("SECTION_LANGUAGE has invalid parameters");
     };
     if language.len() != 3 || !language.bytes().all(|byte| byte.is_ascii_alphabetic()) {
-        return Err(());
+        return invalid("SECTION_LANGUAGE has invalid parameters");
     }
-    valid_optional_section_name(section, implementation_level)
+    valid_optional_section_name(section, implementation_level, budget)
 }
 
 fn valid_section_context(
     parameters: &[Value],
     implementation_level: ImplementationLevel,
-) -> Result<Option<String>, ()> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, ValidationError> {
     let [section, Value::List(contexts)] = parameters else {
-        return Err(());
+        return invalid("SECTION_CONTEXT has invalid parameters");
     };
-    if contexts.is_empty()
-        || !contexts
-            .iter()
-            .all(|context| decoded_string(context, implementation_level).is_some())
-    {
-        return Err(());
+    if contexts.is_empty() {
+        return invalid("SECTION_CONTEXT has invalid parameters");
     }
-    valid_optional_section_name(section, implementation_level)
+    for context in contexts {
+        if decoded_string(context, implementation_level, budget)?.is_none() {
+            return invalid("SECTION_CONTEXT has invalid parameters");
+        }
+    }
+    valid_optional_section_name(section, implementation_level, budget)
 }
 
 fn valid_optional_section_name(
     value: &Value,
     implementation_level: ImplementationLevel,
-) -> Result<Option<String>, ()> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, ValidationError> {
     match value {
         Value::Omitted => Ok(None),
-        value => decoded_string(value, implementation_level)
+        value => decoded_string(value, implementation_level, budget)?
             .map(Some)
-            .ok_or(()),
+            .ok_or(ValidationError::Invalid("invalid section name")),
     }
 }
 
-fn is_decodable_string(value: &Value, implementation_level: ImplementationLevel) -> bool {
-    decoded_string(value, implementation_level).is_some()
+fn is_decodable_string(
+    value: &Value,
+    implementation_level: ImplementationLevel,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    Ok(decoded_string(value, implementation_level, budget)?.is_some())
 }
 
 fn is_decodable_string_list(
     value: Option<&Value>,
     implementation_level: ImplementationLevel,
-) -> bool {
-    matches!(
-        value,
-        Some(Value::List(values))
-            if !values.is_empty()
-                && values
-                    .iter()
-                    .all(|value| is_decodable_string(value, implementation_level))
-    )
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    let Some(Value::List(values)) = value else {
+        return Ok(false);
+    };
+    if values.is_empty() {
+        return Ok(false);
+    }
+    for value in values {
+        if !is_decodable_string(value, implementation_level, budget)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn is_decodable_string_or_omitted(
     value: &Value,
     implementation_level: ImplementationLevel,
-) -> bool {
-    matches!(value, Value::Omitted) || is_decodable_string(value, implementation_level)
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    if matches!(value, Value::Omitted) {
+        return Ok(true);
+    }
+    is_decodable_string(value, implementation_level, budget)
 }
 
 fn string_within_limit(
     value: &Value,
     implementation_level: ImplementationLevel,
     limit: usize,
-) -> bool {
-    decoded_string(value, implementation_level).is_some_and(|value| value.chars().count() <= limit)
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    Ok(decoded_string(value, implementation_level, budget)?
+        .is_some_and(|value| value.chars().count() <= limit))
 }
 
 fn string_list_within_limit(
     value: Option<&Value>,
     implementation_level: ImplementationLevel,
     limit: usize,
-) -> bool {
-    matches!(
-        value,
-        Some(Value::List(values))
-            if !values.is_empty()
-                && values.iter().all(|value| {
-                    string_within_limit(value, implementation_level, limit)
-                })
-    )
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    let Some(Value::List(values)) = value else {
+        return Ok(false);
+    };
+    if values.is_empty() {
+        return Ok(false);
+    }
+    for value in values {
+        if !string_within_limit(value, implementation_level, limit, budget)? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn string_or_omitted_within_limit(
     value: &Value,
     implementation_level: ImplementationLevel,
     limit: usize,
-) -> bool {
-    matches!(value, Value::Omitted) || string_within_limit(value, implementation_level, limit)
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    if matches!(value, Value::Omitted) {
+        return Ok(true);
+    }
+    string_within_limit(value, implementation_level, limit, budget)
 }
 
-fn valid_optional_timestamp(value: &Value, implementation_level: ImplementationLevel) -> bool {
+fn valid_optional_timestamp(
+    value: &Value,
+    implementation_level: ImplementationLevel,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     match value {
-        Value::Omitted => true,
-        Value::String(_) => decoded_string(value, implementation_level)
-            .is_some_and(|value| valid_timestamp_text(&value)),
-        _ => false,
+        Value::Omitted => Ok(true),
+        Value::String(_) => Ok(decoded_string(value, implementation_level, budget)?
+            .is_some_and(|value| valid_timestamp_text(&value))),
+        _ => Ok(false),
     }
 }
 
@@ -1910,12 +2359,16 @@ fn parse_ascii_digits(bytes: &[u8]) -> usize {
         .fold(0, |value, byte| value * 10 + usize::from(byte - b'0'))
 }
 
-fn valid_optional_base64(value: &Value, implementation_level: ImplementationLevel) -> bool {
+fn valid_optional_base64(
+    value: &Value,
+    implementation_level: ImplementationLevel,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
     match value {
-        Value::Omitted => true,
-        Value::String(_) => decoded_string(value, implementation_level)
-            .is_some_and(|value| valid_base64_text(value.as_bytes())),
-        _ => false,
+        Value::Omitted => Ok(true),
+        Value::String(_) => Ok(decoded_string(value, implementation_level, budget)?
+            .is_some_and(|value| valid_base64_text(value.as_bytes()))),
+        _ => Ok(false),
     }
 }
 
@@ -1951,24 +2404,49 @@ fn valid_base64_text(bytes: &[u8]) -> bool {
     quantum_len == 0
 }
 
-fn decoded_string(value: &Value, implementation_level: ImplementationLevel) -> Option<String> {
+fn decoded_string(
+    value: &Value,
+    implementation_level: ImplementationLevel,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, CodecError> {
     let Value::String(bytes) = value else {
-        return None;
+        return Ok(None);
     };
-    decoded_bytes(bytes, implementation_level)
+    decoded_bytes(bytes, implementation_level, budget)
 }
 
-fn decoded_bytes(bytes: &[u8], implementation_level: ImplementationLevel) -> Option<String> {
-    crate::strings::decode_with_level(bytes, implementation_level).ok()
+fn decoded_bytes(
+    bytes: &[u8],
+    implementation_level: ImplementationLevel,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Option<String>, CodecError> {
+    let result = match budget {
+        Some(ctx) => crate::strings::decode_with_context(bytes, implementation_level, ctx),
+        None => crate::strings::decode_with_level(bytes, implementation_level)
+            .map_err(crate::strings::StringDecodeFailure::Invalid),
+    };
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(crate::strings::StringDecodeFailure::Invalid(_)) => Ok(None),
+        Err(crate::strings::StringDecodeFailure::Resource(error)) => Err(error),
+    }
 }
 
-fn schema_identifier_matches(schema_identifiers: &[String], schema_name: &str) -> bool {
-    let schema_name = schema_name.trim().to_ascii_uppercase();
-    schema_identifiers.iter().any(|identifier| {
+fn schema_identifier_matches(
+    schema_identifiers: &[String],
+    schema_name: &str,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<bool, CodecError> {
+    let trimmed = schema_name.trim();
+    if let Some(ctx) = budget {
+        ctx.charge_retained(u64_from_index(trimmed.len()), "step_schema_name_matching")?;
+    }
+    let schema_name = trimmed.to_ascii_uppercase();
+    Ok(schema_identifiers.iter().any(|identifier| {
         let identifier = identifier.trim();
         identifier == schema_name
             || split_schema_identifier(identifier).is_some_and(|(name, _)| name == schema_name)
-    })
+    }))
 }
 
 fn validate_header_data_references(
@@ -2000,34 +2478,53 @@ fn valid_data_parameters(
     schema_identifiers: &[String],
     implementation_level: ImplementationLevel,
     section_names: &mut BTreeSet<String>,
-) -> Result<(), &'static str> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<(), ValidationError> {
     let [Value::String(section_name), Value::List(schema)] = parameters else {
-        return Err("DATA section parameters must contain a name and one schema");
+        return invalid("DATA section parameters must contain a name and one schema");
     };
     let [Value::String(schema_name)] = schema.as_slice() else {
-        return Err("DATA section parameters must contain a name and one schema");
+        return invalid("DATA section parameters must contain a name and one schema");
     };
-    let section_name = crate::strings::decode_with_level(section_name, implementation_level)
-        .map_err(|_| "DATA section parameters contain an invalid string")?;
-    if !section_names.insert(section_name) {
-        return Err("DATA section names must be unique");
+    let Some(section_name) = decoded_bytes(section_name, implementation_level, budget)? else {
+        return invalid("DATA section parameters contain an invalid string");
+    };
+    if let Some(ctx) = budget {
+        ctx.charge_collection_items(1, "step_data_section_names")?;
     }
-    let schema_name = crate::strings::decode_with_level(schema_name, implementation_level)
-        .map_err(|_| "DATA section parameters contain an invalid string")?;
+    if !section_names.insert(section_name) {
+        return invalid("DATA section names must be unique");
+    }
+    let Some(schema_name) = decoded_bytes(schema_name, implementation_level, budget)? else {
+        return invalid("DATA section parameters contain an invalid string");
+    };
     if !valid_schema_identifier(&schema_name)
-        || !schema_identifier_matches(schema_identifiers, &schema_name)
+        || !schema_identifier_matches(schema_identifiers, &schema_name, budget)?
     {
-        return Err("DATA section schema is not listed in FILE_SCHEMA");
+        return invalid("DATA section schema is not listed in FILE_SCHEMA");
     }
     Ok(())
 }
 
 /// The admitted `FILE_SCHEMA` identifiers, for schema-name matching.
-fn schema_names_for_matching(admitted: &[AdmittedSchemaIdentifier]) -> Vec<String> {
-    admitted
-        .iter()
-        .map(|identifier| identifier.text().to_ascii_uppercase())
-        .collect()
+fn schema_names_for_matching(
+    admitted: &[AdmittedSchemaIdentifier],
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<Vec<String>, ParseError> {
+    let mut names = Vec::new();
+    for identifier in admitted {
+        let source = identifier.text();
+        if let Some(ctx) = budget {
+            ctx.charge_retained(u64_from_index(source.len()), "step_schema_matching_name")?;
+        }
+        push_charged(
+            budget,
+            &mut names,
+            source.to_ascii_uppercase(),
+            "step_schema_matching_names",
+        )?;
+    }
+    Ok(names)
 }
 
 fn is_string_list(value: Option<&Value>) -> bool {
@@ -2188,17 +2685,42 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     }
                     self.charge_nodes(*nodes)?;
                     self.charge_storage(value)?;
-                    return Ok((value.clone(), *nodes, *nodes));
+                    return Ok((
+                        try_clone_value(value, self.budget, "step_anchor_memo_value_copy")
+                            .map_err(ResolveError::Resource)?,
+                        *nodes,
+                        *nodes,
+                    ));
                 }
                 if stack.contains(&name) {
-                    return Err(format!("cyclic anchor binding <{name}>").into());
+                    let message = format_parser_text(
+                        self.budget,
+                        "step_cyclic_anchor_error_text",
+                        format_args!("cyclic anchor binding <{name}>"),
+                    )
+                    .map_err(ResolveError::Resource)?;
+                    return Err(message.into());
                 }
                 value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
                 if let Some(context) = self.budget {
                     context
                         .charge_collection_items(1, "step_anchor_reference_stack")
                         .map_err(ResolveError::Resource)?;
+                    if stack.len() == stack.capacity() {
+                        context
+                            .charge_retained(
+                                u64_from_index(size_of::<&str>()),
+                                "step_anchor_reference_stack_storage",
+                            )
+                            .map_err(ResolveError::Resource)?;
+                    }
                 }
+                stack.try_reserve(1).map_err(|_| {
+                    ResolveError::Resource(refuse_index(
+                        self.budget,
+                        "step_anchor_reference_stack_storage",
+                    ))
+                })?;
                 stack.push(name);
                 let resolved = self.resolve(source, stack, budget, depth + 1);
                 stack.pop();
@@ -2219,7 +2741,14 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         )
                         .map_err(ResolveError::Resource)?;
                 }
-                self.memo.insert(name, (value.clone(), nodes));
+                self.memo.insert(
+                    name,
+                    (
+                        try_clone_value(&value, self.budget, "step_anchor_memo_value_copy")
+                            .map_err(ResolveError::Resource)?,
+                        nodes,
+                    ),
+                );
                 return Ok((value, nodes, nodes));
             }
         }
@@ -2241,7 +2770,15 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 )?;
                 let mut nodes = 1usize;
                 let mut expanded_nodes = 0usize;
-                let mut resolved = Vec::with_capacity(values.len());
+                let mut resolved = Vec::new();
+                resolved.try_reserve_exact(values.len()).map_err(|_| {
+                    ResolveError::Resource(match self.budget {
+                        Some(ctx) => ctx.refuse_codec_limit("step_anchor_list_items", 0, 1),
+                        None => {
+                            cadmpeg_core::decode::refuse_local_limit("step_anchor_list_items", 0, 1)
+                        }
+                    })
+                })?;
                 for value in values {
                     let remaining = budget
                         .checked_sub(expanded_nodes)
@@ -2267,13 +2804,22 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         .checked_add(u64_from_index(name.len()))
                         .ok_or("anchor typed storage exceeds u64")?,
                 )?;
-                let value = Value::Typed(name.clone(), Box::new(value));
+                let value = Value::Typed(
+                    copy_parser_text(name, self.budget, "step_anchor_typed_name_copy")
+                        .map_err(ResolveError::Resource)?,
+                    Box::new(value),
+                );
                 Ok((value, nodes + 1, expanded_nodes))
             }
             value => {
                 self.charge_nodes(1)?;
                 self.charge_storage(value)?;
-                Ok((value.clone(), 1, 0))
+                Ok((
+                    try_clone_value(value, self.budget, "step_anchor_leaf_copy")
+                        .map_err(ResolveError::Resource)?,
+                    1,
+                    0,
+                ))
             }
         }
     }
@@ -2339,7 +2885,8 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
 
     fn clone_leaf(&self, value: &Value) -> Result<Value, ResolveError> {
         self.admit_copy(1, value_node_storage_bytes(value))?;
-        Ok(value.clone())
+        try_clone_value(value, self.budget, "step_reference_leaf_copy")
+            .map_err(ResolveError::Resource)
     }
 
     fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, ResolveError> {
@@ -2371,11 +2918,21 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                     .checked_add(allocation_bytes(values.len(), size_of::<Value>()))
                     .ok_or("reference list storage exceeds u64")?;
                 self.admit_copy(1, bytes)?;
-                values
-                    .iter()
-                    .map(|value| self.resolve_value(value, depth + 1))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map(Value::List)
+                let mut resolved = Vec::new();
+                resolved.try_reserve_exact(values.len()).map_err(|_| {
+                    ResolveError::Resource(match self.budget {
+                        Some(ctx) => ctx.refuse_codec_limit("step_reference_list_items", 0, 1),
+                        None => cadmpeg_core::decode::refuse_local_limit(
+                            "step_reference_list_items",
+                            0,
+                            1,
+                        ),
+                    })
+                })?;
+                for value in values {
+                    resolved.push(self.resolve_value(value, depth + 1)?);
+                }
+                Ok(Value::List(resolved))
             }
             Value::Typed(name, value) => {
                 let resolved = self.resolve_value(value, depth + 1)?;
@@ -2383,7 +2940,11 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                     .checked_add(u64_from_index(name.len()))
                     .ok_or("reference typed storage exceeds u64")?;
                 self.admit_copy(1, bytes)?;
-                Ok(Value::Typed(name.clone(), Box::new(resolved)))
+                Ok(Value::Typed(
+                    copy_parser_text(name, self.budget, "step_reference_typed_name_copy")
+                        .map_err(ResolveError::Resource)?,
+                    Box::new(resolved),
+                ))
             }
             _ => self.clone_leaf(value),
         }
@@ -2418,7 +2979,18 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             context
                 .charge_collection_items(1, "step_reference_stack")
                 .map_err(ResolveError::Resource)?;
+            if self.stack.len() == self.stack.capacity() {
+                context
+                    .charge_retained(
+                        u64_from_index(size_of::<ReferenceName>()),
+                        "step_reference_stack_storage",
+                    )
+                    .map_err(ResolveError::Resource)?;
+            }
         }
+        self.stack.try_reserve(1).map_err(|_| {
+            ResolveError::Resource(refuse_index(self.budget, "step_reference_stack_storage"))
+        })?;
         self.stack.push(key);
         let resolved = self.resolve_value(anchor, depth + 1);
         self.stack.pop();
@@ -2473,10 +3045,15 @@ fn resolve_local_references(
             .charge_retained(bytes, "step_reference_anchor_copy_storage")
             .map_err(ResolveError::Resource)?;
     }
-    let anchor_bindings = anchors
-        .iter()
-        .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
-        .collect::<BTreeMap<_, _>>();
+    let mut anchor_bindings = BTreeMap::new();
+    for anchor in anchors.iter() {
+        anchor_bindings.insert(
+            copy_parser_text(&anchor.name, budget, "step_reference_anchor_name_copy")
+                .map_err(ResolveError::Resource)?,
+            try_clone_value(&anchor.value, budget, "step_reference_anchor_value_copy")
+                .map_err(ResolveError::Resource)?,
+        );
+    }
     let mut resolver = ReferenceResolver::new(references, &anchor_bindings, budget)?;
     for anchor in anchors {
         anchor.value = resolver.resolve_value(&anchor.value, 0)?;
@@ -2556,17 +3133,34 @@ fn value_node_count(
     Ok(limit - remaining)
 }
 
-fn references(value: &Value, entity_out: &mut Vec<u64>, value_out: &mut Vec<u64>) {
-    let mut pending = vec![value];
+fn references(
+    value: &Value,
+    entity_out: &mut Vec<u64>,
+    value_out: &mut Vec<u64>,
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<(), ParseError> {
+    let mut pending = Vec::new();
+    push_charged(budget, &mut pending, value, "step_parse_reference_pending")?;
     while let Some(value) = pending.pop() {
         match value {
-            Value::Reference(id) => entity_out.push(*id),
-            Value::ValueReference(id) => value_out.push(*id),
-            Value::List(values) => pending.extend(values.iter().rev()),
-            Value::Typed(_, value) => pending.push(value),
+            Value::Reference(id) => {
+                push_charged(budget, entity_out, *id, "step_parse_reference_ids")?;
+            }
+            Value::ValueReference(id) => {
+                push_charged(budget, value_out, *id, "step_parse_value_reference_ids")?;
+            }
+            Value::List(values) => {
+                for child in values.iter().rev() {
+                    push_charged(budget, &mut pending, child, "step_parse_reference_pending")?;
+                }
+            }
+            Value::Typed(_, value) => {
+                push_charged(budget, &mut pending, value, "step_parse_reference_pending")?;
+            }
             _ => {}
         }
     }
+    Ok(())
 }
 
 fn contains_class3_occurrence(value: &Value) -> bool {

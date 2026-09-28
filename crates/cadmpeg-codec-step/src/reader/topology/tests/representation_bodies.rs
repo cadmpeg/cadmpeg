@@ -7,10 +7,31 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::BodyId;
 
-use super::super::{representation_bodies, TopologyData};
+use super::super::{admitted_body_clone, representation_bodies, TopologyData};
 
 fn body_id() -> BodyId {
     BodyId::try_from("step:data:body#1").expect("test body id")
+}
+
+#[test]
+fn representation_body_vector_refuses_before_two_item_copy() {
+    let bodies = [
+        body_id(),
+        BodyId::try_from("step:data:body#2").expect("test body id"),
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"bodies", &arena, &policy)
+        .expect("root fits selected profile");
+    let error = admitted_body_clone(&bodies, Some(&ctx), "step_representation_body_test_copy")
+        .expect_err("two body slots exceed one collection item");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "step_representation_body_test_copy"
+    ));
 }
 
 fn topology_with_body_at(root: u64) -> TopologyData {

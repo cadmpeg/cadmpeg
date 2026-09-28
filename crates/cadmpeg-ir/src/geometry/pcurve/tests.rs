@@ -9,6 +9,30 @@ use crate::{
 };
 
 #[test]
+fn admitted_pcurve_parts_keep_rational_pole_storage() {
+    use crate::geometry::pcurve::PcurveNurbsPoles;
+
+    let original = pcurve();
+    let poles = original.pole_rows().clone();
+    let PcurveNurbsPoles::Rational { points } = &poles else {
+        panic!("fixture must be rational");
+    };
+    let storage = points.as_ptr();
+    let rebuilt = PcurveNurbs::from_admitted_rows(
+        original.degree(),
+        original.knots().clone(),
+        poles,
+        original.periodic(),
+    )
+    .unwrap();
+    let PcurveNurbsPoles::Rational { points } = rebuilt.pole_rows() else {
+        panic!("rebuilt pcurve must be rational");
+    };
+    assert_eq!(points.as_ptr(), storage);
+    assert_eq!(rebuilt, original);
+}
+
+#[test]
 fn pcurve_copy_refuses_knot_and_pole_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

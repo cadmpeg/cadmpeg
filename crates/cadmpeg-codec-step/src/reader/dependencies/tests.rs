@@ -13,6 +13,114 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::exchange::decode_inline;
 use crate::StepCodec;
 
+const DEPENDENCY_LIMIT_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DOCUMENT_TYPE('type');#2=DOCUMENT('id','name','',#1);#3=APPLIED_DOCUMENT_REFERENCE(#2,'source',(#4));#4=ITEM();#5=EXTERNAL_SOURCE('uri');#6=EXTERNALLY_DEFINED_ITEM('item',#5);ENDSEC;END-ISO-10303-21;";
+
+fn dependency_collection_refusal(operation: &str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::parse::parse(DEPENDENCY_LIMIT_SOURCE).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..128).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(DEPENDENCY_LIMIT_SOURCE, &arena, &policy)
+            .expect("root fits collection policy");
+        matches!(
+            super::decode(&exchange, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::CollectionItems
+                    && refusal.operation == operation
+        )
+    });
+    assert!(refused, "no collection limit refused {operation}");
+}
+
+macro_rules! dependency_collection_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            dependency_collection_refusal($operation);
+        }
+    };
+}
+
+dependency_collection_test!(
+    dependency_documents_refuse_limit,
+    "step_dependency_documents"
+);
+dependency_collection_test!(dependency_sources_refuse_limit, "step_dependency_sources");
+dependency_collection_test!(dependency_claims_refuse_limit, "step_dependency_claims");
+dependency_collection_test!(
+    dependency_note_set_refuses_limit,
+    "step_dependency_note_set"
+);
+dependency_collection_test!(
+    dependency_note_vector_refuses_limit,
+    "step_dependency_note_vector"
+);
+
+#[test]
+fn dependency_note_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::parse::parse(DEPENDENCY_LIMIT_SOURCE).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let refused = (0..2048).any(|limit| {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(DEPENDENCY_LIMIT_SOURCE, &arena, &policy)
+            .expect("root fits retained policy");
+        matches!(
+            super::decode(&exchange, &ctx),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RetainedBytes
+                    && refusal.operation == "step_dependency_note_text"
+        )
+    });
+    assert!(refused, "no retained limit refused dependency note text");
+}
+
+#[test]
+fn dependency_string_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (exchange, _) = crate::parse::parse(DEPENDENCY_LIMIT_SOURCE).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(DEPENDENCY_LIMIT_SOURCE, &arena, &policy)
+        .expect("root fits retained policy");
+    assert!(matches!(
+        super::decode(&exchange, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_string_text"
+    ));
+}
+
+#[test]
+fn dependency_invalid_string_loss_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DOCUMENT_TYPE('type');#2=DOCUMENT('\\X\\GG','name','',#1);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(SOURCE).expect("valid exchange");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 1;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &policy).expect("root fits retained policy");
+    assert!(matches!(
+        super::decode(&exchange, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == "step_invalid_string_loss_text"
+    ));
+}
+
 #[test]
 pub(crate) fn decode_reports_data_section_external_dependencies() {
     let bytes = include_bytes!("../../../tests/fixtures/ap242_external_documents.p21");
@@ -150,7 +258,7 @@ fn bind_entity_reference(
     if resource_uri.is_empty() || anchor_name.is_empty() {
         return Err("reference has an incomplete resource identity");
     }
-    if root.schema_identifiers() != target.schema_identifiers() {
+    if !root.schema_identifiers().eq(target.schema_identifiers()) {
         return Err("resource schemas differ");
     }
     let root_units = unit_signatures(root);
@@ -526,7 +634,7 @@ fn compose_part26_point(
     if source.mapping_edition != "ISO/TS 10303-26:2011" {
         return Part26Composition::Unbound("Part 26 mapping edition is not selected");
     }
-    if source.schema_id != target.schema_identifiers().join(",") {
+    if source.schema_id != target.schema_identifiers().collect::<Vec<_>>().join(",") {
         return Part26Composition::Unbound("resource schemas differ");
     }
     if source.unit_signature != part21_unit_signature(target) {

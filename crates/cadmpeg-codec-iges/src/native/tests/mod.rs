@@ -15,6 +15,415 @@ use crate::test_support::test_curves_and_surfaces::point_file;
 use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
 use crate::IgesCodec;
 
+#[test]
+fn native_token_copy_refuses_outer_and_nested_allocations() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let tokens = [crate::parameter::Token {
+        value: crate::parameter::TokenValue::String(b"abc".to_vec()),
+        span: 0..3,
+    }];
+    for (collection_cap, retained_cap, dimension, operation) in [
+        (
+            0,
+            16,
+            ResourceDimension::CollectionItems,
+            "iges native token slots",
+        ),
+        (
+            1,
+            2,
+            ResourceDimension::RetainedBytes,
+            "iges native token bytes",
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = collection_cap;
+        policy.limits.max_retained_bytes = retained_cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::copy_native_tokens(&ctx, &tokens),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == dimension && limit.operation == operation
+        ));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(super::copy_native_tokens(&ctx, &tokens).unwrap(), tokens);
+}
+
+#[test]
+fn native_entity_links_refuse_slots_and_text_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    for (collection_cap, retained_cap, dimension, operation) in [
+        (
+            0,
+            64,
+            ResourceDimension::CollectionItems,
+            "iges native test links",
+        ),
+        (
+            1,
+            1,
+            ResourceDimension::RetainedBytes,
+            "iges native linked entity id",
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = collection_cap;
+        policy.limits.max_retained_bytes = retained_cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::native_entity_ids(&ctx, [3], "iges native test links"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == dimension && limit.operation == operation
+        ));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        super::native_entity_ids(&ctx, [3], "iges native test links").unwrap(),
+        ["iges:entity:directory#3"]
+    );
+}
+
+#[test]
+fn native_parameter_record_refuses_bytes_tokens_and_comment() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let record = crate::parameter::ParameterRecord::from_test_tokens(
+        1,
+        1..2,
+        b"abc".to_vec(),
+        1,
+        vec![crate::parameter::Token {
+            value: crate::parameter::TokenValue::String(b"d".to_vec()),
+            span: 0..1,
+        }],
+        b"e".to_vec(),
+    );
+    for (collection_cap, retained_cap, dimension, operation) in [
+        (
+            1,
+            2,
+            ResourceDimension::RetainedBytes,
+            "iges native parameter bytes",
+        ),
+        (
+            0,
+            8,
+            ResourceDimension::CollectionItems,
+            "iges native token slots",
+        ),
+        (
+            1,
+            3,
+            ResourceDimension::RetainedBytes,
+            "iges native token bytes",
+        ),
+        (
+            1,
+            4,
+            ResourceDimension::RetainedBytes,
+            "iges native parameter comment",
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = collection_cap;
+        policy.limits.max_retained_bytes = retained_cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::copy_native_parameter_record(&ctx, &record),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == dimension && limit.operation == operation
+        ));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let copy = super::copy_native_parameter_record(&ctx, &record).unwrap();
+    assert_eq!(copy.bytes, record.bytes);
+    assert_eq!(copy.parameters, record.tokens());
+    assert_eq!(copy.comment, record.comment);
+}
+
+#[test]
+fn native_ambiguity_and_entity_slots_refuse_after_input_indexes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = point_file();
+    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let (directory, quarantined_directory) =
+        crate::directory::parse(&scan, global.global_table(), Some(&parse_ctx)).unwrap();
+    let assembly = crate::parameter::assemble_with_context(
+        &scan,
+        &directory,
+        &quarantined_directory,
+        &global,
+        Some(&parse_ctx),
+    )
+    .unwrap();
+    assert_eq!(directory.len(), 1);
+    assert_eq!(directory[0].sequence, 1);
+    assert_eq!(assembly.records.len(), 1);
+    assert!(quarantined_directory.is_empty());
+    assert!(assembly.quarantined.is_empty());
+
+    for (ambiguous, operation) in [
+        (false, "iges native entity slots"),
+        (true, "iges native ambiguous boundary slots"),
+    ] {
+        let mut analysis = assembly.trailing_pointer_analysis.clone();
+        if ambiguous {
+            analysis.insert(
+                1,
+                crate::parameter::TrailingPointerAnalysis::Ambiguous {
+                    candidates: 2,
+                    valid: 2,
+                },
+            );
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = (scan.lines.len() + 3) as u64;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::store(
+            &mut cadmpeg_ir::CadIr::empty(),
+            &scan,
+            &directory,
+            &assembly.records,
+            &analysis,
+            super::QuarantinedRecords {
+                directory: &quarantined_directory,
+                parameters: &assembly.quarantined,
+            },
+            None,
+            &crate::entities::geometry::SourceSequences::default(),
+            &[],
+            &mut std::collections::BTreeMap::new(),
+            &global,
+            super::ProductOccurrenceLimits::new(100_000, 64),
+            &ctx,
+        );
+        let observed = result.as_ref().err().map(ToString::to_string);
+        assert!(
+            matches!(
+                result,
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.dimension == ResourceDimension::CollectionItems
+                        && limit.operation == operation
+            ),
+            "observed {observed:?}"
+        );
+    }
+}
+
+#[test]
+fn native_required_back_pointer_member_refuses_node_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "POINT".into(),
+            status: "00000000",
+            parameters: "116,1,2,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 1,
+            label: "GROUP".into(),
+            status: "00000000",
+            parameters: "402,1,1;".into(),
+        },
+    ]);
+    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let (directory, quarantined_directory) =
+        crate::directory::parse(&scan, global.global_table(), Some(&parse_ctx)).unwrap();
+    let assembly = crate::parameter::assemble_with_context(
+        &scan,
+        &directory,
+        &quarantined_directory,
+        &global,
+        Some(&parse_ctx),
+    )
+    .unwrap();
+    assert_eq!(directory.len(), 2);
+    assert_eq!(assembly.records.len(), 2);
+    assert!(quarantined_directory.is_empty());
+    assert!(assembly.quarantined.is_empty());
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = (scan.lines.len() + 6) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = super::store(
+        &mut cadmpeg_ir::CadIr::empty(),
+        &scan,
+        &directory,
+        &assembly.records,
+        &assembly.trailing_pointer_analysis,
+        super::QuarantinedRecords {
+            directory: &quarantined_directory,
+            parameters: &assembly.quarantined,
+        },
+        None,
+        &crate::entities::geometry::SourceSequences::default(),
+        &[],
+        &mut std::collections::BTreeMap::new(),
+        &global,
+        super::ProductOccurrenceLimits::new(100_000, 64),
+        &ctx,
+    );
+    let observed = result.as_ref().err().map(ToString::to_string);
+    assert!(
+        matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "iges native required back-pointer member"
+        ),
+        "observed {observed:?}"
+    );
+}
+
+#[test]
+fn native_input_card_and_lookup_indexes_refuse_collection_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = point_file();
+    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let (directory, quarantined_directory) =
+        crate::directory::parse(&scan, global.global_table(), Some(&parse_ctx)).unwrap();
+    let assembly = crate::parameter::assemble_with_context(
+        &scan,
+        &directory,
+        &quarantined_directory,
+        &global,
+        Some(&parse_ctx),
+    )
+    .unwrap();
+    assert!(quarantined_directory.is_empty());
+    assert!(assembly.quarantined.is_empty());
+    assert_eq!(assembly.records.len(), 1);
+    let quarantine = || super::QuarantinedRecords {
+        directory: &quarantined_directory,
+        parameters: &assembly.quarantined,
+    };
+    for (cap, operation) in [
+        (0, "iges native card slots"),
+        (scan.lines.len() as u64, "iges native parameter index"),
+        (
+            (scan.lines.len() + assembly.records.len()) as u64,
+            "iges native directory index",
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::index_native_inputs(&scan, &directory, &assembly.records, quarantine(), &ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+        ));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let indexes =
+        super::index_native_inputs(&scan, &directory, &assembly.records, quarantine(), &ctx)
+            .unwrap();
+    assert_eq!(indexes.cards.len(), scan.lines.len());
+    assert_eq!(indexes.by_directory.len(), 1);
+    assert_eq!(indexes.entries.len(), 1);
+}
+
+#[test]
+fn native_quarantine_indexes_refuse_each_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "00000000",
+        parameters: "116,1,2,3x4,0;".into(),
+    }]);
+    let scan = crate::card::scan(&bytes).unwrap();
+    let arena = DecodeArena::new();
+    let (parse_ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
+    let (directory, parsed_quarantine) =
+        crate::directory::parse(&scan, global.global_table(), Some(&parse_ctx)).unwrap();
+    let assembly = crate::parameter::assemble_with_context(
+        &scan,
+        &directory,
+        &parsed_quarantine,
+        &global,
+        Some(&parse_ctx),
+    )
+    .unwrap();
+    assert_eq!(assembly.quarantined.len(), 1);
+    let quarantined_directory = [crate::directory::QuarantinedDirectoryRecord {
+        sequence: 3,
+        source_offset: 0,
+        bytes: Vec::new(),
+        defect: crate::directory::DirectoryDefect::UnpairedCard,
+    }];
+    let quarantine = || super::QuarantinedRecords {
+        directory: &quarantined_directory,
+        parameters: &assembly.quarantined,
+    };
+    for (cap, operation) in [
+        (0, "iges native quarantined directory slots"),
+        (1, "iges native quarantined parameter slots"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::index_native_inputs(&scan, &directory, &assembly.records, quarantine(), &ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+        ));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let indexes =
+        super::index_native_inputs(&scan, &directory, &assembly.records, quarantine(), &ctx)
+            .unwrap();
+    assert_eq!(indexes.quarantined_directory_records.len(), 1);
+    assert_eq!(indexes.quarantined_parameter_records.len(), 1);
+}
+
+mod allocation_limits;
 mod annotations;
 mod counted_lists;
 mod fem;
@@ -225,7 +634,8 @@ fn decode_preserves_native_entities_and_graph() {
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message == "IGES entity type 116 form 0 retained without neutral projection"
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
