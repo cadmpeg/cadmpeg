@@ -2,10 +2,10 @@
 //! Typed records from the bounded fast-load assembly structure stream.
 
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
 use std::fmt::Write;
 
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 
 use crate::container::Container;
 use crate::layout::fastload_structure_envelope as envelope;
@@ -291,7 +291,7 @@ pub(super) fn fast_load_component_object_groups(
         groups.try_reserve_exact(1).map_err(|_| ctx.refuse_codec_limit("allocate NX fast-load object groups", 0, 1))?;
         let uuid_text = copy_structure_text(ctx, uuid.uuid.as_str(), "retain NX fast-load group UUID")?;
         groups.push(FastLoadComponentObjectGroup {
-            id: structure_identity(ctx, "nx:fast-load:object-group#", uuid.ordinal)?,
+            id: structure_identity(ctx, "nx:fast-load:object-group#", uuid.ordinal, "retain NX fast-load group identity")?,
             component_uuid: copy_structure_text(ctx, &uuid.id, "retain NX fast-load group component UUID")?,
             uuid: crate::canonical_uuid::CanonicalUuid::new(uuid_text)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -328,6 +328,7 @@ fn structure_identity(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     prefix: &str,
     ordinal: u32,
+    operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     let mut remaining = ordinal;
     let mut digits = 1usize;
@@ -336,29 +337,49 @@ fn structure_identity(
         digits += 1;
     }
     let length = prefix.len().checked_add(digits)
-        .ok_or_else(|| ctx.refuse_codec_limit("retain NX fast-load group identity", 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "retain NX fast-load group identity")?;
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
     let mut id = String::new();
-    id.try_reserve_exact(length).map_err(|_| ctx.refuse_codec_limit("allocate NX fast-load group identity", 0, 1))?;
-    write!(id, "{prefix}{ordinal}").map_err(|_| ctx.refuse_codec_limit("write NX fast-load group identity", 0, 1))?;
+    id.try_reserve_exact(length).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    write!(id, "{prefix}{ordinal}").map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
     Ok(id)
 }
 
-struct SourceOccurrence {
-    marker: OccurrenceMarker,
-    prototype_index: RosterIndex,
-    uuid_index: RosterIndex,
+fn roster_slots<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    count: usize,
+    operation: &'static str,
+) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+    let bytes = count.checked_mul(std::mem::size_of::<T>())
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), operation)?;
+    let mut records = Vec::new();
+    records.try_reserve_exact(count).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    Ok(records)
+}
+
+fn roster_offset(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entry_offset: u64,
+    local_offset: usize,
+) -> Result<u64, cadmpeg_core::CodecError> {
+    entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(envelope::LEN))
+        .and_then(|offset| offset.checked_add(cadmpeg_core::decode::u64_from_index(local_offset)))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load roster source offset", 0, 1))
 }
 
 struct Candidate {
     start: usize,
     end: usize,
-    prototypes: Vec<(usize, String)>,
+    prototype_count: usize,
+    prototypes_offset: usize,
     occurrence_lane_form: OccurrenceLaneForm,
     occurrence_markers_offset: usize,
     occurrences_offset: usize,
-    occurrences: Vec<SourceOccurrence>,
-    uuids: Vec<(usize, crate::canonical_uuid::CanonicalUuid<String>)>,
+    occurrence_count: usize,
+    uuid_count: usize,
+    uuids_offset: usize,
     uuid_indices_offset: usize,
 }
 
@@ -368,30 +389,22 @@ struct Candidate {
 /// disjoint candidates or partially overlapping candidates remain ambiguous.
 fn select_roster_candidate(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    mut candidates: Vec<Candidate>,
+    candidates: impl IntoIterator<Item = Result<Option<Candidate>, CodecError>>,
 ) -> Result<Option<Candidate>, cadmpeg_core::CodecError> {
-    let work = candidates.len().checked_mul(3)
-        .ok_or_else(|| ctx.refuse_codec_limit("select NX fast-load roster candidate", 0, 1))?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "select NX fast-load roster candidate")?;
-    if candidates.is_empty() {
-        return Ok(None);
-    }
-    let mut best_index = 0usize;
-    for index in 1..candidates.len() {
-        if candidates[index].start < candidates[best_index].start
-            || (candidates[index].start == candidates[best_index].start
-                && candidates[index].end > candidates[best_index].end)
-        {
-            best_index = index;
+    let mut selected: Option<Candidate> = None;
+    let mut furthest_end = 0usize;
+    for candidate in candidates {
+        let Some(candidate) = candidate? else { continue; };
+        ctx.charge_work(1, "select NX fast-load roster candidate")?;
+        furthest_end = furthest_end.max(candidate.end);
+        if selected.as_ref().is_none_or(|best| {
+            candidate.start < best.start
+                || (candidate.start == best.start && candidate.end > best.end)
+        }) {
+            selected = Some(candidate);
         }
     }
-    let selected = candidates.remove(best_index);
-    if candidates.iter().any(|candidate| {
-        candidate.start < selected.start || candidate.end > selected.end
-    }) {
-        return Ok(None);
-    }
-    Ok(Some(selected))
+    Ok(selected.filter(|candidate| candidate.end == furthest_end))
 }
 
 /// Extract the component roster only when its entry and internal frame are
@@ -438,84 +451,93 @@ pub(super) fn fast_load_component_roster(
     // Every admitted roster has one of two structural anchors before the
     // complete counted lanes. Search for both before invoking the parser;
     // trying the parser at every byte makes a large opaque structure stream
-    // quadratic in its candidate count. A MODEL roster matches both anchors,
-    // so deduplicate candidate starts before enforcing uniqueness.
-    let mut starts = BTreeSet::new();
-    for (anchor_offset, window) in payload.windows(ROSTER_ANCHOR.len()).enumerate() {
-        if window == ROSTER_ANCHOR {
-            if let Some(start) = anchor_offset.checked_add(4) {
-                starts.insert(start);
-            }
-        }
-    }
-    for (model_offset, window) in payload.windows(MODEL_FRAME.len()).enumerate() {
-        if window == MODEL_FRAME {
-            if let Some(start) = model_offset.checked_sub(2) {
-                starts.insert(start);
-            }
-        }
-    }
-    let candidates = starts
-        .into_iter()
-        .filter_map(|start| parse_candidate(payload, start))
-        .collect::<Vec<_>>();
+    // quadratic in its candidate count. A MODEL roster can match both anchors;
+    // repeated starts produce the same parse and do not alter span selection.
+    let anchor_work = payload.len().checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX fast-load roster anchors", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(anchor_work), "scan NX fast-load roster anchors")?;
+    let candidates = payload.windows(ROSTER_ANCHOR.len()).enumerate()
+        .filter_map(|(offset, window)| (window == ROSTER_ANCHOR).then(|| offset.checked_add(4)).flatten())
+        .chain(payload.windows(MODEL_FRAME.len()).enumerate()
+            .filter_map(|(offset, window)| (window == MODEL_FRAME).then(|| offset.checked_sub(2)).flatten()))
+        .map(|start| parse_candidate(ctx, payload, start));
     let Some(candidate) = select_roster_candidate(ctx, candidates)? else {
         return Ok((Vec::new(), Vec::new(), FastLoadOccurrences::default()));
     };
 
-    let prototypes: Vec<_> = candidate
-        .prototypes
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, (offset, name))| FastLoadComponentPrototype {
-            id: format!("nx:fast-load:prototype#{ordinal}"),
-            ordinal: ordinal as u32,
-            name,
-            source_entry: entry.name.clone(),
-            source_offset: entry_offset + envelope::LEN as u64 + offset as u64,
-        })
-        .collect();
-    let uuids: Vec<_> = candidate
-        .uuids
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, (offset, uuid))| FastLoadComponentUuid {
-            id: format!("nx:fast-load:uuid#{ordinal}"),
-            ordinal: ordinal as u32,
+    let mut prototypes = roster_slots::<FastLoadComponentPrototype>(ctx, candidate.prototype_count, "NX fast-load prototypes")?;
+    let mut at = candidate.prototypes_offset;
+    for ordinal in 0..candidate.prototype_count {
+        let (offset, name) = parse_string(payload, &mut at)
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("NX fast-load prototype parse changed"))?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX fast-load prototype ordinal", 0, 1))?;
+        prototypes.push(FastLoadComponentPrototype {
+            id: structure_identity(ctx, "nx:fast-load:prototype#", ordinal, "retain NX fast-load prototype identity")?,
+            ordinal,
+            name: copy_structure_text(ctx, name, "retain NX fast-load prototype name")?,
+            source_entry: copy_structure_text(ctx, &entry.name, "retain NX fast-load prototype source entry")?,
+            source_offset: roster_offset(ctx, entry_offset, offset)?,
+        });
+    }
+    let mut uuids = roster_slots::<FastLoadComponentUuid>(ctx, candidate.uuid_count, "NX fast-load UUIDs")?;
+    let mut at = candidate.uuids_offset;
+    for ordinal in 0..candidate.uuid_count {
+        let (offset, text) = parse_tagged_string(payload, &mut at, 3)
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("NX fast-load UUID parse changed"))?;
+        let ordinal = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX fast-load UUID ordinal", 0, 1))?;
+        let text = copy_structure_text(ctx, text, "retain NX fast-load UUID text")?;
+        let uuid = crate::canonical_uuid::CanonicalUuid::new(text)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        uuids.push(FastLoadComponentUuid {
+            id: structure_identity(ctx, "nx:fast-load:uuid#", ordinal, "retain NX fast-load UUID identity")?,
+            ordinal,
             uuid,
-            source_entry: entry.name.clone(),
-            source_offset: entry_offset + envelope::LEN as u64 + offset as u64,
-        })
-        .collect();
-    let occurrences = candidate
-        .occurrences
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, occurrence)| FastLoadComponentOccurrenceWire {
-            id: format!("nx:fast-load:occurrence#{ordinal}"),
-            ordinal: ordinal as u32,
-            occurrence_lane_form: candidate.occurrence_lane_form,
-            marker: occurrence.marker,
-            marker_source_offset: entry_offset
-                + envelope::LEN as u64
-                + candidate.occurrence_markers_offset as u64
-                + ordinal as u64,
-            prototype: prototypes[occurrence.prototype_index.ordinal()].id.clone(),
-            prototype_index: occurrence.prototype_index,
-            component_uuid: uuids[occurrence.uuid_index.ordinal()].id.clone(),
-            uuid_source_offset: entry_offset
-                + envelope::LEN as u64
-                + candidate.uuid_indices_offset as u64
-                + ordinal as u64,
-            source_entry: entry.name.clone(),
-            source_offset: entry_offset
-                + envelope::LEN as u64
-                + candidate.occurrences_offset as u64
-                + ordinal as u64,
-        })
-        .collect::<Vec<_>>();
-    let occurrences =
-        FastLoadOccurrences::try_from(occurrences).map_err(cadmpeg_core::CodecError::malformed)?;
+            source_entry: copy_structure_text(ctx, &entry.name, "retain NX fast-load UUID source entry")?,
+            source_offset: roster_offset(ctx, entry_offset, offset)?,
+        });
+    }
+    let lane_bytes = |offset: usize| -> Result<&[u8], CodecError> {
+        let end = offset.checked_add(candidate.occurrence_count)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load occurrence lane", 0, 1))?;
+        payload.get(offset..end)
+            .ok_or_else(|| CodecError::malformed("NX fast-load occurrence lane changed"))
+    };
+    let markers = lane_bytes(candidate.occurrence_markers_offset)?;
+    let prototype_indices = lane_bytes(candidate.occurrences_offset)?;
+    let uuid_indices = lane_bytes(candidate.uuid_indices_offset)?;
+    let mut records = roster_slots::<FastLoadComponentOccurrence>(ctx, candidate.occurrence_count, "NX fast-load occurrences")?;
+    for (ordinal, ((marker, prototype_index), uuid_index)) in markers.iter().zip(prototype_indices).zip(uuid_indices).enumerate() {
+        let marker = OccurrenceMarker::try_from(*marker)
+            .map_err(CodecError::malformed)?;
+        let prototype_index = RosterIndex::try_from(*prototype_index)
+            .map_err(CodecError::malformed)?;
+        let uuid_index = RosterIndex::try_from(*uuid_index)
+            .map_err(CodecError::malformed)?;
+        let component_uuid = uuids.get(uuid_index.ordinal())
+            .ok_or_else(|| CodecError::malformed("NX fast-load UUID index changed"))?;
+        let ordinal_u32 = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX fast-load occurrence ordinal", 0, 1))?;
+        let marker_offset = candidate.occurrence_markers_offset.checked_add(ordinal)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load marker offset", 0, 1))?;
+        let uuid_offset = candidate.uuid_indices_offset.checked_add(ordinal)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load UUID index offset", 0, 1))?;
+        let occurrence_offset = candidate.occurrences_offset.checked_add(ordinal)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX fast-load occurrence offset", 0, 1))?;
+        records.push(FastLoadComponentOccurrence {
+            id: structure_identity(ctx, "nx:fast-load:occurrence#", ordinal_u32, "retain NX fast-load occurrence identity")?,
+            ordinal: ordinal_u32,
+            marker,
+            marker_source_offset: roster_offset(ctx, entry_offset, marker_offset)?,
+            prototype_index,
+            component_uuid: copy_structure_text(ctx, &component_uuid.id, "retain NX fast-load occurrence UUID reference")?,
+            uuid_source_offset: roster_offset(ctx, entry_offset, uuid_offset)?,
+            source_entry: copy_structure_text(ctx, &entry.name, "retain NX fast-load occurrence source entry")?,
+            source_offset: roster_offset(ctx, entry_offset, occurrence_offset)?,
+        });
+    }
+    let occurrences = FastLoadOccurrences::from_decoded(candidate.occurrence_lane_form, records)?;
     Ok((prototypes, uuids, occurrences))
 }
 
@@ -530,18 +552,21 @@ fn framed_payload(bytes: &[u8]) -> Option<&[u8]> {
     bytes.get(envelope::LEN..)
 }
 
-fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
+fn parse_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+) -> Result<Option<Candidate>, CodecError> {
     let mut at = start;
+    let parsed = (|| {
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     let metadata_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
-    let mut metadata = Vec::with_capacity(metadata_count);
-    for _ in 0..metadata_count {
-        metadata.push(parse_string(bytes, &mut at)?.1);
+    let mut first_metadata_nonempty = false;
+    for index in 0..metadata_count {
+        let (_, value) = parse_string(bytes, &mut at)?;
+        if index == 0 { first_metadata_nonempty = !value.is_empty(); }
     }
-    metadata
-        .first()
-        .is_some_and(|value| !value.is_empty())
-        .then_some(())?;
+    first_metadata_nonempty.then_some(())?;
     take(bytes, &mut at, 2)?.eq(&[1, 3]).then_some(())?;
     let occurrence_lane_form =
         OccurrenceLaneForm::try_from(*take(bytes, &mut at, 1)?.first()?).ok()?;
@@ -550,77 +575,59 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     let occurrence_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
     let occurrence_markers_offset = at;
-    let occurrence_markers = take(bytes, &mut at, occurrence_count)?
-        .iter()
-        .copied()
-        .map(OccurrenceMarker::try_from)
-        .collect::<Result<Vec<_>, _>>()
-        .ok()?;
+    take(bytes, &mut at, occurrence_count)?
+        .iter().all(|marker| OccurrenceMarker::try_from(*marker).is_ok())
+        .then_some(())?;
     take(bytes, &mut at, 6)?
         .eq(&[1, 2, 0xff, 0xff, 0xff, 0xff])
         .then_some(())?;
 
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     let prototype_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
-    let mut prototypes = Vec::with_capacity(prototype_count);
+    let prototypes_offset = at;
     for _ in 0..prototype_count {
-        prototypes.push(parse_string(bytes, &mut at)?);
+        parse_string(bytes, &mut at)?;
     }
 
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     (decoded_count(*take(bytes, &mut at, 1)?.first()?)? == occurrence_count).then_some(())?;
     let occurrences_offset = at;
-    let prototype_indices = take(bytes, &mut at, occurrence_count)?
-        .iter()
-        .copied()
-        .map(|index| {
-            RosterIndex::try_from(index)
-                .ok()
-                .filter(|index| index.ordinal() < prototype_count)
-        })
-        .collect::<Option<Vec<_>>>()?;
+    take(bytes, &mut at, occurrence_count)?.iter()
+        .all(|index| RosterIndex::try_from(*index).is_ok_and(|index| index.ordinal() < prototype_count))
+        .then_some(())?;
 
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     let uuid_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
-    let mut uuids = Vec::with_capacity(uuid_count);
+    let uuids_offset = at;
     for _ in 0..uuid_count {
         let uuid = parse_tagged_string(bytes, &mut at, 3)?;
-        let value = crate::canonical_uuid::CanonicalUuid::new(uuid.1).ok()?;
-        uuids.push((uuid.0, value));
+        crate::canonical_uuid::CanonicalUuid::new(uuid.1).ok()?;
     }
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     (decoded_count(*take(bytes, &mut at, 1)?.first()?)? == occurrence_count).then_some(())?;
     let uuid_indices_offset = at;
-    let uuid_indices = take(bytes, &mut at, occurrence_count)?
-        .iter()
-        .copied()
-        .map(|index| {
-            RosterIndex::try_from(index)
-                .ok()
-                .filter(|index| index.ordinal() < uuid_count)
-        })
-        .collect::<Option<Vec<_>>>()?;
+    take(bytes, &mut at, occurrence_count)?.iter()
+        .all(|index| RosterIndex::try_from(*index).is_ok_and(|index| index.ordinal() < uuid_count))
+        .then_some(())?;
 
     Some(Candidate {
         start,
         end: at,
-        prototypes,
+        prototype_count,
+        prototypes_offset,
         occurrence_lane_form,
         occurrence_markers_offset,
         occurrences_offset,
-        occurrences: occurrence_markers
-            .into_iter()
-            .zip(prototype_indices)
-            .zip(uuid_indices)
-            .map(|((marker, prototype_index), uuid_index)| SourceOccurrence {
-                marker,
-                prototype_index,
-                uuid_index,
-            })
-            .collect(),
-        uuids,
+        occurrence_count,
+        uuid_count,
+        uuids_offset,
         uuid_indices_offset,
     })
+    })();
+    let scanned = at.checked_sub(start)
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX fast-load roster candidate", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(scanned), "scan NX fast-load roster candidate")?;
+    Ok(parsed)
 }
 
 fn decoded_count(encoded: u8) -> Option<usize> {
@@ -629,11 +636,11 @@ fn decoded_count(encoded: u8) -> Option<usize> {
         .filter(|count| *count > 0)
 }
 
-fn parse_string(bytes: &[u8], at: &mut usize) -> Option<(usize, String)> {
+fn parse_string<'a>(bytes: &'a [u8], at: &mut usize) -> Option<(usize, &'a str)> {
     parse_tagged_string(bytes, at, 4)
 }
 
-fn parse_tagged_string(bytes: &[u8], at: &mut usize, tag: u8) -> Option<(usize, String)> {
+fn parse_tagged_string<'a>(bytes: &'a [u8], at: &mut usize, tag: u8) -> Option<(usize, &'a str)> {
     let offset = *at;
     take(bytes, at, 1)?.eq(&[tag]).then_some(())?;
     let framed_len = decoded_count(*take(bytes, at, 1)?.first()?)?;
@@ -641,7 +648,7 @@ fn parse_tagged_string(bytes: &[u8], at: &mut usize, tag: u8) -> Option<(usize, 
     let (&terminator, value) = framed.split_last()?;
     value.iter().all(|byte| *byte >= 0x20).then_some(())?;
     (terminator == 0).then_some(())?;
-    Some((offset, std::str::from_utf8(value).ok()?.to_owned()))
+    Some((offset, std::str::from_utf8(value).ok()?))
 }
 
 fn take<'a>(bytes: &'a [u8], at: &mut usize, len: usize) -> Option<&'a [u8]> {
@@ -677,7 +684,10 @@ mod tests {
     }
 
     fn select_roster_candidate(candidates: Vec<Candidate>) -> Option<Candidate> {
-        crate::test_support::with_decode_context(|ctx| super::select_roster_candidate(ctx, candidates))
+        crate::test_support::with_decode_context(|ctx| super::select_roster_candidate(
+            ctx,
+            candidates.into_iter().map(|candidate| Ok(Some(candidate))),
+        ))
             .expect("default test work limit admits candidate selection")
     }
 
@@ -694,6 +704,32 @@ mod tests {
             .expect("roster candidate selection needs work");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    }
+
+    fn fast_load_roster_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        let file = container(payload(&["plate"], &[1]));
+        super::fast_load_component_roster(&ctx, &file).unwrap_err()
+    }
+
+    #[test]
+    fn fast_load_roster_refuses_collection_limit() {
+        let error = fast_load_roster_refusal(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn fast_load_roster_refuses_retained_limit() {
+        let error = fast_load_roster_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
     }
 
     fn string(bytes: &mut Vec<u8>, value: &str) {
@@ -817,12 +853,14 @@ mod tests {
         Candidate {
             start,
             end,
-            prototypes: Vec::new(),
+            prototype_count: 0,
+            prototypes_offset: 0,
             occurrence_lane_form: OccurrenceLaneForm::Base,
             occurrence_markers_offset: 0,
             occurrences_offset: 0,
-            occurrences: Vec::new(),
-            uuids: Vec::new(),
+            occurrence_count: 0,
+            uuid_count: 0,
+            uuids_offset: 0,
             uuid_indices_offset: 0,
         }
     }
