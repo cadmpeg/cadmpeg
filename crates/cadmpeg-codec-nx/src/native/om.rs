@@ -3967,6 +3967,8 @@ pub(super) fn data_block_control_values(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<DataBlockControlValue>, CodecError> {
+    use std::fmt::Write;
+
     let mut rows = Vec::new();
     for (section_ordinal, (entry, section)) in
         container.indexed_om_sections(ctx)?.into_iter().enumerate()
@@ -3984,14 +3986,74 @@ pub(super) fn data_block_control_values(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
+        let data_block_length = "nx:om-data-blocks-".len()
+            .checked_add(section_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+            .and_then(|length| length.checked_add(":block#0".len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX control value block id length", 0, 1))?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data_block_length),
+            "format NX control value block id",
+        )?;
+        let _data_block_reservation = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(data_block_length),
+            "NX control value block id",
+        )?;
+        let mut data_block = String::new();
+        data_block.try_reserve_exact(data_block_length).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX control value block id", 0, 1)
+        })?;
+        write!(&mut data_block, "nx:om-data-blocks-{section_ordinal}:block#0")
+            .map_err(|_| ctx.refuse_codec_limit("format NX control value block id", 0, 1))?;
         for (ordinal, value) in values.into_iter().enumerate() {
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX data block control value ordinal", 0, 1))?;
+            let source_offset = entry_offset
+                .checked_add(cadmpeg_core::decode::u64_from_index(control.offset))
+                .and_then(|offset| offset.checked_add(u64::from(ordinal).checked_mul(4)?))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX data block control value source offset", 0, 1))?;
+            let id_length = "nx:om-data-block-control-values-".len()
+                .checked_add(section_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+                .and_then(|length| length.checked_add(":value#".len()))
+                .and_then(|length| length.checked_add(ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1)))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX control value id length", 0, 1))?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(id_length),
+                "format NX control value id",
+            )?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(id_length),
+                "retain NX control value id",
+            )?;
+            let mut id = String::new();
+            id.try_reserve_exact(id_length).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX control value id", 0, 1)
+            })?;
+            write!(&mut id, "nx:om-data-block-control-values-{section_ordinal}:value#{ordinal}")
+                .map_err(|_| ctx.refuse_codec_limit("format NX control value id", 0, 1))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(data_block.len()),
+                "retain NX control value block reference",
+            )?;
+            let mut block_reference = String::new();
+            block_reference.try_reserve_exact(data_block.len()).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX control value block reference", 0, 1)
+            })?;
+            block_reference.push_str(&data_block);
+            ctx.charge_entities(1, "NX data block control value")?;
+            ctx.charge_collection_items(1, "NX data block control values")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DataBlockControlValue>()),
+                "retain NX data block control value",
+            )?;
+            rows.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX data block control values", 0, 1)
+            })?;
             rows.push(DataBlockControlValue {
-                id: format!("nx:om-data-block-control-values-{section_ordinal}:value#{ordinal}"),
-                data_block: data_block.clone(),
-                ordinal: ordinal as u32,
+                id,
+                data_block: block_reference,
+                ordinal,
                 value,
-                source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
+                source_offset,
             });
         }
     }
@@ -6102,6 +6164,65 @@ mod tests {
             Some("nx:om-data-blocks-2:block#496")
         );
         assert!(super::control_index_data_block(2, 700, 700).is_none());
+    }
+
+    fn control_value_route_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+        let container = crate::test_support::with_decode_context(|ctx| {
+            crate::container::scan_bytes(ctx, file.as_slice())
+        }).expect("offset-store control fixture");
+        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx))
+            .expect("cached offset-store section");
+        let values = crate::test_support::with_decode_context(|ctx| {
+            super::data_block_control_values(ctx, &container)
+        }).expect("control-value projection");
+        assert_eq!(values.len(), 2);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        super::data_block_control_values(&ctx, &container).unwrap_err()
+    }
+
+    #[test]
+    fn data_block_control_value_route_refuses_collection_limit() {
+        let error = control_value_route_refusal(|policy| policy.limits.max_collection_items = 4);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "NX data block control values"), "{error:?}");
+    }
+
+    #[test]
+    fn data_block_control_value_route_refuses_retained_limit() {
+        let error = control_value_route_refusal(|policy| {
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(crate::container::entry_ref::EntryRef<'_>, crate::om::IndexedSection<'_>)>()
+                    + std::mem::size_of::<Option<crate::om::control_word::ControlWord24>>()
+                    + std::mem::size_of::<crate::om::control_word::ControlWord24>(),
+            );
+        });
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain NX control value id"), "{error:?}");
+    }
+
+    #[test]
+    fn data_block_control_value_route_refuses_scoped_limit() {
+        let error = control_value_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "NX control value block id"), "{error:?}");
+    }
+
+    #[test]
+    fn data_block_control_value_route_refuses_work_limit() {
+        let error = control_value_route_refusal(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "format NX control value block id"), "{error:?}");
     }
 
     #[test]
