@@ -3048,9 +3048,12 @@ struct SketchSurfaceFrame {
     persistent_id: std::num::NonZeroU64,
     u_degree: u32,
     v_degree: u32,
-    u_knots: Vec<f64>,
-    v_knots: Vec<f64>,
-    coordinates: Vec<f64>,
+    u_knots_at: usize,
+    u_knot_count: usize,
+    v_knots_at: usize,
+    v_knot_count: usize,
+    coordinate_count: usize,
+    u_count: usize,
     v_count: usize,
 }
 
@@ -3076,18 +3079,18 @@ fn parse_sketch_surface_frame(payload: &[u8]) -> Option<SketchSurfaceFrame> {
     }
     let coordinate_count = point_count.checked_mul(3)?;
     let coordinate_bytes = point_count.checked_mul(24)?;
-    let coordinates = f64s_at(payload, 131, coordinate_count)?;
+    payload.get(131..131usize.checked_add(coordinate_bytes)?)?;
     let degrees_at = 131usize.checked_add(coordinate_bytes)?;
     let u_degree = View::u32_le_at(payload, degrees_at)?;
     let v_degree = View::u32_le_at(payload, degrees_at.checked_add(4)?)?;
     let u_knot_count =
         usize::try_from(View::u32_le_at(payload, degrees_at.checked_add(8)?)?).ok()?;
     let u_knots_at = degrees_at.checked_add(12)?;
-    let u_knots = f64s_at(payload, u_knots_at, u_knot_count)?;
+    payload.get(u_knots_at..u_knots_at.checked_add(u_knot_count.checked_mul(8)?)?)?;
     let v_count_at = u_knots_at.checked_add(u_knot_count.checked_mul(8)?)?;
     let v_knot_count = usize::try_from(View::u32_le_at(payload, v_count_at)?).ok()?;
     let v_knots_at = v_count_at.checked_add(4)?;
-    let v_knots = f64s_at(payload, v_knots_at, v_knot_count)?;
+    payload.get(v_knots_at..v_knots_at.checked_add(v_knot_count.checked_mul(8)?)?)?;
     let grid_at = v_knots_at.checked_add(v_knot_count.checked_mul(8)?)?;
     let u_count = usize::try_from(View::u32_le_at(payload, grid_at)?).ok()?;
     let v_count = usize::try_from(View::u32_le_at(payload, grid_at.checked_add(4)?)?).ok()?;
@@ -3101,22 +3104,55 @@ fn parse_sketch_surface_frame(payload: &[u8]) -> Option<SketchSurfaceFrame> {
         persistent_id,
         u_degree,
         v_degree,
-        u_knots,
-        v_knots,
-        coordinates,
+        u_knots_at,
+        u_knot_count,
+        v_knots_at,
+        v_knot_count,
+        coordinate_count,
+        u_count,
         v_count,
     })
 }
 
+fn charged_surface_values(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
+    count: usize,
+) -> Result<Vec<f64>, CodecError> {
+    ctx.charge_collection_items(count as u64, "f3d sketch surface scalar values")?;
+    let mut values = Vec::new();
+    values.try_reserve_exact(count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d sketch surface scalar allocation", 0, count as u64)
+    })?;
+    for index in 0..count {
+        let at = offset + index * 8;
+        let value = View::f64_le_at(payload, at).ok_or_else(|| {
+            CodecError::Malformed("F3D sketch surface scalar range changed".into())
+        })?;
+        values.push(value);
+    }
+    Ok(values)
+}
+
 fn parse_sketch_surface(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     record_at: usize,
 ) -> Result<Option<ParsedSketchSurface>, CodecError> {
     let Some(frame) = parse_sketch_surface_frame(payload) else {
         return Ok(None);
     };
-    let mut points = Vec::with_capacity(frame.coordinates.len() / 3);
-    for (ordinal, values) in frame.coordinates.chunks_exact(3).enumerate() {
+    let coordinates = charged_surface_values(ctx, payload, 131, frame.coordinate_count)?;
+    let u_knots = charged_surface_values(ctx, payload, frame.u_knots_at, frame.u_knot_count)?;
+    let v_knots = charged_surface_values(ctx, payload, frame.v_knots_at, frame.v_knot_count)?;
+    let point_count = frame.coordinate_count / 3;
+    ctx.charge_collection_items(point_count as u64, "f3d sketch surface scaled points")?;
+    let mut points = Vec::new();
+    points.try_reserve_exact(point_count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d sketch surface point allocation", 0, point_count as u64)
+    })?;
+    for (ordinal, values) in coordinates.chunks_exact(3).enumerate() {
         let Some(source) = FinitePoint3::new(Point3::new(values[0], values[1], values[2])) else {
             return Ok(None);
         };
@@ -3127,15 +3163,25 @@ fn parse_sketch_surface(
         })?;
         points.push(point);
     }
-    let control_points = points
-        .chunks(frame.v_count)
-        .map(<[FinitePoint3]>::to_vec)
-        .collect();
+    ctx.charge_collection_items(frame.u_count as u64, "f3d sketch surface rows")?;
+    let mut control_points = Vec::new();
+    control_points.try_reserve_exact(frame.u_count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d sketch surface row allocation", 0, frame.u_count as u64)
+    })?;
+    for row in points.chunks(frame.v_count) {
+        ctx.charge_collection_items(frame.v_count as u64, "f3d sketch surface row points")?;
+        let mut row_points = Vec::new();
+        row_points.try_reserve_exact(frame.v_count).map_err(|_| {
+            ctx.refuse_codec_limit("f3d sketch surface row point allocation", 0, frame.v_count as u64)
+        })?;
+        row_points.extend_from_slice(row);
+        control_points.push(row_points);
+    }
     let Some(geometry) = SketchSurfaceGeometry::from_checked_parts(
         frame.u_degree,
         frame.v_degree,
-        frame.u_knots,
-        frame.v_knots,
+        u_knots,
+        v_knots,
         control_points,
     )
     .ok() else {
@@ -3150,6 +3196,7 @@ fn parse_sketch_surface(
 
 /// Decode tensor-product surface entities owned by spatial Design sketches.
 pub(crate) fn decode_sketch_surfaces(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchSurface>, CodecError> {
     let mut out = Vec::new();
@@ -3171,9 +3218,13 @@ pub(crate) fn decode_sketch_surfaces(
                 continue;
             };
             let payload = &bytes[record_at..];
-            let Some(surface) = parse_sketch_surface(payload, record_at)? else {
+            let Some(surface) = parse_sketch_surface(ctx, payload, record_at)? else {
                 continue;
             };
+            ctx.charge_collection_items(1, "f3d sketch surface output")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d sketch surface output allocation", 0, 1)
+            })?;
             out.push(SketchSurface {
                 id: ids::native_sketch_surface_id(&entry.name, record_at),
                 record_index,
