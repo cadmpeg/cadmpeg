@@ -74,6 +74,7 @@ pub(in crate::native) struct DataBlockTargetIndexRow {
 /// Decode complete index rows from offset-store column storage.
 pub(in crate::native) fn data_block_index_rows(ctx: &DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockIndexRow>, CodecError> {
     project_column_rows(
+        ctx,
         container,
         |storage, section, block_count, source_base| {
             Ok(crate::om::column_row::scan::index_rows(ctx, storage)?
@@ -105,6 +106,7 @@ pub(in crate::native) fn data_block_linked_index_rows(
     container: &Container,
 ) -> Result<Vec<DataBlockLinkedIndexRow>, CodecError> {
     project_column_rows(
+        ctx,
         container,
         |storage, section, block_count, source_base| {
             Ok(crate::om::column_row::scan::linked_rows(ctx, storage)?
@@ -136,6 +138,7 @@ pub(in crate::native) fn data_block_target_index_rows(
     container: &Container,
 ) -> Result<Vec<DataBlockTargetIndexRow>, CodecError> {
     project_column_rows(
+        ctx,
         container,
         |storage, section, block_count, source_base| {
             Ok(crate::om::column_row::scan::target_rows(ctx, storage)?
@@ -162,14 +165,14 @@ pub(in crate::native) fn data_block_target_index_rows(
 }
 
 /// One owner for section framing, source locations and admitted row ordinals.
-fn project_column_rows<F, T>(
+fn project_column_rows<F, T>(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     scan: impl Fn(&[u8], usize, usize, u64) -> Result<Vec<(usize, F)>, CodecError>,
     project: impl Fn(usize, usize, F, String, (String, u32)) -> T,
 ) -> Result<Vec<T>, CodecError> {
     let mut result = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections().into_iter().enumerate()
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
     {
         let Some((_, storage, records)) = section.as_offset_only() else {
             continue;

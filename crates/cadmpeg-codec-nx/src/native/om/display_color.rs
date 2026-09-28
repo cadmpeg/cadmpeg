@@ -77,7 +77,7 @@ pub(in crate::native) fn rm_display_color_assignments(
 ) -> Result<Vec<RmDisplayColorAssignment>, CodecError> {
     let mut candidates = Vec::new();
     for (entry, section) in container
-        .om_sections()
+        .om_sections(ctx)?
         .into_iter()
         .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
     {

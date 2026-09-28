@@ -3624,7 +3624,11 @@ pub(crate) fn numeric_expressions<'a>(
 }
 
 /// Locate independently size-framed OM sections and their type registries.
-pub(crate) fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
+pub(crate) fn sections<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<Vec<Section<'a>>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "nx framed OM section scan")?;
     let mut out = Vec::new();
     let mut at = 0usize;
     while at + 16 <= bytes.len() {
@@ -3657,7 +3661,7 @@ pub(crate) fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
             at = offset + 4;
             continue;
         }
-        let type_registry = registry::type_registry(bytes, offset + 16, end);
+        let type_registry = registry::type_registry(ctx, bytes, offset + 16, end)?;
         let types = type_registry.definitions;
         let field_start = type_registry.field_start;
         let record_area_pointer = section_record_area_pointer(bytes, offset, field_start, end)
@@ -3667,11 +3671,11 @@ pub(crate) fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
         let (fields, record_area_offset) =
             if let Some((record_area_offset, pointer_offset)) = record_area_pointer {
                 (
-                    registry::all_field_definitions(bytes, field_start, pointer_offset),
+                    registry::all_field_definitions(ctx, bytes, field_start, pointer_offset)?,
                     Some(record_area_offset),
                 )
             } else {
-                (registry::field_definitions(bytes, field_start, end), None)
+                (registry::field_definitions(ctx, bytes, field_start, end)?, None)
             };
         let record_area = record_area_offset.map(|start| RecordArea {
             offset: start,
@@ -3679,6 +3683,7 @@ pub(crate) fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
         });
         let cached_operation_labels =
             record_area.map_or_else(Vec::new, |area| operation_labels(area.bytes, area.offset));
+        reserve_om_retained_item(ctx, &mut out, "nx framed OM sections")?;
         out.push(Section {
             offset,
             byte_len: end - offset,
@@ -3689,7 +3694,7 @@ pub(crate) fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
         });
         at = end;
     }
-    out
+    Ok(out)
 }
 
 fn section_record_area_pointer(
@@ -3829,34 +3834,43 @@ fn select_outer_indexed_candidates(
             .cmp(&right.start())
             .then_with(|| right.source().len().cmp(&left.source().len()))
     });
-    let mut admitted = Vec::with_capacity(candidates.len());
     let mut furthest_end = 0;
-    for candidate in candidates {
+    candidates.retain(|candidate| {
         if candidate.source().len() <= furthest_end {
-            continue;
+            return false;
         }
         furthest_end = candidate.source().len();
-        admitted.push(candidate);
-    }
-    admitted.sort_by_key(|candidate| candidate.discovery_order);
-    admitted
+        true
+    });
+    candidates.sort_by_key(|candidate| candidate.discovery_order);
+    candidates
 }
 
-fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSection<'_> {
+fn materialize_indexed_candidate<'a>(
+    ctx: &DecodeContext<'_>,
+    candidate: IndexedCandidate<'a>,
+) -> Result<IndexedSection<'a>, CodecError> {
     let bytes = candidate.source();
     let entity_index_offset = candidate.start();
     let base = match &candidate.kind {
         IndexedCandidateKind::Fixed(index) => index.base(),
         IndexedCandidateKind::OffsetOnly(_) => 0,
     };
-    let type_registry = registry::type_registry(bytes, base, entity_index_offset);
+    let type_registry = registry::type_registry(ctx, bytes, base, entity_index_offset)?;
     let fields =
-        registry::all_field_definitions(bytes, type_registry.field_start, entity_index_offset);
+        registry::all_field_definitions(ctx, bytes, type_registry.field_start, entity_index_offset)?;
     let (object_id_table_offset, store) = match candidate.kind {
         IndexedCandidateKind::Fixed(index) => (
             index.object_id_table_offset(),
             IndexedStore::Fixed {
-                records: index.records().collect::<Vec<_>>().into(),
+                records: {
+                    let mut records = Vec::new();
+                    for record in index.records() {
+                        reserve_om_retained_item(ctx, &mut records, "nx fixed OM records")?;
+                        records.push(record);
+                    }
+                    records.into()
+                },
             },
         ),
         IndexedCandidateKind::OffsetOnly(index) => {
@@ -3866,19 +3880,26 @@ fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSect
                 IndexedStore::OffsetOnly {
                     control,
                     column_storage: index.column_storage(),
-                    records: index.records().collect::<Vec<_>>().into(),
+                    records: {
+                        let mut records = Vec::new();
+                        for record in index.records() {
+                            reserve_om_retained_item(ctx, &mut records, "nx offset OM records")?;
+                            records.push(record);
+                        }
+                        records.into()
+                    },
                 },
             )
         }
     };
-    IndexedSection {
+    Ok(IndexedSection {
         base,
         entity_index_offset,
         object_id_table_offset,
         types: type_registry.definitions.into(),
         fields: fields.into(),
         store,
-    }
+    })
 }
 
 /// Locate validated NX OM entity-index/object-id-table pairs.
@@ -3887,13 +3908,22 @@ fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSect
 /// monotone, its first offset is zero, its second offset self-anchors the first
 /// entity exactly at the end of the object-id table, and that entity carries the
 /// NX root marker.
-pub(crate) fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
+pub(crate) fn indexed_sections<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+) -> Result<Vec<IndexedSection<'a>>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "nx indexed OM section scan")?;
+    let mut temporary = ctx.reserve_scoped(0, "nx indexed OM candidate scan")?;
     let mut candidates = Vec::new();
     let mut seen_record_starts = BTreeSet::new();
-    let product_record_ranges = (0..bytes.len())
-        .filter_map(|offset| product_record_range_at(bytes, offset))
-        .collect::<Vec<_>>();
-    let descending_u32_edges = DescendingU32Edges::new(bytes);
+    let mut product_record_ranges = Vec::new();
+    for offset in 0..bytes.len() {
+        if let Some(range) = product_record_range_at(bytes, offset) {
+            reserve_om_scoped_item(ctx, &mut temporary, &mut product_record_ranges, "nx product record ranges")?;
+            product_record_ranges.push(range);
+        }
+    }
+    let descending_u32_edges = DescendingU32Edges::new(ctx, &mut temporary, bytes)?;
     for table in 0..bytes.len().saturating_sub(4) {
         let Some(count) = View::u32_le_at(bytes, table).map(|value| value as usize) else {
             continue;
@@ -3930,9 +3960,13 @@ pub(crate) fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         else {
             continue;
         };
-        if !seen_record_starts.insert(table_end) {
+        if seen_record_starts.contains(&table_end) {
             continue;
         }
+        ctx.charge_collection_items(1, "nx OM seen record starts")?;
+        temporary.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()))?;
+        seen_record_starts.insert(table_end);
+        reserve_om_scoped_item(ctx, &mut temporary, &mut candidates, "nx indexed OM candidates")?;
         candidates.push(IndexedCandidate {
             discovery_order: candidates.len(),
             kind: IndexedCandidateKind::Fixed(index),
@@ -3995,18 +4029,46 @@ pub(crate) fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         ) else {
             continue;
         };
-        if !seen_record_starts.insert(second) {
+        if seen_record_starts.contains(&second) {
             continue;
         }
+        ctx.charge_collection_items(1, "nx OM seen record starts")?;
+        temporary.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()))?;
+        seen_record_starts.insert(second);
+        reserve_om_scoped_item(ctx, &mut temporary, &mut candidates, "nx indexed OM candidates")?;
         candidates.push(IndexedCandidate {
             discovery_order: candidates.len(),
             kind: IndexedCandidateKind::OffsetOnly(index),
         });
     }
-    select_outer_indexed_candidates(candidates)
-        .into_iter()
-        .map(materialize_indexed_candidate)
-        .collect()
+    let mut sections = Vec::new();
+    for candidate in select_outer_indexed_candidates(candidates) {
+        let section = materialize_indexed_candidate(ctx, candidate)?;
+        reserve_om_retained_item(ctx, &mut sections, "nx indexed OM sections")?;
+        sections.push(section);
+    }
+    Ok(sections)
+}
+
+fn reserve_om_retained_item<T>(
+    ctx: &DecodeContext<'_>,
+    items: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), operation)?;
+    items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+}
+
+fn reserve_om_scoped_item<T>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    items: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()))?;
+    items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
 }
 
 /// Decode the first self-framed NX product/version marker in `bytes`.

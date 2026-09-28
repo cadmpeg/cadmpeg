@@ -139,7 +139,7 @@ fn om_color_tables_refuse_work_limit() {
 fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
     let mut bytes = indexed_om_section();
     bytes.extend_from_slice(b"\x10UGS::PayloadText");
-    let sections = indexed_sections(&bytes);
+    let sections = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes)).unwrap();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].types.len(), 1);
     assert_eq!(sections[0].types[0].name, "UGS::EXP_expression");
@@ -150,7 +150,7 @@ fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
 #[test]
 fn om_numeric_expression_retains_identity_name_unit_and_value() {
     let bytes = indexed_om_section();
-    let section = indexed_sections(&bytes).remove(0);
+    let section = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes)).unwrap().remove(0);
     let expression_records = section.numeric_expression_records();
     assert_eq!(expression_records[0].0, 1);
     let expressions = expression_records

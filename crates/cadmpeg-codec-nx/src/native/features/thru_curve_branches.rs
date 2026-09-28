@@ -182,12 +182,13 @@ impl TryFrom<GroupWire> for FeatureThruCurveConstructionBranchGroup {
     }
 }
 
-pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
+pub(in crate::native) fn feature_thru_curve_construction_branch_groups(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureThruCurveConstructionBranchGroup> {
-    let indexed = container.indexed_om_sections();
+) -> Result<Vec<FeatureThruCurveConstructionBranchGroup>, cadmpeg_core::CodecError>
+{
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut groups = Vec::new();
-    visit_feature_history_operation_records(
+    visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(group) = thru_curve_payload_branch_group(record.payload_view()) else {
@@ -207,8 +208,8 @@ pub(in crate::native) fn feature_thru_curve_construction_branch_groups(
                 frame,
             });
         },
-    );
-    groups
+    )?;
+    Ok(groups)
 }
 
 #[cfg(test)]

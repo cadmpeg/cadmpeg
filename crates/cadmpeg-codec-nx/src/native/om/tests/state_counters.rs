@@ -49,7 +49,7 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("required invariant");
 
-    let rows = operation_state_counters(&container);
+    let rows = crate::test_support::with_decode_context(|ctx| operation_state_counters(ctx,&container)).unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(u8::from(rows[0].frame.kind()), 1);
     assert_eq!(rows[0].frame.object().value(), 0x320);
@@ -89,7 +89,7 @@ fn native_catalog_emits_role_gated_audit_trail_rows() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("required invariant");
 
-    let rows = audit_trail_rows(&container);
+    let rows = crate::test_support::with_decode_context(|ctx| audit_trail_rows(ctx,&container)).unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].record().ordinal.value(), 2);
     assert_eq!(rows[0].record().frame_selector, None);
@@ -136,7 +136,7 @@ fn native_catalog_emits_anchored_operation_state_journal_groups() {
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
             .expect("required invariant");
 
-    let groups = operation_state_journal_groups(&container);
+    let groups = crate::test_support::with_decode_context(|ctx| operation_state_journal_groups(ctx,&container)).unwrap();
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].frame.selector(), [0x01, 0x02]);
     assert_eq!(groups[0].frame.rows().len(), 1);

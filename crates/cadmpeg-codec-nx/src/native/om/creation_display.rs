@@ -55,7 +55,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
 ) -> Result<Vec<RmCreationDisplayDataRelation>, CodecError> {
     let mut candidates = Vec::new();
     for (entry, section) in container
-        .om_sections()
+        .om_sections(ctx)?
         .into_iter()
         .filter(|(entry, _)| entry.name == "/Root/FastLoad/RMFastLoad")
     {

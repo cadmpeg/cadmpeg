@@ -167,10 +167,11 @@ pub(super) struct OmOperationStateMessage {
 }
 
 /// Decode internally pointed record areas from linked OM sections.
-pub(super) fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
-    let links = segment_om_links(container);
-    let sections = container.om_sections();
-    links
+pub(super) fn om_record_areas(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<OmRecordArea>, cadmpeg_core::CodecError>
+{
+    let links = segment_om_links(ctx, container)?;
+    let sections = container.om_sections(ctx)?;
+    Ok(links
         .into_iter()
         .filter_map(|link| {
             let section = sections
@@ -203,13 +204,14 @@ pub(super) fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
                 source_offset: entry_offset + header.offset as u64,
             })
         })
-        .collect()
+        .collect())
 }
 
 /// Decode complete rows from audit-trail record areas.
-pub(super) fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
-    let sections = container.om_sections();
-    segment_om_links(container)
+pub(super) fn audit_trail_rows(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<OmAuditTrailRow>, cadmpeg_core::CodecError>
+{
+    let sections = container.om_sections(ctx)?;
+    Ok(segment_om_links(ctx, container)?
         .into_iter()
         .filter(|link| link.schema_role == OmSchemaRole::AuditTrail)
         .enumerate()
@@ -243,13 +245,14 @@ pub(super) fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
                 })
                 .collect()
         })
-        .collect()
+        .collect())
 }
 
 /// Decode exact object state-counter rows from canonical feature-history areas.
-pub(super) fn operation_state_counters(container: &Container) -> Vec<OmOperationStateCounter> {
-    let sections = container.om_sections();
-    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+pub(super) fn operation_state_counters(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<OmOperationStateCounter>, cadmpeg_core::CodecError>
+{
+    let sections = container.om_sections(ctx)?;
+    Ok(crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, link)| {
@@ -284,15 +287,16 @@ pub(super) fn operation_state_counters(container: &Container) -> Vec<OmOperation
                 })
                 .collect()
         })
-        .collect()
+        .collect())
 }
 
 /// Decode anchored state-journal groups from canonical feature-history areas.
-pub(super) fn operation_state_journal_groups(
+pub(super) fn operation_state_journal_groups(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<OmOperationStateJournalGroup> {
-    let sections = container.om_sections();
-    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+) -> Result<Vec<OmOperationStateJournalGroup>, cadmpeg_core::CodecError>
+{
+    let sections = container.om_sections(ctx)?;
+    Ok(crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, link)| {
@@ -328,7 +332,7 @@ pub(super) fn operation_state_journal_groups(
                 })
                 .collect()
         })
-        .collect()
+        .collect())
 }
 
 /// Decode field-declared roll-forward groups from canonical feature-history areas.
@@ -336,8 +340,8 @@ pub(super) fn operation_state_groups(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<OmRollForwardStateTable>, CodecError> {
-    let sections = container.om_sections();
-    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+    let sections = container.om_sections(ctx)?;
+    crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
         .into_iter()
         .enumerate()
         .map(|(section_ordinal, link)| {
@@ -387,8 +391,8 @@ pub(super) fn operation_state_messages(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<OmOperationStateMessage>, CodecError> {
-    let sections = container.om_sections();
-    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+    let sections = container.om_sections(ctx)?;
+    crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
         .into_iter()
         .enumerate()
         .map(|(section_ordinal, link)| {
@@ -437,8 +441,8 @@ pub(super) fn operation_state_statuses(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<OmOperationStateStatus>, CodecError> {
-    let sections = container.om_sections();
-    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+    let sections = container.om_sections(ctx)?;
+    crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
         .into_iter()
         .enumerate()
         .map(|(section_ordinal, link)| {
@@ -494,8 +498,8 @@ pub(super) fn operation_state_slot_lanes(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<OmOperationStateSlotLane>, CodecError> {
-    let sections = container.om_sections();
-    crate::native::features::canonical_feature_history_links(segment_om_links(container))
+    let sections = container.om_sections(ctx)?;
+    crate::native::features::canonical_feature_history_links(segment_om_links(ctx, container)?)
         .into_iter()
         .enumerate()
         .map(|(section_ordinal, link)| {
@@ -3192,17 +3196,18 @@ struct RegistryDefinition {
 }
 
 /// Merge both section forms with framed definitions taking precedence.
-fn registry_definitions<T>(
+fn registry_definitions<T>(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     kind: RegistryKind,
     project: impl Fn(RegistryDefinition) -> T,
-) -> Vec<T> {
+) -> Result<Vec<T>, cadmpeg_core::CodecError>
+{
     let framed = container
-        .om_sections()
+        .om_sections(ctx)?
         .into_iter()
         .map(|(entry, section)| (entry, section.offset, section.types, section.fields, true));
     let indexed = container
-        .indexed_om_sections()
+        .indexed_om_sections(ctx)?
         .into_iter()
         .map(|(entry, section)| {
             (
@@ -3253,12 +3258,15 @@ fn registry_definitions<T>(
             );
         }
     }
-    definitions.into_values().collect()
+    Ok(definitions.into_values().collect())
 }
 
 /// Decode class definitions from every framed OM section.
-pub(super) fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
-    registry_definitions(container, RegistryKind::Class, |d| ClassDefinition {
+pub(super) fn class_definitions(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<ClassDefinition>, CodecError> {
+    registry_definitions(ctx, container, RegistryKind::Class, |d| ClassDefinition {
         id: d.id,
         name: d.name,
         ordinal: d.ordinal,
@@ -3291,8 +3299,11 @@ fn registry_layout(suffix: &[u8]) -> Option<RegistryLayout<'_>> {
 }
 
 /// Decode member definitions from every framed OM section.
-pub(super) fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
-    registry_definitions(container, RegistryKind::Field, |d| FieldDefinition {
+pub(super) fn field_definitions(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<FieldDefinition>, CodecError> {
+    registry_definitions(ctx, container, RegistryKind::Field, |d| FieldDefinition {
         id: d.id,
         name: d.name,
         ordinal: d.ordinal,
@@ -3305,10 +3316,11 @@ pub(super) fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
 }
 
 /// Catalog every externally bounded NX OM entity record.
-pub(super) fn object_records(container: &Container) -> Vec<ObjectRecord> {
+pub(super) fn object_records(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError>
+{
     let mut candidates = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections().into_iter().enumerate()
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
     {
         let Some(records) = section.as_fixed() else {
             continue;
@@ -3377,7 +3389,7 @@ pub(super) fn object_records(container: &Container) -> Vec<ObjectRecord> {
         *identity_counts.entry(identity).or_default() += 1;
     }
 
-    candidates
+    Ok(candidates
         .into_iter()
         .map(
             |(
@@ -3411,7 +3423,7 @@ pub(super) fn object_records(container: &Container) -> Vec<ObjectRecord> {
                 }
             },
         )
-        .collect()
+        .collect())
 }
 
 /// Retain the complete counted `RMFastLoad` active-object membership table.
@@ -3574,10 +3586,11 @@ fn assign_rmfastload_object_id_identities(
 }
 
 /// Catalog every externally bounded block in offset-only NX OM storage.
-pub(super) fn data_blocks(container: &Container) -> Vec<DataBlock> {
+pub(super) fn data_blocks(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlock>, cadmpeg_core::CodecError>
+{
     let mut candidates = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections().into_iter().enumerate()
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
     {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
@@ -3618,7 +3631,7 @@ pub(super) fn data_blocks(container: &Container) -> Vec<DataBlock> {
         *identity_counts.entry(identity).or_default() += 1;
     }
 
-    candidates
+    Ok(candidates
         .into_iter()
         .map(
             |(
@@ -3647,13 +3660,14 @@ pub(super) fn data_blocks(container: &Container) -> Vec<DataBlock> {
                 }
             },
         )
-        .collect()
+        .collect())
 }
 
 /// Classify every admitted complete offset-only store control lane.
-pub(super) fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlForm> {
-    container
-        .indexed_om_sections()
+pub(super) fn data_block_control_forms(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockControlForm>, cadmpeg_core::CodecError>
+{
+    Ok(container
+        .indexed_om_sections(ctx)?
         .into_iter()
         .enumerate()
         .filter_map(|(section_ordinal, (entry, section))| {
@@ -3684,13 +3698,14 @@ pub(super) fn data_block_control_forms(container: &Container) -> Vec<DataBlockCo
                     + control.offset as u64,
             })
         })
-        .collect()
+        .collect())
 }
 
 /// Decode complete zero-prefixed control arrays from offset-only OM stores.
-pub(super) fn data_block_control_values(container: &Container) -> Vec<DataBlockControlValue> {
-    container
-        .indexed_om_sections()
+pub(super) fn data_block_control_values(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<DataBlockControlValue>, cadmpeg_core::CodecError>
+{
+    Ok(container
+        .indexed_om_sections(ctx)?
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
@@ -3721,7 +3736,7 @@ pub(super) fn data_block_control_values(container: &Container) -> Vec<DataBlockC
                 })
                 .collect()
         })
-        .collect()
+        .collect())
 }
 
 /// Resolve each atomic leading control lane through its store-local class registry.
@@ -3730,7 +3745,7 @@ pub(super) fn data_block_control_class_references(
     container: &Container,
 ) -> Result<Vec<DataBlockControlClassReference>, CodecError> {
     let rows = container
-        .indexed_om_sections()
+        .indexed_om_sections(ctx)?
         .into_iter()
         .enumerate()
         .map(|(section_ordinal, (entry, section))| -> Result<Vec<_>, CodecError> {
@@ -3748,13 +3763,13 @@ pub(super) fn data_block_control_class_references(
             }
             let mut registry = BTreeMap::new();
             for definition in container
-                .om_sections()
+                .om_sections(ctx)?
                 .into_iter()
                 .filter(|(candidate, _)| candidate.index() == entry.index())
                 .flat_map(|(_, section)| section.types.iter().cloned().collect::<Vec<_>>())
                 .chain(
                     container
-                        .indexed_om_sections()
+                        .indexed_om_sections(ctx)?
                         .into_iter()
                         .filter(|(candidate, _)| candidate.index() == entry.index())
                         .flat_map(|(_, section)| {
@@ -3803,11 +3818,12 @@ pub(super) fn data_block_control_class_references(
 }
 
 /// Decode aligned index arrays preceding a unique control-lane product anchor.
-pub(super) fn data_block_control_index_values(
+pub(super) fn data_block_control_index_values(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<DataBlockControlIndexValue> {
-    container
-        .indexed_om_sections()
+) -> Result<Vec<DataBlockControlIndexValue>, cadmpeg_core::CodecError>
+{
+    Ok(container
+        .indexed_om_sections(ctx)?
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
@@ -3850,7 +3866,7 @@ pub(super) fn data_block_control_index_values(
                 })
                 .collect()
         })
-        .collect()
+        .collect())
 }
 
 fn control_index_data_block(
@@ -3885,11 +3901,12 @@ fn column_storage_block_at(
 }
 
 /// Decode persistent-handle and tagged-28 occurrences in bounded control blocks.
-pub(super) fn data_block_control_references(
+pub(super) fn data_block_control_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<DataBlockControlReference> {
-    container
-        .indexed_om_sections()
+) -> Result<Vec<DataBlockControlReference>, cadmpeg_core::CodecError>
+{
+    Ok(container
+        .indexed_om_sections(ctx)?
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
@@ -3913,7 +3930,7 @@ pub(super) fn data_block_control_references(
                 })
                 .collect()
         })
-        .collect()
+        .collect())
 }
 
 /// Join maximal two-token adjacent persistent-handle runs atomically.
@@ -3963,11 +3980,12 @@ pub(super) fn data_block_control_handle_pairs(
 }
 
 /// Decode framed object references from offset-only OM data blocks.
-pub(super) fn data_block_references(
+pub(super) fn data_block_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     object_records: &[ObjectRecord],
     expression_declarations: &[ExpressionDeclaration],
-) -> Vec<DataBlockReference> {
+) -> Result<Vec<DataBlockReference>, cadmpeg_core::CodecError>
+{
     let mut target_records = BTreeMap::<(String, u32), Vec<String>>::new();
     for record in object_records {
         let (object_id, _) = record.object_id;
@@ -3983,8 +4001,8 @@ pub(super) fn data_block_references(
             .or_default()
             .push(declaration.id.clone());
     }
-    container
-        .indexed_om_sections()
+    Ok(container
+        .indexed_om_sections(ctx)?
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
@@ -4030,7 +4048,7 @@ pub(super) fn data_block_references(
                 })
                 .collect()
         })
-        .collect()
+        .collect())
 }
 
 /// Decode complete part-local color tables from class-declaring offset stores.
@@ -4043,7 +4061,7 @@ pub(super) fn part_color_tables(
     let mut definitions = Vec::new();
 
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections().into_iter().enumerate()
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
     {
         let Some((_, storage, records)) = section.as_offset_only() else {
             continue;
@@ -4188,9 +4206,10 @@ pub(super) fn data_block_column_index_tables(
 }
 
 /// Decode one product/version header from each indexed NX OM store.
-pub(super) fn store_headers(container: &Container) -> Vec<StoreHeader> {
-    container
-        .indexed_om_sections()
+pub(super) fn store_headers(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<StoreHeader>, cadmpeg_core::CodecError>
+{
+    Ok(container
+        .indexed_om_sections(ctx)?
         .into_iter()
         .enumerate()
         .filter_map(|(section_ordinal, (entry, section))| {
@@ -4227,13 +4246,14 @@ pub(super) fn store_headers(container: &Container) -> Vec<StoreHeader> {
                     }),
             }
         })
-        .collect()
+        .collect())
 }
 
 /// Decode self-framed printable values from bounded NX OM records.
-pub(super) fn string_values(container: &Container) -> Vec<StringValue> {
-    container
-        .indexed_om_sections()
+pub(super) fn string_values(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<StringValue>, cadmpeg_core::CodecError>
+{
+    Ok(container
+        .indexed_om_sections(ctx)?
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
@@ -4269,13 +4289,14 @@ pub(super) fn string_values(container: &Container) -> Vec<StringValue> {
                 })
                 .collect()
         })
-        .collect()
+        .collect())
 }
 
 /// Decode ordered tagged references from bounded NX OM records.
-pub(super) fn object_references(container: &Container) -> Vec<ObjectReference> {
-    container
-        .indexed_om_sections()
+pub(super) fn object_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<ObjectReference>, cadmpeg_core::CodecError>
+{
+    Ok(container
+        .indexed_om_sections(ctx)?
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
@@ -4315,7 +4336,7 @@ pub(super) fn object_references(container: &Container) -> Vec<ObjectReference> {
                 )
                 .collect()
         })
-        .collect()
+        .collect())
 }
 
 /// Join maximal two-token adjacent persistent-handle runs within object records.
@@ -4436,9 +4457,10 @@ pub(super) fn persistent_handles(
 }
 
 /// Decode named parameter declarations from expression-class OM records.
-pub(super) fn expression_declarations(container: &Container) -> Vec<ExpressionDeclaration> {
-    container
-        .indexed_om_sections()
+pub(super) fn expression_declarations(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<ExpressionDeclaration>, cadmpeg_core::CodecError>
+{
+    Ok(container
+        .indexed_om_sections(ctx)?
         .into_iter()
         .enumerate()
         .flat_map(|(section_ordinal, (entry, section))| {
@@ -4478,12 +4500,12 @@ pub(super) fn expression_declarations(container: &Container) -> Vec<ExpressionDe
                 })
                 .collect()
         })
-        .collect()
+        .collect())
 }
 
 /// Decode explicit numeric expressions from all indexed OM sections.
 pub(super) fn expressions(ctx: &DecodeContext<'_>, container: &Container) -> Result<Vec<Expression>, CodecError> {
-    let declarations = expression_declarations(container);
+    let declarations = expression_declarations(ctx, container)?;
     let mut declarations_by_name = BTreeMap::<(&str, &str), Vec<&ExpressionDeclaration>>::new();
     for declaration in &declarations {
         declarations_by_name
@@ -4493,7 +4515,7 @@ pub(super) fn expressions(ctx: &DecodeContext<'_>, container: &Container) -> Res
     }
     let mut indexed = BTreeMap::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections().into_iter().enumerate()
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
     {
         for (record_ordinal, expression) in section.numeric_expression_records() {
             let Some(object_id) = expression.object_id else {
@@ -5762,8 +5784,8 @@ mod tests {
             crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
                 .expect("required invariant");
 
-        assert!(super::object_records(&container).is_empty());
-        let blocks = super::data_blocks(&container);
+        assert!(crate::test_support::with_decode_context(|ctx| super::object_records(ctx, &container)).unwrap().is_empty());
+        let blocks = crate::test_support::with_decode_context(|ctx| super::data_blocks(ctx, &container)).unwrap();
         assert_eq!(blocks.len(), 3);
         assert_eq!(blocks[0].block_ordinal, 0);
         assert_eq!(blocks[0].role, super::DataBlockRole::Control);
@@ -5774,7 +5796,7 @@ mod tests {
         }
         assert!(blocks[0].byte_len > 0);
         assert!(blocks[0].stable_identity.is_some());
-        let forms = super::data_block_control_forms(&container);
+        let forms = crate::test_support::with_decode_context(|ctx| super::data_block_control_forms(ctx, &container)).unwrap();
         assert_eq!(forms.len(), 1);
         assert_eq!(forms[0].data_block, blocks[0].id);
         assert_eq!(
@@ -5785,7 +5807,7 @@ mod tests {
         );
         assert_eq!(forms[0].kind.value_count(), 2);
         assert_eq!(forms[0].kind.byte_len(), blocks[0].byte_len);
-        let control_values = super::data_block_control_values(&container);
+        let control_values = crate::test_support::with_decode_context(|ctx| super::data_block_control_values(ctx, &container)).unwrap();
         assert_eq!(control_values.len(), 2);
         assert_eq!(control_values[0].data_block, blocks[0].id);
         assert_eq!(control_values[0].ordinal, 0);
@@ -5809,8 +5831,8 @@ mod tests {
                 .map(|class| class.definition.as_str()),
             Some("nx:om-entry-0:class#8")
         );
-        assert!(super::string_values(&container).is_empty());
-        assert!(super::object_references(&container).is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| super::string_values(ctx, &container)).unwrap().is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| super::object_references(ctx, &container)).unwrap().is_empty());
         let expressions = with_test_ctx(|ctx| super::expressions(ctx, &container).unwrap());
         assert_eq!(expressions.len(), 1);
         assert_eq!(
@@ -5910,7 +5932,7 @@ mod tests {
             crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
                 .expect("required invariant");
 
-        let forms = super::data_block_control_forms(&container);
+        let forms = crate::test_support::with_decode_context(|ctx| super::data_block_control_forms(ctx, &container)).unwrap();
         assert_eq!(forms.len(), 1);
         assert_eq!(
             forms[0].kind,
@@ -5923,8 +5945,8 @@ mod tests {
             }
         );
         assert_eq!(forms[0].kind.value_count(), 2);
-        assert!(super::data_block_control_values(&container).is_empty());
-        assert_eq!(super::data_block_control_index_values(&container).len(), 2);
+        assert!(crate::test_support::with_decode_context(|ctx| super::data_block_control_values(ctx, &container)).unwrap().is_empty());
+        assert_eq!(crate::test_support::with_decode_context(|ctx| super::data_block_control_index_values(ctx, &container)).unwrap().len(), 2);
     }
 
     #[test]
@@ -6488,7 +6510,7 @@ mod object_record_identity_tests {
             crate::container::scan_bytes(ctx, prt_with_indexed_om_section())
         })
         .expect("required invariant");
-        let records = super::object_records(&container);
+        let records = crate::test_support::with_decode_context(|ctx| super::object_records(ctx, &container)).unwrap();
         assert_eq!(records.len(), 2);
         assert!(records
             .iter()

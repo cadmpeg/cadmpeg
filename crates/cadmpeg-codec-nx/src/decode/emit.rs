@@ -1529,7 +1529,7 @@ pub(super) fn source_meta(
             format_args!("{:08x}", assemble_u32_be(footer_fingerprint)),
         )?;
     }
-    let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
+    let (control_count, classified_control_count) = offset_store_control_counts(ctx, &scan.container)?;
     if control_count != 0 {
         insert_source_attribute(
             ctx,

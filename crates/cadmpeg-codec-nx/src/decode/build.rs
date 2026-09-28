@@ -1340,7 +1340,7 @@ pub(super) fn try_decode_geometry(
     report.losses.extend(carrier_refusals);
     report.losses.extend(topology_losses);
     report.losses.extend(native_losses);
-    report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available);
+    report_untransferred_streams(ctx, scan, &mut report, crate::native::TypedNative::Available)?;
     Ok(Some((ir, report, annotations, unknowns)))
 }
 
