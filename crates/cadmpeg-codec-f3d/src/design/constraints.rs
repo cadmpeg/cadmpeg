@@ -249,8 +249,11 @@ pub(crate) fn project_sketch_constraints(
                 &semantic_entities,
             )
         })
-        .or_else(|| exact_offset_constraint(relation, scope, &projected))
-        .or_else(|| exact_text_relation(relation, scope, &projected));
+        .or_else(|| exact_offset_constraint(relation, scope, &projected));
+        let definition = match definition {
+            Some(definition) => Some(definition),
+            None => exact_text_relation(relation, scope, &projected, ctx)?,
+        };
         let definition = if let Some(definition) = definition {
             definition
         } else {
@@ -539,16 +542,19 @@ fn exact_text_relation(
     relation: &SketchRelation,
     scope: &str,
     projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
-) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput>, CodecError> {
     use crate::records::sketch_relations::SketchPatternDefinition;
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
     };
     use cadmpeg_ir::transform::Transform;
 
-    relation.sole_constraint_kind()?;
+    if relation.sole_constraint_kind().is_none() {
+        return Ok(None);
+    }
     let pattern = relation.definition.pattern();
-    match pattern {
+    Ok(match pattern {
         Some(SketchPatternDefinition::TextFrame { text_reference })
             if relation
                 .members()
@@ -560,38 +566,36 @@ fn exact_text_relation(
                     .values()
                     .copied()
                     .eq([*text_reference])
-                && relation.return_member_indices() == relation.member_indices()[1..] =>
+                && relation.return_members().iter().map(|member| member.reference.record_index())
+                    .eq(relation.members().iter().skip(1).map(|member| member.reference.record_index())) =>
         {
-            let text = projected.get(&(scope, *text_reference))?;
+            let Some(text) = projected.get(&(scope, *text_reference)) else { return Ok(None); };
             if !matches!(
                 *text.geometry.definition(),
                 SketchGeometryDefinition::Text { .. }
             ) {
-                return None;
+                return Ok(None);
             }
-            let frame = relation
-                .return_members()
-                .iter()
-                .map(|member| {
-                    projected
-                        .get(&(scope, member.reference.record_index()))
-                        .copied()
-                })
-                .collect::<Option<Vec<_>>>()?;
-            (!frame.is_empty()
-                && frame.iter().all(|entity| {
-                    entity.id() != text.id()
-                        && !matches!(
-                            *entity.geometry.definition(),
-                            SketchGeometryDefinition::Text { .. }
-                        )
-                }))
-            .then(|| Definition::TextFrame {
-                text: text.id().clone(),
-                frame: frame
-                    .into_iter()
-                    .map(|entity| entity.id().clone())
-                    .collect(),
+            let mut frame = Vec::new();
+            for member in relation.return_members().iter() {
+                let Some(entity) = projected.get(&(scope, member.reference.record_index())) else {
+                    return Ok(None);
+                };
+                if entity.id() == text.id()
+                    || matches!(*entity.geometry.definition(), SketchGeometryDefinition::Text { .. })
+                {
+                    return Ok(None);
+                }
+                let id = copy_constraint_id(ctx, entity.id().as_str(),
+                    "f3d sketch constraint text frame entity id")?;
+                push_constraint_item(ctx, &mut frame, id,
+                    "f3d sketch constraint text frame entity")?;
+            }
+            if frame.is_empty() { return Ok(None); }
+            Some(Definition::TextFrame {
+                text: copy_constraint_id(ctx, text.id().as_str(),
+                    "f3d sketch constraint text frame text id")?,
+                frame,
             })
         }
         Some(SketchPatternDefinition::TextPath {
@@ -604,11 +608,13 @@ fn exact_text_relation(
                 .values()
                 .copied()
                 .eq([*text_reference])
-            && relation.return_member_indices()
-                == [relation.members()[0].reference.record_index()] =>
+            && relation.return_members().iter().map(|member| member.reference.record_index())
+                .eq([relation.members()[0].reference.record_index()]) =>
         {
-            let path = projected.get(&(scope, relation.members()[0].reference.record_index()))?;
-            let text = projected.get(&(scope, *text_reference))?;
+            let Some(path) = projected.get(&(scope, relation.members()[0].reference.record_index())) else {
+                return Ok(None);
+            };
+            let Some(text) = projected.get(&(scope, *text_reference)) else { return Ok(None); };
             if path.id() == text.id()
                 || matches!(
                     *path.geometry.definition(),
@@ -620,30 +626,32 @@ fn exact_text_relation(
                 )
                 || glyph_transforms.is_empty()
             {
-                return None;
+                return Ok(None);
             }
-            let glyph_transforms = glyph_transforms
-                .iter()
-                .map(|source| {
-                    let source = source.rows();
-                    if source[3] != [0.0, 0.0, 0.0, 1.0] {
-                        return None;
-                    }
-                    let mut rows = [source[0], source[1], source[2]];
-                    for row in &mut rows {
-                        row[3] *= 10.0;
-                    }
-                    Transform::affine(rows)
-                })
-                .collect::<Option<Vec<_>>>()?;
+            let mut glyphs = Vec::new();
+            for source in glyph_transforms {
+                let source = source.rows();
+                if source[3] != [0.0, 0.0, 0.0, 1.0] {
+                    return Ok(None);
+                }
+                let mut rows = [source[0], source[1], source[2]];
+                for row in &mut rows {
+                    row[3] *= 10.0;
+                }
+                let Some(glyph) = Transform::affine(rows) else { return Ok(None); };
+                push_constraint_item(ctx, &mut glyphs, glyph,
+                    "f3d sketch constraint text glyph transform")?;
+            }
             Some(Definition::TextPath {
-                text: text.id().clone(),
-                path: path.id().clone(),
-                glyph_transforms,
+                text: copy_constraint_id(ctx, text.id().as_str(),
+                    "f3d sketch constraint text path text id")?,
+                path: copy_constraint_id(ctx, path.id().as_str(),
+                    "f3d sketch constraint text path curve id")?,
+                glyph_transforms: glyphs,
             })
         }
         _ => None,
-    }
+    })
 }
 
 fn exact_circular_pattern(
