@@ -377,7 +377,8 @@ pub(crate) fn scan_with_graph(
     let uv = uv_records(stream);
     let mut constructions = graph.composite_curves(ctx)?;
     append_intersection_data_curves(ctx, stream, &mut constructions)?;
-    Ok(scan_with_auxiliaries(
+    scan_with_auxiliaries(
+        ctx,
         &chart_records(stream, point_layout),
         &term_records(stream),
         &uv,
@@ -385,7 +386,7 @@ pub(crate) fn scan_with_graph(
         graph,
         constructions,
         CrossFormCollision::Reject,
-    ))
+    )
 }
 
 fn append_intersection_data_curves(
@@ -436,7 +437,8 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
     }
     let mut constructions = graph.composite_curves(ctx)?;
     append_intersection_data_curves(ctx, stream, &mut constructions)?;
-    Ok(scan_with_auxiliaries(
+    scan_with_auxiliaries(
+        ctx,
         &charts,
         &terms,
         &uv,
@@ -444,7 +446,7 @@ pub(crate) fn scan_with_auxiliary_replacements_and_graph(
         graph,
         constructions,
         CrossFormCollision::PreferDeltaTwin,
-    ))
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -454,6 +456,7 @@ enum CrossFormCollision {
 }
 
 fn scan_with_auxiliaries(
+    ctx: &DecodeContext<'_>,
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
     uv: &BTreeMap<u32, SupportUvValues>,
@@ -461,23 +464,29 @@ fn scan_with_auxiliaries(
     graph: &topology::Graph,
     constructions: Vec<CompositeCurve>,
     cross_form_collision: CrossFormCollision,
-) -> CurveScan {
-    let referenced_curves = graph.referenced_curve_xmts();
+) -> Result<CurveScan, CodecError> {
+    let referenced_curves = graph.referenced_curve_xmts(ctx)?;
     let mut result = CurveScan::default();
     let mut forms_by_xmt = BTreeMap::<u32, BTreeSet<bool>>::new();
     for construction in &constructions {
-        forms_by_xmt
-            .entry(construction.xmt)
-            .or_default()
-            .insert(construction.delta_twin);
+        if !forms_by_xmt.contains_key(&construction.xmt) {
+            ctx.charge_collection_items(1, "NX intersection form keys")?;
+        }
+        let forms = forms_by_xmt.entry(construction.xmt).or_default();
+        if !forms.contains(&construction.delta_twin) {
+            ctx.charge_collection_items(1, "NX intersection form values")?;
+        }
+        forms.insert(construction.delta_twin);
     }
-    let cross_form_xmts = forms_by_xmt
-        .into_iter()
-        .filter_map(|(xmt, forms)| (forms.len() > 1).then_some(xmt))
-        .collect::<BTreeSet<_>>();
-    let constructions = constructions
-        .into_iter()
-        .filter(|construction| {
+    let mut cross_form_xmts = BTreeSet::new();
+    for (xmt, forms) in forms_by_xmt {
+        if forms.len() > 1 {
+            ctx.charge_collection_items(1, "NX intersection cross-form identities")?;
+            cross_form_xmts.insert(xmt);
+        }
+    }
+    let mut constructions = constructions;
+    constructions.retain(|construction| {
             if !cross_form_xmts.contains(&construction.xmt) {
                 return true;
             }
@@ -488,20 +497,19 @@ fn scan_with_auxiliaries(
                 }
                 CrossFormCollision::PreferDeltaTwin => construction.delta_twin,
             }
-        })
-        .collect::<Vec<_>>();
+        });
     for construction in constructions.iter().copied() {
         match enrich(construction, charts, terms, uv, bridges, graph) {
             Ok(curve) => {
-                result.constructions.push(construction);
-                result.curves.push(curve);
+                push_scan_record(ctx, &mut result.constructions, construction, "NX intersection constructions")?;
+                push_scan_record(ctx, &mut result.curves, curve, "NX intersection solved curves")?;
             }
             Err(rejection)
                 if referenced_curves.contains(&construction.xmt)
                     && construction_supports(construction, uv, bridges, graph).is_some()
                     && construction_has_endpoint_witnesses(construction, terms, graph) =>
             {
-                result.constructions.push(construction);
+                push_scan_record(ctx, &mut result.constructions, construction, "NX intersection constructions")?;
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some((endpoints, tolerance))) = (
                         construction_supports(construction, uv, bridges, graph).and_then(
@@ -516,12 +524,12 @@ fn scan_with_auxiliaries(
                                 ))
                             }),
                     ) {
-                        result.uncharted.push(UnchartedIntersection {
+                        push_scan_record(ctx, &mut result.uncharted, UnchartedIntersection {
                             xmt: construction.xmt,
                             supports,
                             endpoints,
                             tolerance,
-                        });
+                        }, "NX uncharted intersections")?;
                     }
                 }
                 result.rejected.add(rejection);
@@ -533,7 +541,20 @@ fn scan_with_auxiliaries(
         }
     }
     result.source_constructions = constructions;
-    result
+    Ok(result)
+}
+
+fn push_scan_record<T>(
+    ctx: &DecodeContext<'_>,
+    records: &mut Vec<T>,
+    record: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), operation)?;
+    records.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    records.push(record);
+    Ok(())
 }
 
 fn enrich(

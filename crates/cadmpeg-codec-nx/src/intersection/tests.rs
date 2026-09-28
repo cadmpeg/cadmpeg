@@ -290,7 +290,8 @@ fn intersection_rejects_cross_form_xmt_collision_atomically() {
         delta_twin,
         pos,
     };
-    let scan = super::scan_with_auxiliaries(
+    let scan = crate::test_support::with_decode_context(|ctx| super::scan_with_auxiliaries(
+        ctx,
         &BTreeMap::new(),
         &BTreeMap::new(),
         &BTreeMap::new(),
@@ -298,7 +299,7 @@ fn intersection_rejects_cross_form_xmt_collision_atomically() {
         &crate::topology::Graph::default(),
         vec![construction(false, 10), construction(true, 20)],
         super::CrossFormCollision::Reject,
-    );
+    )).unwrap();
 
     assert!(scan.source_constructions.is_empty());
     assert!(scan.constructions.is_empty());
