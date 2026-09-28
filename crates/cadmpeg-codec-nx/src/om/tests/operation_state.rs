@@ -4,7 +4,7 @@
 use super::message_bytes;
 use crate::om::roll_forward::OperationStateGroupRow;
 use crate::om::{
-    audit_trail_rows, operation_state_group_table, operation_state_group_table_before_counter_map,
+    operation_state_group_table, operation_state_group_table_before_counter_map,
     operation_state_journal, operation_state_journal_groups_before_boundary,
     operation_state_journal_start, operation_state_messages,
 };
@@ -181,7 +181,7 @@ fn audit_trail_rows_retain_optional_selector_variable_value_width_and_raw_bytes(
         0xe0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x03, 0x13, 0x04, 0x05, 0x07, 0x00, 0xe0, 0x65, 0x53,
         0x4d, 0x21, 0xc0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x04, 0x13, 0x04, 0x00,
     ];
-    let rows = audit_trail_rows(&bytes, 2, bytes.len(), 900).expect("audit rows");
+    let rows = crate::test_support::with_decode_context(|ctx| crate::om::audit_trail_rows(ctx, &bytes, 2, bytes.len(), 900)).unwrap().expect("audit rows");
     assert_eq!(rows.len(), 2);
     assert_eq!(Some(rows[0].record().ordinal.value()), Some(2));
     assert_eq!(rows[0].record().frame_selector, None);
@@ -197,7 +197,38 @@ fn audit_trail_rows_retain_optional_selector_variable_value_width_and_raw_bytes(
     assert_eq!(rows[1].record().raw(), &bytes[20..36]);
     assert_eq!(rows[1].end_offset(), 900 + 36);
 
-    let truncated = audit_trail_rows(&bytes, 2, 35, 900).expect("bounded audit rows");
+    let truncated = crate::test_support::with_decode_context(|ctx| crate::om::audit_trail_rows(ctx, &bytes, 2, 35, 900)).unwrap().expect("bounded audit rows");
     assert_eq!(truncated.len(), 1);
     assert_eq!(truncated[0].record().raw(), &bytes[7..20]);
+}
+
+fn audit_trail_refusal(configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+    let bytes = [
+        0x41, 0x00, 0x03, 0x05, 0x01, 0x04, 0x00, 0x04, 0x02, 0x13, 0xe0, 0x65, 0x53, 0x4d, 0x20,
+        0xe0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x03, 0x13, 0x04, 0x05, 0x07, 0x00, 0xe0, 0x65, 0x53,
+        0x4d, 0x21, 0xc0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x04, 0x13, 0x04, 0x00,
+    ];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    crate::om::audit_trail_rows(&ctx, &bytes, 2, bytes.len(), 900).unwrap_err()
+}
+
+#[test]
+fn audit_trail_rows_refuse_collection_limit() {
+    let error = audit_trail_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn audit_trail_rows_refuse_retained_limit() {
+    let error = audit_trail_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn audit_trail_rows_refuse_work_limit() {
+    let error = audit_trail_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }

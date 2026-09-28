@@ -211,11 +211,9 @@ pub(super) fn om_record_areas(ctx: &cadmpeg_core::decode::DecodeContext<'_>, con
 pub(super) fn audit_trail_rows(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<OmAuditTrailRow>, cadmpeg_core::CodecError>
 {
     let sections = container.om_sections(ctx)?;
-    Ok(segment_om_links(ctx, container)?
-        .into_iter()
-        .filter(|link| link.schema_role == OmSchemaRole::AuditTrail)
-        .enumerate()
-        .flat_map(|(section_ordinal, link)| {
+    let mut out = Vec::new();
+    for (section_ordinal, link) in segment_om_links(ctx, container)?
+        .into_iter().filter(|link| link.schema_role == OmSchemaRole::AuditTrail).enumerate() {
             let Some((entry, section)) = sections.iter().find(|(entry, section)| {
                 entry
                     .file_span()
@@ -224,14 +222,14 @@ pub(super) fn audit_trail_rows(ctx: &cadmpeg_core::decode::DecodeContext<'_>, co
                     })
                     == link.location.section_offset()
             }) else {
-                return Vec::new();
+                continue;
             };
-            let Some(rows) = section.audit_trail_rows() else {
-                return Vec::new();
+            let Some(rows) = section.audit_trail_rows(ctx)? else {
+                continue;
             };
             let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
-            rows.into_iter()
+            out.extend(rows.into_iter()
                 .filter_map(move |row| {
                     let record = row.record();
                     let ordinal = record.ordinal.value();
@@ -242,10 +240,9 @@ pub(super) fn audit_trail_rows(ctx: &cadmpeg_core::decode::DecodeContext<'_>, co
                         entry.name.clone(),
                         entry_offset.checked_add(row.offset() as u64)?,
                     )
-                })
-                .collect()
-        })
-        .collect())
+                }));
+    }
+    Ok(out)
 }
 
 /// Decode exact object state-counter rows from canonical feature-history areas.

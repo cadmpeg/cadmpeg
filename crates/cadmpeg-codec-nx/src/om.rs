@@ -1306,7 +1306,7 @@ impl<'a> Section<'a> {
     /// feature-history and model areas from being interpreted as audit data.
     /// Unknown bytes before, between, and after complete rows remain outside
     /// this typed view.
-    pub(crate) fn audit_trail_rows(&self) -> Option<Vec<AuditTrailRow>> {
+    pub(crate) fn audit_trail_rows(&self, ctx: &DecodeContext<'_>) -> Result<Option<Vec<AuditTrailRow>>, CodecError> {
         let has_audit_marker = self
             .types
             .iter()
@@ -1318,18 +1318,20 @@ impl<'a> Section<'a> {
             )
         });
         if !has_audit_marker || has_specialized_marker {
-            return None;
+            return Ok(None);
         }
-        let (base_offset, bytes) = self.record_area_parts()?;
-        let header = self.record_area_header()?;
-        let product = header.product.offset.checked_sub(base_offset)?;
-        let product_end = record_area_product_end(bytes, product)?;
-        let start = bytes
-            .get(product_end..)?
-            .windows(2)
-            .position(|window| window == [0x41, 0x00])?
-            .checked_add(product_end + 2)?;
-        audit_trail_rows(bytes, start, bytes.len(), base_offset)
+        let Some((base_offset, bytes, start)) = (|| {
+            let (base_offset, bytes) = self.record_area_parts()?;
+            let header = self.record_area_header()?;
+            let product = header.product.offset.checked_sub(base_offset)?;
+            let product_end = record_area_product_end(bytes, product)?;
+            let start = bytes.get(product_end..)?
+                .windows(2)
+                .position(|window| window == [0x41, 0x00])?
+                .checked_add(product_end + 2)?;
+            Some((base_offset, bytes, start))
+        })() else { return Ok(None) };
+        audit_trail_rows(ctx, bytes, start, bytes.len(), base_offset)
     }
 
     /// Decode unambiguous primary body references from bounded operation records.
@@ -3089,14 +3091,16 @@ fn audit_trail_row_at(
 /// assigning a second interpretation to a row sequence. Bytes that do not
 /// complete the row grammar are left untyped.
 fn audit_trail_rows(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Option<Vec<AuditTrailRow>> {
+) -> Result<Option<Vec<AuditTrailRow>>, CodecError> {
     if start >= end || end > bytes.len() {
-        return None;
+        return Ok(None);
     }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(end - start), "scan NX audit-trail rows")?;
     let mut rows = Vec::new();
     let mut at = start;
     let mut previous_ordinal = None;
@@ -3107,13 +3111,14 @@ fn audit_trail_rows(
         };
         let ordinal = row.record().ordinal.value();
         if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
-            return None;
+            return Ok(None);
         }
         previous_ordinal = Some(ordinal);
         at = row.local_end();
+        reserve_om_retained_item(ctx, &mut rows, "NX audit-trail rows")?;
         rows.push(row);
     }
-    Some(rows)
+    Ok(Some(rows))
 }
 
 fn operation_state_journal_start(bytes: &[u8], product_end: usize) -> Option<usize> {
