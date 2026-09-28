@@ -402,7 +402,7 @@ pub(super) fn try_decode_geometry(
         let mut surfaces_by_xmt = BTreeMap::new();
         let mut curves_by_xmt = BTreeMap::new();
         let mut pcurves_by_xmt = BTreeMap::new();
-        let mut pcurve_supports_by_xmt = BTreeMap::new();
+        let mut pcurve_supports_by_xmt: BTreeMap<u32, SurfaceId> = BTreeMap::new();
         let mut trim_ranges = BTreeMap::new();
         let mut pending_blend_supports = Vec::new();
         let mut pending_blend_spines = Vec::new();
@@ -1037,10 +1037,17 @@ pub(super) fn try_decode_geometry(
                 annotations.exactness(&procedural_id, Exactness::Unknown);
             }
             let definition = if let Some(charted) = charted {
-                let support_uv = intersection_support_uv
-                    .get(&construction.xmt)
-                    .cloned()
-                    .unwrap_or([None, None]);
+                let support_uv = if let Some(lanes) = intersection_support_uv.get(&construction.xmt) {
+                    let [first, second] = [0, 1].map(|side| {
+                        lanes[side]
+                            .as_ref()
+                            .map(|lane| lane.clone_charged(ctx))
+                            .transpose()
+                    });
+                    [first?, second?]
+                } else {
+                    [None, None]
+                };
                 let parameters = charted.samples.parameters_charged(ctx)?;
                 let first = intersection_side(
                     &ir,
@@ -1091,15 +1098,24 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
-            let _attached = ir.model.add_procedural_curve(curve_id.clone(), procedural);
+            ctx.charge_collection_items(1, "nx intersection constructions")?;
+            ir.model.procedural_curves.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx intersection constructions", 0, 1)
+            })?;
+            let _attached = ir.model.add_procedural_curve(
+                copy_typed_id(ctx, curve_id.as_str(), "nx intersection owner identity")?,
+                procedural,
+            );
 
+            ctx.charge_collection_items(1, "nx curve node index")?;
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
         }
         for (procedural_index, spine_xmt) in pending_blend_spines {
-            let Some(spine) = curves_by_xmt.get(&spine_xmt).cloned() else {
+            let Some(spine_ref) = curves_by_xmt.get(&spine_xmt) else {
                 continue;
             };
+            let spine = copy_typed_id(ctx, spine_ref.as_str(), "nx blend spine identity")?;
             let Some(procedural) = ir.model.procedural_surfaces.get_mut(procedural_index) else {
                 continue;
             };
@@ -1110,62 +1126,76 @@ pub(super) fn try_decode_geometry(
             });
         }
         let trimmed_curves = &view.trimmed_curves;
-        let mut normalized_pcurves = BTreeSet::new();
-        let mut invalid_pcurves = BTreeSet::new();
-        let curve_indices: BTreeMap<_, _> = ir
-            .model
-            .curves
-            .iter()
-            .enumerate()
-            .map(|(index, curve)| (curve.id.clone(), index))
-            .collect();
-        let surface_indices: BTreeMap<_, _> = ir
-            .model
-            .surfaces
-            .iter()
-            .enumerate()
-            .map(|(index, surface)| (surface.id.clone(), index))
-            .collect();
-        let pcurve_indices: BTreeMap<_, _> = ir
-            .model
-            .pcurves
-            .iter()
-            .enumerate()
-            .map(|(index, pcurve)| (pcurve.id.clone(), index))
-            .collect();
+        let mut normalized_pcurves: BTreeSet<PcurveId> = BTreeSet::new();
+        let mut invalid_pcurves: BTreeSet<PcurveId> = BTreeSet::new();
+        let mut curve_indices: BTreeMap<CurveId, usize> = BTreeMap::new();
+        for (index, curve) in ir.model.curves.iter().enumerate() {
+            ctx.charge_collection_items(1, "nx curve identity index")?;
+            curve_indices.insert(
+                copy_typed_id(ctx, curve.id.as_str(), "nx curve index identity")?,
+                index,
+            );
+        }
+        let mut surface_indices: BTreeMap<SurfaceId, usize> = BTreeMap::new();
+        for (index, surface) in ir.model.surfaces.iter().enumerate() {
+            ctx.charge_collection_items(1, "nx surface identity index")?;
+            surface_indices.insert(
+                copy_typed_id(ctx, surface.id.as_str(), "nx surface index identity")?,
+                index,
+            );
+        }
+        let mut pcurve_indices: BTreeMap<PcurveId, usize> = BTreeMap::new();
+        for (index, pcurve) in ir.model.pcurves.iter().enumerate() {
+            ctx.charge_collection_items(1, "nx pcurve identity index")?;
+            pcurve_indices.insert(
+                copy_typed_id(ctx, pcurve.id.as_str(), "nx pcurve index identity")?,
+                index,
+            );
+        }
         let surface_curves = &view.surface_curves;
         loop {
             let mapped = curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len();
             for trim in trimmed_curves {
-                if let Some(basis) = curves_by_xmt.get(&trim.state.basis()).cloned() {
+                if let Some(basis_ref) = curves_by_xmt.get(&trim.state.basis()) {
+                    let basis = copy_typed_id(ctx, basis_ref.as_str(), "nx trimmed curve identity")?;
                     let parameters = curve_indices
                         .get(&basis)
                         .and_then(|index| ir.model.curves.get(*index))
                         .and_then(|curve| {
                             canonical_trim_range(&curve.geometry, trim.state.parameters())
                         });
+                    ctx.charge_collection_items(1, "nx trimmed curve index")?;
                     curves_by_xmt.insert(trim.xmt, basis);
                     if let Some(parameters) = parameters {
+                        ctx.charge_collection_items(1, "nx curve trim ranges")?;
                         trim_ranges.insert(trim.xmt, parameters);
                     }
                 }
-                if let Some(pcurve) = pcurves_by_xmt.get(&trim.state.basis()).cloned() {
+                if let Some(pcurve_ref) = pcurves_by_xmt.get(&trim.state.basis()) {
+                    let pcurve = copy_typed_id(ctx, pcurve_ref.as_str(), "nx trimmed pcurve identity")?;
+                    ctx.charge_collection_items(1, "nx trimmed pcurve index")?;
                     pcurves_by_xmt.insert(trim.xmt, pcurve);
-                    if let Some(support) = pcurve_supports_by_xmt.get(&trim.state.basis()).cloned()
+                    if let Some(support) = pcurve_supports_by_xmt.get(&trim.state.basis())
                     {
-                        pcurve_supports_by_xmt.insert(trim.xmt, support);
+                        ctx.charge_collection_items(1, "nx trimmed pcurve supports")?;
+                        pcurve_supports_by_xmt.insert(
+                            trim.xmt,
+                            copy_typed_id(ctx, support.as_str(), "nx trimmed pcurve support")?,
+                        );
                     }
+                    ctx.charge_collection_items(1, "nx curve trim ranges")?;
                     trim_ranges.insert(trim.xmt, trim.state.parameters());
                 }
             }
             for surface_curve in surface_curves {
-                if let Some(pcurve) = pcurves_by_xmt.get(&surface_curve.state.pcurve()).cloned() {
+                if let Some(pcurve_ref) = pcurves_by_xmt.get(&surface_curve.state.pcurve()) {
+                    let pcurve: PcurveId = copy_typed_id(ctx, pcurve_ref.as_str(), "nx surface pcurve identity")?;
                     if !normalized_pcurves.contains(&pcurve) {
                         let support = surfaces_by_xmt
                             .get(&surface_curve.state.surface())
                             .and_then(|id| surface_indices.get(id))
                             .and_then(|index| ir.model.surfaces.get(*index))
-                            .map(|surface| surface.geometry.clone());
+                            .map(|surface| &surface.geometry);
                         let normalized = if let (Some(support), Some(carrier)) = (
                             support,
                             pcurve_indices
@@ -1178,10 +1208,10 @@ pub(super) fn try_decode_geometry(
                         };
                         if !normalized {
                             pcurves_by_xmt.remove(&surface_curve.state.pcurve());
-                            invalid_pcurves.insert(pcurve.clone());
+                            insert_retained_id(ctx, &mut invalid_pcurves, pcurve.as_str(), "nx invalid pcurves")?;
                             continue;
                         }
-                        normalized_pcurves.insert(pcurve.clone());
+                        insert_retained_id(ctx, &mut normalized_pcurves, pcurve.as_str(), "nx normalized pcurves")?;
                     }
                     if let Some(carrier) = pcurve_indices
                         .get(&pcurve)
@@ -1208,20 +1238,28 @@ pub(super) fn try_decode_geometry(
                             }
                         }
                     }
+                    ctx.charge_collection_items(1, "nx surface pcurve index")?;
                     pcurves_by_xmt.insert(surface_curve.xmt, pcurve);
                     if let Some(support) =
-                        surfaces_by_xmt.get(&surface_curve.state.surface()).cloned()
+                        surfaces_by_xmt.get(&surface_curve.state.surface())
                     {
-                        pcurve_supports_by_xmt.insert(surface_curve.xmt, support);
+                        ctx.charge_collection_items(1, "nx surface pcurve supports")?;
+                        pcurve_supports_by_xmt.insert(
+                            surface_curve.xmt,
+                            copy_typed_id(ctx, support.as_str(), "nx surface pcurve support")?,
+                        );
                     }
                 }
                 if let Some(original) = surface_curve
                     .state
                     .original()
                     .and_then(|original| curves_by_xmt.get(&original))
-                    .cloned()
                 {
-                    curves_by_xmt.insert(surface_curve.xmt, original);
+                    ctx.charge_collection_items(1, "nx surface curve index")?;
+                    curves_by_xmt.insert(
+                        surface_curve.xmt,
+                        copy_typed_id(ctx, original.as_str(), "nx surface curve identity")?,
+                    );
                 }
             }
             if curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len() == mapped {
@@ -1447,14 +1485,19 @@ pub(super) fn try_decode_geometry(
     for (si, unknown_index) in stream_unknowns {
         retain_unknown_stream_data(ctx, &scan.streams[si], &mut unknowns[unknown_index])?;
     }
-    prune_unreferenced_unknown_carriers(&mut ir);
+    prune_unreferenced_unknown_carriers(ctx, &mut ir)?;
     finalize_point_topology(ctx, &mut ir, &mut annotations)?;
-    let referenced_pcurves: BTreeSet<_> = ir
-        .model
-        .coedges
-        .iter()
-        .flat_map(|coedge| coedge.pcurves.iter().map(|pcurve| pcurve.pcurve.clone()))
-        .collect();
+    let mut referenced_pcurves: BTreeSet<PcurveId> = BTreeSet::new();
+    for coedge in &ir.model.coedges {
+        for pcurve in &coedge.pcurves {
+            insert_retained_id(
+                ctx,
+                &mut referenced_pcurves,
+                pcurve.pcurve.as_str(),
+                "nx referenced pcurves",
+            )?;
+        }
+    }
     ir.model
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
@@ -1492,9 +1535,20 @@ pub(super) fn try_decode_geometry(
         dialect_losses,
         notes,
     )?;
-    report.losses.extend(carrier_refusals);
-    report.losses.extend(topology_losses);
-    report.losses.extend(native_losses);
+    for losses in [carrier_refusals, topology_losses, native_losses] {
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(losses.len()),
+            "nx geometry report losses",
+        )?;
+        report.losses.try_reserve(losses.len()).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "nx geometry report losses",
+                0,
+                cadmpeg_core::decode::u64_from_index(losses.len()),
+            )
+        })?;
+        report.losses.extend(losses);
+    }
     report_untransferred_streams(
         ctx,
         scan,
@@ -1504,19 +1558,35 @@ pub(super) fn try_decode_geometry(
     Ok(Some((ir, report, annotations, unknowns)))
 }
 
-fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
-    let mut used_surfaces: BTreeSet<_> = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| face.surface.clone())
-        .collect();
-    let mut used_curves: BTreeSet<_> = ir
-        .model
-        .edges
-        .iter()
-        .filter_map(|edge| edge.curve().cloned())
-        .collect();
+fn insert_retained_id<T>(
+    ctx: &DecodeContext<'_>,
+    ids: &mut BTreeSet<T>,
+    identity: &str,
+    operation: &'static str,
+) -> Result<(), CodecError>
+where
+    T: TryFrom<String> + Ord,
+    T::Error: std::fmt::Display,
+{
+    ctx.charge_collection_items(1, operation)?;
+    ids.insert(copy_typed_id(ctx, identity, operation)?);
+    Ok(())
+}
+
+fn prune_unreferenced_unknown_carriers(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+) -> Result<(), CodecError> {
+    let mut used_surfaces: BTreeSet<SurfaceId> = BTreeSet::new();
+    for face in &ir.model.faces {
+        insert_retained_id(ctx, &mut used_surfaces, face.surface.as_str(), "nx used surfaces")?;
+    }
+    let mut used_curves: BTreeSet<CurveId> = BTreeSet::new();
+    for edge in &ir.model.edges {
+        if let Some(curve) = edge.curve() {
+            insert_retained_id(ctx, &mut used_curves, curve.as_str(), "nx used curves")?;
+        }
+    }
     loop {
         let previous = (used_surfaces.len(), used_curves.len());
         for procedural in &ir.model.procedural_surfaces {
@@ -1529,21 +1599,18 @@ fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
             match procedural.definition() {
                 ProceduralSurfaceDefinition::Offset(definition_payload) => {
                     let support = definition_payload.support();
-                    {
-                        used_surfaces.insert(support.clone());
-                    }
+                    insert_retained_id(ctx, &mut used_surfaces, support.as_str(), "nx used surfaces")?;
                 }
                 ProceduralSurfaceDefinition::Blend(definition_payload) => {
                     let supports = definition_payload.supports();
                     let spine = definition_payload.spine();
 
-                    used_surfaces.extend(
-                        supports
-                            .iter()
-                            .flatten()
-                            .map(|support| support.surface.clone()),
-                    );
-                    used_curves.extend(spine.iter().cloned());
+                    for support in supports.iter().flatten() {
+                        insert_retained_id(ctx, &mut used_surfaces, support.surface.as_str(), "nx used surfaces")?;
+                    }
+                    if let Some(spine) = spine {
+                        insert_retained_id(ctx, &mut used_curves, spine.as_str(), "nx used curves")?;
+                    }
                 }
                 _ => {}
             }
@@ -1557,20 +1624,19 @@ fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
             }
             match procedural.definition() {
                 ProceduralCurveDefinition::Intersection { context, .. } => {
-                    used_surfaces.extend(
-                        context
-                            .sides()
-                            .iter()
-                            .filter_map(|side| side.surface.clone()),
-                    );
+                    for side in context.sides() {
+                        if let Some(surface) = &side.surface {
+                            insert_retained_id(ctx, &mut used_surfaces, surface.as_str(), "nx used surfaces")?;
+                        }
+                    }
                 }
-                ProceduralCurveDefinition::SurfaceCurve { family } => used_surfaces.extend(
-                    family
-                        .context()
-                        .sides()
-                        .iter()
-                        .filter_map(|side| side.surface.clone()),
-                ),
+                ProceduralCurveDefinition::SurfaceCurve { family } => {
+                    for side in family.context().sides() {
+                        if let Some(surface) = &side.surface {
+                            insert_retained_id(ctx, &mut used_surfaces, surface.as_str(), "nx used surfaces")?;
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -1590,6 +1656,7 @@ fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         ) || used_curves.contains(&curve.id)
     });
+    Ok(())
 }
 
 fn retain_live_annotations(
