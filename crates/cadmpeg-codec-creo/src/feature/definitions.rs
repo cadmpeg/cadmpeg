@@ -1636,14 +1636,19 @@ fn decode_variable_guess(
 }
 
 fn variable_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureVariableTable> {
-    let table = find_bytes(payload, b"var_arr\0", start, end)?;
+) -> Result<Option<FeatureVariableTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"var_arr\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"var_arr\0".len();
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
     cursor = after_count;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
@@ -1653,7 +1658,9 @@ fn variable_table(
     } else {
         None
     };
-    let close = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end)?;
+    let Some(close) = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end) else {
+        return Ok(None);
+    };
     let named_row = (|| {
         let type_label = find_bytes(payload, b"type\0", cursor, close)?;
         let variable_type = named_compact_int(payload, b"type\0", cursor, close)?;
@@ -1664,13 +1671,13 @@ fn variable_table(
         let guess_label = find_bytes(payload, b"guess\0", cursor, close)? + b"guess\0".len();
         let (guess, guess_end) =
             decode_section_coordinate_scalar(payload, guess_label, close, cache);
-        Some(FeatureVariableRow {
+        Some((FeatureVariableRow {
             variable_type: variable_type.into(),
             key,
             value,
-            value_body: payload[value_label..value_end].to_vec(),
+            value_body: Vec::new(),
             guess,
-            guess_body: payload[guess_label..guess_end].to_vec(),
+            guess_body: Vec::new(),
             known: named_compact_int(payload, b"known\0", cursor, close),
             homogeneity: named_compact_int(payload, b"homogeneity\0", cursor, close),
             uvar_id: named_compact_int(payload, b"uvar_id\0", cursor, close),
@@ -1679,14 +1686,26 @@ fn variable_table(
             // the row; the label sits at or after the table opener plus eight,
             // so the bound holds for every table this scanner reaches.
             offset: type_label.checked_sub(2)?,
-        })
+        }, (value_label, value_end), (guess_label, guess_end)))
     })();
     let (_, after_close_ref) = psb::compact_int(payload, close + 2);
     cursor = after_close_ref;
     if payload.get(cursor) == Some(&0xe2) {
         cursor += 1;
     }
-    let mut rows = named_row.into_iter().collect::<Vec<_>>();
+    let mut rows = Vec::new();
+    if let Some((mut row, (value_start, value_end), (guess_start, guess_end))) = named_row {
+        row.value_body = ctx.copy_retained(
+            &payload[value_start..value_end],
+            "creo variable value body",
+        )?;
+        row.guess_body = ctx.copy_retained(
+            &payload[guess_start..guess_end],
+            "creo variable guess body",
+        )?;
+        ctx.try_reserve_items(&mut rows, 1, "creo variable rows")?;
+        rows.push(row);
+    }
     // Each row consumes at least one byte, so the declared count cannot admit
     // more rows than the unread bytes in the table window.
     let window = payload.get(cursor..end).map_or(0, <[u8]>::len);
@@ -1710,13 +1729,14 @@ fn variable_table(
         let value_start = cursor;
         let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
-        let value_body = payload[value_start..cursor].to_vec();
+        let value_end = cursor;
         let guess_start = cursor;
         let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
-        let guess_body = payload[guess_start..cursor].to_vec();
-        let mut trailing = Vec::new();
-        while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
+        let guess_end = cursor;
+        let mut trailing = [None; 3];
+        let mut trailing_count = 0;
+        while cursor < end && payload[cursor] != 0xe2 && trailing_count < 3 {
             if payload[cursor] >= 0xc0 {
                 break;
             }
@@ -1724,42 +1744,45 @@ fn variable_table(
             if next == cursor {
                 break;
             }
-            trailing.push(field);
+            trailing[trailing_count] = Some(field);
+            trailing_count += 1;
             cursor = next;
         }
-        let row = FeatureVariableRow {
-            variable_type: variable_type.into(),
-            key,
-            value,
-            value_body,
-            guess,
-            guess_body,
-            known: trailing.first().copied(),
-            homogeneity: trailing.get(1).copied(),
-            uvar_id: trailing.get(2).copied(),
-            offset: row_offset,
-        };
         let Some(delimiter) = payload[cursor..end].iter().position(|&byte| byte == 0xe2) else {
             break;
         };
         cursor += delimiter + 1;
+        let row = FeatureVariableRow {
+            variable_type: variable_type.into(),
+            key,
+            value,
+            value_body: ctx.copy_retained(&payload[value_start..value_end], "creo variable value body")?,
+            guess,
+            guess_body: ctx.copy_retained(&payload[guess_start..guess_end], "creo variable guess body")?,
+            known: trailing[0],
+            homogeneity: trailing[1],
+            uvar_id: trailing[2],
+            offset: row_offset,
+        };
+        ctx.try_reserve_items(&mut rows, 1, "creo variable rows")?;
         rows.push(row);
     }
-    Some(FeatureVariableTable {
+    Ok(Some(FeatureVariableTable {
         declared_count,
         entity_ref,
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn positional_variable_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     table_class: u32,
     cache: &scalar::ScalarCache,
-) -> Option<FeatureVariableTable> {
+) -> Result<Option<FeatureVariableTable>, CodecError> {
     let mut candidates = (start..end).filter_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
@@ -1772,16 +1795,21 @@ fn positional_variable_table(
                 table,
                 declared_count,
                 after_reference + 2,
-                payload[after_count + 1..after_reference].to_vec(),
+                &payload[after_count + 1..after_reference],
             )
         })
     });
-    let (table, declared_count, mut cursor, reference_bytes) = candidates.next()?;
+    let Some((table, declared_count, mut cursor, reference_bytes)) = candidates.next() else {
+        return Ok(None);
+    };
     // A positional definition has one variable array. Do not bind the first
     // header when another array in the same bounded definition matches it.
-    candidates.next().is_none().then_some(())?;
-    (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-    let (_, after_row_class) = psb::reference_id(payload, cursor + 1).ok()?;
+    if candidates.next().is_some() || payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+        return Ok(None);
+    }
+    let Ok((_, after_row_class)) = psb::reference_id(payload, cursor + 1) else {
+        return Ok(None);
+    };
     cursor = after_row_class;
 
     let row_limit = index_from_u32(declared_count);
@@ -1789,10 +1817,9 @@ fn positional_variable_table(
     // count cannot exceed the unread bytes in the table window.
     let window = payload.get(cursor..end).map_or(0, <[u8]>::len);
     let capacity = bounded_len(u64::from(declared_count), 1, window).unwrap_or(0);
-    let mut rows = Vec::with_capacity(capacity);
-    let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
-    prototype_separator.extend_from_slice(&reference_bytes);
-    prototype_separator.push(0xe2);
+    let mut rows = Vec::new();
+    ctx.try_reserve_items(&mut rows, capacity, "creo variable rows")?;
+    let prototype_separator_len = 2 + reference_bytes.len() + 1;
     'rows: while cursor < end && rows.len() < row_limit {
         let row_offset = cursor;
         let (variable_type, next) = psb::compact_int(payload, cursor);
@@ -1802,13 +1829,14 @@ fn positional_variable_table(
         let value_start = cursor;
         let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
-        let value_body = payload[value_start..cursor].to_vec();
+        let value_end = cursor;
         let guess_start = cursor;
         let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
-        let guess_body = payload[guess_start..cursor].to_vec();
-        let mut trailing = Vec::with_capacity(3);
-        while cursor < end && payload[cursor] != 0xe2 && trailing.len() < 3 {
+        let guess_end = cursor;
+        let mut trailing = [None; 3];
+        let mut trailing_count = 0;
+        while cursor < end && payload[cursor] != 0xe2 && trailing_count < 3 {
             if payload[cursor] >= 0xc0 {
                 break 'rows;
             }
@@ -1816,29 +1844,21 @@ fn positional_variable_table(
             if next <= cursor {
                 break 'rows;
             }
-            trailing.push(field);
+            trailing[trailing_count] = Some(field);
+            trailing_count += 1;
             cursor = next;
         }
-        let row = FeatureVariableRow {
-            variable_type: variable_type.into(),
-            key,
-            value,
-            value_body,
-            guess,
-            guess_body,
-            known: trailing.first().copied(),
-            homogeneity: trailing.get(1).copied(),
-            uvar_id: trailing.get(2).copied(),
-            offset: row_offset,
-        };
         if rows.len() + 1 < row_limit {
             if rows.is_empty() {
-                if payload.get(cursor..cursor + prototype_separator.len())
-                    != Some(prototype_separator.as_slice())
+                if payload.get(cursor..cursor + 2)
+                    != Some(&[0xf1, psb::token::ENTITY_REF])
+                    || payload.get(cursor + 2..cursor + 2 + reference_bytes.len())
+                        != Some(reference_bytes)
+                    || payload.get(cursor + prototype_separator_len - 1) != Some(&0xe2)
                 {
                     break;
                 }
-                cursor += prototype_separator.len();
+                cursor += prototype_separator_len;
             } else {
                 if payload.get(cursor) != Some(&0xe2) {
                     break;
@@ -1846,14 +1866,26 @@ fn positional_variable_table(
                 cursor += 1;
             }
         }
+        let row = FeatureVariableRow {
+            variable_type: variable_type.into(),
+            key,
+            value,
+            value_body: ctx.copy_retained(&payload[value_start..value_end], "creo variable value body")?,
+            guess,
+            guess_body: ctx.copy_retained(&payload[guess_start..guess_end], "creo variable guess body")?,
+            known: trailing[0],
+            homogeneity: trailing[1],
+            uvar_id: trailing[2],
+            offset: row_offset,
+        };
         rows.push(row);
     }
-    Some(FeatureVariableTable {
+    Ok(Some(FeatureVariableTable {
         declared_count,
         entity_ref: Some(table_class),
         rows,
         offset: table,
-    })
+    }))
 }
 
 fn segment_int(payload: &[u8], offset: usize) -> (Option<u32>, usize) {
@@ -6513,13 +6545,16 @@ fn definitions_in_ranges(
             }
         }
         outlines.sort_by_key(|outline| outline.offset);
-        let variables = variable_table(payload, start, end, &cache).or_else(|| {
-            positional
-                .then(|| {
-                    positional_variable_table(payload, start, end, replay_variable_class?, &cache)
-                })
-                .flatten()
-        });
+        let variables = match variable_table(ctx, payload, start, end, &cache)? {
+            Some(variables) => Some(variables),
+            None if positional => match replay_variable_class {
+                Some(table_class) => {
+                    positional_variable_table(ctx, payload, start, end, table_class, &cache)?
+                }
+                None => None,
+            },
+            None => None,
+        };
         if !positional {
             replay_variable_class = variables.as_ref().and_then(|table| table.entity_ref);
         }

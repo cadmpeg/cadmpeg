@@ -14,7 +14,7 @@ use crate::feature::definitions::saved_section;
 use crate::feature::definitions::saved_section_scalar;
 use crate::feature::definitions::saved_spline_entities;
 use crate::feature::definitions::saved_spline_parameter;
-use crate::feature::definitions::variable_table;
+use crate::feature::definitions::variable_table as parse_variable_table;
 use crate::feature::definitions::FeatureOrderRow;
 use crate::feature::definitions::FeatureOrderTable;
 use crate::feature::definitions::FeatureSavedEntity;
@@ -28,6 +28,71 @@ use crate::feature::operations::FeatureReferenceName;
 use crate::feature::rows::FeatureFieldValue;
 use crate::psb;
 use crate::scalar;
+
+fn variable_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<crate::feature::definitions::FeatureVariableTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_variable_table(ctx, payload, start, end, cache)
+    })
+    .expect("variable table admitted")
+}
+
+fn variable_row_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<crate::feature::definitions::FeatureVariableTable, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
+            \x00\x41\x18\x20\x96\x61\x01\x01\x82\x06\xe2";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)?;
+    Ok(parse_variable_table(
+        &ctx, payload, 0, payload.len(), &scalar::ScalarCache::default(),
+    )?
+    .expect("complete variable table"))
+}
+
+#[test]
+fn named_variable_row_vec_refuses_before_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert_eq!(variable_row_with_limits(1, u64::MAX).expect("one row admitted").rows.len(), 1);
+    let error = variable_row_with_limits(0, u64::MAX).expect_err("one row needs one item");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo variable rows"));
+}
+
+#[test]
+fn named_variable_value_body_refuses_before_retention() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let error = variable_row_with_limits(1, 0).expect_err("value needs one byte");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo variable value body"));
+}
+
+#[test]
+fn named_variable_guess_body_refuses_before_retention() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let error = variable_row_with_limits(1, 1).expect_err("guess needs three bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo variable guess body"));
+}
 
 fn operation_states(payload: &[u8]) -> Vec<crate::feature::operations::FeatureOperationState> {
     crate::decode::with_test_decode_ctx(|ctx| {
