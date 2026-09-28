@@ -1024,6 +1024,45 @@ fn gui_presentation_document_refuses_at_caller_limit() {
             if limit.operation == "FCStd presentation documents"));
 }
 
+fn view_provider_graph() -> super::super::Graph {
+    super::super::Graph {
+        providers: vec![crate::native::GuiViewProviderRecord {
+            id: "fcstd:gui:view-provider#Provider".into(),
+            object: Some(cadmpeg_core::text::NonBlankString::new("Object")
+                .expect("nonblank provider object")),
+            name: "Provider".into(), expanded: None, order: 0,
+            raw_xml: String::new(),
+        }],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn gui_view_object_identity_refuses_at_matching_retained_limit() {
+    let graph = view_provider_graph();
+    crate::test_support::assert_retained_refusal_at(
+        &[], "FCStd view object identity", |ctx| {
+            super::super::transfer_neutral_presentation(
+                ctx, &mut super::super::AppearancePlan::default(), &graph, None,
+                &mut Vec::new(),
+            )
+        },
+    );
+}
+
+#[test]
+fn gui_view_native_reference_refuses_at_matching_retained_limit() {
+    let graph = view_provider_graph();
+    crate::test_support::assert_retained_refusal_at(
+        &[], "FCStd view native reference", |ctx| {
+            super::super::transfer_neutral_presentation(
+                ctx, &mut super::super::AppearancePlan::default(), &graph, None,
+                &mut Vec::new(),
+            )
+        },
+    );
+}
+
 #[test]
 fn gui_view_presentation_identity_refuses_at_matching_retained_limit() {
     let graph = super::super::Graph {
