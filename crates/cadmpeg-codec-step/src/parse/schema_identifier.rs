@@ -20,6 +20,9 @@
 //! `split_schema_identifier` serves the admission here, the DATA section and
 //! `FILE_POPULATION` schema-name match, and the AP242 edition report.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
 /// One `FILE_SCHEMA` identifier that the header admits.
 ///
 /// The header classifies each identifier once and keeps the result. The
@@ -73,19 +76,47 @@ impl AdmittedSchemaIdentifier {
 
     /// Numeric object-identifier components, with registered root names mapped
     /// to their assigned number.
-    pub(super) fn numeric_object_identifier(&self) -> Option<Vec<u64>> {
-        let (_, object_identifier) = split_schema_identifier(self.text())?;
-        let mut components = object_identifier?.split_whitespace();
-        let root = u64::from(schema_oid_root_number(components.next()?)?);
-        let mut numbers = vec![root];
+    pub(super) fn numeric_object_identifier(
+        &self,
+        ctx: Option<&DecodeContext<'_>>,
+    ) -> Result<Option<Vec<u64>>, CodecError> {
+        let Some((_, Some(object_identifier))) = split_schema_identifier(self.text()) else {
+            return Ok(None);
+        };
+        let mut components = object_identifier.split_whitespace();
+        let Some(root) = components.next().and_then(schema_oid_root_number) else {
+            return Ok(None);
+        };
+        let mut numbers = Vec::new();
+        push_object_identifier_component(&mut numbers, u64::from(root), ctx)?;
         for component in components {
             let ComponentForm::Number(number) = schema_oid_component_form(component) else {
-                return None;
+                return Ok(None);
             };
-            numbers.push(number.parse().ok()?);
+            let Ok(number) = number.parse() else {
+                return Ok(None);
+            };
+            push_object_identifier_component(&mut numbers, number, ctx)?;
         }
-        (numbers.len() >= 2).then_some(numbers)
+        Ok((numbers.len() >= 2).then_some(numbers))
     }
+}
+
+fn push_object_identifier_component(
+    numbers: &mut Vec<u64>,
+    number: u64,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    let operation = "step_schema_object_identifier_components";
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+    }
+    numbers.try_reserve(1).map_err(|_| match ctx {
+        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
+        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+    })?;
+    numbers.push(number);
+    Ok(())
 }
 
 /// The admission form of one schema identifier.

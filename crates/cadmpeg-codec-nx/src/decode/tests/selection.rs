@@ -739,11 +739,11 @@ fn directory_retained_bytes(name: &str) -> u64 {
 #[test]
 fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
     let mut stream = b"PS\0\0 (partition) SCH_TEST_1_9999".to_vec();
-    stream.resize(64, b'.');
+    stream.resize(8192, b'.');
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes =
-        directory_retained_bytes("/Root/UG_PART/UG_PART") + (stream.len() * 2) as u64;
+        directory_retained_bytes("/Root/UG_PART/UG_PART") + (stream.len() * 2) as u64 + 4096;
 
     let result = NxCodec
         .decode(&mut Cursor::new(file), &options)
@@ -777,10 +777,10 @@ fn metadata_fallback_old_retained_limit_refuses_inflated_stream_after_directory(
 fn decode_refuses_opaque_container_copy_when_retained_budget_is_exhausted() {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", vec![0x5a; 64])]);
+    let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", vec![0x5a; 8192])]);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes =
-        directory_retained_bytes("/Root/FastLoad/Structure") + 1;
+        directory_retained_bytes("/Root/FastLoad/Structure") + 4096;
 
     let error = NxCodec
         .decode(&mut Cursor::new(file), &options)
@@ -816,9 +816,10 @@ fn opaque_container_with_one_retained_byte_refuses_directory_entry() {
 fn decode_refuses_invalid_preview_copy_when_retained_budget_is_exhausted() {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let file = prt_with_named_payloads(&[("/Root/images/preview", vec![0x5a; 64])]);
+    let file = prt_with_named_payloads(&[("/Root/images/preview", vec![0x5a; 8192])]);
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = directory_retained_bytes("/Root/images/preview") + 1;
+    options.policy.limits.max_retained_bytes =
+        directory_retained_bytes("/Root/images/preview") + 4096;
 
     let error = NxCodec
         .decode(&mut Cursor::new(file), &options)

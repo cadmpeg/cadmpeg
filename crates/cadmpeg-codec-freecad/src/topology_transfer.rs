@@ -525,12 +525,15 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             )?;
             ir.model.tessellations.push(
                 Tessellation::from_parts(
-                    crate::native::model_id_charged(
-                        self.ctx,
-                        "tessellation",
-                        &self.payload.id,
-                        &index.to_string(),
-                    )?,
+                    cadmpeg_ir::tessellation::TessellationId::mint(
+                        crate::native::model_id_charged(
+                            self.ctx,
+                            "tessellation",
+                            &self.payload.id,
+                            &index.to_string(),
+                        )?,
+                    )
+                    .map_err(|error| CodecError::malformed(error.to_string()))?,
                     cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         copied_items(
                             self.ctx,
@@ -1260,8 +1263,9 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             )?;
             ir.model.tessellations.push(
                 Tessellation::from_parts(
-                    crate::native::model_id_charged_at(self.ctx, "tessellation",
-                        &self.payload.id, &tessellation_key, "FreeCAD tessellation identity")?,
+                    cadmpeg_ir::tessellation::TessellationId::mint(crate::native::model_id_charged_at(self.ctx, "tessellation",
+                        &self.payload.id, &tessellation_key, "FreeCAD tessellation identity")?)
+                        .map_err(|error| CodecError::malformed(error.to_string()))?,
                     cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
                         vertices, triangles, normals,
                     )?,
@@ -2201,12 +2205,15 @@ fn connected_components(
                 let probe = connectivity[current]
                     .len()
                     .min(connectivity[candidate].len());
-                let capped_probe = u64::try_from(probe).unwrap_or(u64::MAX);
-                let work = if capped_probe == u64::MAX {
-                    u64::MAX
-                } else {
-                    capped_probe + 1
-                };
+                let work = cadmpeg_core::decode::u64_from_index(probe)
+                    .checked_add(1)
+                    .ok_or_else(|| {
+                        cadmpeg_core::decode::refuse_local_limit(
+                            "FreeCAD connected-component comparison",
+                            u64::MAX,
+                            u64::MAX,
+                        )
+                    })?;
                 ctx.charge_work(work, "FreeCAD connected-component comparison")?;
                 if !connectivity[current].is_disjoint(&connectivity[candidate]) {
                     assigned[candidate] = true;
@@ -2431,9 +2438,9 @@ pub(crate) fn pcurve_geometry(
             let mut knots = collection_vec(ctx, nurbs.knots.len(), "FreeCAD pcurve knots")?;
             knots.extend(nurbs.knots.iter().map(|knot| knot.get()));
             Some(PcurveGeometry::Nurbs {
-                nurbs: PcurveNurbs::from_raw_knots_and_admitted_poles(
+                nurbs: PcurveNurbs::from_admitted_rows(
                     nurbs.degree,
-                    knots,
+                    cadmpeg_ir::geometry::nurbs::KnotVector::new(knots)?,
                     poles,
                     nurbs.periodic,
                 )?,
@@ -2511,7 +2518,7 @@ fn transform_curve(
     })?;
     let basis = match solved {
         SolvedCurveGeometry::Nurbs(nurbs) => {
-            SolvedCurveGeometry::Nurbs(crate::brep::clone_nurbs_curve(ctx, nurbs)?)
+            SolvedCurveGeometry::Nurbs(nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS curve copy")?)
         }
         other => other.clone(),
     };
@@ -2531,9 +2538,9 @@ fn transform_surface(
         cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
     })?;
     let basis = match solved {
-        SolvedSurfaceGeometry::Nurbs(nurbs) => {
-            SolvedSurfaceGeometry::Nurbs(crate::brep::clone_nurbs_surface(ctx, nurbs)?)
-        }
+        SolvedSurfaceGeometry::Nurbs(nurbs) => SolvedSurfaceGeometry::Nurbs(
+            nurbs.try_clone_for_decode(ctx, "FreeCAD NURBS surface copy")?,
+        ),
         other => other.clone(),
     };
     Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(

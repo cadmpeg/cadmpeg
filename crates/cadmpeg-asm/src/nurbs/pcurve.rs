@@ -13,6 +13,15 @@ use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles, WeightedPole2}
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::NonZeroReal;
 
+macro_rules! propagate_resource {
+    ($result:expr) => {
+        match $result {
+            Ok(value) => value,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+}
+
 /// Writable value offsets for one 2D pcurve cache.
 pub struct PcurvePatchLayout {
     /// Tagged-integer payload offset for the curve degree.
@@ -189,9 +198,10 @@ pub fn decode_pcurve_cache(record_bytes: &[u8]) -> Option<PcurveNurbs> {
 /// the pcurve and the token index just past the block. Token-space counterpart
 /// of [`decode_pcurve_block_with_end`].
 pub(super) fn pcurve_block_with_end(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     toks: &[Token],
     marker_pos: usize,
-) -> Option<(PcurveNurbs, usize)> {
+) -> Option<Result<(PcurveNurbs, usize), cadmpeg_core::CodecError>> {
     let rational = toks::marker_at(toks, marker_pos)?.rational();
     let mut cur = Cur::at(toks, marker_pos + 1);
     let degree = cur.take_long()?;
@@ -203,9 +213,25 @@ pub(super) fn pcurve_block_with_end(
     if !(1..=1000).contains(&n_uniq) {
         return None;
     }
-    let (knots, n_poles) = toks::take_knot_table(&mut cur, n_uniq as usize, degree)?;
+    let (knots, n_poles) = match toks::take_knot_table(ctx, &mut cur, n_uniq as usize, degree)? {
+        Ok(knots) => knots,
+        Err(error) => return Some(Err(error)),
+    };
     let mut points = Vec::new();
     let mut weighted = Vec::new();
+    if rational {
+        weighted = match crate::decode_alloc::counted_vec(ctx, n_poles, "ASM rational pcurve poles")
+        {
+            Ok(weighted) => weighted,
+            Err(error) => return Some(Err(error)),
+        };
+    } else {
+        points = match crate::decode_alloc::counted_vec(ctx, n_poles, "ASM polynomial pcurve poles")
+        {
+            Ok(points) => points,
+            Err(error) => return Some(Err(error)),
+        };
+    }
     for _ in 0..n_poles {
         let u = cur.take_f64()?;
         let v = cur.take_f64()?;
@@ -224,14 +250,18 @@ pub(super) fn pcurve_block_with_end(
     } else {
         PcurveNurbsPoles::Polynomial { points }
     };
-    Some((
+    Some(Ok((
         PcurveNurbs::new(degree as u32, knots, poles, is_periodic(closure)).ok()?,
         cur.pos(),
-    ))
+    )))
 }
 
-fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<PcurveNurbs> {
-    pcurve_block_with_end(toks, marker_pos).map(|(pcurve, _)| pcurve)
+fn pcurve_block(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    toks: &[Token],
+    marker_pos: usize,
+) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
+    pcurve_block_with_end(ctx, toks, marker_pos).map(|result| result.map(|(pcurve, _)| pcurve))
 }
 
 /// Decode the BS2 field owned directly by an `exp_par_cur` scope.
@@ -242,18 +272,24 @@ fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<PcurveNurbs> {
 /// The argument is the scope, so the marker walk is total: the unbalanced
 /// stream the free walk refuses is a state [`toks::SubtypeScope`] cannot hold.
 /// Marker positions index the scope's own tokens.
-pub fn explicit_pcurve_cache(scope: toks::SubtypeScope<'_>) -> Option<PcurveNurbs> {
-    let position = scope.owned_marker_positions().into_iter().next()?;
-    pcurve_block(scope.tokens(), position)
+pub fn explicit_pcurve_cache(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scope: toks::SubtypeScope<'_>,
+) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
+    let position = propagate_resource!(scope.owned_marker_positions(ctx))
+        .into_iter()
+        .next()?;
+    pcurve_block(ctx, scope.tokens(), position)
 }
 
 /// Resolve an explicit pcurve through one subtype-table reference.
 pub fn explicit_pcurve_cache_from_subtype_ref(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: i64,
     table: &toks::SubtypeTable,
-) -> Option<PcurveNurbs> {
+) -> Option<Result<PcurveNurbs, cadmpeg_core::CodecError>> {
     let index = usize::try_from(index).ok()?;
-    explicit_pcurve_cache(table.span(index)?)
+    explicit_pcurve_cache(ctx, table.span(index)?)
 }
 
 /// The parameter-space fit tolerance immediately following the final valid 2D
@@ -266,15 +302,21 @@ pub fn explicit_pcurve_cache_from_subtype_ref(
 /// The argument is the scope, so the marker walk is total: the unbalanced
 /// stream the free walk refuses is a state [`toks::SubtypeScope`] cannot hold.
 /// Marker positions index the scope's own tokens.
-pub fn pcurve_fit_tolerance(scope: toks::SubtypeScope<'_>) -> Option<f64> {
+pub fn pcurve_fit_tolerance(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scope: toks::SubtypeScope<'_>,
+) -> Option<Result<f64, cadmpeg_core::CodecError>> {
     let tokens = scope.tokens();
-    let (_, end) = scope
-        .owned_marker_positions()
+    let (_, end) = match propagate_resource!(scope.owned_marker_positions(ctx))
         .into_iter()
-        .filter_map(|pos| pcurve_block_with_end(tokens, pos))
-        .next_back()?;
+        .rev()
+        .find_map(|pos| pcurve_block_with_end(ctx, tokens, pos))?
+    {
+        Ok(decoded) => decoded,
+        Err(error) => return Some(Err(error)),
+    };
     match tokens.get(end) {
-        Some(Token::Double(value)) => Some(*value),
+        Some(Token::Double(value)) => Some(Ok(*value)),
         _ => None,
     }
 }

@@ -1128,6 +1128,66 @@ mod tests {
 
     use super::{ArchiveSnapshot, EntryRecord, PhysicalSpan, ZipCompression, ZipSpanRole};
 
+    fn summary_refuses(dimension: ResourceDimension, limit: u64, operation: &str) {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "part.p21",
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored),
+            )
+            .expect("start ZIP member");
+        writer.write_all(b"part").expect("write ZIP member");
+        let bytes = writer.finish().expect("finish ZIP").into_inner();
+
+        let setup_arena = DecodeArena::new();
+        let setup_policy = DecodePolicy::service();
+        let (setup_ctx, root) = DecodeContext::from_root_bytes(&bytes, &setup_arena, &setup_policy)
+            .expect("root fits setup policy");
+        let snapshot = ArchiveSnapshot::new(&setup_ctx, root).expect("ZIP snapshot");
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => panic!("test only selects collection or retained limits"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("root fits selected policy");
+        assert!(matches!(
+            snapshot.container_entries(&ctx, |_| cadmpeg_core::container::ContainerRole::Stream),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == dimension && refusal.operation == operation
+        ));
+    }
+
+    #[test]
+    fn zip_summary_entries_refuse_collection_limit() {
+        summary_refuses(
+            ResourceDimension::CollectionItems,
+            0,
+            "ZIP container summaries",
+        );
+    }
+
+    #[test]
+    fn zip_summary_attributes_refuse_collection_limit() {
+        summary_refuses(
+            ResourceDimension::CollectionItems,
+            1,
+            "ZIP summary attributes",
+        );
+    }
+
+    #[test]
+    fn zip_summary_name_refuses_retained_limit() {
+        summary_refuses(
+            ResourceDimension::RetainedBytes,
+            3,
+            "ZIP summary entry name",
+        );
+    }
+
     #[test]
     fn empty_zip_ledger_covers_its_end_record() {
         let bytes = zip::ZipWriter::new(Cursor::new(Vec::new()))

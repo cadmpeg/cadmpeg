@@ -1796,6 +1796,60 @@ fn om_offset_store_class_lane_reports_collection_limit() {
     );
 }
 
+#[test]
+fn om_offset_store_class_lane_refuses_control_validation_work() {
+    let bytes = [0, 4, 0, 0, 0, 8, 0, 0];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("test decode context");
+    let error = offset_store_control_class_ordinals(&ctx, &bytes)
+        .expect_err("two control words exceed one work unit");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                && limit.operation == "nx offset-store control validation"
+    ));
+}
+
+#[test]
+fn om_offset_store_class_lane_refuses_suffix_scratch_bytes() {
+    let bytes = [0, 4, 0, 0, 0, 8, 0, 0];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 7;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("test decode context");
+    let error = offset_store_control_class_ordinals(&ctx, &bytes)
+        .expect_err("two u32 suffix slots need eight scratch bytes");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "nx offset-store suffix minima"
+    ));
+}
+
+#[test]
+fn om_offset_store_class_lane_refuses_identity_index_collection_limit() {
+    let bytes = [0, 4, 0, 0, 0, 8, 0, 0];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("test decode context");
+    let error = offset_store_control_class_ordinals(&ctx, &bytes)
+        .expect_err("two suffix slots leave no item for the identity index");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "nx offset-store class identities"
+    ));
+}
+
 mod numeric_expressions;
 
 mod registry;

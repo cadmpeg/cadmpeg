@@ -22,7 +22,7 @@ fn square() -> Vec<Point3> {
 
 fn mesh() -> Tessellation {
     Tessellation::new(
-        "test:mesh:tessellation#0",
+        TessellationId::mint("test:mesh:tessellation#0").expect("valid identity"),
         TessellationMesh::List {
             vertices: square(),
             triangles: vec![[0, 1, 2], [0, 2, 3]],
@@ -43,7 +43,7 @@ fn per_corner_mesh_exposes_its_normals() {
     let base = mesh();
     let normals = vec![Vector3::new(0.0, 0.0, 1.0); 6];
     let value = Tessellation::new(
-        "test:mesh:tessellation#corners",
+        TessellationId::mint("test:mesh:tessellation#corners").expect("valid identity"),
         TessellationMesh::from_corner_lanes(
             base.mesh().clone().into_raw().vertices(),
             base.triangles(),
@@ -71,8 +71,12 @@ fn admitted_corner_mesh_parts_preserve_normals_and_check_indices() {
         Some(normals.clone()),
     )
     .unwrap();
-    let value =
-        Tessellation::from_parts("test:mesh:tessellation#admitted", admitted, Vec::new()).unwrap();
+    let value = Tessellation::from_parts(
+        TessellationId::mint("test:mesh:tessellation#admitted").expect("valid identity"),
+        admitted,
+        Vec::new(),
+    )
+    .unwrap();
     assert_eq!(
         value.per_corner_normals(),
         vec![Vector3::new(0.0, 0.0, 1.0); 3]
@@ -80,9 +84,12 @@ fn admitted_corner_mesh_parts_preserve_normals_and_check_indices() {
 
     let invalid =
         TessellationMesh::from_corner_lanes(vertices, vec![[0, 1, 4]], Some(normals)).unwrap();
-    assert!(
-        Tessellation::from_parts("test:mesh:tessellation#invalid", invalid, Vec::new()).is_err()
-    );
+    assert!(Tessellation::from_parts(
+        TessellationId::mint("test:mesh:tessellation#invalid").expect("valid identity"),
+        invalid,
+        Vec::new()
+    )
+    .is_err());
 }
 
 #[test]
@@ -90,7 +97,7 @@ fn per_vertex_mesh_exposes_its_normals() {
     let base = mesh();
     let normals = vec![Vector3::new(0.0, 0.0, 1.0); base.vertex_count()];
     let value = Tessellation::new(
-        "test:mesh:tessellation#vertices",
+        TessellationId::mint("test:mesh:tessellation#vertices").expect("valid identity"),
         TessellationMesh::from_list_lanes(
             base.mesh().clone().into_raw().vertices(),
             base.triangles(),
@@ -118,8 +125,12 @@ fn checked_vertex_lanes_pair_without_retesting_coordinates() {
         Some(normals.clone()),
     )
     .unwrap();
-    let tessellation =
-        Tessellation::from_parts("test:mesh:tessellation#checked-lanes", mesh, Vec::new()).unwrap();
+    let tessellation = Tessellation::from_parts(
+        TessellationId::mint("test:mesh:tessellation#checked-lanes").expect("valid identity"),
+        mesh,
+        Vec::new(),
+    )
+    .unwrap();
     assert_eq!(tessellation.vertex_count(), positions.len());
     assert_eq!(
         tessellation.vertex_normals(),
@@ -234,7 +245,7 @@ fn vertex_channels_may_retain_auxiliary_descriptors_with_a_different_count() {
     let base = mesh();
     let channel = TessellationChannel::new(ChannelAddressing::Vertex {}, 1, 0, 0, vec![7]).unwrap();
     let value = Tessellation::new(
-        "test:mesh:tessellation#auxiliary",
+        TessellationId::mint("test:mesh:tessellation#auxiliary").expect("valid identity"),
         TessellationMesh::List {
             vertices: base.mesh().clone().into_raw().vertices(),
             triangles: base.triangles(),
@@ -255,15 +266,6 @@ fn tessellation_identity_admission() {
     for id in ["", "mesh id", "mesh\nid"] {
         assert!(TessellationId::mint(id).is_err());
         rejects_wire_field("id", id);
-        assert!(Tessellation::new(
-            id,
-            TessellationMesh::List {
-                vertices: Vec::new(),
-                triangles: Vec::new(),
-            },
-            Vec::new(),
-        )
-        .is_err());
     }
     let id = TessellationId::mint("test:mesh:tessellation#0").unwrap();
     assert_eq!(
@@ -283,7 +285,7 @@ fn numeric_admission_rejects_non_finite_vertices_and_normals() {
         let mut vertices = base.mesh().clone().into_raw().vertices();
         vertices[0].x = invalid;
         assert!(Tessellation::new(
-            "test:mesh:tessellation#numeric",
+            TessellationId::mint("test:mesh:tessellation#numeric").expect("valid identity"),
             TessellationMesh::List {
                 vertices: vertices.clone(),
                 triangles: base.triangles(),
@@ -321,10 +323,12 @@ fn numeric_admission_rejects_non_finite_vertices_and_normals() {
                 )
             }
             .unwrap();
-            assert!(
-                Tessellation::new("test:mesh:tessellation#numeric", rows.clone(), Vec::new())
-                    .is_err()
-            );
+            assert!(Tessellation::new(
+                TessellationId::mint("test:mesh:tessellation#numeric").expect("valid identity"),
+                rows.clone(),
+                Vec::new()
+            )
+            .is_err());
             rejects_wire_field("mesh", rows);
         }
     }
@@ -349,8 +353,12 @@ fn numeric_edits_reject_invalid_values_without_partial_changes() {
             )
         }
         .unwrap();
-        let mut value =
-            Tessellation::new("test:mesh:tessellation#numeric", rows, Vec::new()).unwrap();
+        let mut value = Tessellation::new(
+            TessellationId::mint("test:mesh:tessellation#numeric").expect("valid identity"),
+            rows,
+            Vec::new(),
+        )
+        .unwrap();
         let original = value.clone();
         for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let mut seen = 0;
@@ -495,7 +503,12 @@ fn a_refused_normal_edit_keeps_the_prior_normals() {
         Some(vec![Vector3::new(0.0, 0.0, 1.0); 4]),
     )
     .unwrap();
-    let mut value = Tessellation::new("test:mesh:tessellation#refused", rows, Vec::new()).unwrap();
+    let mut value = Tessellation::new(
+        TessellationId::mint("test:mesh:tessellation#refused").expect("valid identity"),
+        rows,
+        Vec::new(),
+    )
+    .unwrap();
     let original = value.clone();
     let mut seen = 0;
     assert!(value
@@ -526,7 +539,7 @@ fn the_wire_spells_the_shading_by_name() {
 
     let base = mesh();
     let shaded = Tessellation::new(
-        "test:mesh:tessellation#shaded",
+        TessellationId::mint("test:mesh:tessellation#shaded").expect("valid identity"),
         TessellationMesh::from_list_lanes(
             base.mesh().clone().into_raw().vertices(),
             base.triangles(),
@@ -589,7 +602,7 @@ fn the_wire_spells_the_topology_by_name() {
     assert!(Strips::from_spans(square(), &[2, 2]).is_none());
 
     let strips = Tessellation::new(
-        "test:mesh:tessellation#strips",
+        TessellationId::mint("test:mesh:tessellation#strips").expect("valid identity"),
         TessellationMesh::Strips {
             strips: Strips::from_spans(square(), &[4]).unwrap(),
         },
@@ -700,7 +713,7 @@ fn a_tessellation_holds_its_admitted_mesh_and_takes_an_admitted_replacement() {
     let base = mesh();
     let normals = vec![Vector3::new(0.0, 0.0, 1.0); base.vertex_count()];
     let shaded = Tessellation::new(
-        "test:mesh:tessellation#admitted",
+        TessellationId::mint("test:mesh:tessellation#admitted").expect("valid identity"),
         TessellationMesh::from_list_lanes(square(), base.triangles(), Some(normals.clone()))
             .unwrap(),
         Vec::new(),
