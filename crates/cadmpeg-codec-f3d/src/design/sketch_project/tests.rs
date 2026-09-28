@@ -1518,11 +1518,8 @@ fn text_frame_owner_indices_refuse_collection_limits() {
     }
 }
 
-#[test]
-fn spatial_surface_owner_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    let surface = SketchSurface {
+fn owner_limit_surface() -> SketchSurface {
+    SketchSurface {
         id: "f3d:BulkStream.dat:surface#2".into(),
         record_index: 2,
         owner_reference: Some(42),
@@ -1539,7 +1536,14 @@ fn spatial_surface_owner_refuses_collection_limit() {
                 vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
             ],
         ).unwrap(),
-    };
+    }
+}
+
+#[test]
+fn spatial_surface_owner_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let surface = owner_limit_surface();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
@@ -1550,6 +1554,57 @@ fn spatial_surface_owner_refuses_collection_limit() {
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d spatial surface owner"
     ));
+}
+
+#[test]
+fn spatial_surface_lanes_refuse_each_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let placement = owner_limit_placement();
+    let surface = owner_limit_surface();
+    for (limit, operation) in [
+        (2, "f3d spatial sketch surface u knots"),
+        (6, "f3d spatial sketch surface v knots"),
+        (10, "f3d spatial sketch surface control rows"),
+        (11, "f3d spatial sketch surface control points"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            project_spatial_sketch_design(
+                Some(&ctx), std::slice::from_ref(&placement), &[], &[],
+                std::slice::from_ref(&surface), &[], 1.0e-6,
+            ),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ), "limit {limit}, operation {operation}");
+    }
+}
+
+#[test]
+fn sketch_nurbs_lanes_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for operation in [
+        "f3d planar sketch nurbs poles",
+        "f3d planar sketch nurbs weights",
+        "f3d spatial sketch nurbs poles",
+        "f3d spatial sketch nurbs weights",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::collect_project_items(Some(&ctx), [1.0_f64], operation),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ), "operation {operation}");
+    }
 }
 
 #[test]
