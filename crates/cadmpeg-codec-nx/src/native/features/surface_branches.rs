@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native surface construction branches with derived reference positions.
 
-use super::{unique_offset_data_block, visit_feature_history_operation_records};
+use super::{format_feature_history_id, unique_offset_data_block, visit_feature_history_operation_records};
 use crate::container::Container;
 use crate::om::branch_items::BranchItems;
 use crate::om::discriminators::SurfaceBranchMode;
@@ -176,36 +176,40 @@ pub(in crate::native) fn feature_surface_construction_branches(
             if failure.is_some() {
                 return;
             }
-            let group = match surface_feature_payload_branches(ctx, record.payload_view()) {
-                Ok(Some(group)) => group,
-                Ok(None) => return,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
+            let projected = (|| -> Result<(), cadmpeg_core::CodecError> {
+                let Some(group) = surface_feature_payload_branches(ctx, record.payload_view())? else {
+                    return Ok(());
+                };
+                let family = group.family;
+                let header_code = group.header_code;
+                for (ordinal, branch) in group.into_branches().into_iter().enumerate() {
+                    let Some(order) = u8::try_from(ordinal + 1).ok().and_then(NonZeroU8::new) else {
+                        continue;
+                    };
+                    let Some(references) = branch.resolve(ctx, entry_offset, |token| {
+                        unique_offset_data_block(&indexed, token.value())
+                    })? else {
+                        continue;
+                    };
+                    let id = format_feature_history_id(ctx, "surface-construction-branch", section_key, operation_ordinal, Some(ordinal))?;
+                    let operation_label = format_feature_history_id(ctx, "operation-label", section_key, operation_ordinal, None)?;
+                    ctx.charge_entities(1, "NX surface construction branch")?;
+                    ctx.charge_collection_items(1, "NX surface construction branches")?;
+                    ctx.charge_retained(
+                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSurfaceConstructionBranch>()),
+                        "retain NX surface construction branch",
+                    )?;
+                    branches.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("allocate NX surface construction branches", 0, 1)
+                    })?;
+                    branches.push(FeatureSurfaceConstructionBranch {
+                        id, operation_label, order, family, header_code, references,
+                    });
                 }
-            };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let family = group.family;
-            let header_code = group.header_code;
-            for (ordinal, branch) in group.into_branches().into_iter().enumerate() {
-                let Some(order) = u8::try_from(ordinal + 1).ok().and_then(NonZeroU8::new) else {
-                    continue;
-                };
-                let references = match branch.resolve(ctx, entry_offset, |token| {
-                    unique_offset_data_block(&indexed, token.value())
-                }) {
-                    Ok(Some(references)) => references,
-                    Ok(None) => continue,
-                    Err(error) => {
-                        failure = Some(error);
-                        return;
-                    }
-                };
-                branches.push(FeatureSurfaceConstructionBranch {
-                    id: format!("nx:feature-history:surface-construction-branch#{section_key}-{operation_ordinal:010}-{ordinal:010}"),
-                    operation_label: operation_label.clone(), order, family, header_code, references,
-                });
+                Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
             }
         },
     )?;

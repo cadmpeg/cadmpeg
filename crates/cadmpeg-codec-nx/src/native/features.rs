@@ -3777,7 +3777,7 @@ fn copy_operation_text(
     Ok(text)
 }
 
-fn format_unlabeled_history_id(
+fn format_feature_history_id(
     ctx: &DecodeContext<'_>,
     kind: &'static str,
     section_key: &str,
@@ -3799,26 +3799,26 @@ fn format_unlabeled_history_id(
         .and_then(|length| length.checked_add(section_key.len()))
         .and_then(|length| length.checked_add(1))
         .and_then(|length| length.checked_add(decimal_width(operation_ordinal)))
-        .ok_or_else(|| ctx.refuse_codec_limit("retain NX unlabeled history identity", 0, 1))?;
+        .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature history identity", 0, 1))?;
     if let Some(subordinal) = subordinal {
         length = length
             .checked_add(1)
             .and_then(|length| length.checked_add(decimal_width(subordinal)))
-            .ok_or_else(|| ctx.refuse_codec_limit("retain NX unlabeled history identity", 0, 1))?;
+            .ok_or_else(|| ctx.refuse_codec_limit("retain NX feature history identity", 0, 1))?;
     }
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index(length),
-        "retain NX unlabeled history identity",
+        "retain NX feature history identity",
     )?;
     let mut id = String::new();
     id.try_reserve_exact(length).map_err(|_| {
-        ctx.refuse_codec_limit("allocate NX unlabeled history identity", 0, 1)
+        ctx.refuse_codec_limit("allocate NX feature history identity", 0, 1)
     })?;
     write!(&mut id, "{prefix}{kind}#{section_key}-{operation_ordinal:010}")
-        .map_err(|_| ctx.refuse_codec_limit("format NX unlabeled history identity", 0, 1))?;
+        .map_err(|_| ctx.refuse_codec_limit("format NX feature history identity", 0, 1))?;
     if let Some(subordinal) = subordinal {
         write!(&mut id, "-{subordinal:010}")
-            .map_err(|_| ctx.refuse_codec_limit("format NX unlabeled history identity", 0, 1))?;
+            .map_err(|_| ctx.refuse_codec_limit("format NX feature history identity", 0, 1))?;
     }
     Ok(id)
 }
@@ -4033,7 +4033,7 @@ pub(super) fn feature_unlabeled_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let id = format_unlabeled_history_id(ctx, "unlabeled-operation-record", section_key, operation_ordinal, None)?;
+            let id = format_feature_history_id(ctx, "unlabeled-operation-record", section_key, operation_ordinal, None)?;
             let ordinal = u32::try_from(operation_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX unlabeled operation ordinal", 0, 1))?;
             if let Some(record) = FeatureUnlabeledOperationRecord::from_source(
@@ -4081,8 +4081,8 @@ pub(super) fn feature_unlabeled_operation_body_writes(
                 ) else {
                     continue;
                 };
-                let id = format_unlabeled_history_id(ctx, "unlabeled-operation-body-write", section_key, operation_ordinal, Some(ordinal))?;
-                let operation_record = format_unlabeled_history_id(ctx, "unlabeled-operation-record", section_key, operation_ordinal, None)?;
+                let id = format_feature_history_id(ctx, "unlabeled-operation-body-write", section_key, operation_ordinal, Some(ordinal))?;
+                let operation_record = format_feature_history_id(ctx, "unlabeled-operation-record", section_key, operation_ordinal, None)?;
                 let ordinal = u32::try_from(ordinal)
                     .map_err(|_| ctx.refuse_codec_limit("NX unlabeled body write ordinal", 0, 1))?;
                 ctx.charge_entities(1, "NX unlabeled operation body write")?;
