@@ -314,6 +314,19 @@ fn topology_projection_route_refuses_retained_limit() {
 }
 
 #[test]
+fn topology_carrier_references_refuse_collection_limit() {
+    let stream = topology_partition_stream();
+    let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy).unwrap();
+    let error = graph.referenced_carrier_xmts(&ctx).expect_err("carrier reference refusal");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
 fn topology_resolves_kernel_node_identity_only_within_one_unique_family() {
     let mut stream = topology_partition_stream();
     let graph = crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream)).unwrap();

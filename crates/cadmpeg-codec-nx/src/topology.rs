@@ -642,6 +642,18 @@ fn collect_graph_records<T>(
     Ok(out)
 }
 
+fn insert_reference(
+    ctx: &DecodeContext<'_>,
+    references: &mut BTreeSet<u32>,
+    reference: u32,
+) -> Result<(), CodecError> {
+    if !references.contains(&reference) {
+        ctx.charge_collection_items(1, "NX topology carrier references")?;
+    }
+    references.insert(reference);
+    Ok(())
+}
+
 impl Graph {
     pub(crate) fn composite_curves(&self, ctx: &DecodeContext<'_>) -> Result<Vec<CompositeCurve>, CodecError> {
         collect_graph_records(ctx, "NX composite curves", self.of_kind(NodeKind::Intersection)
@@ -1241,20 +1253,23 @@ impl Graph {
 
     /// Curve identities occupying typed curve-reference slots in the fixed
     /// topology and procedural graph.
-    pub(crate) fn referenced_curve_xmts(&self) -> BTreeSet<u32> {
+    pub(crate) fn referenced_curve_xmts(&self, ctx: &DecodeContext<'_>) -> Result<BTreeSet<u32>, CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.nodes.len()), "scan NX topology curve references")?;
         let mut references = BTreeSet::new();
-        references.extend(
-            self.of_kind(NodeKind::Edge)
-                .filter_map(Node::edge_fields)
-                .filter_map(|fields| fields.curve.map(u32::from))
-                .filter(|reference| *reference > 1),
-        );
-        references.extend(
-            self.of_kind(NodeKind::Fin)
-                .filter_map(Node::fin_fields)
-                .filter_map(|fields| fields.curve_xmt.map(u32::from))
-                .filter(|reference| *reference > 1),
-        );
+        for reference in self.of_kind(NodeKind::Edge)
+            .filter_map(Node::edge_fields)
+            .filter_map(|fields| fields.curve.map(u32::from))
+            .filter(|reference| *reference > 1)
+        {
+            insert_reference(ctx, &mut references, reference)?;
+        }
+        for reference in self.of_kind(NodeKind::Fin)
+            .filter_map(Node::fin_fields)
+            .filter_map(|fields| fields.curve_xmt.map(u32::from))
+            .filter(|reference| *reference > 1)
+        {
+            insert_reference(ctx, &mut references, reference)?;
+        }
         for node in self.of_kind(NodeKind::BlendSurface) {
             let Some(mut at) = node.compact_tail_offset() else {
                 continue;
@@ -1267,7 +1282,7 @@ impl Graph {
                 .and_then(|items| items.get(2).copied())
                 .filter(|reference| *reference > 1)
             {
-                references.insert(spine);
+                insert_reference(ctx, &mut references, spine)?;
             }
         }
         for node in self.of_kind(NodeKind::TrimmedCurve) {
@@ -1276,7 +1291,7 @@ impl Graph {
                 .and_then(|items| items.first().copied())
                 .filter(|reference| *reference > 1)
             {
-                references.insert(reference);
+                insert_reference(ctx, &mut references, reference)?;
             }
         }
         for node in self.of_kind(NodeKind::SpCurve) {
@@ -1285,10 +1300,10 @@ impl Graph {
                 .and_then(|items| items.get(2).copied())
                 .filter(|reference| *reference > 1)
             {
-                references.insert(reference);
+                insert_reference(ctx, &mut references, reference)?;
             }
         }
-        references
+        Ok(references)
     }
 
     /// Resolve the exact witnesses of the unique edge carrying a curve.
@@ -1318,21 +1333,24 @@ impl Graph {
     }
 
     /// Carrier identities required by the surviving fixed topology image.
-    pub(crate) fn referenced_carrier_xmts(&self) -> BTreeSet<u32> {
-        let mut references = self.referenced_curve_xmts();
-        references.extend(
-            self.of_kind(NodeKind::Face)
-                .filter_map(Node::face_fields)
-                .filter_map(|fields| fields.surface.map(u32::from))
-                .filter(|reference| *reference > 1),
-        );
-        references.extend(
-            self.of_kind(NodeKind::Vertex)
-                .filter_map(Node::vertex_fields)
-                .filter_map(|fields| fields.point.map(u32::from))
-                .filter(|reference| *reference > 1),
-        );
-        references
+    pub(crate) fn referenced_carrier_xmts(&self, ctx: &DecodeContext<'_>) -> Result<BTreeSet<u32>, CodecError> {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(self.nodes.len()), "scan NX topology carrier references")?;
+        let mut references = self.referenced_curve_xmts(ctx)?;
+        for reference in self.of_kind(NodeKind::Face)
+            .filter_map(Node::face_fields)
+            .filter_map(|fields| fields.surface.map(u32::from))
+            .filter(|reference| *reference > 1)
+        {
+            insert_reference(ctx, &mut references, reference)?;
+        }
+        for reference in self.of_kind(NodeKind::Vertex)
+            .filter_map(Node::vertex_fields)
+            .filter_map(|fields| fields.point.map(u32::from))
+            .filter(|reference| *reference > 1)
+        {
+            insert_reference(ctx, &mut references, reference)?;
+        }
+        Ok(references)
     }
 
     /// Return SHELL nodes whose ownership fields define a body shape.

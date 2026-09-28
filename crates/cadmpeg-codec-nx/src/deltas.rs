@@ -1940,7 +1940,7 @@ fn merge_records(
     if let Some((totals, events)) = unmatched_events {
         *totals = count_unmatched_events(ctx, events, &graph)?;
     }
-    let topology_carriers = graph.referenced_carrier_xmts();
+    let topology_carriers = graph.referenced_carrier_xmts(ctx)?;
     replacements.retain(|key, record| {
         tombstones
             .get(key)
