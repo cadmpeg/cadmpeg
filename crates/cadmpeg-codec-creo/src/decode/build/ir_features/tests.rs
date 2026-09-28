@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 use super::{
-    admit_new_feature_id, merge_feature_source_properties, ordered_row_feature_ids,
+    admit_new_feature_id, merge_feature_dependencies, merge_feature_source_properties, ordered_row_feature_ids,
     refresh_feature_outputs,
 };
 
@@ -98,6 +98,41 @@ fn existing_feature_property_merge_keeps_order_and_replacement() {
     assert_eq!(target["recipe"], "Extrude");
     assert_eq!(target["featdefs_schema_state"], "absent");
     assert_eq!(target.keys().next().map(cadmpeg_core::text::NonBlankString::as_str), Some("featdefs_schema_state"));
+}
+
+#[test]
+fn existing_feature_dependency_refuses_before_member_growth() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let mut target = cadmpeg_ir::features::DistinctMembers::default();
+    let dependency = cadmpeg_ir::features::FeatureId::mint("creo:model:feature#12")
+        .expect("dependency identity");
+    let error = merge_feature_dependencies(&ctx, &mut target, vec![dependency])
+        .expect_err("one new dependency needs one member slot");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo IR Feature dependency members"));
+    assert!(target.is_empty());
+}
+
+#[test]
+fn existing_feature_dependency_merge_preserves_first_order_and_uniqueness() {
+    let first = cadmpeg_ir::features::FeatureId::mint("creo:model:feature#12")
+        .expect("first dependency identity");
+    let second = cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
+        .expect("second dependency identity");
+    let mut target = cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(vec![
+        first.clone(),
+    ])
+    .expect("one member is distinct");
+    crate::decode::with_test_decode_ctx(|ctx| {
+        merge_feature_dependencies(ctx, &mut target, vec![first.clone(), second.clone()])
+    })
+    .expect("service profile admits one new member");
+    assert_eq!(target.as_slice(), &[first, second]);
 }
 
 #[test]
