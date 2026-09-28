@@ -22,7 +22,6 @@ impl<S: AsRef<str>> CanonicalUuid<S> {
         Ok(Self(value))
     }
 
-    #[cfg(test)]
     pub(crate) fn as_str(&self) -> &str {
         self.0.as_ref()
     }
