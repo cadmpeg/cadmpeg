@@ -47,12 +47,14 @@ impl ExtrusionSpan {
 pub(in crate::decode) fn hole_extent_and_direction(
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
 ) -> Option<([f64; 3], LinearTermination)> {
-    let planes = planes.into_iter().collect::<Vec<_>>();
-    let [(first_origin, first_normal), (second_origin, second_normal)] = planes.as_slice() else {
+    let mut planes = planes.into_iter();
+    let (first_origin, first_normal) = planes.next()?;
+    let (second_origin, second_normal) = planes.next()?;
+    if planes.next().is_some() {
         return None;
-    };
-    let first_normal = normalize(*first_normal)?;
-    let second_normal = normalize(*second_normal)?;
+    }
+    let first_normal = normalize(first_normal)?;
+    let second_normal = normalize(second_normal)?;
     let alignment = first_normal
         .iter()
         .zip(second_normal)
@@ -70,7 +72,7 @@ pub(in crate::decode) fn hole_extent_and_direction(
         .sum::<f64>();
     let scale = second_origin
         .iter()
-        .chain(first_origin)
+        .chain(first_origin.iter())
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     if signed_length.abs() <= EPS_SIGNED_LENGTH * scale {
@@ -87,17 +89,17 @@ pub(in crate::decode) fn hole_extent_and_direction(
 pub(in crate::decode) fn hole_placement(
     planes: impl IntoIterator<Item = (u32, [f64; 3], [f64; 3])>,
 ) -> Option<(u32, [f64; 3], LinearTermination)> {
-    let planes = planes.into_iter().collect::<Vec<_>>();
-    let [(entry_id, entry_origin, entry_normal), (_, termination_origin, termination_normal)] =
-        planes.as_slice()
-    else {
+    let mut planes = planes.into_iter();
+    let (entry_id, entry_origin, entry_normal) = planes.next()?;
+    let (_, termination_origin, termination_normal) = planes.next()?;
+    if planes.next().is_some() {
         return None;
-    };
+    }
     let (direction, extent) = hole_extent_and_direction([
-        (*entry_origin, *entry_normal),
-        (*termination_origin, *termination_normal),
+        (entry_origin, entry_normal),
+        (termination_origin, termination_normal),
     ])?;
-    Some((*entry_id, direction, extent))
+    Some((entry_id, direction, extent))
 }
 
 pub(in crate::decode) fn plane_envelope_corners(
@@ -183,13 +185,10 @@ pub(in crate::decode) fn hole_cylinder_from_cap_outlines(
     let axis = placement.1;
     let aligned_axis = axis_aligned_with(axis, EPS_AXIS_COMPONENT)?;
     let radial = aligned_axis.complement().map(Axis::index);
-    let mut centers = Vec::<[f64; 3]>::new();
-    let mut radii = Vec::new();
-    for cap in caps {
-        let (center, radius) = cap_square_center_radius(cap.corners, aligned_axis)?;
-        centers.push(center);
-        radii.push(radius);
-    }
+    let (first_center, first_radius) = cap_square_center_radius(caps[0].corners, aligned_axis)?;
+    let (second_center, second_radius) = cap_square_center_radius(caps[1].corners, aligned_axis)?;
+    let centers = [first_center, second_center];
+    let radii = [first_radius, second_radius];
     let scale = centers
         .iter()
         .flatten()

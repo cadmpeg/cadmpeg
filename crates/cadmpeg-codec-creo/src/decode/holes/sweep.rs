@@ -2,6 +2,8 @@
 //! Compact hole and circular-sweep geometry.
 
 use crate::vecmath::normalize;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition as IrFeatureDefinition,
     FeatureOperation as IrFeatureOperation, LinearTermination, ProfileRef,
@@ -26,12 +28,18 @@ const EPS_OFFSET_NONZERO: f64 = 1.0e-12;
 const EPS_EXTENT_AGREEMENT: f64 = 1.0e-9;
 
 pub(in crate::decode) fn simple_hole_geometry<'a>(
+    ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<SimpleHoleGeometry<'a>> {
-    let cap_rows = feature_outline_planes(scan, feature_id)?
-        .into_iter()
-        .map(|(id, origin, normal)| {
+) -> Result<Option<SimpleHoleGeometry<'a>>, CodecError> {
+    let Some(cap_rows) = feature_outline_planes(ctx, scan, feature_id)? else {
+        return Ok(None);
+    };
+    let candidate = (|| {
+        let [first, second] = cap_rows.as_slice() else {
+            return None;
+        };
+        let cap = |(id, origin, normal): FeatureOutlinePlane| {
             let envelope = exactly_one(scan.planes.envelopes.iter().filter(|envelope| envelope.surface_id == id))?;
             Some(CapOutline {
                 surface_id: id,
@@ -39,35 +47,42 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
                 normal,
                 corners: plane_envelope_corners(&envelope.envelope)?,
             })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let [first, second] = cap_rows.as_slice() else {
-        return None;
+        };
+        let first = cap(*first)?;
+        let second = cap(*second)?;
+        let table = exactly_one(scan.features.entity_tables.iter().filter(|table| {
+            table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
+        }))?;
+        let [entry_plane, termination_plane, first_cylinder, second_cylinder] = table.entries.as_slice()
+        else {
+            return None;
+        };
+        if entry_plane.entity_id != first.surface_id || termination_plane.entity_id != second.surface_id {
+            return None;
+        }
+        let cylinder_row = |id| {
+            crate::surface::unique_surface_row(&scan.surfaces.rows, id).filter(|row| {
+                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+            })
+        };
+        let first_row = cylinder_row(first_cylinder.entity_id)?;
+        let second_row = cylinder_row(second_cylinder.entity_id)?;
+        let (_, _, extent) = hole_placement([first, second].map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
+        let geometry = hole_cylinder_from_cap_outlines([first, second])?;
+        Some((entry_plane.entity_id, first_row, second_row, extent, geometry))
+    })();
+    let Some((entry_surface_id, first_row, second_row, extent, geometry)) = candidate else {
+        return Ok(None);
     };
-    let table = exactly_one(scan.features.entity_tables.iter().filter(|table| {
-        table.feature_id == feature_id && table.surface_ids_iter().next().is_some()
-    }))?;
-    let [entry_plane, termination_plane, first_cylinder, second_cylinder] = table.entries.as_slice()
-    else {
-        return None;
-    };
-    if entry_plane.entity_id != first.surface_id || termination_plane.entity_id != second.surface_id {
-        return None;
-    }
-    let cylinder_row = |id| {
-        crate::surface::unique_surface_row(&scan.surfaces.rows, id).filter(|row| {
-            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
-        })
-    };
-    let cylinder_rows = vec![cylinder_row(first_cylinder.entity_id)?, cylinder_row(second_cylinder.entity_id)?];
-    let (_, _, extent) =
-        hole_placement([*first, *second].map(|cap| (cap.surface_id, cap.origin, cap.normal)))?;
-    Some(SimpleHoleGeometry {
-        entry_surface_id: Some(entry_plane.entity_id),
+    let mut cylinder_rows = Vec::new();
+    ctx.try_reserve_items(&mut cylinder_rows, 2, "creo simple hole cylinder rows")?;
+    cylinder_rows.extend([first_row, second_row]);
+    Ok(Some(SimpleHoleGeometry {
+        entry_surface_id: Some(entry_surface_id),
         cylinder_rows,
         extent,
-        geometry: hole_cylinder_from_cap_outlines([*first, *second])?,
-    })
+        geometry,
+    }))
 }
 
 fn has_exact_materialized_surface_roster(
@@ -181,23 +196,31 @@ pub(in crate::decode) fn compact_simple_hole_cylinder_id(
 }
 
 pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
+    ctx: &DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<SimpleHoleGeometry<'a>> {
-    let cylinder_id = compact_simple_hole_cylinder_id(
+) -> Result<Option<SimpleHoleGeometry<'a>>, CodecError> {
+    let candidate = (|| {
+        let cylinder_id = compact_simple_hole_cylinder_id(
         feature_id,
         &scan.features.entity_tables,
         &scan.surfaces.rows,
-    )?;
-    let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?
-        .positional_cylinder_frame()?;
-    let length = frame.length()?;
-    Some(SimpleHoleGeometry {
+        )?;
+        let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?
+            .positional_cylinder_frame()?;
+        let length = frame.length()?;
+        let row = crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_id)?;
+        Some((frame, length, row))
+    })();
+    let Some((frame, length, row)) = candidate else {
+        return Ok(None);
+    };
+    let mut cylinder_rows = Vec::new();
+    ctx.try_reserve_items(&mut cylinder_rows, 1, "creo compact hole cylinder rows")?;
+    cylinder_rows.push(row);
+    Ok(Some(SimpleHoleGeometry {
         entry_surface_id: None,
-        cylinder_rows: vec![crate::surface::unique_surface_row(
-            &scan.surfaces.rows,
-            cylinder_id,
-        )?],
+        cylinder_rows,
         extent: LinearTermination::Blind {
             length: cadmpeg_ir::scalar::NonZeroLength::from(length),
         },
@@ -206,7 +229,7 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
             frame.frame().orthonormal_frame(),
             frame.radius(),
         ),
-    })
+    }))
 }
 
 pub(in crate::decode) fn circular_sweep_cylinder_from_cap_outlines(

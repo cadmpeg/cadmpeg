@@ -105,6 +105,23 @@ fn feature_plane_limit_error(limit: u64) -> cadmpeg_core::CodecError {
 }
 
 #[test]
+fn feature_outline_planes_refuse_collection_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.surfaces.rows.push(plane_row(31));
+    scan.planes.outlines.push(plane_outline(31, 2.0));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::feature_outline_planes(&ctx, &scan, 917)
+        .expect_err("outline plane exceeds limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo feature outline planes"));
+}
+
+#[test]
 fn feature_plane_id_nodes_refuse_collection_limit() {
     assert!(matches!(feature_plane_limit_error(0),
         cadmpeg_core::CodecError::ResourceLimit(resource)

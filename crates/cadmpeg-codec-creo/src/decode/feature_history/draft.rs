@@ -374,14 +374,16 @@ pub(in super::super) fn schema_feature_definition(
                 .and_then(|(recipe, (diameter, _, depth))| {
                     simple_drilled_hole_placement(scan, recipe.table, diameter, depth)
                 });
-        let placement = feature_outline_planes(scan, feature_id).and_then(hole_placement);
+        let placement = feature_outline_planes(ctx, scan, feature_id)?.and_then(hole_placement);
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
             &scan.features.entity_tables,
             &scan.surfaces.rows,
         );
-        let solved = simple_hole_geometry(scan, feature_id)
-            .or_else(|| compact_simple_hole_geometry(scan, feature_id));
+        let mut solved = simple_hole_geometry(ctx, scan, feature_id)?;
+        if solved.is_none() {
+            solved = compact_simple_hole_geometry(ctx, scan, feature_id)?;
+        }
         let simple_form = solved.is_some() || compact_cylinder_id.is_some();
         let result_surface_ids = feature_result_surface_ids_by_feature(
             ctx,
