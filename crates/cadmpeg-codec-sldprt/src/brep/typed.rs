@@ -228,9 +228,23 @@ impl Facts {
     /// Return FACE attributes from a closed typed BODY ownership set. Raw FACE
     /// candidates can be byte-window matches with a pointer outside the u16
     /// attribute identity space.
-    pub(super) fn valid_ownership_face_attrs(&self) -> Option<HashSet<u16>> {
-        let (_, _, _, faces) = self.valid_ownership_maps()?;
-        Some(faces.keys().copied().collect())
+    pub(super) fn valid_ownership_face_attrs(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<HashSet<u16>>, CodecError> {
+        let Some((_, _, _, faces)) = self.valid_ownership_maps() else {
+            return Ok(None);
+        };
+        let mut attrs = HashSet::new();
+        for attr in faces.keys().copied() {
+            ctx.charge_work(1, "select typed Parasolid face attributes")?;
+            ctx.charge_collection_items(1, "collect typed Parasolid face attributes")?;
+            attrs.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect typed Parasolid face attributes", u64::MAX - 1, u64::MAX)
+            })?;
+            attrs.insert(attr);
+        }
+        Ok(Some(attrs))
     }
 
     /// Return body hierarchies only when the typed ownership graph is complete
@@ -1545,8 +1559,12 @@ mod tests {
             ],
         };
 
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).expect("test context");
         assert_eq!(
-            facts.valid_ownership_face_attrs(),
+            facts.valid_ownership_face_attrs(&ctx).expect("face attributes"),
             Some(HashSet::from([101]))
         );
         assert!(facts.hierarchies(&HashSet::from([100])).is_none());

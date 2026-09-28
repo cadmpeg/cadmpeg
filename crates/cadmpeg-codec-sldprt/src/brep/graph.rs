@@ -1233,7 +1233,7 @@ pub(crate) fn decode_bodies(
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(ctx, stream_typed_facts.try_clone(ctx)?)?;
     }
-    let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
+    let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs(ctx)?;
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
     for (stream_order, ((payload, header), stream_typed_facts)) in
         ordered.into_iter().zip(typed_streams).enumerate()
@@ -1305,7 +1305,7 @@ fn decode_body(
     let carriers = scan_carriers(ctx, body)?;
     let curve_attrs = carriers.curve_attrs(ctx)?;
     let typed_facts = typed::scan(body, ctx)?;
-    let typed_face_attrs = typed_facts.valid_ownership_face_attrs();
+    let typed_face_attrs = typed_facts.valid_ownership_face_attrs(ctx)?;
     let typed_face_offsets =
         selected_typed_face_offsets(ctx, &typed_facts, typed_face_attrs.as_ref())?;
     let t =
