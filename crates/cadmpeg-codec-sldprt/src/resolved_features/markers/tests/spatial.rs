@@ -24,6 +24,7 @@ use crate::resolved_features::markers::marker_local_id;
 use crate::resolved_features::markers::marker_object_index;
 use crate::resolved_features::markers::marker_spatial_coordinates;
 use crate::resolved_features::markers::reference_cells;
+use crate::resolved_features::markers::reference_cells_charged;
 use crate::resolved_features::markers::relation_bindings;
 use crate::resolved_features::markers::relation_bindings_scoped;
 use crate::resolved_features::markers::sketch_input_entities;
@@ -105,6 +106,47 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
     assert!(reference_cells(&scalars, &ambiguous_classes)
         .iter()
         .all(|reference| reference.class_ref.is_none()));
+}
+
+#[test]
+fn reference_cells_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let kind = FeatureInputOperandKind::D6;
+    let scalar = FeatureInputScalar {
+        id: "scalar".into(),
+        parent: "lane".into(),
+        feature_ref: None,
+        ordinal: 0,
+        offset: 100,
+        object_id: 1,
+        name: "name".into(),
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
+        role: FeatureInputScalarRole::Driving,
+        operands: vec![FeatureInputOperand {
+            offset: 143,
+            reference_ref: "reference".into(),
+            kind,
+            entity_index: 7,
+            entity_ref: None,
+        }],
+    };
+    let arena = DecodeArena::new();
+    let mut limited_policy = DecodePolicy::service();
+    limited_policy.limits.max_collection_items = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
+    let error = reference_cells_charged(&limited, &[scalar.clone()], &[]).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT reference cells"));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        reference_cells_charged(&service, &[scalar.clone()], &[]).unwrap(),
+        reference_cells(&[scalar], &[])
+    );
 }
 
 #[test]

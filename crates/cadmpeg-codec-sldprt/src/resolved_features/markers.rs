@@ -26,7 +26,8 @@ use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputOperandKind, FeatureInputReference,
     FeatureInputRelationBinding, FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, FinitePoint3};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::{
@@ -1205,6 +1206,91 @@ pub(crate) fn reference_cells(
         }
     }
     cells
+}
+
+pub(crate) fn reference_cells_charged(
+    ctx: &DecodeContext<'_>,
+    scalars: &[FeatureInputScalar],
+    classes: &[FeatureInputClass],
+) -> Result<Vec<FeatureInputReference>, CodecError> {
+    let mut cells = Vec::new();
+    for scalar in scalars {
+        for operand in &scalar.operands {
+            let id = copy_reference_text(ctx, &operand.reference_ref)?;
+            let parent = copy_reference_text(ctx, &scalar.parent)?;
+            let feature_ref = scalar
+                .feature_ref
+                .as_deref()
+                .map(|feature| copy_reference_text(ctx, feature))
+                .transpose()?;
+            ctx.reserve_collection_vec(&mut cells, 1, "collect SLDPRT reference cells")?;
+            cells.push(FeatureInputReference {
+                id,
+                parent,
+                feature_ref,
+                ordinal: 0,
+                offset: operand.offset,
+                kind: operand.kind,
+                class_ref: None,
+                object_index: operand.entity_index,
+            });
+        }
+    }
+    cells.sort_by_key(|cell| cell.offset);
+    cells.dedup_by_key(|cell| cell.offset);
+    for (ordinal, cell) in cells.iter_mut().enumerate() {
+        cell.ordinal = u32::try_from(ordinal).map_err(|_| {
+            ctx.refuse_codec_limit("number SLDPRT reference cells", u64::MAX - 1, u64::MAX)
+        })?;
+    }
+    let comparisons = cells.len().checked_mul(classes.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit("match SLDPRT reference declarations", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_work(
+        u64::try_from(comparisons).map_err(|_| {
+            ctx.refuse_codec_limit("match SLDPRT reference declarations", u64::MAX - 1, u64::MAX)
+        })?,
+        "match SLDPRT reference declarations",
+    )?;
+    let mut declarations = HashMap::<FeatureInputOperandKind, Vec<&FeatureInputClass>>::new();
+    for cell in &cells {
+        for class in classes.iter().filter(|class| {
+            class.parent == cell.parent && class.offset.checked_sub(cell.offset) == Some(12)
+        }) {
+            if !declarations.contains_key(&cell.kind) {
+                ctx.charge_collection_items(1, "index SLDPRT reference declarations")?;
+                declarations.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "index SLDPRT reference declarations",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+                declarations.insert(cell.kind, Vec::new());
+            }
+            if let Some(group) = declarations.get_mut(&cell.kind) {
+                ctx.reserve_collection_vec(group, 1, "collect SLDPRT reference declarations")?;
+                group.push(class);
+            }
+        }
+    }
+    for declared in declarations.values_mut() {
+        declared.sort_unstable_by_key(|class| class.offset);
+        declared.dedup_by_key(|class| class.id.as_str());
+    }
+    for cell in &mut cells {
+        if let Some([class]) = declarations.get(&cell.kind).map(Vec::as_slice) {
+            cell.class_ref = Some(copy_reference_text(ctx, &class.id)?);
+        }
+    }
+    Ok(cells)
+}
+
+fn copy_reference_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, CodecError> {
+    let mut copy = String::new();
+    ctx.reserve_retained_string(&mut copy, value.len(), "retain SLDPRT reference identity")?;
+    copy.push_str(value);
+    Ok(copy)
 }
 
 pub(crate) fn marker_local_id_offset(payload: &[u8], offset: usize) -> Option<usize> {

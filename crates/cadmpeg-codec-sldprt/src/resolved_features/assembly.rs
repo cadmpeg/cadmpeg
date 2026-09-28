@@ -1,6 +1,6 @@
 //! Feature-input lane assembly from container streams.
 
-use super::markers::{admit_sketch_input_entities, reference_cells, relation_bindings};
+use super::markers::{admit_sketch_input_entities, reference_cells_charged, relation_bindings};
 use super::names::{class_declarations, configuration, object_names};
 use super::scalars::named_scalars_charged;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
@@ -87,7 +87,7 @@ fn feature_input_lane(
     let names = object_names(ctx, payload, &parent)?;
     let scalars = named_scalars_charged(ctx, payload, &parent, &names)?;
     let relation_bindings = relation_bindings(&parent, &classes, &scalars);
-    let references = reference_cells(&scalars, &classes);
+    let references = reference_cells_charged(ctx, &scalars, &classes)?;
     let sketch_entities = admit_sketch_input_entities(payload, &parent)?;
     for entity in &sketch_entities {
         let signature = usize::try_from(entity.offset())
