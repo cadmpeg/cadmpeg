@@ -1337,9 +1337,17 @@ fn strip_reference(bytes: &[u8]) -> Option<&[u8]> {
     }
 }
 
-pub(crate) fn repeated_reference_suffix(
+struct RepeatedReferenceSuffixView<'a> {
+    repeated: &'a [PayloadField],
+    terminal_reference: u32,
+    first_count_offset: usize,
+    repeated_count_offset: usize,
+    schema_preamble: Option<ReferenceSchemaPreamble>,
+}
+
+fn repeated_reference_suffix_view(
     payload: &ObjectPayload,
-) -> Option<RepeatedReferenceSuffix> {
+) -> Option<RepeatedReferenceSuffixView<'_>> {
     let fields = &payload.fields;
     let mut matches = fields
         .iter()
@@ -1363,14 +1371,10 @@ pub(crate) fn repeated_reference_suffix(
             let count = usize::try_from(*declared_count).ok()?;
             let references_start = count_index.checked_add(1)?;
             let references_end = references_start.checked_add(count)?;
-            let first = fields
-                .get(references_start..references_end)?
-                .iter()
-                .map(|field| match field {
-                    PayloadField::Reference { value, .. } => Some(*value),
-                    _ => None,
-                })
-                .collect::<Option<Vec<_>>>()?;
+            let first = fields.get(references_start..references_end)?;
+            if !first.iter().all(|field| matches!(field, PayloadField::Reference { .. })) {
+                return None;
+            }
             let PayloadField::Atom {
                 value: repeated_count,
                 offset: repeated_count_offset,
@@ -1384,15 +1388,12 @@ pub(crate) fn repeated_reference_suffix(
             let repeated_start = references_end.checked_add(1)?;
             let repeated_end = repeated_start.checked_add(count.checked_sub(1)?)?;
             let terminator_start = repeated_end.checked_add(1)?;
-            let repeated = fields
-                .get(repeated_start..repeated_end)?
-                .iter()
-                .map(|field| match field {
-                    PayloadField::Reference { value, .. } => Some(*value),
-                    _ => None,
-                })
-                .collect::<Option<Vec<_>>>()?;
-            if repeated != first[..count - 1]
+            let repeated = fields.get(repeated_start..repeated_end)?;
+            if !first[..count - 1].iter().zip(repeated).all(|(left, right)| {
+                matches!((left, right),
+                    (PayloadField::Reference { value: left, .. },
+                     PayloadField::Reference { value: right, .. }) if left == right)
+            })
                 || !matches!(
                     fields.get(repeated_end),
                     Some(PayloadField::Atom { value: 129, .. })
@@ -1404,16 +1405,46 @@ pub(crate) fn repeated_reference_suffix(
             {
                 return None;
             }
-            Some(RepeatedReferenceSuffix {
+            let terminal_reference = match first.last()? {
+                PayloadField::Reference { value, .. } => *value,
+                _ => return None,
+            };
+            Some(RepeatedReferenceSuffixView {
                 schema_preamble: reference_schema_preamble(&fields[..count_index - 1]),
-                repeated_references: repeated,
-                terminal_reference: first[count - 1],
+                repeated,
+                terminal_reference,
                 first_count_offset: *first_count_offset,
                 repeated_count_offset: *repeated_count_offset,
             })
         });
     let suffix = matches.next()?;
     matches.next().is_none().then_some(suffix)
+}
+
+pub(crate) fn has_repeated_reference_suffix(payload: &ObjectPayload) -> bool {
+    repeated_reference_suffix_view(payload).is_some()
+}
+
+pub(crate) fn repeated_reference_schema_preamble(
+    payload: &ObjectPayload,
+) -> Option<ReferenceSchemaPreamble> {
+    repeated_reference_suffix_view(payload)?.schema_preamble
+}
+
+pub(crate) fn repeated_reference_suffix(
+    payload: &ObjectPayload,
+) -> Option<RepeatedReferenceSuffix> {
+    let view = repeated_reference_suffix_view(payload)?;
+    Some(RepeatedReferenceSuffix {
+        schema_preamble: view.schema_preamble,
+        repeated_references: view.repeated.iter().filter_map(|field| match field {
+            PayloadField::Reference { value, .. } => Some(*value),
+            _ => None,
+        }).collect(),
+        terminal_reference: view.terminal_reference,
+        first_count_offset: view.first_count_offset,
+        repeated_count_offset: view.repeated_count_offset,
+    })
 }
 
 fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaPreamble> {

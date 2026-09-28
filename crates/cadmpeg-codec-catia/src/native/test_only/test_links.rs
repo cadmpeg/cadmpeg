@@ -482,13 +482,18 @@ pub(super) fn validate_native_links(
                             .map(|entry| (entry.id.as_str(), entry.value.as_str()))
                     })
             });
+            let expected_repeated_selection = crate::test_support::with_service_context(|ctx| {
+                repeated_reference_schema_selection(
+                    ctx,
+                    object_graph::repeated_reference_schema_preamble(&record.payload).as_ref(),
+                    catalog,
+                )
+            });
             if record.class_entry() != expected_class.map(|(entry, _)| entry)
                 || record.class_name() != expected_class.map(|(_, value)| value)
-                || record.repeated_reference_schema_selection
-                    != repeated_reference_schema_selection(
-                        record.repeated_reference_suffix().as_ref(),
-                        catalog,
-                    )
+                || expected_repeated_selection.as_ref().map_or(true, |selection| {
+                    record.repeated_reference_schema_selection != *selection
+                })
             {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "object record `{}` has an invalid schema class",

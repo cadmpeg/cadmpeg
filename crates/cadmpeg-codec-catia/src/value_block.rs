@@ -187,6 +187,29 @@ pub(crate) enum ValueField {
     },
 }
 
+pub(crate) fn copy_fields_charged(
+    ctx: &DecodeContext<'_>,
+    fields: &[ValueField],
+) -> Result<Vec<ValueField>, CodecError> {
+    let mut copied = Vec::new();
+    for field in fields {
+        let copy = match field {
+            ValueField::Inline { bytes, offset } => ValueField::Inline {
+                bytes: InlineBytes(crate::resource::copy_retained_slice(ctx, &bytes.0,
+                    "catia_native_value_inline_bytes")?),
+                offset: *offset,
+            },
+            ValueField::ByteString { bytes, offset } => ValueField::ByteString {
+                bytes: crate::resource::copy_retained_slice(ctx, bytes, "catia_native_value_field_bytes")?,
+                offset: *offset,
+            },
+            other => other.clone(),
+        };
+        crate::resource::push(ctx, &mut copied, copy, "catia_native_value_fields")?;
+    }
+    Ok(copied)
+}
+
 /// Parse every exact `7C0B` value block immediately followed by `7C02`.
 pub(crate) fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<ValueBlock>, CodecError> {
     let mut blocks = Vec::<ValueBlock>::new();

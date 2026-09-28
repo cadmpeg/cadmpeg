@@ -250,25 +250,32 @@ impl CatiaNative {
                             )
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.definition_schema_selections
-                            != definition_schema_selections(
-                                &entity_table::parse_definition_schema_selectors(
-                                    entity.definition_prefix(),
-                                ),
-                                catalog,
-                            )
+                        let expected = crate::test_support::with_service_context(|ctx| {
+                            let selectors = entity_table::parse_definition_schema_selectors(
+                                ctx, entity.definition_prefix())?;
+                            definition_schema_selections(ctx, &selectors, catalog)
+                        });
+                        expected.as_ref().map_or(true, |selections| {
+                            entity.definition_schema_selections != *selections
+                        })
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.value_schema_selections
-                            != entity_value_schema_selections(
-                                &entity.value_fields(),
-                                catalog,
-                                &entity.value_packets(),
-                            )
+                        let expected = crate::test_support::with_service_context(|ctx| {
+                            let fields = entity.value_fields_charged(ctx)?;
+                            let packets = entity.value_packets(ctx, &fields)?;
+                            entity_value_schema_selections(ctx, &fields, catalog, &packets)
+                        });
+                        expected.as_ref().map_or(true, |selections| {
+                            entity.value_schema_selections != *selections
+                        })
                     })
                     || graph_entities.iter().any(|entity| {
-                        entity.value_production
-                            != value_production(entity, &graph.records, &entity.value_fields())
+                        let fields = crate::test_support::with_service_context(|ctx| {
+                            entity.value_fields_charged(ctx)
+                        });
+                        fields.as_ref().map_or(true, |fields| {
+                            entity.value_production != value_production(entity, &graph.records, fields)
+                        })
                     })
                     || graph_entities.iter().any(|entity| {
                         entity.suffix_value()

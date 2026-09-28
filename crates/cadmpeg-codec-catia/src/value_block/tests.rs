@@ -12,6 +12,26 @@ fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
 }
 
 #[test]
+fn copied_value_fields_refuse_nested_retained_and_outer_collection_limits() {
+    let fields = [ValueField::Inline { bytes: InlineBytes(vec![1, 2]), offset: 0 }];
+    let retained = crate::test_support::with_retained_limit(1, |ctx| {
+        super::copy_fields_charged(ctx, &fields)
+    });
+    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_value_inline_bytes"));
+    let collection = crate::test_support::with_collection_limit(2, |ctx| {
+        super::copy_fields_charged(ctx, &fields)
+    });
+    assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_value_fields"));
+    let copied = crate::test_support::with_service_context(|ctx| {
+        super::copy_fields_charged(ctx, &fields)
+    })
+    .expect("service profile admits nested value field");
+    assert_eq!(copied, fields);
+}
+
+#[test]
 fn value_block_payload_refuses_retained_and_collection_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;

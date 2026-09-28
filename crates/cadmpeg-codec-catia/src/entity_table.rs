@@ -2,6 +2,8 @@
 //! Framing and identity decode for outer `7C05` entity-table records.
 
 use std::collections::HashSet;
+use std::convert::Infallible;
+use std::hash::Hash;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -565,6 +567,22 @@ pub(crate) enum EntityValuePacket {
 }
 
 impl EntityValuePacket {
+    pub(crate) fn copy_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        match self {
+            Self::Numeric { offset, prefix_atoms, type_selector, layout_atom, value_atom,
+                items, terminator_count } => Ok(Self::Numeric {
+                offset: *offset,
+                prefix_atoms: *prefix_atoms,
+                type_selector: *type_selector,
+                layout_atom: *layout_atom,
+                value_atom: *value_atom,
+                items: crate::resource::copy_retained_slice(ctx, items, "catia_native_numeric_packet_items")?,
+                terminator_count: *terminator_count,
+            }),
+            other => Ok(other.clone()),
+        }
+    }
+
     /// Complete byte range occupied by this packet within its value payload.
     pub(crate) fn byte_range(&self) -> Option<std::ops::Range<usize>> {
         match self {
@@ -588,44 +606,113 @@ impl EntityValuePacket {
 }
 
 /// Decode every exact packet in source order from a `7C07` value payload.
+trait PacketGrowth {
+    type Error;
+
+    fn push<T>(&self, values: &mut Vec<T>, value: T,
+        operation: &'static str) -> Result<(), Self::Error>;
+    fn insert<T: Eq + Hash>(&self, values: &mut HashSet<T>, value: T,
+        operation: &'static str) -> Result<(), Self::Error>;
+    fn work(&self, units: usize, operation: &'static str) -> Result<(), Self::Error>;
+}
+
+struct UnchargedPacketGrowth;
+
+impl PacketGrowth for UnchargedPacketGrowth {
+    type Error = Infallible;
+
+    fn push<T>(&self, values: &mut Vec<T>, value: T,
+        _operation: &'static str) -> Result<(), Self::Error> {
+        values.push(value);
+        Ok(())
+    }
+
+    fn insert<T: Eq + Hash>(&self, values: &mut HashSet<T>, value: T,
+        _operation: &'static str) -> Result<(), Self::Error> {
+        values.insert(value);
+        Ok(())
+    }
+
+    fn work(&self, _units: usize, _operation: &'static str) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
+struct ChargedPacketGrowth<'a, 'ctx>(&'a DecodeContext<'ctx>);
+
+impl PacketGrowth for ChargedPacketGrowth<'_, '_> {
+    type Error = CodecError;
+
+    fn push<T>(&self, values: &mut Vec<T>, value: T,
+        operation: &'static str) -> Result<(), Self::Error> {
+        crate::resource::push(self.0, values, value, operation)
+    }
+
+    fn insert<T: Eq + Hash>(&self, values: &mut HashSet<T>, value: T,
+        operation: &'static str) -> Result<(), Self::Error> {
+        crate::resource::insert_set(self.0, values, value, operation).map(|_| ())
+    }
+
+    fn work(&self, units: usize, operation: &'static str) -> Result<(), Self::Error> {
+        let units = u64::try_from(units)
+            .map_err(|_| self.0.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        self.0.charge_work(units, operation)
+    }
+}
+
 #[must_use]
 pub(crate) fn value_packets(
     payload: &[u8],
     fields: &[value_block::ValueField],
 ) -> Vec<EntityValuePacket> {
-    let opcode_offsets = fields
-        .iter()
-        .filter_map(|field| match field {
-            value_block::ValueField::Opcode { offset, .. } => Some(*offset),
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-    let e8_opcode_offsets = fields
-        .iter()
-        .filter_map(|field| match field {
-            value_block::ValueField::Opcode { code: 0xe8, offset } => Some(*offset),
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-    let marker_offsets = fields
-        .iter()
-        .filter_map(|field| match field {
-            value_block::ValueField::Marker { code: 0xe8, offset } => Some(*offset),
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-    let atom_offsets = fields
-        .iter()
-        .filter_map(|field| match field {
-            value_block::ValueField::Atom { offset, .. } => Some(*offset),
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-    let mut packets =
-        numeric_value_packets(payload, &e8_opcode_offsets, &marker_offsets, &atom_offsets);
-    packets.extend(e9_scalar_packets(payload, &opcode_offsets, &atom_offsets));
-    packets.extend(
-        (0..payload.len())
+    match value_packets_with(&UnchargedPacketGrowth, payload, fields) {
+        Ok(packets) => packets,
+        Err(never) => match never {},
+    }
+}
+
+pub(crate) fn value_packets_charged(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    fields: &[value_block::ValueField],
+) -> Result<Vec<EntityValuePacket>, CodecError> {
+    value_packets_with(&ChargedPacketGrowth(ctx), payload, fields)
+}
+
+fn value_packets_with<G: PacketGrowth>(
+    growth: &G,
+    payload: &[u8],
+    fields: &[value_block::ValueField],
+) -> Result<Vec<EntityValuePacket>, G::Error> {
+    growth.work(fields.len(), "catia_value_packet_field_scan")?;
+    growth.work(payload.len(), "catia_value_packet_payload_scan")?;
+    let mut opcode_offsets = HashSet::new();
+    let mut e8_opcode_offsets = HashSet::new();
+    let mut marker_offsets = HashSet::new();
+    let mut atom_offsets = HashSet::new();
+    for field in fields {
+        match field {
+            value_block::ValueField::Opcode { code, offset } => {
+                growth.insert(&mut opcode_offsets, *offset, "catia_value_packet_opcodes")?;
+                if *code == 0xe8 {
+                    growth.insert(&mut e8_opcode_offsets, *offset, "catia_value_packet_e8_opcodes")?;
+                }
+            }
+            value_block::ValueField::Marker { code: 0xe8, offset } => {
+                growth.insert(&mut marker_offsets, *offset, "catia_value_packet_markers")?;
+            }
+            value_block::ValueField::Atom { offset, .. } => {
+                growth.insert(&mut atom_offsets, *offset, "catia_value_packet_atoms")?;
+            }
+            _ => {}
+        }
+    }
+    let mut packets = numeric_value_packets(growth, payload, &e8_opcode_offsets,
+        &marker_offsets, &atom_offsets)?;
+    for packet in e9_scalar_packets(payload, &opcode_offsets, &atom_offsets) {
+        growth.push(&mut packets, packet, "catia_value_packets")?;
+    }
+    for packet in (0..payload.len())
             .filter(|index| opcode_offsets.contains(index))
             .filter_map(|index| {
                 if let Some([0xe9, _, _, layout, 0x37, 0xfe, 0xfe]) = payload.get(index..index + 7)
@@ -644,22 +731,24 @@ pub(crate) fn value_packets(
                     }),
                     _ => None,
                 }
-            }),
-    );
-    packets.sort_by_key(|packet| match packet {
-        EntityValuePacket::Numeric { offset, .. }
-        | EntityValuePacket::Compact { offset, .. }
-        | EntityValuePacket::Layout { offset, .. }
-        | EntityValuePacket::E9Scalar { offset, .. } => *offset,
+            }) {
+        growth.push(&mut packets, packet, "catia_value_packets")?;
+    }
+    growth.work(packets.len(), "catia_value_packet_sort")?;
+    packets.sort_unstable_by_key(|packet| match packet {
+        EntityValuePacket::Numeric { offset, .. } => (*offset, 0u8),
+        EntityValuePacket::E9Scalar { offset, .. } => (*offset, 1u8),
+        EntityValuePacket::Compact { offset, .. }
+        | EntityValuePacket::Layout { offset, .. } => (*offset, 2u8),
     });
-    packets
+    Ok(packets)
 }
 
-fn e9_scalar_packets(
-    payload: &[u8],
-    opcode_offsets: &HashSet<usize>,
-    atom_offsets: &HashSet<usize>,
-) -> Vec<EntityValuePacket> {
+fn e9_scalar_packets<'a>(
+    payload: &'a [u8],
+    opcode_offsets: &'a HashSet<usize>,
+    atom_offsets: &'a HashSet<usize>,
+) -> impl Iterator<Item = EntityValuePacket> + 'a {
     const PREFIX: [u8; 7] = [0x83, 0xe9, 0xc0, 0x07, 0x01, 0xe1, 0xe6];
     const TRAILER: [u8; 10] = [0x88, 0x81, 0x81, 0x81, 0x81, 0x81, 0x82, 0xe7, 0x81, 0xfe];
 
@@ -686,16 +775,17 @@ fn e9_scalar_packets(
                     bits,
                 })
         })
-        .collect()
 }
 
-fn numeric_value_packets(
+fn numeric_value_packets<G: PacketGrowth>(
+    growth: &G,
     payload: &[u8],
     opcode_offsets: &HashSet<usize>,
     marker_offsets: &HashSet<usize>,
     atom_offsets: &HashSet<usize>,
-) -> Vec<EntityValuePacket> {
-    let candidates = (0..payload.len())
+) -> Result<Vec<EntityValuePacket>, G::Error> {
+    let mut candidates = Vec::new();
+    for offset in (0..payload.len())
         .filter(|offset| {
             if !atom_offsets.contains(offset) {
                 return false;
@@ -709,64 +799,72 @@ fn numeric_value_packets(
             atom_offsets.contains(&prefix1_offset)
                 && compact_atom(payload, prefix1_offset)
                     .is_some_and(|(_, opcode_offset)| opcode_offsets.contains(&opcode_offset))
-        })
-        .filter_map(|offset| parse_numeric_value_packet(payload, offset))
-        .collect::<Vec<_>>();
-    candidates
-        .iter()
-        .enumerate()
-        .filter(|(index, (_, range))| {
-            !candidates
-                .iter()
-                .enumerate()
-                .any(|(other_index, (_, other))| {
-                    *index != other_index && range.start < other.end && other.start < range.end
-                })
-        })
-        .map(|(_, (packet, _))| packet.clone())
-        .collect()
+        }) {
+        if let Some((packet, range)) = parse_numeric_value_packet(growth, payload, offset)? {
+            growth.push(&mut candidates, (Some(packet), range), "catia_numeric_packet_candidates")?;
+        }
+    }
+    let mut packets = Vec::new();
+    for index in 0..candidates.len() {
+        growth.work(candidates.len(), "catia_numeric_packet_overlap")?;
+        let range = &candidates[index].1;
+        let overlaps = candidates.iter().enumerate().any(|(other_index, (_, other))| {
+            index != other_index && range.start < other.end && other.start < range.end
+        });
+        if !overlaps {
+            if let Some(packet) = candidates[index].0.take() {
+                growth.push(&mut packets, packet, "catia_numeric_value_packets")?;
+            }
+        }
+    }
+    Ok(packets)
 }
 
-fn parse_numeric_value_packet(
+fn parse_numeric_value_packet<G: PacketGrowth>(
+    growth: &G,
     payload: &[u8],
     offset: usize,
-) -> Option<(EntityValuePacket, std::ops::Range<usize>)> {
-    let (prefix0, mut at) = compact_atom(payload, offset)?;
-    let (prefix1, next) = compact_atom(payload, at)?;
-    at = next;
-    (payload.get(at) == Some(&0xe8)).then_some(())?;
-    let selector = View::u16_le_at(payload, at + 1)?;
-    (payload.get(at + 3) == Some(&0x37)).then_some(())?;
-    let (layout_atom, next) = one_byte_atom(payload, at + 4)?;
-    let (value_atom, next) = one_byte_atom(payload, next)?;
-    at = next;
+) -> Result<Option<(EntityValuePacket, std::ops::Range<usize>)>, G::Error> {
+    let Some((prefix0, prefix1, selector, layout_atom, value_atom, mut at)) = (|| {
+        let (prefix0, at) = compact_atom(payload, offset)?;
+        let (prefix1, at) = compact_atom(payload, at)?;
+        (payload.get(at) == Some(&0xe8)).then_some(())?;
+        let selector = View::u16_le_at(payload, at + 1)?;
+        (payload.get(at + 3) == Some(&0x37)).then_some(())?;
+        let (layout_atom, at) = one_byte_atom(payload, at + 4)?;
+        let (value_atom, at) = one_byte_atom(payload, at)?;
+        Some((prefix0, prefix1, selector, layout_atom, value_atom, at))
+    })() else { return Ok(None) };
     let mut items = Vec::new();
     let mut binary64_count = 0usize;
     loop {
-        match *payload.get(at)? {
+        let Some(&code) = payload.get(at) else { return Ok(None) };
+        match code {
             0xe6 => {
-                let end = at.checked_add(9)?;
-                let bits = View::u64_le_at(payload, at + 1)?;
-                items.push(NumericPacketItem::Binary64 { bits, offset: at });
+                let Some(end) = at.checked_add(9) else { return Ok(None) };
+                let Some(bits) = View::u64_le_at(payload, at + 1) else { return Ok(None) };
+                growth.push(&mut items, NumericPacketItem::Binary64 { bits, offset: at },
+                    "catia_numeric_packet_items")?;
                 binary64_count += 1;
                 at = end;
             }
             code @ 0xe7..=0xe9 => {
-                items.push(NumericPacketItem::Control { code, offset: at });
+                growth.push(&mut items, NumericPacketItem::Control { code, offset: at },
+                    "catia_numeric_packet_items")?;
                 at += 1;
             }
             0xfe => break,
-            _ => return None,
+            _ => return Ok(None),
         }
     }
-    (binary64_count != 0).then_some(())?;
+    if binary64_count == 0 { return Ok(None) }
     let terminator_start = at;
     while payload.get(at) == Some(&0xfe) {
         at += 1;
     }
     let terminator_count = at - terminator_start;
     if offset == 0 && at == payload.len() && terminator_count >= 2 {
-        return None;
+        return Ok(None);
     }
     let packet = EntityValuePacket::Numeric {
         offset,
@@ -777,8 +875,8 @@ fn parse_numeric_value_packet(
         items,
         terminator_count,
     };
-    let range = packet.byte_range()?;
-    (range.end == at).then_some((packet, range))
+    let Some(range) = packet.byte_range() else { return Ok(None) };
+    Ok((range.end == at).then_some((packet, range)))
 }
 
 /// One length-closed `7C05` entity-table record.
@@ -1299,7 +1397,10 @@ fn materialize_record(
     .transpose()
 }
 
-pub(crate) fn parse_definition_schema_selectors(prefix: &[u8]) -> Vec<DefinitionSchemaSelector> {
+pub(crate) fn parse_definition_schema_selectors(
+    ctx: &DecodeContext<'_>,
+    prefix: &[u8],
+) -> Result<Vec<DefinitionSchemaSelector>, CodecError> {
     let mut selectors = Vec::new();
     let mut at = 0;
     while at < prefix.len() {
@@ -1308,13 +1409,14 @@ pub(crate) fn parse_definition_schema_selectors(prefix: &[u8]) -> Vec<Definition
             _ => None,
         };
         if let Some(value) = selector {
-            selectors.push(DefinitionSchemaSelector { value, offset: at });
+            crate::resource::push(ctx, &mut selectors, DefinitionSchemaSelector { value, offset: at },
+                "catia_definition_schema_selectors")?;
             at += 5;
         } else {
             at += 1;
         }
     }
-    selectors
+    Ok(selectors)
 }
 
 pub(crate) fn parse_numeric_pair(payload: &[u8]) -> Option<NumericPair> {
@@ -1753,7 +1855,8 @@ mod tests {
             } => (
                 prefix.len() + suffix.len() + 11,
                 prefix.as_slice(),
-                parse_definition_schema_selectors(prefix),
+                crate::test_support::with_service_context(|ctx| parse_definition_schema_selectors(ctx, prefix))
+                    .expect("test definition selectors fit service limits"),
                 suffix.as_slice(),
                 value_payload.len() + 6,
                 value_payload.as_slice(),
@@ -1912,7 +2015,9 @@ mod tests {
 
     #[test]
     fn truncated_definition_selector_is_not_assigned() {
-        assert!(parse_definition_schema_selectors(&[0x32, 1, 2, 3]).is_empty());
+        assert!(crate::test_support::with_service_context(|ctx|
+            parse_definition_schema_selectors(ctx, &[0x32, 1, 2, 3]))
+            .expect("short prefix fits service limits").is_empty());
     }
 
     #[test]
@@ -2390,6 +2495,73 @@ mod tests {
                 terminator_count: 1,
             }]
         );
+    }
+
+    #[test]
+    fn numeric_packet_items_refuse_collection_limit_before_growth() {
+        let mut payload = vec![0xaa, 0x81, 0x87, 0xe8, 0xf4, 0x1a, 0x37, 0x83, 0x84, 0xe6];
+        payload.extend_from_slice(&42.0_f64.to_bits().to_le_bytes());
+        payload.extend_from_slice(&[0xfe, 0xbb]);
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            super::parse_numeric_value_packet(&super::ChargedPacketGrowth(ctx), &payload, 1)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_numeric_packet_items"));
+        let parsed = crate::test_support::with_service_context(|ctx| {
+            super::parse_numeric_value_packet(&super::ChargedPacketGrowth(ctx), &payload, 1)
+        })
+        .expect("service profile admits numeric packet items");
+        assert!(parsed.is_some());
+    }
+
+    #[test]
+    fn copied_numeric_packet_items_refuse_retained_limit() {
+        let packet = EntityValuePacket::Numeric {
+            offset: 0,
+            prefix_atoms: [1, 2],
+            type_selector: 4,
+            layout_atom: 5,
+            value_atom: 6,
+            items: vec![NumericPacketItem::Binary64 { bits: 1.0_f64.to_bits(), offset: 9 }],
+            terminator_count: 1,
+        };
+        let refused = crate::test_support::with_retained_limit(0, |ctx| packet.copy_charged(ctx));
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_native_numeric_packet_items"));
+        let admitted = crate::test_support::with_service_context(|ctx| packet.copy_charged(ctx))
+            .expect("service profile admits numeric packet copy");
+        assert_eq!(admitted, packet);
+    }
+
+    #[test]
+    fn definition_schema_selectors_refuse_collection_limit_before_growth() {
+        let prefix = [0x32, 4, 0, 0, 0];
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            super::parse_definition_schema_selectors(ctx, &prefix)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_definition_schema_selectors"));
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            super::parse_definition_schema_selectors(ctx, &prefix)
+        })
+        .expect("service profile admits definition selector");
+        assert_eq!(admitted, [super::DefinitionSchemaSelector { value: 4, offset: 0 }]);
+    }
+
+    #[test]
+    fn value_packet_indexes_refuse_collection_limit_before_growth() {
+        let payload = [0xe8, 0xe0, 0x0a, 0x37, 0xfe, 0xfe];
+        let fields = value_block::tokenize(&payload);
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            super::value_packets_charged(ctx, &payload, &fields)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_value_packet_opcodes"));
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            super::value_packets_charged(ctx, &payload, &fields)
+        })
+        .expect("service profile admits compact value packet");
+        assert_eq!(admitted, value_packets(&payload, &fields));
     }
 
     #[test]
