@@ -232,13 +232,13 @@ fn create_boundary_vertices(
         let vertex_id = crate::ids::vertex(&stem.slot(boundary).slot(index));
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
         candidate.model_mut().points.push(Point::new(
-            point_id.clone(),
+            crate::decode_resource::clone_optional_identity(Some(ctx), &point_id, "iges trimming identity copy")?,
             cluster.representative,
             None,
         ));
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
         candidate.model_mut().vertices.push(Vertex {
-            id: vertex_id.clone(),
+            id: crate::decode_resource::clone_optional_identity(Some(ctx), &vertex_id, "iges trimming identity copy")?,
             point: point_id,
             tolerance: Some(tolerance),
         });
@@ -253,13 +253,13 @@ fn create_boundary_vertices(
         }
         derivations.push(BoundaryVertexDerivation {
             source_entity: format_retained(ctx, format_args!("{source_entity}"), "iges boundary derivation source text")?,
-            vertex: vertex_id.clone(),
+            vertex: crate::decode_resource::clone_optional_identity(Some(ctx), &vertex_id, "iges trimming identity copy")?,
             representative: cluster.representative,
             tolerance: tolerance.get(),
             source_endpoints: derivation_endpoints,
         });
         for member in cluster.members {
-            vertex_ids[member] = Some(vertex_id.clone());
+            vertex_ids[member] = Some(crate::decode_resource::clone_optional_identity(Some(ctx), &vertex_id, "iges trimming identity copy")?);
         }
     }
     let mut result_ids = reserve_vec(ctx, vertex_ids.len(), "iges boundary result vertex ids")?;
@@ -2393,8 +2393,12 @@ pub(super) fn project(
             candidate_boundary_vertex_derivations.extend(derivations);
             for (segment_index, item) in items.into_iter().enumerate() {
                 let edge_id = crate::ids::edge(&stem.slot(boundary_index).slot(segment_index));
-                let start_vertex = vertex_ids[segment_index * 2].clone();
-                let end_vertex = vertex_ids[segment_index * 2 + 1].clone();
+                let start_vertex = crate::decode_resource::clone_optional_identity(
+                    Some(ctx), &vertex_ids[segment_index * 2], "iges trimming identity copy",
+                )?;
+                let end_vertex = crate::decode_resource::clone_optional_identity(
+                    Some(ctx), &vertex_ids[segment_index * 2 + 1], "iges trimming identity copy",
+                )?;
                 let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
                     Some(item.model_curve),
                     item.source_edge
@@ -2410,7 +2414,7 @@ pub(super) fn project(
                 };
                 crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
                 candidate.model_mut().edges.push(Edge {
-                    id: edge_id.clone(),
+                    id: crate::decode_resource::clone_optional_identity(Some(ctx), &edge_id, "iges trimming identity copy")?,
                     carrier,
                     start: start_vertex,
                     end: end_vertex,
@@ -2452,11 +2456,13 @@ pub(super) fn project(
                         parameter_range: None,
                     });
                 }
-                let coedge_id = coedge_ids[segment_index].clone();
+                let coedge_id = crate::decode_resource::clone_optional_identity(
+                    Some(ctx), &coedge_ids[segment_index], "iges trimming identity copy",
+                )?;
                 crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
                 candidate.model_mut().coedges.push(Coedge {
-                    id: coedge_id.clone(),
-                    owner_loop: loop_id.clone(),
+                    id: crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges trimming identity copy")?,
+                    owner_loop: crate::decode_resource::clone_optional_identity(Some(ctx), &loop_id, "iges trimming identity copy")?,
                     edge: edge_id,
                     radial_next: coedge_id,
                     sense: item.segment.sense,
@@ -2475,12 +2481,12 @@ pub(super) fn project(
             };
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
             candidate.model_mut().loops.push(Loop {
-                id: loop_id.clone(),
-                face: face_id.clone(),
+                id: crate::decode_resource::clone_optional_identity(Some(ctx), &loop_id, "iges trimming identity copy")?,
+                face: crate::decode_resource::clone_optional_identity(Some(ctx), &face_id, "iges trimming identity copy")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
             if explicit_outer_sequence == Some(sequence) {
-                explicit_outer_loop = Some(loop_id.clone());
+                explicit_outer_loop = Some(crate::decode_resource::clone_optional_identity(Some(ctx), &loop_id, "iges trimming identity copy")?);
             }
             reserve_vec_growth(ctx, &mut loop_ids, 1, "iges trimming face loop IDs")?;
             loop_ids.push(loop_id);
@@ -2517,7 +2523,7 @@ pub(super) fn project(
             sequences.record_surface(&derived_surface_id, entry.sequence, Some(ctx))?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
             candidate.model_mut().surfaces.push(Surface {
-                id: derived_surface_id.clone(),
+                id: crate::decode_resource::clone_optional_identity(Some(ctx), &derived_surface_id, "iges trimming identity copy")?,
                 geometry: support_geometry,
                 source_object: Some(match source_object(entry, Some(ctx)) {
                     Ok(source) => source,
@@ -2540,14 +2546,14 @@ pub(super) fn project(
             reserve_vec_growth(ctx, &mut candidate.model_mut().procedural_surfaces, 1, "iges procedural surface slots")?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
             let _attached = candidate.model_mut().add_procedural_surface(
-                derived_surface_id.clone(),
+                crate::decode_resource::clone_optional_identity(Some(ctx), &derived_surface_id, "iges trimming identity copy")?,
                 ProceduralSurface::new(
                     crate::ids::procedural_surface(
                         &crate::ids::Stem::directory(entry.sequence)
                             .part(crate::ids::Word::ImplicitOuter),
                     ),
                     ProceduralSurfaceDefinition::CurveBounded {
-                        support: surface_id.clone(),
+                        support: crate::decode_resource::clone_optional_identity(Some(ctx), &surface_id, "iges trimming identity copy")?,
                         boundaries: implicit_boundary_curves,
                         boundary_pcurves: implicit_boundary_pcurves,
                         implicit_outer: true,
@@ -2579,8 +2585,8 @@ pub(super) fn project(
         };
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
         candidate.model_mut().faces.push(Face {
-            id: face_id.clone(),
-            shell: shell_id.clone(),
+            id: crate::decode_resource::clone_optional_identity(Some(ctx), &face_id, "iges trimming identity copy")?,
+            shell: crate::decode_resource::clone_optional_identity(Some(ctx), &shell_id, "iges trimming identity copy")?,
             surface: face_surface_id,
             sense: Sense::Forward,
             loops: face_loops,
@@ -2592,14 +2598,14 @@ pub(super) fn project(
         shell_faces.push(face_id);
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
         candidate.model_mut().shells.push(Shell::new(
-            shell_id.clone(), region_id.clone(), shell_faces, Vec::new(), Vec::new(),
+            crate::decode_resource::clone_optional_identity(Some(ctx), &shell_id, "iges trimming identity copy")?, crate::decode_resource::clone_optional_identity(Some(ctx), &region_id, "iges trimming identity copy")?, shell_faces, Vec::new(), Vec::new(),
         ).map_err(|error| CodecError::Malformed(error.to_string()))?);
         let mut region_shells = reserve_vec(ctx, 1, "iges trimming region shell IDs")?;
         region_shells.push(shell_id);
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
         candidate.model_mut().regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
+            id: crate::decode_resource::clone_optional_identity(Some(ctx), &region_id, "iges trimming identity copy")?,
+            body: crate::decode_resource::clone_optional_identity(Some(ctx), &body_id, "iges trimming identity copy")?,
             shells: region_shells,
         });
         let mut body_regions = reserve_vec(ctx, 1, "iges trimming body region IDs")?;
