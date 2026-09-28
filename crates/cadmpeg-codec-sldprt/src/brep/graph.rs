@@ -3220,6 +3220,7 @@ fn derive_planar_pcurves(
             geometry,
             metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
         };
+        ctx.reserve_collection_vec(&mut derived, 1, "collect derived Parasolid pcurves")?;
         derived.push((coedge.id.clone(), id, pcurve));
     }
     let coedge_indices = collect_graph_map(ctx,
@@ -3227,17 +3228,21 @@ fn derive_planar_pcurves(
         "index Parasolid derived coedges")?;
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+            let mut uses = Vec::new();
+            ctx.reserve_collection_vec(&mut uses, 1, "bind derived Parasolid pcurve")?;
+            uses.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.clone(),
                 isoparametric: None,
                 parameter_range: None,
-            }];
+            });
+            out.coedges[*index].pcurves = uses;
         }
         annotations
             .note(&id, source_stream, 0)
             .tag("derived_planar_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
     }
     Ok(())
@@ -3538,6 +3543,7 @@ fn derive_cylindrical_pcurves(
             Some(Some(range)) => Some(range),
             None => None,
         };
+        ctx.reserve_collection_vec(&mut derived, 1, "collect derived Parasolid pcurves")?;
         derived.push((
             coedge.id.clone(),
             id.clone(),
@@ -3557,17 +3563,21 @@ fn derive_cylindrical_pcurves(
         "index Parasolid derived coedges")?;
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+            let mut uses = Vec::new();
+            ctx.reserve_collection_vec(&mut uses, 1, "bind derived Parasolid pcurve")?;
+            uses.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.clone(),
                 isoparametric: None,
                 parameter_range: None,
-            }];
+            });
+            out.coedges[*index].pcurves = uses;
         }
         annotations
             .note(&id, source_stream, 0)
             .tag("derived_cylindrical_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
     }
     ctx.reserve_precharged_vec(&mut out.losses, refusals.len(), "move cylindrical pcurve losses")?;
@@ -4033,6 +4043,7 @@ fn derive_revolved_circle_pcurves(
             &pcurve_namespace(),
             cadmpeg_ir::identity_key!("revolved-circle:").then(coedge.id.key()),
         );
+        ctx.reserve_collection_vec(&mut derived, 1, "collect derived Parasolid pcurves")?;
         derived.push((
             coedge.id.clone(),
             id.clone(),
@@ -4056,17 +4067,21 @@ fn derive_revolved_circle_pcurves(
         "index Parasolid derived coedges")?;
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+            let mut uses = Vec::new();
+            ctx.reserve_collection_vec(&mut uses, 1, "bind derived Parasolid pcurve")?;
+            uses.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.clone(),
                 isoparametric: None,
                 parameter_range: None,
-            }];
+            });
+            out.coedges[*index].pcurves = uses;
         }
         annotations
             .note(&id, source_stream, 0)
             .tag("derived_revolved_circle_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
     }
     Ok(())
@@ -4249,6 +4264,7 @@ fn derive_spherical_pcurves(
             &pcurve_namespace(),
             cadmpeg_ir::identity_key!("sphere:").then(coedge.id.key()),
         );
+        ctx.reserve_collection_vec(&mut derived, 1, "collect derived Parasolid pcurves")?;
         derived.push((
             coedge.id.clone(),
             id.clone(),
@@ -4264,17 +4280,21 @@ fn derive_spherical_pcurves(
         "index Parasolid derived coedges")?;
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+            let mut uses = Vec::new();
+            ctx.reserve_collection_vec(&mut uses, 1, "bind derived Parasolid pcurve")?;
+            uses.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.clone(),
                 isoparametric: None,
                 parameter_range: None,
-            }];
+            });
+            out.coedges[*index].pcurves = uses;
         }
         annotations
             .note(&id, source_stream, 0)
             .tag("derived_spherical_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
     }
     Ok(())
@@ -4413,6 +4433,7 @@ fn derive_nurbs_isoparametric_pcurves(
         else {
             continue;
         };
+        ctx.reserve_collection_vec(&mut derived, 1, "collect derived Parasolid pcurves")?;
         derived.push((
             coedge.id.clone(),
             id.clone(),
@@ -4440,14 +4461,17 @@ fn derive_nurbs_isoparametric_pcurves(
     }
     for (coedge_id, id, pcurve, cache) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
-            out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+            let mut uses = Vec::new();
+            ctx.reserve_collection_vec(&mut uses, 1, "bind derived Parasolid pcurve")?;
+            uses.push(cadmpeg_ir::topology::PcurveUse {
                 pcurve: id.clone(),
                 isoparametric: None,
                 parameter_range: (pcurve.parameter_range())
                     .map(|range| cadmpeg_ir::geometry::DirectedParameterRange::new(range.get()))
                     .transpose()
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-            }];
+            });
+            out.coedges[*index].pcurves = uses;
         }
         annotations.note(&id, source_stream, 0).tag(if cache {
             "derived_nurbs_surface_cache_pcurve"
@@ -4456,6 +4480,7 @@ fn derive_nurbs_isoparametric_pcurves(
         });
         annotations.exactness(&id, Exactness::Derived);
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.pcurves, 1, "collect derived Parasolid pcurves")?;
         out.pcurves.push(pcurve);
     }
     Ok(())
