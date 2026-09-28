@@ -464,7 +464,10 @@ impl CatiaNative {
         let mut external_references: Vec<CatiaExternalReference> =
             namespace.arena_as("external_references")?;
         external_references.sort_by_key(|reference| reference.byte_offset);
-        let expected_external_references = external_reference_views(&finjpl_segments);
+        let expected_external_references = crate::test_support::with_service_context(|ctx| {
+            external_reference_views(ctx, &finjpl_segments)
+        }).map_err(|_| cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "stored CATIA external references exceed service limits".to_string()))?;
         if external_references != expected_external_references {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "stored CATIA external references disagree with their project-flags segments"
@@ -478,7 +481,10 @@ impl CatiaNative {
         validate_legacy_entity_runs(&legacy_entity_runs)?;
         let mut preview_images: Vec<CatiaPreviewImage> = namespace.arena_as("preview_images")?;
         preview_images.sort_by_key(|preview| preview.byte_offset);
-        let expected_preview_images = preview_views(&finjpl_segments);
+        let expected_preview_images = crate::test_support::with_service_context(|ctx| {
+            preview_views(ctx, &finjpl_segments)
+        }).map_err(|_| cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "stored CATIA previews exceed service limits".to_string()))?;
         if preview_images != expected_preview_images {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "stored CATIA previews disagree with their summary segments".to_string(),

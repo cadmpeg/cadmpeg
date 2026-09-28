@@ -342,7 +342,10 @@ pub(super) fn validate_native_links(
         }
     }
     for (index, segment) in segments.iter().enumerate() {
-        let parsed = container::finjpl_segments(&container::BodyExtent::whole(&segment.data));
+        let parsed = crate::test_support::with_service_context(|ctx| {
+            container::finjpl_segments(ctx, &container::BodyExtent::whole(&segment.data))
+        }).map_err(|_| cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "stored CATIA FINJPL segment exceeds service limits".to_string()))?;
         let expected_id = format!("catia:outer:finjpl#{index}");
         if segment.id != expected_id
             || u64::try_from(segment.data.len()).ok() != Some(segment.byte_len)
