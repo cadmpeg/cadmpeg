@@ -628,6 +628,32 @@ fn native_validation_scoped_limit_reaches_caller() {
 }
 
 #[test]
+fn native_validation_retained_limit_reaches_caller() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(document_with_named_scalars()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut native = sldprt_native(decoded.ir());
+    native.feature_input_lanes[0].scalars[0].ordinal += 1;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::lanes::admit(&native, super::admission::NativeAdmission::Decode(&limited))
+        .unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "format SLDPRT native validation error"
+    ));
+}
+
+#[test]
 fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 

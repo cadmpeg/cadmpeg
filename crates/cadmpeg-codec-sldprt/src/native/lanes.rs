@@ -67,22 +67,31 @@ pub(super) fn admit(
             })
             .enumerate()
         {
-            let entity = entities.next().ok_or_else(|| {
-                cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "SolidWorks feature-input lane {} omits marker at offset {position}",
-                    lane.id
-                ))
-            })?;
+            let Some(entity) = entities.next() else {
+                return Err(invalid_owner(
+                    admission,
+                    format_args!(
+                        "SolidWorks feature-input lane {} omits marker at offset {position}",
+                        lane.id
+                    ),
+                )?);
+            };
             if usize::try_from(entity.ordinal()).ok() != Some(index) {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "SolidWorks feature-input lane expects entity ordinal {index}, found {}",
-                    entity.ordinal()
-                )));
+                return Err(invalid_owner(
+                    admission,
+                    format_args!(
+                        "SolidWorks feature-input lane expects entity ordinal {index}, found {}",
+                        entity.ordinal()
+                    ),
+                )?);
             }
             if entity.offset() != position as u64 {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "SolidWorks feature-input lane {} omits marker at offset {position} or has an extra or unordered entity", lane.id
-                )));
+                return Err(invalid_owner(
+                    admission,
+                    format_args!(
+                        "SolidWorks feature-input lane {} omits marker at offset {position} or has an extra or unordered entity", lane.id
+                    ),
+                )?);
             }
         }
         if entities.next().is_some() {
@@ -133,7 +142,7 @@ pub(super) fn admit(
             &lane.scalars,
             &expected_lane.scalars,
         ) {
-            let detail = lane
+            let mismatch = lane
                 .scalars
                 .iter()
                 .zip(&expected_lane.scalars)
@@ -142,20 +151,22 @@ pub(super) fn admit(
                         std::slice::from_ref(actual),
                         std::slice::from_ref(expected),
                     )
-                })
-                .map_or_else(
-                    || {
-                        format!(
-                            "count {} != {}",
-                            lane.scalars.len(),
-                            expected_lane.scalars.len()
-                        )
-                    },
-                    |(actual, expected)| format!("{actual:?} != {expected:?}"),
-                );
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "SolidWorks feature-input scalar index does not match its native payload: {detail}"
-            )));
+                });
+            return match mismatch {
+                Some((actual, expected)) => Err(invalid_owner(
+                    admission,
+                    format_args!(
+                        "SolidWorks feature-input scalar index does not match its native payload: {actual:?} != {expected:?}"
+                    ),
+                )?),
+                None => Err(invalid_owner(
+                    admission,
+                    format_args!(
+                        "SolidWorks feature-input scalar index does not match its native payload: count {} != {}",
+                        lane.scalars.len(), expected_lane.scalars.len()
+                    ),
+                )?),
+            };
         }
         if lane.relation_bindings != expected_lane.relation_bindings {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
