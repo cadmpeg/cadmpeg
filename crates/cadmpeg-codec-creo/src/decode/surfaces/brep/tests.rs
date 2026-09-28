@@ -22,6 +22,8 @@ use super::{
     NeutralShellSpec,
 };
 
+mod eligible_index;
+
 fn brep_edge_index_input() -> (
     Vec<crate::curve::CurveTopologyRow>,
     BTreeMap<u32, [u32; 2]>,
@@ -170,6 +172,26 @@ fn brep_model_surface_count_nodes_refuse_collection_limit() {
 }
 
 #[test]
+fn brep_boundary_curve_id_nodes_refuse_collection_limit() {
+    let mut scan = face_candidate_scan();
+    scan.topology.loops[0].half_edges.push(crate::topology::HalfEdgeId {
+        curve_id: 10,
+        side: crate::topology::Side::Zero,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = BrepFaceCandidateIndexes::from_scan(&ctx, &scan, &CadIr::empty())
+        .err()
+        .expect("boundary curve node refused");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep boundary curve ID nodes"));
+}
+
+#[test]
 fn brep_face_candidate_indexes_preserve_service_selection() {
     let scan = face_candidate_scan();
     let indexes = crate::decode::with_test_decode_ctx(|ctx| {
@@ -179,6 +201,7 @@ fn brep_face_candidate_indexes_preserve_service_selection() {
     assert_eq!(indexes.loops_by_face[&5].len(), 1);
     assert_eq!(indexes.candidate_face_ids, BTreeSet::from([5]));
     assert_eq!(indexes.model_surface_counts[&5], 0);
+    assert!(indexes.boundary_curve_ids.is_empty());
     assert_eq!(indexes.legacy_nonvisible_face_reference_count, 0);
 }
 

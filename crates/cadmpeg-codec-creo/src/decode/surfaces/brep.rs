@@ -1209,6 +1209,7 @@ struct BrepFaceCandidateIndexes<'a> {
     loops_by_face: BTreeMap<u32, Vec<&'a crate::topology::Loop>>,
     candidate_face_ids: BTreeSet<u32>,
     model_surface_counts: BTreeMap<u32, usize>,
+    boundary_curve_ids: BTreeSet<u32>,
     legacy_nonvisible_face_reference_count: usize,
 }
 
@@ -1280,10 +1281,22 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
             ctx.charge_collection_items(1, "creo B-rep model surface count nodes")?;
             model_surface_counts.insert(*face_id, count);
         }
+        let mut boundary_curve_ids = BTreeSet::new();
+        for curve_id in loops_by_face
+            .values()
+            .flatten()
+            .flat_map(|lp| lp.half_edges.iter().map(|half_edge| half_edge.curve_id))
+        {
+            if !boundary_curve_ids.contains(&curve_id) {
+                ctx.charge_collection_items(1, "creo B-rep boundary curve ID nodes")?;
+                boundary_curve_ids.insert(curve_id);
+            }
+        }
         Ok(Self {
             loops_by_face,
             candidate_face_ids,
             model_surface_counts,
+            boundary_curve_ids,
             legacy_nonvisible_face_reference_count,
         })
     }
@@ -1339,6 +1352,90 @@ impl BrepEdgeIndexes {
             }
         }
         Ok(Self { edge_vertices, model_curve_counts, admitted_edge_curves })
+    }
+}
+
+struct BrepEligibleFaceIndexes {
+    emitted_half_edges: BTreeSet<HalfEdgeId>,
+    face_curves: BTreeSet<u32>,
+    closed_single_edge_curves: BTreeSet<u32>,
+    row_offsets: BTreeMap<u32, usize>,
+    curve_faces: BTreeMap<u32, [u32; 2]>,
+    eligible_face_ids: BTreeSet<u32>,
+}
+
+impl BrepEligibleFaceIndexes {
+    fn from_faces(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        eligible_faces: &BTreeMap<u32, Vec<&crate::topology::Loop>>,
+        topology_rows: &[crate::curve::CurveTopologyRow],
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut eligible_loops = Vec::new();
+        for lp in eligible_faces.values().flatten() {
+            ctx.try_reserve_items(&mut eligible_loops, 1, "creo B-rep eligible loop refs")?;
+            eligible_loops.push(*lp);
+        }
+        let mut emitted_half_edges = BTreeSet::new();
+        for half_edge in eligible_loops
+            .iter()
+            .flat_map(|lp| lp.half_edges.iter().copied())
+        {
+            if !emitted_half_edges.contains(&half_edge) {
+                ctx.charge_collection_items(1, "creo B-rep emitted half-edge nodes")?;
+                emitted_half_edges.insert(half_edge);
+            }
+        }
+        let mut face_curves = BTreeSet::new();
+        for half_edge in &emitted_half_edges {
+            if !face_curves.contains(&half_edge.curve_id) {
+                ctx.charge_collection_items(1, "creo B-rep face curve ID nodes")?;
+                face_curves.insert(half_edge.curve_id);
+            }
+        }
+        let mut closed_single_edge_curves = BTreeSet::new();
+        for curve_id in &face_curves {
+            let mut uses = eligible_loops.iter().filter(|lp| {
+                lp.half_edges
+                    .iter()
+                    .any(|half_edge| half_edge.curve_id == *curve_id)
+            });
+            if uses.next().is_some_and(|lp| lp.half_edges.len() == 1)
+                && uses.all(|lp| lp.half_edges.len() == 1)
+            {
+                ctx.charge_collection_items(1, "creo B-rep single-edge curve nodes")?;
+                closed_single_edge_curves.insert(*curve_id);
+            }
+        }
+        let mut row_offsets = BTreeMap::new();
+        for row in topology_rows {
+            match row_offsets.entry(row.id) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.insert(row.offset);
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo B-rep row-offset nodes")?;
+                    entry.insert(row.offset);
+                }
+            }
+        }
+        let mut curve_faces = BTreeMap::new();
+        for row in crate::identity::uniquely_identified_rows_checked(ctx, topology_rows, |row| row.id)? {
+            ctx.charge_collection_items(1, "creo B-rep curve-face nodes")?;
+            curve_faces.insert(row.id, row.stored_face_ids());
+        }
+        let mut eligible_face_ids = BTreeSet::new();
+        for face_id in eligible_faces.keys() {
+            ctx.charge_collection_items(1, "creo B-rep eligible face ID nodes")?;
+            eligible_face_ids.insert(*face_id);
+        }
+        Ok(Self {
+            emitted_half_edges,
+            face_curves,
+            closed_single_edge_curves,
+            row_offsets,
+            curve_faces,
+            eligible_face_ids,
+        })
     }
 }
 
@@ -1464,6 +1561,7 @@ pub(in super::super) fn transfer_native_brep(
         loops_by_face,
         candidate_face_ids,
         model_surface_counts,
+        boundary_curve_ids,
         legacy_nonvisible_face_reference_count,
     } = BrepFaceCandidateIndexes::from_scan(ctx, scan, ir)?;
     let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ctx, ir, source_carriers)?;
@@ -1473,11 +1571,6 @@ pub(in super::super) fn transfer_native_brep(
         vertex_solve: solved_vertex_result.diagnostics,
         ..BrepTransferDiagnostics::default()
     };
-    let boundary_curve_ids = loops_by_face
-        .values()
-        .flatten()
-        .flat_map(|lp| lp.half_edges.iter().map(|half_edge| half_edge.curve_id))
-        .collect::<BTreeSet<_>>();
     diagnostics.boundary_curve_count = boundary_curve_ids.len();
     diagnostics.boundary_curve_missing_incidence_count = boundary_curve_ids
         .iter()
@@ -1616,47 +1709,14 @@ pub(in super::super) fn transfer_native_brep(
         eligible_faces.insert(face_id, ordered);
     }
     diagnostics.admitted_face_count = eligible_faces.len();
-    let eligible_loops = eligible_faces
-        .values()
-        .flatten()
-        .copied()
-        .collect::<Vec<_>>();
-
-    let emitted_half_edges = eligible_loops
-        .iter()
-        .flat_map(|lp| lp.half_edges.iter().copied())
-        .collect::<BTreeSet<_>>();
-    let face_curves = emitted_half_edges
-        .iter()
-        .map(|half_edge| half_edge.curve_id)
-        .collect::<BTreeSet<_>>();
-    let closed_single_edge_curves = face_curves
-        .iter()
-        .filter(|curve_id| {
-            let uses = eligible_loops
-                .iter()
-                .filter(|lp| {
-                    lp.half_edges
-                        .iter()
-                        .any(|half_edge| half_edge.curve_id == **curve_id)
-                })
-                .collect::<Vec<_>>();
-            !uses.is_empty() && uses.iter().all(|lp| lp.half_edges.len() == 1)
-        })
-        .copied()
-        .collect::<BTreeSet<_>>();
-    let row_offsets = scan
-        .curves
-        .topology_rows
-        .iter()
-        .map(|row| (row.id, row.offset))
-        .collect::<BTreeMap<_, _>>();
-    let curve_faces = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
-        .into_iter()
-        .map(|row| (row.id, row.stored_face_ids()))
-        .collect::<BTreeMap<_, _>>();
-
-    let eligible_face_ids = eligible_faces.keys().copied().collect::<BTreeSet<_>>();
+    let BrepEligibleFaceIndexes {
+        emitted_half_edges,
+        face_curves,
+        closed_single_edge_curves,
+        row_offsets,
+        curve_faces,
+        eligible_face_ids,
+    } = BrepEligibleFaceIndexes::from_faces(ctx, &eligible_faces, &scan.curves.topology_rows)?;
     let admitted_components = admitted_face_components(ctx, scan, &eligible_face_ids)?;
     let neutral_edge_curves = admitted_components
         .iter()
