@@ -12,6 +12,39 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn singular_reference_link_keeps_one_selector_and_rejects_two() {
+    let property = |subelements: Vec<String>| {
+        let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
+            document: None,
+            document_attribute: None,
+            object: Some("source".into()),
+            subelements,
+        }).expect("valid link");
+        crate::native::PropertyRecord {
+            id: "reference".into(),
+            owner: "owner".into(),
+            name: "ReferenceAxis".into(),
+            type_name: "App::PropertyLinkSub".into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            body: crate::native::PropertyBody::Persisted {
+                values: Vec::new(),
+                links: vec![link],
+                side_entries: Vec::new(),
+                dynamic: None,
+            },
+            order: 0,
+            xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
+                .expect("valid XML span"),
+        }
+    };
+    let one = property(vec!["Edge1".into()]);
+    assert!(matches!(super::singular_reference_link(&one), Some((_, Some("Edge1")))));
+    let two = property(vec!["Edge1 Edge2".into()]);
+    assert!(super::singular_reference_link(&two).is_none());
+}
+
+#[test]
 fn design_revolution_reference_copies_refuse_at_retained_limits() {
     let property = |id: &str, name: &str, type_name: &str, xml: &str,
                     links: Vec<Option<crate::native::LinkTarget>>| crate::native::PropertyRecord {
