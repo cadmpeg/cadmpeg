@@ -172,35 +172,51 @@ impl FaceAdmissionDetail {
     }
 
     fn unresolved_boundary(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         face_id: u32,
         loops: &[&crate::topology::Loop],
         edge_vertices: &BTreeMap<u32, [u32; 2]>,
         incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
-    ) -> Self {
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         let mut detail = Self::face(face_id);
         for half_edge in loops.iter().flat_map(|lp| lp.half_edges.iter()) {
             if edge_vertices.contains_key(&half_edge.curve_id) {
                 continue;
             }
             if detail.boundary_half_edges.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT {
+                ctx.try_reserve_items(
+                    &mut detail.boundary_half_edges,
+                    1,
+                    "creo B-rep rejection boundary samples",
+                )?;
                 detail.boundary_half_edges.push(*half_edge);
             }
             if let Some(binding) = incidence.get(half_edge) {
                 if detail.vertex_ids.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT
                     && !detail.vertex_ids.contains(&binding.start_vertex_id)
                 {
+                    ctx.try_reserve_items(
+                        &mut detail.vertex_ids,
+                        1,
+                        "creo B-rep rejection vertex samples",
+                    )?;
                     detail.vertex_ids.push(binding.start_vertex_id);
                 }
                 if let Some(end_vertex_id) = binding.end_vertex_id {
                     if detail.vertex_ids.len() < FACE_REJECTION_OPERAND_SAMPLE_LIMIT
                         && !detail.vertex_ids.contains(&end_vertex_id)
                     {
+                        ctx.try_reserve_items(
+                            &mut detail.vertex_ids,
+                            1,
+                            "creo B-rep rejection vertex samples",
+                        )?;
                         detail.vertex_ids.push(end_vertex_id);
                     }
                 }
             }
         }
-        detail
+        Ok(detail)
     }
 }
 
@@ -224,17 +240,29 @@ pub(in super::super) struct BrepTransferDiagnostics {
 }
 
 impl BrepTransferDiagnostics {
-    fn reject_face(&mut self, reason: FaceAdmissionRejection, face_id: u32) {
-        self.reject_face_with_detail(reason, FaceAdmissionDetail::face(face_id));
+    fn reject_face(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        reason: FaceAdmissionRejection,
+        face_id: u32,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        self.reject_face_with_detail(ctx, reason, FaceAdmissionDetail::face(face_id))
     }
 
     fn reject_face_with_detail(
         &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         reason: FaceAdmissionRejection,
         detail: FaceAdmissionDetail,
-    ) {
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.try_reserve_items(
+            &mut self.face_rejection_diagnostics,
+            1,
+            "creo B-rep face rejection diagnostics",
+        )?;
         self.face_rejection_diagnostics
             .push(FaceAdmissionDiagnostic { reason, detail });
+        Ok(())
     }
 
     /// The rejection count and bounded detail samples for a reason.
@@ -1315,19 +1343,19 @@ pub(in super::super) fn transfer_native_brep(
     let mut eligible_faces = BTreeMap::new();
     for face_id in candidate_face_ids {
         if model_surface_counts[&face_id] == 0 {
-            diagnostics.reject_face(FaceAdmissionRejection::MissingSurfaceCarrier, face_id);
+            diagnostics.reject_face(ctx, FaceAdmissionRejection::MissingSurfaceCarrier, face_id)?;
             continue;
         }
         if !face_orientations.contains_key(&face_id) {
-            diagnostics.reject_face(FaceAdmissionRejection::MissingOrientation, face_id);
+            diagnostics.reject_face(ctx, FaceAdmissionRejection::MissingOrientation, face_id)?;
             continue;
         }
         if model_surface_counts[&face_id] > 1 {
-            diagnostics.reject_face(FaceAdmissionRejection::AmbiguousSurfaceCarrier, face_id);
+            diagnostics.reject_face(ctx, FaceAdmissionRejection::AmbiguousSurfaceCarrier, face_id)?;
             continue;
         }
         let Some(loops) = loops_by_face.get(&face_id) else {
-            diagnostics.reject_face(FaceAdmissionRejection::MissingLoops, face_id);
+            diagnostics.reject_face(ctx, FaceAdmissionRejection::MissingLoops, face_id)?;
             continue;
         };
         let has_unresolved_boundary_vertices = loops.iter().any(|lp| {
@@ -1337,14 +1365,16 @@ pub(in super::super) fn transfer_native_brep(
         });
         if has_unresolved_boundary_vertices {
             diagnostics.reject_face_with_detail(
+                ctx,
                 FaceAdmissionRejection::UnresolvedBoundaryVertices,
                 FaceAdmissionDetail::unresolved_boundary(
+                    ctx,
                     face_id,
                     loops,
                     &edge_vertices,
                     &incidence,
-                ),
-            );
+                )?,
+            )?;
             continue;
         }
         let has_ambiguous_boundary_curve = loops.iter().any(|lp| {
@@ -1355,7 +1385,7 @@ pub(in super::super) fn transfer_native_brep(
             })
         });
         if has_ambiguous_boundary_curve {
-            diagnostics.reject_face(FaceAdmissionRejection::AmbiguousBoundaryCurve, face_id);
+            diagnostics.reject_face(ctx, FaceAdmissionRejection::AmbiguousBoundaryCurve, face_id)?;
             continue;
         }
         let mut two_edge_loops_are_proven = true;
@@ -1387,7 +1417,7 @@ pub(in super::super) fn transfer_native_brep(
             }
         }
         if !two_edge_loops_are_proven {
-            diagnostics.reject_face(FaceAdmissionRejection::TwoEdgeParameterProof, face_id);
+            diagnostics.reject_face(ctx, FaceAdmissionRejection::TwoEdgeParameterProof, face_id)?;
             continue;
         }
         let ordered = ordered_face_loops(
@@ -1427,7 +1457,7 @@ pub(in super::super) fn transfer_native_brep(
             }
         };
         let Some(ordered) = ordered else {
-            diagnostics.reject_face(FaceAdmissionRejection::LoopOrdering, face_id);
+            diagnostics.reject_face(ctx, FaceAdmissionRejection::LoopOrdering, face_id)?;
             continue;
         };
         eligible_faces.insert(face_id, ordered);
