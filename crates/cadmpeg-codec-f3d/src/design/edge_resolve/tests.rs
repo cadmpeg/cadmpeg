@@ -23,6 +23,7 @@ mod treatment_allocation;
 mod partition_allocation;
 mod fixed_fillet_allocation;
 mod hem_allocation;
+mod reference_assignment_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,

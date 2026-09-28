@@ -1418,26 +1418,25 @@ pub(super) fn changed_reference_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    let candidate_sets = operands
-        .iter()
-        .map(|operand| {
-            let mut changed_sets = operand
-                .recipe_reference_contexts
-                .iter()
-                .map(|context| context.changed_reference_edge_slots.as_slice())
-                .filter(|edges| !edges.is_empty());
-            let mut candidates = changed_sets.next()?.to_vec();
-            for changed in changed_sets {
-                candidates.retain(|candidate| changed.contains(candidate));
-            }
-            candidates.sort_unstable();
-            candidates.dedup();
-            (!candidates.is_empty()).then_some(candidates)
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(candidate_sets) = candidate_sets else {
-        return Ok(None);
-    };
+    let mut candidate_sets = Vec::new();
+    for operand in operands {
+        let mut changed_sets = operand.recipe_reference_contexts.iter()
+            .map(|context| context.changed_reference_edge_slots.as_slice())
+            .filter(|edges| !edges.is_empty());
+        let Some(first) = changed_sets.next() else { return Ok(None); };
+        let mut candidates = Vec::new();
+        for edge in first {
+            push_edge_item(ctx, &mut candidates, *edge, "f3d changed reference candidate")?;
+        }
+        for changed in changed_sets {
+            candidates.retain(|candidate| changed.contains(candidate));
+        }
+        candidates.sort_unstable();
+        candidates.dedup();
+        if candidates.is_empty() { return Ok(None); }
+        push_edge_item(ctx, &mut candidate_sets, candidates,
+            "f3d changed reference candidate set")?;
+    }
     unique_bipartite_assignment(&candidate_sets, ctx)
 }
 
@@ -1445,23 +1444,27 @@ fn deleted_reference_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    let reference_candidates = operands
-        .iter()
-        .map(|operand| {
-            let mut candidates = operand
-                .recipe_reference_contexts
-                .iter()
-                .flat_map(|context| context.changed_reference_edge_slots.iter().copied())
-                .collect::<Vec<_>>();
-            candidates.sort_unstable();
-            candidates.dedup();
-            candidates
-        })
-        .collect::<Vec<_>>();
-    let deleted_candidates = operands
-        .iter()
-        .map(|operand| operand.deleted_boundary_edge_slots.clone())
-        .collect::<Vec<_>>();
+    let mut reference_candidates = Vec::new();
+    let mut deleted_candidates = Vec::new();
+    for operand in operands {
+        let mut candidates = Vec::new();
+        for edge in operand.recipe_reference_contexts.iter()
+            .flat_map(|context| context.changed_reference_edge_slots.iter().copied()) {
+            push_edge_item(ctx, &mut candidates, edge,
+                "f3d deleted reference candidate")?;
+        }
+        candidates.sort_unstable();
+        candidates.dedup();
+        push_edge_item(ctx, &mut reference_candidates, candidates,
+            "f3d deleted reference candidate set")?;
+        let mut deleted = Vec::new();
+        for edge in &operand.deleted_boundary_edge_slots {
+            push_edge_item(ctx, &mut deleted, *edge,
+                "f3d deleted reference boundary edge")?;
+        }
+        push_edge_item(ctx, &mut deleted_candidates, deleted,
+            "f3d deleted reference boundary set")?;
+    }
     unique_deleted_reference_assignment(&reference_candidates, &deleted_candidates, ctx)
 }
 
@@ -1473,23 +1476,19 @@ fn unique_deleted_reference_assignment(
     if reference_candidates.len() != deleted_candidates.len() {
         return Ok(None);
     }
-    let candidate_sets = reference_candidates
-        .iter()
-        .zip(deleted_candidates)
-        .map(|(references, deleted)| {
-            let mut candidates = references
-                .iter()
-                .copied()
-                .filter(|edge| deleted.contains(edge))
-                .collect::<Vec<_>>();
-            candidates.sort_unstable();
-            candidates.dedup();
-            (!candidates.is_empty()).then_some(candidates)
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(candidate_sets) = candidate_sets else {
-        return Ok(None);
-    };
+    let mut candidate_sets = Vec::new();
+    for (references, deleted) in reference_candidates.iter().zip(deleted_candidates) {
+        let mut candidates = Vec::new();
+        for edge in references.iter().copied().filter(|edge| deleted.contains(edge)) {
+            push_edge_item(ctx, &mut candidates, edge,
+                "f3d deleted reference shared edge")?;
+        }
+        candidates.sort_unstable();
+        candidates.dedup();
+        if candidates.is_empty() { return Ok(None); }
+        push_edge_item(ctx, &mut candidate_sets, candidates,
+            "f3d deleted reference shared set")?;
+    }
     unique_bipartite_assignment(&candidate_sets, ctx)
 }
 
