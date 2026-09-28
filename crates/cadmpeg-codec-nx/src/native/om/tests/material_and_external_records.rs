@@ -1029,7 +1029,10 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
         reference("record#1", 6, 25),
     ];
 
-    let pairs = super::super::object_record_handle_pairs(&references);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let pairs = super::super::object_record_handle_pairs(&ctx, &references).unwrap();
     assert_eq!(pairs.len(), 2);
     assert_eq!(pairs[0].record, "record#0");
     assert_eq!(pairs[0].first_reference, "record#0:reference#0");
@@ -1037,6 +1040,52 @@ fn nx_object_record_handle_pairs_do_not_cross_records_or_long_runs() {
     assert_eq!(pairs[0].object_id, 7);
     assert_eq!(pairs[1].record, "record#1");
     assert_eq!(pairs[1].source_offset, 20);
+}
+
+fn record_handle_pair_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    let reference = |ordinal, source_offset| super::super::ObjectReference {
+        id: format!("reference#{ordinal}"),
+        record: "record".into(),
+        object_id: 7,
+        ordinal,
+        reference: RecordReference::Direct(DirectReference::PersistentHandle(ordinal + 100)),
+        source_entry: "om".into(),
+        source_offset,
+    };
+    let references = [reference(0, 10), reference(1, 15)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::object_record_handle_pairs(&ctx, &references).unwrap_err()
+}
+
+#[test]
+fn record_handle_pair_route_refuses_collection_limit() {
+    let error = record_handle_pair_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn record_handle_pair_route_refuses_scoped_limit() {
+    let error = record_handle_pair_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn record_handle_pair_route_refuses_retained_limit() {
+    let error = record_handle_pair_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn record_handle_pair_route_refuses_work_limit() {
+    let error = record_handle_pair_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
 }
 
 #[test]

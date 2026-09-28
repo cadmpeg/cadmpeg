@@ -5418,8 +5418,17 @@ pub(super) fn object_references(
 
 /// Join maximal two-token adjacent persistent-handle runs within object records.
 pub(super) fn object_record_handle_pairs(
+    ctx: &DecodeContext<'_>,
     references: &[ObjectReference],
-) -> Vec<ObjectRecordHandlePair> {
+) -> Result<Vec<ObjectRecordHandlePair>, CodecError> {
+    let index_bytes = references.len()
+        .checked_mul(std::mem::size_of::<(&str, Vec<(&ObjectReference, u32)>)>()
+            + 4 * std::mem::size_of::<(&ObjectReference, u32)>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX record handle pair index size", 0, 1))?;
+    let _index_guard = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(index_bytes),
+        "NX record handle pair index",
+    )?;
     let mut by_record = BTreeMap::<&str, Vec<(&ObjectReference, u32)>>::new();
     for reference in references {
         let RecordReference::Direct(DirectReference::PersistentHandle(handle)) =
@@ -5427,30 +5436,45 @@ pub(super) fn object_record_handle_pairs(
         else {
             continue;
         };
-        by_record
-            .entry(reference.record.as_str())
-            .or_default()
-            .push((reference, handle));
+        if !by_record.contains_key(reference.record.as_str()) {
+            ctx.charge_collection_items(1, "NX record handle pair groups")?;
+        }
+        let group = by_record.entry(reference.record.as_str()).or_default();
+        ctx.charge_collection_items(1, "NX record handle pair references")?;
+        group.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX record handle pair references", 0, 1))?;
+        group.push((reference, handle));
     }
     let mut pairs = Vec::new();
     for (record, mut record_references) in by_record {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(record_references.len()),
+            "sort NX record handle references",
+        )?;
         record_references.sort_by_key(|(reference, _)| reference.source_offset);
         let mut at = 0;
         while at < record_references.len() {
             let start = at;
             while record_references.get(at + 1).is_some_and(|next| {
-                next.0.source_offset == record_references[at].0.source_offset + 5
+                record_references[at].0.source_offset.checked_add(5) == Some(next.0.source_offset)
             }) {
                 at += 1;
             }
             let run = &record_references[start..=at];
             if let [(first, first_handle), (second, second_handle)] = run {
+                ctx.charge_collection_items(1, "NX record handle pairs")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ObjectRecordHandlePair>()),
+                    "retain NX record handle pair",
+                )?;
+                pairs.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX record handle pairs", 0, 1))?;
                 pairs.push(ObjectRecordHandlePair {
-                    id: format!("nx:om-object-record:handle-pair#{}", first.source_offset),
-                    record: record.to_string(),
+                    id: retained_om_number_id(ctx, "nx:om-object-record:handle-pair#", first.source_offset, "NX record handle pair id")?,
+                    record: copy_om_retained_text(ctx, record, "NX record handle pair record")?,
                     object_id: first.object_id,
-                    first_reference: first.id.clone(),
-                    second_reference: second.id.clone(),
+                    first_reference: copy_om_retained_text(ctx, &first.id, "NX first handle reference")?,
+                    second_reference: copy_om_retained_text(ctx, &second.id, "NX second handle reference")?,
                     first_handle: *first_handle,
                     second_handle: *second_handle,
                     source_offset: first.source_offset,
@@ -5459,7 +5483,7 @@ pub(super) fn object_record_handle_pairs(
             at += 1;
         }
     }
-    pairs
+    Ok(pairs)
 }
 
 /// Group persistent-handle occurrences into cross-record identities.
