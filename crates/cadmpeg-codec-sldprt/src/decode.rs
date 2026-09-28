@@ -2902,15 +2902,20 @@ fn build_geometry_ir(
     );
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     assign_configuration_bodies(&mut ir, &configuration_bodies)?;
-    pmi_losses.extend(
+    let configuration_losses =
         crate::history::configuration::project_configuration_sketch_states(
             ctx,
             &mut ir,
             &histories,
             &native.feature_input_lanes,
             &mut annotations,
-        )?,
-    );
+        )?;
+    ctx.reserve_collection_vec(
+        &mut pmi_losses,
+        configuration_losses.len(),
+        "append SLDPRT configuration PMI losses",
+    )?;
+    pmi_losses.extend(configuration_losses);
     crate::history::configuration::bind_configuration_topology_selections(
         &mut ir,
         &histories,
@@ -4016,15 +4021,20 @@ fn build_metadata_ir(
     );
     sync_active_configuration_resolutions(&mut ir)?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
-    pmi_losses.extend(
+    let configuration_losses =
         crate::history::configuration::project_configuration_sketch_states(
             ctx,
             &mut ir,
             &histories,
             &lanes,
             &mut annotations,
-        )?,
-    );
+        )?;
+    ctx.reserve_collection_vec(
+        &mut pmi_losses,
+        configuration_losses.len(),
+        "append SLDPRT configuration PMI losses",
+    )?;
+    pmi_losses.extend(configuration_losses);
     crate::history::configuration::inherit_configuration_reference_plane_states(&mut ir);
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(&mut ir)?;
