@@ -24,6 +24,49 @@ use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };
 
+fn compact_region_payload() -> Vec<u8> {
+    let mut payload = b"moSketchRegion_c".to_vec();
+    payload.extend(0x8060u16.to_le_bytes());
+    payload.extend(4u16.to_le_bytes());
+    for address in [2u16, 1, 4, 3] {
+        payload.extend(0x80e1u16.to_le_bytes());
+        payload.extend(address.to_le_bytes());
+        payload.extend([0xff; 4]);
+        payload.extend([0; 4]);
+    }
+    payload
+}
+
+fn compact_chain_payload() -> Vec<u8> {
+    let mut payload = Vec::new();
+    payload.extend(4u16.to_le_bytes());
+    for address in [3u32, 2, 1, 4] {
+        payload.extend(address.to_le_bytes());
+    }
+    payload.extend(1u32.to_le_bytes());
+    payload.extend(0u16.to_le_bytes());
+    payload.extend(6u32.to_le_bytes());
+    payload.extend([0xff; 4]);
+    payload.extend([0; 8]);
+    payload.extend(5u32.to_le_bytes());
+    payload.extend(5u32.to_le_bytes());
+    payload.extend([0xff, 0xfe, 0xff, 0, 0, 0]);
+    payload.extend([0xff; 4]);
+    payload
+}
+
+fn region_addresses(payload: &[u8]) -> Option<Vec<u16>> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
+    compact_line_region_addresses(&ctx, payload).unwrap()
+}
+
+fn chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
+    compact_line_chain_addresses(&ctx, payload).unwrap()
+}
+
 #[test]
 fn shared_endpoint_block_cycles_remain_profile_chains() {
     let sketch = SketchId::mint("synthetic:test:id#block-sketch").unwrap();
@@ -56,45 +99,69 @@ fn shared_endpoint_block_cycles_remain_profile_chains() {
 
 #[test]
 fn compact_line_region_is_an_ordered_one_based_curve_roster() {
-    let mut payload = b"moSketchRegion_c".to_vec();
-    payload.extend(0x8060u16.to_le_bytes());
-    payload.extend(4u16.to_le_bytes());
-    for address in [2u16, 1, 4, 3] {
-        payload.extend(0x80e1u16.to_le_bytes());
-        payload.extend(address.to_le_bytes());
-        payload.extend([0xff; 4]);
-        payload.extend([0; 4]);
-    }
+    let mut payload = compact_region_payload();
     assert_eq!(
-        compact_line_region_addresses(&payload),
+        region_addresses(&payload),
         Some(vec![2, 1, 4, 3])
     );
     payload[22] = 1;
-    assert_eq!(compact_line_region_addresses(&payload), None);
+    assert_eq!(
+        region_addresses(&payload),
+        None
+    );
 }
 
 #[test]
 fn compact_line_chain_is_an_ordered_one_based_vertex_roster() {
-    let mut payload = Vec::new();
-    payload.extend(4u16.to_le_bytes());
-    for address in [3u32, 2, 1, 4] {
-        payload.extend(address.to_le_bytes());
-    }
-    payload.extend(1u32.to_le_bytes());
-    payload.extend(0u16.to_le_bytes());
-    payload.extend(6u32.to_le_bytes());
-    payload.extend([0xff; 4]);
-    payload.extend([0; 8]);
-    payload.extend(5u32.to_le_bytes());
-    payload.extend(5u32.to_le_bytes());
-    payload.extend([0xff, 0xfe, 0xff, 0, 0, 0]);
-    payload.extend([0xff; 4]);
+    let mut payload = compact_chain_payload();
     assert_eq!(
-        compact_line_chain_addresses(&payload),
+        chain_addresses(&payload),
         Some(vec![3, 2, 1, 4])
     );
     payload[24] = 4;
-    assert_eq!(compact_line_chain_addresses(&payload), None);
+    assert_eq!(
+        chain_addresses(&payload),
+        None
+    );
+}
+
+#[test]
+fn compact_line_region_refuses_collection_limit() {
+    let payload = compact_region_payload();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = compact_line_region_addresses(&ctx, &payload).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT compact region addresses"));
+}
+
+#[test]
+fn compact_line_chain_refuses_collection_limit() {
+    let payload = compact_chain_payload();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = compact_line_chain_addresses(&ctx, &payload).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT compact chain addresses"));
+}
+
+#[test]
+fn compact_line_address_scan_refuses_work_limit() {
+    let payload = compact_region_payload();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = (payload.len() - 1) as u64;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = compact_line_region_addresses(&ctx, &payload).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "scan SLDPRT compact region"));
 }
 
 #[test]
