@@ -302,7 +302,7 @@ pub(crate) fn enrich_history_reference_planes(
                 push_reference_plane_candidate(ctx, &mut candidate_sources, index,
                     SketchPlaneUAxisSource::Native, "collect SLDPRT plane U-axis sources")?;
             }
-            let constraint = constraint_midplane_frame(bytes);
+            let constraint = constraint_midplane_frame(ctx, bytes)?;
             let mut anchored_frames = Vec::new();
             for class in &lane.classes {
                 let frame = (|| {
@@ -2630,21 +2630,26 @@ fn offset_reference_plane_frame_pair(
     Some(*pair)
 }
 
-fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+fn constraint_midplane_frame(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<(Point3, Vector3, Vector3)>, CodecError> {
     const CLASS: &[u8] = b"moConstraintMidPlaneRefplaneData_c";
     const NATIVE_TO_IR: f64 = 1000.0;
     let record_len = CLASS_MARKER.len() + 2 + CLASS.len();
-    let mut frames = payload
-        .windows(record_len)
-        .enumerate()
-        .filter_map(|(offset, bytes)| {
-            (bytes.get(..CLASS_MARKER.len()) == Some(CLASS_MARKER)
-                && bytes.get(CLASS_MARKER.len()..CLASS_MARKER.len() + 2)
-                    == Some(&(CLASS.len() as u16).to_le_bytes())
-                && bytes.get(CLASS_MARKER.len() + 2..) == Some(CLASS))
-            .then_some(offset + record_len)
-        })
-        .filter_map(|body| {
+    let mut unique = None;
+    let mut ambiguous = false;
+    for (offset, bytes) in payload.windows(record_len).enumerate() {
+        ctx.charge_work(1, "scan SLDPRT midplane constraints")?;
+        if bytes.get(..CLASS_MARKER.len()) != Some(CLASS_MARKER)
+                || bytes.get(CLASS_MARKER.len()..CLASS_MARKER.len() + 2)
+                    != Some(&(CLASS.len() as u16).to_le_bytes())
+                || bytes.get(CLASS_MARKER.len() + 2..) != Some(CLASS)
+        {
+            continue;
+        }
+        let body = offset + record_len;
+        let frame = (|| {
             payload.get(body..body + 8)?;
             let scalar = |relative| {
                 let value = View::f64_le_at(payload, body + relative)?;
@@ -2690,26 +2695,16 @@ fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3
                 normal,
                 u_axis,
             ))
-        })
-        .collect::<Vec<_>>();
-    frames.sort_by_key(|(origin, normal, u_axis)| {
-        [
-            origin.x.to_bits(),
-            origin.y.to_bits(),
-            origin.z.to_bits(),
-            normal.x.to_bits(),
-            normal.y.to_bits(),
-            normal.z.to_bits(),
-            u_axis.x.to_bits(),
-            u_axis.y.to_bits(),
-            u_axis.z.to_bits(),
-        ]
-    });
-    frames.dedup();
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+        })();
+        if let Some(frame) = frame {
+            match unique {
+                None => unique = Some(frame),
+                Some(previous) if previous != frame => ambiguous = true,
+                Some(_) => {}
+            }
+        }
+    }
+    Ok(if ambiguous { None } else { unique })
 }
 
 fn angled_reference_plane_frame_candidates(
