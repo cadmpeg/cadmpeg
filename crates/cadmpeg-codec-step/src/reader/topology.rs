@@ -862,7 +862,9 @@ pub(super) fn decode(
             if let Some(message) = failure_message {
                 push_topology_vec(&mut result.losses,
                     StepLossCode::TopologyRootRejected
-                        .note(format!("STEP topology root #{id} rejected: {message}")),
+                        .note(crate::decode_alloc::charged_format(ctx,
+                            "step_topology_root_rejected_text",
+                            format_args!("STEP topology root #{id} rejected: {message}"))?),
                 ctx, "step_topology_losses")?;
             } else {
                 push_topology_vec(&mut result.losses, StepLossCode::TopologyRootIncomplete.note(format!(
@@ -884,7 +886,11 @@ pub(super) fn decode(
             if let Some(failures) = failures {
                 let detail = failure_message
                     .as_deref()
-                    .map_or_else(String::new, |message| format!(": {message}"));
+                    .map(|message| crate::decode_alloc::charged_format(ctx,
+                        "step_topology_root_failure_detail",
+                        format_args!(": {message}")))
+                    .transpose()?
+                    .unwrap_or_default();
                 push_topology_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                     "STEP topology root #{id} omitted {} unresolved shell(s){detail}",
                     failures.count,
@@ -2621,7 +2627,7 @@ fn build(
             ctx,
         );
         return Ok(match built {
-            Ok(built) => BuildOutcome::Built(vec![built]),
+            Ok(built) => BuildOutcome::Built(one_topology_vec(built, ctx, "step_topology_built_outcome")?),
             Err(BuildError::Absent) => BuildOutcome::Partial {
                 built: Vec::new(),
                 failures: BuildFailures {
@@ -2852,7 +2858,7 @@ fn build_one(
                 return Err(BuildError::Absent);
             }
             let face_info = require_carrier(
-                face_attributes(face_step, fr, exchange, &mut BTreeSet::new()),
+                face_attributes(face_step, fr, exchange, &mut BTreeSet::new(), ctx)?,
                 failure,
                 face_step,
                 CarrierKind::FaceAttributes,
@@ -3768,7 +3774,7 @@ fn push_connected_face_item<T>(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
     values.try_reserve(1).map_err(|_| {
-        cadmpeg_core::decode::refuse_local_limit(operation, u64_from_index(values.len()), 1)
+        ctx.refuse_codec_limit(operation, u64_from_index(values.len()), 1)
     })?;
     values.push(value);
     Ok(())
@@ -5138,9 +5144,9 @@ fn shell_def_for(
 }
 
 #[derive(Default)]
-struct FaceInfo {
+struct FaceInfo<'a> {
     bounds: Vec<u64>,
-    name: Option<Value>,
+    name: Option<&'a Value>,
     surface: Option<u64>,
     same_sense: bool,
     reverse_bound_orientation: bool,
@@ -5155,16 +5161,31 @@ fn is_face_record(record: &RawRecord) -> bool {
         || record.partial("SUBFACE").is_some()
 }
 
-fn face_attributes(
+fn face_attributes<'a>(
     id: u64,
-    record: &RawRecord,
-    exchange: &Exchange,
+    record: &'a RawRecord,
+    exchange: &'a Exchange,
     active: &mut BTreeSet<u64>,
-) -> Option<FaceInfo> {
-    if !active.insert(id) {
-        return None;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<FaceInfo<'a>>, CodecError> {
+    let _depth = ctx.enter_nested("step_face_attribute_recursion")?;
+    if active.contains(&id) {
+        return Ok(None);
     }
-    let result = (|| match most_specific(
+    insert_topology_set(active, id, ctx, "step_face_attribute_active")?;
+    let result = face_attributes_inner(id, record, exchange, active, ctx);
+    active.remove(&id);
+    result
+}
+
+fn face_attributes_inner<'a>(
+    _id: u64,
+    record: &'a RawRecord,
+    exchange: &'a Exchange,
+    active: &mut BTreeSet<u64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<FaceInfo<'a>>, CodecError> {
+    let Some(kind) = most_specific(
         record,
         &[
             "ORIENTED_FACE",
@@ -5173,16 +5194,29 @@ fn face_attributes(
             "FACE_SURFACE",
             "FACE",
         ],
-    )? {
+    ) else {
+        return Ok(None);
+    };
+    let result = match kind {
         "ORIENTED_FACE" => {
-            let face_element = oriented_face_element(record)?;
-            let mut base = face_attributes(
+            let Some(face_element) = oriented_face_element(record) else {
+                return Ok(None);
+            };
+            let Some(element_record) = exchange.records().get(&face_element) else {
+                return Ok(None);
+            };
+            let Some(mut base) = face_attributes(
                 face_element,
-                exchange.records().get(&face_element)?,
+                element_record,
                 exchange,
                 active,
-            )?;
-            let orientation = oriented_face_orientation(record)?;
+                ctx,
+            )? else {
+                return Ok(None);
+            };
+            let Some(orientation) = oriented_face_orientation(record) else {
+                return Ok(None);
+            };
             if !orientation {
                 base.reverse_bound_orientation = !base.reverse_bound_orientation;
             }
@@ -5190,15 +5224,23 @@ fn face_attributes(
             if let Some(name) = face_name_value(record) {
                 base.name = Some(name);
             }
-            base.typed.insert(face_element);
+            insert_topology_hash_set(&mut base.typed, face_element, ctx, "step_face_attribute_typed")?;
             Some(base)
         }
         "SUBFACE" => {
-            let parent = subface_parent(record)?;
-            let mut parent_info =
-                face_attributes(parent, exchange.records().get(&parent)?, exchange, active)?;
-            let bounds = direct_face_bounds(record, exchange)?;
-            parent_info.typed.insert(parent);
+            let Some(parent) = subface_parent(record) else {
+                return Ok(None);
+            };
+            let Some(parent_record) = exchange.records().get(&parent) else {
+                return Ok(None);
+            };
+            let Some(mut parent_info) = face_attributes(parent, parent_record, exchange, active, ctx)? else {
+                return Ok(None);
+            };
+            let Some(bounds) = direct_face_bounds(record, exchange, ctx)? else {
+                return Ok(None);
+            };
+            insert_topology_hash_set(&mut parent_info.typed, parent, ctx, "step_face_attribute_typed")?;
             if let Some(name) = face_name_value(record) {
                 parent_info.name = Some(name);
             }
@@ -5212,7 +5254,9 @@ fn face_attributes(
             })
         }
         "FACE" => {
-            let bounds = direct_face_bounds(record, exchange)?;
+            let Some(bounds) = direct_face_bounds(record, exchange, ctx)? else {
+                return Ok(None);
+            };
             Some(FaceInfo {
                 bounds,
                 name: face_name_value(record),
@@ -5223,10 +5267,18 @@ fn face_attributes(
             })
         }
         "ADVANCED_FACE" | "FACE_SURFACE" => {
-            let bounds = direct_face_bounds(record, exchange)?;
-            let governing = most_specific(record, &["ADVANCED_FACE", "FACE_SURFACE"])?;
-            let surface = direct_face_surface(record, &bounds, governing)?;
-            let same_sense = direct_face_same_sense(record, governing)?;
+            let Some(bounds) = direct_face_bounds(record, exchange, ctx)? else {
+                return Ok(None);
+            };
+            let Some(governing) = most_specific(record, &["ADVANCED_FACE", "FACE_SURFACE"]) else {
+                return Ok(None);
+            };
+            let Some(surface) = direct_face_surface(record, &bounds, governing) else {
+                return Ok(None);
+            };
+            let Some(same_sense) = direct_face_same_sense(record, governing) else {
+                return Ok(None);
+            };
             Some(FaceInfo {
                 bounds,
                 name: face_name_value(record),
@@ -5237,12 +5289,11 @@ fn face_attributes(
             })
         }
         _ => None,
-    })();
-    active.remove(&id);
-    result
+    };
+    Ok(result)
 }
 
-fn face_name_value(record: &RawRecord) -> Option<Value> {
+fn face_name_value(record: &RawRecord) -> Option<&Value> {
     let value = if record.partials.len() == 1 {
         record.parameter(0)
     } else {
@@ -5267,28 +5318,48 @@ fn face_name_value(record: &RawRecord) -> Option<Value> {
     };
     value
         .filter(|value| !matches!(value, Value::String(bytes) if bytes.is_empty()))
-        .cloned()
 }
 
-fn direct_face_bounds(record: &RawRecord, exchange: &Exchange) -> Option<Vec<u64>> {
-    let values = if record.partials.len() == 1 {
-        vec![entity_parameter(record, record.simple_name()?, 1)?]
+fn direct_face_bounds(
+    record: &RawRecord,
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<u64>>, CodecError> {
+    let simple_value = if record.partials.len() == 1 {
+        let Some(name) = record.simple_name() else {
+            return Ok(None);
+        };
+        let Some(value) = entity_parameter(record, name, 1) else {
+            return Ok(None);
+        };
+        Some(value)
     } else {
-        record
-            .partials
-            .iter()
-            .flat_map(|partial| partial.parameters.iter())
-            .collect::<Vec<_>>()
+        None
     };
-    values.into_iter().filter_map(refs).find(|ids| {
-        !ids.is_empty()
-            && ids.iter().all(|id| {
-                exchange.records().get(id).is_some_and(|bound| {
+    let complex_values = record.partials.iter()
+        .filter(|_| record.partials.len() != 1)
+        .flat_map(|partial| partial.parameters.iter());
+    for value in simple_value.into_iter().chain(complex_values) {
+        let Some(items) = value.list() else {
+            continue;
+        };
+        if items.is_empty() || !items.iter().all(|item| {
+            item.reference().is_some_and(|id| {
+                exchange.records().get(&id).is_some_and(|bound| {
                     bound.partial("FACE_BOUND").is_some()
                         || bound.partial("FACE_OUTER_BOUND").is_some()
                 })
             })
-    })
+        }) {
+            continue;
+        }
+        let mut bounds = Vec::new();
+        for id in items.iter().filter_map(ValueExt::reference) {
+            push_topology_vec(&mut bounds, id, ctx, "step_face_attribute_bounds")?;
+        }
+        return Ok(Some(bounds));
+    }
+    Ok(None)
 }
 
 fn direct_face_surface(record: &RawRecord, bounds: &[u64], governing: &str) -> Option<u64> {

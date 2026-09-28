@@ -915,3 +915,55 @@ fn brep_used_faces_refuse_collection_limit() {
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_brep_used_faces"));
 }
+
+fn face_attribute_refusal(collection_limit: u64, depth_limit: u64, face_id: u64) -> CodecError {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=FACE('',(#2));#2=FACE_BOUND('',#3,.T.);#3=EDGE_LOOP('',());#4=ORIENTED_FACE('',*,#1,.T.);ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid face references");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_recursion_depth = depth_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("source fits policy");
+    super::super::face_attributes(
+        face_id,
+        exchange.records().get(&face_id).expect("face record"),
+        &exchange,
+        &mut std::collections::BTreeSet::new(),
+        &ctx,
+    )
+    .err()
+    .expect("face attributes exceed limit")
+}
+
+#[test]
+fn face_attribute_active_refuses_collection_limit() {
+    assert!(matches!(face_attribute_refusal(0, u64::MAX, 1),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_face_attribute_active"));
+}
+
+#[test]
+fn face_attribute_bounds_refuse_collection_limit() {
+    assert!(matches!(face_attribute_refusal(1, u64::MAX, 1),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_face_attribute_bounds"));
+}
+
+#[test]
+fn face_attribute_typed_refuses_collection_limit() {
+    assert!(matches!(face_attribute_refusal(3, u64::MAX, 4),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_face_attribute_typed"));
+}
+
+#[test]
+fn face_attribute_recursion_refuses_depth_limit() {
+    assert!(matches!(face_attribute_refusal(u64::MAX, 1, 4),
+        CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_face_attribute_recursion"));
+}
