@@ -55,6 +55,80 @@ fn native_validation_refuses_decode_collection_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
+#[test]
+fn native_configuration_name_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let configuration = crate::records::configuration::DesignConfiguration::try_new(
+        "sample.dsgcfgrule".into(),
+        crate::records::configuration::DesignConfigurationKind::Rule,
+        Vec::new(),
+        serde_json::Map::new(),
+    )
+    .unwrap();
+    let mut native = crate::native::F3dNative::default();
+    native.design_configurations.push(configuration);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let ctx = super::Ctx::new(&ir, &native, Some(&decode)).unwrap();
+    let error = super::validate_configurations(&ctx, &mut Vec::new()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D configuration entry names"));
+}
+
+#[test]
+fn native_duplicate_configuration_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let configuration = crate::records::configuration::DesignConfiguration::try_new(
+        "sample.dsgcfgrule".into(),
+        crate::records::configuration::DesignConfigurationKind::Rule,
+        Vec::new(),
+        serde_json::Map::new(),
+    )
+    .unwrap();
+    let mut native = crate::native::F3dNative::default();
+    native.design_configurations.push(configuration.clone());
+    native.design_configurations.push(configuration);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let ctx = super::Ctx::new(&ir, &native, Some(&decode)).unwrap();
+    let error = super::validate_configurations(&ctx, &mut Vec::new()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D configuration entry ID"));
+}
+
+#[test]
+fn native_duplicate_configuration_finding_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let configuration = crate::records::configuration::DesignConfiguration::try_new(
+        "sample.dsgcfgrule".into(),
+        crate::records::configuration::DesignConfigurationKind::Rule,
+        Vec::new(),
+        serde_json::Map::new(),
+    )
+    .unwrap();
+    let mut native = crate::native::F3dNative::default();
+    native.design_configurations.push(configuration.clone());
+    native.design_configurations.push(configuration);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let ctx = super::Ctx::new(&ir, &native, Some(&decode)).unwrap();
+    let error = super::validate_configurations(&ctx, &mut Vec::new()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
 fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
     crate::records::dimensions::DesignRecipeReference {
         selector: 1,

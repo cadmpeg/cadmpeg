@@ -609,7 +609,8 @@ fn reload_native_arena<T: serde::de::DeserializeOwned>(
 /// Read-only indexes over the loaded `f3d` native namespace, shared by the
 /// per-family validators. Every map is derived purely from the namespace and
 /// borrows it for the duration of a [`validate_native`] call.
-struct Ctx<'a> {
+struct Ctx<'a, 'd> {
+    decode: Option<&'a DecodeContext<'d>>,
     /// The decoded document, for model-side body, face, and edge identity.
     ir: &'a CadIr,
     /// The loaded native namespace.
@@ -652,14 +653,43 @@ struct Ctx<'a> {
     sketch_owner_ids: HashMap<(&'a str, u32), &'a str>,
 }
 
-impl<'a> Ctx<'a> {
+impl<'a, 'd> Ctx<'a, 'd> {
+    fn charge_item(&self, operation: &'static str) -> Result<(), CodecError> {
+        if let Some(decode) = self.decode {
+            decode.charge_collection_items(1, operation)?;
+        }
+        Ok(())
+    }
+
+    fn push_constant_finding(
+        &self,
+        findings: &mut Vec<Finding>,
+        message: &'static str,
+        entity: Option<String>,
+    ) -> Result<(), CodecError> {
+        self.charge_item("collect F3D native validation findings")?;
+        findings.try_reserve(1).map_err(|_| {
+            self.decode.map_or_else(
+                || CodecError::malformed("F3D validation finding allocation failed"),
+                |decode| decode.refuse_codec_limit("collect F3D native validation findings", 0, 1),
+            )
+        })?;
+        findings.push(Finding {
+            check: Check::NativeLinks,
+            severity: Severity::Error,
+            message: message.into(),
+            entity,
+        });
+        Ok(())
+    }
+
     /// Build every shared index over `native` up front. All builds are pure and
     /// emit no findings, so their eager construction does not affect the
     /// observable finding order.
     fn new(
         ir: &'a CadIr,
         native: &'a native::F3dNative,
-        decode: Option<&DecodeContext<'_>>,
+        decode: Option<&'a DecodeContext<'d>>,
     ) -> Result<Self, CodecError> {
         let records_by_index = collect_index(decode, native
             .design_record_headers
@@ -758,6 +788,7 @@ impl<'a> Ctx<'a> {
                 ))
             }), "index F3D sketch owner ids")?;
         Ok(Ctx {
+            decode,
             ir,
             native,
             records_by_index,
@@ -881,7 +912,7 @@ fn validate_loaded(
     validate_decal_images(&ctx, &mut findings);
     validate_mesh_features(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings);
-    validate_configurations(&ctx, &mut findings);
+    validate_configurations(&ctx, &mut findings)?;
     validate_feature_timelines(&ctx, &mut findings);
     validate_parameter_scopes(&ctx, &mut findings);
     validate_extrude_selection_groups(&ctx, &mut findings);
@@ -1105,32 +1136,49 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
 }
 
 /// Validate unique configuration entries and a single authored table.
-fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let mut entry_names = HashSet::new();
     for configuration in &ctx.native.design_configurations {
-        if !entry_names.insert(configuration.entry_name().as_str()) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design configuration entry name is duplicated".into(),
-                entity: Some(configuration.id()),
-            });
+        let name = configuration.entry_name().as_str();
+        if !entry_names.contains(name) {
+            ctx.charge_item("index F3D configuration entry names")?;
+            entry_names.try_reserve(1).map_err(|_| {
+                ctx.decode.map_or_else(
+                    || CodecError::malformed("F3D configuration entry index allocation failed"),
+                    |decode| decode.refuse_codec_limit("index F3D configuration entry names", 0, 1),
+                )
+            })?;
+        }
+        if !entry_names.insert(name) {
+            let id = match ctx.decode {
+                Some(decode) => configuration.id_charged(decode)?,
+                None => configuration.id(),
+            };
+            ctx.push_constant_finding(
+                findings,
+                "Fusion Design configuration entry name is duplicated",
+                Some(id),
+            )?;
         }
     }
-    let nonempty_tables = ctx
+    let mut nonempty_tables = ctx
         .native
         .design_configurations
         .iter()
-        .filter(|configuration| !configuration.variants().is_empty())
-        .collect::<Vec<_>>();
-    if nonempty_tables.len() > 1 {
-        findings.push(Finding {
-            check: Check::NativeLinks,
-            severity: Severity::Error,
-            message: "Fusion Design configurations have no single authored table order".into(),
-            entity: nonempty_tables.first().map(|table| table.id()),
-        });
+        .filter(|configuration| !configuration.variants().is_empty());
+    let first = nonempty_tables.next();
+    if nonempty_tables.next().is_some() {
+        let id = first.map(|table| match ctx.decode {
+            Some(decode) => table.id_charged(decode),
+            None => Ok(table.id()),
+        }).transpose()?;
+        ctx.push_constant_finding(
+            findings,
+            "Fusion Design configurations have no single authored table order",
+            id,
+        )?;
     }
+    Ok(())
 }
 
 /// Validate authored Design timeline order and its exact type and scope joins.
@@ -5039,7 +5087,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
 
 /// Validate Fillet radius-law parameter assignments; returns the assigned groups.
 fn validate_fillet_radius_groups<'a>(
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
 ) -> HashSet<(&'a str, u32)> {
     let native = ctx.native;
@@ -5195,7 +5243,7 @@ fn validate_fillet_radius_groups<'a>(
 
 /// Report Fillet operand groups that carry no radius assignment.
 fn validate_fillet_operand_groups<'a>(
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
     fillet_radius_group_records: &HashSet<(&'a str, u32)>,
 ) {
@@ -5369,7 +5417,7 @@ fn validate_fillet_operand_groups<'a>(
 
 /// Validate construction operand identity chains; returns identity-backed groups.
 fn validate_construction_operand_identities<'a>(
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
 ) -> HashSet<(&'a str, u32)> {
     let native = ctx.native;
@@ -5510,7 +5558,7 @@ fn validate_construction_operand_identities<'a>(
 /// Validate edge identity operands; returns their backing record set.
 fn validate_edge_identity_operands<'a>(
     decode: Option<&DecodeContext<'_>>,
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
     expected_face_operands: &[records::topology::face::DesignFaceOperand],
 ) -> Result<HashSet<(&'a str, u32)>, CodecError> {
@@ -5584,7 +5632,7 @@ fn validate_edge_identity_operands<'a>(
 /// Validate whole-body recipe operands; returns their backing record set.
 fn validate_body_recipe_operands<'a>(
     decode: Option<&DecodeContext<'_>>,
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
 ) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
@@ -5703,7 +5751,7 @@ fn validate_body_recipe_operands<'a>(
 
 /// Report operand groups lacking a typed member carrier.
 fn validate_operand_group_carriers<'a>(
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
     operand_identity_groups: &HashSet<(&'a str, u32)>,
     edge_identity_records: &HashSet<(&'a str, u32)>,
@@ -6157,7 +6205,7 @@ fn recipe_reference_frames_match(
 /// Validate edge operands and their recipe frames; returns their record set.
 fn validate_edge_operands<'a>(
     decode: Option<&DecodeContext<'_>>,
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
 ) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
@@ -6290,7 +6338,7 @@ fn validate_edge_operands<'a>(
 
 fn validate_edge_treatment_vertex_operands<'a>(
     decode: Option<&DecodeContext<'_>>,
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
 ) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
@@ -6372,7 +6420,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
 
 /// Report Fillet/Chamfer edge groups with incomplete selection operands.
 fn validate_edge_treatment_groups<'a>(
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
     edge_operand_records: &HashSet<(&'a str, u32)>,
     edge_identity_records: &HashSet<(&'a str, u32)>,
@@ -6427,7 +6475,7 @@ fn validate_edge_treatment_groups<'a>(
 
 /// Validate face operands and their recipe frames; returns their record set.
 fn validate_face_operands<'a>(
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
     expected_face_operands: &[records::topology::face::DesignFaceOperand],
 ) -> HashSet<(&'a str, u32, u32)> {
@@ -7109,7 +7157,7 @@ fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
 
 /// Validate dimension recipe records; returns the owned recipe ids.
 fn validate_dimension_recipe_records<'a>(
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
 ) -> HashSet<(&'a str, &'a str)> {
     let native = ctx.native;
@@ -7205,7 +7253,7 @@ fn validate_dimension_recipe_records<'a>(
 
 /// Report dimension companions owning an unresolved construction recipe.
 fn validate_dimension_companion_recipes<'a>(
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
     dimension_recipe_ids: &HashSet<(&'a str, &'a str)>,
 ) {
@@ -7242,7 +7290,7 @@ fn validate_dimension_companion_recipes<'a>(
 
 /// Validate dimension locus pairs; returns their companion set.
 fn validate_dimension_locus_pairs<'a>(
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
 ) -> HashSet<(&'a str, u32)> {
     let native = ctx.native;
@@ -7482,7 +7530,7 @@ fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>
 
 /// Validate dimension locus groups; returns their companion set.
 fn validate_dimension_locus_groups<'a>(
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
 ) -> HashSet<(&'a str, u32)> {
     let native = ctx.native;
@@ -7587,7 +7635,7 @@ fn validate_dimension_locus_groups<'a>(
 
 /// Validate null-locus dimension pairs against typed companions.
 fn validate_dimension_null_locus_pairs<'a>(
-    ctx: &Ctx<'a>,
+    ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
     locus_pair_companions: &HashSet<(&'a str, u32)>,
     locus_group_companions: &HashSet<(&'a str, u32)>,
