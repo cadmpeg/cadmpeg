@@ -1739,27 +1739,42 @@ fn consume_shared_record(
     let Some(previous) = records.last() else { return Ok(None); };
     if previous.end != offset || !has_shareable_terminal(stream, previous) { return Ok(None); }
     let Some(record_offset) = offset.checked_sub(1) else { return Ok(None); };
-    if let Some(record) = consume_intersection_auxiliary(ctx, stream, record_offset)?
-        .or_else(|| consume_nurbs_auxiliary(stream, record_offset))
-        .or_else(|| consume_type_141(stream, record_offset))
-        .or_else(|| consume_type_45(stream, record_offset))
-        .or_else(|| consume_type_70(stream, record_offset))
-        .or_else(|| consume_attdef_list(stream, record_offset))
-        .or_else(|| consume_type_101(stream, record_offset))
-        .or_else(|| {
-            consume_intersection_data(stream, record_offset, intersection_schema_anchor_seen)
-        })
-    {
+    if let Some(record) = consume_intersection_auxiliary(ctx, stream, record_offset)? {
+        return Ok(Some(record));
+    }
+    if let Some(record) = first_complete_record(ctx, stream, record_offset, intersection_schema_anchor_seen, false)? {
         return Ok(Some(record));
     }
     let Some(kind) = stream.get(offset).copied().map(u16::from) else { return Ok(None); };
-    let fixed = fixed_signature(kind)
-        .and_then(|signature| consume_fixed(stream, record_offset, kind, signature));
+    let fixed = if let Some(signature) = fixed_signature(kind) {
+        consume_fixed(ctx, stream, record_offset, kind, signature)?
+    } else {
+        None
+    };
     Ok(if fixed.is_some() {
         fixed
     } else {
         consume_variable(ctx, stream, record_offset, kind)?
     })
+}
+
+fn first_complete_record(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+    intersection_schema_anchor_seen: bool,
+    include_type_67: bool,
+) -> Result<Option<Record>, CodecError> {
+    if let Some(record) = consume_nurbs_auxiliary(ctx, stream, offset)? { return Ok(Some(record)); }
+    if let Some(record) = consume_type_141(ctx, stream, offset)? { return Ok(Some(record)); }
+    if let Some(record) = consume_type_45(ctx, stream, offset)? { return Ok(Some(record)); }
+    if include_type_67 {
+        if let Some(record) = consume_type_67(ctx, stream, offset)? { return Ok(Some(record)); }
+    }
+    if let Some(record) = consume_type_70(ctx, stream, offset)? { return Ok(Some(record)); }
+    if let Some(record) = consume_attdef_list(ctx, stream, offset)? { return Ok(Some(record)); }
+    if let Some(record) = consume_type_101(ctx, stream, offset)? { return Ok(Some(record)); }
+    consume_intersection_data(ctx, stream, offset, intersection_schema_anchor_seen)
 }
 
 fn has_shareable_terminal(stream: &[u8], record: &Record) -> bool {
@@ -2327,20 +2342,76 @@ pub(crate) fn semantic_residual_with_census(
     Ok(residual)
 }
 
-fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -> Option<Record> {
+fn consume_fixed(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+    kind: u16,
+    signature: &[Token],
+) -> Result<Option<Record>, CodecError> {
     let direct = fixed_layout(stream, offset, kind, signature, 0);
     let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-    let escaped = escaped_marker
-        .then(|| fixed_layout(stream, offset, kind, signature, 1))
-        .flatten();
-    let record = if escaped_marker {
-        direct.or(escaped)?
+    let escaped = if escaped_marker {
+        fixed_layout(stream, offset, kind, signature, 1)
     } else {
-        direct?
+        None
     };
-    let shadows_type_101 = (record.offset + 1..record.end)
-        .any(|offset| consume_type_101(stream, offset).is_some_and(|later| later.end > record.end));
-    (!shadows_type_101).then_some(record)
+    let candidate = if escaped_marker {
+        direct.or(escaped)
+    } else {
+        direct
+    };
+    let Some(candidate) = candidate else { return Ok(None); };
+    let shadows_type_101 = (candidate.offset + 1..candidate.end)
+        .any(|offset| type_101_shape(stream, offset).is_some_and(|(_, end)| end > candidate.end));
+    if shadows_type_101 {
+        return Ok(None);
+    }
+    candidate.materialize(ctx, stream, signature).map(Some)
+}
+
+struct FixedCandidate {
+    family: RecordFamily,
+    xmt: u32,
+    offset: usize,
+    end: usize,
+    prefix_end: usize,
+    canonical_len: usize,
+}
+
+impl FixedCandidate {
+    fn materialize(self, ctx: &DecodeContext<'_>, stream: &[u8], signature: &[Token]) -> Result<Record, CodecError> {
+        let canonical_len = cadmpeg_core::decode::u64_from_index(self.canonical_len);
+        ctx.charge_retained(canonical_len, "NX deltas fixed record bytes")?;
+        let mut canonical_bytes = Vec::new();
+        canonical_bytes.try_reserve_exact(self.canonical_len).map_err(|_| {
+            ctx.refuse_codec_limit("NX deltas fixed record bytes", 0, canonical_len)
+        })?;
+        canonical_bytes.extend_from_slice(&stream[self.offset..self.prefix_end]);
+        let mut at = self.prefix_end;
+        for token in signature {
+            let (len, skip) = match token {
+                Token::Ref => {
+                    let (_, consumed) = read_xmt(stream, at).ok_or_else(|| {
+                        ctx.refuse_codec_limit("NX deltas fixed record bytes", 0, 0)
+                    })?;
+                    (consumed, 1)
+                }
+                Token::Tolerance | Token::Scalar => (8, 0),
+                Token::Sense | Token::OffsetDiscriminator | Token::BlendSubtype | Token::Boolean => (1, 0),
+                Token::Position | Token::Vector => (24, 0),
+            };
+            canonical_bytes.extend_from_slice(&stream[at..at + len]);
+            at += len + skip;
+        }
+        Ok(Record {
+            family: self.family,
+            xmt: self.xmt,
+            canonical_bytes,
+            offset: self.offset,
+            end: self.end,
+        })
+    }
 }
 
 fn fixed_layout(
@@ -2349,7 +2420,7 @@ fn fixed_layout(
     kind: u16,
     signature: &[Token],
     envelope_len: usize,
-) -> Option<Record> {
+) -> Option<FixedCandidate> {
     let xmt_at = offset.checked_add(2 + envelope_len)?;
     let (xmt, consumed) = read_xmt(stream, xmt_at)?;
     if xmt <= 1 {
@@ -2363,7 +2434,9 @@ fn fixed_layout(
         at += 4;
         Some(node_id)
     };
-    let mut canonical_bytes = stream.get(offset..at)?.to_vec();
+    stream.get(offset..at)?;
+    let prefix_end = at;
+    let mut canonical_len = at.checked_sub(offset)?;
     let mut references = Vec::new();
     let mut position = None;
     for token in signature {
@@ -2374,7 +2447,8 @@ fn fixed_layout(
                 at += consumed;
                 matches!(stream.get(at), Some(0 | 1)).then_some(())?;
                 at += 1;
-                canonical_bytes.extend_from_slice(stream.get(start..start + consumed)?);
+                stream.get(start..start + consumed)?;
+                canonical_len = canonical_len.checked_add(consumed)?;
                 references.push(reference);
             }
             Token::Tolerance => {
@@ -2382,54 +2456,62 @@ fn fixed_layout(
                 (tolerance.is_finite()
                     && (!matches!(kind, 16 | 18) || tolerance.abs() >= 1.0e-100))
                     .then_some(())?;
-                canonical_bytes.extend_from_slice(stream.get(at..at + 8)?);
+                stream.get(at..at + 8)?;
+                canonical_len = canonical_len.checked_add(8)?;
                 at += 8;
             }
             Token::Sense => {
                 matches!(stream.get(at), Some(b'+' | b'-')).then_some(())?;
-                canonical_bytes.push(*stream.get(at)?);
+                stream.get(at)?;
+                canonical_len = canonical_len.checked_add(1)?;
                 at += 1;
             }
             Token::OffsetDiscriminator => {
                 matches!(stream.get(at), Some(b'V' | b'I' | b'U')).then_some(())?;
-                canonical_bytes.push(*stream.get(at)?);
+                stream.get(at)?;
+                canonical_len = canonical_len.checked_add(1)?;
                 at += 1;
             }
             Token::BlendSubtype => {
                 (stream.get(at) == Some(&b'R')).then_some(())?;
-                canonical_bytes.push(b'R');
+                canonical_len = canonical_len.checked_add(1)?;
                 at += 1;
             }
             Token::Boolean => {
                 matches!(stream.get(at), Some(0 | 1)).then_some(())?;
-                canonical_bytes.push(*stream.get(at)?);
+                stream.get(at)?;
+                canonical_len = canonical_len.checked_add(1)?;
                 at += 1;
             }
             Token::Position => {
                 let xyz = vec3_be_at(stream, at)?;
                 position = Some(FixedPosition::new(kind, xyz)?);
-                canonical_bytes.extend_from_slice(stream.get(at..at + 24)?);
+                stream.get(at..at + 24)?;
+                canonical_len = canonical_len.checked_add(24)?;
                 at += 24;
             }
             Token::Vector => {
                 let xyz = vec3_be_at(stream, at)?;
                 xyz.iter().all(|value| value.is_finite()).then_some(())?;
-                canonical_bytes.extend_from_slice(stream.get(at..at + 24)?);
+                stream.get(at..at + 24)?;
+                canonical_len = canonical_len.checked_add(24)?;
                 at += 24;
             }
             Token::Scalar => {
                 View::f64_be_at(stream, at)?.is_finite().then_some(())?;
-                canonical_bytes.extend_from_slice(stream.get(at..at + 8)?);
+                stream.get(at..at + 8)?;
+                canonical_len = canonical_len.checked_add(8)?;
                 at += 8;
             }
         }
     }
-    Some(Record {
+    Some(FixedCandidate {
         family: RecordFamily::from_fixed_admitted(kind, node_id, position, references)?,
         xmt,
-        canonical_bytes,
         offset,
         end: at,
+        prefix_end,
+        canonical_len,
     })
 }
 
@@ -2440,10 +2522,10 @@ fn consume_variable(
     kind: u16,
 ) -> Result<Option<Record>, CodecError> {
     if kind == 90 {
-        return Ok(consume_group(stream, offset));
+        return consume_group(ctx, stream, offset);
     }
     if kind == 91 {
-        return Ok(consume_type_91(stream, offset));
+        return consume_type_91(ctx, stream, offset);
     }
     let parsed = (|| -> Option<_> { Some(match kind {
         81 => {
@@ -2493,68 +2575,78 @@ fn is_value_family(kind: u16) -> bool {
     matches!(kind, 82..=89 | 98)
 }
 
-fn consume_group(stream: &[u8], offset: usize) -> Option<Record> {
-    (View::u16_be_at(stream, offset) == Some(90)).then_some(())?;
-    let direct = group_layout(stream, offset, 0);
-    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-    let escaped = escaped_marker
-        .then(|| group_layout(stream, offset, 1))
-        .flatten();
-    let (xmt, node_id, references, selector, linked_reference_status, end) =
-        select_enveloped_layout(escaped_marker, direct, escaped)?;
-    Some(Record {
-        family: RecordFamily::Group {
+fn admitted_record(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    offset: usize,
+    end: usize,
+    family: RecordFamily,
+    xmt: u32,
+) -> Result<Option<Record>, CodecError> {
+    let Some(bytes) = stream.get(offset..end) else { return Ok(None); };
+    Ok(Some(Record {
+        family,
+        xmt,
+        canonical_bytes: ctx.copy_retained(bytes, "NX deltas canonical record bytes")?,
+        offset,
+        end,
+    }))
+}
+
+fn consume_group(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+    let parsed = (|| {
+        (View::u16_be_at(stream, offset) == Some(90)).then_some(())?;
+        let direct = group_layout(stream, offset, 0);
+        let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+        let escaped = escaped_marker
+            .then(|| group_layout(stream, offset, 1))
+            .flatten();
+        let (xmt, node_id, references, selector, linked_reference_status, end) =
+            select_enveloped_layout(escaped_marker, direct, escaped)?;
+        Some((RecordFamily::Group {
             references: references.try_into().ok()?,
             node_id,
             selector,
             linked_reference_status,
-        },
-        xmt,
-        canonical_bytes: stream.get(offset..end)?.to_vec(),
-        offset,
-        end,
-    })
+        }, xmt, end))
+    })();
+    let Some((family, xmt, end)) = parsed else { return Ok(None); };
+    admitted_record(ctx, stream, offset, end, family, xmt)
 }
 
-fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
-    (View::u16_be_at(stream, offset) == Some(74)).then_some(())?;
-    let direct = attdef_list_body(stream, offset.checked_add(2)?);
-    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-    let escaped = escaped_marker
-        .then(|| attdef_list_body(stream, offset.checked_add(3)?))
-        .flatten();
-    let (state, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
-    let xmt = state.xmt();
-    Some(Record {
-        family: RecordFamily::AttdefList {
-            slots: state.into_slots(),
-        },
-        xmt,
-        canonical_bytes: stream.get(offset..end)?.to_vec(),
-        offset,
-        end,
-    })
+fn consume_attdef_list(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+    let parsed = (|| {
+        (View::u16_be_at(stream, offset) == Some(74)).then_some(())?;
+        let direct = attdef_list_body(stream, offset.checked_add(2)?);
+        let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+        let escaped = escaped_marker
+            .then(|| attdef_list_body(stream, offset.checked_add(3)?))
+            .flatten();
+        let (state, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
+        let xmt = state.xmt();
+        Some((RecordFamily::AttdefList { slots: state.into_slots() }, xmt, end))
+    })();
+    let Some((family, xmt, end)) = parsed else { return Ok(None); };
+    admitted_record(ctx, stream, offset, end, family, xmt)
 }
 
-fn consume_type_70(stream: &[u8], offset: usize) -> Option<Record> {
-    (View::u16_be_at(stream, offset) == Some(70)).then_some(())?;
-    let direct = type_70_body(stream, offset.checked_add(2)?, TrailingCopies::Two);
-    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-    let escaped = escaped_marker
-        .then(|| type_70_body(stream, offset.checked_add(3)?, TrailingCopies::Two))
-        .flatten();
-    let (state, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
-    Some(Record {
-        family: RecordFamily::Type70 {
+fn consume_type_70(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+    let parsed = (|| {
+        (View::u16_be_at(stream, offset) == Some(70)).then_some(())?;
+        let direct = type_70_body(stream, offset.checked_add(2)?, TrailingCopies::Two);
+        let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+        let escaped = escaped_marker
+            .then(|| type_70_body(stream, offset.checked_add(3)?, TrailingCopies::Two))
+            .flatten();
+        let (state, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
+        Some((RecordFamily::Type70 {
             node_id: state.node_id(),
             references: state.references(),
             trailing_reference: state.trailing_reference(),
-        },
-        xmt: state.xmt(),
-        canonical_bytes: stream.get(offset..end)?.to_vec(),
-        offset,
-        end,
-    })
+        }, state.xmt(), end))
+    })();
+    let Some((family, xmt, end)) = parsed else { return Ok(None); };
+    admitted_record(ctx, stream, offset, end, family, xmt)
 }
 
 fn type_70_body(
@@ -2599,7 +2691,13 @@ fn type_70_body(
     ))
 }
 
-fn consume_type_101(stream: &[u8], offset: usize) -> Option<Record> {
+fn consume_type_101(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+    let Some((references, end)) = type_101_shape(stream, offset) else { return Ok(None); };
+    let family = RecordFamily::Type101 { references };
+    admitted_record(ctx, stream, offset, end, family, 2)
+}
+
+fn type_101_shape(stream: &[u8], offset: usize) -> Option<([u32; 15], usize)> {
     (View::u16_be_at(stream, offset) == Some(101)).then_some(())?;
     let direct = type_101_layout(stream, offset, 0);
     let escaped_marker = stream.get(offset + 2) == Some(&0xff);
@@ -2607,15 +2705,7 @@ fn consume_type_101(stream: &[u8], offset: usize) -> Option<Record> {
         .then(|| type_101_layout(stream, offset, 1))
         .flatten();
     let (references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
-    Some(Record {
-        family: RecordFamily::Type101 {
-            references: references.try_into().ok()?,
-        },
-        xmt: 2,
-        canonical_bytes: stream.get(offset..end)?.to_vec(),
-        offset,
-        end,
-    })
+    Some((references.try_into().ok()?, end))
 }
 
 fn type_101_layout(stream: &[u8], offset: usize, envelope_len: usize) -> Option<(Vec<u32>, usize)> {
@@ -2771,27 +2861,23 @@ fn group_layout_without_leading_statuses(
     ))
 }
 
-fn consume_type_91(stream: &[u8], offset: usize) -> Option<Record> {
-    (View::u16_be_at(stream, offset) == Some(91)).then_some(())?;
-    let direct = type_91_layout(stream, offset, 0);
-    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-    let escaped = escaped_marker
-        .then(|| type_91_layout(stream, offset, 1))
-        .flatten();
-    let (xmt, references, end) = if escaped_marker {
-        escaped.or(direct)?
-    } else {
-        direct?
-    };
-    Some(Record {
-        family: RecordFamily::Type91 {
-            references: references.try_into().ok()?,
-        },
-        xmt,
-        canonical_bytes: stream.get(offset..end)?.to_vec(),
-        offset,
-        end,
-    })
+fn consume_type_91(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+    let parsed = (|| {
+        (View::u16_be_at(stream, offset) == Some(91)).then_some(())?;
+        let direct = type_91_layout(stream, offset, 0);
+        let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+        let escaped = escaped_marker
+            .then(|| type_91_layout(stream, offset, 1))
+            .flatten();
+        let (xmt, references, end) = if escaped_marker {
+            escaped.or(direct)?
+        } else {
+            direct?
+        };
+        Some((RecordFamily::Type91 { references: references.try_into().ok()? }, xmt, end))
+    })();
+    let Some((family, xmt, end)) = parsed else { return Ok(None); };
+    admitted_record(ctx, stream, offset, end, family, xmt)
 }
 
 fn type_91_layout(
@@ -2816,64 +2902,55 @@ fn type_91_layout(
     Some((xmt, references, at))
 }
 
-fn consume_type_141(stream: &[u8], offset: usize) -> Option<Record> {
-    (View::u16_be_at(stream, offset) == Some(141)).then_some(())?;
-    let direct = type_141_layout(stream, offset, 0);
-    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-    let escaped = escaped_marker
-        .then(|| type_141_layout(stream, offset, 1))
-        .flatten();
-    let (xmt, references, at) = if escaped_marker {
-        escaped.or(direct)?
-    } else {
-        direct?
-    };
-    Some(Record {
-        family: RecordFamily::Type141 {
-            references: references.try_into().ok()?,
-        },
-        xmt,
-        canonical_bytes: stream.get(offset..at)?.to_vec(),
-        offset,
-        end: at,
-    })
+fn consume_type_141(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+    let parsed = (|| {
+        (View::u16_be_at(stream, offset) == Some(141)).then_some(())?;
+        let direct = type_141_layout(stream, offset, 0);
+        let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+        let escaped = escaped_marker
+            .then(|| type_141_layout(stream, offset, 1))
+            .flatten();
+        let (xmt, references, end) = if escaped_marker {
+            escaped.or(direct)?
+        } else {
+            direct?
+        };
+        Some((RecordFamily::Type141 { references: references.try_into().ok()? }, xmt, end))
+    })();
+    let Some((family, xmt, end)) = parsed else { return Ok(None); };
+    admitted_record(ctx, stream, offset, end, family, xmt)
 }
 
-fn consume_type_45(stream: &[u8], offset: usize) -> Option<Record> {
-    (View::u16_be_at(stream, offset) == Some(45)).then_some(())?;
-    let direct = type_45_layout(stream, offset, 0);
-    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-    let escaped = escaped_marker
-        .then(|| type_45_layout(stream, offset, 1))
-        .flatten();
-    let (xmt, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
-    Some(Record {
-        family: RecordFamily::Type45,
-        xmt,
-        canonical_bytes: stream.get(offset..end)?.to_vec(),
-        offset,
-        end,
-    })
+fn consume_type_45(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+    let parsed = (|| {
+        (View::u16_be_at(stream, offset) == Some(45)).then_some(())?;
+        let direct = type_45_layout(stream, offset, 0);
+        let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+        let escaped = escaped_marker
+            .then(|| type_45_layout(stream, offset, 1))
+            .flatten();
+        select_enveloped_layout(escaped_marker, direct, escaped)
+    })();
+    let Some((xmt, end)) = parsed else { return Ok(None); };
+    admitted_record(ctx, stream, offset, end, RecordFamily::Type45, xmt)
 }
 
-fn consume_type_67(stream: &[u8], offset: usize) -> Option<Record> {
-    (View::u16_be_at(stream, offset) == Some(67)).then_some(())?;
-    let direct = type_67_layout(stream, offset, 0);
-    let escaped_marker = stream.get(offset + 2) == Some(&0xff);
-    let escaped = escaped_marker
-        .then(|| type_67_layout(stream, offset, 1))
-        .flatten();
-    let (xmt, node_id, references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
-    Some(Record {
-        family: RecordFamily::Type67 {
+fn consume_type_67(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+    let parsed = (|| {
+        (View::u16_be_at(stream, offset) == Some(67)).then_some(())?;
+        let direct = type_67_layout(stream, offset, 0);
+        let escaped_marker = stream.get(offset + 2) == Some(&0xff);
+        let escaped = escaped_marker
+            .then(|| type_67_layout(stream, offset, 1))
+            .flatten();
+        let (xmt, node_id, references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
+        Some((RecordFamily::Type67 {
             node_id,
             references: references.try_into().ok()?,
-        },
-        xmt,
-        canonical_bytes: stream.get(offset..end)?.to_vec(),
-        offset,
-        end,
-    })
+        }, xmt, end))
+    })();
+    let Some((family, xmt, end)) = parsed else { return Ok(None); };
+    admitted_record(ctx, stream, offset, end, family, xmt)
 }
 
 fn type_67_layout(
@@ -2981,15 +3058,16 @@ fn select_enveloped_layout<T>(
 }
 
 fn consume_intersection_data(
+    ctx: &DecodeContext<'_>,
     stream: &[u8],
     offset: usize,
     intersection_schema_anchor_seen: bool,
-) -> Option<Record> {
-    let (curve, end) = crate::topology::intersection_data_curve_at(
+) -> Result<Option<Record>, CodecError> {
+    let Some((curve, end)) = crate::topology::intersection_data_curve_at(
         stream,
         offset,
         intersection_schema_anchor_seen,
-    )?;
+    ) else { return Ok(None); };
     let mut references = curve
         .header_references
         .map(crate::framing::xmt_reference::XmtTarget::to_wire)
@@ -2999,15 +3077,8 @@ fn consume_intersection_data(
             .references
             .map(crate::framing::xmt_reference::XmtTarget::to_wire),
     );
-    Some(Record {
-        family: RecordFamily::IntersectionData {
-            references: references.try_into().ok()?,
-        },
-        xmt: curve.xmt,
-        canonical_bytes: stream.get(offset..end)?.to_vec(),
-        offset,
-        end,
-    })
+    let Ok(references) = references.try_into() else { return Ok(None); };
+    admitted_record(ctx, stream, offset, end, RecordFamily::IntersectionData { references }, curve.xmt)
 }
 
 // Names follow the ordered source slots in this fixed-width lane.
@@ -3057,15 +3128,9 @@ fn consume_intersection_auxiliary(
     }))
 }
 
-fn consume_nurbs_auxiliary(stream: &[u8], offset: usize) -> Option<Record> {
-    let auxiliary = crate::nurbs::auxiliary_record_at(stream, offset)?;
-    Some(Record {
-        family: auxiliary.family,
-        xmt: auxiliary.xmt,
-        canonical_bytes: stream.get(offset..auxiliary.end)?.to_vec(),
-        offset,
-        end: auxiliary.end,
-    })
+fn consume_nurbs_auxiliary(ctx: &DecodeContext<'_>, stream: &[u8], offset: usize) -> Result<Option<Record>, CodecError> {
+    let Some(auxiliary) = crate::nurbs::auxiliary_record_at(stream, offset) else { return Ok(None); };
+    admitted_record(ctx, stream, offset, auxiliary.end, auxiliary.family, auxiliary.xmt)
 }
 
 fn compact_tombstone(stream: &[u8], offset: usize) -> Option<u32> {
@@ -3176,7 +3241,9 @@ mod type_67_record_tests {
         let record_end = bytes.len();
         bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
 
-        let parsed = consume_type_67(&bytes, 0).expect("complete current-record grammar");
+        let parsed = crate::test_support::with_decode_context(|ctx| consume_type_67(ctx, &bytes, 0))
+            .expect("resource limit admits test record")
+            .expect("complete current-record grammar");
 
         assert_eq!(parsed.end, record_end);
         assert_eq!(parsed.canonical_bytes, bytes[..record_end]);
@@ -3205,17 +3272,23 @@ mod type_67_record_tests {
     fn rejects_incomplete_or_noncanonical_type_67_records() {
         let bytes = record(true);
         for end in 0..bytes.len() {
-            assert!(consume_type_67(&bytes[..end], 0).is_none());
+            assert!(crate::test_support::with_decode_context(|ctx| consume_type_67(ctx, &bytes[..end], 0))
+                .expect("resource limit admits test prefix")
+                .is_none());
         }
 
         let mut invalid_status = bytes.clone();
         invalid_status[11] = 0;
-        assert!(consume_type_67(&invalid_status, 0).is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| consume_type_67(ctx, &invalid_status, 0))
+            .expect("resource limit admits invalid test record")
+            .is_none());
 
         let mut subnormal_value = bytes;
         let value_at = subnormal_value.len() - 32;
         subnormal_value[value_at..value_at + 8].copy_from_slice(&1u64.to_be_bytes());
-        assert!(consume_type_67(&subnormal_value, 0).is_none());
+        assert!(crate::test_support::with_decode_context(|ctx| consume_type_67(ctx, &subnormal_value, 0))
+            .expect("resource limit admits invalid test record")
+            .is_none());
     }
 }
 
@@ -3232,7 +3305,9 @@ mod type_45_record_tests {
         let record_end = bytes.len();
         bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
 
-        let parsed = consume_type_45(&bytes, 0).expect("complete declared value lane");
+        let parsed = crate::test_support::with_decode_context(|ctx| consume_type_45(ctx, &bytes, 0))
+            .expect("resource limit admits test record")
+            .expect("complete declared value lane");
 
         assert_eq!(parsed.end, record_end);
         assert_eq!(parsed.canonical_bytes, bytes[..record_end]);
