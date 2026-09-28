@@ -8922,7 +8922,7 @@ impl CatiaNative {
         refusal: &mut crate::nurbs::LaneRefusals,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let consolidated_records =
-            crate::wire::records::consolidated_records_in_sources(bytes, sources.iter().cloned());
+            crate::wire::records::consolidated_records_in_sources(ctx, bytes, sources.iter().cloned())?;
         Self::decode_with_records(ctx, bytes, &consolidated_records, refusal)
     }
 

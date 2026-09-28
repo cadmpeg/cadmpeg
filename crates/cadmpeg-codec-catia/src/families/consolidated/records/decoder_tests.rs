@@ -78,13 +78,14 @@ fn object_stream_vertex_ranges_rows_and_points_refuse_limits() {
     for value in [1.0_f32, 2.0, 3.0] {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
+    let records = crate::wire::records::consolidated_records(&bytes);
     for (limit, operation) in [
         (0, "catia_object_stream_frame_ranges"),
         (1, "catia_object_stream_vertex_rows"),
         (2, "catia_object_stream_vertices"),
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
-            crate::families::consolidated::records::object_stream_vertices(ctx, &bytes)
+            super::object_stream_vertices_from_records(ctx, &bytes, &records)
         });
         assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
             if error.operation == operation), "limit {limit}");
