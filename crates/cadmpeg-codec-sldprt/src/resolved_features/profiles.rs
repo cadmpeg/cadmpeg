@@ -1846,11 +1846,12 @@ pub(crate) fn project_marker_backed_sketches(
                 QUANTUM,
             )?;
             resolve_slot_marker_arcs(
+                ctx,
                 &lane.native_payload,
                 &object_markers,
                 &mut projected,
                 QUANTUM,
-            );
+            )?;
             resolve_connected_marker_arcs(&mut projected, QUANTUM);
             let Ok(profiles) =
                 cadmpeg_ir::sketches::SketchProfiles::try_from(closed_marker_profiles(&projected))

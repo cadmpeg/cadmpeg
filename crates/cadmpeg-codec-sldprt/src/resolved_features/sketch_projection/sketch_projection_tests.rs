@@ -3,6 +3,8 @@
 use super::super::curves::{resolve_connected_marker_arcs, resolve_slot_marker_arcs};
 use super::super::LEGACY_EXTENDED_SKETCH_MARKER;
 use crate::records::{SketchInputEntity, SketchInputKind};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
@@ -49,8 +51,7 @@ fn indexed_arc_uses_its_consecutive_middle_point_as_center() {
     );
 }
 
-#[test]
-fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
+fn slot_cycle_fixture() -> (Vec<u8>, [SketchInputEntity; 11], Vec<cadmpeg_ir::sketches::SketchEntity>) {
     let slot_offset = 500;
     let mut payload = vec![0; slot_offset + 140];
     let declaration = b"\xff\xff\x01\x00\x08\x00sgSlot_c\0\0\0\0\x01\0\0\0";
@@ -121,7 +122,6 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         input("left", 230, SketchInputKind::Arc, None),
         input("slot", slot_offset as u64, SketchInputKind::Point, None),
     ];
-    let markers = inputs.iter().collect::<Vec<_>>();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let point = |id: &str, position| {
         cadmpeg_ir::sketches::SketchEntity::new(
@@ -140,7 +140,7 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         .with_native_ref(Some(id.into()))
         .with_endpoint_refs(endpoint_refs.iter().map(|id| (*id).into()).collect())
     };
-    let mut entities = vec![
+    let entities = vec![
         point("center-left", Point2::new(0.0, 0.0)),
         point("center-right", Point2::new(2.0, 0.0)),
         point("left-top", Point2::new(0.0, 1.0)),
@@ -187,7 +187,59 @@ fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
         ),
     ];
 
-    resolve_slot_marker_arcs(&payload, &markers, &mut entities, 1.0e-9);
+    (payload, inputs, entities)
+}
+
+#[test]
+fn slot_cycle_refuses_collection_limit() {
+    let (payload, inputs, mut entities) = slot_cycle_fixture();
+    let markers = inputs.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = resolve_slot_marker_arcs(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "collect SLDPRT slot curves"));
+}
+
+#[test]
+fn slot_cycle_refuses_work_limit() {
+    let (payload, inputs, mut entities) = slot_cycle_fixture();
+    let markers = inputs.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = resolve_slot_marker_arcs(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "sort SLDPRT slot curves"));
+}
+
+#[test]
+fn slot_cycle_refuses_retained_limit() {
+    let (payload, inputs, mut entities) = slot_cycle_fixture();
+    let markers = inputs.iter().collect::<Vec<_>>();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = resolve_slot_marker_arcs(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "copy SLDPRT slot endpoint identity"));
+}
+
+#[test]
+fn slot_cycle_supplies_the_missing_cap_endpoints_and_center() {
+    let (payload, inputs, mut entities) = slot_cycle_fixture();
+    let markers = inputs.iter().collect::<Vec<_>>();
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
+    resolve_slot_marker_arcs(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap();
 
     assert_eq!(
         entities[9].endpoint_refs,
