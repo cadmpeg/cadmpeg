@@ -125,8 +125,14 @@ impl ChartSamples {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn points(&self) -> Vec<Point3> {
         self.samples.iter().map(|sample| sample.0.get()).collect()
+    }
+    pub(crate) fn points_charged(&self, ctx: &DecodeContext<'_>) -> Result<Vec<Point3>, CodecError> {
+        let mut points = charged_vec(ctx, self.samples.len(), "NX chart points")?;
+        points.extend(self.samples.iter().map(|sample| sample.0.get()));
+        Ok(points)
     }
     pub(crate) fn iter_points(&self) -> impl DoubleEndedIterator<Item = Point3> + '_ {
         self.samples.iter().map(|sample| sample.0.get())
@@ -134,8 +140,14 @@ impl ChartSamples {
     pub(crate) fn len(&self) -> usize {
         self.samples.len()
     }
+    #[cfg(test)]
     pub(crate) fn parameters(&self) -> Vec<f64> {
         self.samples.iter().map(|sample| sample.1.get()).collect()
+    }
+    pub(crate) fn parameters_charged(&self, ctx: &DecodeContext<'_>) -> Result<Vec<f64>, CodecError> {
+        let mut parameters = charged_vec(ctx, self.samples.len(), "NX chart parameters")?;
+        parameters.extend(self.samples.iter().map(|sample| sample.1.get()));
+        Ok(parameters)
     }
 
     pub(crate) fn endpoints(&self) -> [Point3; 2] {
@@ -464,7 +476,37 @@ impl SourceChartData {
 #[cfg(test)]
 mod tests {
     use super::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn chart_point_projection_refuses_collection_limit() {
+        let samples = ChartSamples::from_test_values(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            vec![0.0, 1.0],
+        )
+        .unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(samples.points_charged(&ctx), Err(CodecError::ResourceLimit(_))));
+    }
+
+    #[test]
+    fn chart_parameter_projection_refuses_retained_limit() {
+        let samples = ChartSamples::from_test_values(
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            vec![0.0, 1.0],
+        )
+        .unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 15;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(samples.parameters_charged(&ctx), Err(CodecError::ResourceLimit(_))));
+    }
 
     #[test]
     fn chart_preamble_retains_finite_parameter_scale_and_angle() {
