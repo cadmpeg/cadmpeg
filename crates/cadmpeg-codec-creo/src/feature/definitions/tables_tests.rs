@@ -8,16 +8,16 @@ use crate::feature::definitions::depdb_definitions;
 use crate::feature::definitions::dimension_table as parse_dimension_table;
 use crate::feature::definitions::entity_intersection;
 use crate::feature::definitions::equation_table;
-use crate::feature::definitions::feature_relation_triples;
-use crate::feature::definitions::feature_skamps;
+use crate::feature::definitions::feature_relation_triples as parse_feature_relation_triples;
+use crate::feature::definitions::feature_skamps as parse_feature_skamps;
 use crate::feature::definitions::named_solver_table_header;
 use crate::feature::definitions::order_table as parse_order_table;
 use crate::feature::definitions::positional_dimension as parse_positional_dimension;
 use crate::feature::definitions::positional_dimension_table as parse_positional_dimension_table;
-use crate::feature::definitions::positional_feature_skamps;
+use crate::feature::definitions::positional_feature_skamps as parse_positional_feature_skamps;
 use crate::feature::definitions::positional_order_table as parse_positional_order_table;
 use crate::feature::definitions::positional_relation_table as parse_positional_relation_table;
-use crate::feature::definitions::positional_relation_triples;
+use crate::feature::definitions::positional_relation_triples as parse_positional_relation_triples;
 use crate::feature::definitions::positional_section_3d as parse_positional_section_3d;
 use crate::feature::definitions::positional_trim_entity_table as parse_positional_trim_entity_table;
 use crate::feature::definitions::positional_trim_vertex_table as parse_positional_trim_vertex_table;
@@ -267,6 +267,26 @@ fn positional_section_3d(
         parse_positional_section_3d(ctx, payload, start, end)
     })
     .expect("positional section admitted")
+}
+
+fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<crate::feature::definitions::FeatureSkamp> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_feature_skamps(ctx, payload, start, end))
+        .expect("skamps admitted")
+}
+
+fn positional_feature_skamps(payload: &[u8], start: usize, end: usize, table_class: u32) -> Vec<crate::feature::definitions::FeatureSkamp> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_positional_feature_skamps(ctx, payload, start, end, table_class))
+        .expect("positional skamps admitted")
+}
+
+fn feature_relation_triples(payload: &[u8], start: usize, end: usize) -> Vec<crate::feature::definitions::FeatureRelationTriple> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_feature_relation_triples(ctx, payload, start, end))
+        .expect("triples admitted")
+}
+
+fn positional_relation_triples(payload: &[u8], start: usize, end: usize, table_class: u32) -> Vec<crate::feature::definitions::FeatureRelationTriple> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_positional_relation_triples(ctx, payload, start, end, table_class))
+        .expect("positional triples admitted")
 }
 
 fn relation_table(
@@ -1520,6 +1540,91 @@ fn positional_solver_tables_retain_complete_prefix_rows() {
     let rows = positional_relation_triples(triples, 0, triples.len(), 100);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].relation_id, Some(1));
+}
+
+#[test]
+fn positional_skamp_items_refuse_before_vec_growth() {
+    let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    assert!(matches!(parse_positional_feature_skamps(&ctx, payload, 0, payload.len(), 88),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo skamp items"));
+}
+
+#[test]
+fn positional_skamp_rows_refuse_before_vec_growth() {
+    let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    assert!(matches!(parse_positional_feature_skamps(&ctx, payload, 0, payload.len(), 88),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo skamp rows"));
+    assert_eq!(positional_feature_skamps(payload, 0, payload.len(), 88).len(), 1);
+}
+
+#[test]
+fn named_skamp_prototype_items_refuse_before_vec_growth() {
+    let payload = b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
+            \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+            \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+            \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+            \xf3\xf7\x6b\xe2";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    assert!(matches!(parse_feature_skamps(&ctx, payload, 0, payload.len()),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo skamp prototype items"));
+}
+
+#[test]
+fn named_skamp_rows_refuse_before_vec_growth() {
+    let payload = b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
+            \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+            \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+            \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+            \xf3\xf7\x6b\xe2";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    assert!(matches!(parse_feature_skamps(&ctx, payload, 0, payload.len()),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo skamp rows"));
+}
+
+#[test]
+fn named_relation_triples_refuse_before_vec_growth() {
+    let payload = b"triples_ptr\0\xf4\x04\xf8\x01\xf7\x6d\xfb\xe2\
+            \xe0\x01rel_id\0\x07\xe0\x01eqn_id\0\x08\
+            \xe0\x01skamp_id\0\x05\xf1\xf7\x6d\xe2";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    assert!(matches!(parse_feature_relation_triples(&ctx, payload, 0, payload.len()),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo relation triples"));
+}
+
+#[test]
+fn positional_relation_triples_refuse_before_vec_growth() {
+    let payload = b"\xf8\x01\xf7\x64\xfb\xe2\xf7\x65\x01\xf6\x04";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    assert!(matches!(parse_positional_relation_triples(&ctx, payload, 0, payload.len(), 100),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo relation triples"));
 }
 
 #[test]
