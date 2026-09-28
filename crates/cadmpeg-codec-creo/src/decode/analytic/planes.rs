@@ -405,11 +405,14 @@ pub(in crate::decode) fn canonical_plane(plane: PlaneEquation) -> Option<PlaneEq
 }
 
 pub(super) fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation> {
-    let mut planes = candidates.iter().copied().map(canonical_plane);
-    let first = planes.next()??;
+    agreed_plane_iter(candidates.iter().copied())
+}
+
+fn agreed_plane_iter(mut planes: impl Iterator<Item = PlaneEquation>) -> Option<PlaneEquation> {
+    let first = canonical_plane(planes.next()?)?;
     let first_distance = dot(first.normal, first.origin);
     planes
-        .all(|plane| plane.is_some_and(|plane| {
+        .all(|plane| canonical_plane(plane).is_some_and(|plane| {
             let distance = dot(plane.normal, plane.origin);
             let scale = first_distance.abs().max(distance.abs()).max(1.0);
             first
@@ -480,13 +483,8 @@ struct PlaneChart {
 }
 
 fn agreed_plane_surface(candidates: &[PlaneCandidate]) -> Option<(PlaneEquation, [f64; 3], usize)> {
-    agreed_plane(
-        &candidates
-            .iter()
-            .map(|candidate| candidate.equation)
-            .collect::<Vec<_>>(),
-    )?;
-    let charts = candidates
+    agreed_plane_iter(candidates.iter().map(|candidate| candidate.equation))?;
+    let mut charts = candidates
         .iter()
         .filter_map(|candidate| {
             let chart = candidate.chart?;
@@ -498,11 +496,9 @@ fn agreed_plane_surface(candidates: &[PlaneCandidate]) -> Option<(PlaneEquation,
                 u_axis,
                 candidate.offset,
             ))
-        })
-        .collect::<Vec<_>>();
-    let representative = charts.iter().min_by_key(|(_, _, _, offset)| *offset)?;
+        });
+    let representative = charts.clone().min_by_key(|(_, _, _, offset)| *offset)?;
     charts
-        .iter()
         .all(|(origin, normal, u_axis, _)| {
             representative.0.iter().zip(origin).all(|(left, right)| {
                 (left - right).abs() <= EPS_AGREE * left.abs().max(right.abs()).max(1.0)
@@ -1369,23 +1365,20 @@ fn unique_round_edge_origin_candidate(
     candidates: &[PlaneCandidate],
     envelopes: &[crate::surface::Type24RoundEdgeEnvelope],
 ) -> Option<PlaneCandidate> {
-    let scores = candidates
-        .iter()
-        .copied()
-        .map(|candidate| {
-            (
-                candidate,
-                round_edge_endpoint_plane_score(candidate, envelopes),
-            )
-        })
-        .collect::<Vec<_>>();
-    let maximum = scores.iter().map(|(_, score)| *score).max()?;
-    (maximum > 0).then_some(())?;
-    let mut best = scores
-        .into_iter()
-        .filter_map(|(candidate, score)| (score == maximum).then_some(candidate));
-    let candidate = best.next()?;
-    best.next().is_none().then_some(candidate)
+    let mut best = None;
+    let mut maximum = 0;
+    let mut tied = false;
+    for candidate in candidates.iter().copied() {
+        let score = round_edge_endpoint_plane_score(candidate, envelopes);
+        if score > maximum {
+            maximum = score;
+            best = Some(candidate);
+            tied = false;
+        } else if score == maximum && score > 0 {
+            tied = true;
+        }
+    }
+    if maximum > 0 && !tied { best } else { None }
 }
 
 fn round_edge_envelopes_for_plane(
@@ -1744,12 +1737,7 @@ pub(in crate::decode) fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, Pl
     plane_candidates(scan)
         .into_iter()
         .filter_map(|(id, candidates)| {
-            agreed_plane(
-                &candidates
-                    .iter()
-                    .map(|candidate| candidate.equation)
-                    .collect::<Vec<_>>(),
-            )
+            agreed_plane_iter(candidates.iter().map(|candidate| candidate.equation))
             .map(|plane| (id, plane))
         })
         .collect()
