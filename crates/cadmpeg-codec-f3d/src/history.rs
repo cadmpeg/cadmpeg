@@ -2672,9 +2672,11 @@ pub(crate) fn bind_feature_face_selections(
     histories: &[AsmHistory],
 ) {
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
+        let native_ref = feature.native_ref.as_deref();
+        let feature_id = &feature.id;
+        feature.evaluation.edit(|definition, _| {
         'feature_edit: {
-            let Some(native_ref) = feature.native_ref.as_deref() else {
+            let Some(native_ref) = native_ref else {
                 break 'feature_edit;
             };
             let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
@@ -2706,8 +2708,7 @@ pub(crate) fn bind_feature_face_selections(
             let Some(_topology) = previous.topology() else {
                 break 'feature_edit;
             };
-            let feature_id = feature.id.clone();
-            match &mut definition {
+            match definition {
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Extrude { start, extent, .. },
                 ) => {
@@ -2849,7 +2850,7 @@ pub(crate) fn bind_feature_face_selections(
                 _ => {}
             }
         }
-        feature.evaluation.set_definition(definition);
+        });
     }
 }
 
@@ -3132,9 +3133,11 @@ pub(crate) fn bind_feature_path_selections(
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, SurfaceBoundary};
 
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
+        let native_ref = feature.native_ref.as_deref();
+        let feature_id = &feature.id;
+        feature.evaluation.edit(|definition, _| {
         'feature_edit: {
-            let Some(native_ref) = feature.native_ref.as_deref() else {
+            let Some(native_ref) = native_ref else {
                 break 'feature_edit;
             };
             let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
@@ -3147,8 +3150,7 @@ pub(crate) fn bind_feature_path_selections(
             let Some(previous_state_id) = scope.previous_history_state_id() else {
                 break 'feature_edit;
             };
-            let feature_id = feature.id.clone();
-            match &mut definition {
+            match definition {
                 FeatureDefinition::Operation(FeatureOperation::FilledSurface {
                     boundary: SurfaceBoundary::Path(path),
                     ..
@@ -3205,7 +3207,7 @@ pub(crate) fn bind_feature_path_selections(
                 _ => {}
             }
         }
-        feature.evaluation.set_definition(definition);
+        });
     }
 }
 
