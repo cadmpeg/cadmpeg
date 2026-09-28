@@ -8760,7 +8760,10 @@ fn resolve_fixed_mesh_endpoint_pairs(
     let mut assignment_domains = Vec::new();
     crate::resource::reserve_vec(ctx, &mut assignment_domains, selected.len(), "catia_fixed_assignment_domain_rows")?;
     for assignment in selected {
-        assignment_domains.push(ctx.alloc_filled(1, copy_mesh_assignment(ctx, assignment)?, "catia_fixed_assignment_domain_entries")?);
+        let mut domain = Vec::new();
+        crate::resource::push(ctx, &mut domain, copy_mesh_assignment(ctx, assignment)?,
+            "catia_fixed_assignment_domain_entries")?;
+        assignment_domains.push(domain);
     }
     if edge_candidates
         .iter()
