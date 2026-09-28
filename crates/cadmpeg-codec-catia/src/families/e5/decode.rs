@@ -354,7 +354,9 @@ pub(in crate::families) fn try_decode_e5(
             "E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.",
         )]
         };
-        insert_unresolved_carrier_loss(&ir, &mut losses);
+        if let Err(error) = insert_unresolved_carrier_loss(ctx, &ir, &mut losses) {
+            return Some(Err(error));
+        }
         if let Err(error) = link_payload_carriers(ctx, &ir, &mut unknowns[payload_index], &mut annotations) {
             return Some(Err(error));
         }
