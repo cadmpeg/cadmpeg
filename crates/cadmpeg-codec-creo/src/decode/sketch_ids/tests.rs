@@ -40,10 +40,10 @@ fn owning_definition_lookup_keeps_unique_owner_rule() {
         owner_feature_id: Some(40),
     };
     scan.features.definitions.push(owned.clone());
-    assert_eq!(owning_feature_definition_ref(&scan, 40).as_deref(),
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| owning_feature_definition_ref(ctx, &scan, 40)).expect("ID admitted").as_deref(),
         Some("creo:featdefs:feature_definition#17"));
     scan.features.definitions.push(owned);
-    assert_eq!(owning_feature_definition_ref(&scan, 40), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| owning_feature_definition_ref(ctx, &scan, 40)).expect("lookup admitted"), None);
 }
 
 fn bucket() -> FeatureTrimBucket {

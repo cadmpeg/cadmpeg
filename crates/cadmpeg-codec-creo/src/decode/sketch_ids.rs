@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch native identity, table headers, and feature-definition record ids.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FeatureId as IrFeatureId;
 use cadmpeg_ir::ids::{CurveId, IdentityKey};
 use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
@@ -185,9 +187,10 @@ pub(super) fn binary_flag_value(flag: crate::feature::definitions::BinaryFlag) -
 }
 
 pub(super) fn feature_definition_record_id(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> String {
+) -> Result<String, CodecError> {
     if scan
         .features
         .definitions
@@ -198,14 +201,14 @@ pub(super) fn feature_definition_record_id(
         || (definition.identity.schema_id().is_none()
             && definition.identity.owner_feature_id().is_none())
     {
-        format!(
-            "creo:featdefs:feature_definition#offset:{}",
-            definition.offset
+        ctx.format_retained(
+            format_args!("creo:featdefs:feature_definition#offset:{}", definition.offset),
+            "creo feature definition record id",
         )
     } else {
-        format!(
-            "creo:featdefs:feature_definition#{}",
-            definition.identity.id()
+        ctx.format_retained(
+            format_args!("creo:featdefs:feature_definition#{}", definition.identity.id()),
+            "creo feature definition record id",
         )
     }
 }
@@ -323,15 +326,18 @@ pub(super) fn section_owner_feature_id(
 }
 
 pub(super) fn owning_feature_definition_ref(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     feature_id: u32,
-) -> Option<String> {
-    let definition = exactly_one(scan
+) -> Result<Option<String>, CodecError> {
+    let Some(definition) = exactly_one(scan
         .features
         .definitions
         .iter()
-        .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id)))?;
-    Some(feature_definition_record_id(scan, definition))
+        .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))) else {
+        return Ok(None);
+    };
+    feature_definition_record_id(ctx, scan, definition).map(Some)
 }
 
 #[cfg(test)]

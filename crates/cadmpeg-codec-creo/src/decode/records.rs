@@ -81,14 +81,14 @@ pub(super) struct CreoSketchRecord {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureDefinitionRecord {
+pub(super) struct CreoFeatureDefinitionRecord<'a> {
     pub(super) id: String,
     definition_id: u32,
     owner_feature_id: Option<u32>,
-    pub(super) source_section: String,
-    body: Vec<u8>,
-    parameter_frames: Vec<CreoFeatureParameterFrame>,
-    outlines: Vec<CreoFeatureOutline>,
+    pub(super) source_section: &'a str,
+    body: &'a [u8],
+    parameter_frames: Vec<CreoFeatureParameterFrame<'a>>,
+    outlines: Vec<CreoFeatureOutline<'a>>,
     pub(super) offset: usize,
 }
 
@@ -4147,60 +4147,132 @@ pub(super) fn sketch_section_point_records(
         , "creo sketch section point records")
 }
 
-pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatureDefinitionRecord> {
-    scan.features
-        .definitions
-        .iter()
-        .map(|definition| CreoFeatureDefinitionRecord {
-            id: feature_definition_record_id(scan, definition),
+pub(super) fn feature_definition_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureDefinitionRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for definition in &scan.features.definitions {
+        let id = feature_definition_record_id(ctx, scan, definition)?;
+        let mut parameter_frames = Vec::new();
+        for frame in &definition.parameter_frames {
+            ctx.try_reserve_items(&mut parameter_frames, 1, "creo native feature parameter frames")?;
+            parameter_frames.push(CreoFeatureParameterFrame {
+                kind: match frame.kind {
+                    crate::feature::definitions::FeatureParameterFrameKind::LocalSystem => "local_system",
+                    crate::feature::definitions::FeatureParameterFrameKind::Transform => "transform",
+                },
+                body: &frame.body,
+                decoded_values: frame.decoded_values.map(cadmpeg_ir::units::FiniteVector::get),
+                offset: frame.offset,
+            });
+        }
+        let mut outlines = Vec::new();
+        for outline in &definition.outlines {
+            ctx.try_reserve_items(&mut outlines, 1, "creo native feature outlines")?;
+            outlines.push(CreoFeatureOutline {
+                phase: match outline.phase {
+                    crate::feature::definitions::OutlinePhase::PreRollback => "pre_rollback",
+                    crate::feature::definitions::OutlinePhase::PostRollback => "post_rollback",
+                    crate::feature::definitions::OutlinePhase::PostRegen => "post_regen",
+                },
+                local_values: &outline.local_scalars,
+                local_value_bodies: &outline.local_scalars,
+                offset: outline.offset,
+            });
+        }
+        ctx.try_reserve_items(&mut records, 1, "creo native feature definition records")?;
+        records.push(CreoFeatureDefinitionRecord {
+            id,
             definition_id: definition.identity.id(),
             owner_feature_id: definition.identity.owner_feature_id(),
-            source_section: source_section(scan, definition.offset),
-            body: definition.body.clone(),
-            parameter_frames: definition
-                .parameter_frames
-                .iter()
-                .map(|frame| CreoFeatureParameterFrame {
-                    kind: match frame.kind {
-                        crate::feature::definitions::FeatureParameterFrameKind::LocalSystem => {
-                            "local_system"
-                        }
-                        crate::feature::definitions::FeatureParameterFrameKind::Transform => {
-                            "transform"
-                        }
-                    },
-                    body: frame.body.clone(),
-                    decoded_values: frame
-                        .decoded_values
-                        .map(cadmpeg_ir::units::FiniteVector::get),
-                    offset: frame.offset,
-                })
-                .collect(),
-            outlines: definition
-                .outlines
-                .iter()
-                .map(|outline| CreoFeatureOutline {
-                    phase: match outline.phase {
-                        crate::feature::definitions::OutlinePhase::PreRollback => "pre_rollback",
-                        crate::feature::definitions::OutlinePhase::PostRollback => "post_rollback",
-                        crate::feature::definitions::OutlinePhase::PostRegen => "post_regen",
-                    },
-                    local_values: outline
-                        .local_scalars
-                        .iter()
-                        .map(|field| field.value)
-                        .collect(),
-                    local_value_bodies: outline
-                        .local_scalars
-                        .iter()
-                        .map(|field| field.body.clone())
-                        .collect(),
-                    offset: outline.offset,
-                })
-                .collect(),
+            source_section: source_section_ref(scan, definition.offset),
+            body: &definition.body,
+            parameter_frames,
+            outlines,
             offset: definition.offset,
-        })
-        .collect()
+        });
+    }
+    Ok(records)
+}
+
+#[cfg(test)]
+mod feature_definition_projection_limit_tests {
+    use super::feature_definition_records;
+    use crate::feature::definitions::{
+        DecodedField, DefinitionIdentity, FeatureDefinition, FeatureOutline,
+        FeatureParameterFrame, FeatureParameterFrameKind, OutlinePhase,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let mut local_scalars = std::array::from_fn(|_| DecodedField { value: None, body: Vec::new() });
+        local_scalars[0] = DecodedField { value: Some(2.0), body: vec![0xf9] };
+        scan.features.definitions.push(FeatureDefinition {
+            identity: DefinitionIdentity::Parsed { schema_id: std::num::NonZeroU32::new(7), owner_feature_id: Some(3) },
+            body: vec![0xe3],
+            parameter_frames: vec![FeatureParameterFrame {
+                kind: FeatureParameterFrameKind::Transform, body: vec![0xf9],
+                decoded_values: None, offset: 4,
+            }],
+            outlines: vec![FeatureOutline { phase: OutlinePhase::PostRegen, local_scalars, offset: 5 }],
+            variables: None, segments: None, trim_entities: None, trim_vertices: None,
+            order_table: None, section_3d: None, dimensions: None, relations: None,
+            saved_section: None, offset: 3,
+        });
+        scan
+    }
+
+    #[test]
+    fn feature_definition_id_refuses_retained_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let error = match feature_definition_records(&ctx, &scan) {
+            Err(error) => error, Ok(_) => panic!("native ID exceeds retained limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo feature definition record id"), "{error:?}");
+    }
+
+    #[test]
+    fn feature_definition_nested_rows_refuse_collection_limit() {
+        let scan = scan();
+        for (limit, operation) in [
+            (0, "creo native feature parameter frames"),
+            (1, "creo native feature outlines"),
+            (2, "creo native feature definition records"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+            let error = match feature_definition_records(&ctx, &scan) {
+                Err(error) => error, Ok(_) => panic!("one more projection row exceeds the collection limit"),
+            };
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::CollectionItems
+                    && resource.operation == operation), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn borrowed_feature_definition_preserves_nested_json() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
+        let records = feature_definition_records(&ctx, &scan).expect("definition is admitted");
+        let value = serde_json::to_value(&records[0]).expect("record serializes");
+        assert_eq!(value["body"], serde_json::json!([227]));
+        assert_eq!(value["parameter_frames"][0]["body"], serde_json::json!([249]));
+        assert_eq!(value["outlines"][0]["local_values"], serde_json::json!([2.0,null,null,null,null,null]));
+        assert_eq!(value["outlines"][0]["local_value_bodies"], serde_json::json!([[249],[],[],[],[],[]]));
+    }
 }
 
 pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTableRecord> {

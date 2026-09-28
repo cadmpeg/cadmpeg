@@ -364,7 +364,7 @@ pub(super) fn emit_model_features(
         let source_tag = current_feature_recipe(&scan.features.operations, operation.feature_id)
             .map(|recipe| ctx.copy_retained_text(recipe.name(), "creo Feature source tag"))
             .transpose()?;
-        let native_ref = owning_feature_definition_ref(scan, operation.feature_id);
+        let native_ref = owning_feature_definition_ref(ctx, scan, operation.feature_id)?;
         if let Some(existing) = ir
             .model
             .features
@@ -568,7 +568,7 @@ pub(super) fn emit_model_features(
                 )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
-            native_ref: owning_feature_definition_ref(scan, feature_id),
+            native_ref: owning_feature_definition_ref(ctx, scan, feature_id)?,
         };
         source_carriers.admit_feature(ctx, ir, feature)?;
         refresh_feature_outputs(ctx, scan, ir)?;
