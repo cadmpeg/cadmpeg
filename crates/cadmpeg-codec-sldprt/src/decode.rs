@@ -4935,7 +4935,7 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
     let (Some(active_name), Some(active_index)) = (active_name, active_index) else {
         return None;
     };
-    let matches = ir
+    let mut matches = ir
         .model
         .configurations
         .iter()
@@ -4944,14 +4944,14 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
             configuration.source_index.is_none()
                 && configuration.name.as_deref() == Some(active_name.as_str())
         })
-        .map(|(position, _)| position)
-        .collect::<Vec<_>>();
+        .map(|(position, _)| position);
+    let position = matches.next()?;
     let source_identity_available = !ir
         .model
         .configurations
         .iter()
         .any(|configuration| configuration.source_index == Some(active_index));
-    if matches.len() != 1 || !source_identity_available {
+    if matches.next().is_some() || !source_identity_available {
         return None;
     }
 
@@ -4959,7 +4959,6 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
     // establish the partition identity even when that block yielded no
     // decoded body list. Body membership remains unresolved until a decoded
     // partition supplies its body identities.
-    let position = matches[0];
     ir.model.configurations[position].source_index = Some(active_index);
     Some((active_index, position))
 }
