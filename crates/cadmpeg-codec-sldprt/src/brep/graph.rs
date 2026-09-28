@@ -1189,6 +1189,42 @@ fn selected_typed_face_offsets(
     Ok(offsets)
 }
 
+fn append_entity_facts(
+    ctx: &DecodeContext<'_>,
+    target: &mut entity::Facts,
+    mut source: entity::Facts,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.reserve_precharged_vec(
+        &mut target.face_colors,
+        source.face_colors.len(),
+        "merge Parasolid face colors",
+    )?;
+    target.face_colors.append(&mut source.face_colors);
+    ctx.reserve_precharged_vec(
+        &mut target.face_color_versions,
+        source.face_color_versions.len(),
+        "merge Parasolid face color versions",
+    )?;
+    target
+        .face_color_versions
+        .append(&mut source.face_color_versions);
+    ctx.reserve_precharged_vec(
+        &mut target.face_atoms,
+        source.face_atoms.len(),
+        "merge Parasolid face atoms",
+    )?;
+    target.face_atoms.append(&mut source.face_atoms);
+    ctx.reserve_precharged_vec(
+        &mut target.body_modifiers,
+        source.body_modifiers.len(),
+        "merge Parasolid body modifiers",
+    )?;
+    target.body_modifiers.append(&mut source.body_modifiers);
+    target.entity_count += source.entity_count;
+    target.unresolved_face_colors += source.unresolved_face_colors;
+    Ok(())
+}
+
 /// Decode related partition and deltas streams as one record source.
 ///
 /// Partition records are the base set. Deltas records fill missing subordinate
@@ -1264,16 +1300,7 @@ pub(crate) fn decode_bodies(
         if !initialized || !is_deltas {
             if initialized {
                 tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs)?;
-                facts.face_colors.append(&mut scanned_facts.face_colors);
-                facts
-                    .face_color_versions
-                    .append(&mut scanned_facts.face_color_versions);
-                facts.face_atoms.append(&mut scanned_facts.face_atoms);
-                facts
-                    .body_modifiers
-                    .append(&mut scanned_facts.body_modifiers);
-                facts.entity_count += scanned_facts.entity_count;
-                facts.unresolved_face_colors += scanned_facts.unresolved_face_colors;
+                append_entity_facts(ctx, &mut facts, scanned_facts)?;
             } else {
                 tables = scanned_tables;
                 facts = scanned_facts;
@@ -1281,16 +1308,7 @@ pub(crate) fn decode_bodies(
             }
         } else {
             tables.merge_deltas(ctx, scanned_tables, selected_bridge_attrs)?;
-            facts.face_colors.append(&mut scanned_facts.face_colors);
-            facts
-                .face_color_versions
-                .append(&mut scanned_facts.face_color_versions);
-            facts.face_atoms.append(&mut scanned_facts.face_atoms);
-            facts
-                .body_modifiers
-                .append(&mut scanned_facts.body_modifiers);
-            facts.entity_count += scanned_facts.entity_count;
-            facts.unresolved_face_colors += scanned_facts.unresolved_face_colors;
+            append_entity_facts(ctx, &mut facts, scanned_facts)?;
         }
     }
     decode_graph(ctx, &carriers, &tables, facts, &typed_facts, stream)
