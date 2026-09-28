@@ -510,43 +510,6 @@ struct BodyRecord {
     regions: Vec<RegionRecord>,
 }
 
-/// How one `.sldprt` B-rep partitions its faces into bodies.
-///
-/// The source states body records, or it states none. `Stated` carries a
-/// non-empty slice; the private mint is the only constructor, so an empty
-/// slice cannot reach it. `Synthetic` carries no record and stands for the one
-/// derived body hierarchy the decoder emits when the source states no body.
-enum BodyGrouping<'a> {
-    /// Body records the source states. Non-empty by the mint.
-    Stated(&'a [BodyRecord]),
-    /// No body record was stated; one body hierarchy is derived.
-    Synthetic,
-}
-
-impl<'a> BodyGrouping<'a> {
-    /// The only constructor. An empty slice is `Synthetic`.
-    fn of(records: &'a [BodyRecord]) -> Self {
-        match records {
-            [] => Self::Synthetic,
-            stated => Self::Stated(stated),
-        }
-    }
-
-    /// True when the grouping is derived, not stated.
-    fn is_synthetic(&self) -> bool {
-        matches!(self, Self::Synthetic)
-    }
-
-    /// One entry per emitted body group, in source order. `Synthetic` yields
-    /// exactly one entry with no record.
-    fn groups(&self) -> Vec<Option<&'a BodyRecord>> {
-        match self {
-            Self::Stated(records) => records.iter().map(Some).collect(),
-            Self::Synthetic => vec![None],
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 struct RegionRecord {
     attr: u16,
@@ -2421,10 +2384,15 @@ fn decode_graph(
             ..Brep::default()
         });
     }
-    let grouping = BodyGrouping::of(&body_records);
-    out.stats.synthetic_body_grouping = grouping.is_synthetic();
+    let synthetic_grouping = body_records.is_empty();
+    out.stats.synthetic_body_grouping = synthetic_grouping;
 
-    for (group, body_record) in grouping.groups().into_iter().enumerate() {
+    for (group, body_record) in body_records
+        .iter()
+        .map(Some)
+        .chain(std::iter::once(None).take(usize::from(synthetic_grouping)))
+        .enumerate()
+    {
         let body_id = BodyId::compose(
             &body_namespace(),
             body_record.map_or(0_u16, |record| record.attr),
