@@ -194,7 +194,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         ..SldprtNative::default()
     };
 
-    assert_eq!(unprojected_sketch_relation_records(&ir, &native), 3);
+    assert_eq!(unprojected_sketch_relation_records(&cadmpeg_test_support::service_decode_context(), &ir, &native).unwrap(), 3);
 
     ir.model.features[0]
         .evaluation
@@ -202,7 +202,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
             role: FeatureTreeNodeRole::History,
             children: cadmpeg_ir::features::TreeChildren::default(),
         }));
-    assert_eq!(unprojected_sketch_relation_records(&ir, &native), 0);
+    assert_eq!(unprojected_sketch_relation_records(&cadmpeg_test_support::service_decode_context(), &ir, &native).unwrap(), 0);
 }
 
 #[test]
@@ -284,7 +284,7 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
         ..SldprtNative::default()
     };
 
-    assert_eq!(multiply_projected_sketch_relation_records(&ir, &native), 1);
+    assert_eq!(multiply_projected_sketch_relation_records(&cadmpeg_test_support::service_decode_context(), &ir, &native).unwrap(), 1);
 }
 
 #[test]
