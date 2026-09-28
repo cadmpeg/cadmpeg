@@ -1995,6 +1995,10 @@ fn decode_graph(
     let mut kept_loops: HashSet<u16> = HashSet::new();
     for f in &faces {
         for (loop_attr, ring) in &f.loops {
+            let work = u64::try_from(ring.len()).map_err(|_| {
+                ctx.refuse_codec_limit("check Parasolid loop ring", u64::MAX - 1, u64::MAX)
+            })?;
+            ctx.charge_work(work, "check Parasolid loop ring")?;
             let ok = !ring.is_empty()
                 && ring.iter().all(|c| {
                     t.coedges()
@@ -2002,16 +2006,23 @@ fn decode_graph(
                         .is_some_and(|ce| edge_set.contains(&ce.refs[6]))
                 });
             if ok {
+                reserve_graph_set_key(ctx, &mut kept_loops, loop_attr, "track kept Parasolid loops")?;
                 kept_loops.insert(*loop_attr);
             }
         }
     }
-    let emitted_coedges: HashSet<u16> = faces
-        .iter()
-        .flat_map(|f| f.loops.iter())
-        .filter(|(la, _)| kept_loops.contains(la))
-        .flat_map(|(_, ring)| ring.iter().copied())
-        .collect();
+    let mut emitted_coedges = HashSet::new();
+    for f in &faces {
+        for (loop_attr, ring) in &f.loops {
+            if kept_loops.contains(loop_attr) {
+                for coedge in ring.iter().copied() {
+                    ctx.charge_work(1, "index emitted Parasolid coedges")?;
+                    reserve_graph_set_key(ctx, &mut emitted_coedges, &coedge, "track emitted Parasolid coedges")?;
+                    emitted_coedges.insert(coedge);
+                }
+            }
+        }
+    }
 
     // Coedges of kept loops: `next`/`prev` from the ring order, partner from a
     // mutual twin that is itself emitted.
@@ -2097,6 +2108,7 @@ fn decode_graph(
                             });
                         annotations.exactness(&id, Exactness::Derived);
                         admit_brep_entity(ctx)?;
+                        ctx.reserve_collection_vec(&mut out.pcurves, 1, "collect intersection Parasolid pcurves")?;
                         out.pcurves.push(Pcurve {
                             id: id.clone(),
                             geometry,
@@ -2142,6 +2154,7 @@ fn decode_graph(
                     };
                 }
                 admit_brep_entity(ctx)?;
+                ctx.reserve_collection_vec(&mut out.coedges, 1, "collect Parasolid coedges")?;
                 out.coedges.push(Coedge {
                     id: id_coedge(ce_attr),
                     owner_loop: id_loop(*loop_attr),
@@ -2161,7 +2174,9 @@ fn decode_graph(
             if !kept_loops.contains(loop_attr) {
                 continue;
             }
-            let coedges: Vec<CoedgeId> = ring.iter().map(|a| id_coedge(*a)).collect();
+            let mut coedges = Vec::new();
+            ctx.reserve_collection_vec(&mut coedges, ring.len(), "collect Parasolid loop coedges")?;
+            coedges.extend(ring.iter().map(|a| id_coedge(*a)));
             let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
             annotations
                 .note(id_loop(*loop_attr), &source_stream, off as u64)
@@ -2170,6 +2185,7 @@ fn decode_graph(
                 continue;
             };
             admit_brep_entity(ctx)?;
+            ctx.reserve_collection_vec(&mut out.loops, 1, "collect Parasolid loops")?;
             out.loops.push(Loop {
                 id: id_loop(*loop_attr),
                 face: id_face(f.bridge_attr),
