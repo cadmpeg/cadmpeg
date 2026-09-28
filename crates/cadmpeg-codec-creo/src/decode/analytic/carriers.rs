@@ -625,30 +625,35 @@ pub(in crate::decode) fn geometry_section_record(
 mod tests;
 
 fn projected_loop_polygon(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     lp: &crate::topology::Loop,
     plane: PlaneEquation,
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
-) -> Option<Vec<[f64; 2]>> {
-    let dropped_axis = (0..3).max_by(|left, right| {
+) -> Result<Option<Vec<[f64; 2]>>, cadmpeg_core::CodecError> {
+    let Some(dropped_axis) = (0..3).max_by(|left, right| {
         plane.normal[*left]
             .abs()
             .total_cmp(&plane.normal[*right].abs())
-    })?;
-    let polygon = lp
-        .half_edges
-        .iter()
-        .map(|half_edge| {
-            let vertex = incidence.get(half_edge)?.start_vertex_id;
-            let point = solved_vertices.get(&vertex)?;
-            Some(match dropped_axis {
+    }) else {
+        return Ok(None);
+    };
+    let mut polygon = Vec::new();
+    for half_edge in &lp.half_edges {
+        let Some(point) = incidence
+            .get(half_edge)
+            .and_then(|binding| solved_vertices.get(&binding.start_vertex_id))
+        else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut polygon, 1, "creo projected loop polygon points")?;
+        polygon.push(match dropped_axis {
                 0 => [point[1], point[2]],
                 1 => [point[0], point[2]],
                 _ => [point[0], point[1]],
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    valid_parameter_polygon(&polygon).then_some(polygon)
+        });
+    }
+    Ok(valid_parameter_polygon(ctx, &polygon)?.then_some(polygon))
 }
 
 fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool {
@@ -726,46 +731,50 @@ fn polygon_strictly_contains_polygon(outer: &[[f64; 2]], inner: &[[f64; 2]]) -> 
         })
 }
 
-fn valid_parameter_polygon(polygon: &[[f64; 2]]) -> bool {
+fn valid_parameter_polygon(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    polygon: &[[f64; 2]],
+) -> Result<bool, cadmpeg_core::CodecError> {
     let Some(origin) = polygon.first() else {
-        return false;
+        return Ok(false);
     };
     if polygon.len() < 3 || polygon.iter().flatten().any(|value| !value.is_finite()) {
-        return false;
+        return Ok(false);
     }
     let scale = polygon
         .iter()
         .flat_map(|point| (0..2).map(|axis| (point[axis] - origin[axis]).abs()))
         .fold(0.0_f64, f64::max);
     if scale == 0.0 || !scale.is_finite() {
-        return false;
+        return Ok(false);
     }
-    let local = polygon
-        .iter()
-        .map(|point| {
-            cadmpeg_ir::math::Point2::new(
-                (point[0] - origin[0]) / scale,
-                (point[1] - origin[1]) / scale,
-            )
-        })
-        .collect::<Vec<_>>();
-    cadmpeg_ir::math::planar::polygon_area_twice(&local)
-        .is_some_and(|area| area.get().abs() > EPS_NEAR_ZERO)
+    let mut local = Vec::new();
+    for point in polygon {
+        ctx.try_reserve_items(&mut local, 1, "creo normalized polygon points")?;
+        local.push(cadmpeg_ir::math::Point2::new(
+            (point[0] - origin[0]) / scale,
+            (point[1] - origin[1]) / scale,
+        ));
+    }
+    Ok(cadmpeg_ir::math::planar::polygon_area_twice(&local)
+        .is_some_and(|area| area.get().abs() > EPS_NEAR_ZERO))
 }
 
 fn ordered_contained_face_loops<'a>(
-    loops: Vec<&'a crate::topology::Loop>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    mut loops: Vec<&'a crate::topology::Loop>,
     polygons: &[Vec<[f64; 2]>],
-) -> Option<Vec<&'a crate::topology::Loop>> {
-    if loops.len() < 2
-        || loops.len() != polygons.len()
-        || polygons
-            .iter()
-            .any(|polygon| !valid_parameter_polygon(polygon))
-    {
-        return None;
+) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
+    if loops.len() < 2 || loops.len() != polygons.len() {
+        return Ok(None);
     }
-    let outer = polygons
+    for polygon in polygons {
+        if !valid_parameter_polygon(ctx, polygon)? {
+            return Ok(None);
+        }
+    }
+    let mut outer = None;
+    for index in polygons
         .iter()
         .enumerate()
         .filter(|(candidate, polygon)| {
@@ -774,45 +783,49 @@ fn ordered_contained_face_loops<'a>(
             })
         })
         .map(|(index, _)| index)
-        .collect::<Vec<_>>();
-    let [outer] = outer.as_slice() else {
-        return None;
+    {
+        if outer.replace(index).is_some() {
+            return Ok(None);
+        }
+    }
+    let Some(outer) = outer else {
+        return Ok(None);
     };
-    let mut ordered = Vec::with_capacity(loops.len());
-    ordered.push(loops[*outer]);
-    ordered.extend(
-        loops
-            .into_iter()
-            .enumerate()
-            .filter_map(|(index, lp)| (index != *outer).then_some(lp)),
-    );
-    Some(ordered)
+    let selected = loops.remove(outer);
+    loops.insert(0, selected);
+    Ok(Some(loops))
 }
 
 pub(in crate::decode) fn ordered_planar_face_loops<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     loops: Vec<&'a crate::topology::Loop>,
     plane: PlaneEquation,
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
-) -> Option<Vec<&'a crate::topology::Loop>> {
+) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
     if loops.len() == 1 {
-        return Some(loops);
+        return Ok(Some(loops));
     }
-    let polygons = loops
-        .iter()
-        .map(|lp| projected_loop_polygon(lp, plane, incidence, solved_vertices))
-        .collect::<Option<Vec<_>>>()?;
-    ordered_contained_face_loops(loops, &polygons)
+    let mut polygons = Vec::new();
+    for lp in &loops {
+        let Some(polygon) = projected_loop_polygon(ctx, lp, plane, incidence, solved_vertices)? else {
+            return Ok(None);
+        };
+        ctx.try_reserve_items(&mut polygons, 1, "creo projected loop polygons")?;
+        polygons.push(polygon);
+    }
+    ordered_contained_face_loops(ctx, loops, &polygons)
 }
 
 pub(in crate::decode) fn ordered_parameter_face_loops<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     loops: Vec<&'a crate::topology::Loop>,
     polygons: &[Vec<[f64; 2]>],
-) -> Option<Vec<&'a crate::topology::Loop>> {
+) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
     if loops.len() == 1 {
-        return Some(loops);
+        return Ok(Some(loops));
     }
-    ordered_contained_face_loops(loops, polygons)
+    ordered_contained_face_loops(ctx, loops, polygons)
 }
 
 fn face_boundary_plane(
@@ -841,7 +854,7 @@ pub(in crate::decode) fn ordered_face_loops<'a>(
         None => face_boundary_plane(ctx, &loops, incidence, solved_vertices)?,
     };
     if let Some(plane) = plane {
-        Ok(ordered_planar_face_loops(loops, plane, incidence, solved_vertices))
+        ordered_planar_face_loops(ctx, loops, plane, incidence, solved_vertices)
     } else {
         Ok((loops.len() == 1).then_some(loops))
     }

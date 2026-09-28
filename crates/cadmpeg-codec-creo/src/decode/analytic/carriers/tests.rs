@@ -614,7 +614,8 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
         .collect::<BTreeMap<_, _>>();
     let solved_vertices = vertices.into_iter().collect::<BTreeMap<_, _>>();
 
-    assert!(super::ordered_planar_face_loops(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::ordered_planar_face_loops(
+        ctx,
         vec![&outer, &inner],
         PlaneEquation {
             origin: [0.0, 0.0, 0.0],
@@ -622,8 +623,85 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
         },
         &incidence,
         &solved_vertices,
-    )
+    ))
+    .expect("service planar loop ordering")
     .is_none());
+}
+
+fn planar_polygon_collection_error(limit: u64, two_loops: bool) -> CodecError {
+    let make_loop = |base: u32| crate::topology::Loop {
+        face_id: std::num::NonZeroU32::new(5),
+        half_edges: (0..3)
+            .map(|index| crate::topology::HalfEdgeId {
+                curve_id: base + index,
+                side: crate::topology::Side::Zero,
+            })
+            .collect(),
+    };
+    let outer = make_loop(10);
+    let inner = make_loop(20);
+    let bindings = outer
+        .half_edges
+        .iter()
+        .copied()
+        .zip(1..=3)
+        .chain(inner.half_edges.iter().copied().zip(4..=6))
+        .map(|(half_edge, start_vertex_id)| crate::topology::HalfEdgeVertexIncidence {
+            half_edge,
+            start_vertex_id,
+            end_vertex_id: None,
+        })
+        .collect::<Vec<_>>();
+    let incidence = bindings
+        .iter()
+        .map(|binding| (binding.half_edge, binding))
+        .collect::<BTreeMap<_, _>>();
+    let solved_vertices = BTreeMap::from([
+        (1, [0.0, 0.0, 0.0]),
+        (2, [4.0, 0.0, 0.0]),
+        (3, [0.0, 4.0, 0.0]),
+        (4, [0.5, 0.5, 0.0]),
+        (5, [1.0, 0.5, 0.0]),
+        (6, [0.5, 1.0, 0.0]),
+    ]);
+    let plane = PlaneEquation {
+        origin: [0.0, 0.0, 0.0],
+        normal: [0.0, 0.0, 1.0],
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let result = if two_loops {
+        super::ordered_planar_face_loops(
+            &ctx,
+            vec![&outer, &inner],
+            plane,
+            &incidence,
+            &solved_vertices,
+        )
+        .map(|_| ())
+    } else {
+        super::projected_loop_polygon(&ctx, &outer, plane, &incidence, &solved_vertices)
+            .map(|_| ())
+    };
+    result.expect_err("polygon collection exceeds limit")
+}
+
+#[test]
+fn projected_loop_polygon_refuses_point_collection() {
+    assert_placed_carrier_refusal(
+        planar_polygon_collection_error(0, false),
+        "creo projected loop polygon points",
+    );
+}
+
+#[test]
+fn ordered_planar_face_loops_refuses_polygon_collection() {
+    assert_placed_carrier_refusal(
+        planar_polygon_collection_error(6, true),
+        "creo projected loop polygons",
+    );
 }
 
 #[test]
@@ -649,21 +727,25 @@ fn parameter_loop_classifier_orders_unique_outer() {
     let outer_polygon = vec![[-2.0, -2.0], [2.0, -2.0], [2.0, 2.0], [-2.0, 2.0]];
     let inner_polygon = vec![[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
 
-    let ordered = super::ordered_parameter_face_loops(
+    let ordered = crate::decode::with_test_decode_ctx(|ctx| super::ordered_parameter_face_loops(
+        ctx,
         vec![&inner, &outer],
         &[inner_polygon.clone(), outer_polygon.clone()],
-    )
+    ))
+    .expect("service parameter loop ordering")
     .expect("one parameter-space outer loop");
     assert_eq!(ordered[0].half_edges[0].curve_id, 10);
     assert_eq!(ordered[1].half_edges[0].curve_id, 20);
 
-    assert!(super::ordered_parameter_face_loops(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| super::ordered_parameter_face_loops(
+        ctx,
         vec![&outer, &inner],
         &[
             outer_polygon,
             vec![[3.0, 3.0], [4.0, 3.0], [4.0, 4.0], [3.0, 4.0]]
         ],
-    )
+    ))
+    .expect("service parameter loop ordering")
     .is_none());
 }
 
