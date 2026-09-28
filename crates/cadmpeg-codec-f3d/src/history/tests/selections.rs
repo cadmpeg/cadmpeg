@@ -409,7 +409,8 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
         (12, Some(&result)),
     ]);
     assert_eq!(
-        singleton_body_revision_across_state_chain(&result, 10, &states),
+        singleton_body_revision_across_state_chain(
+            &cadmpeg_test_support::service_decode_context(), &result, 10, &states).unwrap(),
         Some(7)
     );
 
@@ -432,7 +433,8 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
         crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8, 9]));
     let split_states = HashMap::from([(20, Some(&split_previous)), (21, Some(&split_result))]);
     assert_eq!(
-        singleton_revised_input_body_across_state_chain(&split_result, 20, &split_states),
+        singleton_revised_input_body_across_state_chain(
+            &cadmpeg_test_support::service_decode_context(), &split_result, 20, &split_states).unwrap(),
         Some(7)
     );
 
@@ -443,7 +445,8 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
     let ambiguous_states =
         HashMap::from([(20, Some(&split_previous)), (21, Some(&ambiguous_split))]);
     assert_eq!(
-        singleton_revised_input_body_across_state_chain(&ambiguous_split, 20, &ambiguous_states),
+        singleton_revised_input_body_across_state_chain(
+            &cadmpeg_test_support::service_decode_context(), &ambiguous_split, 20, &ambiguous_states).unwrap(),
         None
     );
 

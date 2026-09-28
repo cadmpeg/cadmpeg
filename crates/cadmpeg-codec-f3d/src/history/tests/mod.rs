@@ -5,6 +5,7 @@ mod body_recipe;
 mod body_recipe_budget;
 mod body_recipe_selection_limits;
 mod body_intersection_budget;
+mod body_chain_limits;
 mod body_selection;
 mod budgets;
 mod component_spaces;
