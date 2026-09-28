@@ -65,7 +65,12 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     });
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report
         .losses
@@ -98,7 +103,12 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     });
     let mut neutral_plane_report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut neutral_plane_report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut neutral_plane_report,
+    )
+    .unwrap();
 
     assert!(neutral_plane_report
         .losses
@@ -204,7 +214,12 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
     }
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     for expected in [
         "1 feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; 0 feature record(s) share regeneration ordinals.",
@@ -242,7 +257,12 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
     });
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(!report
         .losses
@@ -506,7 +526,12 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
     });
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message
@@ -523,7 +548,12 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
         )]),
     ));
     report.losses.clear();
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
     assert!(!report
         .losses
         .iter()

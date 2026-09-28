@@ -23,12 +23,26 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
 
+/// Charge a decode copy of `count` values of `T` as collection items and retained bytes.
+pub(super) fn charge_decode_copy<T>(
+    count: usize,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = u64_from_index(count);
+    let bytes = count
+        .checked_mul(u64_from_index(std::mem::size_of::<T>()))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, count))?;
+    ctx.charge_collection_items(count, operation)?;
+    ctx.charge_retained(bytes, operation)
+}
+
 pub(super) fn copy_decode_slice<T: Copy>(
     values: &[T],
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
-    ctx.charge_collection_items(u64_from_index(values.len()), operation)?;
+    charge_decode_copy::<T>(values.len(), ctx, operation)?;
     let mut copied = Vec::new();
     copied
         .try_reserve_exact(values.len())
@@ -182,7 +196,7 @@ impl SolvedSurfaceGeometry {
             Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
             Self::Polygonal(value) => Self::Polygonal(value.try_clone_for_decode(ctx, operation)?),
             Self::Transformed(value) => {
-                ctx.charge_collection_items(1, operation)?;
+                charge_decode_copy::<Self>(1, ctx, operation)?;
                 Self::Transformed(PlacedSurface {
                     basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
                     transform: value.transform,
@@ -425,7 +439,7 @@ impl SolvedCurveGeometry {
                 segments,
                 self_intersect,
             } => {
-                ctx.charge_collection_items(u64_from_index(segments.len()), operation)?;
+                charge_decode_copy::<CompositeCurveSegment>(segments.len(), ctx, operation)?;
                 let mut copied = Vec::new();
                 copied.try_reserve_exact(segments.len()).map_err(|_| {
                     ctx.refuse_codec_limit(operation, 0, u64_from_index(segments.len()))
@@ -441,7 +455,7 @@ impl SolvedCurveGeometry {
             Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
             Self::Polyline(value) => Self::Polyline(value.try_clone_for_decode(ctx, operation)?),
             Self::Transformed(value) => {
-                ctx.charge_collection_items(1, operation)?;
+                charge_decode_copy::<Self>(1, ctx, operation)?;
                 Self::Transformed(PlacedCurve {
                     basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
                     transform: value.transform,

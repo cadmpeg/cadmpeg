@@ -12,11 +12,8 @@ use serde::Deserialize;
 use serde::Serialize;
 
 /// Persistent Design entity selected through a nested indexed-record frame.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignEntitySelectionOperandWire",
-    into = "DesignEntitySelectionOperandWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignEntitySelectionOperandWire")]
 pub(crate) struct DesignEntitySelectionOperand {
     selection: EntitySelectionFrame,
     frame: crate::records::frame_chain::RecordFrameChain,
@@ -52,6 +49,107 @@ pub(crate) struct DesignEntitySelectionOperand {
     /// Unique input-state edge selected by every available identity proof.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) resolved_edge_slot: Option<i64>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static ENTITY_SELECTION_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignEntitySelectionOperand {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        ENTITY_SELECTION_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            selection: self.selection,
+            frame: self.frame,
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            group_record_index: self.group_record_index,
+            group_member_ordinal: self.group_member_ordinal,
+            class_tag: self.class_tag.clone(),
+            asset_id: self.asset_id.clone(),
+            asset_id_offset: self.asset_id_offset,
+            context_id: self.context_id.clone(),
+            context_id_offset: self.context_id_offset,
+            identity_record_offset: self.identity_record_offset,
+            primary_identity: self.primary_identity,
+            historical_edge_candidates: self.historical_edge_candidates.clone(),
+            historical_face_candidates: self.historical_face_candidates.clone(),
+            resolved_edge_slot: self.resolved_edge_slot,
+        }
+    }
+}
+
+impl Serialize for DesignEntitySelectionOperand {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct BorrowedWire<'a> {
+            id: &'a str,
+            scope_record_index: u32,
+            group_record_index: u32,
+            group_member_ordinal: u32,
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            asset_id: &'a str,
+            asset_id_offset: u64,
+            context_id: &'a str,
+            context_id_offset: u64,
+            identity_record_index: u32,
+            identity_record_offset: u64,
+            primary_identity: u64,
+            primary_identity_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            secondary_identity: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            secondary_identity_offset: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            curve_secondary_identity: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            curve_secondary_identity_offset: Option<u64>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            historical_edge_candidates: &'a Vec<DesignEntitySelectionEdgeCandidate>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            historical_face_candidates: &'a Vec<DesignEntitySelectionFaceCandidate>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            resolved_edge_slot: Option<i64>,
+            next_record_index: u32,
+            next_byte_offset: u64,
+        }
+        let secondary = self.secondary();
+        BorrowedWire {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            group_record_index: self.group_record_index,
+            group_member_ordinal: self.group_member_ordinal,
+            record_index: self.record_index(),
+            byte_offset: self.byte_offset(),
+            class_tag: self.class_tag.as_str(),
+            asset_id: self.asset_id.as_str(),
+            asset_id_offset: self.asset_id_offset,
+            context_id: self.context_id.as_str(),
+            context_id_offset: self.context_id_offset,
+            identity_record_index: self.identity_record_index(),
+            identity_record_offset: self.identity_record_offset,
+            primary_identity: self.primary_identity,
+            primary_identity_offset: self.primary_identity_offset(),
+            secondary_identity: secondary.map(|value| value.identity.value),
+            secondary_identity_offset: secondary.map(|value| value.identity.offset),
+            curve_secondary_identity: secondary
+                .and_then(|value| value.curve_identity)
+                .map(|value| value.value),
+            curve_secondary_identity_offset: secondary
+                .and_then(|value| value.curve_identity)
+                .map(|value| value.offset),
+            historical_edge_candidates: &self.historical_edge_candidates,
+            historical_face_candidates: &self.historical_face_candidates,
+            resolved_edge_slot: self.resolved_edge_slot,
+            next_record_index: self.next_record_index(),
+            next_byte_offset: self.next_byte_offset(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl DesignEntitySelectionOperand {
@@ -142,6 +240,7 @@ impl DesignEntitySelectionOperand {
         }
         Ok(value)
     }
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignEntitySelectionOperandDraft {
         let record_index = self.record_index();
         let byte_offset = self.byte_offset();
@@ -372,6 +471,7 @@ impl TryFrom<DesignEntitySelectionOperandWire> for DesignEntitySelectionOperand 
     }
 }
 
+#[cfg(test)]
 impl From<DesignEntitySelectionOperand> for DesignEntitySelectionOperandWire {
     fn from(record: DesignEntitySelectionOperand) -> Self {
         let record = record.into_draft();
@@ -427,11 +527,8 @@ pub(crate) struct DesignEntitySelectionFaceCandidate {
 /// The carrier is a scope-owned, role-less frame. It is retained separately
 /// from the ordinary construction-operand group because its member and
 /// scalar lanes do not use the counted-group grammar.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignLoftLegacyBodyCarrierSerde",
-    into = "DesignLoftLegacyBodyCarrierSerde"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignLoftLegacyBodyCarrierSerde")]
 pub(crate) struct DesignLoftLegacyBodyCarrier {
     /// Globally unique deterministic identifier.
     pub(crate) id: String,
@@ -477,6 +574,114 @@ pub(crate) struct DesignLoftLegacyBodyCarrier {
     pub(crate) paired_class_tag: DesignClassTag,
     /// Same-index paired-header byte offset.
     pub(crate) paired_byte_offset: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static LOFT_LEGACY_BODY_CARRIER_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignLoftLegacyBodyCarrier {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        LOFT_LEGACY_BODY_CARRIER_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.clone(),
+            owner_scope_record_index_offset: self.owner_scope_record_index_offset,
+            member: self.member,
+            member_offset: self.member_offset,
+            member_count_offset: self.member_count_offset,
+            opaque_index: self.opaque_index,
+            opaque_index_offset: self.opaque_index_offset,
+            opaque_scalar: self.opaque_scalar,
+            opaque_scalar_offset: self.opaque_scalar_offset,
+            repeated_opaque_index_offset: self.repeated_opaque_index_offset,
+            next_next_record_index: self.next_next_record_index,
+            next_next_reference_offset: self.next_next_reference_offset,
+            flags_offset: self.flags_offset,
+            next_record_index: self.next_record_index,
+            next_reference_offset: self.next_reference_offset,
+            trailing_scope_reference_offset: self.trailing_scope_reference_offset,
+            paired_class_tag: self.paired_class_tag.clone(),
+            paired_byte_offset: self.paired_byte_offset,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DesignLoftLegacyBodyCarrierRef<'a> {
+    id: &'a str,
+    scope_record_index: u32,
+    scope_reference_ordinal: u32,
+    record_index: u32,
+    byte_offset: u64,
+    class_tag: &'a str,
+    owner_scope_record_index: u32,
+    owner_scope_record_index_offset: u64,
+    members: [u32; 1],
+    member_offsets: [u64; 1],
+    member_count: u32,
+    member_count_offset: u64,
+    opaque_index: u32,
+    opaque_index_offset: u64,
+    opaque_scalar: f64,
+    opaque_scalar_offset: u64,
+    repeated_opaque_index: u32,
+    repeated_opaque_index_offset: u64,
+    next_next_record_index: u32,
+    next_next_reference_offset: u64,
+    flags: [u8; 2],
+    flags_offset: u64,
+    next_record_index: u32,
+    next_reference_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    trailing_scope_record_index: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    trailing_scope_reference_offset: Option<u64>,
+    paired_class_tag: &'a str,
+    paired_byte_offset: u64,
+}
+
+impl Serialize for DesignLoftLegacyBodyCarrier {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DesignLoftLegacyBodyCarrierRef {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            scope_reference_ordinal: 0,
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            class_tag: self.class_tag.as_str(),
+            owner_scope_record_index: self.scope_record_index,
+            owner_scope_record_index_offset: self.owner_scope_record_index_offset,
+            members: [self.member],
+            member_offsets: [self.member_offset],
+            member_count: 1,
+            member_count_offset: self.member_count_offset,
+            opaque_index: u32::from(self.opaque_index.get()),
+            opaque_index_offset: self.opaque_index_offset,
+            opaque_scalar: self.opaque_scalar.get(),
+            opaque_scalar_offset: self.opaque_scalar_offset,
+            repeated_opaque_index: u32::from(self.opaque_index.get()),
+            repeated_opaque_index_offset: self.repeated_opaque_index_offset,
+            next_next_record_index: self.next_next_record_index,
+            next_next_reference_offset: self.next_next_reference_offset,
+            flags: [0, 0],
+            flags_offset: self.flags_offset,
+            next_record_index: self.next_record_index,
+            next_reference_offset: self.next_reference_offset,
+            trailing_scope_record_index: self
+                .trailing_scope_reference_offset
+                .map(|_| self.scope_record_index),
+            trailing_scope_reference_offset: self.trailing_scope_reference_offset,
+            paired_class_tag: self.paired_class_tag.as_str(),
+            paired_byte_offset: self.paired_byte_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -585,6 +790,7 @@ impl TryFrom<DesignLoftLegacyBodyCarrierSerde> for DesignLoftLegacyBodyCarrier {
     }
 }
 
+#[cfg(test)]
 impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
     fn from(carrier: DesignLoftLegacyBodyCarrier) -> Self {
         Self {

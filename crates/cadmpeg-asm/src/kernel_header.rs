@@ -101,15 +101,11 @@ pub(crate) fn read_string_region(
     for slot in &mut strings {
         match read_u8_string_span(bytes, cur) {
             Some((value, next)) => {
-                let length = u64::try_from(value.len()).map_err(|_| {
-                    ctx.refuse_codec_limit(
-                        "kernel header product string length",
-                        u64::MAX - 1,
-                        u64::MAX,
-                    )
-                })?;
-                ctx.charge_retained(length, "retain kernel header product string")?;
-                *slot = Some(value.to_owned());
+                *slot = Some(crate::decode_alloc::copy_string(
+                    ctx,
+                    value,
+                    "retain kernel header product string",
+                )?);
                 cur = next;
             }
             None => break,
@@ -170,6 +166,27 @@ fn read_tagged_f64(bytes: &[u8], at: usize) -> Option<(f64, usize)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn binary_header_product_string_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let bytes = [0x07, 3, b'a', b'b', b'c'];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("source fits input limit");
+        let Err(error) = super::read_string_region(&ctx, &bytes, 0) else {
+            panic!("product string must exceed retained limit");
+        };
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, ResourceDimension::RetainedBytes);
+        assert_eq!(refusal.operation, "retain kernel header product string");
+    }
+
     #[test]
     fn partial_binary_headers_retain_linear_tolerance_without_angular() {
         for (magic, header_len) in [

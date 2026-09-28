@@ -9,11 +9,8 @@ use serde::Deserialize;
 use serde::Serialize;
 
 /// Whole-body construction operand carrying a persistent body-recipe reference.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignBodyRecipeOperandWire",
-    into = "DesignBodyRecipeOperandWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignBodyRecipeOperandWire")]
 pub(crate) struct DesignBodyRecipeOperand {
     frame: crate::records::frame_chain::RecordFrameChain,
     /// Globally unique deterministic identifier for this native operand.
@@ -55,6 +52,36 @@ pub(crate) struct DesignBodyRecipeOperand {
     pub(crate) resolved_body_face_slots: Vec<i64>,
     /// Byte offset of the indexed record immediately following this operand.
     next_byte_offset: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static BODY_RECIPE_OPERAND_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignBodyRecipeOperand {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        BODY_RECIPE_OPERAND_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            frame: self.frame,
+            id: self.id.clone(),
+            scope_record_index: self.scope_record_index,
+            owner: self.owner,
+            class_tag: self.class_tag.clone(),
+            asset_id: self.asset_id.clone(),
+            context_id: self.context_id.clone(),
+            context_id_offset: self.context_id_offset,
+            selector_tail: self.selector_tail,
+            references: self.references.clone(),
+            recipe_id: self.recipe_id.clone(),
+            resolved_face_slot: self.resolved_face_slot,
+            resolved_body_state_id: self.resolved_body_state_id,
+            resolved_body_slot: self.resolved_body_slot,
+            resolved_body_face_slots: self.resolved_body_face_slots.clone(),
+            next_byte_offset: self.next_byte_offset,
+        }
+    }
 }
 
 impl DesignBodyRecipeOperand {
@@ -128,6 +155,7 @@ impl DesignBodyRecipeOperand {
         }
         Ok(value)
     }
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignBodyRecipeOperandDraft {
         let record_index = self.record_index();
         let byte_offset = self.byte_offset();
@@ -185,6 +213,68 @@ impl DesignBodyRecipeOperand {
     }
     pub(crate) fn next_byte_offset(&self) -> u64 {
         self.next_byte_offset
+    }
+}
+
+impl Serialize for DesignBodyRecipeOperand {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            scope_record_index: u32,
+            #[serde(flatten)]
+            owner: DesignOperandOwner,
+            record_index: u32,
+            byte_offset: u64,
+            class_tag: &'a str,
+            asset_id: &'a str,
+            asset_id_offset: u64,
+            context_id: &'a str,
+            context_id_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            selector_tail: Option<[u8; 4]>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            selector_tail_offset: Option<u64>,
+            references: &'a [DesignBodyRecipeReference],
+            nested_record_index: u64,
+            nested_record_index_offset: u64,
+            recipe_id: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            resolved_face_slot: Option<i64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            resolved_body_state_id: Option<i64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            resolved_body_slot: Option<i64>,
+            #[serde(skip_serializing_if = "<[i64]>::is_empty")]
+            resolved_body_face_slots: &'a [i64],
+            next_record_index: u32,
+            next_byte_offset: u64,
+        }
+        WireRef {
+            id: &self.id,
+            scope_record_index: self.scope_record_index,
+            owner: self.owner,
+            record_index: self.record_index(),
+            byte_offset: self.byte_offset(),
+            class_tag: self.class_tag.as_str(),
+            asset_id: self.asset_id.as_str(),
+            asset_id_offset: self.asset_id_offset(),
+            context_id: self.context_id.as_str(),
+            context_id_offset: self.context_id_offset,
+            selector_tail: self.selector_tail.map(|tail| tail.value),
+            selector_tail_offset: self.selector_tail.map(|tail| tail.offset),
+            references: &self.references,
+            nested_record_index: self.nested_record_index(),
+            nested_record_index_offset: self.nested_record_index_offset(),
+            recipe_id: &self.recipe_id,
+            resolved_face_slot: self.resolved_face_slot,
+            resolved_body_state_id: self.resolved_body_state_id,
+            resolved_body_slot: self.resolved_body_slot,
+            resolved_body_face_slots: &self.resolved_body_face_slots,
+            next_record_index: self.next_record_index(),
+            next_byte_offset: self.next_byte_offset,
+        }
+        .serialize(serializer)
     }
 }
 
@@ -349,6 +439,7 @@ impl TryFrom<DesignBodyRecipeOperandWire> for DesignBodyRecipeOperand {
     }
 }
 
+#[cfg(test)]
 impl From<DesignBodyRecipeOperand> for DesignBodyRecipeOperandWire {
     fn from(record: DesignBodyRecipeOperand) -> Self {
         let record = record.into_draft();

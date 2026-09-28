@@ -420,7 +420,7 @@ fn rescope_record(
     let mut fields = typed_fields(record, arena, occurrence)?;
     rescope_native_reference_fields(arena, &mut fields, occurrence);
     let id = rescope(record.id(), occurrence).unwrap_or_else(|| record.id().to_owned());
-    NativeRecord::new(id, fields)
+    NativeRecord::new(cadmpeg_ir::ids::Identity::new(id)?, fields)
 }
 
 /// Rewrite typed identity markers before JSON erases their ownership.

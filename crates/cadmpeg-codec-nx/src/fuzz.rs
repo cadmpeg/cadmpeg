@@ -52,17 +52,24 @@ pub fn om(data: &[u8]) {
 
 /// Exercise NX analytic point extraction.
 pub fn geometry_points(data: &[u8]) {
-    let _ = crate::geometry::points(data);
+    with_geometry_context(data, |ctx| drop(crate::geometry::points(ctx, data)));
 }
 
 /// Exercise NX analytic curve extraction.
 pub fn geometry_curves(data: &[u8]) {
-    let _ = crate::geometry::curves(data);
+    with_geometry_context(data, |ctx| drop(crate::geometry::curves(ctx, data)));
 }
 
 /// Exercise NX analytic surface extraction.
 pub fn geometry_surfaces(data: &[u8]) {
-    let _ = crate::geometry::surfaces(data);
+    with_geometry_context(data, |ctx| drop(crate::geometry::surfaces(ctx, data)));
+}
+
+fn with_geometry_context(data: &[u8], parse: impl FnOnce(&DecodeContext<'_>)) {
+    let arena = DecodeArena::new();
+    if let Ok((ctx, _)) = DecodeContext::from_root_bytes(data, &arena, &fuzz_policy()) {
+        parse(&ctx);
+    }
 }
 
 /// Exercise NX surface-intersection chart decoding.

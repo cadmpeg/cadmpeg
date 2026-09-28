@@ -22,6 +22,37 @@ fn native_rectangular_pattern_refuses_nonunit_direction() {
 const RELATION_WIRE: &str = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"members":[1,2],"resolved_members":[],"member_offsets":[25,40],"owner_reference_offset":0,"state":0,"constraint_kinds":["coincident"],"unknown_constraint_bits":0,"member_relation_ordinals":[3,5],"entity_genesis":null,"pattern":null,"return_members":[2,1],"resolved_return_members":[],"return_member_offsets":[60,75],"raw_bytes":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}"#;
 
 #[test]
+fn sketch_relation_borrowed_wire_matches_owned_wire_bytes() {
+    let resolved = RELATION_WIRE.replace(
+        r#""resolved_members":[]"#,
+        r#""resolved_members":[{"kind":"point","record_index":1,"persistent_id":10},{"kind":"record","record_index":2}]"#,
+    ).replace(
+        r#""resolved_return_members":[]"#,
+        r#""resolved_return_members":[{"kind":"record","record_index":2},{"kind":"point","record_index":1,"persistent_id":10}]"#,
+    );
+    for wire in [RELATION_WIRE, resolved.as_str()] {
+        let relation: SketchRelation = serde_json::from_str(wire).unwrap();
+        let owned = super::SketchRelationSerde::from(relation.clone());
+        assert_eq!(
+            serde_json::to_vec(&relation).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn sketch_relation_native_retained_limit_refuses_before_clone() {
+    let mut relation: SketchRelation = serde_json::from_str(RELATION_WIRE).unwrap();
+    relation.id = "f3d:native:sketch-relation#0".into();
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &relation,
+        "sketch_relations",
+        || super::SKETCH_RELATION_CLONE_COUNT.with(|count| count.set(0)),
+        || super::SKETCH_RELATION_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 fn sketch_relation_runs_preserve_wire_and_reject_conflicting_resolved_indices() {
     let base = RELATION_WIRE;
     let resolved = base.replace(r#""resolved_members":[]"#, r#""resolved_members":[{"kind":"point","record_index":1,"persistent_id":10},{"kind":"record","record_index":2}]"#)

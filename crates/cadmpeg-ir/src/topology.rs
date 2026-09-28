@@ -307,6 +307,9 @@ impl Shell {
         wire_edges: Vec<EdgeId>,
         free_vertices: Vec<VertexId>,
     ) -> Result<Self, BodySelectionError> {
+        if faces.is_empty() && wire_edges.is_empty() && free_vertices.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
         let members = ShellMembers {
             faces,
             wire_edges,
@@ -315,7 +318,7 @@ impl Shell {
         Ok(Self {
             id,
             region,
-            members: NonEmptyMembers::try_from(Vec::<ShellMember>::from(members))?.into(),
+            members,
         })
     }
 
@@ -758,6 +761,42 @@ impl LoopRing {
             coedges,
             vertex_uses,
         })
+    }
+
+    /// Build a ring with duplicate-check storage charged to a decode caller.
+    pub fn try_new_for_decode(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        coedges: Vec<CoedgeId>,
+        vertex_uses: Vec<AnchoredVertexUse>,
+    ) -> Result<Result<Self, LoopRingError>, cadmpeg_core::CodecError> {
+        if coedges.is_empty() {
+            return Ok(Err(LoopRingError("loop ring must contain a coedge".into())));
+        }
+        let count = u64::try_from(coedges.len())
+            .map_err(|_| ctx.refuse_codec_limit("loop ring members", u64::MAX, u64::MAX))?;
+        ctx.charge_collection_items(count, "loop ring members")?;
+        let mut members = HashSet::new();
+        members
+            .try_reserve(coedges.len())
+            .map_err(|_| ctx.refuse_codec_limit("loop ring members", 0, count))?;
+        members.extend(coedges.iter());
+        if members.len() != coedges.len() {
+            return Ok(Err(LoopRingError(
+                "loop ring coedges must be distinct".into(),
+            )));
+        }
+        if vertex_uses
+            .iter()
+            .any(|vertex_use| !members.contains(&vertex_use.after))
+        {
+            return Ok(Err(LoopRingError(
+                "loop ring vertex-use after must name a coedge in the ring".into(),
+            )));
+        }
+        Ok(Ok(Self {
+            coedges,
+            vertex_uses,
+        }))
     }
 
     /// Coedges in source traversal order.

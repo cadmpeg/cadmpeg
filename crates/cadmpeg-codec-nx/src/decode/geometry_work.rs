@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared work accounting for adaptive geometry certification.
 
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{
+    DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation, WorkBudget,
+};
 use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -34,7 +36,42 @@ pub(super) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 /// certificates earned within the same accounting scope.
 pub(super) struct GeometryWorkBudget<'a> {
     work: WorkBudget<'a>,
+    charges: Option<&'a dyn ScratchCharges>,
     blend_frame_cache: Rc<RefCell<super::blend::BlendSurfaceFrameCache>>,
+}
+
+trait ScratchCharges {
+    fn charge_items(&self, count: u64, operation: &'static str) -> Result<(), ResourceLimit>;
+    fn resource_refusal(&self) -> Option<ResourceLimit>;
+    fn fuse_local_work(&self, limit: u64);
+    fn reserve_bytes(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<ScopedReservation<'_>, ResourceLimit>;
+}
+
+impl ScratchCharges for DecodeContext<'_> {
+    fn charge_items(&self, count: u64, operation: &'static str) -> Result<(), ResourceLimit> {
+        self.charge_collection_items_limit(count, operation)
+    }
+
+    fn resource_refusal(&self) -> Option<ResourceLimit> {
+        DecodeContext::resource_refusal(self)
+    }
+
+    fn fuse_local_work(&self, limit: u64) {
+        let additional = limit + u64::from(limit != u64::MAX);
+        drop(self.refuse_codec_limit("nx adaptive geometry work", limit, additional));
+    }
+
+    fn reserve_bytes(
+        &self,
+        bytes: u64,
+        operation: &'static str,
+    ) -> Result<ScopedReservation<'_>, ResourceLimit> {
+        self.reserve_scoped_limit(bytes, operation)
+    }
 }
 
 impl<'a> GeometryWorkBudget<'a> {
@@ -43,18 +80,85 @@ impl<'a> GeometryWorkBudget<'a> {
         Self::from_work_budget(WorkBudget::new(limit))
     }
 
-    pub(super) fn from_work_budget(work: WorkBudget<'a>) -> Self {
+    #[cfg(test)]
+    fn from_work_budget(work: WorkBudget<'a>) -> Self {
         Self {
             work,
+            charges: None,
             blend_frame_cache: Rc::new(RefCell::new(
                 super::blend::BlendSurfaceFrameCache::default(),
             )),
         }
     }
 
-    pub(super) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'static> {
+    pub(super) fn from_context(ctx: &'a DecodeContext<'_>, limit: u64) -> Self {
+        Self {
+            work: ctx.work_budget(limit),
+            charges: Some(ctx),
+            blend_frame_cache: Rc::new(RefCell::new(
+                super::blend::BlendSurfaceFrameCache::default(),
+            )),
+        }
+    }
+
+    pub(super) fn reserve_vec<T>(
+        &self,
+        output: &mut Vec<T>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<Option<ScopedReservation<'_>>, ResourceLimit> {
+        let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+        let invalid_size = || ResourceLimit {
+            dimension: ResourceDimension::Codec(operation),
+            reason: ResourceFailure::BudgetExceeded,
+            limit: u64::MAX,
+            used: 0,
+            additional: count_u64,
+            operation,
+        };
+        let item_bytes = u64::try_from(std::mem::size_of::<T>()).map_err(|_| invalid_size())?;
+        let bytes = count_u64.checked_mul(item_bytes).ok_or_else(invalid_size)?;
+        let reservation = if let Some(charges) = self.charges {
+            charges.charge_items(count_u64, operation)?;
+            Some(charges.reserve_bytes(bytes, operation)?)
+        } else {
+            None
+        };
+        output.try_reserve_exact(count).map_err(|_| ResourceLimit {
+            dimension: ResourceDimension::Codec(operation),
+            reason: ResourceFailure::AllocationFailed,
+            limit: count_u64,
+            used: count_u64,
+            additional: 0,
+            operation,
+        })?;
+        Ok(reservation)
+    }
+
+    pub(super) fn resource_refusal(&self) -> Option<ResourceLimit> {
+        let charges = self.charges?;
+        if let Some(limit) = charges.resource_refusal() {
+            return Some(limit);
+        }
+        if self.work.exhausted() {
+            let limit = cadmpeg_core::decode::u64_from_index(self.work.consumed());
+            charges.fuse_local_work(limit);
+        }
+        charges.resource_refusal()
+    }
+
+    pub(super) fn exhausted(&self) -> bool {
+        let exhausted = self.work.exhausted();
+        if exhausted {
+            let _resource_refusal = self.resource_refusal();
+        }
+        exhausted
+    }
+
+    pub(super) fn child_slice(&self, limit: usize) -> GeometryWorkBudget<'_> {
         GeometryWorkBudget {
-            work: self.work.child_slice(limit),
+            work: self.work.session_child_slice(limit),
+            charges: self.charges,
             blend_frame_cache: Rc::clone(&self.blend_frame_cache),
         }
     }

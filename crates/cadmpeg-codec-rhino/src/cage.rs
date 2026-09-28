@@ -40,7 +40,10 @@ impl Cage {
 }
 
 fn refused(offset: usize, error: &CodecError) -> GeometryError {
-    GeometryError::malformed(offset, format!("NURBS cage allocation refused: {error}"))
+    match error {
+        CodecError::ResourceLimit(limit) => GeometryError::Codec(CodecError::ResourceLimit(*limit)),
+        _ => GeometryError::malformed(offset, format!("NURBS cage allocation refused: {error}")),
+    }
 }
 
 fn req_i32(view: &mut View<'_>) -> Result<i32, GeometryError> {
@@ -171,7 +174,8 @@ pub(crate) fn decode_at(
             GeometryError::malformed(body.position(), "NURBS cage knot vector truncated")
         })?;
         let mut reserved =
-            ExactVec::<FiniteReal>::new(bound).map_err(|error| refused(body.position(), &error))?;
+            ExactVec::<FiniteReal>::new(expand.ctx(), bound, "Rhino cage knot values")
+                .map_err(|error| refused(body.position(), &error))?;
         let mut previous: Option<FiniteReal> = None;
         for _ in 0..knot_count {
             let knot = req_f64(&mut body)?;
@@ -210,14 +214,15 @@ pub(crate) fn decode_at(
         .ok_or_else(|| {
             GeometryError::malformed(body.position(), "NURBS cage control net truncated")
         })?;
-    let mut control_points = ExactVec::<Vec<FiniteReal>>::new(control_bound)
-        .map_err(|error| refused(body.position(), &error))?;
+    let mut control_points =
+        ExactVec::<Vec<FiniteReal>>::new(expand.ctx(), control_bound, "Rhino cage control points")
+            .map_err(|error| refused(body.position(), &error))?;
     let mut weights = if rational {
-        let mut weights = Vec::new();
-        weights.try_reserve_exact(control_count).map_err(|_| {
-            GeometryError::malformed(body.position(), "NURBS cage weight allocation failed")
-        })?;
-        Some(weights)
+        Some(crate::curves::charged_vec(
+            expand.ctx(),
+            control_count,
+            "Rhino cage weights",
+        )?)
     } else {
         None
     };
@@ -225,8 +230,9 @@ pub(crate) fn decode_at(
         let tuple_bound = body.counted(dimension as u64, 8).ok_or_else(|| {
             GeometryError::malformed(body.position(), "NURBS cage coordinate tuple truncated")
         })?;
-        let mut stored = ExactVec::<FiniteReal>::new(tuple_bound)
-            .map_err(|error| refused(body.position(), &error))?;
+        let mut stored =
+            ExactVec::<FiniteReal>::new(expand.ctx(), tuple_bound, "Rhino cage coordinate tuple")
+                .map_err(|error| refused(body.position(), &error))?;
         for _ in 0..dimension {
             let value = req_f64(&mut body)?;
             let Some(value) = FiniteReal::new(value) else {
@@ -258,9 +264,10 @@ pub(crate) fn decode_at(
         } else {
             FiniteReal::ONE
         };
-        let point = stored
-            .into_iter()
-            .map(|coordinate| {
+        let mut point =
+            crate::curves::charged_vec(expand.ctx(), dimension, "Rhino cage scaled coordinates")?;
+        for coordinate in stored {
+            point.push(
                 cadmpeg_ir::math::multiply_divide(coordinate, scale.real(), weight).ok_or_else(
                     || {
                         GeometryError::malformed(
@@ -268,9 +275,9 @@ pub(crate) fn decode_at(
                             "scaled NURBS cage coordinate is invalid",
                         )
                     },
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+                )?,
+            );
+        }
         control_points
             .push(point)
             .map_err(|error| refused(body.position(), &error))?;
@@ -359,6 +366,54 @@ mod tests {
             cage.weights.as_ref().expect("required invariant")[7].get(),
             2.0
         );
+    }
+
+    fn cage_collection_refusal(limit: u64, operation: &str) {
+        let bytes = crc_chunk(ArchiveVersion::V5, ANONYMOUS, &rational_cage_body());
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("root bytes admitted");
+        let expand = crate::mesh::MeshExpand::new(&ctx, root);
+        let error = decode(
+            expand,
+            0..bytes.len(),
+            crate::test_support::millimeter_scale(10.0),
+            ArchiveVersion::V8,
+        )
+        .expect_err("cage allocation exceeds collection limit");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                if refusal.operation == operation
+        ));
+    }
+
+    #[test]
+    fn cage_knots_refuse_collection_limit() {
+        cage_collection_refusal(1, "Rhino cage knot values");
+    }
+
+    #[test]
+    fn cage_control_points_refuse_collection_limit() {
+        cage_collection_refusal(13, "Rhino cage control points");
+    }
+
+    #[test]
+    fn cage_weights_refuse_collection_limit() {
+        cage_collection_refusal(21, "Rhino cage weights");
+    }
+
+    #[test]
+    fn cage_coordinate_tuple_refuses_collection_limit() {
+        cage_collection_refusal(24, "Rhino cage coordinate tuple");
+    }
+
+    #[test]
+    fn cage_scaled_coordinates_refuse_collection_limit() {
+        cage_collection_refusal(27, "Rhino cage scaled coordinates");
     }
 
     #[test]

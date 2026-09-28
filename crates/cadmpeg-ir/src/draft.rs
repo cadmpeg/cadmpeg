@@ -807,9 +807,11 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.native.namespace_mut("test").arenas_mut().insert(
             "records".into(),
-            vec![
-                NativeRecord::new(identity, serde_json::Map::new()).expect("valid native identity")
-            ],
+            vec![NativeRecord::new(
+                crate::ids::Identity::new(identity).expect("valid identity"),
+                serde_json::Map::new(),
+            )
+            .expect("valid native identity")],
         );
         let mut session = CommitSession::new(&mut ir);
 

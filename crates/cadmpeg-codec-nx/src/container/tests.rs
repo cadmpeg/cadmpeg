@@ -29,14 +29,14 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file)).unwrap();
     let (_, index) = container.segment_index().expect("segment index");
-    assert_eq!(index.rows.len() * 12 + index.padding.len(), 28);
-    assert_eq!(index.rows.len(), 2);
-    assert_eq!(index.rows[0].type_code, 7);
-    assert_eq!(index.rows[0].subtype_code, 9);
-    assert_eq!(index.rows[0].value, 11);
-    assert_eq!(index.rows[1].type_code, 1);
-    assert_eq!(index.rows[1].subtype_code, 1);
-    assert_eq!(index.rows[1].value, 28);
+    assert_eq!(index.rows().count() * 12 + index.padding.len(), 28);
+    assert_eq!(index.rows().count(), 2);
+    assert_eq!(index.row(0).expect("first validated row").type_code, 7);
+    assert_eq!(index.row(0).expect("first validated row").subtype_code, 9);
+    assert_eq!(index.row(0).expect("first validated row").value, 11);
+    assert_eq!(index.row(1).expect("second validated row").type_code, 1);
+    assert_eq!(index.row(1).expect("second validated row").subtype_code, 1);
+    assert_eq!(index.row(1).expect("second validated row").value, 28);
     assert_eq!(index.padding, &[0xaa, 0xbb, 0xcc, 0xdd]);
 }
 

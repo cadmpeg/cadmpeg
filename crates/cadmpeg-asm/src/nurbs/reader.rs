@@ -31,6 +31,26 @@ impl ReadPoles3 {
         }
     }
 
+    pub(super) fn with_counted_capacity(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        count: usize,
+        rational: bool,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        if rational {
+            Ok(Self::Rational(crate::decode_alloc::counted_vec(
+                ctx,
+                count,
+                "ASM rational NURBS poles",
+            )?))
+        } else {
+            Ok(Self::Polynomial(crate::decode_alloc::counted_vec(
+                ctx,
+                count,
+                "ASM polynomial NURBS poles",
+            )?))
+        }
+    }
+
     /// Add one pole with the weight its own slot states.
     pub(super) fn push(&mut self, point: Point3, weight: f64) -> Option<()> {
         match self {
@@ -74,6 +94,48 @@ impl ReadPoles3 {
             Self::Rational(points) => Some(NurbsPoleGrid::Rational {
                 rows: transpose(&points, u_count, v_count)?,
             }),
+        }
+    }
+
+    pub(super) fn into_counted_transposed_grid(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        u_count: usize,
+        v_count: usize,
+    ) -> Option<Result<NurbsPoleGrid, cadmpeg_core::CodecError>> {
+        fn transpose<T: Clone>(
+            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+            flat: &[T],
+            u_count: usize,
+            v_count: usize,
+        ) -> Option<Result<Vec<Vec<T>>, cadmpeg_core::CodecError>> {
+            (flat.len() == u_count.checked_mul(v_count)?).then_some(())?;
+            let mut rows =
+                match crate::decode_alloc::counted_vec(ctx, u_count, "ASM NURBS grid rows") {
+                    Ok(rows) => rows,
+                    Err(error) => return Some(Err(error)),
+                };
+            for u in 0..u_count {
+                let mut row = match crate::decode_alloc::counted_vec(
+                    ctx,
+                    v_count,
+                    "ASM NURBS grid row poles",
+                ) {
+                    Ok(row) => row,
+                    Err(error) => return Some(Err(error)),
+                };
+                for v in 0..v_count {
+                    row.push(flat.get(v.checked_mul(u_count)?.checked_add(u)?)?.clone());
+                }
+                rows.push(row);
+            }
+            Some(Ok(rows))
+        }
+        match self {
+            Self::Polynomial(points) => transpose(ctx, &points, u_count, v_count)
+                .map(|result| result.map(|rows| NurbsPoleGrid::Polynomial { rows })),
+            Self::Rational(points) => transpose(ctx, &points, u_count, v_count)
+                .map(|result| result.map(|rows| NurbsPoleGrid::Rational { rows })),
         }
     }
 }
@@ -265,12 +327,12 @@ const MAX_EXPANDED_NURBS_KNOTS: usize = MAX_NURBS_POLES + MAX_NURBS_DEGREE + 1;
 /// Checked expansion metadata for one unique-knot multiplicity table.
 pub(in crate::nurbs) struct KnotExpansionLayout {
     pub(super) n_poles: usize,
-    pub(super) expanded_run_lengths: Vec<usize>,
+    expanded_len: usize,
 }
 
 impl KnotExpansionLayout {
     pub(super) fn expanded_len(&self) -> usize {
-        self.expanded_run_lengths.iter().sum()
+        self.expanded_len
     }
 }
 
@@ -283,7 +345,6 @@ pub(super) fn checked_knot_layout(
         .filter(|degree| (1..=MAX_NURBS_DEGREE).contains(degree))?;
     let mut sum = 0usize;
     let mut expanded_len = 0usize;
-    let mut expanded_run_lengths = Vec::with_capacity(multiplicities.len());
     for (index, &multiplicity) in multiplicities.iter().enumerate() {
         let multiplicity = usize::try_from(multiplicity).ok()?;
         sum = sum.checked_add(multiplicity)?;
@@ -293,7 +354,6 @@ pub(super) fn checked_knot_layout(
         if expanded_len > MAX_EXPANDED_NURBS_KNOTS {
             return None;
         }
-        expanded_run_lengths.push(run_length);
     }
     let n_poles = sum.checked_sub(degree - 1)?;
     if !(2..=MAX_NURBS_POLES).contains(&n_poles) {
@@ -302,7 +362,7 @@ pub(super) fn checked_knot_layout(
     let derived_max = n_poles.checked_add(degree)?.checked_add(1)?;
     (expanded_len <= derived_max).then_some(KnotExpansionLayout {
         n_poles,
-        expanded_run_lengths,
+        expanded_len,
     })
 }
 
@@ -335,7 +395,9 @@ pub(super) fn read_knots(
     }
     let expansion = checked_knot_layout(&mults, degree)?;
     let mut expanded = Vec::with_capacity(expansion.expanded_len());
-    for (kv, &run_length) in knots.iter().zip(&expansion.expanded_run_lengths) {
+    for (index, (kv, multiplicity)) in knots.iter().zip(&mults).enumerate() {
+        let run_length = usize::try_from(*multiplicity).ok()?
+            + usize::from(index == 0 || index + 1 == mults.len());
         for _ in 0..run_length {
             expanded.push(*kv);
         }
@@ -538,6 +600,28 @@ mod string_width_tests {
     use crate::kernel_header::RefWidth;
     use cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn token_surface_grid_rows_refuse_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 5;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let points = (0..4)
+            .map(|index| Point3::new(f64::from(index), 0.0, 0.0))
+            .collect();
+        let error = ReadPoles3::Polynomial(points)
+            .into_counted_transposed_grid(&ctx, 2, 2)
+            .expect("valid grid")
+            .expect_err("two rows and four poles need six items");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected collection refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+    }
 
     /// A `0x09` string whose length prefix is the stream integer width.
     fn long_string_bytes(payload: &str, int_width: RefWidth) -> Vec<u8> {

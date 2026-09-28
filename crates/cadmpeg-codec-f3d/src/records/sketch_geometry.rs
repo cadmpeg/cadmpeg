@@ -2,6 +2,7 @@
 //! Sketch text, points, curves, surfaces and NURBS poles.
 
 use super::references::DesignClassTag;
+use super::serde_column::SliceColumn;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::geometry::nurbs::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -31,8 +32,8 @@ cadmpeg_core::named_optional_field!(deserialize_second_reference, u32, "second_r
 cadmpeg_core::named_optional_field!(deserialize_vertical_alignment, u32, "vertical_alignment");
 cadmpeg_core::named_optional_field!(deserialize_width_factor, f64, "width_factor");
 /// One text entity in a Fusion sketch coordinate system.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "SketchTextSerde", into = "SketchTextSerde")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "SketchTextSerde")]
 pub(crate) struct SketchText {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -75,6 +76,114 @@ pub(crate) struct SketchText {
     /// Complete source record bytes for native replay and rewrite.
     #[serde(with = "cadmpeg_ir::bytes")]
     pub(crate) raw_bytes: Vec<u8>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_TEXT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for SketchText {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        SKETCH_TEXT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            record_index: self.record_index,
+            owner_reference: self.owner_reference,
+            class_tag: self.class_tag.clone(),
+            class_version: self.class_version,
+            byte_offset: self.byte_offset,
+            entity_genesis: self.entity_genesis,
+            persistent_id: self.persistent_id,
+            base_id: self.base_id,
+            text: self.text.clone(),
+            font_family: self.font_family.clone(),
+            font_weight: self.font_weight,
+            height: self.height,
+            color: self.color,
+            layout: self.layout.clone(),
+            raw_bytes: self.raw_bytes.clone(),
+        }
+    }
+}
+
+impl Serialize for SketchText {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            record_index: u32,
+            owner_reference: u32,
+            class_tag: &'a str,
+            class_version: u32,
+            byte_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            entity_genesis: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            persistent_id: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            base_id: Option<u64>,
+            text: &'a str,
+            font_family: &'a str,
+            font_weight: i32,
+            height: f64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            width_factor: Option<f64>,
+            color: Color,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            anchor: Option<Point2>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            rotation: Option<f64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            horizontal_alignment: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            vertical_alignment: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            first_reference: Option<u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            second_reference: Option<u32>,
+            #[serde(serialize_with = "cadmpeg_ir::bytes::serialize")]
+            raw_bytes: &'a [u8],
+        }
+        let placement = self.placement();
+        let alignment = self.alignment();
+        WireRef {
+            id: &self.id,
+            record_index: self.record_index,
+            owner_reference: self.owner_reference,
+            class_tag: self.class_tag.as_str(),
+            class_version: self.class_version,
+            byte_offset: self.byte_offset,
+            entity_genesis: self.entity_genesis,
+            persistent_id: self.persistent_id,
+            base_id: self.base_id,
+            text: &self.text,
+            font_family: &self.font_family,
+            font_weight: self.font_weight,
+            height: self.height.get(),
+            width_factor: self.width_factor().map(NonNegativeReal::get),
+            color: self.color,
+            anchor: placement.map(|value| value.anchor.get()),
+            rotation: placement.map(|value| value.rotation.get()),
+            horizontal_alignment: alignment.map(|value| value.horizontal),
+            vertical_alignment: alignment.map(|value| value.vertical),
+            first_reference: match self.layout {
+                SketchTextLayout::TxtTag { .. } => None,
+                SketchTextLayout::TextexTag {
+                    first_reference, ..
+                } => first_reference,
+            },
+            second_reference: match self.layout {
+                SketchTextLayout::TxtTag { .. } => None,
+                SketchTextLayout::TextexTag {
+                    second_reference, ..
+                } => second_reference,
+            },
+            raw_bytes: &self.raw_bytes,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Horizontal and vertical alignment members of a sketch-text record.
@@ -270,6 +379,7 @@ impl TryFrom<SketchTextSerde> for SketchText {
     }
 }
 
+#[cfg(test)]
 impl From<SketchText> for SketchTextSerde {
     fn from(text: SketchText) -> Self {
         let (width_factor, alignment, first_reference, second_reference, placement) =
@@ -793,8 +903,8 @@ fn sketch_point_flags_are_zero(flags: &[u8; 8]) -> bool {
 }
 
 /// One point in a Fusion sketch coordinate system.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "SketchPointSerde", into = "SketchPointSerde")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "SketchPointSerde")]
 pub(crate) struct SketchPoint {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -816,6 +926,106 @@ pub(crate) struct SketchPoint {
     pub(crate) paired_reference: u32,
     /// First two sketch coordinates in millimetres.
     coordinates: FinitePoint2,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_POINT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for SketchPoint {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        SKETCH_POINT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            record_index: self.record_index,
+            owner_reference: self.owner_reference,
+            class_tag: self.class_tag.clone(),
+            byte_offset: self.byte_offset,
+            coordinate_offset: self.coordinate_offset,
+            record_form: self.record_form.clone(),
+            companion: self.companion.clone(),
+            paired_reference: self.paired_reference,
+            coordinates: self.coordinates,
+        }
+    }
+}
+
+impl Serialize for SketchPoint {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct CompanionRef<'a> {
+            incident_curves: &'a [u32],
+        }
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            record_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            owner_reference: Option<u32>,
+            class_tag: &'a str,
+            byte_offset: u64,
+            coordinate_offset: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            entity_genesis: Option<u64>,
+            record_form: SketchPointRecordFormSerde,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            persistent_id: Option<u64>,
+            paired_reference: u32,
+            #[serde(skip_serializing_if = "sketch_point_flags_are_zero")]
+            flags: [u8; 8],
+            coordinates: Point2,
+            depth: f64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            closure: Option<SketchPointClosureSerde>,
+            companion: CompanionRef<'a>,
+        }
+        let record_form = match self.record_form {
+            SketchPointRecordForm::Version0 { .. } => SketchPointRecordFormSerde::Version0,
+            SketchPointRecordForm::Version8 { .. } => SketchPointRecordFormSerde::Version8,
+            SketchPointRecordForm::Version10 { .. } => SketchPointRecordFormSerde::Version10,
+            SketchPointRecordForm::Version10InlineTyped {
+                trailing_reference, ..
+            } => SketchPointRecordFormSerde::Version10InlineTyped { trailing_reference },
+            SketchPointRecordForm::Version11 {
+                padded_paired_reference,
+                companion_prefix_present_zero,
+                ..
+            } => SketchPointRecordFormSerde::Version11 {
+                padded_paired_reference,
+                companion_prefix_present_zero,
+            },
+            SketchPointRecordForm::Version11InlineTyped {
+                trailing_reference,
+                companion_prefix_present_zero,
+                ..
+            } => SketchPointRecordFormSerde::Version11InlineTyped {
+                trailing_reference,
+                companion_prefix_present_zero,
+            },
+        };
+        WireRef {
+            id: &self.id,
+            record_index: self.record_index,
+            owner_reference: self.owner_reference,
+            class_tag: self.class_tag.as_str(),
+            byte_offset: self.byte_offset,
+            coordinate_offset: self.coordinate_offset,
+            entity_genesis: self.entity_genesis(),
+            record_form,
+            persistent_id: self.persistent_id(),
+            paired_reference: self.paired_reference,
+            flags: self.flags(),
+            coordinates: self.coordinates.get(),
+            depth: self.depth(),
+            closure: self.closure().map(SketchPointClosureSerde::from),
+            companion: CompanionRef {
+                incident_curves: &self.companion.incident_curves,
+            },
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1134,6 +1344,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
     }
 }
 
+#[cfg(test)]
 impl From<SketchPoint> for SketchPointSerde {
     fn from(point: SketchPoint) -> Self {
         let depth = point.depth();
@@ -1231,8 +1442,8 @@ pub(crate) struct SketchCurveIdentity {
 }
 
 /// One persistent tensor-product surface owned by a spatial Fusion sketch.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "SketchSurfaceWire", into = "SketchSurfaceWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "SketchSurfaceWire")]
 pub(crate) struct SketchSurface {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -1250,6 +1461,81 @@ pub(crate) struct SketchSurface {
     pub(crate) persistent_id: std::num::NonZeroU64,
     /// Admitted tensor-product geometry.
     pub(crate) geometry: SketchSurfaceGeometry,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_SURFACE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for SketchSurface {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        SKETCH_SURFACE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            record_index: self.record_index,
+            owner_reference: self.owner_reference,
+            class_tag: self.class_tag.clone(),
+            byte_offset: self.byte_offset,
+            entity_genesis: self.entity_genesis,
+            persistent_id: self.persistent_id,
+            geometry: self.geometry.clone(),
+        }
+    }
+}
+
+struct SurfaceControlRow<'a>(&'a [FinitePoint3]);
+
+impl Serialize for SurfaceControlRow<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|point| point.get()))
+    }
+}
+
+struct SurfaceControlGrid<'a>(&'a [Vec<FinitePoint3>]);
+
+impl Serialize for SurfaceControlGrid<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|row| SurfaceControlRow(row)))
+    }
+}
+
+impl Serialize for SketchSurface {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            record_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            owner_reference: Option<u32>,
+            class_tag: &'a DesignClassTag,
+            byte_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            entity_genesis: Option<u64>,
+            persistent_id: std::num::NonZeroU64,
+            u_degree: u32,
+            v_degree: u32,
+            u_knots: SliceColumn<'a, FiniteReal, f64>,
+            v_knots: SliceColumn<'a, FiniteReal, f64>,
+            control_points: SurfaceControlGrid<'a>,
+        }
+        WireRef {
+            id: &self.id,
+            record_index: self.record_index,
+            owner_reference: self.owner_reference,
+            class_tag: &self.class_tag,
+            byte_offset: self.byte_offset,
+            entity_genesis: self.entity_genesis,
+            persistent_id: self.persistent_id,
+            u_degree: self.geometry.u_degree.get(),
+            v_degree: self.geometry.v_degree.get(),
+            u_knots: SliceColumn::new(&self.geometry.u_knots, |knot| knot.get()),
+            v_knots: SliceColumn::new(&self.geometry.v_knots, |knot| knot.get()),
+            control_points: SurfaceControlGrid(&self.geometry.control_points),
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Positive degrees, ordered knots, and a finite rectangular control grid.
@@ -1391,6 +1677,7 @@ impl TryFrom<SketchSurfaceWire> for SketchSurface {
     }
 }
 
+#[cfg(test)]
 impl From<SketchSurface> for SketchSurfaceWire {
     fn from(surface: SketchSurface) -> Self {
         Self {
@@ -1426,8 +1713,8 @@ impl From<SketchSurface> for SketchSurfaceWire {
 }
 
 /// Exact analytic geometry carried by a source sketch-curve record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "SketchCurveGeometryWire", into = "SketchCurveGeometryWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "SketchCurveGeometryWire")]
 pub(crate) enum SketchCurveGeometry {
     /// A straight line segment.
     Line {
@@ -1471,6 +1758,153 @@ pub(crate) enum SketchCurveGeometry {
         /// Admitted degree, fit tolerance, knots and poles; source scalar width is eight.
         geometry: SketchNurbsGeometry,
     },
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_CURVE_GEOMETRY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for SketchCurveGeometry {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        SKETCH_CURVE_GEOMETRY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        match self {
+            Self::Line {
+                start,
+                end,
+                direction,
+                normal,
+            } => Self::Line {
+                start: *start,
+                end: *end,
+                direction: *direction,
+                normal: *normal,
+            },
+            Self::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            } => Self::Arc {
+                center: *center,
+                normal: *normal,
+                reference_direction: *reference_direction,
+                radius: *radius,
+                start_angle: *start_angle,
+                end_angle: *end_angle,
+            },
+            Self::Nurbs {
+                carrier_reference,
+                subtype_class_tag,
+                subtype_record_index,
+                geometry,
+            } => Self::Nurbs {
+                carrier_reference: *carrier_reference,
+                subtype_class_tag: subtype_class_tag.clone(),
+                subtype_record_index: *subtype_record_index,
+                geometry: geometry.clone(),
+            },
+        }
+    }
+}
+
+struct NurbsPoints<'a>(&'a SketchNurbsPoles);
+
+impl Serialize for NurbsPoints<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.points())
+    }
+}
+
+struct NurbsWeights<'a>(&'a SketchNurbsPoles);
+
+impl Serialize for NurbsWeights<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.weights())
+    }
+}
+
+impl Serialize for SketchCurveGeometry {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum WireRef<'a> {
+            Line {
+                start: Point3,
+                end: Point3,
+                direction: Vector3,
+                normal: Vector3,
+            },
+            Arc {
+                center: Point3,
+                normal: Vector3,
+                reference_direction: Vector3,
+                radius: f64,
+                start_angle: f64,
+                end_angle: f64,
+            },
+            Nurbs {
+                #[serde(skip_serializing_if = "Option::is_none")]
+                carrier_reference: Option<u64>,
+                subtype_class_tag: &'a str,
+                subtype_record_index: u32,
+                degree: u32,
+                fit_tolerance: f64,
+                scalar_width: u32,
+                knots: SliceColumn<'a, FiniteReal, f64>,
+                weights: NurbsWeights<'a>,
+                control_points: NurbsPoints<'a>,
+            },
+        }
+        let view = match self {
+            Self::Line {
+                start,
+                end,
+                direction,
+                normal,
+            } => WireRef::Line {
+                start: start.get(),
+                end: end.get(),
+                direction: *direction.as_raw(),
+                normal: *normal.as_raw(),
+            },
+            Self::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            } => WireRef::Arc {
+                center: center.get(),
+                normal: *normal.as_raw(),
+                reference_direction: *reference_direction.as_raw(),
+                radius: radius.get(),
+                start_angle: start_angle.get(),
+                end_angle: end_angle.get(),
+            },
+            Self::Nurbs {
+                carrier_reference,
+                subtype_class_tag,
+                subtype_record_index,
+                geometry,
+            } => WireRef::Nurbs {
+                carrier_reference: *carrier_reference,
+                subtype_class_tag: subtype_class_tag.as_str(),
+                subtype_record_index: *subtype_record_index,
+                degree: geometry.degree,
+                fit_tolerance: geometry.fit_tolerance.get(),
+                scalar_width: 8,
+                knots: SliceColumn::new(&geometry.knots, |knot| knot.get()),
+                weights: NurbsWeights(&geometry.poles),
+                control_points: NurbsPoints(&geometry.poles),
+            },
+        };
+        view.serialize(serializer)
+    }
 }
 
 const EPS_SKETCH_LINE_FRAME: f64 = 1.0e-9;
@@ -1784,6 +2218,7 @@ impl TryFrom<SketchCurveGeometryWire> for SketchCurveGeometry {
     }
 }
 
+#[cfg(test)]
 impl From<SketchCurveGeometry> for SketchCurveGeometryWire {
     fn from(geometry: SketchCurveGeometry) -> Self {
         match geometry {
@@ -1932,7 +2367,7 @@ impl SketchNurbsPoles {
 
 #[cfg(test)]
 mod tests {
-    use super::{SketchCurveGeometry, SketchSurface};
+    use super::{SketchCurveGeometry, SketchPoint, SketchSurface, SketchText};
     use serde_json::json;
 
     fn native_surface_wire() -> serde_json::Value {
@@ -1949,6 +2384,115 @@ mod tests {
         })
     }
 
+    fn native_text_wire(extended: bool) -> serde_json::Value {
+        let mut wire = json!({
+            "id": "text", "record_index": 1, "owner_reference": 2,
+            "class_tag": "000", "class_version": 4, "byte_offset": 0,
+            "text": "text", "font_family": "Arial", "font_weight": 400,
+            "height": 10.0, "color": {"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0},
+            "raw_bytes": "AQID"
+        });
+        if extended {
+            wire["width_factor"] = json!(1.0);
+            wire["horizontal_alignment"] = json!(3);
+            wire["vertical_alignment"] = json!(7);
+            wire["first_reference"] = json!(12);
+            wire["second_reference"] = json!(13);
+        }
+        wire["anchor"] = json!({"u": 2.0, "v": 3.0});
+        wire["rotation"] = json!(0.5);
+        wire
+    }
+
+    fn native_point_wire(form: &serde_json::Value) -> serde_json::Value {
+        let mut wire = json!({
+            "id": "point", "record_index": 1, "class_tag": "000",
+            "byte_offset": 0, "coordinate_offset": 1, "record_form": form,
+            "paired_reference": 2, "coordinates": {"u": 2.0, "v": 3.0},
+            "depth": 0.0, "companion": {"incident_curves": [7, 2]}
+        });
+        if wire["record_form"]["kind"] != "version0" {
+            wire["persistent_id"] = json!(4);
+            wire["closure"] = json!({"selector": 0, "state": 0});
+        }
+        wire
+    }
+
+    #[test]
+    fn sketch_point_borrowed_wire_matches_owned_wire_bytes() {
+        for form in [
+            json!({"kind": "version0"}),
+            json!({"kind": "version8"}),
+            json!({"kind": "version10"}),
+            json!({"kind": "version10_inline_typed", "trailing_reference": 3}),
+            json!({"kind": "version11", "padded_paired_reference": false, "companion_prefix_present_zero": false}),
+            json!({"kind": "version11_inline_typed", "trailing_reference": 3, "companion_prefix_present_zero": false}),
+        ] {
+            let point: SketchPoint = serde_json::from_value(native_point_wire(&form)).unwrap();
+            let owned = super::SketchPointSerde::from(point.clone());
+            assert_eq!(
+                serde_json::to_vec(&point).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn sketch_point_native_retained_limit_refuses_before_clone() {
+        #[derive(serde::Serialize)]
+        struct NestedRecord<'a> {
+            id: &'static str,
+            value: &'a SketchPoint,
+        }
+        let point: SketchPoint = serde_json::from_value(native_point_wire(&json!({
+            "kind": "version11", "padded_paired_reference": false,
+            "companion_prefix_present_zero": false
+        })))
+        .unwrap();
+        let record = NestedRecord {
+            id: "f3d:native:sketch-point#0",
+            value: &point,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "sketch_points",
+            || super::SKETCH_POINT_CLONE_COUNT.with(|count| count.set(0)),
+            || super::SKETCH_POINT_CLONE_COUNT.with(std::cell::Cell::get),
+        );
+    }
+
+    #[test]
+    fn sketch_text_borrowed_wire_matches_owned_wire_bytes() {
+        for extended in [false, true] {
+            let text: SketchText = serde_json::from_value(native_text_wire(extended)).unwrap();
+            let owned = super::SketchTextSerde::from(text.clone());
+            assert_eq!(
+                serde_json::to_vec(&text).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn sketch_text_native_retained_limit_refuses_before_clone() {
+        #[derive(serde::Serialize)]
+        struct NestedRecord<'a> {
+            id: &'static str,
+            value: &'a SketchText,
+        }
+        let text: SketchText = serde_json::from_value(native_text_wire(true)).unwrap();
+        let record = NestedRecord {
+            id: "f3d:native:sketch-text#0",
+            value: &text,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "sketch_texts",
+            || super::SKETCH_TEXT_CLONE_COUNT.with(|count| count.set(0)),
+            || super::SKETCH_TEXT_CLONE_COUNT.with(std::cell::Cell::get),
+        );
+    }
+
     fn native_arc_wire() -> serde_json::Value {
         json!({
             "kind": "arc",
@@ -1959,6 +2503,62 @@ mod tests {
             "start_angle": 0.0,
             "end_angle": 1.0
         })
+    }
+
+    fn native_nurbs_wire(weights: &[f64]) -> serde_json::Value {
+        json!({
+            "kind": "nurbs", "subtype_class_tag": "306", "subtype_record_index": 4,
+            "degree": 1, "fit_tolerance": 0.0, "scalar_width": 8,
+            "knots": [0.0, 0.0, 1.0, 1.0], "weights": weights,
+            "control_points": [
+                {"x": 0.0, "y": 0.0, "z": 0.0},
+                {"x": 1.0, "y": 0.0, "z": 0.0}
+            ]
+        })
+    }
+
+    #[test]
+    fn sketch_curve_geometry_borrowed_wire_matches_owned_wire_bytes() {
+        let line = json!({
+            "kind": "line", "start": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "end": {"x": 10.0, "y": 0.0, "z": 0.0},
+            "direction": {"x": 1.0, "y": 0.0, "z": 0.0},
+            "normal": {"x": 0.0, "y": 0.0, "z": 1.0}
+        });
+        for wire in [
+            line,
+            native_arc_wire(),
+            native_nurbs_wire(&[]),
+            native_nurbs_wire(&[1.0, 2.0]),
+        ] {
+            let geometry: SketchCurveGeometry = serde_json::from_value(wire).unwrap();
+            let owned = super::SketchCurveGeometryWire::from(geometry.clone());
+            assert_eq!(
+                serde_json::to_vec(&geometry).unwrap(),
+                serde_json::to_vec(&owned).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn sketch_curve_geometry_native_retained_limit_refuses_before_clone() {
+        #[derive(serde::Serialize)]
+        struct NestedRecord<'a> {
+            id: &'static str,
+            value: &'a SketchCurveGeometry,
+        }
+        let geometry: SketchCurveGeometry =
+            serde_json::from_value(native_nurbs_wire(&[1.0, 2.0])).unwrap();
+        let record = NestedRecord {
+            id: "f3d:native:sketch-curve#0",
+            value: &geometry,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "sketch_curves",
+            || super::SKETCH_CURVE_GEOMETRY_CLONE_COUNT.with(|count| count.set(0)),
+            || super::SKETCH_CURVE_GEOMETRY_CLONE_COUNT.with(std::cell::Cell::get),
+        );
     }
 
     #[test]
@@ -1996,6 +2596,36 @@ mod tests {
         assert_eq!(
             serde_json::to_value(surface).expect("serialize surface"),
             wire
+        );
+    }
+
+    #[test]
+    fn sketch_surface_borrowed_wire_matches_owned_wire_bytes() {
+        let surface: SketchSurface = serde_json::from_value(native_surface_wire()).unwrap();
+        let owned = super::SketchSurfaceWire::from(surface.clone());
+        assert_eq!(
+            serde_json::to_vec(&surface).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+
+    #[test]
+    fn sketch_surface_native_retained_limit_refuses_before_clone() {
+        #[derive(serde::Serialize)]
+        struct NestedRecord<'a> {
+            id: &'static str,
+            value: &'a SketchSurface,
+        }
+        let surface: SketchSurface = serde_json::from_value(native_surface_wire()).unwrap();
+        let record = NestedRecord {
+            id: "f3d:native:sketch-surface#0",
+            value: &surface,
+        };
+        crate::test_support::native_test::assert_borrowed_native_retained_limit(
+            &record,
+            "sketch_surfaces",
+            || super::SKETCH_SURFACE_CLONE_COUNT.with(|count| count.set(0)),
+            || super::SKETCH_SURFACE_CLONE_COUNT.with(std::cell::Cell::get),
         );
     }
 

@@ -43,7 +43,7 @@ pub(crate) struct HatchLoop {
     pub(crate) curve: DecodedCurve,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 struct GradientColorStop {
     color: [u8; 4],
     position: FiniteReal,
@@ -114,7 +114,10 @@ pub(crate) struct Hatch {
 }
 
 fn refused(offset: usize, error: &CodecError) -> GeometryError {
-    GeometryError::malformed(offset, format!("hatch allocation refused: {error}"))
+    match error {
+        CodecError::ResourceLimit(limit) => GeometryError::Codec(CodecError::ResourceLimit(*limit)),
+        _ => GeometryError::malformed(offset, format!("hatch allocation refused: {error}")),
+    }
 }
 
 fn coordinate3(view: &mut View<'_>, label: &str) -> Result<FiniteVector<3>, GeometryError> {
@@ -204,7 +207,8 @@ pub(crate) fn decode(
     let loop_bound = body.counted(count as u64, 5).ok_or_else(|| {
         GeometryError::malformed(count_offset, "hatch loop count exceeds remaining window")
     })?;
-    let mut loops = match ExactVec::<HatchLoop>::new(loop_bound) {
+    let mut loops = match ExactVec::<HatchLoop>::new(expand.ctx(), loop_bound, "Rhino hatch loops")
+    {
         Ok(loops) => loops,
         Err(error) => return Err(refused(body.position(), &error)),
     };
@@ -236,6 +240,7 @@ pub(crate) fn decode(
         let wrapper = chunk_at(data, wrapper_offset, range.end, archive, false)?;
         let mut loop_warnings = Diagnostics::new();
         let class = parse_class_wrapper(
+            expand.ctx(),
             data,
             wrapper_offset..wrapper.next_offset(),
             archive,
@@ -259,7 +264,7 @@ pub(crate) fn decode(
         if let Err(error) = loops.push(HatchLoop { kind, curve }) {
             return Err(refused(body.position(), &error));
         }
-        warnings.extend(loop_warnings);
+        warnings.append_admitted(expand.ctx(), &mut loop_warnings)?;
     }
     let basepoint = if minor >= 2 {
         let offset = body.position();
@@ -451,19 +456,36 @@ fn gradient_point(
     Ok([x, y, z])
 }
 
-pub(crate) fn gradient_json(gradient: &Gradient) -> String {
-    serde_json::json!({
-        "type": gradient.kind.name(),
-        "type_value": gradient.kind.value(),
-        "start": gradient.start,
-        "end": gradient.end,
-        "repeat": gradient.repeat,
-        "colors": gradient.colors.iter().map(|stop| serde_json::json!({
-            "color": stop.color,
-            "position": stop.position,
-        })).collect::<Vec<_>>(),
-    })
-    .to_string()
+#[derive(serde::Serialize)]
+struct GradientJson<'a> {
+    colors: &'a [GradientColorStop],
+    end: [FiniteReal; 3],
+    repeat: FiniteReal,
+    start: [FiniteReal; 3],
+    r#type: &'static str,
+    type_value: i32,
+}
+
+pub(crate) fn gradient_semantic(gradient: &Gradient) -> impl serde::Serialize + '_ {
+    GradientJson {
+        colors: &gradient.colors,
+        end: gradient.end,
+        repeat: gradient.repeat,
+        start: gradient.start,
+        r#type: gradient.kind.name(),
+        type_value: gradient.kind.value(),
+    }
+}
+
+pub(crate) fn gradient_json(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    gradient: &Gradient,
+) -> Result<String, CodecError> {
+    crate::wire::admitted_json(
+        ctx,
+        &gradient_semantic(gradient),
+        "Rhino hatch gradient JSON",
+    )
 }
 
 fn parse_userdata(
@@ -582,6 +604,31 @@ pub(crate) mod tests {
         payload.extend(3.0_f64.to_le_bytes());
         payload.extend(4.0_f64.to_le_bytes());
         payload
+    }
+
+    #[test]
+    fn hatch_loops_refuse_collection_limit() {
+        let payload = version_two_hatch_payload();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                .expect("root bytes admitted");
+        let expand = crate::mesh::MeshExpand::new(&ctx, root);
+        let error = decode(
+            expand,
+            0..payload.len(),
+            MillimeterScale::IDENTITY,
+            ArchiveVersion::V8,
+        )
+        .expect_err("one hatch loop exceeds collection limit");
+        assert!(matches!(
+            error,
+            crate::curves::GeometryError::Codec(
+                cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            ) if refusal.operation == "Rhino hatch loops"
+        ));
     }
 
     fn gradient_userdata_payload(gradient_type: i32, outer_suffix: &[u8]) -> Vec<u8> {
@@ -783,12 +830,41 @@ pub(crate) mod tests {
                 gradient.colors[1].position,
                 crate::test_support::finite(1.0)
             );
-            let semantic: serde_json::Value =
-                serde_json::from_str(&gradient_json(&gradient)).expect("gradient JSON object");
+            let semantic: serde_json::Value = serde_json::from_str(
+                &gradient_json(expand.ctx(), &gradient).expect("gradient JSON admitted"),
+            )
+            .expect("gradient JSON object");
             assert_eq!(semantic["type"], "linear");
             assert_eq!(semantic["type_value"], 1);
             assert_eq!(semantic["start"], serde_json::json!([2.0, 4.0, 6.0]));
         });
+    }
+
+    #[test]
+    fn gradient_json_refuses_retained_limit() {
+        let gradient = super::Gradient {
+            kind: super::GradientKind::Linear,
+            start: [crate::test_support::finite(0.0); 3],
+            end: [crate::test_support::finite(1.0); 3],
+            repeat: crate::test_support::finite(1.0),
+            colors: Vec::new(),
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let refusal = super::gradient_json(&ctx, &gradient)
+            .expect_err("gradient JSON exceeds zero retained bytes");
+        assert!(matches!(
+            refusal,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "Rhino hatch gradient JSON"
+        ));
+        let json = super::gradient_json(&cadmpeg_test_support::service_decode_context(), &gradient)
+            .expect("service profile admits gradient JSON");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("gradient JSON");
+        assert_eq!(value["type"], "linear");
     }
 
     #[test]
