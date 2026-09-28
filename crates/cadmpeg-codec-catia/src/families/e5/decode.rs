@@ -611,11 +611,10 @@ fn solve_e5_plane_frame(
             for endpoint in uv {
                 if let Some((basis_index, basis_uv)) = basis {
                     if e5_uv_vectors_are_independent(basis_uv, *endpoint) {
-                        break 'find_anchors Some(if basis_index == index {
-                            vec![index]
-                        } else {
-                            vec![basis_index, index]
-                        });
+                        break 'find_anchors Some((
+                            [basis_index, index],
+                            if basis_index == index { 1 } else { 2 },
+                        ));
                     }
                 } else if endpoint[0] != 0.0 || endpoint[1] != 0.0 {
                     basis = Some((index, *endpoint));
@@ -644,7 +643,8 @@ fn solve_e5_plane_frame(
     };
 
     let mut fitted_axes = Vec::new();
-    if let Some(anchors) = anchors {
+    if let Some((anchor_indices, anchor_count)) = anchors {
+        let anchors = &anchor_indices[..anchor_count];
         for mask in 0usize..(1usize << anchors.len()) {
             let mut orientations = ctx.alloc_filled(segments.len(), false, "catia_e5_plane_orientations")?;
             for (bit, &index) in anchors.iter().enumerate() {
@@ -653,7 +653,7 @@ fn solve_e5_plane_frame(
             let mut seed_pairs = Vec::new();
             let Some(seed_count) = anchors.len().checked_mul(2) else { return Ok(None); };
             crate::resource::reserve_vec(ctx, &mut seed_pairs, seed_count, "catia_e5_plane_seed_pairs")?;
-            for &index in &anchors {
+            for &index in anchors {
                 seed_pairs.extend(endpoint_pairs(&segments[index], orientations[index]));
             }
             let Some((seed_u, seed_v, _)) = fit_e5_plane_axes(origin, &seed_pairs) else {
