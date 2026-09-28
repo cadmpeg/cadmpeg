@@ -511,7 +511,7 @@ pub(super) struct CreoReferenceCircleRecord {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoReferenceConicRecord {
+pub(super) struct CreoReferenceConicRecord<'a> {
     pub(super) id: String,
     entity_id: u32,
     type_id: crate::reference::ConicType,
@@ -520,7 +520,7 @@ pub(super) struct CreoReferenceConicRecord {
     parameter_interval: [Option<f64>; 2],
     coefficients: [f64; 2],
     local_system: Option<[f64; 12]>,
-    body: Vec<u8>,
+    body: &'a [u8],
     pub(super) offset: usize,
 }
 
@@ -537,34 +537,45 @@ pub(super) struct CreoReferenceEllipseRecord {
     pub(super) offset: usize,
 }
 
-pub(super) fn reference_line_records(scan: &ContainerScan) -> Vec<CreoReferenceLineRecord> {
+pub(super) fn reference_line_records(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<CreoReferenceLineRecord>, CodecError> {
     let family = |kind: &crate::reference::ReferenceLineKind| match kind {
         crate::reference::ReferenceLineKind::Line => "line",
         crate::reference::ReferenceLineKind::Line3d { .. } => "line3d",
     };
-    scan.references
-        .lines
-        .iter()
-        .map(|line| CreoReferenceLineRecord {
-            id: format!(
-                "creo:mdl_ref_info:{}_record#{}",
-                family(&line.kind),
-                line.offset
-            ),
+    let mut records = Vec::new();
+    for line in &scan.references.lines {
+        let id = ctx.format_retained(
+            format_args!("creo:mdl_ref_info:{}_record#{}", family(&line.kind), line.offset),
+            "creo native reference line IDs",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native reference line records")?;
+        records.push(CreoReferenceLineRecord {
+            id,
             kind: line.kind.clone(),
             start: line.start.get().into(),
             end: line.end.get().into(),
             offset: line.offset,
-        })
-        .collect()
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn reference_circle_records(scan: &ContainerScan) -> Vec<CreoReferenceCircleRecord> {
-    scan.references
-        .circles
-        .iter()
-        .map(|circle| CreoReferenceCircleRecord {
-            id: format!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
+pub(super) fn reference_circle_records(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<CreoReferenceCircleRecord>, CodecError> {
+    let mut records = Vec::new();
+    for circle in &scan.references.circles {
+        let id = ctx.format_retained(
+            format_args!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
+            "creo native reference circle IDs",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native reference circle records")?;
+        records.push(CreoReferenceCircleRecord {
+            id,
             entity_id: circle.entity_id,
             center: circle.center.get().into(),
             center_source: if circle.center_stored {
@@ -576,16 +587,24 @@ pub(super) fn reference_circle_records(scan: &ContainerScan) -> Vec<CreoReferenc
             axis: (*circle.axis.as_raw()).into(),
             endpoints: [circle.start.get().into(), circle.end.get().into()],
             offset: circle.offset,
-        })
-        .collect()
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn reference_conic_records(scan: &ContainerScan) -> Vec<CreoReferenceConicRecord> {
-    scan.references
-        .conics
-        .iter()
-        .map(|conic| CreoReferenceConicRecord {
-            id: format!("creo:mdl_ref_info:conic_record#{}", conic.offset),
+pub(super) fn reference_conic_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan<'_>,
+) -> Result<Vec<CreoReferenceConicRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for conic in &scan.references.conics {
+        let id = ctx.format_retained(
+            format_args!("creo:mdl_ref_info:conic_record#{}", conic.offset),
+            "creo native reference conic IDs",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native reference conic records")?;
+        records.push(CreoReferenceConicRecord {
+            id,
             entity_id: conic.entity_id,
             type_id: conic.type_id,
             flip: conic.flip,
@@ -598,19 +617,31 @@ pub(super) fn reference_conic_records(scan: &ContainerScan) -> Vec<CreoReference
             ],
             coefficients: [conic.coefficient_1.get(), conic.coefficient_2.get()],
             local_system: conic.local_system.map(cadmpeg_ir::units::FiniteVector::get),
-            body: conic.body.clone(),
+            body: &conic.body,
             offset: conic.offset,
-        })
-        .collect()
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn reference_ellipse_records(scan: &ContainerScan) -> Vec<CreoReferenceEllipseRecord> {
-    scan.references
-        .ellipses
-        .iter()
-        .map(|ellipse| CreoReferenceEllipseRecord {
-            id: format!("creo:mdl_ref_info:ellipse_carrier#{}", ellipse.offset),
-            source_conic_id: format!("creo:mdl_ref_info:conic_record#{}", ellipse.offset),
+pub(super) fn reference_ellipse_records(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<CreoReferenceEllipseRecord>, CodecError> {
+    let mut records = Vec::new();
+    for ellipse in &scan.references.ellipses {
+        let id = ctx.format_retained(
+            format_args!("creo:mdl_ref_info:ellipse_carrier#{}", ellipse.offset),
+            "creo native reference ellipse IDs",
+        )?;
+        let source_conic_id = ctx.format_retained(
+            format_args!("creo:mdl_ref_info:conic_record#{}", ellipse.offset),
+            "creo native reference ellipse source IDs",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native reference ellipse records")?;
+        records.push(CreoReferenceEllipseRecord {
+            id,
+            source_conic_id,
             source_entity_id: ellipse.source_entity_id,
             center: ellipse.center.get().into(),
             axis: (*ellipse.axis.as_raw()).into(),
@@ -618,8 +649,9 @@ pub(super) fn reference_ellipse_records(scan: &ContainerScan) -> Vec<CreoReferen
             major_radius: ellipse.major_radius.get(),
             minor_radius: ellipse.minor_radius.get(),
             offset: ellipse.offset,
-        })
-        .collect()
+        });
+    }
+    Ok(records)
 }
 
 pub(super) fn expanded_section_records(scan: &ContainerScan) -> Vec<CreoExpandedSectionRecord> {
@@ -2959,9 +2991,187 @@ pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTabl
 
 #[cfg(test)]
 mod tests {
-    use super::{feature_operation_state_records, feature_reference_name_records, feature_row_records};
+    use super::{
+        feature_operation_state_records, feature_reference_name_records, feature_row_records,
+        reference_circle_records, reference_conic_records, reference_ellipse_records,
+        reference_line_records,
+    };
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use std::collections::BTreeSet;
+
+    fn reference_scan() -> crate::container::ContainerScan<'static> {
+        use cadmpeg_ir::features::FinitePoint3;
+        use cadmpeg_ir::scalar::{FiniteReal, PositiveLength};
+        use cadmpeg_ir::units::UnitVector3;
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let point = |coordinates: [f64; 3]| {
+            FinitePoint3::new(coordinates.into()).expect("finite reference point")
+        };
+        scan.references.lines.push(crate::reference::ReferenceLine {
+            kind: crate::reference::ReferenceLineKind::Line,
+            start: point([0.0, 0.0, 0.0]),
+            end: point([1.0, 0.0, 0.0]),
+            offset: 0,
+        });
+        scan.references.circles.push(crate::reference::ReferenceCircle {
+            entity_id: 7,
+            center: point([0.0, 0.0, 0.0]),
+            center_stored: true,
+            radius: PositiveLength::new(1.0).expect("positive radius"),
+            axis: UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
+            start: point([1.0, 0.0, 0.0]),
+            end: point([0.0, 1.0, 0.0]),
+            offset: 0,
+        });
+        scan.references.conics.push(crate::reference::ReferenceConic {
+            entity_id: 8,
+            type_id: crate::reference::ConicType::Ellipse,
+            flip: 1,
+            start: point([2.0, 0.0, 0.0]),
+            end: point([0.0, 1.0, 0.0]),
+            parameter_start: None,
+            parameter_end: None,
+            coefficient_1: FiniteReal::new(2.0).expect("finite coefficient"),
+            coefficient_2: FiniteReal::new(1.0).expect("finite coefficient"),
+            local_system: None,
+            body: vec![0x31, 0x32],
+            offset: 0,
+        });
+        scan.references.ellipses.push(crate::reference::ReferenceEllipse {
+            source_entity_id: 8,
+            center: point([0.0, 0.0, 0.0]),
+            axis: UnitVector3::new([0.0, 0.0, 1.0].into()).expect("unit axis"),
+            major_direction: UnitVector3::new([1.0, 0.0, 0.0].into()).expect("unit direction"),
+            major_radius: PositiveLength::new(2.0).expect("positive radius"),
+            minor_radius: PositiveLength::new(1.0).expect("positive radius"),
+            offset: 0,
+        });
+        scan
+    }
+
+    fn reference_records_with_limits(
+        max_retained_bytes: u64,
+        max_collection_items: u64,
+        project: impl FnOnce(&DecodeContext<'_>, &crate::container::ContainerScan<'_>)
+            -> Result<usize, cadmpeg_core::CodecError>,
+    ) -> Result<usize, cadmpeg_core::CodecError> {
+        let scan = reference_scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        policy.limits.max_collection_items = max_collection_items;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        project(&ctx, &scan)
+    }
+
+    #[test]
+    fn native_reference_line_id_refuses_retained_limit() {
+        let limit = "creo:mdl_ref_info:line_record#0".len() as u64 - 1;
+        let error = reference_records_with_limits(limit, 1, |ctx, scan| {
+            reference_line_records(ctx, scan).map(|records| records.len())
+        }).expect_err("line ID needs its full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native reference line IDs"));
+    }
+
+    #[test]
+    fn native_reference_line_row_refuses_collection_limit() {
+        let error = reference_records_with_limits(u64::MAX, 0, |ctx, scan| {
+            reference_line_records(ctx, scan).map(|records| records.len())
+        }).expect_err("one line record needs an output row");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native reference line records"));
+        assert_eq!(reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
+            reference_line_records(ctx, scan).map(|records| records.len())
+        }).expect("one line record"), 1);
+    }
+
+    #[test]
+    fn native_reference_circle_id_refuses_retained_limit() {
+        let limit = "creo:mdl_ref_info:arc_z_record#0".len() as u64 - 1;
+        let error = reference_records_with_limits(limit, 1, |ctx, scan| {
+            reference_circle_records(ctx, scan).map(|records| records.len())
+        }).expect_err("circle ID needs its full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native reference circle IDs"));
+    }
+
+    #[test]
+    fn native_reference_circle_row_refuses_collection_limit() {
+        let error = reference_records_with_limits(u64::MAX, 0, |ctx, scan| {
+            reference_circle_records(ctx, scan).map(|records| records.len())
+        }).expect_err("one circle record needs an output row");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native reference circle records"));
+        assert_eq!(reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
+            reference_circle_records(ctx, scan).map(|records| records.len())
+        }).expect("one circle record"), 1);
+    }
+
+    #[test]
+    fn native_reference_conic_id_refuses_retained_limit() {
+        let limit = "creo:mdl_ref_info:conic_record#0".len() as u64 - 1;
+        let error = reference_records_with_limits(limit, 1, |ctx, scan| {
+            reference_conic_records(ctx, scan).map(|records| records.len())
+        }).expect_err("conic ID needs its full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native reference conic IDs"));
+    }
+
+    #[test]
+    fn native_reference_conic_row_refuses_collection_limit() {
+        let error = reference_records_with_limits(u64::MAX, 0, |ctx, scan| {
+            reference_conic_records(ctx, scan).map(|records| records.len())
+        }).expect_err("one conic record needs an output row");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native reference conic records"));
+        assert_eq!(reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
+            reference_conic_records(ctx, scan).map(|records| records.len())
+        }).expect("one conic record"), 1);
+    }
+
+    #[test]
+    fn native_reference_ellipse_id_refuses_retained_limit() {
+        let limit = "creo:mdl_ref_info:ellipse_carrier#0".len() as u64 - 1;
+        let error = reference_records_with_limits(limit, 1, |ctx, scan| {
+            reference_ellipse_records(ctx, scan).map(|records| records.len())
+        }).expect_err("ellipse ID needs its full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native reference ellipse IDs"));
+    }
+
+    #[test]
+    fn native_reference_ellipse_source_id_refuses_retained_limit() {
+        let limit = "creo:mdl_ref_info:ellipse_carrier#0".len() as u64
+            + "creo:mdl_ref_info:conic_record#0".len() as u64 - 1;
+        let error = reference_records_with_limits(limit, 1, |ctx, scan| {
+            reference_ellipse_records(ctx, scan).map(|records| records.len())
+        }).expect_err("source conic ID needs its full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native reference ellipse source IDs"));
+    }
+
+    #[test]
+    fn native_reference_ellipse_row_refuses_collection_limit() {
+        let error = reference_records_with_limits(u64::MAX, 0, |ctx, scan| {
+            reference_ellipse_records(ctx, scan).map(|records| records.len())
+        }).expect_err("one ellipse record needs an output row");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native reference ellipse records"));
+        assert_eq!(reference_records_with_limits(u64::MAX, 1, |ctx, scan| {
+            reference_ellipse_records(ctx, scan).map(|records| records.len())
+        }).expect("one ellipse record"), 1);
+    }
 
     fn reference_name_scan() -> crate::container::ContainerScan<'static> {
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
