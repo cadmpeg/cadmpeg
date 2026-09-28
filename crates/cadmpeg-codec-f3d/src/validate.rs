@@ -6528,10 +6528,9 @@ fn validate_edge_treatment_vertex_operands<'a>(
         &native.asm_histories,
         &scope_histories,
     );
-    let expected = expected
-        .iter()
-        .map(|operand| (operand.id.as_str(), operand))
-        .collect::<HashMap<_, _>>();
+    let expected = collect_index(decode,
+        expected.iter().map(|operand| (operand.id.as_str(), operand)),
+        "index F3D expected edge treatment vertex operands")?;
     let mut records = HashSet::new();
     for operand in &native.design_edge_treatment_vertex_operands {
         let stream = design_stream(&operand.id);
@@ -6547,12 +6546,17 @@ fn validate_edge_treatment_vertex_operands<'a>(
                     && group.record_index == operand.group_record_index
             });
         let group = groups.next();
-        let valid = operand.id
-            == crate::ids::native_scoped_id(
-                stream,
-                "edge-treatment-vertex-operand",
+        let expected_id = match decode {
+            Some(decode) => crate::ids::native_scoped_id_charged(
+                decode, stream, "edge-treatment-vertex-operand",
                 operand.recipe.byte_offset(),
-            )
+            )?,
+            None => crate::ids::native_scoped_id(
+                stream, "edge-treatment-vertex-operand",
+                operand.recipe.byte_offset(),
+            ),
+        };
+        let valid = operand.id == expected_id
             && scope.is_some_and(|scope| {
                 design::decode::operands::has_edge_recipe_operands(&scope.kind())
                     && usize::try_from(operand.scope_reference_ordinal)
@@ -6567,17 +6571,14 @@ fn validate_edge_treatment_vertex_operands<'a>(
                     == Some(&operand.recipe.record_index())
             })
             && groups.next().is_none()
-            && expected.get(operand.id.as_str()) == Some(&operand)
-            && records.insert((stream, operand.recipe.record_index()));
+            && expected.get(operand.id.as_str()) == Some(&operand);
+        let valid = valid && ctx.insert_unique(&mut records,
+            (stream, operand.recipe.record_index()),
+            "index F3D edge treatment vertex records")?;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "Fusion edge-treatment vertex operand has an invalid group or recipe frame"
-                        .into(),
-                entity: Some(operand.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion edge-treatment vertex operand has an invalid group or recipe frame",
+                Some(ctx.copy_entity(&operand.id)?))?;
         }
     }
     Ok(records)
