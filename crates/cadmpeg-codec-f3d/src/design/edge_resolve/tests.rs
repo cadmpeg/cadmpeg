@@ -16,6 +16,8 @@ use super::{
     transition_chain_is_supported_by_recipe, unique_hem_transition_edge_candidate,
     SurfacePatchRecipeEdges,
 };
+
+mod surface_patch_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
@@ -587,7 +589,7 @@ fn grouped_surface_patch_recipe_requires_agreeing_exact_references() {
     second.recipe_references = vec![recipe_reference(&[18]), recipe_reference(&[18])];
 
     assert_eq!(
-        surface_patch_grouped_recipe_edges(&[&first, &second]),
+        surface_patch_grouped_recipe_edges(&[&first, &second], None).unwrap(),
         SurfacePatchRecipeEdges::Resolved(vec![
             EdgeId::mint("f3d:test:edge#17").expect("identity grammar"),
             EdgeId::mint("f3d:test:edge#18").expect("identity grammar")
@@ -606,19 +608,19 @@ fn grouped_surface_patch_recipe_rejects_ambiguous_or_repeated_edges() {
     repeated.recipe_references = vec![recipe_reference(&[17])];
 
     assert_eq!(
-        surface_patch_grouped_recipe_edges(&[&ambiguous]),
+        surface_patch_grouped_recipe_edges(&[&ambiguous], None).unwrap(),
         SurfacePatchRecipeEdges::Inconclusive
     );
     assert_eq!(
-        surface_patch_grouped_recipe_edges(&[&contradictory]),
+        surface_patch_grouped_recipe_edges(&[&contradictory], None).unwrap(),
         SurfacePatchRecipeEdges::Inconclusive
     );
     assert_eq!(
-        surface_patch_grouped_recipe_edges(&[&absent, &contradictory]),
+        surface_patch_grouped_recipe_edges(&[&absent, &contradictory], None).unwrap(),
         SurfacePatchRecipeEdges::Inconclusive
     );
     assert_eq!(
-        surface_patch_grouped_recipe_edges(&[&repeated, &repeated]),
+        surface_patch_grouped_recipe_edges(&[&repeated, &repeated], None).unwrap(),
         SurfacePatchRecipeEdges::Inconclusive
     );
 }
