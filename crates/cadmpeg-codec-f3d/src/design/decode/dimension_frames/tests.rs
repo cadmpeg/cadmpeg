@@ -80,6 +80,50 @@ use std::collections::{HashMap, HashSet};
 const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 
 #[test]
+fn recipe_program_words_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        contiguous_i32_program(&ctx, &1i32.to_le_bytes(), 0, 4),
+        Some(Err(CodecError::ResourceLimit(failure)))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d recipe program words"
+    ));
+}
+
+#[test]
+fn recipe_prefix_copies_refuse_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut bytes = vec![0; 11];
+    bytes.extend_from_slice(&[7, 8, 9]);
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    let family_name_offset = bytes.len();
+    bytes.extend_from_slice(b"edge_recipe_data");
+    let (_, prefix) = recipe_record_prefix(&bytes, 0, family_name_offset, 16).unwrap();
+    for operation in [
+        "f3d dimension recipe prefix",
+        "f3d recipe operand prefix",
+        "f3d face operand prefix",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            ctx.copy_retained(prefix, operation),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation
+        ));
+    }
+}
+
+#[test]
 fn dimension_recipe_edge_id_refuses_collection_and_retained_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -105,6 +149,9 @@ fn dimension_recipe_edge_id_refuses_collection_and_retained_limits() {
 
 #[test]
 fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut bytes = vec![0xaa; 5];
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"415");
@@ -129,10 +176,10 @@ fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
     );
     assert_eq!(indexed_record_containing(&bytes, 6, bytes.len(), 7), None);
     assert_eq!(
-        contiguous_i32_program(&[u8::MAX; 8], 0, 8),
+        contiguous_i32_program(&ctx, &[u8::MAX; 8], 0, 8).transpose().unwrap(),
         Some(vec![-1, -1])
     );
-    assert_eq!(contiguous_i32_program(&[0; 7], 0, 7), None);
+    assert_eq!(contiguous_i32_program(&ctx, &[0; 7], 0, 7).transpose().unwrap(), None);
 
     let mut framed = vec![0; 11];
     framed.extend_from_slice(&[7, 8, 9]);
@@ -141,7 +188,7 @@ fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
     framed.extend_from_slice(b"edge_recipe_data");
     assert_eq!(
         recipe_record_prefix(&framed, 0, family_name_offset, 16),
-        Some((11, vec![7, 8, 9]))
+        Some((11, &[7, 8, 9][..]))
     );
     framed[14..18].copy_from_slice(&15u32.to_le_bytes());
     assert_eq!(

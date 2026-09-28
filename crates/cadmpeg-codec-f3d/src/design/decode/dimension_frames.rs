@@ -56,6 +56,7 @@ pub(crate) struct DimensionDecodeInputs<'a> {
 /// Decode the indexed record that directly contains each construction recipe
 /// owned by a dimensional parameter companion.
 pub(crate) fn decode_dimension_recipe_records(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     owners: &[DesignParameterOwner],
@@ -141,10 +142,12 @@ pub(crate) fn decode_dimension_recipe_records(
             let Ok(prefix_offset) = u64::try_from(prefix_offset) else {
                 continue;
             };
-            let references = decode_recipe_references(&prefix_bytes, prefix_offset);
-            let Some(program) = contiguous_i32_program(bytes, program_offset, record_end) else {
+            let references = decode_recipe_references(prefix_bytes, prefix_offset);
+            let Some(program) = contiguous_i32_program(ctx, bytes, program_offset, record_end) else {
                 continue;
             };
+            let program = program?;
+            let prefix_bytes = ctx.copy_retained(prefix_bytes, "f3d dimension recipe prefix")?;
             let Ok(class_tag) = crate::records::references::DesignClassTag::try_from(class_tag)
             else {
                 continue;
@@ -665,19 +668,19 @@ fn dimension_recipe_edge_matches(
     record.program.windows(tail.len()).any(|window| window == tail)
 }
 
-pub(super) fn recipe_record_prefix(
-    bytes: &[u8],
+pub(super) fn recipe_record_prefix<'a>(
+    bytes: &'a [u8],
     record_offset: usize,
     family_name_offset: usize,
     family_name_len: usize,
-) -> Option<(usize, Vec<u8>)> {
+) -> Option<(usize, &'a [u8])> {
     let prefix_offset = record_offset.checked_add(11)?;
     let prefix_end = family_name_offset.checked_sub(4)?;
     if View::u32_le_at(bytes, prefix_end)? != u32::try_from(family_name_len).ok()? {
         return None;
     }
     let prefix = bytes.get(prefix_offset..prefix_end)?;
-    Some((prefix_offset, prefix.to_vec()))
+    Some((prefix_offset, prefix))
 }
 
 fn indexed_record_containing(
@@ -706,12 +709,34 @@ fn indexed_record_containing(
     containing.map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, end))
 }
 
-pub(super) fn contiguous_i32_program(bytes: &[u8], start: usize, end: usize) -> Option<Vec<i32>> {
-    let mut view = View::over_retained(bytes).child(start, end)?;
+pub(super) fn contiguous_i32_program(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<Result<Vec<i32>, CodecError>> {
+    let view = View::over_retained(bytes).child(start, end)?;
     if view.remaining() == 0 || !view.remaining().is_multiple_of(4) {
         return None;
     }
-    view.read_counted((view.remaining() / 4) as u64, 4, View::i32_le)
+    let count = view.remaining() / 4;
+    let count_u64 = match u64::try_from(count) {
+        Ok(count) => count,
+        Err(_) => return Some(Err(ctx.refuse_codec_limit("f3d recipe program count", 0, 1))),
+    };
+    if let Err(error) = ctx.charge_collection_items(
+        count_u64, "f3d recipe program words",
+    ) {
+        return Some(Err(error));
+    }
+    let mut program = Vec::new();
+    if program.try_reserve(count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d recipe program allocation", 0, count_u64)));
+    }
+    for at in (start..end).step_by(4) {
+        program.push(View::i32_le_at(bytes, at)?);
+    }
+    Some(Ok(program))
 }
 
 /// Decode paired typed sketch loci nested immediately after dimensional
