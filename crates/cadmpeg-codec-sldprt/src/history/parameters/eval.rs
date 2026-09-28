@@ -513,28 +513,29 @@ pub(super) enum ParameterFunction {
 
 impl ParameterFunction {
     pub(super) fn parse(name: &str) -> Option<Self> {
-        Some(match name.to_ascii_lowercase().as_str() {
-            "iif" => Self::Iif,
-            "abs" => Self::Abs,
-            "sin" => Self::Sin,
-            "cos" => Self::Cos,
-            "tan" => Self::Tan,
-            "sec" => Self::Sec,
-            "cosec" => Self::Cosec,
-            "cotan" => Self::Cotan,
-            "arcsin" => Self::Arcsin,
-            "arccos" => Self::Arccos,
-            "atn" => Self::Atn,
-            "arcsec" => Self::Arcsec,
-            "arccosec" => Self::Arccosec,
-            "arccotan" => Self::Arccotan,
-            "exp" => Self::Exp,
-            "log" => Self::Log,
-            "sqr" => Self::Sqr,
-            "int" => Self::Int,
-            "sgn" => Self::Sgn,
-            _ => return None,
-        })
+        [
+            ("iif", Self::Iif),
+            ("abs", Self::Abs),
+            ("sin", Self::Sin),
+            ("cos", Self::Cos),
+            ("tan", Self::Tan),
+            ("sec", Self::Sec),
+            ("cosec", Self::Cosec),
+            ("cotan", Self::Cotan),
+            ("arcsin", Self::Arcsin),
+            ("arccos", Self::Arccos),
+            ("atn", Self::Atn),
+            ("arcsec", Self::Arcsec),
+            ("arccosec", Self::Arccosec),
+            ("arccotan", Self::Arccotan),
+            ("exp", Self::Exp),
+            ("log", Self::Log),
+            ("sqr", Self::Sqr),
+            ("int", Self::Int),
+            ("sgn", Self::Sgn),
+        ]
+        .into_iter()
+        .find_map(|(word, function)| name.eq_ignore_ascii_case(word).then_some(function))
     }
 
     fn argument_count(self) -> usize {
