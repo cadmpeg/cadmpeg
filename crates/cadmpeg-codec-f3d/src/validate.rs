@@ -729,6 +729,35 @@ impl<'a, 'd> Ctx<'a, 'd> {
         Ok(collected)
     }
 
+    fn push_group<K: Eq + Hash, T>(
+        &self,
+        groups: &mut HashMap<K, Vec<T>>,
+        key: K,
+        value: T,
+        map_operation: &'static str,
+        item_operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if !groups.contains_key(&key) {
+            self.charge_item(map_operation)?;
+            groups.try_reserve(1).map_err(|_| {
+                self.decode.map_or_else(
+                    || CodecError::malformed("F3D validation map allocation failed"),
+                    |decode| decode.refuse_codec_limit(map_operation, 0, 1),
+                )
+            })?;
+        }
+        let items = groups.entry(key).or_default();
+        self.charge_item(item_operation)?;
+        items.try_reserve(1).map_err(|_| {
+            self.decode.map_or_else(
+                || CodecError::malformed("F3D validation group allocation failed"),
+                |decode| decode.refuse_codec_limit(item_operation, 0, 1),
+            )
+        })?;
+        items.push(value);
+        Ok(())
+    }
+
     fn copy_entity(&self, text: &str) -> Result<String, CodecError> {
         match self.decode {
             Some(decode) => crate::container::format_retained(
@@ -986,7 +1015,7 @@ fn validate_loaded(
         })
         , "index F3D face group members")?;
     validate_act(&ctx, &mut findings);
-    validate_body_bindings(&ctx, &mut findings);
+    validate_body_bindings(&ctx, &mut findings)?;
     validate_body_bounds(&ctx, &mut findings)?;
     validate_canvas_images(&ctx, &mut findings)?;
     validate_decal_images(&ctx, &mut findings)?;
@@ -1756,7 +1785,7 @@ fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Resu
 }
 
 /// Validate the ordered Design body-map binding entries and their pair runs.
-fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_body_bindings(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let mut binding_offsets = HashSet::new();
     let mut binding_groups =
@@ -1766,14 +1795,14 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let valid = design_stream_contains_entry(native_stream, &binding.stream)
             && binding.body.as_ref().is_none_or(|body| {
                 let has_named_source = native.body_native_keys.iter().any(|key| {
-                    ids::same_native_occurrence(&key.id(), &binding.id)
+                    ids::same_native_occurrence(key.source_namespace.as_str(), &binding.id)
                         && key.source_brep.as_deref() == Some(binding.blob_name())
                 });
                 let source_keys = native
                     .body_native_keys
                     .iter()
                     .filter(|key| {
-                        ids::same_native_occurrence(&key.id(), &binding.id)
+                        ids::same_native_occurrence(key.source_namespace.as_str(), &binding.id)
                             && if has_named_source {
                                 key.source_brep.as_deref() == Some(binding.blob_name())
                             } else {
@@ -1785,19 +1814,17 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     Ok(Some(resolved)) if resolved == body
                 )
             })
-            && binding_offsets.insert((native_stream, binding.asm_body_key_offset()));
+            && ctx.insert_unique(&mut binding_offsets,
+                (native_stream, binding.asm_body_key_offset()),
+                "index F3D body binding offsets")?;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design body binding has an invalid ordered map entry".into(),
-                entity: Some(binding.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design body binding has an invalid ordered map entry",
+                Some(ctx.copy_entity(&binding.id)?))?;
         }
-        binding_groups
-            .entry((native_stream, binding.blob_name_offset()))
-            .or_default()
-            .push(binding);
+        ctx.push_group(&mut binding_groups,
+            (native_stream, binding.blob_name_offset()), binding,
+            "index F3D body binding groups", "collect F3D body binding group members")?;
     }
     for bindings in binding_groups.values_mut() {
         bindings.sort_by_key(|binding| binding.pair_ordinal());
@@ -1811,14 +1838,12 @@ fn validate_body_bindings(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && binding.stream == bindings[0].stream
             });
         if !complete {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design body map has an incomplete ordered pair run".into(),
-                entity: bindings.first().map(|binding| binding.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design body map has an incomplete ordered pair run",
+                bindings.first().map(|binding| ctx.copy_entity(&binding.id)).transpose()?)?;
         }
     }
+    Ok(())
 }
 
 /// Validate each Design body-bounds repeated record frame.

@@ -390,6 +390,94 @@ fn body_bounds_valid_binding_order_has_no_finding() {
     assert!(findings.is_empty());
 }
 
+fn body_binding_error(
+    native: crate::native::F3dNative,
+    max_items: u64,
+    max_retained: u64,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained;
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    ctx.decode = Some(&decode);
+    super::super::validate_body_bindings(&ctx, &mut Vec::new()).unwrap_err()
+}
+
+#[test]
+fn body_binding_offset_index_refuses_collection_limit() {
+    let error = body_binding_error(validation_body_bounds(true), 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D body binding offsets"));
+}
+
+#[test]
+fn body_binding_group_index_refuses_collection_limit() {
+    let error = body_binding_error(validation_body_bounds(true), 1, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D body binding groups"));
+}
+
+#[test]
+fn body_binding_group_member_refuses_collection_limit() {
+    let error = body_binding_error(validation_body_bounds(true), 2, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D body binding group members"));
+}
+
+#[test]
+fn body_binding_invalid_finding_refuses_collection_limit() {
+    let mut native = validation_body_bounds(true);
+    native.design_body_bindings[0].stream = "Other/BulkStream.dat".into();
+    let error = body_binding_error(native, 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn body_binding_invalid_entity_refuses_retained_limit() {
+    let mut native = validation_body_bounds(true);
+    native.design_body_bindings[0].stream = "Other/BulkStream.dat".into();
+    let error = body_binding_error(native, u64::MAX, 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity"));
+}
+
+#[test]
+fn body_binding_incomplete_group_finding_refuses_collection_limit() {
+    use crate::records::bodies::{DesignBodyBinding, DesignBodyBindingWire};
+    let mut native = validation_body_bounds(true);
+    native.design_body_bindings[0] = DesignBodyBinding::try_from(DesignBodyBindingWire {
+        id: "f3d:Design/BulkStream.dat:body-binding#1".into(),
+        stream: "Design/BulkStream.dat".into(),
+        pair_count: 2,
+        pair_ordinal: 0,
+        asm_body_key: 1,
+        asm_body_key_offset: 50,
+        entity_suffix: 1,
+        entity_suffix_offset: 58,
+        blob_name: "BREP.body".into(),
+        blob_name_offset: 60,
+        body: None,
+    }).unwrap();
+    let error = body_binding_error(native, 3, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn body_binding_valid_group_has_no_finding() {
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let native = validation_body_bounds(true);
+    let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    let mut findings = Vec::new();
+    super::super::validate_body_bindings(&ctx, &mut findings).unwrap();
+    assert!(findings.is_empty());
+}
+
 fn validation_occurrence(record_index: u32, occurrence_guid: &str) -> crate::records::feature::assembly_features::DesignComponentOccurrence {
     use crate::records::feature::assembly_features::{
         DesignComponentOccurrence, DesignComponentOccurrenceDraft, DesignComponentOccurrencePlacement,
