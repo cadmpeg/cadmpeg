@@ -1896,7 +1896,10 @@ fn blend_surface_frame_with_index_and_budget_and_options(
                 .borrow()
                 .get(surface, u, allow_offset_contact)
         {
-            return Ok(geometry_budget.charge().then_some(frame));
+            if !geometry_budget.charge() {
+                return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+            }
+            return Ok(Some(frame));
         }
     }
     let frame = (|| -> Result<Option<BlendSurfaceFrame>, cadmpeg_core::decode::ResourceLimit> {
@@ -2035,7 +2038,10 @@ fn blend_boundary_point_with_index_and_budget(
         .borrow()
         .get_boundary_point(surface, parameter, boundary);
     if let Some(point) = cached {
-        return Ok(geometry_budget.charge().then_some(point));
+        if !geometry_budget.charge() {
+            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
+        }
+        return Ok(Some(point));
     }
     let Some((supports, spine, radius, _)) = blend_surface_definition_with_index(index, surface)
     else {

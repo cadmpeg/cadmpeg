@@ -1404,14 +1404,13 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     curve_is_cache_backed_with_index(&model_index, owner),
                 )))
             })();
-        // Charging the shared budget for this candidate's work is how the
-        // route reports its own exhaustion: `WorkBudget::charge_by` marks
-        // the budget exhausted when the candidate overran the remainder,
-        // and `GeometryWorkBudget::exhausted` is what the decode reports
-        // as `geometry.adaptive-work-bounded`. The candidate's own
-        // replacement was computed inside its slice and is kept.
-        match geometry_budget.consume_child(&candidate_geometry_budget) {
-            Ok(()) | Err(cadmpeg_core::decode::BudgetExhausted) => {}
+        // The candidate's completed replacement is admitted only when its
+        // work fits the shared geometry slice.
+        if geometry_budget.consume_child(&candidate_geometry_budget).is_err() {
+            return Err(geometry_budget.resource_refusal().map_or_else(
+                || cadmpeg_core::decode::refuse_local_limit("nx opposite chart geometry work", 0, 1),
+                Into::into,
+            ));
         }
         if let Some(replacement) = replacement? {
             ctx.charge_collection_items(1, "nx opposite chart replacements")?;
@@ -1922,7 +1921,7 @@ fn exact_boundary_pcurve_with_index(
         let [first, second] = [first, second].map(Point2::from);
         for (endpoint, parameter) in endpoints.into_iter().zip([first, second]) {
             if !geometry_budget.charge() {
-                return Ok(None);
+                return geometry_budget.resource_refusal().map_or(Ok(None), Err);
             }
             let Some(mapped) = decoded_surface_point_inner_with_budget(
                 index,
@@ -2036,7 +2035,7 @@ fn exact_boundary_pcurve_with_index(
                 return Ok(None);
             };
             if !geometry_budget.charge() {
-                return Ok(None);
+                return geometry_budget.resource_refusal().map_or(Ok(None), Err);
             }
             let Some(mapped) = decoded_surface_point_inner_with_budget(
                 index,
@@ -2114,7 +2113,7 @@ fn exact_boundary_pcurve_with_index(
     let parameters = [first_parameters, second_parameters];
     for index in 0..2 {
         if !geometry_budget.charge() {
-            return Ok(None);
+            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         }
         let Some(point) = finite_or_refusal(nurbs_surface_point_with_budget(
             nurbs,
@@ -2219,7 +2218,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
     for parameter in breaks {
         if !geometry_budget.charge() {
-            return Ok(false);
+            return geometry_budget.resource_refusal().map_or(Ok(false), Err);
         }
         let Some(uv) = finite_or_refusal(pcurve_uv(pcurve, parameter))? else {
             return Ok(false);
@@ -2424,7 +2423,9 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
             Ok(None) => return None,
             Err(limit) => return Some(Err(limit)),
         };
-        geometry_budget.charge().then_some(())?;
+        if !geometry_budget.charge() {
+            return geometry_budget.resource_refusal().map(Err);
+        }
         let surface_jet = match finite_or_refusal(surface_second_partials(
             &surface_carrier.geometry,
             uv.u,
@@ -2527,7 +2528,7 @@ fn coincident_pcurve_pair_with_index(
     let tolerance = tolerance.get();
     let separation = |parameter| -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
         if !geometry_budget.charge() {
-            return Ok(None);
+            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         }
         let evaluate = |side| -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
             let Some(uv) = finite_or_refusal(pcurve_uv(pcurves[side], parameter))? else {
@@ -2583,7 +2584,7 @@ fn coincident_pcurve_pair_with_index(
     intervals.push(range);
     while let Some([start, end]) = intervals.pop() {
         if !geometry_budget.charge() {
-            return Ok(false);
+            return geometry_budget.resource_refusal().map_or(Ok(false), Err);
         }
         let middle = finite_parameter_sample([start, end], 1, 2);
         let Some(middle_separation) = separation(middle)? else {
