@@ -86,30 +86,25 @@ fn blind_extrusion_from_carriers(
                         .all(|start| (dot(*start, direction) - end_station).abs() <= tolerance))
         })
         .then_some(())?;
-    let cap_stations = planes
-        .iter()
-        .map(|(origin, normal)| {
-            let normal = normalize(*normal)?;
-            let alignment = dot(normal, direction).abs();
-            if alignment >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE {
-                Some(Some(dot(*origin, direction)))
-            } else if alignment <= EPS_SWEEP_EXTENT_DEGENERATE {
-                Some(None)
-            } else {
-                None
+    let mut unique_stations = [0.0; 2];
+    let mut station_count = 0;
+    for (origin, normal) in planes {
+        let normal = normalize(*normal)?;
+        let alignment = dot(normal, direction).abs();
+        if alignment >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE {
+            let station = dot(*origin, direction);
+            if unique_stations[..station_count]
+                .iter()
+                .all(|existing| (station - existing).abs() > tolerance)
+            {
+                if station_count == unique_stations.len() {
+                    return None;
+                }
+                unique_stations[station_count] = station;
+                station_count += 1;
             }
-        })
-        .collect::<Option<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let mut unique_stations = Vec::new();
-    for station in cap_stations {
-        if unique_stations
-            .iter()
-            .all(|existing| (station - existing).abs() > tolerance)
-        {
-            unique_stations.push(station);
+        } else if alignment > EPS_SWEEP_EXTENT_DEGENERATE || !alignment.is_finite() {
+            return None;
         }
     }
     let reverse = if has_opposed_carrier {
@@ -123,7 +118,7 @@ fn blind_extrusion_from_carriers(
                 return None;
             }
         } else {
-            let [terminal_station] = unique_stations.as_slice() else {
+            let [terminal_station] = &unique_stations[..station_count] else {
                 return None;
             };
             if (*terminal_station - end_station).abs() <= tolerance {
@@ -152,14 +147,15 @@ fn blind_extrusion_from_carriers(
             && (dot(transform.origin(), direction) - start_station).abs() <= tolerance)
             .then_some(())?;
     }
-    let unique_stations = unique_stations
-        .into_iter()
-        .map(|station| if reverse { -station } else { station })
-        .collect::<Vec<_>>();
+    if reverse {
+        for station in &mut unique_stations[..station_count] {
+            *station = -*station;
+        }
+    }
     let cap_matches = |cap: f64| {
         (cap - start_station).abs() <= tolerance || (cap - end_station).abs() <= tolerance
     };
-    match unique_stations.as_slice() {
+    match &unique_stations[..station_count] {
         [] => {}
         [cap] if cap_matches(*cap) => {}
         [first_cap, second_cap]
@@ -328,26 +324,26 @@ pub(in super::super) fn bounded_cylinder_span(
                 .fold(1.0, f64::max);
             let tolerance = EPS_SWEEP_EXTENT_GEOMETRY * scale;
             let start_station = dot(frame.frame().origin(), axis);
-            let mut terminal_offsets = Vec::new();
+            let mut terminal_offset: Option<f64> = None;
             for (origin, normal) in planes {
                 let normal = normalize(*normal)?;
                 let alignment = dot(normal, axis).abs();
                 if alignment >= 1.0 - EPS_SWEEP_EXTENT_DEGENERATE {
                     let offset = dot(*origin, axis) - start_station;
-                    if offset.abs() > tolerance
-                        && terminal_offsets
-                            .iter()
-                            .all(|existing| (offset - existing).abs() > tolerance)
-                    {
-                        terminal_offsets.push(offset);
+                    if offset.abs() > tolerance {
+                        if let Some(existing) = terminal_offset {
+                            if (offset - existing).abs() > tolerance {
+                                return None;
+                            }
+                        } else {
+                            terminal_offset = Some(offset);
+                        }
                     }
                 } else if alignment > EPS_SWEEP_EXTENT_DEGENERATE {
                     return None;
                 }
             }
-            let [offset] = terminal_offsets.as_slice() else {
-                return None;
-            };
+            let offset = terminal_offset?;
             axis.map(|component| component * offset)
         }
     };
@@ -552,57 +548,68 @@ fn unit_plane(normal: cadmpeg_ir::units::UnitVector3, origin: [f64; 3]) -> Optio
 }
 
 fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence {
-    let datums = scan
+    let mut datums = scan
         .planes
         .datums
         .iter()
-        .filter(|datum| datum.id == id)
-        .collect::<Vec<_>>();
-    let model_planes = scan
+        .filter(|datum| datum.id == id);
+    let datum = datums.next();
+    let duplicate_datums = datums.next().is_some();
+    let mut model_planes = scan
         .planes
         .local_systems
         .iter()
-        .filter(|plane| plane.surface_id == id)
-        .collect::<Vec<_>>();
-    let model_equation = match model_planes.as_slice() {
-        [plane] => {
+        .filter(|plane| plane.surface_id == id);
+    let model_plane = model_planes.next();
+    let duplicate_model_planes = model_planes.next().is_some();
+    let model_equation = if duplicate_model_planes {
+        None
+    } else {
+        model_plane.and_then(|plane| {
             let frame = plane.frame();
             frame
                 .normal
                 .zip(frame.origin)
                 .and_then(|(normal, origin)| unit_plane(normal, origin))
-        }
-        _ => None,
+        })
     };
-    let outline_planes = if scan
+    let has_outline = scan
         .planes
         .outlines
         .iter()
-        .any(|plane| plane.surface_id == id)
-    {
-        scan.planes
+        .any(|plane| plane.surface_id == id);
+    let (outline_equation, duplicate_outline_planes) = if has_outline {
+        let mut planes = scan.planes
             .outlines
             .iter()
-            .filter(|plane| plane.surface_id == id)
-            .collect::<Vec<_>>()
+            .filter(|plane| plane.surface_id == id);
+        let first = planes.next();
+        let duplicate = planes.next().is_some();
+        (
+            first.filter(|_| !duplicate)
+                .and_then(|plane| unit_plane(plane.normal, plane.origin)),
+            duplicate,
+        )
     } else {
-        scan.planes
+        let mut planes = scan.planes
             .positional_frames
             .iter()
-            .filter(|plane| plane.surface_id == id)
-            .collect::<Vec<_>>()
-    };
-    let outline_equation = match outline_planes.as_slice() {
-        [plane] => unit_plane(plane.normal, plane.origin),
-        _ => None,
+            .filter(|plane| plane.surface_id == id);
+        let first = planes.next();
+        let duplicate = planes.next().is_some();
+        (
+            first.filter(|_| !duplicate)
+                .and_then(|plane| unit_plane(plane.normal, plane.origin)),
+            duplicate,
+        )
     };
 
-    if datums.len() > 1
-        || (datums.len() == 1 && (model_equation.is_some() || outline_equation.is_some()))
+    if duplicate_datums
+        || (datum.is_some() && (model_equation.is_some() || outline_equation.is_some()))
     {
         return SectionPlaneEvidence::Ambiguous;
     }
-    if let [datum] = datums.as_slice() {
+    if let Some(datum) = datum {
         return normalized_plane(datum.plane.normal(), datum.plane.offset).map_or(
             SectionPlaneEvidence::Ambiguous,
             SectionPlaneEvidence::Resolved,
@@ -611,7 +618,7 @@ fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence
     if let Some(equation) = model_equation {
         return SectionPlaneEvidence::Resolved(equation);
     }
-    if model_planes.len() > 1 || outline_planes.len() > 1 {
+    if duplicate_model_planes || duplicate_outline_planes {
         return SectionPlaneEvidence::Ambiguous;
     }
     outline_equation.map_or(
