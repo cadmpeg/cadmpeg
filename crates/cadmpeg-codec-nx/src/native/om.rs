@@ -2748,92 +2748,106 @@ pub(super) struct MaterialTextureCatalogEntry {
 
 /// Join QAF material paths to embedded TIFF streams by exact stored path.
 pub(super) fn material_texture_catalog_entries(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     assets: &[MaterialTextureAsset],
-) -> Vec<MaterialTextureCatalogEntry> {
+) -> Result<Vec<MaterialTextureCatalogEntry>, CodecError> {
     let Some((entry_index, entry)) = container
         .entries
         .iter()
         .enumerate()
         .find(|(_, entry)| entry.name == "/Root/qafmetadata")
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some((entry_offset, size)) = entry.file_span() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(start) = usize::try_from(entry_offset).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(size) = usize::try_from(size).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(end) = start.checked_add(size) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(payload) = container.data.get(start..end) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(entries) =
-        parse_material_texture_catalog(payload, entry_index, &entry.name, entry_offset, assets)
+        parse_material_texture_catalog(ctx, payload, entry_index, &entry.name, entry_offset, assets)?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    entries
+    Ok(entries)
 }
 
 fn parse_material_texture_catalog(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     entry_index: usize,
     source_entry: &str,
     entry_offset: u64,
     assets: &[MaterialTextureAsset],
-) -> Option<Vec<MaterialTextureCatalogEntry>> {
-    let document = roxmltree::Document::parse(xml_stream_text(payload)?).ok()?;
+) -> Result<Option<Vec<MaterialTextureCatalogEntry>>, CodecError> {
+    let Some(xml) = xml_stream_text(payload) else { return Ok(None); };
+    let document_bytes = payload.len().checked_mul(16)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX material catalog XML size", 0, 1))?;
+    let _document_guard = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(document_bytes), "NX material catalog XML")?;
+    let Ok(document) = roxmltree::Document::parse(xml) else { return Ok(None); };
     let root = document.root_element();
-    (root.tag_name().name() == "folderContents").then_some(())?;
-    let assets_by_path = assets
-        .iter()
-        .map(|asset| (asset.storage_path(), asset))
-        .collect::<BTreeMap<_, _>>();
+    if root.tag_name().name() != "folderContents" { return Ok(None); }
+    let index_bytes = assets.len()
+        .checked_mul(std::mem::size_of::<(&str, &MaterialTextureAsset)>() * 4
+            + std::mem::size_of::<&str>() * 4)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX material catalog index size", 0, 1))?;
+    let _index_guard = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(index_bytes), "NX material catalog index")?;
+    let mut assets_by_path = BTreeMap::new();
+    for asset in assets {
+        if !assets_by_path.contains_key(asset.storage_path()) {
+            ctx.charge_collection_items(1, "NX material asset path index")?;
+        }
+        assets_by_path.insert(asset.storage_path(), asset);
+    }
     let mut catalog = Vec::new();
     let mut seen_assets = BTreeSet::new();
     for node in root.children().filter(roxmltree::Node::is_element) {
-        (node.tag_name().name() == "folderProperties").then_some(())?;
-        let storage_path = node.attribute("location")?;
-        let material_path = node.attribute("unmappedLocation")?;
-        let children = node
-            .children()
-            .filter(roxmltree::Node::is_element)
-            .collect::<Vec<_>>();
-        let [create, modify] = children.as_slice() else {
-            return None;
-        };
-        (create.tag_name().name() == "createTime" && modify.tag_name().name() == "modifyTime")
-            .then_some(())?;
-        let create_time = create.text()?;
-        let modify_time = modify.text()?;
+        if node.tag_name().name() != "folderProperties" { return Ok(None); }
+        let Some(storage_path) = node.attribute("location") else { return Ok(None); };
+        let Some(material_path) = node.attribute("unmappedLocation") else { return Ok(None); };
+        let mut children = node.children().filter(roxmltree::Node::is_element);
+        let (Some(create), Some(modify), None) = (children.next(), children.next(), children.next()) else { return Ok(None); };
+        if create.tag_name().name() != "createTime" || modify.tag_name().name() != "modifyTime" { return Ok(None); }
+        let Some(create_time) = create.text() else { return Ok(None); };
+        let Some(modify_time) = modify.text() else { return Ok(None); };
         if !storage_path.starts_with("materialsTif/") {
             continue;
         }
-        let asset = assets_by_path.get(storage_path)?;
-        material_path
-            .strip_prefix("materialsTif/")
-            .filter(|name| !name.is_empty())?;
-        seen_assets.insert(asset.id.as_str()).then_some(())?;
+        let Some(asset) = assets_by_path.get(storage_path) else { return Ok(None); };
+        if material_path.strip_prefix("materialsTif/").is_none_or(str::is_empty) { return Ok(None); }
+        if seen_assets.contains(asset.id.as_str()) { return Ok(None); }
+        ctx.charge_collection_items(1, "NX material catalog seen assets")?;
+        seen_assets.insert(asset.id.as_str());
         let ordinal = catalog.len();
+        let source_offset = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(node.range().start))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX material catalog source offset", 0, 1))?;
+        ctx.charge_collection_items(1, "NX material catalog entries")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<MaterialTextureCatalogEntry>()), "retain NX material catalog entry")?;
+        catalog.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX material catalog entries", 0, 1))?;
         catalog.push(MaterialTextureCatalogEntry {
-            id: format!("nx:qafmetadata-{entry_index}:material-texture#{ordinal}"),
-            texture_asset: asset.id.clone(),
-            storage_path: storage_path.to_string(),
-            material_path: material_path.to_string(),
-            create_time: create_time.to_string(),
-            modify_time: modify_time.to_string(),
-            source_entry: source_entry.to_string(),
-            source_offset: entry_offset + node.range().start as u64,
+            id: retained_om_index_id(ctx, "nx:qafmetadata-", entry_index, ":material-texture#", cadmpeg_core::decode::u64_from_index(ordinal), "NX material catalog entry id")?,
+            texture_asset: copy_om_retained_text(ctx, &asset.id, "NX material catalog texture asset")?,
+            storage_path: copy_om_retained_text(ctx, storage_path, "NX material catalog storage path")?,
+            material_path: copy_om_retained_text(ctx, material_path, "NX material catalog material path")?,
+            create_time: copy_om_retained_text(ctx, create_time, "NX material catalog create time")?,
+            modify_time: copy_om_retained_text(ctx, modify_time, "NX material catalog modify time")?,
+            source_entry: copy_om_retained_text(ctx, source_entry, "NX material catalog source entry")?,
+            source_offset,
         });
     }
-    Some(catalog)
+    Ok(Some(catalog))
 }
 
 /// Decode end-anchored external child-part string tables.
@@ -8384,6 +8398,7 @@ mod tests {
     }
     mod material_and_external_records;
     mod expression_admission;
+    mod material_catalog_admission;
 }
 
 #[cfg(test)]
