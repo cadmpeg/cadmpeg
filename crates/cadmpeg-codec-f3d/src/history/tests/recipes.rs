@@ -392,11 +392,12 @@ fn feature_input_topology_projects_historical_vertices() {
     };
 
     let projected = super::super::project_feature_input_topologies(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&scope),
         std::slice::from_ref(&history),
         &[],
-    );
+    ).unwrap();
     let prefix = super::super::feature_input_prefix(&feature.id, 4);
     assert_eq!(projected.len(), 1);
     assert_eq!(
