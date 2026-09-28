@@ -1166,6 +1166,29 @@ fn is_deltas_stream(header: &StreamHeader) -> bool {
         .any(|window| window.eq_ignore_ascii_case(b"deltas"))
 }
 
+fn selected_typed_face_offsets(
+    ctx: &DecodeContext<'_>,
+    facts: &typed::Facts,
+    attrs: Option<&HashSet<u16>>,
+) -> Result<HashSet<usize>, cadmpeg_core::CodecError> {
+    let mut offsets = HashSet::new();
+    if let Some(attrs) = attrs {
+        for face in &facts.faces {
+            ctx.charge_work(1, "select typed Parasolid face offsets")?;
+            if attrs.contains(&face.attr) {
+                reserve_graph_set_key(
+                    ctx,
+                    &mut offsets,
+                    &face.offset,
+                    "index typed Parasolid face offsets",
+                )?;
+                offsets.insert(face.offset);
+            }
+        }
+    }
+    Ok(offsets)
+}
+
 /// Decode related partition and deltas streams as one record source.
 ///
 /// Partition records are the base set. Deltas records fill missing subordinate
@@ -1217,21 +1240,8 @@ pub(crate) fn decode_bodies(
     {
         let body = header_body(payload, header)?;
         let is_deltas = is_deltas_stream(header);
-        let mut typed_face_offsets = HashSet::new();
-        if let Some(attrs) = typed_bridge_attrs.as_ref() {
-            for face in &stream_typed_facts.faces {
-                ctx.charge_work(1, "select typed Parasolid face offsets")?;
-                if attrs.contains(&face.attr) {
-                    reserve_graph_set_key(
-                        ctx,
-                        &mut typed_face_offsets,
-                        &face.offset,
-                        "index typed Parasolid face offsets",
-                    )?;
-                    typed_face_offsets.insert(face.offset);
-                }
-            }
-        }
+        let typed_face_offsets =
+            selected_typed_face_offsets(ctx, &stream_typed_facts, typed_bridge_attrs.as_ref())?;
         carriers.merge_missing(ctx, scan_carriers(ctx, body)?)?;
         let curve_attrs = carriers.curve_attrs(ctx)?;
         let scanned_tables = if is_deltas {
@@ -1296,16 +1306,8 @@ fn decode_body(
     let curve_attrs = carriers.curve_attrs(ctx)?;
     let typed_facts = typed::scan(body, ctx)?;
     let typed_face_attrs = typed_facts.valid_ownership_face_attrs();
-    let typed_face_offsets = typed_face_attrs
-        .as_ref()
-        .map_or_else(HashSet::new, |attrs| {
-            typed_facts
-                .faces
-                .iter()
-                .filter(|face| attrs.contains(&face.attr))
-                .map(|face| face.offset)
-                .collect::<HashSet<_>>()
-        });
+    let typed_face_offsets =
+        selected_typed_face_offsets(ctx, &typed_facts, typed_face_attrs.as_ref())?;
     let t =
         topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)?;
     let entity_facts = entity::scan_metadata(ctx, body, false)?;
