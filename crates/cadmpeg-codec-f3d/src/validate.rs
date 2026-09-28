@@ -6397,10 +6397,9 @@ fn validate_edge_operands<'a>(
         &native.asm_histories,
         &scope_histories,
     );
-    let expected_edge_operands = expected_edge_operands
-        .iter()
-        .map(|operand| (operand.id.as_str(), operand))
-        .collect::<HashMap<_, _>>();
+    let expected_edge_operands = collect_index(decode,
+        expected_edge_operands.iter().map(|operand| (operand.id.as_str(), operand)),
+        "index F3D expected edge operands")?;
     for operand in &native.design_edge_operands {
         let native_stream = design_stream(&operand.id);
         let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
@@ -6484,20 +6483,19 @@ fn validate_edge_operands<'a>(
                 == operand.recipe_structure
             && expected_surface_patch_recipe_structure == operand.surface_patch_recipe_structure
             && (historical_candidates_retained || expected_faces == operand.candidate_faces)
-            && expected_edge_operands.get(operand.id.as_str()) == Some(&operand)
-            && edge_operand_slots.insert((
+            && expected_edge_operands.get(operand.id.as_str()) == Some(&operand);
+        let valid = valid && ctx.insert_unique(&mut edge_operand_slots, (
                 native_stream,
                 operand.scope_record_index,
                 operand.scope_reference_ordinal,
-            ))
-            && edge_operand_records.insert((native_stream, operand.record_index()));
+            ), "index F3D edge operand slots")?
+            && ctx.insert_unique(&mut edge_operand_records,
+                (native_stream, operand.record_index()),
+                "index F3D edge operand records")?;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design edge operand has an invalid scope or recipe frame".into(),
-                entity: Some(operand.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design edge operand has an invalid scope or recipe frame",
+                Some(ctx.copy_entity(&operand.id)?))?;
         }
     }
     Ok(edge_operand_records)
