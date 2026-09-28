@@ -17,7 +17,7 @@ use cadmpeg_ir::Native;
 
 use crate::f3z::merge::{
     append_feature_history, compose_transforms, extend_native, occurrence_key,
-    reparent_component_roots, OccurrenceScope,
+    reparent_component_roots, rescope_record, OccurrenceScope,
 };
 use crate::records::xref::XrefReference;
 use cadmpeg_ir::features::FeatureOperation;
@@ -198,6 +198,7 @@ fn reparent_component_root_refuses_retained_identity_limit() {
 
 #[test]
 fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
+    let ctx = cadmpeg_test_support::service_decode_context();
     let mut merged = Model::default();
     let mut component = Model::default();
     component.bodies = vec![Body {
@@ -217,6 +218,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     for ordinal in 0..2 {
         let occurrence = format!("role/occurrence-{ordinal}");
         let mut scope = OccurrenceScope {
+            ctx: &ctx,
             occurrence: &occurrence,
         };
         merged
@@ -239,6 +241,7 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
 #[test]
 fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     use cadmpeg_ir::document::EntityRewrite;
+    let ctx = cadmpeg_test_support::service_decode_context();
     let source_id = "f3d:model:body#source";
     let body = Body {
         id: BodyId::mint(source_id).unwrap(),
@@ -250,6 +253,7 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
         visible: None,
     };
     let scoped = OccurrenceScope {
+        ctx: &ctx,
         occurrence: "component-0",
     }
     .rewrite(body)
@@ -260,6 +264,66 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
         "f3d:xref/component-0/model:region#source"
     );
     assert_eq!(scoped.name.as_deref(), Some(source_id));
+}
+
+#[test]
+fn occurrence_model_identity_rescope_refuses_retained_limit() {
+    use cadmpeg_ir::document::EntityRewrite;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let body = Body {
+        id: BodyId::mint("f3d:model:body#source").unwrap(),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
+    let error = OccurrenceScope {
+        ctx: &ctx,
+        occurrence: "component-0",
+    }
+    .rewrite(body)
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "rescope F3Z identity"));
+}
+
+#[test]
+fn occurrence_native_identity_rescope_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let record = cadmpeg_ir::NativeRecord::new(
+        "f3d:model:native#source",
+        serde_json::Map::new(),
+    )
+    .unwrap();
+    policy.limits.max_retained_bytes = u64::try_from(serde_json::to_vec(&record).unwrap().len())
+        .unwrap();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = rescope_record(&ctx, &record, "unknowns", "component-0").unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "rescope F3Z identity"));
+}
+
+#[test]
+fn occurrence_native_field_clone_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let mut fields = serde_json::Map::new();
+    fields.insert("links".into(), serde_json::json!(["f3d:model:body#source"]));
+    let record = cadmpeg_ir::NativeRecord::new("f3d:model:native#source", fields).unwrap();
+    let error = rescope_record(&ctx, &record, "unknowns", "component-0").unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "load typed native record"));
 }
 
 #[test]

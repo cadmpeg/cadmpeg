@@ -241,6 +241,7 @@ impl MergeSession<'_, '_> {
             append_feature_history(&parent_ir.model, &mut component_ir.model)?;
             let occurrence_start = parent_ir.model.occurrences.len();
             let mut scope = OccurrenceScope {
+                ctx: self.ctx,
                 occurrence: &occurrence,
             };
             parent_ir
@@ -498,11 +499,6 @@ fn compose_transforms(
     })
 }
 
-fn rescope(text: &str, occurrence: &str) -> Option<String> {
-    text.strip_prefix("f3d:")
-        .map(|rest| format!("f3d:xref/{occurrence}/{rest}"))
-}
-
 fn rescope_charged(
     ctx: &DecodeContext<'_>,
     text: &str,
@@ -520,23 +516,56 @@ fn rescope_charged(
 }
 
 /// Rewrites every `f3d:` identity in one model entity into occurrence scope.
-struct OccurrenceScope<'a> {
-    occurrence: &'a str,
+struct OccurrenceScope<'r, 'a> {
+    ctx: &'r DecodeContext<'a>,
+    occurrence: &'r str,
 }
 
-impl EntityRewrite for OccurrenceScope<'_> {
+impl EntityRewrite for OccurrenceScope<'_, '_> {
     type Error = CodecError;
 
     fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, CodecError> {
+        let refusal = std::cell::RefCell::new(None);
         let rewritten = cadmpeg_ir::schema::rewrite::identities(&entity, |id| {
-            rescope(id, self.occurrence).unwrap_or_else(|| id.to_owned())
+            rewrite_identity(self.ctx, id, self.occurrence, &refusal)
         });
-        let value = serde_value::to_value(rewritten).map_err(|error| {
+        let value = serde_value::to_value(rewritten);
+        if let Some(error) = refusal.into_inner() {
+            return Err(error);
+        }
+        let value = value.map_err(|error| {
             CodecError::malformed(format_args!("model serialization failed: {error}"))
         })?;
         crate::value_tree::from_value(value).map_err(|error| {
             CodecError::malformed(format_args!("merged model round-trip failed: {error}"))
         })
+    }
+}
+
+fn rewrite_identity(
+    ctx: &DecodeContext<'_>,
+    id: &str,
+    occurrence: &str,
+    refusal: &std::cell::RefCell<Option<CodecError>>,
+) -> String {
+    if refusal.borrow().is_some() {
+        return String::new();
+    }
+    let rewritten = match rescope_charged(ctx, id, occurrence) {
+        Ok(Some(rewritten)) => Ok(rewritten),
+        Ok(None) => crate::container::format_retained(
+            ctx,
+            "copy F3Z unchanged identity",
+            format_args!("{id}"),
+        ),
+        Err(error) => Err(error),
+    };
+    match rewritten {
+        Ok(rewritten) => rewritten,
+        Err(error) => {
+            *refusal.borrow_mut() = Some(error);
+            String::new()
+        }
     }
 }
 
@@ -570,7 +599,7 @@ fn extend_native(
             .try_reserve(records.len())
             .map_err(|_| ctx.refuse_codec_limit("append F3Z native records", 0, count))?;
         for record in records {
-            arena.push(rescope_record(&record, name, occurrence)?);
+            arena.push(rescope_record(ctx, &record, name, occurrence)?);
         }
     }
     Ok(())
@@ -578,14 +607,18 @@ fn extend_native(
 
 /// Rescopes one native record's identity and every identity it references.
 fn rescope_record(
+    ctx: &DecodeContext<'_>,
     record: &NativeRecord,
     arena: &str,
     occurrence: &str,
-) -> Result<NativeRecord, cadmpeg_ir::native::NativeConvertError> {
-    let mut fields = typed_fields(record, arena, occurrence)?;
-    rescope_native_reference_fields(arena, &mut fields, occurrence);
-    let id = rescope(record.id(), occurrence).unwrap_or_else(|| record.id().to_owned());
-    NativeRecord::new(id, fields)
+) -> Result<NativeRecord, CodecError> {
+    let mut fields = typed_fields(ctx, record, arena, occurrence)?;
+    rescope_native_reference_fields(ctx, arena, &mut fields, occurrence)?;
+    let id = rescope_charged(ctx, record.id(), occurrence)?.map_or_else(
+        || crate::container::format_retained(ctx, "copy F3Z native identity", format_args!("{}", record.id())),
+        Ok,
+    )?;
+    NativeRecord::new(id, fields).map_err(CodecError::from)
 }
 
 /// Rewrite typed identity markers before JSON erases their ownership.
@@ -596,33 +629,44 @@ fn rescope_record(
 /// ordinary `String` while the field-specific pass below handles native text
 /// references that have not yet gained a newtype.
 fn typed_fields(
+    ctx: &DecodeContext<'_>,
     record: &NativeRecord,
     arena: &str,
     occurrence: &str,
-) -> Result<Map<String, Value>, cadmpeg_ir::native::NativeConvertError> {
+) -> Result<Map<String, Value>, CodecError> {
     let typed_error = |error: serde_json::Error| {
-        cadmpeg_ir::native::NativeConvertError::InvalidCollection(
+        CodecError::from(cadmpeg_ir::native::NativeConvertError::InvalidCollection(
             format_args!(
                 "F3D native arena `{arena}` record `{}` typed admission: {error}",
                 record.id()
             )
             .to_string(),
-        )
+        ))
     };
     macro_rules! typed {
         ($type:path) => {{
-            let mut value = Value::Object(record.fields());
+            let mut value = Value::Object(record.fields_charged(ctx)?);
             let Value::Object(fields) = &mut value else {
-                return Err(cadmpeg_ir::native::NativeConvertError::NonObject);
+                return Err(CodecError::malformed("F3Z native record fields are not an object"));
             };
-            fields.insert("id".into(), Value::String(record.id().into()));
+            ctx.charge_collection_items(1, "insert F3Z typed native identity field")?;
+            fields.insert("id".into(), Value::String(crate::container::format_retained(
+                ctx,
+                "copy F3Z typed native identity",
+                format_args!("{}", record.id()),
+            )?));
             let typed: $type = serde_json::from_value(value).map_err(typed_error)?;
+            let refusal = std::cell::RefCell::new(None);
             let rewritten = cadmpeg_ir::schema::rewrite::identities(&typed, |id| {
-                rescope(id, occurrence).unwrap_or_else(|| id.to_owned())
+                rewrite_identity(ctx, id, occurrence, &refusal)
             });
-            let Value::Object(mut fields) = serde_json::to_value(rewritten).map_err(typed_error)?
+            let value = serde_json::to_value(rewritten);
+            if let Some(error) = refusal.into_inner() {
+                return Err(error);
+            }
+            let Value::Object(mut fields) = value.map_err(typed_error)?
             else {
-                return Err(cadmpeg_ir::native::NativeConvertError::NonObject);
+                return Err(CodecError::malformed("F3Z typed native record is not an object"));
             };
             fields.remove("id");
             fields
@@ -651,7 +695,7 @@ fn typed_fields(
         "persistent_design_links" => typed!(crate::records::sketch_links::PersistentDesignLink),
         "persistent_subentity_tags" => typed!(crate::records::sketch_links::PersistentSubentityTag),
         "sketch_curve_links" => typed!(crate::records::sketch_links::SketchCurveLink),
-        _ => record.fields(),
+        _ => record.fields_charged(ctx)?,
     })
 }
 
@@ -662,7 +706,12 @@ fn typed_fields(
 /// Field names are therefore the admission boundary: this list is assembled
 /// from the native record definitions and their readers, and no map key or
 /// unowned string is traversed as an identity.
-fn rescope_native_reference_fields(arena: &str, fields: &mut Map<String, Value>, occurrence: &str) {
+fn rescope_native_reference_fields(
+    ctx: &DecodeContext<'_>,
+    arena: &str,
+    fields: &mut Map<String, Value>,
+    occurrence: &str,
+) -> Result<(), CodecError> {
     let direct_fields: &[&str] = match arena {
         "asm_bulletin_boards"
         | "asm_delta_states"
@@ -693,7 +742,7 @@ fn rescope_native_reference_fields(arena: &str, fields: &mut Map<String, Value>,
     };
     for field in direct_fields {
         if let Some(value) = fields.get_mut(*field) {
-            scope_identity_value(value, occurrence);
+            scope_identity_value(ctx, value, occurrence)?;
         }
     }
 
@@ -706,7 +755,7 @@ fn rescope_native_reference_fields(arena: &str, fields: &mut Map<String, Value>,
             | "design_edge_identity_operands"
             | "design_extrude_selection_members"
     ) {
-        scope_named_fields(fields, &["history_id"], occurrence);
+        scope_named_fields(ctx, fields, &["history_id"], occurrence)?;
     }
 
     // WorkPoint and mesh records contain native identities as ordinary strings
@@ -715,33 +764,39 @@ fn rescope_native_reference_fields(arena: &str, fields: &mut Map<String, Value>,
     // corresponding native relations.
     match arena {
         "design_edge_treatment_vertex_operands" => {
-            scope_named_fields(fields, &["recipe_id"], occurrence);
+            scope_named_fields(ctx, fields, &["recipe_id"], occurrence)?;
         }
         "design_mesh_features" => {
-            scope_named_fields(fields, &["tessellation_id"], occurrence);
+            scope_named_fields(ctx, fields, &["tessellation_id"], occurrence)?;
         }
         "design_parameter_scopes" => {
             scope_named_fields(
+                ctx,
                 fields,
                 &["history_id", "operand_id", "point_native_id", "recipe_id"],
                 occurrence,
-            );
+            )?;
         }
         _ => {}
     }
+    Ok(())
 }
 
-fn scope_identity_value(value: &mut Value, occurrence: &str) {
+fn scope_identity_value(
+    ctx: &DecodeContext<'_>,
+    value: &mut Value,
+    occurrence: &str,
+) -> Result<(), CodecError> {
     match value {
         Value::String(text) => {
-            if let Some(rescoped) = rescope(text, occurrence) {
+            if let Some(rescoped) = rescope_charged(ctx, text, occurrence)? {
                 *text = rescoped;
             }
         }
         Value::Array(items) => {
             for item in items {
                 if let Value::String(text) = item {
-                    if let Some(rescoped) = rescope(text, occurrence) {
+                    if let Some(rescoped) = rescope_charged(ctx, text, occurrence)? {
                         *text = rescoped;
                     }
                 }
@@ -751,35 +806,51 @@ fn scope_identity_value(value: &mut Value, occurrence: &str) {
         // typed identity and all other members are its discriminator/value.
         Value::Object(fields) => {
             if let Some(Value::String(text)) = fields.get_mut("id") {
-                if let Some(rescoped) = rescope(text, occurrence) {
+                if let Some(rescoped) = rescope_charged(ctx, text, occurrence)? {
                     *text = rescoped;
                 }
             }
         }
         Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
+    Ok(())
 }
 
-fn scope_named_fields(fields: &mut Map<String, Value>, names: &[&str], occurrence: &str) {
+fn scope_named_fields(
+    ctx: &DecodeContext<'_>,
+    fields: &mut Map<String, Value>,
+    names: &[&str],
+    occurrence: &str,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("walk F3Z native identity fields")?;
     for (name, value) in fields {
+        ctx.charge_work(1, "inspect F3Z native identity field")?;
         if names.contains(&name.as_str()) {
-            scope_identity_value(value, occurrence);
+            scope_identity_value(ctx, value, occurrence)?;
         } else {
-            scope_named_values(value, names, occurrence);
+            scope_named_values(ctx, value, names, occurrence)?;
         }
     }
+    Ok(())
 }
 
-fn scope_named_values(value: &mut Value, names: &[&str], occurrence: &str) {
+fn scope_named_values(
+    ctx: &DecodeContext<'_>,
+    value: &mut Value,
+    names: &[&str],
+    occurrence: &str,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("walk F3Z native identity values")?;
     match value {
-        Value::Object(fields) => scope_named_fields(fields, names, occurrence),
+        Value::Object(fields) => scope_named_fields(ctx, fields, names, occurrence)?,
         Value::Array(items) => {
             for item in items {
-                scope_named_values(item, names, occurrence);
+                scope_named_values(ctx, item, names, occurrence)?;
             }
         }
         Value::String(_) | Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
+    Ok(())
 }
 
 #[cfg(test)]
