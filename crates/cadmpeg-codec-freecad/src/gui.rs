@@ -439,18 +439,14 @@ fn transfer_schema_one(
             }
         }
         let property_provenance = |property_name: &str, type_name: &str| {
-            SourceProvenance::in_stream(
-                "fcstd",
-                cadmpeg_ir::stream_name!("GuiDocument.xml"),
-                property_nodes
-                    .iter()
-                    .find(|property| {
-                        property.attribute("name") == Some(property_name)
-                            && property.attribute("type") == Some(type_name)
-                    })
-                    .map_or(0, |property| property.range().start as u64),
-            )
-            .with_tag(format!("ViewProvider {name} property {property_name}"))
+            let offset = property_nodes
+                .iter()
+                .find(|property| {
+                    property.attribute("name") == Some(property_name)
+                        && property.attribute("type") == Some(type_name)
+                })
+                .map_or(0, |property| property.range().start as u64);
+            gui_provider_property_provenance(ctx, name, property_name, offset)
         };
         let visibility = values
             .get("Visibility")
@@ -494,7 +490,7 @@ fn transfer_schema_one(
                 element_maps,
                 TopologyColorKind::Face,
                 requires_alpha_conversion,
-                property_provenance("DiffuseColor", "App::PropertyColorList"),
+                property_provenance("DiffuseColor", "App::PropertyColorList")?,
                 &mut losses,
             )?;
         }
@@ -519,7 +515,7 @@ fn transfer_schema_one(
                     packed_color: color,
                     style: PrimitiveStyle::Line(PrimitiveSize::from_source(width)),
                     payload_prefixes: &payload_prefixes,
-                    provenance: property_provenance("LineWidth", "App::PropertyFloatConstraint"),
+                    provenance: property_provenance("LineWidth", "App::PropertyFloatConstraint")?,
                 },
             )?;
         }
@@ -541,7 +537,7 @@ fn transfer_schema_one(
                 element_maps,
                 TopologyColorKind::Edge,
                 requires_alpha_conversion,
-                property_provenance("LineColorArray", "App::PropertyColorList"),
+                property_provenance("LineColorArray", "App::PropertyColorList")?,
                 &mut losses,
             )?;
         }
@@ -565,7 +561,7 @@ fn transfer_schema_one(
                     packed_color: color,
                     style: PrimitiveStyle::Point(PrimitiveSize::from_source(size)),
                     payload_prefixes: &payload_prefixes,
-                    provenance: property_provenance("PointSize", "App::PropertyFloatConstraint"),
+                    provenance: property_provenance("PointSize", "App::PropertyFloatConstraint")?,
                 },
             )?;
         }
@@ -587,7 +583,7 @@ fn transfer_schema_one(
                 element_maps,
                 TopologyColorKind::Vertex,
                 requires_alpha_conversion,
-                property_provenance("PointColorArray", "App::PropertyColorList"),
+                property_provenance("PointColorArray", "App::PropertyColorList")?,
                 &mut losses,
             )?;
         }
@@ -698,6 +694,20 @@ fn push_gui_appearance_loss(
     let text = crate::resource::retained_format(ctx, message, text_operation)?;
     losses.push(code.note(text).with_provenance(provenance));
     Ok(())
+}
+
+fn gui_provider_property_provenance(
+    ctx: &DecodeContext<'_>,
+    provider_name: &str,
+    property_name: &str,
+    offset: u64,
+) -> Result<SourceProvenance, CodecError> {
+    let tag = crate::resource::retained_format(ctx,
+        format_args!("ViewProvider {provider_name} property {property_name}"),
+        "FCStd GUI property provenance tag")?;
+    Ok(SourceProvenance::in_stream(
+        "fcstd", cadmpeg_ir::stream_name!("GuiDocument.xml"), offset,
+    ).with_tag(tag))
 }
 
 fn presentation_property_type(name: &str) -> Option<&'static str> {
