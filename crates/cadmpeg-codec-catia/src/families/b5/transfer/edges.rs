@@ -332,6 +332,7 @@ pub(super) fn emit_edges(
         let cache_fit_tolerance = curve_plan.cache_fit_tolerance;
         let geometry = curve_plan.geometry;
         annotate(
+            admission.context(),
             annotations,
             &curve_id,
             "object_stream_b5_03",
@@ -344,7 +345,7 @@ pub(super) fn emit_edges(
             } else {
                 Exactness::Derived
             },
-        );
+        )?;
         if !matches!(
             geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
@@ -384,12 +385,13 @@ pub(super) fn emit_edges(
                 &namespace, index, ProceduralCurveId::mint,
                 "catia_b5_edge_procedural_id")?;
             annotate(
+                admission.context(),
                 annotations,
                 &procedural_id,
                 "object_stream_b5_03",
                 tag,
                 Exactness::Derived,
-            );
+            )?;
             annotations
                 .derived(&procedural_id, "curve")
                 .map_err(cadmpeg_core::CodecError::malformed)?
@@ -414,12 +416,13 @@ pub(super) fn emit_edges(
             let _attached = ir.model.add_procedural_curve(owner, procedural);
         }
         annotate(
+            admission.context(),
             annotations,
             &id,
             "object_stream_b5_03",
             "5e_edge",
             Exactness::ByteExact,
-        );
+        )?;
         annotations
             .derived(&id, "start")
             .map_err(cadmpeg_core::CodecError::malformed)?

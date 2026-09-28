@@ -293,7 +293,16 @@ impl AnnotationBuilder {
         stream: &StreamHandle,
         offset: u64,
     ) -> ProvenanceNote<'_> {
-        let id = id.to_string();
+        self.note_owned(id.to_string(), stream, offset)
+    }
+
+    /// Record a source location with an already admitted identity.
+    pub fn note_owned(
+        &mut self,
+        id: String,
+        stream: &StreamHandle,
+        offset: u64,
+    ) -> ProvenanceNote<'_> {
         let provenance = match self.annotations.provenance.entry(id) {
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert(
                 AnnotationProvenance::annotation(stream.0.clone(), offset, None),
@@ -313,7 +322,11 @@ impl AnnotationBuilder {
     /// Set entity-level exactness. Byte-exact entries are removed to preserve
     /// the table's sparse absent-means-byte-exact representation.
     pub fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
-        let id = id.to_string();
+        self.exactness_owned(id.to_string(), exactness)
+    }
+
+    /// Set entity exactness with an already admitted identity.
+    pub fn exactness_owned(&mut self, id: String, exactness: Exactness) -> &mut Self {
         let fields = match self.annotations.exactness.remove(&id) {
             Some(
                 ExactnessNote::Entity { mut fields, .. }
@@ -362,8 +375,17 @@ impl AnnotationBuilder {
         field: impl Into<String>,
         exactness: Exactness,
     ) -> Result<&mut Self, &'static str> {
-        let id = id.to_string();
-        let field = FieldName::try_from(field.into())
+        self.field_exactness_owned(id.to_string(), field.into(), exactness)
+    }
+
+    /// Set field exactness with already admitted identity and field strings.
+    pub fn field_exactness_owned(
+        &mut self,
+        id: String,
+        field: String,
+        exactness: Exactness,
+    ) -> Result<&mut Self, &'static str> {
+        let field = FieldName::try_from(field)
             .map_err(|_| "an exactness field name cannot be empty")?;
         if exactness == Exactness::ByteExact {
             let Some(note) = self.annotations.exactness.remove(&id) else {
