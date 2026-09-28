@@ -289,10 +289,18 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
             .unwrap();
         assert!((pcurve_uv(&p, t).unwrap().u - 0.3).abs() < 64. * f64::EPSILON);
     }
-    assert_eq!(scalar_bezier_value(&[0., 1.], 0., [-1e308, 1e308]), 0.5);
     assert_eq!(
-        homogeneous_residual_distance(&[[-0.5, 0., 1.], [0.5, 0., 1.]], 0., [-1e308, 1e308]),
-        0.
+        scalar_bezier_value(&[0., 1.], 0., [-1e308, 1e308], &GeometryWorkBudget::new(100)),
+        Ok(0.5)
+    );
+    assert_eq!(
+        homogeneous_residual_distance(
+            &[[-0.5, 0., 1.], [0.5, 0., 1.]],
+            0.,
+            [-1e308, 1e308],
+            &GeometryWorkBudget::new(100),
+        ),
+        Ok(0.)
     );
 }
 

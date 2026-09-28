@@ -919,7 +919,9 @@ fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
         controls: vec![-1.0, 1.0],
     };
 
-    assert!(crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget).is_none());
+    assert!(crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget)
+        .expect("test work slice has no decode resource refusal")
+        .is_none());
     assert!(budget.exhausted());
 }
 
@@ -1916,7 +1918,13 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
             let expected =
                 cadmpeg_ir::eval::nurbs_pcurve_uv(2, &knots, &points, Some(&weights), parameter)
                     .expect("source NURBS evaluation");
-            let actual = homogeneous_residual_distance(&span.controls, parameter, span.domain);
+            let actual = homogeneous_residual_distance(
+                &span.controls,
+                parameter,
+                span.domain,
+                &crate::decode::geometry_work::GeometryWorkBudget::new(100),
+            )
+            .expect("test solver allocation succeeds");
             let expected = expected.as_raw();
             assert!((actual - expected.u.hypot(expected.v)).abs() < 1.0e-12);
         }

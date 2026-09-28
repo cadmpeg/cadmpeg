@@ -145,6 +145,7 @@ mod tests {
         BLEND_SECTION_BOUNDARY_EPSILON, MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES,
         MAX_BLEND_CONTACT_SEEDS, MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES,
     };
+    use crate::decode::geometry_work::GeometryWorkBudget;
     use cadmpeg_ir::ids::{CurveId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -259,7 +260,13 @@ mod tests {
                 [-0.25 * weight, 0.0, 0.0, weight],
                 [0.75 * weight, 0.0, 0.0, weight],
             ];
-            let distance = super::homogeneous_residual_distance(&controls, 0.0, [0.0, 1.0]);
+            let distance = super::homogeneous_residual_distance(
+                &controls,
+                0.0,
+                [0.0, 1.0],
+                &GeometryWorkBudget::new(100),
+            )
+            .expect("test solver allocation succeeds");
             assert!((distance - 0.25).abs() <= 4.0 * f64::EPSILON);
             let curve = NurbsCurve::from_lanes(
                 1,
@@ -2776,7 +2783,7 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
                 controls: derivative,
             },
             geometry_budget,
-        ) else {
+        )? else {
             return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         };
         let root_count = match &roots {
@@ -2802,17 +2809,22 @@ fn stationary_rational_distance_candidates<const DIMENSION: usize>(
             ScalarBezierRoots::Isolated(roots) => parameters.extend(roots),
         }
         let _candidate_reservation = geometry_budget.reserve_vec(&mut candidates, parameter_count, "nx stationary candidates")?;
-        candidates.extend(parameters.into_iter().map(|parameter| {
-            let distance = homogeneous_residual_distance(&span.controls, parameter, span.domain);
-            (
+        for parameter in parameters {
+            let distance = homogeneous_residual_distance(
+                &span.controls,
+                parameter,
+                span.domain,
+                geometry_budget,
+            )?;
+            candidates.push((
                 parameter,
                 if distance <= homogeneous.coordinate_tolerance {
                     0.0
                 } else {
                     distance * distance
                 },
-            )
-        }));
+            ));
+        }
     }
     Ok(Some(candidates))
 }
@@ -3000,7 +3012,7 @@ pub(super) struct ScalarBezierSpan {
 pub(super) fn scalar_bezier_roots_with_budget(
     span: ScalarBezierSpan,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> Option<ScalarBezierRoots> {
+) -> Result<Option<ScalarBezierRoots>, cadmpeg_core::decode::ResourceLimit> {
     let scale = span
         .controls
         .iter()
@@ -3008,7 +3020,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
     let tolerance = 64.0 * f64::EPSILON * scale;
     let constant = span.controls.iter().all(|value| *value == 0.0);
     if constant {
-        return Some(ScalarBezierRoots::Constant);
+        return Ok(Some(ScalarBezierRoots::Constant));
     }
     let mut parameters = Vec::new();
     if span
@@ -3016,6 +3028,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
         .first()
         .is_some_and(|value| value.abs() <= tolerance)
     {
+        let _reservation = geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
         parameters.push(span.domain[0]);
     }
     if span
@@ -3023,38 +3036,44 @@ pub(super) fn scalar_bezier_roots_with_budget(
         .last()
         .is_some_and(|value| value.abs() <= tolerance)
     {
+        let _reservation = geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
         parameters.push(span.domain[1]);
     }
     let domain = span.domain;
-    let mut intervals = vec![span];
+    let mut intervals = Vec::new();
+    let _interval_reservation = geometry_budget.reserve_vec(&mut intervals, 1, "nx Bezier root intervals")?;
+    intervals.push(span);
     while let Some(span) = intervals.pop() {
         if !geometry_budget.charge() {
-            return None;
+            return geometry_budget.resource_refusal().map_or(Ok(None), Err);
         }
         if scalar_bernstein_sign_variations(&span.controls) == 0 {
             continue;
         }
-        let middle = cadmpeg_ir::math::interpolate(span.domain[0], span.domain[1], 0.5)?.get();
+        let Some(middle) = cadmpeg_ir::math::interpolate(span.domain[0], span.domain[1], 0.5) else {
+            return Ok(None);
+        };
+        let middle = middle.get();
         if middle == span.domain[0] || middle == span.domain[1] {
-            let parameter =
-                [span.domain[0], span.domain[1]]
-                    .into_iter()
-                    .min_by(|first, second| {
-                        scalar_bezier_value(&span.controls, *first, span.domain)
-                            .abs()
-                            .total_cmp(
-                                &scalar_bezier_value(&span.controls, *second, span.domain).abs(),
-                            )
-                    })?;
-            if scalar_bezier_value(&span.controls, parameter, span.domain).abs() <= tolerance {
+            let first_value = scalar_bezier_value(&span.controls, span.domain[0], span.domain, geometry_budget)?.abs();
+            let second_value = scalar_bezier_value(&span.controls, span.domain[1], span.domain, geometry_budget)?.abs();
+            let (parameter, value) = if first_value.total_cmp(&second_value).is_le() {
+                (span.domain[0], first_value)
+            } else {
+                (span.domain[1], second_value)
+            };
+            if value <= tolerance {
+                let _reservation = geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
                 parameters.push(parameter);
             }
             continue;
         }
-        let (first, second) = subdivide_scalar_bezier_span(span, middle);
+        let (first, second) = subdivide_scalar_bezier_span(span, middle, geometry_budget)?;
         if first.controls.last().is_some_and(|value| *value == 0.0) {
+            let _reservation = geometry_budget.reserve_vec(&mut parameters, 1, "nx Bezier root parameters")?;
             parameters.push(middle);
         }
+        let _reservation = geometry_budget.reserve_vec(&mut intervals, 2, "nx Bezier root intervals")?;
         intervals.push(second);
         intervals.push(first);
     }
@@ -3066,7 +3085,7 @@ pub(super) fn scalar_bezier_roots_with_budget(
             (first.get() - second.get()).abs() <= 64.0 * f64::EPSILON
         })
     });
-    Some(ScalarBezierRoots::Isolated(parameters))
+    Ok(Some(ScalarBezierRoots::Isolated(parameters)))
 }
 
 fn scalar_bernstein_sign_variations(controls: &[f64]) -> usize {
@@ -3089,26 +3108,23 @@ fn scalar_bernstein_sign_variations(controls: &[f64]) -> usize {
 fn subdivide_scalar_bezier_span(
     span: ScalarBezierSpan,
     middle: f64,
-) -> (ScalarBezierSpan, ScalarBezierSpan) {
-    let mut levels = vec![span.controls];
-    while let Some(next) = levels.last().filter(|level| level.len() > 1).map(|level| {
-        level
-            .windows(2)
-            .map(|pair| pair[0].midpoint(pair[1]))
-            .collect::<Vec<_>>()
-    }) {
-        levels.push(next);
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<(ScalarBezierSpan, ScalarBezierSpan), cadmpeg_core::decode::ResourceLimit> {
+    let count = span.controls.len();
+    let mut levels = span.controls;
+    let mut first = Vec::new();
+    let _first_reservation = geometry_budget.reserve_vec(&mut first, count, "nx first Bezier subdivision")?;
+    let mut second = Vec::new();
+    let _second_reservation = geometry_budget.reserve_vec(&mut second, count, "nx second Bezier subdivision")?;
+    for level in 0..count {
+        first.push(levels[0]);
+        second.push(levels[count - level - 1]);
+        for index in 0..count - level - 1 {
+            levels[index] = levels[index].midpoint(levels[index + 1]);
+        }
     }
-    let first = levels
-        .iter()
-        .filter_map(|level| level.first().copied())
-        .collect();
-    let second = levels
-        .iter()
-        .rev()
-        .filter_map(|level| level.last().copied())
-        .collect();
-    (
+    second.reverse();
+    Ok((
         ScalarBezierSpan {
             domain: [span.domain[0], middle],
             controls: first,
@@ -3117,44 +3133,50 @@ fn subdivide_scalar_bezier_span(
             domain: [middle, span.domain[1]],
             controls: second,
         },
-    )
+    ))
 }
 
-fn scalar_bezier_value(controls: &[f64], parameter: f64, domain: [f64; 2]) -> f64 {
+fn scalar_bezier_value(
+    controls: &[f64],
+    parameter: f64,
+    domain: [f64; 2],
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<f64, cadmpeg_core::decode::ResourceLimit> {
     let fraction = cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
-    let mut values = controls.to_vec();
-    while values.len() > 1 {
-        values = values
-            .windows(2)
-            .map(|pair| (1.0 - fraction) * pair[0] + fraction * pair[1])
-            .collect();
+    let mut values = Vec::new();
+    let _reservation = geometry_budget.reserve_vec(&mut values, controls.len(), "nx scalar Bezier evaluation")?;
+    values.extend_from_slice(controls);
+    for level in 1..values.len() {
+        for index in 0..values.len() - level {
+            values[index] = (1.0 - fraction) * values[index] + fraction * values[index + 1];
+        }
     }
-    values[0]
+    Ok(values[0])
 }
 
 pub(super) fn homogeneous_residual_distance<const DIMENSION: usize>(
     controls: &[[f64; DIMENSION]],
     parameter: f64,
     domain: [f64; 2],
-) -> f64 {
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<f64, cadmpeg_core::decode::ResourceLimit> {
     let fraction = cadmpeg_ir::math::parameter_fraction(parameter, domain[0], domain[1])
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get);
-    let mut values = controls.to_vec();
-    while values.len() > 1 {
-        values = values
-            .windows(2)
-            .map(|pair| {
-                std::array::from_fn(|axis| {
-                    (1.0 - fraction) * pair[0][axis] + fraction * pair[1][axis]
-                })
-            })
-            .collect();
+    let mut values = Vec::new();
+    let _reservation = geometry_budget.reserve_vec(&mut values, controls.len(), "nx rational Bezier evaluation")?;
+    values.extend_from_slice(controls);
+    for level in 1..values.len() {
+        for index in 0..values.len() - level {
+            values[index] = std::array::from_fn(|axis| {
+                (1.0 - fraction) * values[index][axis] + fraction * values[index + 1][axis]
+            });
+        }
     }
-    values[0][..DIMENSION - 1]
+    Ok(values[0][..DIMENSION - 1]
         .iter()
         .map(|value| value / values[0][DIMENSION - 1])
-        .fold(0.0, f64::hypot)
+        .fold(0.0, f64::hypot))
 }
 
 fn closest_parameter_candidates(
