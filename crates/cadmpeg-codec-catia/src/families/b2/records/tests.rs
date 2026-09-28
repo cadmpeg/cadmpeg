@@ -1115,6 +1115,22 @@ fn b2_revolution_profile_requires_one_exact_circle_interval() {
 }
 
 #[test]
+fn b2_revolution_profile_and_resolved_output_refuse_collection_limits() {
+    let bytes = b2_resolved_revolution_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_revolution_profiles"));
+    let limited = crate::test_support::with_collection_limit(1, |ctx| {
+        crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, &bytes, &records)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_resolved_revolutions"));
+}
+
+#[test]
 fn b2_revolution_profile_identity_disambiguates_equal_intervals() {
     let mut first = b2_circle_stream();
     first[6..8].copy_from_slice(&0x9999u16.to_le_bytes());

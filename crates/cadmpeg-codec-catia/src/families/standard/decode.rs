@@ -911,9 +911,15 @@ fn refine_consolidated_analytic_surfaces(
     let cylinders = crate::resource::collect_vec(ctx,
         crate::families::b2::records::b2_cylinders_from_records(bytes, records),
         "catia_standard_refined_cylinders")?;
-    let cones = crate::families::b2::records::b2_cones_from_records(bytes, records);
-    let spheres = crate::families::b2::records::b2_spheres_from_records(bytes, records);
-    let tori = crate::families::b2::records::b2_tori_from_records(bytes, records);
+    let cones = crate::resource::collect_vec(ctx,
+        crate::families::b2::records::b2_cones_from_records(bytes, records),
+        "catia_standard_refined_cones")?;
+    let spheres = crate::resource::collect_vec(ctx,
+        crate::families::b2::records::b2_spheres_from_records(bytes, records),
+        "catia_standard_refined_spheres")?;
+    let tori = crate::resource::collect_vec(ctx,
+        crate::families::b2::records::b2_tori_from_records(bytes, records),
+        "catia_standard_refined_tori")?;
     let quantized = |value: f64| f64::from(value as f32);
     let same_point = |point: Point3, stored: [f64; 3]| {
         point.x.to_bits() == quantized(stored[0]).to_bits()
@@ -1051,6 +1057,23 @@ mod consolidated_analytic_refinement_tests {
             refine_consolidated_analytic_surfaces(ctx, &bytes, &records, &mut surfaces)
         }).expect("service decode");
         assert!(refined.is_empty());
+    }
+
+    #[test]
+    fn analytic_refinement_refuses_each_parsed_carrier_collection() {
+        for (bytes, operation) in [
+            (crate::test_support::test_b2::b2_cone_stream(), "catia_standard_refined_cones"),
+            (crate::test_support::test_b2::b2_sphere_stream(), "catia_standard_refined_spheres"),
+            (crate::test_support::test_b2::b2_torus_stream(), "catia_standard_refined_tori"),
+        ] {
+            let records = crate::wire::records::consolidated_records(&bytes);
+            let mut surfaces = [];
+            let limited = crate::test_support::with_collection_limit(0, |ctx| {
+                refine_consolidated_analytic_surfaces(ctx, &bytes, &records, &mut surfaces)
+            });
+            assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == operation));
+        }
     }
 
     #[test]
@@ -2365,7 +2388,7 @@ fn try_decode_standard_population(
         &scan.data,
         &consolidated_records,
     )
-    .len();
+    .count();
     let face_frame_vectors = match fbb::standard_face_frame_vectors(ctx, standard_spine, records.len()) {
         Ok(vectors) => vectors,
         Err(error) => return Some(Err(error)),
@@ -2910,10 +2933,12 @@ fn try_decode_standard_population(
     }
     ir.model.surfaces = surfaces;
     let resolved_consolidated_revolutions =
-        crate::families::b2::records::b2_resolved_revolutions_from_records(
-            &scan.data,
-            &consolidated_records,
-        );
+        match crate::families::b2::records::b2_resolved_revolutions_from_records(
+            ctx, &scan.data, &consolidated_records,
+        ) {
+            Ok(revolutions) => revolutions,
+            Err(error) => return Some(Err(error)),
+        };
     let resolved_revolution_count = resolved_consolidated_revolutions.len();
     // The bindings this call returns are read below, through
     // `bind_consolidated_revolution_faces_and_seams`.

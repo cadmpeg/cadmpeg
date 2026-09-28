@@ -6977,14 +6977,15 @@ fn store_projection(
 }
 
 fn consolidated_circles(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedCircle> {
-    crate::families::b2::records::b2_circles_from_records(bytes, records)
-        .into_iter()
-        .enumerate()
-        .map(|(index, circle)| CatiaConsolidatedCircle {
-            id: format!("catia:consolidated:circle#{index}"),
+) -> Result<Vec<CatiaConsolidatedCircle>, CodecError> {
+    let mut circles = Vec::new();
+    for (index, circle) in crate::families::b2::records::b2_circles_from_records(bytes, records).enumerate() {
+        let value = CatiaConsolidatedCircle {
+            id: crate::resource::format_usize_id(ctx, "catia:consolidated:circle#", index, 0,
+                "catia_native_circle_id")?,
             byte_offset: circle.pos as u64,
             layout: circle.layout,
             record_id: circle.record_id,
@@ -6993,8 +6994,10 @@ fn consolidated_circles(
             radius: circle.radius,
             range: circle.range,
             chart_shift: circle.chart_shift,
-        })
-        .collect()
+        };
+        crate::resource::push(ctx, &mut circles, value, "catia_native_circles")?;
+    }
+    Ok(circles)
 }
 
 fn legacy_entity_runs(bytes: &[u8]) -> Vec<CatiaLegacyEntityRun> {
@@ -7368,12 +7371,12 @@ fn consolidated_cone_faces(
         .collect()
 }
 
-fn consolidated_cones(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<CatiaConsolidatedCone> {
-    crate::families::b2::records::b2_cones_from_records(bytes, records)
-        .into_iter()
-        .enumerate()
-        .map(|(index, cone)| CatiaConsolidatedCone {
-            id: format!("catia:consolidated:cone#{index}"),
+fn consolidated_cones(ctx: &DecodeContext<'_>, bytes: &[u8], records: &[ConsolidatedRecord]) -> Result<Vec<CatiaConsolidatedCone>, CodecError> {
+    let mut cones = Vec::new();
+    for (index, cone) in crate::families::b2::records::b2_cones_from_records(bytes, records).enumerate() {
+        let value = CatiaConsolidatedCone {
+            id: crate::resource::format_usize_id(ctx, "catia:consolidated:cone#", index, 0,
+                "catia_native_cone_id")?,
             byte_offset: cone.pos as u64,
             apex: cone.apex.coordinates().into(),
             direction_x: cone.frame.reference(),
@@ -7385,8 +7388,10 @@ fn consolidated_cones(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<Catia
             slant_range: cone.slant_range,
             angular_scale: cone.angular_scale,
             angular_domain: cone.angular_domain,
-        })
-        .collect()
+        };
+        crate::resource::push(ctx, &mut cones, value, "catia_native_cones")?;
+    }
+    Ok(cones)
 }
 
 fn consolidated_cylinders(
@@ -7522,6 +7527,54 @@ mod consolidated_cylinder_limit_tests {
             consolidated_cylinder_groups(ctx, &bytes, &records)
         }).expect("service decode");
         assert_eq!((groups.len(), cylinders.len()), (1, 1));
+    }
+}
+
+#[cfg(test)]
+mod consolidated_analytic_limit_tests {
+    use super::{consolidated_circles, consolidated_cones, consolidated_revolutions,
+        consolidated_spheres, consolidated_tori};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn native_analytic_carriers_refuse_output_and_id_limits() {
+        macro_rules! check {
+            ($fixture:ident, $decode:ident, $output:literal, $id:literal) => {{
+            let bytes = crate::test_support::test_b2::$fixture();
+            let records = crate::wire::records::consolidated_records(&bytes);
+            let limited = crate::test_support::with_collection_limit(0, |ctx| $decode(ctx, &bytes, &records));
+            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+                if error.operation == $output));
+            let limited = crate::test_support::with_retained_limit(0, |ctx| $decode(ctx, &bytes, &records));
+            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+                if error.operation == $id));
+            }};
+        }
+        check!(b2_circle_stream, consolidated_circles, "catia_native_circles", "catia_native_circle_id");
+        check!(b2_cone_stream, consolidated_cones, "catia_native_cones", "catia_native_cone_id");
+        check!(b2_sphere_stream, consolidated_spheres, "catia_native_spheres", "catia_native_sphere_id");
+        check!(b2_torus_stream, consolidated_tori, "catia_native_tori", "catia_native_torus_id");
+    }
+
+    #[test]
+    fn native_revolution_refuses_profile_map_output_and_id_limits() {
+        let bytes = crate::test_support::test_b2::b2_resolved_revolution_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(2, |ctx| {
+            consolidated_revolutions(ctx, &bytes, &records, &[])
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_revolution_profile_index"));
+        let limited = crate::test_support::with_collection_limit(3, |ctx| {
+            consolidated_revolutions(ctx, &bytes, &records, &[])
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_revolutions"));
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            consolidated_revolutions(ctx, &bytes, &records, &[])
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_revolution_id"));
     }
 }
 
@@ -7699,24 +7752,35 @@ mod consolidated_pcurve_limit_tests {
 }
 
 fn consolidated_revolutions(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
     circles: &[CatiaConsolidatedCircle],
-) -> Vec<CatiaConsolidatedRevolution> {
-    let resolved_profiles =
-        crate::families::b2::records::b2_resolved_revolutions_from_records(bytes, records)
-            .into_iter()
-            .map(|resolved| (resolved.revolution.pos as u64, resolved.profile.pos as u64))
-            .collect::<HashMap<_, _>>();
-    let circle_ids = circles
-        .iter()
-        .map(|circle| (circle.byte_offset, circle.id.clone()))
-        .collect::<HashMap<_, _>>();
-    crate::families::b2::records::b2_revolutions_from_records(bytes, records)
-        .into_iter()
-        .enumerate()
-        .map(|(index, revolution)| CatiaConsolidatedRevolution {
-            id: format!("catia:consolidated:revolution#{index}"),
+) -> Result<Vec<CatiaConsolidatedRevolution>, CodecError> {
+    let mut resolved_profiles = HashMap::new();
+    for resolved in crate::families::b2::records::b2_resolved_revolutions_from_records(ctx, bytes, records)? {
+        crate::resource::insert_map(ctx, &mut resolved_profiles,
+            resolved.revolution.pos as u64, resolved.profile.pos as u64,
+            "catia_native_revolution_profile_index")?;
+    }
+    let mut circle_ids = HashMap::new();
+    for circle in circles {
+        let id = crate::resource::copy_retained_str(ctx, &circle.id,
+            "catia_native_revolution_circle_id")?;
+        crate::resource::insert_map(ctx, &mut circle_ids, circle.byte_offset, id,
+            "catia_native_revolution_circle_index")?;
+    }
+    let mut revolutions = Vec::new();
+    for (index, revolution) in crate::families::b2::records::b2_revolutions_from_records(bytes, records).enumerate() {
+        let profile_circle = match resolved_profiles.get(&(revolution.pos as u64))
+            .and_then(|offset| circle_ids.get(offset)) {
+                Some(id) => Some(crate::resource::copy_retained_str(ctx, id,
+                    "catia_native_revolution_profile_circle")?),
+                None => None,
+            };
+        let value = CatiaConsolidatedRevolution {
+            id: crate::resource::format_usize_id(ctx, "catia:consolidated:revolution#", index, 0,
+                "catia_native_revolution_id")?,
             byte_offset: revolution.pos as u64,
             reference_token: revolution.reference_token,
             profile_allocation_id: revolution.profile_allocation_id,
@@ -7726,13 +7790,12 @@ fn consolidated_revolutions(
             axis: revolution.axis,
             angular_range: revolution.angular_range,
             profile_range: revolution.profile_range,
-            profile_circle: resolved_profiles
-                .get(&(revolution.pos as u64))
-                .and_then(|offset| circle_ids.get(offset))
-                .cloned(),
+            profile_circle,
             angular_scale: revolution.angular_scale,
-        })
-        .collect()
+        };
+        crate::resource::push(ctx, &mut revolutions, value, "catia_native_revolutions")?;
+    }
+    Ok(revolutions)
 }
 
 fn consolidated_line_profiles(
@@ -7753,14 +7816,15 @@ fn consolidated_line_profiles(
 }
 
 fn consolidated_spheres(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedSphere> {
-    crate::families::b2::records::b2_spheres_from_records(bytes, records)
-        .into_iter()
-        .enumerate()
-        .map(|(index, sphere)| CatiaConsolidatedSphere {
-            id: format!("catia:consolidated:sphere#{index}"),
+) -> Result<Vec<CatiaConsolidatedSphere>, CodecError> {
+    let mut spheres = Vec::new();
+    for (index, sphere) in crate::families::b2::records::b2_spheres_from_records(bytes, records).enumerate() {
+        let value = CatiaConsolidatedSphere {
+            id: crate::resource::format_usize_id(ctx, "catia:consolidated:sphere#", index, 0,
+                "catia_native_sphere_id")?,
             byte_offset: sphere.pos as u64,
             center: sphere.center.coordinates().into(),
             direction_x: sphere.frame.reference(),
@@ -7769,16 +7833,18 @@ fn consolidated_spheres(
             radius: sphere.radius,
             azimuth_range: sphere.azimuth_range,
             latitude_range: sphere.latitude_range,
-        })
-        .collect()
+        };
+        crate::resource::push(ctx, &mut spheres, value, "catia_native_spheres")?;
+    }
+    Ok(spheres)
 }
 
-fn consolidated_tori(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<CatiaConsolidatedTorus> {
-    crate::families::b2::records::b2_tori_from_records(bytes, records)
-        .into_iter()
-        .enumerate()
-        .map(|(index, torus)| CatiaConsolidatedTorus {
-            id: format!("catia:consolidated:torus#{index}"),
+fn consolidated_tori(ctx: &DecodeContext<'_>, bytes: &[u8], records: &[ConsolidatedRecord]) -> Result<Vec<CatiaConsolidatedTorus>, CodecError> {
+    let mut tori = Vec::new();
+    for (index, torus) in crate::families::b2::records::b2_tori_from_records(bytes, records).enumerate() {
+        let value = CatiaConsolidatedTorus {
+            id: crate::resource::format_usize_id(ctx, "catia:consolidated:torus#", index, 0,
+                "catia_native_torus_id")?,
             byte_offset: torus.pos as u64,
             center: torus.center.coordinates().into(),
             direction_x: torus.frame.reference(),
@@ -7792,8 +7858,10 @@ fn consolidated_tori(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<CatiaC
             minor_angular_domain: torus.minor_angular_domain,
             major_scale: torus.major_scale,
             minor_scale: torus.minor_scale,
-        })
-        .collect()
+        };
+        crate::resource::push(ctx, &mut tori, value, "catia_native_tori")?;
+    }
+    Ok(tori)
 }
 
 fn zero_entity_support_runs(
@@ -9199,7 +9267,7 @@ impl CatiaNative {
                 })
                 .map(CatiaOuterContainerBinding::from);
         }
-        let consolidated_circles = consolidated_circles(bytes, consolidated_records);
+        let consolidated_circles = consolidated_circles(ctx, bytes, consolidated_records)?;
         let consolidated_class61_records =
             consolidated_class61_records(bytes, consolidated_records);
         let consolidated_class5b5c_records =
@@ -9208,7 +9276,7 @@ impl CatiaNative {
             consolidated_parameter_points(bytes, consolidated_records);
         let consolidated_cone_faces =
             consolidated_cone_faces(bytes, consolidated_records, &consolidated_parameter_points);
-        let consolidated_cones = consolidated_cones(bytes, consolidated_records);
+        let consolidated_cones = consolidated_cones(ctx, bytes, consolidated_records)?;
         let consolidated_cylinders = consolidated_cylinders(ctx, bytes, consolidated_records)?;
         let (consolidated_groups, consolidated_embedded_cylinders) =
             consolidated_cylinder_groups(ctx, bytes, consolidated_records)?;
@@ -9221,9 +9289,9 @@ impl CatiaNative {
         let consolidated_reference_lists =
             consolidated_reference_lists(bytes, consolidated_records);
         let consolidated_revolutions =
-            consolidated_revolutions(bytes, consolidated_records, &consolidated_circles);
-        let consolidated_spheres = consolidated_spheres(bytes, consolidated_records);
-        let consolidated_tori = consolidated_tori(bytes, consolidated_records);
+            consolidated_revolutions(ctx, bytes, consolidated_records, &consolidated_circles)?;
+        let consolidated_spheres = consolidated_spheres(ctx, bytes, consolidated_records)?;
+        let consolidated_tori = consolidated_tori(ctx, bytes, consolidated_records)?;
         let zero_entity_range = container::outer_preamble_range(bytes).unwrap_or_else(|| {
             if bytes.starts_with(container::OUTER_MAGIC) {
                 0..0
