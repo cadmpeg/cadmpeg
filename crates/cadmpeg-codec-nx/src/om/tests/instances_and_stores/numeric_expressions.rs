@@ -1,12 +1,21 @@
-use crate::om::counted_record_references;
 use crate::om::evaluate_constant_expression;
 use crate::om::expression_declaration_name;
 use crate::om::numeric_expressions;
-use crate::om::record_references;
 use crate::om::reference_value::{DirectReference, Tagged28};
-use crate::om::references;
 use crate::om::string_values;
 use crate::om::ExpressionUnit;
+
+fn references_for_test(bytes: &[u8], base_offset: usize) -> Vec<crate::om::LocatedReference<DirectReference>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::references(ctx, bytes, base_offset)).unwrap()
+}
+
+fn record_references_for_test(bytes: &[u8], base_offset: usize) -> Vec<crate::om::LocatedReference<DirectReference>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::record_references(ctx, bytes, base_offset)).unwrap()
+}
+
+fn counted_record_references_for_test(bytes: &[u8], base_offset: usize, record_count: usize) -> Vec<crate::om::LocatedReference<u16>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::counted_record_references(ctx, bytes, base_offset, record_count)).unwrap()
+}
 
 #[test]
 fn om_numeric_expression_types_only_canonical_parameter_names() {
@@ -197,7 +206,7 @@ fn om_string_value_requires_marker_length_printability_and_terminator() {
 #[test]
 fn om_tagged_references_preserve_family_value_order_and_bounds() {
     let bytes = b"\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0\xe0\x01";
-    let references = references(bytes, 20);
+    let references = references_for_test(bytes, 20);
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].offset, 20);
     assert_eq!(
@@ -214,7 +223,7 @@ fn om_tagged_references_preserve_family_value_order_and_bounds() {
 #[test]
 fn om_counted_record_references_require_a_complete_in_bounds_run() {
     let bytes = b"\xff\x01\x03\x90\x00\x02\x90\x00\x04\x01\x02\x90\x00\x05";
-    let references = counted_record_references(bytes, 100, 5);
+    let references = counted_record_references_for_test(bytes, 100, 5);
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].offset, 103);
     assert_eq!(references[0].value, 2);
@@ -229,14 +238,14 @@ fn om_record_references_require_adjacent_persistent_tagged_pairs() {
         dense.extend_from_slice(&value.to_be_bytes());
         dense.extend_from_slice(&(0xc000_0000 | value).to_be_bytes());
     }
-    let references = record_references(&dense, 100);
+    let references = record_references_for_test(&dense, 100);
     assert_eq!(references.len(), 16);
     assert_eq!(references[0].offset, 115);
 
     let mut unpaired = dense;
     unpaired.extend_from_slice(&[0xc0, 0, 0, 2]);
     assert_eq!(
-        record_references(&unpaired, 0)
+        record_references_for_test(&unpaired, 0)
             .into_iter()
             .filter(|reference| matches!(reference.value, DirectReference::Tagged28(_)))
             .count(),
@@ -244,7 +253,7 @@ fn om_record_references_require_adjacent_persistent_tagged_pairs() {
     );
 
     let lone_tagged = [0xc0, 0, 0, 1];
-    assert!(record_references(&lone_tagged, 0)
+    assert!(record_references_for_test(&lone_tagged, 0)
         .into_iter()
         .all(|reference| !matches!(reference.value, DirectReference::Tagged28(_))));
 }
@@ -274,4 +283,58 @@ fn om_numeric_expression_table_is_independent_of_entity_indexing() {
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(120.0)
     );
+}
+
+fn tagged_reference_refusal(configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+    let bytes = b"\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    crate::om::references(&ctx, bytes, 0).unwrap_err()
+}
+
+fn counted_reference_refusal(configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
+    let bytes = b"\x01\x03\x90\x00\x02\x90\x00\x04";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    crate::om::counted_record_references(&ctx, bytes, 0, 5).unwrap_err()
+}
+
+#[test]
+fn tagged_references_refuse_collection_limit() {
+    let error = tagged_reference_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn tagged_references_refuse_retained_limit() {
+    let error = tagged_reference_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn tagged_references_refuse_work_limit() {
+    let error = tagged_reference_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn counted_references_refuse_collection_limit() {
+    let error = counted_reference_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn counted_references_refuse_retained_limit() {
+    let error = counted_reference_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn counted_references_refuse_work_limit() {
+    let error = counted_reference_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
