@@ -538,7 +538,11 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
     let mut decoded = Brep::default();
     decoded.stats.ambiguous_pcurve_parameters = 2;
 
-    let classification = crate::dialect::classify_layers(&scan);
+    let classification = crate::dialect::classify_layers(
+        &cadmpeg_test_support::service_decode_context(),
+        &scan,
+    )
+    .unwrap();
     let report = super::super::build_geometry_report(
         &cadmpeg_test_support::service_decode_context(),
         &scan,

@@ -84,7 +84,7 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
 /// through the decode body when a partial result can be represented.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
     let mut scan = container::scan(ctx, root)?;
-    let classification = crate::dialect::classify_layers(&scan);
+    let classification = crate::dialect::classify_layers(ctx, &scan)?;
     let form_padding = classification.host().form_code_padding();
     // Marker identities are admitted during scanning. Compound stream identities
     // are admitted here before B-rep and IR construction.
@@ -3856,7 +3856,7 @@ fn build_geometry_report(
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
-    classification.append_losses(&mut losses);
+    classification.append_losses(ctx, &mut losses)?;
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
@@ -5356,7 +5356,7 @@ fn build_container_report(
         );
     }
     append_swift_pmi_losses(scan, &mut losses);
-    classification.append_losses(&mut losses);
+    classification.append_losses(ctx, &mut losses)?;
 
     Ok(DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),
