@@ -254,7 +254,7 @@ impl MergeSession<'_, '_> {
                     reference.occurrence_ordinal,
                 ),
             )?;
-            extend_native(&mut parent_ir.native, component_ir.native, &occurrence)?;
+            extend_native(self.ctx, &mut parent_ir.native, component_ir.native, &occurrence)?;
             parent_fidelity.append(rescope_fidelity(component_fidelity, &occurrence)?)?;
             merged += descendants + 1;
             if component_report.transfer.geometry_transferred() {
@@ -491,6 +491,7 @@ impl EntityRewrite for OccurrenceScope<'_> {
 
 /// Appends all known component-native arenas after occurrence-local rescoping.
 fn extend_native(
+    ctx: &DecodeContext<'_>,
     root: &mut Native,
     mut component: Native,
     occurrence: &str,
@@ -510,8 +511,13 @@ fn extend_native(
         if records.is_empty() {
             continue;
         }
+        let count = u64::try_from(records.len())
+            .map_err(|_| ctx.refuse_codec_limit("append F3Z native records", 0, u64::MAX))?;
+        ctx.charge_collection_items(count, "append F3Z native records")?;
         let arena = target.arenas_mut().entry(name.to_string()).or_default();
-        arena.reserve(records.len());
+        arena
+            .try_reserve(records.len())
+            .map_err(|_| ctx.refuse_codec_limit("append F3Z native records", 0, count))?;
         for record in records {
             arena.push(rescope_record(&record, name, occurrence)?);
         }

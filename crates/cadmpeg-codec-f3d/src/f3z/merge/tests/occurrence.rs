@@ -295,7 +295,13 @@ fn occurrence_merge_remaps_and_retains_native_records() {
         )
         .expect("store component native");
     let mut root = Native::default();
-    extend_native(&mut root, component, "role/occurrence-0").unwrap();
+    extend_native(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut root,
+        component,
+        "role/occurrence-0",
+    )
+    .unwrap();
 
     let merged: Vec<DesignSketchPlacement> = root
         .namespace("f3d")
@@ -306,6 +312,37 @@ fn occurrence_merge_remaps_and_retains_native_records() {
         merged[0].id,
         "f3d:xref/role/occurrence-0/Design/BulkStream.dat:design-sketch-placement#42"
     );
+}
+
+#[test]
+fn occurrence_merge_refuses_native_record_collection_limit() {
+    let mut component = Native::default();
+    component
+        .namespace_mut("f3d")
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "xref_designs",
+            &[crate::records::xref::XrefDesign {
+                id: "f3d:xref:design#0".into(),
+                ordinal: 0,
+                file_version: 1,
+                target_file_name: "part.f3d".into(),
+                display_name: "Part".into(),
+                lineage_urn: "lineage".into(),
+                version_urn: "version".into(),
+            }],
+        )
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let mut root = Native::default();
+
+    let error = extend_native(&ctx, &mut root, component, "component-0").unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "append F3Z native records"));
 }
 
 #[test]
@@ -328,7 +365,13 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
         )
         .unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
-    extend_native(&mut ir.native, component, "component-0").unwrap();
+    extend_native(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir.native,
+        component,
+        "component-0",
+    )
+    .unwrap();
     let wire = ir.to_canonical_json().unwrap();
     let admitted = cadmpeg_ir::CadIr::from_json(&wire).unwrap();
     let configurations = admitted
@@ -398,7 +441,13 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
         .expect("store typed native reference");
 
     let mut root = Native::default();
-    extend_native(&mut root, component, "role/occurrence-0").unwrap();
+    extend_native(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut root,
+        component,
+        "role/occurrence-0",
+    )
+    .unwrap();
 
     let merged_visibility: Vec<BodyVisibility> = root
         .namespace("f3d")
