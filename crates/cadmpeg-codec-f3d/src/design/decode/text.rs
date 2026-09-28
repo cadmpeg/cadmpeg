@@ -37,6 +37,16 @@ pub(in crate::design::decode) fn class_tag_from_view(
     crate::records::references::DesignClassTag::try_from(value.to_owned())
 }
 
+/// Copy an admitted ASCII field into retained text after charging its bytes.
+pub(in crate::design::decode) fn copy_ascii_retained(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
+        .map_err(|_| CodecError::malformed("F3D ASCII field must be UTF-8"))
+}
+
 pub(in crate::design::decode) fn design_record_id_charged(
     ctx: &DecodeContext<'_>,
     stream: &str,

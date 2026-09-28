@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse exact raster and face bindings owned by Design `Decal` scopes.
 
-use crate::bytes::lp_ascii_filtered;
+use crate::design::decode::text::{copy_ascii_retained, lp_ascii_filtered_view};
 use crate::container::ContainerScan;
 use crate::design::decode::image::{copy_asset_id_charged, embedded_image_asset};
 use crate::design::decode::scopes::shared_frames::marked_reference;
@@ -229,7 +229,7 @@ fn parse_decal_asset_record(
 ) -> Result<Option<DesignDecalAsset>, CodecError> {
     let parsed = (|| {
     let (asset_class_tag, after_asset_tag) =
-        lp_ascii_filtered(bytes, asset_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, asset_at, 0..=2000, u8::is_ascii_graphic)?;
     if View::u32_le_at(bytes, after_asset_tag)? != asset_record_index
         || bytes.get(
             asset_at + decal_asset::ZERO_RUN_8
@@ -248,7 +248,7 @@ fn parse_decal_asset_record(
         return None;
     }
     let (name_class_tag, after_name_tag) =
-        lp_ascii_filtered(bytes, name_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, name_at, 0..=2000, u8::is_ascii_graphic)?;
     let name_record_index = View::u32_le_at(bytes, after_name_tag)?;
     if bytes
         .get(name_at + decal_name::ZERO_RUN_10..name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT)?
@@ -267,6 +267,14 @@ fn parse_decal_asset_record(
     if after_asset_name != next_at {
         return None;
     }
+    let asset_class_tag = match copy_ascii_retained(ctx, asset_class_tag, "f3d Decal asset class tag") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
+    let name_class_tag = match copy_ascii_retained(ctx, name_class_tag, "f3d Decal name class tag") {
+        Ok(value) => value,
+        Err(error) => return Some(Err(error)),
+    };
 
     DesignDecalAsset::new(
         [asset_class_tag, name_class_tag],
@@ -285,6 +293,7 @@ mod tests {
     use super::parse_decal_image_frame;
     use crate::records::decal::DesignDecalMappingMode;
     use crate::test_support::write_marked_reference;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
         bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
@@ -317,6 +326,30 @@ mod tests {
         (bytes, scope_at)
     }
 
+    fn assert_class_tag_retained_refusal(limit: u64, operation: &'static str) {
+        let (bytes, scope_at) = fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = parse_decal_image_frame(&ctx, &bytes, "Design/BulkStream.dat", 23, scope_at)
+            .err()
+            .unwrap();
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RetainedBytes
+                && refusal.operation == operation));
+    }
+
+    #[test]
+    fn decal_asset_class_tag_refuses_retained_limit() {
+        assert_class_tag_retained_refusal(10, "f3d Decal asset class tag");
+    }
+
+    #[test]
+    fn decal_name_class_tag_refuses_retained_limit() {
+        assert_class_tag_retained_refusal(13, "f3d Decal name class tag");
+    }
+
     #[test]
     fn decal_frame_decodes_image_mode_and_target() {
         let (bytes, scope_at) = fixture();
@@ -347,8 +380,6 @@ mod tests {
 
     #[test]
     fn decal_asset_name_refuses_retained_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-
         let (bytes, scope_at) = fixture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
