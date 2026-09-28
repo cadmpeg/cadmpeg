@@ -1289,6 +1289,59 @@ impl<'a> BrepFaceCandidateIndexes<'a> {
     }
 }
 
+struct BrepEdgeIndexes {
+    edge_vertices: BTreeMap<u32, [u32; 2]>,
+    model_curve_counts: BTreeMap<u32, usize>,
+    admitted_edge_curves: BTreeSet<u32>,
+}
+
+impl BrepEdgeIndexes {
+    fn from_rows(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        rows: &[crate::curve::CurveTopologyRow],
+        native_edge_vertices: &BTreeMap<u32, [u32; 2]>,
+        solved_vertices: &BTreeMap<u32, [f64; 3]>,
+        ir: &CadIr,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut edge_vertices = BTreeMap::new();
+        for row in crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)? {
+            let Some(vertices) = native_edge_vertices.get(&row.id).copied() else {
+                continue;
+            };
+            if vertices
+                .iter()
+                .all(|vertex| solved_vertices.contains_key(vertex))
+            {
+                ctx.charge_collection_items(1, "creo B-rep edge-vertex nodes")?;
+                edge_vertices.insert(row.id, vertices);
+            }
+        }
+        let mut model_curve_counts = BTreeMap::new();
+        let mut admitted_edge_curves = BTreeSet::new();
+        for curve_id in edge_vertices.keys() {
+            let count = ir
+                .model
+                .curves
+                .iter()
+                .filter(|curve| {
+                    crate::identity::matches_numbered_identity(
+                        curve.id.as_str(),
+                        "creo:visibgeom:curve#",
+                        *curve_id,
+                    )
+                })
+                .count();
+            ctx.charge_collection_items(1, "creo B-rep model curve count nodes")?;
+            model_curve_counts.insert(*curve_id, count);
+            if count <= 1 {
+                ctx.charge_collection_items(1, "creo B-rep admitted edge ID nodes")?;
+                admitted_edge_curves.insert(*curve_id);
+            }
+        }
+        Ok(Self { edge_vertices, model_curve_counts, admitted_edge_curves })
+    }
+}
+
 /// Transfer the native `VisibGeom` B-rep: bodies, faces, loops, and coedges.
 ///
 /// A coedge whose projected pcurve lane the IR carrier refuses is emitted
@@ -1399,34 +1452,14 @@ pub(in super::super) fn transfer_native_brep(
     }
     let native_edge_vertices =
         crate::topology::edge_vertex_pairs(ctx, &scan.topology.half_edge_vertex_incidence)?;
-    let edge_vertices = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
-        .into_iter()
-        .filter_map(|row| {
-            let vertices = native_edge_vertices.get(&row.id).copied()?;
-            vertices
-                .iter()
-                .all(|vertex| solved_vertices.contains_key(vertex))
-                .then_some((row.id, vertices))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let model_curve_counts = edge_vertices
-        .keys()
-        .map(|curve_id| {
-            let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, *curve_id);
-            let count = ir
-                .model
-                .curves
-                .iter()
-                .filter(|curve| curve.id == id)
-                .count();
-            (*curve_id, count)
-        })
-        .collect::<BTreeMap<_, _>>();
-    let admitted_edge_curves = edge_vertices
-        .keys()
-        .copied()
-        .filter(|curve_id| model_curve_counts[curve_id] <= 1)
-        .collect::<BTreeSet<_>>();
+    let BrepEdgeIndexes { edge_vertices, model_curve_counts, admitted_edge_curves } =
+        BrepEdgeIndexes::from_rows(
+            ctx,
+            &scan.curves.topology_rows,
+            &native_edge_vertices,
+            solved_vertices,
+            ir,
+        )?;
     let BrepFaceCandidateIndexes {
         loops_by_face,
         candidate_face_ids,

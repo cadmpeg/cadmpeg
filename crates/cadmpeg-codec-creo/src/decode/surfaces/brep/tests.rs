@@ -18,8 +18,93 @@ use super::{
     ordered_native_parameter_face_loops, split_neutral_component_shells, transfer_native_brep,
     model_typed_nonlinear_curve_ids, push_native_pcurve_candidate, BrepTransferDiagnostics,
     FaceAdmissionDetail, FaceAdmissionRejection, NativeBrepCurveEvidence, NativeCurveEvidence,
-    BrepFaceCandidateIndexes, BrepSourceIndexes, NativePcurveCandidates, NeutralShellSpec,
+    BrepEdgeIndexes, BrepFaceCandidateIndexes, BrepSourceIndexes, NativePcurveCandidates,
+    NeutralShellSpec,
 };
+
+fn brep_edge_index_input() -> (
+    Vec<crate::curve::CurveTopologyRow>,
+    BTreeMap<u32, [u32; 2]>,
+    BTreeMap<u32, [f64; 3]>,
+    CadIr,
+) {
+    let rows = vec![crate::curve::CurveTopologyRow {
+        id: 10,
+        type_byte: 0,
+        feature_id: 1,
+        directions: [0, 0],
+        faces: [None, None],
+        next_edges: [0, 0],
+        offset: 0,
+    }];
+    let native_vertices = BTreeMap::from([(10, [1, 2])]);
+    let solved_vertices = BTreeMap::from([
+        (1, [0.0, 0.0, 0.0]),
+        (2, [1.0, 0.0, 0.0]),
+    ]);
+    (rows, native_vertices, solved_vertices, CadIr::empty())
+}
+
+fn brep_edge_index_limit_error(limit: u64) -> CodecError {
+    let (rows, native_vertices, solved_vertices, ir) = brep_edge_index_input();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    BrepEdgeIndexes::from_rows(&ctx, &rows, &native_vertices, &solved_vertices, &ir)
+        .err()
+        .expect("edge-index node refused")
+}
+
+#[test]
+fn brep_edge_vertex_nodes_refuse_collection_limit() {
+    let error = brep_edge_index_limit_error(2);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep edge-vertex nodes"));
+}
+
+#[test]
+fn brep_model_curve_count_nodes_refuse_collection_limit() {
+    let error = brep_edge_index_limit_error(3);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep model curve count nodes"));
+}
+
+#[test]
+fn brep_admitted_edge_id_nodes_refuse_collection_limit() {
+    let error = brep_edge_index_limit_error(4);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep admitted edge ID nodes"));
+}
+
+#[test]
+fn brep_edge_indexes_preserve_model_curve_multiplicity() {
+    let (rows, native_vertices, solved_vertices, mut ir) = brep_edge_index_input();
+    let curve = Curve {
+        id: CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 10),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+        source_object: None,
+    };
+    ir.model.curves.push(curve.clone());
+    let one = crate::decode::with_test_decode_ctx(|ctx| {
+        BrepEdgeIndexes::from_rows(ctx, &rows, &native_vertices, &solved_vertices, &ir)
+    })
+    .expect("one service edge admitted");
+    assert_eq!(one.edge_vertices[&10], [1, 2]);
+    assert_eq!(one.model_curve_counts[&10], 1);
+    assert_eq!(one.admitted_edge_curves, BTreeSet::from([10]));
+    ir.model.curves.push(curve);
+    let duplicate = crate::decode::with_test_decode_ctx(|ctx| {
+        BrepEdgeIndexes::from_rows(ctx, &rows, &native_vertices, &solved_vertices, &ir)
+    })
+    .expect("duplicate service edge counted");
+    assert_eq!(duplicate.model_curve_counts[&10], 2);
+    assert!(duplicate.admitted_edge_curves.is_empty());
+}
 
 fn face_candidate_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
