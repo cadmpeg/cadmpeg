@@ -12,6 +12,25 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn loft_profiles_refuse_at_matching_limits() {
+    let profiles = linked_property_count("loft", "Sections", "loft-sections", 2);
+    let sketches = std::collections::HashMap::new();
+    for operation in ["fcstd loft profiles", "fcstd loft sections"] {
+        crate::test_support::assert_collection_refusal_at(&[], operation, |ctx| {
+            super::loft_definition(ctx, "Part::Loft", &[&profiles], &sketches)
+        });
+    }
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd loft native profile identity", |ctx| {
+        super::loft_definition(ctx, "Part::Loft", &[&profiles], &sketches)
+    });
+    let mut sketches = std::collections::HashMap::new();
+    sketches.insert("base", cadmpeg_ir::sketches::SketchId::mint("test:test:sketch#loft").expect("valid sketch id"));
+    crate::test_support::assert_retained_refusal_at(&[], "fcstd loft sketch identity", |ctx| {
+        super::loft_definition(ctx, "Part::Loft", &[&profiles], &sketches)
+    });
+}
+
+#[test]
 fn boolean_selection_identities_refuse_at_retained_limits() {
     let base_feature = linked_property("boolean", "BaseFeature", "base-feature");
     let group = linked_property("boolean", "Group", "boolean-group");
