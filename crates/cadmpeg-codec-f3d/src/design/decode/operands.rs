@@ -9,6 +9,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::{is_guid_relaxed, lp_utf16_bounded, take_reference};
 use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::design::decode::text::design_record_id_charged;
 use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
 use crate::design::decode::dimension_frames::{
@@ -254,10 +255,18 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignEdgeTreatmentVertexOperand>, CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let mut header_index = HashMap::new();
+    for header in headers {
+        let Some(stream) = native_stream(&header.id) else { continue; };
+        let key = (stream, header.record_index);
+        if !header_index.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d vertex operand header index")?;
+            header_index.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d vertex operand header index allocation", 0, 1)
+            })?;
+        }
+        header_index.insert(key, header);
+    }
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
     let mut out = Vec::new();
     for scope in scopes
@@ -276,7 +285,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
         for (scope_reference_ordinal, record_index) in
             scope.reference_members().values().copied().enumerate()
         {
-            let matches = groups
+            let mut matches = groups
                 .iter()
                 .filter(|group| {
                     native_stream(&group.id) == Some(stream)
@@ -291,12 +300,14 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
                         .filter(|(_, member)| **member == record_index);
                     let (ordinal, _) = ordinals.next()?;
                     ordinals.next().is_none().then_some((group, ordinal))
-                })
-                .collect::<Vec<_>>();
-            let [(group, group_member_ordinal)] = matches.as_slice() else {
+                });
+            let Some((group, group_member_ordinal)) = matches.next() else {
                 continue;
             };
-            let Some(header) = headers.get(&(stream, record_index)) else {
+            if matches.next().is_some() {
+                continue;
+            }
+            let Some(header) = header_index.get(&(stream, record_index)) else {
                 continue;
             };
             let Some(recipe) = parse_vertex_recipe(bytes, records, stream, header, recipes) else {
@@ -304,16 +315,19 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             };
             let (Ok(scope_reference_ordinal), Ok(group_member_ordinal)) = (
                 u32::try_from(scope_reference_ordinal),
-                u32::try_from(*group_member_ordinal),
+                u32::try_from(group_member_ordinal),
             ) else {
                 continue;
             };
+            ctx.charge_collection_items(1, "f3d vertex operand output")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d vertex operand output allocation", 0, 1)
+            })?;
             out.push(DesignEdgeTreatmentVertexOperand {
-                id: crate::ids::native_scoped_id(
-                    stream,
-                    "edge-treatment-vertex-operand",
-                    header.byte_offset,
-                ),
+                id: design_record_id_charged(
+                    ctx, stream, ":edge-treatment-vertex-operand#", header.byte_offset,
+                    "f3d vertex operand ID", "f3d vertex operand ID allocation",
+                )?,
                 scope_record_index: scope.record_index,
                 scope_reference_ordinal,
                 group_record_index: group.record_index,
