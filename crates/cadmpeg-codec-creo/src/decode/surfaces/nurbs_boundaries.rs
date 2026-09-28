@@ -6,7 +6,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsPoles3, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry,
 };
 use cadmpeg_ir::math::Point3;
@@ -32,80 +32,110 @@ struct NurbsSurfaceBoundary {
 /// `surface_id` is the `VisibGeom` surface row that stated the surface. Every
 /// refusal names that row, so N refused rows stay N named records.
 fn nurbs_surface_boundaries(
+    ctx: &DecodeContext<'_>,
     nurbs: &NurbsSurface,
     surface_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<[NurbsSurfaceBoundary; 4]> {
+) -> Result<Option<[NurbsSurfaceBoundary; 4]>, CodecError> {
     let u_count = nurbs.u_count();
     let v_count = nurbs.v_count();
-    let poles = nurbs.poles();
-    let pole_weights = nurbs.pole_weights();
-    pole_weights
-        .as_ref()
-        .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0))
-        .then_some(())?;
-    let boundaries = [
-        (false, (0..v_count).collect::<Vec<_>>()),
-        (
-            false,
-            ((u_count - 1) * v_count..u_count * v_count).collect(),
-        ),
-        (true, (0..u_count).map(|u| u * v_count).collect()),
-        (
-            true,
-            (0..u_count).map(|u| u * v_count + v_count - 1).collect(),
-        ),
-    ];
-    let boundaries = boundaries
-        .into_iter()
-        .map(|(along_u, control_indices)| {
-            let (degree, knots, periodic, transverse_periodic) = if along_u {
-                (
-                    nurbs.u_degree(),
-                    nurbs.u_knots().clone(),
-                    nurbs.u_periodic(),
-                    nurbs.v_periodic(),
-                )
-            } else {
-                (
-                    nurbs.v_degree(),
-                    nurbs.v_knots().clone(),
-                    nurbs.v_periodic(),
-                    nurbs.u_periodic(),
-                )
-            };
-            let curve = match NurbsCurve::from_checked_lanes(
-                degree,
-                knots,
-                control_indices
-                    .iter()
-                    .map(|index| poles[*index])
-                    .collect::<Vec<_>>(),
-                pole_weights.as_ref().map(|weights| {
-                    control_indices
-                        .iter()
-                        .map(|index| weights[*index])
-                        .collect()
-                }),
-                periodic,
-            ) {
-                Ok(curve) => curve,
-                Err(error) => {
-                    refusal.note(
-                        format!("creo VisibGeom surface row {surface_id} boundary curve record"),
-                        &error,
-                    );
-                    return None;
-                }
-            };
-            Some(NurbsSurfaceBoundary {
-                curve,
-                control_indices,
-                transverse_periodic,
-            })
+    let (Some(last_u), Some(last_v)) = (u_count.checked_sub(1), v_count.checked_sub(1)) else {
+        return Ok(None);
+    };
+    let weighted = matches!(nurbs.pole_grid(), NurbsPoleGrid::Rational { .. });
+    if weighted
+        && (0..u_count).any(|u| {
+            (0..v_count).any(|v| nurbs.weight(u, v).is_none_or(|weight| weight.get() <= 0.0))
         })
-        .collect::<Option<Vec<_>>>()?;
-    boundaries.try_into().ok()
+    {
+        return Ok(None);
+    }
+    let mut boundaries = [None, None, None, None];
+    for (ordinal, (along_u, fixed_index)) in
+        [(false, 0), (false, last_u), (true, 0), (true, last_v)]
+            .into_iter()
+            .enumerate()
+    {
+        let count = if along_u { u_count } else { v_count };
+        let mut control_indices = Vec::new();
+        ctx.try_reserve_items(
+            &mut control_indices,
+            count,
+            "creo NURBS boundary control indices",
+        )?;
+        let mut control_points = Vec::new();
+        ctx.try_reserve_items(&mut control_points, count, "creo NURBS boundary control points")?;
+        let mut weights = if weighted {
+            let mut weights = Vec::new();
+            ctx.try_reserve_items(&mut weights, count, "creo NURBS boundary weights")?;
+            Some(weights)
+        } else {
+            None
+        };
+        for position in 0..count {
+            let (u, v) = if along_u {
+                (position, fixed_index)
+            } else {
+                (fixed_index, position)
+            };
+            control_indices.push(u * v_count + v);
+            let Some(point) = nurbs.pole(u, v) else {
+                return Ok(None);
+            };
+            control_points.push(point);
+            if let Some(weights) = &mut weights {
+                let Some(weight) = nurbs.weight(u, v) else {
+                    return Ok(None);
+                };
+                weights.push(weight);
+            }
+        }
+        let (degree, source_knots, periodic, transverse_periodic) = if along_u {
+            (
+                nurbs.u_degree(),
+                nurbs.u_knots(),
+                nurbs.u_periodic(),
+                nurbs.v_periodic(),
+            )
+        } else {
+            (
+                nurbs.v_degree(),
+                nurbs.v_knots(),
+                nurbs.v_periodic(),
+                nurbs.u_periodic(),
+            )
+        };
+        let knots = ctx.try_collection(
+            source_knots.len(),
+            "creo NURBS boundary knots",
+            || source_knots.try_clone(),
+        )?;
+        let curve = match NurbsCurve::from_checked_lanes(
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        ) {
+            Ok(curve) => curve,
+            Err(error) => {
+                refusal.note(
+                    format!("creo VisibGeom surface row {surface_id} boundary curve record"),
+                    &error,
+                );
+                return Ok(None);
+            }
+        };
+        boundaries[ordinal] = Some(NurbsSurfaceBoundary {
+            curve,
+            control_indices,
+            transverse_periodic,
+        });
+    }
+    let [Some(first), Some(second), Some(third), Some(fourth)] = boundaries else {
+        return Ok(None);
+    };
+    Ok(Some([first, second, third, fourth]))
 }
 
 fn surface_poles(nurbs: &NurbsSurface) -> impl Iterator<Item = FinitePoint3> + '_ {
@@ -130,12 +160,16 @@ fn point_tolerance(mut points: impl Iterator<Item = FinitePoint3>) -> Option<f64
 }
 
 pub(in super::super) fn nurbs_plane_boundary_curve(
+    ctx: &DecodeContext<'_>,
     nurbs: &NurbsSurface,
     surface_id: u32,
     plane: PlaneEquation,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<CurveGeometry> {
-    let boundaries = nurbs_surface_boundaries(nurbs, surface_id, refusal)?;
+) -> Result<Option<CurveGeometry>, CodecError> {
+    let Some(boundaries) = nurbs_surface_boundaries(ctx, nurbs, surface_id, refusal)? else {
+        return Ok(None);
+    };
+    Ok((|| {
     let normal = normalize(plane.normal)?;
     let tolerance = point_tolerance(surface_poles(nurbs))?
         .max(32.0 * f64::EPSILON * plane.origin.into_iter().map(f64::abs).fold(1.0, f64::max));
@@ -178,6 +212,7 @@ pub(in super::super) fn nurbs_plane_boundary_curve(
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         boundary.curve,
     )))
+    })())
 }
 
 fn scalar_near(left: f64, right: f64, tolerance: f64) -> bool {
@@ -385,14 +420,20 @@ fn generator_separates_control_nets(
 }
 
 pub(in super::super) fn shared_extrusion_generator_curve(
+    ctx: &DecodeContext<'_>,
     first: &NurbsSurface,
     first_surface_id: u32,
     second: &NurbsSurface,
     second_surface_id: u32,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<CurveGeometry> {
-    let first_boundaries = nurbs_surface_boundaries(first, first_surface_id, refusal)?;
-    let second_boundaries = nurbs_surface_boundaries(second, second_surface_id, refusal)?;
+) -> Result<Option<CurveGeometry>, CodecError> {
+    let Some(first_boundaries) = nurbs_surface_boundaries(ctx, first, first_surface_id, refusal)? else {
+        return Ok(None);
+    };
+    let Some(second_boundaries) = nurbs_surface_boundaries(ctx, second, second_surface_id, refusal)? else {
+        return Ok(None);
+    };
+    Ok((|| {
     let tolerance = point_tolerance(surface_poles(first).chain(surface_poles(second)))?;
     let selected_index = {
         let mut candidates = first_boundaries
@@ -432,6 +473,7 @@ pub(in super::super) fn shared_extrusion_generator_curve(
     Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         curve,
     )))
+    })())
 }
 
 /// The power-basis coefficients `[cubic, quadratic, linear, constant]` of the
@@ -588,7 +630,11 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         plane: PlaneEquation,
         refusal: &mut crate::lane_refusal::LaneRefusals,
     ) -> Option<Result<CurveGeometry, CodecError>> {
-        let boundaries = nurbs_surface_boundaries(nurbs, surface_id, refusal)?;
+        let boundaries = match nurbs_surface_boundaries(ctx, nurbs, surface_id, refusal) {
+            Ok(Some(boundaries)) => boundaries,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         (nurbs.u_degree() == 3
             && nurbs.v_degree() == 1
             && nurbs.u_count() == 4
@@ -756,8 +802,98 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    use cadmpeg_ir::math::Point3;
+
     const EPS_TEST_VALUE: f64 = 1.0e-11;
     const EPS_TEST_ROOT: f64 = 1.0e-12;
+
+    fn boundary_count_with_limit(limit: u64) -> Result<usize, cadmpeg_core::CodecError> {
+        let surface = NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                ],
+                Some(vec![vec![1.0, 2.0], vec![3.0, 4.0]]),
+            ),
+            false,
+        )
+        .expect("valid rational boundary surface");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits the collection policy");
+        super::nurbs_surface_boundaries(
+            &ctx,
+            &surface,
+            7,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .map(|boundaries| boundaries.map_or(0, |boundaries| boundaries.len()))
+    }
+
+    macro_rules! boundary_collection_limit_test {
+        ($name:ident, $operation:literal) => {
+            #[test]
+            fn $name() {
+                let limit = (0..128)
+                    .find(|limit| matches!(boundary_count_with_limit(*limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                        if refusal.dimension == ResourceDimension::CollectionItems
+                            && refusal.operation == $operation))
+                    .expect("the rational boundary reaches the named collection allocation");
+                assert!(matches!(boundary_count_with_limit(limit), Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == $operation));
+                assert_eq!(boundary_count_with_limit(u64::MAX).expect("service budget admits all four boundaries"), 4);
+            }
+        };
+    }
+
+    boundary_collection_limit_test!(nurbs_boundary_control_indices_refuse_before_vec_growth, "creo NURBS boundary control indices");
+    boundary_collection_limit_test!(nurbs_boundary_control_points_refuse_before_vec_growth, "creo NURBS boundary control points");
+    boundary_collection_limit_test!(nurbs_boundary_weights_refuse_before_vec_growth, "creo NURBS boundary weights");
+    boundary_collection_limit_test!(nurbs_boundary_knots_refuse_before_fallible_clone, "creo NURBS boundary knots");
+
+    #[test]
+    fn nurbs_plane_boundary_preserves_control_index_refusal() {
+        let surface = NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .expect("valid plane boundary surface");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits the collection policy");
+        let error = super::nurbs_plane_boundary_curve(
+            &ctx,
+            &surface,
+            7,
+            super::PlaneEquation {
+                origin: [0.0; 3],
+                normal: [1.0, 0.0, 0.0],
+            },
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )
+        .expect_err("boundary allocation refusal must remain a resource error");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo NURBS boundary control indices"));
+    }
 
     #[test]
     fn numerical_followup_degenerate_bezier_plane_distances_state_a_zero_difference() {
