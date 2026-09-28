@@ -1109,21 +1109,21 @@ fn find_dimension_locus_pair(
         parse_dimension_locus_pair(bytes, at, companion_record_index, geometry_indices)
             .filter(|pair| pair.paired_byte_offset() < u64_from_index(end))
     };
-    let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
+    let mut candidate = parse(start);
     let mut position = start.saturating_add(1);
     while let Some(at) = next_indexed_record_offset(bytes, position) {
         if at >= end {
             break;
         }
         if let Some(pair) = parse(at) {
-            candidates.push(pair);
+            if candidate.is_some() {
+                return None;
+            }
+            candidate = Some(pair);
         }
         position = at.saturating_add(1);
     }
-    let [pair] = candidates.as_slice() else {
-        return None;
-    };
-    Some(pair.clone())
+    candidate
 }
 
 fn parse_dimension_locus_pair(
@@ -1325,23 +1325,21 @@ fn find_dimension_null_locus_pair(
         parse_dimension_null_locus_pair(bytes, at, companion_record_index, geometry_indices)
             .filter(|pair| pair.paired_byte_offset() < u64_from_index(end))
     };
-    let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
+    let mut candidate = parse(start);
     let mut position = start.saturating_add(1);
     while let Some(at) = next_indexed_record_offset(bytes, position) {
         if at >= end {
             break;
         }
         if let Some(pair) = parse(at) {
-            candidates.push(pair);
+            if candidate.is_some() {
+                return None;
+            }
+            candidate = Some(pair);
         }
         position = at.saturating_add(1);
     }
-    candidates.sort_by_key(crate::records::dimensions::DesignDimensionLocusPair::byte_offset);
-    candidates.dedup_by_key(|pair| pair.byte_offset());
-    let [pair] = candidates.as_slice() else {
-        return None;
-    };
-    Some(pair.clone())
+    candidate
 }
 
 fn parse_dimension_null_locus_pair(
