@@ -118,6 +118,17 @@ pub(crate) fn reserve_vec<T>(
     reserve_admitted_vec(count, operation)
 }
 
+pub(crate) fn admit_optional_entities(
+    ctx: Option<&DecodeContext<'_>>,
+    count: u64,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_entities(count, operation)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn reserve_optional_vec<T>(
     ctx: Option<&DecodeContext<'_>>,
     count: usize,
@@ -256,7 +267,7 @@ pub(crate) fn collect_optional_vec<T>(
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_optional_vec, copy_optional_identity, format_retained, lossy_retained};
+    use super::{admit_optional_entities, collect_optional_vec, copy_optional_identity, format_retained, lossy_retained};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
@@ -369,5 +380,22 @@ mod tests {
         let result = collect_optional_vec(&ctx, [Some(3_u8), Some(7_u8)], "iges optional test")
             .expect("valid test fixture");
         assert_eq!(result, Some(vec![3, 7]));
+    }
+
+    #[test]
+    fn geometry_creation_refuses_the_next_entity_at_its_boundary() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        admit_optional_entities(Some(&ctx), 2, "iges geometry test").unwrap();
+        let result = admit_optional_entities(Some(&ctx), 1, "iges geometry test");
+        assert!(matches!(result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Entities
+                    && limit.operation == "iges geometry test"
+                    && limit.used == 2
+                    && limit.additional == 1
+        ));
     }
 }

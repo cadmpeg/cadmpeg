@@ -164,6 +164,7 @@ fn appearance(
 ) -> Result<(), CodecError> {
     if ir.model.appearances.iter().all(|item| item.id != id) {
         reserve_vec_growth(ctx, &mut ir.model.appearances, 1, "iges neutral appearance slots")?;
+        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_presentation")?;
         ir.model.appearances.push(Appearance {
             id,
             name,
@@ -578,6 +579,7 @@ pub(super) fn project(
         ctx.charge_retained(appearance_id.as_str().len() as u64, "iges appearance ID copy")?;
         appearance(ir, appearance_id.clone(), None, color, ctx)?;
         reserve_vec_growth(ctx, &mut ir.model.appearance_bindings, 1, "iges appearance binding slots")?;
+        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding(&crate::ids::Stem::word_directory(
                 crate::ids::Word::Body,
@@ -661,6 +663,7 @@ pub(super) fn project(
         ctx.charge_retained(appearance_id.as_str().len() as u64, "iges appearance ID copy")?;
         appearance(ir, appearance_id.clone(), None, color, ctx)?;
         reserve_vec_growth(ctx, &mut ir.model.appearance_bindings, 1, "iges appearance binding slots")?;
+        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding(&crate::ids::Stem::word_directory(
                 crate::ids::Word::Face,

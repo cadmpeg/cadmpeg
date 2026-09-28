@@ -190,11 +190,13 @@ fn add_edge(
     let curve = crate::ids::curve(&stem);
     let edge = crate::ids::edge(&stem);
     reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges spline neutral point slots")?;
+    crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_splines")?;
     ir.model.points.extend([
         Point::new(start_point.clone(), start, None),
         Point::new(end_point.clone(), end, None),
     ]);
     reserve_vec_growth(ctx, &mut ir.model.vertices, 2, "iges spline neutral vertex slots")?;
+    crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_splines")?;
     ir.model.vertices.extend([
         Vertex {
             id: start_vertex.clone(),
@@ -209,6 +211,7 @@ fn add_edge(
     ]);
     sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
     reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges spline neutral curve slots")?;
+    crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_splines")?;
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
@@ -221,6 +224,7 @@ fn add_edge(
         }),
     });
     reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges spline neutral edge slots")?;
+    crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_splines")?;
     ir.model.edges.push(Edge {
         id: edge.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_range.into()),
@@ -901,6 +905,7 @@ pub(super) fn project(
             &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             entry.sequence, Some(ctx))?;
         reserve_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges spline neutral surface slots")?;
+        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_splines")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),

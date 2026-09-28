@@ -859,6 +859,7 @@ pub(super) fn project(
         if offset_source_id != source_id {
             sequences.record_curve(&offset_source_id, entry.sequence, ctx)?;
             reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges offset source curve slots")?;
+            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
             ir.model.curves.push(Curve {
                 id: offset_source_id.clone(),
                 geometry: CurveGeometry::Solved(offset_source_geometry.clone()),
@@ -872,11 +873,13 @@ pub(super) fn project(
             });
         }
         reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges offset neutral point slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_offsets")?;
         ir.model.points.extend([
             Point::new(start_point.clone(), start_position, None),
             Point::new(end_point.clone(), end_position, None),
         ]);
         reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges offset neutral vertex slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_offsets")?;
         ir.model.vertices.extend([
             Vertex {
                 id: start_vertex.clone(),
@@ -891,6 +894,7 @@ pub(super) fn project(
         ]);
         sequences.record_curve(&curve_id, entry.sequence, ctx)?;
         reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges offset neutral curve slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
@@ -913,6 +917,7 @@ pub(super) fn project(
             }
         };
         reserve_optional_vec_growth(ctx, &mut ir.model.edges, 1, "iges offset neutral edge slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
         ir.model.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
@@ -921,6 +926,7 @@ pub(super) fn project(
             tolerance: None,
         });
         reserve_optional_vec_growth(ctx, &mut ir.model.procedural_curves, 1, "iges offset procedural curve slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
         let _attached = ir.model.add_procedural_curve(curve_id, procedural);
         reserve_optional_vec_growth(ctx, &mut wire_edges, 1, "iges offset wire edge slots")?;
         wire_edges.push(edge_id);

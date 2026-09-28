@@ -398,10 +398,12 @@ pub(super) fn project(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
                 );
                 reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges copious neutral points")?;
+                crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
                 ir.model
                     .points
                     .push(Point::new(point.clone(), position, None));
                 reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges copious neutral vertices")?;
+                crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
                 ir.model.vertices.push(Vertex {
                     id: vertex.clone(),
                     point,
@@ -467,10 +469,12 @@ pub(super) fn project(
         let curve = crate::ids::curve(&stem);
         let edge = crate::ids::edge(&stem);
         reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges copious neutral points")?;
+        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model
             .points
             .push(Point::new(start_point.clone(), start, None));
         reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges copious neutral vertices")?;
+        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.vertices.push(Vertex {
             id: start_vertex.clone(),
             point: start_point,
@@ -478,10 +482,12 @@ pub(super) fn project(
         });
         if entry.form != 63 {
             reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges copious neutral points")?;
+            crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
             ir.model
                 .points
                 .push(Point::new(end_point.clone(), end, None));
             reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges copious neutral vertices")?;
+            crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
             ir.model.vertices.push(Vertex {
                 id: end_vertex.clone(),
                 point: end_point,
@@ -502,6 +508,7 @@ pub(super) fn project(
                 .and_then(|poles| NurbsCurve::new(1, knots, poles, false))
         });
         reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges copious neutral curves")?;
+        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.map_err(
@@ -510,6 +517,7 @@ pub(super) fn project(
             source_object: Some(source_object(entry, Some(ctx))?),
         });
         reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges copious neutral edges")?;
+        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model.edges.push(Edge {
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(

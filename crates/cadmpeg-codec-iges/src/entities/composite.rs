@@ -1956,10 +1956,12 @@ fn project_native_composite(
     let edge_id = crate::ids::edge(&stem);
     reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges composite native point slots")?;
     reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges composite native vertex slots")?;
+    crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
     ir.model.points.extend([
         Point::new(start_point.clone(), start, None),
         Point::new(end_point.clone(), end, None),
     ]);
+    crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
     ir.model.vertices.extend([
         Vertex {
             id: start_vertex.clone(),
@@ -1985,6 +1987,7 @@ fn project_native_composite(
         }
     };
     reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges composite native curve slots")?;
+    crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
@@ -1994,6 +1997,7 @@ fn project_native_composite(
         source_object: Some(source),
     });
     reserve_optional_vec_growth(ctx, &mut ir.model.edges, 1, "iges composite native edge slots")?;
+    crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
     ir.model.edges.push(Edge {
         id: edge_id.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
@@ -2421,10 +2425,12 @@ fn project_with_type_130_policy(
         let edge = crate::ids::edge(&stem);
         reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges composite solved point slots")?;
         reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges composite solved vertex slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
         ir.model.points.extend([
             Point::new(start_point.clone(), start, None),
             Point::new(end_point.clone(), end, None),
         ]);
+        crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
         ir.model.vertices.extend([
             Vertex {
                 id: start_vertex.clone(),
@@ -2439,12 +2445,14 @@ fn project_with_type_130_policy(
         ]);
         sequences.record_curve(&curve_id, entry.sequence, ctx)?;
         reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges composite solved curve slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, ctx)?),
         });
         reserve_optional_vec_growth(ctx, &mut ir.model.edges, 1, "iges composite solved edge slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
         ir.model.edges.push(Edge {
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
@@ -2486,6 +2494,7 @@ fn project_with_type_130_policy(
             });
         }
         reserve_optional_vec_growth(ctx, &mut ir.model.procedural_curves, 1, "iges composite procedural curve slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
         let _attached = ir.model.add_procedural_curve(
             curve_id,
             ProceduralCurve::new(

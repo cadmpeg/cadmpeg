@@ -1362,6 +1362,7 @@ pub(super) fn project(
             &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             entry.sequence, ctx)?;
         reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges plane neutral surface slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -1469,12 +1470,14 @@ pub(super) fn project(
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges ruled neutral surface slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: Some(source_object(entry, ctx)?),
         });
         reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
@@ -1610,6 +1613,7 @@ pub(super) fn project(
                 );
                 sequences.record_curve(&placed_id, entry.sequence, ctx)?;
                 reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges tabulated exact placed directrix slots")?;
+                crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
                     id: placed_id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -1630,6 +1634,7 @@ pub(super) fn project(
                 crate::ids::procedural_surface(&crate::ids::Stem::directory(entry.sequence));
             sequences.record_surface(&surface_id, entry.sequence, ctx)?;
             reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges tabulated exact neutral surface slots")?;
+            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
@@ -1655,6 +1660,7 @@ pub(super) fn project(
                 ))
             })?;
             reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
                 ProceduralSurface::new(
@@ -1791,6 +1797,7 @@ pub(super) fn project(
         };
         if entry.transform != 0 {
             reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges tabulated placed directrix slots")?;
+            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             ir.model.curves.push(Curve {
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_directrix)),
@@ -1799,6 +1806,7 @@ pub(super) fn project(
         }
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges tabulated neutral surface slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -1821,6 +1829,7 @@ pub(super) fn project(
             ))
         })?;
         reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
@@ -1944,6 +1953,7 @@ pub(super) fn project(
                 );
                 sequences.record_curve(&procedural_directrix, entry.sequence, ctx)?;
                 reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges revolution exact placed generatrix slots")?;
+                crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
                 ir.model.curves.push(Curve {
                     id: procedural_directrix.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
@@ -1978,6 +1988,7 @@ pub(super) fn project(
                 crate::ids::procedural_surface(&crate::ids::Stem::directory(entry.sequence));
             sequences.record_surface(&surface_id, entry.sequence, ctx)?;
             reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges revolution exact neutral surface slots")?;
+            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Procedural {
@@ -1987,6 +1998,7 @@ pub(super) fn project(
                 source_object: Some(source_object(entry, ctx)?),
             });
             reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
@@ -2127,6 +2139,7 @@ pub(super) fn project(
         };
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges revolution neutral surface slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -2156,6 +2169,7 @@ pub(super) fn project(
             );
             sequences.record_curve(&procedural_directrix, entry.sequence, ctx)?;
             reserve_optional_vec_growth(ctx, &mut ir.model.curves, 1, "iges revolution placed generatrix slots")?;
+            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             ir.model.curves.push(Curve {
                 id: procedural_directrix.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed_generatrix)),
@@ -2181,6 +2195,7 @@ pub(super) fn project(
         };
         if procedural_is_exact {
             reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+            crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
                 surface_id,
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
@@ -2567,6 +2582,7 @@ pub(super) fn project(
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges NURBS surface neutral slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
@@ -2575,6 +2591,7 @@ pub(super) fn project(
         let [u_lower, u_upper] = u_range.finite_endpoints();
         let [v_lower, v_upper] = v_range.finite_endpoints();
         reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             ProceduralSurface::new(
@@ -2687,12 +2704,14 @@ pub(super) fn project(
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
         sequences.record_surface(&surface_id, entry.sequence, ctx)?;
         reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges offset neutral surface slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry,
             source_object: Some(source_object(entry, ctx)?),
         });
         reserve_optional_vec_growth(ctx, &mut ir.model.procedural_surfaces, 1, "iges procedural surface slots")?;
+        crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
             surface_id,
             cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(

@@ -152,7 +152,9 @@ fn topology_vertex(
     let point = Point::new(point_id.clone(), position, None);
     sequences.record_point(&point_id, stem, Some(ctx))?;
     let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
+    crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
     candidate.model_mut().points.push(point);
+    crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
     candidate.model_mut().vertices.push(Vertex {
         id: vertex_id.clone(),
         point: point_id,
@@ -223,6 +225,7 @@ fn project_pcurve_uses(
             .transpose()?;
         reserve_vec_growth(ctx, &mut candidate.model_mut().pcurves, 1, "iges B-rep pcurve slots")?;
         let id = crate::ids::pcurve(&id_stem.slot(index));
+        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
         candidate.model_mut().pcurves.push(Pcurve {
             id: id.clone(),
             geometry,
@@ -1098,6 +1101,7 @@ pub(super) fn project(
                                 }
                             };
                             reserve_vec_growth(ctx, &mut candidate.model_mut().edges, 1, "iges B-rep topology edges")?;
+                            crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
                             candidate.model_mut().edges.push(Edge {
                                 id: id.clone(),
                                 carrier,
@@ -1144,6 +1148,7 @@ pub(super) fn project(
                         reserve_vec_growth(ctx, ring, 1, "iges B-rep radial coedge ids")?;
                         ring.push(coedge_id.clone());
                         reserve_vec_growth(ctx, &mut candidate.model_mut().coedges, 1, "iges B-rep topology coedges")?;
+                        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
                         candidate.model_mut().coedges.push(Coedge {
                             id: coedge_id.clone(),
                             owner_loop: loop_id.clone(),
@@ -1195,6 +1200,7 @@ pub(super) fn project(
                         LoopBoundary::Ring(ring)
                     };
                     reserve_vec_growth(ctx, &mut candidate.model_mut().loops, 1, "iges B-rep topology loops")?;
+                    crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
                     candidate.model_mut().loops.push(Loop {
                         id: loop_id.clone(),
                         face: face_id.clone(),
@@ -1220,6 +1226,7 @@ pub(super) fn project(
                     }
                 };
                 reserve_vec_growth(ctx, &mut candidate.model_mut().faces, 1, "iges B-rep topology faces")?;
+                crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
                 candidate.model_mut().faces.push(Face {
                     id: face_id.clone(),
                     shell: shell_id.clone(),
@@ -1237,6 +1244,7 @@ pub(super) fn project(
                 break;
             }
             reserve_vec_growth(ctx, &mut candidate.model_mut().shells, 1, "iges B-rep topology shells")?;
+            crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
             candidate.model_mut().shells.push(
                 match Shell::new(
                     shell_id.clone(),
@@ -1296,6 +1304,7 @@ pub(super) fn project(
             }
         }
         reserve_vec_growth(ctx, &mut candidate.model_mut().regions, 1, "iges B-rep topology regions")?;
+        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
         candidate.model_mut().regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
@@ -1304,6 +1313,7 @@ pub(super) fn project(
         let mut body_regions = reserve_vec(ctx, 1, "iges B-rep body region ids")?;
         body_regions.push(region_id);
         reserve_vec_growth(ctx, &mut candidate.model_mut().bodies, 1, "iges B-rep topology bodies")?;
+        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
         candidate.model_mut().bodies.push(Body {
             id: body_id,
             kind: definition.kind,
