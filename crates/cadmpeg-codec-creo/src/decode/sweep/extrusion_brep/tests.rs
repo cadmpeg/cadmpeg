@@ -1,8 +1,87 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{copy_ring_coedges, sketch_profiles_cover_generated_extrusion_sides};
+use super::{
+    cap_coedge_ids_admitted, copy_ring_coedges, generated_extrusion_identity,
+    sketch_profiles_cover_generated_extrusion_sides,
+};
 use crate::decode::tests::surface_row;
 use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchEntityUse, SketchId, SketchPlacement};
+
+fn cap_ids_at_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+    side: &'static str,
+    reversed: bool,
+    operation: &'static str,
+) -> Result<Vec<cadmpeg_ir::ids::CoedgeId>, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    cap_coedge_ids_admitted(&ctx, 7, 0, 2, side, reversed, operation)
+}
+
+#[test]
+fn generated_extrusion_identity_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let result = generated_extrusion_identity::<cadmpeg_ir::ids::BodyId>(
+        &ctx, format_args!("7:body"),
+    );
+    assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion generated identities"));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let id = generated_extrusion_identity::<cadmpeg_ir::ids::BodyId>(
+            ctx, format_args!("7:body"),
+        )
+        .expect("admitted identity");
+        assert_eq!(id.as_str(), cadmpeg_ir::ids::BodyId::compose(
+            &crate::identity::FEATURE_EXTRUSION,
+            cadmpeg_ir::ids::IdentityKey::from(7).colon(cadmpeg_ir::identity_key!("body")),
+        ).as_str());
+    });
+}
+
+#[test]
+fn bottom_cap_coedge_ids_refuse_collection_limit() {
+    assert!(matches!(cap_ids_at_limits(0, u64::MAX, "bottom-cap", true,
+        "creo extrusion bottom cap coedge IDs"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion bottom cap coedge IDs"));
+}
+
+#[test]
+fn top_cap_coedge_ids_refuse_collection_limit() {
+    assert!(matches!(cap_ids_at_limits(0, u64::MAX, "top-cap", false,
+        "creo extrusion top cap coedge IDs"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion top cap coedge IDs"));
+}
+
+#[test]
+fn cap_coedge_identity_refuses_retained_limit() {
+    assert!(matches!(cap_ids_at_limits(2, 0, "bottom-cap", true,
+        "creo extrusion bottom cap coedge IDs"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion generated identities"));
+}
+
+#[test]
+fn cap_coedge_ids_preserve_service_order() {
+    let bottom = cap_ids_at_limits(2, u64::MAX, "bottom-cap", true,
+        "creo extrusion bottom cap coedge IDs").expect("admitted bottom ring");
+    let top = cap_ids_at_limits(2, u64::MAX, "top-cap", false,
+        "creo extrusion top cap coedge IDs").expect("admitted top ring");
+    assert!(bottom[0].as_str().ends_with("#7:coedge:0:1:bottom-cap"));
+    assert!(bottom[1].as_str().ends_with("#7:coedge:0:0:bottom-cap"));
+    assert!(top[0].as_str().ends_with("#7:coedge:0:0:top-cap"));
+    assert!(top[1].as_str().ends_with("#7:coedge:0:1:top-cap"));
+}
 
 fn ring_copy_at_limits(
     collection_limit: u64,
