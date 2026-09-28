@@ -1066,7 +1066,7 @@ fn validate_loaded(
     validate_configurations(&ctx, &mut findings)?;
     validate_feature_timelines(&ctx, &mut findings);
     validate_parameter_scopes(&ctx, &mut findings);
-    validate_extrude_selection_groups(&ctx, &mut findings);
+    validate_extrude_selection_groups(&ctx, &mut findings)?;
     validate_construction_operand_groups(&ctx, &mut findings);
     validate_path_feature_operand_roles(&ctx, &mut findings);
     validate_extrude_parameter_operands(&ctx, &mut findings);
@@ -4174,7 +4174,7 @@ fn valid_component_pattern_occurrences(
 }
 
 /// Validate Extrude selection groups and their counted member frames.
-fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_extrude_selection_groups(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
@@ -4183,7 +4183,7 @@ fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let native_stream = design_stream(&group.id);
         let scope = scopes_by_index.get(&(native_stream, group.scope_record_index));
         let header = records_by_index.get(&(native_stream, group.record_index));
-        let valid = scope.is_some_and(|scope| {
+        let frame_valid = scope.is_some_and(|scope| {
             design::design_feature_family(&scope.kind())
                 == Some(design::DesignFeatureFamily::Extrude)
                 && usize::try_from(group.scope_reference_ordinal)
@@ -4195,22 +4195,21 @@ fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }) && group
             .members()
             .iter()
-            .all(|member| records_by_index.contains_key(&(native_stream, member.value)))
-            && group_slots.insert((
-                native_stream,
-                group.scope_record_index,
-                group.scope_reference_ordinal,
-            ));
+            .all(|member| records_by_index.contains_key(&(native_stream, member.value)));
+        let valid = if frame_valid {
+            ctx.insert_unique(&mut group_slots,
+                (native_stream, group.scope_record_index, group.scope_reference_ordinal),
+                "index F3D Extrude selection group slots")?
+        } else {
+            false
+        };
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design Extrude selection group has an invalid counted frame"
-                    .into(),
-                entity: Some(group.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design Extrude selection group has an invalid counted frame",
+                Some(ctx.copy_entity(&group.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate construction operand groups and their role discriminators.
