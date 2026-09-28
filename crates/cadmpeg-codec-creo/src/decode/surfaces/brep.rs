@@ -2176,10 +2176,15 @@ pub(in super::super) fn transfer_native_brep(
         };
     let solved_point_count = solved_vertices.len();
     for (vertex_id, position) in solved_vertices {
-        let point_id = PointId::compose(&crate::identity::VISIBGEOM_POINT, vertex_id);
-        if ir.model.points.iter().any(|item| item.id == point_id) {
+        if ir.model.points.iter().any(|item| crate::identity::matches_numbered_identity(
+            item.id.as_str(), "creo:visibgeom:point#", *vertex_id,
+        )) {
             continue;
         }
+        let point_id = crate::identity::compose_checked::<PointId>(
+            ctx, &crate::identity::VISIBGEOM_POINT, vertex_id,
+            "creo B-rep topological point identities",
+        )?;
         annotate(
             annotations,
             &point_id,
@@ -2190,9 +2195,10 @@ pub(in super::super) fn transfer_native_brep(
         );
         let source_object = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Creo,
-            object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                "topology:vertex#{vertex_id}"
-            ))
+            object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                format_args!("topology:vertex#{vertex_id}"),
+                "creo B-rep point source object IDs",
+            )?)
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("source object_id must not be empty")
             })?,
@@ -2232,11 +2238,19 @@ pub(in super::super) fn transfer_native_brep(
     let used_vertices = used_brep_vertices(ctx, &neutral_edge_curves, &edge_vertices)?;
 
     for vertex_id in used_vertices {
-        let vertex = VertexId::compose(&crate::identity::VISIBGEOM_VERTEX, vertex_id);
-        if ir.model.vertices.iter().any(|item| item.id == vertex) {
+        if ir.model.vertices.iter().any(|item| crate::identity::matches_numbered_identity(
+            item.id.as_str(), "creo:visibgeom:vertex#", vertex_id,
+        )) {
             continue;
         }
-        let point_id = PointId::compose(&crate::identity::VISIBGEOM_POINT, vertex_id);
+        let vertex = crate::identity::compose_checked::<VertexId>(
+            ctx, &crate::identity::VISIBGEOM_VERTEX, vertex_id,
+            "creo B-rep vertex identities",
+        )?;
+        let point_id = crate::identity::compose_checked::<PointId>(
+            ctx, &crate::identity::VISIBGEOM_POINT, vertex_id,
+            "creo B-rep vertex point identities",
+        )?;
         annotate(
             annotations,
             &vertex,
@@ -2258,7 +2272,10 @@ pub(in super::super) fn transfer_native_brep(
     }
     for curve_id in &neutral_edge_curves {
         let [start, end] = edge_vertices[curve_id];
-        let curve = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, *curve_id);
+        let curve = crate::identity::compose_checked::<CurveId>(
+            ctx, &crate::identity::VISIBGEOM_CURVE, *curve_id,
+            "creo B-rep edge curve identities",
+        )?;
         let points = [solved_vertices[&start], solved_vertices[&end]];
         let unbacked_closed_edge = start == end
             && closed_single_edge_curves.contains(curve_id)
@@ -2321,7 +2338,10 @@ pub(in super::super) fn transfer_native_brep(
                 None
             }
         };
-        let id = EdgeId::compose(&crate::identity::VISIBGEOM_EDGE, *curve_id);
+        let id = crate::identity::compose_checked::<EdgeId>(
+            ctx, &crate::identity::VISIBGEOM_EDGE, *curve_id,
+            "creo B-rep edge identities",
+        )?;
         annotate(
             annotations,
             &id,
@@ -2336,10 +2356,18 @@ pub(in super::super) fn transfer_native_brep(
             ir,
             Edge {
                 id,
-                carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve.clone()), param_range)
+                carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(crate::identity::copy_checked_id(
+                    ctx, curve.as_str(), "creo B-rep edge carrier curve ID copies",
+                )?), param_range)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-                start: VertexId::compose(&crate::identity::VISIBGEOM_VERTEX, start),
-                end: VertexId::compose(&crate::identity::VISIBGEOM_VERTEX, end),
+                start: crate::identity::compose_checked(
+                    ctx, &crate::identity::VISIBGEOM_VERTEX, start,
+                    "creo B-rep edge start vertex identities",
+                )?,
+                end: crate::identity::compose_checked(
+                    ctx, &crate::identity::VISIBGEOM_VERTEX, end,
+                    "creo B-rep edge end vertex identities",
+                )?,
                 tolerance: None,
             },
         )?;
@@ -2364,9 +2392,10 @@ pub(in super::super) fn transfer_native_brep(
                     }),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                            "VisibGeom:{curve_id}"
-                        ))
+                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                            format_args!("VisibGeom:{curve_id}"),
+                            "creo B-rep curve source object IDs",
+                        )?)
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
