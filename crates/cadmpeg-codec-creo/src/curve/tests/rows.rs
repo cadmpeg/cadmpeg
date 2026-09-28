@@ -552,12 +552,16 @@ fn promotes_only_referenced_unique_prototype_topology() {
         offset: 200,
     }];
     assert_eq!(
-        prototype_topology_rows(
-            &prototypes,
-            &prototype_topology,
-            &positional_rows,
-            &BTreeSet::from([43, 141, 235]),
-        ),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            prototype_topology_rows(
+                ctx,
+                &prototypes,
+                &prototype_topology,
+                &positional_rows,
+                &BTreeSet::from([43, 141, 235]),
+            )
+        })
+        .expect("service profile admits prototype topology rows"),
         vec![CurveTopologyRow {
             id: 44,
             type_byte: 0,
@@ -572,13 +576,86 @@ fn promotes_only_referenced_unique_prototype_topology() {
         }]
     );
 
-    assert!(prototype_topology_rows(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| {
+        prototype_topology_rows(
+            ctx,
+            &prototypes,
+            &prototype_topology,
+            &positional_rows,
+            &BTreeSet::from([43, 235]),
+        )
+    })
+    .expect("service profile admits absent prototype topology rows")
+    .is_empty());
+}
+
+fn prototype_topology_collection_error(limit: u64) -> CodecError {
+    let prototypes = [CurvePrototype {
+        id: 44,
+        type_byte: 0,
+        feature_id: Some(40),
+        directions: Some([0x01, 0xf6]),
+        offset: 100,
+    }];
+    let prototype_topology = [CurvePrototypeTopology {
+        curve_id: 44,
+        faces: [NonZeroU32::new(43), NonZeroU32::new(141)],
+        next_edges: [271, 142],
+        offset: 100,
+    }];
+    let positional_rows = [CurveTopologyRow {
+        id: 605,
+        type_byte: 0,
+        feature_id: 547,
+        directions: [0x01, 0xf6],
+        faces: [NonZeroU32::new(43), NonZeroU32::new(235)],
+        next_edges: [44, 597],
+        offset: 200,
+    }];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    prototype_topology_rows(
+        &ctx,
         &prototypes,
         &prototype_topology,
         &positional_rows,
-        &BTreeSet::from([43, 235]),
+        &BTreeSet::from([43, 141, 235]),
     )
-    .is_empty());
+    .expect_err("one promoted prototype topology row exceeds limit")
+}
+
+fn assert_prototype_topology_refusal(limit: u64, operation: &'static str) {
+    let error = prototype_topology_collection_error(limit);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn prototype_topology_refuses_prototype_count_node() {
+    assert_prototype_topology_refusal(0, "creo prototype ID count nodes");
+}
+
+#[test]
+fn prototype_topology_refuses_topology_count_node() {
+    assert_prototype_topology_refusal(1, "creo prototype topology count nodes");
+}
+
+#[test]
+fn prototype_topology_refuses_positional_id_node() {
+    assert_prototype_topology_refusal(2, "creo positional topology ID nodes");
+}
+
+#[test]
+fn prototype_topology_refuses_referenced_id_node() {
+    assert_prototype_topology_refusal(3, "creo referenced topology ID nodes");
+}
+
+#[test]
+fn prototype_topology_refuses_promoted_row_vector() {
+    assert_prototype_topology_refusal(7, "creo promoted prototype topology rows");
 }
 
 #[test]
