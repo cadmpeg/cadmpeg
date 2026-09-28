@@ -1074,15 +1074,11 @@ fn plane_candidate_pcurve_lies_on_carrier(
     endpoints: [[f64; 2]; 2],
     carrier: CarrierEquation,
 ) -> bool {
-    let Some(points) = endpoints
-        .map(|uv| plane_chart_point(candidate, uv))
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-    else {
+    let [Some(first), Some(second)] = endpoints.map(|uv| plane_chart_point(candidate, uv)) else {
         return false;
     };
-    !model_points_agree(points[0], points[1])
-        && points
+    !model_points_agree(first, second)
+        && [first, second]
             .into_iter()
             .all(|point| point_on_carrier(<[f64; 3]>::from(point.get()), carrier))
 }
@@ -1448,7 +1444,9 @@ fn select_round_edge_origin_branches(
         let Some(selected) = unique_round_edge_origin_candidate(&options, &envelopes) else {
             continue;
         };
-        candidates.insert(frame.surface_id, vec![selected]);
+        if let Some(existing) = candidates.get_mut(&frame.surface_id) {
+            existing[0] = selected;
+        }
     }
 }
 
