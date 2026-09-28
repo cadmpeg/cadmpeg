@@ -3077,10 +3077,11 @@ fn parse_extrude_selection_group(
     }
     let paired_at = position.checked_add(53)?;
     let (paired_class_tag, after_paired_tag) =
-        lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
+        lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     if View::u32_le_at(bytes, after_paired_tag)? != header.record_index {
         return None;
     }
+    let paired_class_tag = crate::design::decode::text::class_tag_from_view(paired_class_tag).ok()?;
     DesignExtrudeSelectionGroup::try_from(
         crate::records::topology::extrude_selection::DesignExtrudeSelectionGroupWire {
             id: String::new(),
@@ -3097,7 +3098,7 @@ fn parse_extrude_selection_group(
             opaque_scalar,
             opaque_scalar_offset: u64::try_from(position + 4).ok()?,
             variant: bytes[position + 28] != 0,
-            paired_class_tag,
+            paired_class_tag: paired_class_tag.into(),
             paired_byte_offset: u64::try_from(paired_at).ok()?,
         },
     )
