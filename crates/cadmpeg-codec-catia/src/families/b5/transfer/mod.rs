@@ -35,7 +35,7 @@ use super::graph::{
 mod edges;
 mod faces;
 mod pcurves;
-mod surfaces;
+pub(in crate::families) mod surfaces;
 mod vertices;
 
 use edges::{

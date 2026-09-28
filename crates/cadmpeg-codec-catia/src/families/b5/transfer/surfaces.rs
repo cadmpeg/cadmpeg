@@ -216,7 +216,7 @@ pub(super) fn neutral_surface(
     })
 }
 
-pub(super) fn copy_rolling_ball_definition(
+pub(in crate::families) fn copy_rolling_ball_definition(
     ctx: &DecodeContext<'_>,
     definition: &ProceduralSurfaceDefinition,
 ) -> Result<ProceduralSurfaceDefinition, CodecError> {

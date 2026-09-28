@@ -10627,23 +10627,29 @@ fn ensure_native_edge_support_surface(
             }
         }
     }
-    let id = SurfaceId::compose(
+    let id = crate::resource::compose_u32_id(admission.context(),
         &cadmpeg_ir::identity_namespace!("catia", "standard", "edge-support-surface"),
-        surface_object_id,
-    );
+        surface_object_id, SurfaceId::mint, "catia_native_edge_support_surface_id")?;
     admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
     let (geometry, procedural_id) = match carrier {
         crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) => {
-            (geometry.clone(), None)
+            let copy = match geometry {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =>
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                        crate::resource::copy_nurbs_surface(admission.context(), surface,
+                            "catia_native_edge_support_geometry")?)),
+                _ => geometry.clone(),
+            };
+            (copy, None)
         }
         crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => {
-            let procedural_id = ProceduralSurfaceId::compose(
+            let procedural_id = crate::resource::compose_u32_id(admission.context(),
                 &cadmpeg_ir::identity_namespace!("catia", "standard", "edge-support-definition"),
-                surface_object_id,
-            );
+                surface_object_id, ProceduralSurfaceId::mint, "catia_native_edge_support_definition_id")?;
             (
                 SurfaceGeometry::Procedural {
-                    construction: procedural_id.clone(),
+                    construction: crate::resource::copy_id(admission.context(), procedural_id.as_str(),
+                        ProceduralSurfaceId::mint, "catia_native_edge_support_construction_id")?,
                     cache: None,
                 },
                 Some(procedural_id),
@@ -10659,7 +10665,8 @@ fn ensure_native_edge_support_surface(
         "native_edge_support_surface",
         Exactness::ByteExact)?;
     ir.model.surfaces.push(Surface {
-        id: id.clone(),
+        id: crate::resource::copy_id(admission.context(), id.as_str(), SurfaceId::mint,
+            "catia_native_edge_support_record_id")?,
         geometry,
         source_object: Some(source),
     });
@@ -10684,7 +10691,8 @@ fn ensure_native_edge_support_surface(
         admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
-            definition.as_ref().clone(),
+            crate::families::b5::transfer::surfaces::copy_rolling_ball_definition(
+                admission.context(), definition)?,
             None,
         ));
     }
