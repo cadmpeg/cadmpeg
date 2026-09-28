@@ -16,10 +16,79 @@ use super::{
     admitted_face_components, component_is_closed, is_neutral_face_reference,
     legacy_body_ownership_is_unambiguous, merge_body_components, native_parameter_loop_polygon,
     ordered_native_parameter_face_loops, split_neutral_component_shells, transfer_native_brep,
-    model_typed_nonlinear_curve_ids, BrepTransferDiagnostics, FaceAdmissionDetail,
-    FaceAdmissionRejection, NativeBrepCurveEvidence,
-    NativeCurveEvidence, NeutralShellSpec,
+    model_typed_nonlinear_curve_ids, push_native_pcurve_candidate, BrepTransferDiagnostics,
+    FaceAdmissionDetail, FaceAdmissionRejection, NativeBrepCurveEvidence, NativeCurveEvidence,
+    NativePcurveCandidates, NeutralShellSpec,
 };
+
+fn pcurve_candidate_limit_error(limit: u64, second_on_same_key: bool) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let mut candidates = NativePcurveCandidates::new();
+    if second_on_same_key {
+        push_native_pcurve_candidate(
+            &ctx,
+            &mut candidates,
+            10,
+            5,
+            [[0.0, 0.0], [1.0, 0.0]],
+            4,
+        )
+        .expect("first candidate admitted");
+    }
+    push_native_pcurve_candidate(
+        &ctx,
+        &mut candidates,
+        10,
+        5,
+        [[1.0, 0.0], [2.0, 0.0]],
+        8,
+    )
+    .expect_err("candidate allocation refused")
+}
+
+#[test]
+fn brep_pcurve_candidate_nodes_refuse_collection_limit() {
+    let error = pcurve_candidate_limit_error(0, false);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep pcurve candidate nodes"));
+}
+
+#[test]
+fn brep_pcurve_candidates_refuse_collection_limit() {
+    let error = pcurve_candidate_limit_error(1, false);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep pcurve candidates"));
+}
+
+#[test]
+fn brep_pcurve_candidates_reuse_nodes_and_preserve_source_order() {
+    let error = pcurve_candidate_limit_error(2, true);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep pcurve candidates"
+            && resource.used == 2));
+    let candidates = crate::decode::with_test_decode_ctx(|ctx| {
+        let mut candidates = NativePcurveCandidates::new();
+        push_native_pcurve_candidate(
+            ctx, &mut candidates, 10, 5, [[0.0, 0.0], [1.0, 0.0]], 4,
+        )
+        .expect("first service candidate admitted");
+        push_native_pcurve_candidate(
+            ctx, &mut candidates, 10, 5, [[1.0, 0.0], [2.0, 0.0]], 8,
+        )
+        .expect("second service candidate admitted");
+        candidates
+    });
+    assert_eq!(candidates[&(10, 5)].len(), 2);
+    assert_eq!(candidates[&(10, 5)][0].1, 4);
+    assert_eq!(candidates[&(10, 5)][1].1, 8);
+}
 
 fn typed_curve_id_fixture() -> CadIr {
     let mut ir = CadIr::empty();
