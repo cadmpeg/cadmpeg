@@ -12,6 +12,35 @@ mod taper;
 use cadmpeg_ir::features::FeatureDefinition;
 
 #[test]
+fn boolean_selection_identities_refuse_at_retained_limits() {
+    let base_feature = linked_property("boolean", "BaseFeature", "base-feature");
+    let group = linked_property("boolean", "Group", "boolean-group");
+    for operation in ["fcstd boolean base feature identity", "fcstd boolean group identity"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::boolean_definition(ctx, "PartDesign::Boolean", &[&base_feature, &group])
+        });
+    }
+    for operation in ["fcstd boolean final group link", "fcstd boolean preceding group links"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::boolean_definition(ctx, "PartDesign::Boolean", &[&group])
+        });
+    }
+    let base = linked_property("cut", "Base", "cut-base");
+    let tool = linked_property("cut", "Tool", "cut-tool");
+    for operation in ["fcstd boolean base identity", "fcstd boolean tool identity"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::boolean_definition(ctx, "Part::Cut", &[&base, &tool])
+        });
+    }
+    let shapes = linked_property_count("fuse", "Shapes", "fuse-shapes", 2);
+    for operation in ["fcstd boolean first shape link", "fcstd boolean remaining shape links"] {
+        crate::test_support::assert_retained_refusal_at(&[], operation, |ctx| {
+            super::boolean_definition(ctx, "Part::MultiFuse", &[&shapes])
+        });
+    }
+}
+
+#[test]
 fn thickness_faces_identity_refuses_at_retained_limit() {
     let faces = linked_property("wall", "Base", "faces-property");
     let value = scalar_property("wall", "Value", "2.5");
@@ -109,6 +138,10 @@ fn draft_face_identities_refuse_at_retained_limits() {
 }
 
 fn linked_property(owner: &str, name: &str, id: &str) -> crate::native::PropertyRecord {
+    linked_property_count(owner, name, id, 1)
+}
+
+fn linked_property_count(owner: &str, name: &str, id: &str, count: usize) -> crate::native::PropertyRecord {
     let link = crate::native::LinkTarget::optional_from_wire(crate::native::LinkTargetWire {
         document: None, document_attribute: None, object: Some("base".into()),
         subelements: Vec::new(),
@@ -118,7 +151,7 @@ fn linked_property(owner: &str, name: &str, id: &str) -> crate::native::Property
         type_name: "App::PropertyLink".into(),
         family: crate::native::PropertyFamily::Unknown, status: None,
         body: crate::native::PropertyBody::Persisted {
-            values: Vec::new(), links: vec![link], side_entries: Vec::new(), dynamic: None,
+            values: Vec::new(), links: vec![link; count], side_entries: Vec::new(), dynamic: None,
         },
         order: 0,
         xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
