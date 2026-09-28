@@ -2030,3 +2030,38 @@ fn a_loaded_plane_carrier_direction_is_admitted_unit() {
         "{error}"
     );
 }
+
+#[test]
+fn owner_chart_alias_binding_refuses_retained_limit() {
+    let mut bytes = b2_owner_chart_stream(0x2b);
+    bytes.extend(grouped_surface_alias_stream(0, 100, 0x148));
+    bytes.extend(grouped_surface_alias_stream(1, 200, 0x148));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut packets = native.consolidated_owner_packets.clone();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("owner chart fixture fits the input limit");
+    assert!(matches!(
+        super::super::resolve_owner_chart_support_aliases(&ctx, &mut packets, &native.alias_rows),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
+fn owner_chart_alias_index_refuses_collection_limit() {
+    let mut bytes = b2_owner_chart_stream(0x2b);
+    bytes.extend(grouped_surface_alias_stream(0, 100, 0x148));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut packets = native.consolidated_owner_packets.clone();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("owner chart fixture fits the input limit");
+    assert!(matches!(
+        super::super::resolve_owner_chart_support_aliases(&ctx, &mut packets, &native.alias_rows),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}

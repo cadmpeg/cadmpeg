@@ -688,6 +688,23 @@ fn grouped_non_surface_alias_rejects_ambiguous_surface_storage() {
 }
 
 #[test]
+fn alias_surface_resolution_refuses_collection_limit() {
+    let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
+    bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut rows = native.alias_rows.clone();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+        .expect("alias fixture fits the input limit");
+    assert!(matches!(
+        super::super::resolve_alias_surface_tags(&ctx, &mut rows),
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
 fn pre_route_surface_alias_map_closes_only_unique_group_targets() {
     fn read_tags(bytes: &[u8]) -> std::collections::HashMap<u32, Option<u32>> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
