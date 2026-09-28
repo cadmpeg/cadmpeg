@@ -122,7 +122,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 &mut admitted_entities,
             )?;
             report.losses.append(&mut pmi_losses);
-            append_tessellation_losses(&ir, &mut report);
+            append_tessellation_losses(ctx, &ir, &mut report)?;
             append_design_losses(ctx, &ir, &mut report)?;
             return decode_result(ir, report, annotations, unknowns);
         }
@@ -145,7 +145,25 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     decode_result(ir, report, annotations, unknowns)
 }
 
-fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
+fn push_report_loss(
+    ctx: &DecodeContext<'_>,
+    report: &mut DecodeBody,
+    loss: cadmpeg_ir::report::loss::LossNote,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "append SLDPRT decode loss";
+    ctx.charge_collection_items(1, OPERATION)?;
+    report.losses.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+    })?;
+    report.losses.push(loss);
+    Ok(())
+}
+
+fn append_tessellation_losses(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    report: &mut DecodeBody,
+) -> Result<(), CodecError> {
     let unresolved = ir
         .model
         .tessellations
@@ -153,12 +171,11 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
         .filter(|mesh| mesh.body.is_none() || mesh.faces.is_empty())
         .count();
     if unresolved > 0 {
-        report
-            .losses
-            .push(SldprtLossCode::TessellationFaceOwnershipUnresolved.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::TessellationFaceOwnershipUnresolved.note(format!(
                 "{unresolved} DisplayLists tessellation table(s) do not resolve to B-rep face ownership. Geometry and native channels are retained without fabricating body or face references."
-            )));
+            )))?;
     }
+    Ok(())
 }
 
 fn decode_result(
@@ -435,10 +452,10 @@ fn append_design_losses(
         .filter(|configuration| configuration.active)
         .count();
     if !ir.model.configurations.is_empty() && active_configurations != 1 {
-        report.losses.push(SldprtLossCode::ConfigActiveIdentityUnresolved.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::ConfigActiveIdentityUnresolved.note(format!(
                 "active configuration identity is unresolved; {active_configurations} of {} configuration records are active.",
                 ir.model.configurations.len()
-            )));
+            )))?;
     }
     let active_partition = ir
         .source
@@ -456,9 +473,9 @@ fn append_design_losses(
             })
     });
     if let Some(active_partition) = active_partition_mismatch {
-        report.losses.push(SldprtLossCode::ConfigActivePartitionMismatch.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::ConfigActivePartitionMismatch.note(format!(
                 "active configuration identity does not resolve to active geometry partition {active_partition}."
-            )));
+            )))?;
     }
     let inferred_configurations = ir
         .model
@@ -467,9 +484,9 @@ fn append_design_losses(
         .filter(|configuration| configuration.native_ref.is_none())
         .count();
     if inferred_configurations > 0 {
-        report.losses.push(SldprtLossCode::ConfigInferredWithoutNative.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::ConfigInferredWithoutNative.note(format!(
                 "{inferred_configurations} configuration state(s) are inferred from geometry partitions without native configuration definitions."
-            )));
+            )))?;
     }
     let unresolved_configuration_parameter_lanes = native.as_ref().map_or(0, |native| {
         crate::history::configuration::unresolved_configuration_lanes(
@@ -478,9 +495,9 @@ fn append_design_losses(
         )
     });
     if unresolved_configuration_parameter_lanes > 0 {
-        report.losses.push(SldprtLossCode::ConfigLaneIdentityUnresolved.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::ConfigLaneIdentityUnresolved.note(format!(
                 "{unresolved_configuration_parameter_lanes} configuration-scoped feature-input lane(s) have duplicate or unresolved configuration identity."
-            )));
+            )))?;
     }
     let configuration_source_counts = count_keys(
         ctx,
@@ -493,9 +510,9 @@ fn append_design_losses(
         .copied()
         .sum::<usize>();
     if ambiguous_configuration_sources > 0 {
-        report.losses.push(SldprtLossCode::ConfigAmbiguousPartition.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::ConfigAmbiguousPartition.note(format!(
                 "{ambiguous_configuration_sources} configuration record(s) share non-unique geometry partition identities."
-            )));
+            )))?;
     }
     let empty_configuration_names = ir
         .model
@@ -529,9 +546,9 @@ fn append_design_losses(
         || ambiguous_configuration_names > 0
         || ambiguous_configuration_ordinals > 0
     {
-        report.losses.push(SldprtLossCode::ConfigAmbiguousNaming.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::ConfigAmbiguousNaming.note(format!(
                 "{empty_configuration_names} configuration record(s) have empty names; {ambiguous_configuration_names} configuration record(s) share non-unique names; {ambiguous_configuration_ordinals} configuration record(s) share regeneration ordinals."
-            )));
+            )))?;
     }
     let model_body_ids = charged_set(
         ctx,
@@ -556,9 +573,9 @@ fn append_design_losses(
         .filter(|configuration| configuration.bodies.is_none())
         .count();
     if unresolved_configuration_bodies > 0 || incoherent_configuration_bodies > 0 {
-        report.losses.push(SldprtLossCode::ConfigIncoherentBodyRefs.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::ConfigIncoherentBodyRefs.note(format!(
                 "{unresolved_configuration_bodies} configuration record(s) have unresolved body membership; {incoherent_configuration_bodies} configuration record(s) contain missing or repeated body references."
-            )));
+            )))?;
     }
 
     let feature_ids = charged_set(
@@ -600,9 +617,9 @@ fn append_design_losses(
     if incomplete_configuration_feature_snapshots > 0
         || incomplete_configuration_parameter_snapshots > 0
     {
-        report.losses.push(SldprtLossCode::ConfigIncompleteSnapshot.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::ConfigIncompleteSnapshot.note(format!(
                 "{incomplete_configuration_feature_snapshots} configuration(s) lack a complete evaluated feature snapshot; {incomplete_configuration_parameter_snapshots} configuration(s) lack a complete evaluated parameter snapshot."
-            )));
+            )))?;
     }
     let incoherent_configuration_suppression = ir
         .model
@@ -637,9 +654,9 @@ fn append_design_losses(
         })
         .count();
     if incoherent_configuration_suppression > 0 || incoherent_configuration_overrides > 0 {
-        report.losses.push(SldprtLossCode::ConfigIncompleteSnapshot.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::ConfigIncompleteSnapshot.note(format!(
             "{incoherent_configuration_suppression} configuration(s) have missing, repeated, or feature-state-inconsistent suppression members; {incoherent_configuration_overrides} configuration(s) reference missing parameter overrides."
-        )));
+        )))?;
     }
 
     let feature_names = ir
@@ -737,9 +754,9 @@ fn append_design_losses(
         || incoherent_parameter_dependencies > 0
         || incoherent_parameter_values > 0
     {
-        report.losses.push(SldprtLossCode::ParameterUnevaluated.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::ParameterUnevaluated.note(format!(
                 "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; {unevaluable_parameter_expressions} parameter expression(s) cannot regenerate a finite typed value; {invalid_parameter_dependency_order} parameter record(s) contain missing or non-preceding dependency edges; {incoherent_parameter_dependencies} parameter record(s) have dependency edges inconsistent with their expressions; {incoherent_parameter_values} dependency-driven parameter(s) disagree with their evaluated expressions."
-            )));
+            )))?;
     }
     let empty_parameter_names = ir
         .model
@@ -772,9 +789,9 @@ fn append_design_losses(
         || duplicate_parameter_names > 0
         || duplicate_parameter_ordinals > 0
     {
-        report.losses.push(SldprtLossCode::ParameterAmbiguousIdentity.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::ParameterAmbiguousIdentity.note(format!(
                 "{empty_parameter_names} parameter record(s) have empty names; {duplicate_parameter_names} parameter record(s) share owner-local names; {duplicate_parameter_ordinals} parameter record(s) share owner-local ordinals."
-            )));
+            )))?;
     }
 
     let mut bound_pmi = std::collections::HashSet::new();
@@ -806,18 +823,18 @@ fn append_design_losses(
         })
         .count();
     if unbound_pmi_dimensions > 0 || native_pmi_subtypes > 0 {
-        report.losses.push(SldprtLossCode::PmiDimensionUnbound.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::PmiDimensionUnbound.note(format!(
                 "{unbound_pmi_dimensions} semantic dimension record(s) are not bound to parameters; {native_pmi_subtypes} parameter dimension(s) retain native subtypes."
-            )));
+            )))?;
     }
 
     let incomplete_history_references = native.as_ref().map_or(0, |native| {
         crate::history::project::incomplete_history_reference_features(&native.feature_histories)
     });
     if incomplete_history_references > 0 {
-        report.losses.push(SldprtLossCode::HistoryIncompleteReferences.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::HistoryIncompleteReferences.note(format!(
             "{incomplete_history_references} feature history record(s) contain duplicate identities or unresolved parent, dependency, dimension, or child references."
-        )));
+        )))?;
     }
     let feature_positions = &feature_ordinals;
     let evaluated_feature_states = if ir
@@ -882,9 +899,9 @@ fn append_design_losses(
         .copied()
         .sum::<usize>();
     if incoherent_feature_edges > 0 || duplicate_feature_ordinals > 0 {
-        report.losses.push(SldprtLossCode::FeatureIncoherentEdges.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::FeatureIncoherentEdges.note(format!(
                 "{incoherent_feature_edges} feature record(s) contain missing, repeated, or non-preceding parent/dependency edges; {duplicate_feature_ordinals} feature record(s) share regeneration ordinals."
-            )));
+            )))?;
     }
     let parameter_owners = charged_map(
         ctx,
@@ -916,9 +933,9 @@ fn append_design_losses(
         })
         .count();
     if incoherent_feature_content > 0 {
-        report.losses.push(SldprtLossCode::FeatureIncoherentContent.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::FeatureIncoherentContent.note(format!(
                 "{incoherent_feature_content} feature record(s) contain missing, repeated, misowned, or structurally inconsistent source-content references."
-            )));
+            )))?;
     }
 
     let unresolved_output_scopes = evaluated_feature_states
@@ -933,9 +950,9 @@ fn append_design_losses(
         })
         .count();
     if unresolved_output_scopes > 0 {
-        report.losses.push(SldprtLossCode::FeatureUnresolvedOutputScope.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::FeatureUnresolvedOutputScope.note(format!(
                 "{unresolved_output_scopes} feature(s) retain non-empty native output scopes that do not resolve to model bodies."
-            )));
+            )))?;
     }
     let mut incoherent_feature_outputs = 0;
     for state in &evaluated_feature_states {
@@ -949,9 +966,9 @@ fn append_design_losses(
         }
     }
     if incoherent_feature_outputs > 0 {
-        report.losses.push(SldprtLossCode::FeatureIncoherentOutputs.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::FeatureIncoherentOutputs.note(format!(
                 "{incoherent_feature_outputs} feature record(s) contain missing or repeated output body references."
-            )));
+            )))?;
     }
 
     let native_planar_constraints = ir
@@ -973,9 +990,9 @@ fn append_design_losses(
         .count();
     let native_constraints = native_planar_constraints + native_spatial_constraints;
     if native_constraints > 0 {
-        report.losses.push(SldprtLossCode::SketchNativeConstraint.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::SketchNativeConstraint.note(format!(
                 "{native_constraints} planar or spatial sketch constraint(s) retain native relation kinds and operands without complete neutral geometric semantics."
-            )));
+            )))?;
     }
 
     let native_sketch_geometry = ir
@@ -1000,26 +1017,26 @@ fn append_design_losses(
             })
             .count();
     if native_sketch_geometry > 0 {
-        report.losses.push(SldprtLossCode::SketchNativeGeometry.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::SketchNativeGeometry.note(format!(
                 "{native_sketch_geometry} sketch entity geometry record(s) retain native kinds without solved neutral geometry."
-            )));
+            )))?;
     }
 
     let unprojected_relations = native
         .as_ref()
         .map_or(0, |native| unprojected_sketch_relation_records(ir, native));
     if unprojected_relations > 0 {
-        report.losses.push(SldprtLossCode::SketchRelationUnprojected.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::SketchRelationUnprojected.note(format!(
                 "{unprojected_relations} native sketch relation record(s) have no projected neutral constraint."
-            )));
+            )))?;
     }
     let multiply_projected_relations = native.as_ref().map_or(0, |native| {
         multiply_projected_sketch_relation_records(ir, native)
     });
     if multiply_projected_relations > 0 {
-        report.losses.push(SldprtLossCode::SketchRelationMultiplyProjected.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::SketchRelationMultiplyProjected.note(format!(
                 "{multiply_projected_relations} native sketch relation record(s) are claimed by multiple neutral objects."
-            )));
+            )))?;
     }
 
     let native_features = evaluated_feature_states
@@ -1027,17 +1044,17 @@ fn append_design_losses(
         .filter(|state| native_feature_has_operation_evidence(state))
         .count();
     if native_features > 0 {
-        report.losses.push(SldprtLossCode::FeatureNativeKindRetained.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::FeatureNativeKindRetained.note(format!(
                 "{native_features} feature(s) retain their native kind without a complete neutral operation definition."
-            )));
+            )))?;
     }
     let unbound_feature_input_objects = native
         .as_ref()
         .map_or(0, unbound_feature_input_operation_objects);
     if unbound_feature_input_objects > 0 {
-        report.losses.push(SldprtLossCode::FeatureInputObjectUnbound.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::FeatureInputObjectUnbound.note(format!(
                 "{unbound_feature_input_objects} native feature-input operation object(s) do not bind uniquely to a history feature."
-            )));
+            )))?;
     }
 
     let incomplete_edge_selection = |selection: &EdgeSelection| match selection {
@@ -1725,9 +1742,9 @@ incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
         })
         .count();
     if incomplete_typed_features > 0 {
-        report.losses.push(SldprtLossCode::FeatureTypedOperandIncomplete.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::FeatureTypedOperandIncomplete.note(format!(
             "{incomplete_typed_features} typed feature(s) retain native or unresolved required operation operands."
-        )));
+        )))?;
     }
 
     let unresolved_body_modes = evaluated_feature_states
@@ -1743,9 +1760,9 @@ incomplete_face_selection(targets) || incomplete_face_selection(replacements)},
         })
         .count();
     if unresolved_body_modes > 0 {
-        report.losses.push(SldprtLossCode::FeatureBodyRetentionUnresolved.note(format!(
+        push_report_loss(ctx, report, SldprtLossCode::FeatureBodyRetentionUnresolved.note(format!(
             "{unresolved_body_modes} body delete/keep feature(s) retain selected native body identities without a decoded retention mode."
-        )));
+        )))?;
     }
     Ok(())
 }
