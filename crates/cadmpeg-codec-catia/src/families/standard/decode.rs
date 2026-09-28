@@ -898,16 +898,19 @@ mod consolidated_revolution_binding_tests {
 }
 
 fn refine_consolidated_analytic_surfaces(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
     surfaces: &mut [Option<SurfaceGeometry>],
-) -> HashMap<usize, usize> {
+) -> Result<HashMap<usize, usize>, cadmpeg_core::CodecError> {
     fn exactly_one<T>(mut values: impl Iterator<Item = T>) -> Option<T> {
         let value = values.next()?;
         values.next().is_none().then_some(value)
     }
 
-    let cylinders = crate::families::b2::records::b2_cylinders_from_records(bytes, records);
+    let cylinders = crate::resource::collect_vec(ctx,
+        crate::families::b2::records::b2_cylinders_from_records(bytes, records),
+        "catia_standard_refined_cylinders")?;
     let cones = crate::families::b2::records::b2_cones_from_records(bytes, records);
     let spheres = crate::families::b2::records::b2_spheres_from_records(bytes, records);
     let tori = crate::families::b2::records::b2_tori_from_records(bytes, records);
@@ -1010,10 +1013,11 @@ fn refine_consolidated_analytic_surfaces(
         };
         if let Some((geometry, source_pos)) = replacement {
             *surface = Some(geometry);
-            refined.insert(index, source_pos);
+            crate::resource::insert_map(ctx, &mut refined, index, source_pos,
+                "catia_standard_refined_surface_sources")?;
         }
     }
-    refined
+    Ok(refined)
 }
 
 #[cfg(test)]
@@ -1021,6 +1025,33 @@ mod consolidated_analytic_refinement_tests {
     use super::refine_consolidated_analytic_surfaces;
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
+
+    fn refined_analytic_surfaces(
+        bytes: &[u8],
+        records: &[crate::wire::records::ConsolidatedRecord],
+        surfaces: &mut [Option<SurfaceGeometry>],
+    ) -> std::collections::HashMap<usize, usize> {
+        crate::test_support::with_service_context(|ctx| {
+            refine_consolidated_analytic_surfaces(ctx, bytes, records, surfaces)
+                .expect("service decode")
+        })
+    }
+
+    #[test]
+    fn cylinder_refinement_refuses_cylinder_collection_before_copy() {
+        let bytes = crate::test_support::test_b2::b2_cylinder_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let mut surfaces = [];
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            refine_consolidated_analytic_surfaces(ctx, &bytes, &records, &mut surfaces)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_standard_refined_cylinders"));
+        let refined = crate::test_support::with_service_context(|ctx| {
+            refine_consolidated_analytic_surfaces(ctx, &bytes, &records, &mut surfaces)
+        }).expect("service decode");
+        assert!(refined.is_empty());
+    }
 
     #[test]
     fn unique_quantized_torus_refines_every_matching_face_to_binary64() {
@@ -1038,7 +1069,7 @@ mod consolidated_analytic_refinement_tests {
             .expect("valid TorusSurface fixture"),
         ));
         let mut surfaces = vec![Some(coarse.clone()), Some(coarse)];
-        let refined = refine_consolidated_analytic_surfaces(
+        let refined = refined_analytic_surfaces(
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
             &mut surfaces,
@@ -1071,7 +1102,7 @@ mod consolidated_analytic_refinement_tests {
         ));
         let mut unique = vec![Some(coarse.clone())];
         assert_eq!(
-            refine_consolidated_analytic_surfaces(
+            refined_analytic_surfaces(
                 &bytes,
                 &crate::wire::records::consolidated_records(&bytes),
                 &mut unique,
@@ -1088,7 +1119,7 @@ mod consolidated_analytic_refinement_tests {
 
         bytes.extend_from_slice(&bytes.clone());
         let mut ambiguous = vec![Some(coarse)];
-        assert!(refine_consolidated_analytic_surfaces(
+        assert!(refined_analytic_surfaces(
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
             &mut ambiguous,
@@ -1123,7 +1154,7 @@ mod consolidated_analytic_refinement_tests {
             ))),
         ];
         assert_eq!(
-            refine_consolidated_analytic_surfaces(
+            refined_analytic_surfaces(
                 &bytes,
                 &crate::wire::records::consolidated_records(&bytes),
                 &mut surfaces,
@@ -2352,11 +2383,15 @@ fn try_decode_standard_population(
             return Some(Err(error));
         }
     }
-    let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(
+    let refined_analytic_surfaces = match refine_consolidated_analytic_surfaces(
+        ctx,
         &scan.data,
         &consolidated_records,
         &mut curved_surfaces,
-    );
+    ) {
+        Ok(surfaces) => surfaces,
+        Err(error) => return Some(Err(error)),
+    };
     let plane_normals = match standard_plane_normals_from_face_frames(ctx, &records, &face_frame_vectors) {
         Ok(normals) => normals,
         Err(error) => return Some(Err(error)),

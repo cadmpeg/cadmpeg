@@ -1243,8 +1243,8 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
     let points = object_stream_vertices_from_records(data, records);
-    let embedded = b2_embedded_cylinders_from_records(data, records);
-    let standalone = b2_cylinders_from_records(data, records);
+    let embedded = crate::resource::collect_vec(ctx, b2_embedded_cylinders_from_records(data, records), "catia_resolved_embedded_cylinders")?;
+    let standalone = crate::resource::collect_vec(ctx, b2_cylinders_from_records(data, records), "catia_resolved_standalone_cylinders")?;
     let circles = b2_circles_from_records(data, records);
     let cones = b2_cones_from_records(data, records);
     let spheres = b2_spheres_from_records(data, records);
