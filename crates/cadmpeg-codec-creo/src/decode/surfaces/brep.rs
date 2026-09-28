@@ -2035,7 +2035,7 @@ pub(in super::super) fn transfer_native_brep(
         }
         let ordered = ordered_face_loops(
             ctx,
-            loops.clone(),
+            loops,
             planes.get(&face_id).copied(),
             &incidence,
             solved_vertices,
