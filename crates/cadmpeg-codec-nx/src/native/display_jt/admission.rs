@@ -98,7 +98,7 @@ impl DisplayJtGraph {
                 .ok_or_else(|| ctx.refuse_codec_limit("index DisplayJT TOC entries", 0, u64::MAX))
         })?;
         let _toc = reserve_graph_index(ctx, toc_count, "index DisplayJT TOC entries")?;
-        Self::from_wire(wire)
+        Self::from_wire(ctx, wire)
     }
 
     pub(crate) fn from_namespace_with_context(
@@ -131,7 +131,9 @@ impl DisplayJtGraph {
 
     #[cfg(test)]
     fn from_namespace(namespace: &NativeNamespace) -> Result<Self, NativeConvertError> {
-        Self::from_wire(DisplayJtGraphWire {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())?;
+        Self::from_wire_with_context(&ctx, DisplayJtGraphWire {
             documents: namespace.arena_as("display_jt_documents")?,
             segments: namespace.arena_as("display_jt_segments")?,
             shape_lod_elements: namespace.arena_as("display_jt_shape_lod_elements")?,
@@ -141,20 +143,23 @@ impl DisplayJtGraph {
         })
     }
 
-    fn from_wire(wire: DisplayJtGraphWire) -> Result<Self, NativeConvertError> {
-        let documents = by_id(&wire.documents, |item| item.id.as_str(), "documents")?;
-        let segments = by_id(&wire.segments, |item| item.id.as_str(), "segments")?;
+    fn from_wire(ctx: &DecodeContext<'_>, wire: DisplayJtGraphWire) -> Result<Self, NativeConvertError> {
+        let documents = by_id(ctx, &wire.documents, |item| item.id.as_str(), "documents")?;
+        let segments = by_id(ctx, &wire.segments, |item| item.id.as_str(), "segments")?;
         let elements = by_id(
+            ctx,
             &wire.compressed_elements,
             |item| item.id.as_str(),
             "compressed_elements",
         )?;
         by_id(
+            ctx,
             &wire.shape_lod_elements,
             |item| item.id.as_str(),
             "shape_lod_elements",
         )?;
         by_id(
+            ctx,
             &wire.compressed_element_sequences,
             |item| item.id.as_str(),
             "compressed_element_sequences",
@@ -168,6 +173,8 @@ impl DisplayJtGraph {
         let mut toc_entries = BTreeMap::new();
         for document in &wire.documents {
             for entry in &document.toc_entries {
+                ctx.charge_collection_items(1, "index DisplayJT TOC entries")?;
+                ctx.charge_work(1, "index DisplayJT TOC entries")?;
                 if toc_entries
                     .insert((document.id.as_str(), entry.id.as_str()), entry)
                     .is_some()
@@ -276,7 +283,9 @@ impl TryFrom<DisplayJtGraphWire> for DisplayJtGraph {
     type Error = NativeConvertError;
 
     fn try_from(wire: DisplayJtGraphWire) -> Result<Self, Self::Error> {
-        Self::from_wire(wire)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())?;
+        Self::from_wire_with_context(&ctx, wire)
     }
 }
 
@@ -323,7 +332,6 @@ fn reserve_graph_index<'a>(
     count: u64,
     operation: &'static str,
 ) -> Result<ScopedReservation<'a>, NativeConvertError> {
-    ctx.charge_collection_items(count, operation)?;
     let bytes = count
         .checked_mul(128)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
@@ -388,12 +396,15 @@ fn arena_as_charged<T: DeserializeOwned>(
 }
 
 fn by_id<'a, T>(
+    ctx: &DecodeContext<'_>,
     records: &'a [T],
     id: impl Fn(&'a T) -> &'a str,
     arena: &str,
 ) -> Result<BTreeMap<&'a str, &'a T>, NativeConvertError> {
     let mut index = BTreeMap::new();
     for record in records {
+        ctx.charge_collection_items(1, "index DisplayJT graph records")?;
+        ctx.charge_work(1, "index DisplayJT graph records")?;
         let id = id(record);
         if index.insert(id, record).is_some() {
             return Err(invalid(id, &format!("duplicate identity in {arena}")));

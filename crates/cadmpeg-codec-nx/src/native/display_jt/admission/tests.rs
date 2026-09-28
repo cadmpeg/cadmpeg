@@ -109,6 +109,31 @@ fn graph_toc_index_refuses_before_btree_allocation() {
 }
 
 #[test]
+fn graph_index_refuses_scoped_limit() {
+    let raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = DisplayJtGraph::from_wire_with_context(&ctx, raw).unwrap_err();
+    assert!(matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+        CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn graph_index_refuses_work_limit() {
+    let raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = DisplayJtGraph::from_wire_with_context(&ctx, raw).unwrap_err();
+    assert!(matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+        CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits
+        && limit.operation == "index DisplayJT graph records"));
+}
+
+#[test]
 fn display_jt_native_validation_propagates_resource_limit() {
     let namespace: NativeNamespace = serde_json::from_value(graph_wire()).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
