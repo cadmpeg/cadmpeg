@@ -55,38 +55,47 @@ fn sketch_geometry_endpoints(geometry: &SketchGeometry) -> Option<([f64; 2], [f6
 }
 
 pub(in super::super) fn connected_sketch_profile_vertices(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     sketch_id: &SketchId,
-) -> Vec<(usize, Vec<[f64; 2]>)> {
+) -> Result<Vec<(usize, Vec<[f64; 2]>)>, cadmpeg_core::CodecError> {
     let Some(sketch) = exactly_one(
         ir.model
             .sketches
             .iter()
             .filter(|sketch| sketch.id == *sketch_id),
     ) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    sketch
-        .profiles
-        .iter()
-        .enumerate()
-        .filter_map(|(profile_index, profile)| {
-            (!profile.is_empty()).then_some(())?;
-            let uses = profile
-                .iter()
-                .map(|entity_use| {
-                    let geometry = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
+    let mut profiles = Vec::new();
+    for (profile_index, profile) in sketch.profiles.iter().enumerate() {
+        if profile.is_empty() {
+            continue;
+        }
+        let mut uses = Vec::new();
+        let mut valid = true;
+        for entity_use in profile {
+            let Some(geometry) = exactly_one(ir.model.sketch_entities.iter().filter(|entity| {
                         entity.sketch == *sketch_id && entity.id() == &entity_use.entity
                     }))
-                    .map(|entity| source_carriers.sketch_geometry(entity))?;
-                    let (mut start, mut end) = sketch_geometry_endpoints(geometry)?;
-                    if entity_use.reversed {
-                        std::mem::swap(&mut start, &mut end);
-                    }
-                    Some((start, end))
-                })
-                .collect::<Option<Vec<_>>>()?;
+                    .map(|entity| source_carriers.sketch_geometry(entity)) else {
+                valid = false;
+                break;
+            };
+            let Some((mut start, mut end)) = sketch_geometry_endpoints(geometry) else {
+                valid = false;
+                break;
+            };
+            if entity_use.reversed {
+                std::mem::swap(&mut start, &mut end);
+            }
+            ctx.try_reserve_items(&mut uses, 1, "creo connected profile uses")?;
+            uses.push((start, end));
+        }
+        if !valid {
+            continue;
+        }
             let scale = uses
                 .iter()
                 .flat_map(|(start, end)| start.iter().chain(end))
@@ -97,19 +106,27 @@ pub(in super::super) fn connected_sketch_profile_vertices(
                 let next = adjacent[1].0;
                 (end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale
             }) {
-                return None;
+                continue;
             }
-            let first = uses.first()?.0;
-            let terminal = uses.last()?.1;
-            let mut vertices = uses.iter().map(|(start, _)| *start).collect::<Vec<_>>();
+            let Some(first) = uses.first().map(|use_row| use_row.0) else {
+                continue;
+            };
+            let Some(terminal) = uses.last().map(|use_row| use_row.1) else {
+                continue;
+            };
+            let mut vertices = Vec::new();
+            ctx.try_reserve_items(&mut vertices, uses.len(), "creo connected profile vertices")?;
+            vertices.extend(uses.iter().map(|(start, _)| *start));
             if (terminal[0] - first[0]).hypot(terminal[1] - first[1])
                 > EPS_ENDPOINT_AGREEMENT * scale
             {
+                ctx.try_reserve_items(&mut vertices, 1, "creo connected profile vertices")?;
                 vertices.push(terminal);
             }
-            Some((profile_index, vertices))
-        })
-        .collect()
+            ctx.try_reserve_items(&mut profiles, 1, "creo connected profile rows")?;
+            profiles.push((profile_index, vertices));
+    }
+    Ok(profiles)
 }
 
 pub(in super::super) fn oriented_arc_parameterization(

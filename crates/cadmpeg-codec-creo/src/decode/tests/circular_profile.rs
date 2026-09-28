@@ -266,11 +266,13 @@ fn connected_profile_vertices_include_open_chain_terminals() {
     ]);
 
     assert_eq!(
-        connected_sketch_profile_vertices(
+        crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+            ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
-        ),
+        ))
+        .expect("service profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
     );
 
@@ -289,11 +291,13 @@ fn connected_profile_vertices_include_open_chain_terminals() {
     })
     .expect("valid test fixture");
     assert_eq!(
-        connected_sketch_profile_vertices(
+        crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+            ctx,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
             &sketch_id,
-        ),
+        ))
+        .expect("service profile vertices"),
         vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
     );
 
@@ -311,11 +315,13 @@ fn connected_profile_vertices_include_open_chain_terminals() {
         definition.try_into()
     })
     .expect("valid test fixture");
-    assert!(connected_sketch_profile_vertices(
+    assert!(crate::decode::with_test_decode_ctx(|ctx| connected_sketch_profile_vertices(
+        ctx,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
         &sketch_id
-    )
+    ))
+    .expect("service profile vertices")
     .is_empty());
 }
 

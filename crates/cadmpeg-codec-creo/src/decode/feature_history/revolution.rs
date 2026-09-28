@@ -528,7 +528,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             continue;
         };
         for (profile_index, vertices) in
-            connected_sketch_profile_vertices(ir, source_carriers, &sketch_id)
+            connected_sketch_profile_vertices(ctx, ir, source_carriers, &sketch_id)?
         {
             for (vertex_index, point) in vertices.iter().enumerate() {
                 let Some(geometry) = revolved_section_circle(transform, *point, &axis) else {
@@ -536,6 +536,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                 };
                 let geometry = CurveGeometry::try_from(geometry)
                     .map_err(cadmpeg_core::CodecError::malformed)?;
+                ctx.try_reserve_items(&mut pending, 1, "creo revolution vertex orbit candidates")?;
                 pending.push((
                     CurveId::compose(
                         &crate::identity::FEATURE_REVOLUTION_VERTEX_ORBIT,
@@ -628,12 +629,13 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             continue;
         };
         for (profile_index, vertices) in
-            connected_sketch_profile_vertices(ir, source_carriers, &sketch_id)
+            connected_sketch_profile_vertices(ctx, ir, source_carriers, &sketch_id)?
         {
             for (vertex_index, point) in vertices.iter().enumerate() {
                 let Some(geometry) = extruded_section_line(transform, *point) else {
                     continue;
                 };
+                ctx.try_reserve_items(&mut pending, 1, "creo extrusion vertex orbit candidates")?;
                 pending.push((
                     CurveId::compose(
                         &crate::identity::FEATURE_EXTRUSION_VERTEX_ORBIT,
