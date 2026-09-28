@@ -22,6 +22,7 @@ use crate::om::fixed::Q155;
 use crate::om::nonempty::NonEmpty;
 use crate::om::scalar_run::FramedScalarRun;
 use crate::printable_string::PrintableString;
+use cadmpeg_core::CodecError;
 use serde::Deserialize;
 
 use crate::om::scalar::ShiftedBinary32;
@@ -946,14 +947,14 @@ pub(in crate::native) fn feature_draft_construction_identity_frames(ctx: &cadmpe
 ) -> Result<Vec<FeatureDraftConstructionIdentityFrame>, cadmpeg_core::CodecError>
 {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(payloads
+    let projected = payloads
         .iter()
-        .flat_map(|payload| {
+        .map(|payload| -> Result<Vec<FeatureDraftConstructionIdentityFrame>, CodecError> {
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
-            crate::om::draft_construction_identity_frames(joined.bytes())
+            Ok(crate::om::draft_construction_identity_frames(ctx, joined.bytes())?
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, frame)| {
@@ -969,9 +970,10 @@ pub(in crate::native) fn feature_draft_construction_identity_frames(ctx: &cadmpe
                         identity_source_offset: joined.source_offset(identity_payload_offset)?,
                     })
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>())
         })
-        .collect())
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(projected.into_iter().flatten().collect())
 }
 
 /// Decode complete end-anchored terminal lanes from draft construction payloads.

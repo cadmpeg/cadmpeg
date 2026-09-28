@@ -2513,11 +2513,20 @@ pub(crate) fn datum_csys_descriptor_block(
 
 /// Decode every complete identity frame in a reconstructed draft construction payload.
 pub(crate) fn draft_construction_identity_frames(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
-) -> Vec<draft_identity::DraftIdentityFrame> {
-    (0..bytes.len())
-        .filter_map(|offset| draft_identity::DraftIdentityFrame::read(bytes, offset))
-        .collect()
+) -> Result<Vec<draft_identity::DraftIdentityFrame>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX draft identity frames")?;
+    let mut frames = Vec::new();
+    for offset in 0..bytes.len() {
+        if let Some(frame) = draft_identity::DraftIdentityFrame::read(ctx, bytes, offset)? {
+            ctx.charge_collection_items(1, "NX draft identity frames")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<draft_identity::DraftIdentityFrame>()), "NX draft identity frames")?;
+            frames.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("NX draft identity frames", 0, 1))?;
+            frames.push(frame);
+        }
+    }
+    Ok(frames)
 }
 
 /// Decode compact object IDs followed by their complete frame discriminator.
