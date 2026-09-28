@@ -13,7 +13,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::{IdentityError, IdentityKey};
+use cadmpeg_ir::ids::IdentityKey;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;
@@ -183,23 +183,6 @@ pub(crate) fn model_id(kind: &str, parent: &str, child: impl AsRef<str>) -> Stri
 
 pub(crate) fn id_key(id: &str) -> &str {
     id.split_once('#').map_or(id, |(_, key)| key)
-}
-
-pub(crate) fn id_key_identity(id: &str) -> Result<IdentityKey, IdentityError> {
-    IdentityKey::try_new(id_key(id).to_owned())
-}
-
-pub(crate) fn model_key(
-    parent: &str,
-    child: impl AsRef<str>,
-) -> Result<IdentityKey, IdentityError> {
-    let parent = id_key_identity(parent)?;
-    let child = child.as_ref();
-    if child.is_empty() {
-        Ok(parent.then(cadmpeg_ir::identity_key!(":")))
-    } else {
-        Ok(parent.colon(IdentityKey::encode_segment(child)))
-    }
 }
 
 #[cfg(test)]
