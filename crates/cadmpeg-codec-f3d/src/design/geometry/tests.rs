@@ -1931,3 +1931,18 @@ fn arrangement_split_parameter_refuses_collection_limit() {
             if failure.operation == "f3d arrangement split parameter"
     ));
 }
+
+#[test]
+fn profile_use_polyline_refuses_collection_limit() {
+    let (entities, _) = single_line_profile();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::profile_use_polyline(&entities[0], [0.0, 1.0], false,
+            PROFILE_LIMIT_TEST_TOLERANCE, Some(&ctx)),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d profile use polyline"
+    ));
+}
