@@ -350,30 +350,43 @@ pub(crate) fn bind_work_point_input_carriers(
     edge_operands: &[DesignEdgeOperand],
     sketch_points: &[SketchPoint],
 ) -> Result<(), CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| {
-            Some((
-                (native_stream(&header.id)?.to_owned(), header.record_index),
-                header,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let work_planes = scopes
-        .iter()
-        .filter(|scope| {
-            scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
-        })
-        .filter_map(|scope| {
-            Some((
-                (
-                    native_stream(&scope.id)?.to_owned(),
-                    scope.record_index.checked_sub(1)?,
-                ),
-                scope.record_index,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut header_index = HashMap::new();
+    for header in headers {
+        let Some(stream) = native_stream(&header.id) else { continue; };
+        let key = (stream, header.record_index);
+        if !header_index.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d WorkPoint header index")?;
+            header_index.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d WorkPoint header index allocation", 0, 1)
+            })?;
+        }
+        header_index.insert(key, header);
+    }
+    let mut work_planes: HashMap<String, HashMap<u32, u32>> = HashMap::new();
+    for scope in scopes.iter().filter(|scope| {
+        scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
+    }) {
+        let (Some(stream), Some(preceding_index)) =
+            (native_stream(&scope.id), scope.record_index.checked_sub(1)) else { continue; };
+        if !work_planes.contains_key(stream) {
+            ctx.charge_collection_items(1, "f3d WorkPoint work-plane stream index")?;
+            work_planes.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d WorkPoint work-plane stream allocation", 0, 1)
+            })?;
+            work_planes.insert(
+                copy_ascii_retained(ctx, stream, "f3d WorkPoint work-plane stream key")?,
+                HashMap::new(),
+            );
+        }
+        let Some(indices) = work_planes.get_mut(stream) else { continue; };
+        if !indices.contains_key(&preceding_index) {
+            ctx.charge_collection_items(1, "f3d WorkPoint work-plane index")?;
+            indices.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d WorkPoint work-plane index allocation", 0, 1)
+            })?;
+        }
+        indices.insert(preceding_index, scope.record_index);
+    }
     let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
 
     for scope in scopes.iter_mut().filter(|scope| {
@@ -395,23 +408,23 @@ pub(crate) fn bind_work_point_input_carriers(
         };
         let mut inputs = construction.rule.inputs().to_vec();
         for input in &mut inputs {
-            let edge_matches = edge_operands
+            let mut edge_matches = edge_operands
                 .iter()
                 .filter(|operand| {
                     native_stream(&operand.id) == Some(stream.as_str())
                         && operand.scope_record_index == scope_record_index
                         && operand.record_index() == input.record_index()
-                })
-                .collect::<Vec<_>>();
-            if let [operand] = edge_matches.as_slice() {
+                });
+            let edge_match = edge_matches.next();
+            if let Some(operand) = edge_match.filter(|_| edge_matches.next().is_none()) {
                 input
                     .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
-                        operand_id: operand.id.clone(),
+                        operand_id: copy_ascii_retained(ctx, &operand.id, "f3d WorkPoint edge operand ID")?,
                     })))
                     .map_err(crate::error::malformed)?;
                 continue;
             }
-            let Some(header) = headers.get(&(stream.clone(), input.record_index())) else {
+            let Some(header) = header_index.get(&(stream.as_str(), input.record_index())) else {
                 continue;
             };
             if let Some(recipe) = parse_vertex_recipe(bytes, records, &stream, header, recipes) {
@@ -425,25 +438,25 @@ pub(crate) fn bind_work_point_input_carriers(
             if let Some(selection) =
                 parse_work_point_sketch_point_frame(ctx, bytes, input.record_index(), header.byte_offset).transpose()?
             {
-                let point_matches = sketch_points
+                let mut point_matches = sketch_points
                     .iter()
                     .filter(|point| {
                         native_stream(&point.id) == Some(stream.as_str())
                             && point.owner_reference == Some(selection.sketch_record_index)
                             && point.persistent_id() == Some(selection.point_persistent_id)
-                    })
-                    .collect::<Vec<_>>();
+                    });
                 let (Ok(asset_id), Ok(context_id)) = (
                     crate::records::mesh::DesignRelaxedGuidText::try_from(
-                        selection.asset_id.clone(),
+                        selection.asset_id,
                     ),
                     crate::records::mesh::DesignRelaxedGuidText::try_from(
-                        selection.context_id.clone(),
+                        selection.context_id,
                     ),
                 ) else {
                     continue;
                 };
-                if let [point] = point_matches.as_slice() {
+                let point_match = point_matches.next();
+                if let Some(point) = point_match.filter(|_| point_matches.next().is_none()) {
                     input
                         .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::SketchPoint {
                             selection: DesignWorkPointSketchPointSelection::try_new(
@@ -462,7 +475,7 @@ pub(crate) fn bind_work_point_input_carriers(
                                     point_persistent_id: selection.point_persistent_id,
                                     point_persistent_id_offset: selection
                                         .point_persistent_id_offset,
-                                    point_native_id: point.id.clone(),
+                                    point_native_id: copy_ascii_retained(ctx, &point.id, "f3d WorkPoint sketch-point ID")?,
                                     next_record_index: selection.next_record_index,
                                     next_byte_offset: selection.next_byte_offset,
                                 },
@@ -486,7 +499,8 @@ pub(crate) fn bind_work_point_input_carriers(
                 continue;
             };
             let Some(work_plane_scope_record_index) = work_planes
-                .get(&(stream.clone(), primary_identity))
+                .get(stream.as_str())
+                .and_then(|indices| indices.get(&primary_identity))
                 .copied()
             else {
                 continue;
@@ -495,8 +509,8 @@ pub(crate) fn bind_work_point_input_carriers(
                 continue;
             }
             let (Ok(asset_id), Ok(context_id)) = (
-                crate::records::mesh::DesignRelaxedGuidText::try_from(selection.asset_id.clone()),
-                crate::records::mesh::DesignRelaxedGuidText::try_from(selection.context_id.clone()),
+                crate::records::mesh::DesignRelaxedGuidText::try_from(selection.asset_id),
+                crate::records::mesh::DesignRelaxedGuidText::try_from(selection.context_id),
             ) else {
                 continue;
             };
