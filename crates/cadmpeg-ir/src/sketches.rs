@@ -547,6 +547,21 @@ pub struct SketchGeometry(
 );
 
 impl SketchGeometry {
+    /// Build from a definition whose field types already carry the admitted invariants.
+    #[must_use]
+    pub fn from_admitted_definition(
+        definition: SketchGeometryDefinition<
+            FinitePoint2,
+            PositiveLength,
+            FiniteReal,
+            PositiveReal,
+            ReferenceLineDirection,
+            OrderedMajorRadius,
+        >,
+    ) -> Self {
+        Self(definition)
+    }
+
     /// Retain source-native geometry without solved numeric fields.
     #[must_use]
     pub fn native(native_kind: NonBlankString) -> Self {

@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{DesignParameter, Feature, FeatureDefinition, ParameterValue};
@@ -16,6 +17,7 @@ use cadmpeg_ir::products::Occurrence;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchEntity, SketchEntityId, SketchGeometry,
+    SketchGeometryDefinition,
 };
 use cadmpeg_ir::topology::{Body, Coedge, Edge, EdgeCarrier, Face, Point, Vertex};
 use cadmpeg_ir::transform::Transform;
@@ -30,6 +32,90 @@ pub(super) struct SourceUnitCarriers {
 }
 
 impl SourceUnitCarriers {
+    fn copy_sketch_geometry(
+        ctx: &DecodeContext<'_>,
+        geometry: &SketchGeometry,
+    ) -> Result<SketchGeometry, CodecError> {
+        let copy_nonblank = |value: &NonBlankString, operation: &'static str| {
+            NonBlankString::new(ctx.copy_retained_text(value.as_str(), operation)?)
+                .ok_or_else(|| CodecError::malformed("admitted sketch text became blank"))
+        };
+        match geometry.definition() {
+            SketchGeometryDefinition::Nurbs { curve } => {
+                let operation = "creo source sketch NURBS copy";
+                let items = curve.knots().len().checked_add(curve.pole_rows().count())
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                Ok(SketchGeometry::nurbs(
+                    ctx.try_collection(items, operation, || curve.try_clone())?,
+                ))
+            }
+            SketchGeometryDefinition::Text {
+                text,
+                font_family,
+                font_weight,
+                height,
+                width_factor,
+                placement,
+                horizontal_alignment,
+                vertical_alignment,
+            } => Ok(SketchGeometry::from_admitted_definition(
+                SketchGeometryDefinition::Text {
+                    text: copy_nonblank(text, "creo source sketch text")?,
+                    font_family: copy_nonblank(font_family, "creo source sketch font")?,
+                    font_weight: *font_weight,
+                    height: *height,
+                    width_factor: *width_factor,
+                    placement: *placement,
+                    horizontal_alignment: *horizontal_alignment,
+                    vertical_alignment: *vertical_alignment,
+                },
+            )),
+            SketchGeometryDefinition::ExternalReference {
+                document,
+                object,
+                subelements,
+            } => {
+                let document = document
+                    .as_ref()
+                    .map(|value| ctx.copy_retained_text(value, "creo source sketch document"))
+                    .transpose()?;
+                let object = copy_nonblank(object, "creo source sketch object")?;
+                let mut selectors = Vec::new();
+                ctx.try_reserve_items(
+                    &mut selectors,
+                    subelements.len(),
+                    "creo source sketch subelements",
+                )?;
+                for value in subelements {
+                    selectors.push(ctx.copy_retained_text(
+                        value,
+                        "creo source sketch subelement text",
+                    )?);
+                }
+                Ok(SketchGeometry::from_admitted_definition(
+                    SketchGeometryDefinition::ExternalReference {
+                        document,
+                        object,
+                        subelements: selectors,
+                    },
+                ))
+            }
+            SketchGeometryDefinition::Native { native_kind } => Ok(
+                SketchGeometry::from_admitted_definition(SketchGeometryDefinition::Native {
+                    native_kind: copy_nonblank(native_kind, "creo source sketch native kind")?,
+                }),
+            ),
+            SketchGeometryDefinition::Point { .. }
+            | SketchGeometryDefinition::Line { .. }
+            | SketchGeometryDefinition::ReferenceLine { .. }
+            | SketchGeometryDefinition::Circle { .. }
+            | SketchGeometryDefinition::Arc { .. }
+            | SketchGeometryDefinition::Ellipse { .. }
+            | SketchGeometryDefinition::Hyperbola { .. }
+            | SketchGeometryDefinition::Parabola { .. } => Ok(geometry.clone()),
+        }
+    }
+
     pub(super) fn new(length_scale_mm: Option<PositiveReal>) -> Self {
         Self {
             length_scale_mm: length_scale_mm.filter(|scale| scale.get() != 1.0),
@@ -166,7 +252,7 @@ impl SourceUnitCarriers {
                 "creo source sketch entity IDs",
             )?)
             .map_err(CodecError::malformed)?;
-            let source_geometry = entity.geometry.clone();
+            let source_geometry = Self::copy_sketch_geometry(ctx, &entity.geometry)?;
             if let Some(scale) = self.length_scale_mm {
                 crate::decode::build::units::scale_sketch_geometry(&mut entity.geometry, scale)
                     .map_err(Self::unrepresentable_length)?;
@@ -593,6 +679,117 @@ mod tests {
     use cadmpeg_ir::transform::Transform;
 
     use super::SourceUnitCarriers;
+
+    #[test]
+    fn source_sketch_geometry_refuses_nurbs_copy_limit() {
+        let geometry = SketchGeometry::nurbs(
+            cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    cadmpeg_ir::math::Point2::new(1.0, 1.0),
+                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                ],
+                None,
+                false,
+            )
+            .expect("source NURBS"),
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 8;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = SourceUnitCarriers::copy_sketch_geometry(&ctx, &geometry)
+            .expect_err("six knots and three poles exceed the limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.operation == "creo source sketch NURBS copy"), "{error:?}");
+        let copy = crate::decode::with_test_decode_ctx(|ctx| {
+            SourceUnitCarriers::copy_sketch_geometry(ctx, &geometry)
+        })
+        .expect("service copy");
+        assert_eq!(copy, geometry);
+    }
+
+    #[test]
+    fn source_sketch_geometry_refuses_text_and_native_retained_limits() {
+        let text = SketchGeometry::try_from(SketchGeometryDefinition::Text {
+            text: cadmpeg_core::text::NonBlankString::new("cadmpeg").expect("text"),
+            font_family: cadmpeg_core::text::NonBlankString::new("sans").expect("font"),
+            font_weight: cadmpeg_ir::sketches::SketchFontWeight::Regular,
+            height: cadmpeg_ir::scalar::Length::new(4.0).expect("height"),
+            width_factor: None,
+            placement: None,
+            horizontal_alignment: None,
+            vertical_alignment: None,
+        })
+        .expect("source text");
+        let native = SketchGeometry::native(
+            cadmpeg_core::text::NonBlankString::new("native").expect("native kind"),
+        );
+        let arena = DecodeArena::new();
+        for (geometry, limit, operation) in [
+            (&text, 6, "creo source sketch text"),
+            (&text, 10, "creo source sketch font"),
+            (&native, 5, "creo source sketch native kind"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root admitted");
+            let error = SourceUnitCarriers::copy_sketch_geometry(&ctx, geometry)
+                .expect_err("retained source text exceeds its limit");
+            assert!(matches!(error, CodecError::ResourceLimit(resource)
+                if resource.operation == operation), "{error:?}");
+        }
+        for geometry in [&text, &native] {
+            let copy = crate::decode::with_test_decode_ctx(|ctx| {
+                SourceUnitCarriers::copy_sketch_geometry(ctx, geometry)
+            })
+            .expect("service copy");
+            assert_eq!(&copy, geometry);
+        }
+    }
+
+    #[test]
+    fn source_sketch_geometry_refuses_external_reference_copies() {
+        let geometry = SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
+            document: Some("doc".to_owned()),
+            object: cadmpeg_core::text::NonBlankString::new("part").expect("object"),
+            subelements: vec!["face".to_owned(), "edge".to_owned()],
+        })
+        .expect("external source geometry");
+        let arena = DecodeArena::new();
+        let mut item_policy = DecodePolicy::service();
+        item_policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &item_policy)
+            .expect("empty root admitted");
+        let error = SourceUnitCarriers::copy_sketch_geometry(&ctx, &geometry)
+            .expect_err("two selectors exceed the item limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.operation == "creo source sketch subelements"), "{error:?}");
+        for (limit, operation) in [
+            (2, "creo source sketch document"),
+            (6, "creo source sketch object"),
+            (10, "creo source sketch subelement text"),
+            (14, "creo source sketch subelement text"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root admitted");
+            let error = SourceUnitCarriers::copy_sketch_geometry(&ctx, &geometry)
+                .expect_err("external reference copy exceeds its retained limit");
+            assert!(matches!(error, CodecError::ResourceLimit(resource)
+                if resource.operation == operation), "{error:?}");
+        }
+        let copy = crate::decode::with_test_decode_ctx(|ctx| {
+            SourceUnitCarriers::copy_sketch_geometry(ctx, &geometry)
+        })
+        .expect("service copy");
+        assert_eq!(copy, geometry);
+    }
 
     #[test]
     fn replacement_curve_refuses_source_node_and_id_copy_limits() {
