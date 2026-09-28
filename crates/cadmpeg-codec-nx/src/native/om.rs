@@ -308,6 +308,7 @@ pub(super) fn operation_state_counters(
             .into_iter()
             .enumerate()
     {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sections.len()), "match NX state counter section")?;
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()
@@ -322,23 +323,21 @@ pub(super) fn operation_state_counters(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let section_key = format!("{section_ordinal:010}");
-        out.extend(
-            map.into_rows()
-                .enumerate()
-                .filter_map(move |(ordinal, row)| {
-                    let ordinal = u32::try_from(ordinal).ok()?;
-                    Some(OmOperationStateCounter {
-                        id: format!(
-                            "nx:feature-history:operation-state-counter#{section_key}-{ordinal:010}"
-                        ),
-                        section_link: link.id.clone(),
-                        ordinal,
-                        frame: row.into_absolute(entry_offset)?,
-                        source_entry: entry.name.clone(),
-                    })
-                }),
-        );
+        for (ordinal, row) in map.into_rows().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else { continue; };
+            let Some(frame) = row.into_absolute(entry_offset) else { continue; };
+            ctx.charge_collection_items(1, "NX operation state counters")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmOperationStateCounter>()), "retain NX operation state counter")?;
+            out.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX operation state counters", 0, 1))?;
+            out.push(OmOperationStateCounter {
+                id: retained_om_padded_state_id(ctx, "nx:feature-history:operation-state-counter#", section_ordinal, ordinal, "NX operation state counter id")?,
+                section_link: copy_om_retained_text(ctx, &link.id, "NX state counter section link")?,
+                ordinal,
+                frame,
+                source_entry: copy_om_retained_text(ctx, &entry.name, "NX state counter source entry")?,
+            });
+        }
     }
     Ok(out)
 }
@@ -355,6 +354,7 @@ pub(super) fn operation_state_journal_groups(
             .into_iter()
             .enumerate()
     {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sections.len()), "match NX state journal section")?;
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()
@@ -369,7 +369,6 @@ pub(super) fn operation_state_journal_groups(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let section_key = format!("{section_ordinal:010}");
         for (ordinal, group) in groups.into_iter().enumerate() {
             let Some(ordinal) = u32::try_from(ordinal).ok() else {
                 continue;
@@ -377,14 +376,16 @@ pub(super) fn operation_state_journal_groups(
             let Some(frame) = group.into_absolute(ctx, entry_offset)? else {
                 continue;
             };
+            ctx.charge_collection_items(1, "NX operation state journal groups")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<OmOperationStateJournalGroup>()), "retain NX operation state journal group")?;
+            out.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX operation state journal groups", 0, 1))?;
             out.push(OmOperationStateJournalGroup {
-                id: format!(
-                    "nx:feature-history:operation-state-journal-group#{section_key}-{ordinal:010}"
-                ),
-                section_link: link.id.clone(),
+                id: retained_om_padded_state_id(ctx, "nx:feature-history:operation-state-journal-group#", section_ordinal, ordinal, "NX operation state journal group id")?,
+                section_link: copy_om_retained_text(ctx, &link.id, "NX state journal section link")?,
                 ordinal,
                 frame,
-                source_entry: entry.name.clone(),
+                source_entry: copy_om_retained_text(ctx, &entry.name, "NX state journal source entry")?,
             });
         }
     }
