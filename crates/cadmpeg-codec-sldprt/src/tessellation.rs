@@ -273,11 +273,11 @@ impl DisplayFace {
     }
 
     /// Return the complete identity only when every duplicate reference agrees.
-    pub(crate) fn persistent_surface_identity(&self) -> Option<PersistentFaceIdentity> {
+    pub(crate) fn persistent_surface_identity(&self) -> Option<&PersistentFaceIdentity> {
         let mut references = self.surface_references.iter();
-        let first = references.next()?.complete_identity()?.clone();
+        let first = references.next()?.complete_identity()?;
         references
-            .all(|reference| reference.complete_identity() == Some(&first))
+            .all(|reference| reference.complete_identity() == Some(first))
             .then_some(first)
     }
 }

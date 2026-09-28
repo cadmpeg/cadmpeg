@@ -640,10 +640,8 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
         face.feature_source_id().map(FeatureSourceId::value),
         Some(7)
     );
-    assert_eq!(
-        face.persistent_surface_identity(),
-        Some(persistent_identity(7, 3, &[]))
-    );
+    let expected = persistent_identity(7, 3, &[]);
+    assert_eq!(face.persistent_surface_identity(), Some(&expected));
 
     let mut conflicting = face;
     if let PersistentSurfaceReference::Complete(identity) = &mut conflicting.surface_references[1] {

@@ -2965,6 +2965,13 @@ fn build_geometry_ir(
                 table_index
             );
             if let Some(identity) = display_face.persistent_surface_identity() {
+                let mut trailing_fields = Vec::new();
+                ctx.reserve_collection_vec(
+                    &mut trailing_fields,
+                    identity.trailing_fields.len(),
+                    "copy SLDPRT persistent face identity fields",
+                )?;
+                trailing_fields.extend_from_slice(&identity.trailing_fields);
                 ctx.reserve_collection_vec(
                     &mut persistent_face_bindings,
                     1,
@@ -2972,7 +2979,11 @@ fn build_geometry_ir(
                 )?;
                 persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
                     tessellation: id.clone(),
-                    identity,
+                    identity: crate::brep::PersistentFaceIdentity {
+                        feature_source_id: identity.feature_source_id,
+                        local_id: identity.local_id,
+                        trailing_fields,
+                    },
                 });
             }
             crate::annotations::note(
