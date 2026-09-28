@@ -1173,6 +1173,7 @@ fn transition_delta_members(
 }
 
 pub(crate) fn bind_feature_outputs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
@@ -1180,11 +1181,16 @@ pub(crate) fn bind_feature_outputs(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut state_outputs = HashMap::<i64, Option<Vec<i64>>>::new();
     for history in histories {
-        let by_node = history
-            .states
-            .iter()
-            .map(|state| (state.node_index, state))
-            .collect::<HashMap<_, _>>();
+        let mut by_node = HashMap::new();
+        for state in &history.states {
+            if !by_node.contains_key(&state.node_index) {
+                ctx.charge_collection_items(1, "index F3D feature output history nodes")?;
+                by_node.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index F3D feature output history nodes", 0, 1)
+                })?;
+            }
+            by_node.insert(state.node_index, state);
+        }
         if by_node.len() != history.states.len() {
             continue;
         }
@@ -1199,16 +1205,34 @@ pub(crate) fn bind_feature_outputs(
             let Some(outputs) = affected_body_refs(state, previous) else {
                 continue;
             };
+            if !state_outputs.contains_key(&state.state_id) {
+                ctx.charge_collection_items(1, "index F3D feature output states")?;
+                state_outputs.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index F3D feature output states", 0, 1)
+                })?;
+            }
             state_outputs
                 .entry(state.state_id)
                 .and_modify(|outputs| *outputs = None)
                 .or_insert_with(|| Some(outputs));
         }
     }
-    let active = active_bodies
-        .iter()
-        .filter_map(|body| stable_ref(body.id.as_str()).map(|slot| (slot, body.id.clone())))
-        .collect::<HashMap<_, _>>();
+    let mut active = HashMap::new();
+    for body in active_bodies {
+        let Some(slot) = stable_ref(body.id.as_str()) else {
+            continue;
+        };
+        let id = cadmpeg_ir::ids::BodyId::mint(copy_history_string(
+            ctx, body.id.as_str(), "copy F3D active body identity",
+        )?).map_err(cadmpeg_core::CodecError::malformed)?;
+        if !active.contains_key(&slot) {
+            ctx.charge_collection_items(1, "index F3D active feature output bodies")?;
+            active.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index F3D active feature output bodies", 0, 1)
+            })?;
+        }
+        active.insert(slot, id);
+    }
     for feature in features {
         let Some(scope) = feature
             .native_ref
@@ -1238,23 +1262,37 @@ pub(crate) fn bind_feature_outputs(
             })
             .eq([true]);
         if transition_matches {
+            let mut resolved = Vec::new();
+            for slot in outputs {
+                let Some(id) = active.get(slot) else {
+                    continue;
+                };
+                let id = cadmpeg_ir::ids::BodyId::mint(copy_history_string(
+                    ctx, id.as_str(), "copy F3D feature output body identity",
+                )?).map_err(cadmpeg_core::CodecError::malformed)?;
+                ctx.charge_collection_items(1, "collect F3D feature output bodies")?;
+                resolved.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("collect F3D feature output bodies", 0, 1)
+                })?;
+                resolved.push(id);
+            }
             feature.evaluation.set_outputs(
-                outputs
-                    .iter()
-                    .filter_map(|slot| active.get(slot).cloned())
-                    .collect::<Vec<_>>()
+                resolved
                     .try_into()
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             );
-            bind_base_feature_output_selection(feature);
+            bind_base_feature_output_selection(ctx, feature)?;
         }
     }
     Ok(())
 }
 
-fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Feature) {
+fn bind_base_feature_output_selection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    feature: &mut cadmpeg_ir::features::Feature,
+) -> Result<(), cadmpeg_core::CodecError> {
     if feature.evaluation.outputs().is_empty() {
-        return;
+        return Ok(());
     }
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::BaseFeature {
@@ -1262,17 +1300,29 @@ fn bind_base_feature_output_selection(feature: &mut cadmpeg_ir::features::Featur
         },
     ) = feature.evaluation.definition()
     else {
-        return;
+        return Ok(());
     };
+    let mut selected = Vec::new();
+    for body in feature.evaluation.outputs() {
+        let id = cadmpeg_ir::ids::BodyId::mint(copy_history_string(
+            ctx, body.as_str(), "copy F3D BaseFeature body identity",
+        )?).map_err(cadmpeg_core::CodecError::malformed)?;
+        ctx.charge_collection_items(1, "collect F3D BaseFeature output bodies")?;
+        selected.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("collect F3D BaseFeature output bodies", 0, 1)
+        })?;
+        selected.push(id);
+    }
     let bodies = cadmpeg_ir::features::BodySelection::Resolved {
-        bodies: feature.evaluation.outputs().iter().cloned().collect(),
-        native: native.clone(),
+        bodies: selected.try_into().map_err(cadmpeg_core::CodecError::malformed)?,
+        native: copy_history_string(ctx, native, "copy F3D BaseFeature native selection")?,
     };
     feature
         .evaluation
         .set_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::BaseFeature { bodies },
         ));
+    Ok(())
 }
 
 pub(crate) fn bind_sweep_result_modes(

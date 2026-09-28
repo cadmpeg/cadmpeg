@@ -2912,6 +2912,7 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_edge_operands,
         );
         crate::history::bind_feature_outputs(
+            ctx,
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.asm_histories,
