@@ -40,6 +40,13 @@ fn assert_geometry_collection_refusal(bytes: &[u8], operation: &str) {
 }
 
 #[test]
+fn merged_trimming_vertex_derivations_refuse_before_accumulator_growth() {
+    let bytes = crate::test_support::test_surface_fixtures::bounded_plane_file();
+    assert_geometry_collection_refusal(&bytes, "iges merged boundary vertex derivations");
+    assert!(crate::IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+}
+
+#[test]
 fn primitive_identity_copy_refuses_retained_budget_before_model_insertion() {
     use cadmpeg_core::decode::DecodePolicy;
     use cadmpeg_ir::codec::DecodeFailure;
