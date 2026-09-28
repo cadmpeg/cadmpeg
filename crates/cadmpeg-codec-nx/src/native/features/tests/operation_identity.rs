@@ -9,6 +9,7 @@ use crate::native::features::feature_operation_body_partition_uses;
 use crate::native::features::feature_operation_body_writes;
 use crate::native::features::feature_operation_labels;
 use crate::native::features::feature_operation_records;
+use crate::native::features::feature_unlabeled_operation_records;
 use crate::native::features::feature_operation_state_journal_uses;
 use crate::native::features::operation_record::FeatureOperationRecord;
 use crate::native::features::FeatureOperationBodyWrite;
@@ -41,6 +42,36 @@ fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOperationLabe
         stable_identity: None,
         source_offset: u64::from(ordinal),
     }
+}
+
+fn unlabeled_history_fixture() -> crate::container::Container<'static> {
+    const HEADER: &[u8] = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff";
+    let mut section = composed_feature_history_section(&[
+        (&[0xff; 4], "BLOCK", b"first".to_vec()),
+        (&[0xff; 4], "SKETCH", b"second".to_vec()),
+    ]);
+    let second_header = section
+        .windows(HEADER.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == HEADER).then_some(offset))
+        .nth(1)
+        .expect("second operation header");
+    let mut unlabeled = HEADER.to_vec();
+    unlabeled.extend_from_slice(&[0xff; 4]);
+    unlabeled.extend_from_slice(b"unlabeled");
+    section.splice(second_header..second_header, unlabeled);
+    let payload_len = (section.len() - 16) as u32;
+    section[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    payload.extend_from_slice(&section);
+    crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]))
+    })
+    .expect("feature-history fixture")
 }
 
 #[test]
@@ -90,36 +121,7 @@ fn operation_header_identity_witness_survives_reordering() {
 
 #[test]
 fn feature_label_identity_retains_the_complete_header_ordinal() {
-    const HEADER: &[u8] = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff";
-    let mut section = composed_feature_history_section(&[
-        (&[0xff; 4], "BLOCK", b"first".to_vec()),
-        (&[0xff; 4], "SKETCH", b"second".to_vec()),
-    ]);
-    let second_header = section
-        .windows(HEADER.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == HEADER).then_some(offset))
-        .nth(1)
-        .expect("second operation header");
-    let mut unlabeled = HEADER.to_vec();
-    unlabeled.extend_from_slice(&[0xff; 4]);
-    unlabeled.extend_from_slice(b"unlabeled");
-    section.splice(second_header..second_header, unlabeled);
-    let payload_len = (section.len() - 16) as u32;
-    section[8..12].copy_from_slice(&payload_len.to_be_bytes());
-    let mut payload = Vec::new();
-    for word in [32u32, 9, 11, 1, 1, 24] {
-        payload.extend_from_slice(&word.to_le_bytes());
-    }
-    payload.resize(32, 0);
-    payload.extend_from_slice(&section);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
-    })
-    .expect("feature-history fixture");
+    let container = unlabeled_history_fixture();
 
     let labels =
         crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx, &container))
@@ -131,6 +133,50 @@ fn feature_label_identity_retains_the_complete_header_ordinal() {
         crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &container))
             .unwrap();
     assert_eq!(records[1].operation_label, labels[1].id);
+}
+
+fn unlabeled_record_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = unlabeled_history_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_unlabeled_operation_records(&ctx, &container).unwrap_err()
+}
+
+#[test]
+fn unlabeled_record_route_preserves_source_order() {
+    let container = unlabeled_history_fixture();
+    let records = crate::test_support::with_decode_context(|ctx| {
+        feature_unlabeled_operation_records(ctx, &container)
+    })
+    .unwrap();
+    assert_eq!(records.len(), 1);
+    assert!(records[0].id.ends_with("-0000000001"));
+}
+
+#[test]
+fn unlabeled_record_route_refuses_collection_limit() {
+    let error = unlabeled_record_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn unlabeled_record_route_refuses_retained_limit() {
+    let error = unlabeled_record_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn unlabeled_record_route_refuses_work_limit() {
+    let error = unlabeled_record_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
