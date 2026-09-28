@@ -26,7 +26,46 @@ use cadmpeg_ir::sketches::{
     SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchGeometryDefinition, SpatialSketchId,
 };
 use cadmpeg_ir::CadIr;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+#[test]
+fn conflicting_display_reference_retains_exact_text_and_refuses_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let candidates = [
+        crate::brep::feature_source::FeatureSourceId::try_from(300).unwrap(),
+        crate::brep::feature_source::FeatureSourceId::try_from(2).unwrap(),
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+    let expected = "SyntheticDisplayStream::DisplayFace[7] (2, 300)";
+    let text = super::super::conflicting_display_reference(
+        &cadmpeg_test_support::service_decode_context(),
+        "SyntheticDisplayStream",
+        7,
+        &candidates,
+    )
+    .unwrap();
+    assert_eq!(text, expected);
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = (expected.len() - 1) as u64;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::conflicting_display_reference(
+        &ctx,
+        "SyntheticDisplayStream",
+        7,
+        &candidates,
+    )
+    .expect_err("one byte below the exact message length must refuse");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT conflicting display reference"
+    ));
+}
 
 #[test]
 fn native_planar_and_spatial_sketch_geometry_is_reported() {
