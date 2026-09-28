@@ -3318,21 +3318,22 @@ impl ParasolidStreamRecords for ParasolidBlendSurfaceRecord {
 
 /// Retain every non-null topology-to-attribute-list reference.
 pub(super) fn parasolid_topology_attribute_list_references(
+    ctx: &DecodeContext<'_>,
     parsed: &ParsedStreams,
     entity_records: &[ParasolidEntity51Record],
-) -> Vec<ParasolidTopologyAttributeListReference> {
-    let mut records_by_identity = BTreeMap::<(u32, u32), Vec<&str>>::new();
+) -> Result<Vec<ParasolidTopologyAttributeListReference>, CodecError> {
+    let mut records_by_identity = BTreeMap::<(u32, u32), Option<&str>>::new();
+    let mut records_guard = ctx.reserve_scoped(0, "NX topology attribute list record index")?;
     for record in entity_records {
-        records_by_identity
-            .entry((record.stream_ordinal, u32::from(record.xmt)))
-            .or_default()
-            .push(record.id.as_str());
+        insert_unique_value(ctx, &mut records_by_identity, &mut records_guard,
+            (record.stream_ordinal, u32::from(record.xmt)), record.id.as_str())?;
     }
     let mut references = Vec::new();
     for (stream_ordinal, stream) in parsed.iter() {
         let graph = &stream.view_for_records().graph;
         for topology_type in TopologyAttributeKind::ALL {
             for node in graph.of_kind(topology_type.node_kind()) {
+                ctx.charge_work(1, "scan NX topology attribute list references")?;
                 let attribute_list_xmt = match topology_type {
                     TopologyAttributeKind::Shell => node
                         .shell_fields()
@@ -3359,30 +3360,43 @@ pub(super) fn parasolid_topology_attribute_list_references(
                 let Some(inflated_offset) = node.attribute_field_offset() else {
                     continue;
                 };
+                let ordinal = u32::try_from(stream_ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX topology attribute stream ordinal", 0, 1))?;
+                ctx.charge_collection_items(1, "NX topology attribute list references")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidTopologyAttributeListReference>()), "NX topology attribute list reference")?;
+                references.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX topology attribute list references", 0, 1))?;
+                let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+                let length = "nx:s".len()
+                    .checked_add(digits(cadmpeg_core::decode::u64_from_index(stream_ordinal)))
+                    .and_then(|length| length.checked_add(":topology-attribute-list-reference#".len()))
+                    .and_then(|length| length.checked_add(digits(u64::from(topology_type.code()))))
+                    .and_then(|length| length.checked_add(1 + digits(u64::from(node.xmt))))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute list reference identity", 0, 1))?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX topology attribute list reference identity")?;
+                let mut id = String::new();
+                id.try_reserve_exact(length)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX topology attribute list reference identity", 0, 1))?;
+                write!(&mut id, "nx:s{stream_ordinal}:topology-attribute-list-reference#{}-{}", topology_type.code(), node.xmt)
+                    .map_err(|_| ctx.refuse_codec_limit("write NX topology attribute list reference identity", 0, 1))?;
+                let attribute_list_record = records_by_identity
+                    .get(&(ordinal, attribute_list_xmt))
+                    .and_then(|record| *record)
+                    .map(|record| entity_51_use_text(ctx, record))
+                    .transpose()?;
                 references.push(ParasolidTopologyAttributeListReference {
-                    id: format!(
-                        "nx:s{stream_ordinal}:topology-attribute-list-reference#{}-{}",
-                        topology_type.code(),
-                        node.xmt
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
+                    id,
+                    stream_ordinal: ordinal,
                     topology_type,
                     topology_xmt: node.xmt,
                     attribute_list_xmt,
-                    attribute_list_record: records_by_identity
-                        .get(&(stream_ordinal as u32, attribute_list_xmt))
-                        .and_then(|records| {
-                            let [record] = records.as_slice() else {
-                                return None;
-                            };
-                            Some((*record).to_string())
-                        }),
-                    inflated_offset: inflated_offset as u64,
+                    attribute_list_record,
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(inflated_offset),
                 });
             }
         }
     }
-    references
+    Ok(references)
 }
 
 /// Decode every framed type-81 entity/attribute-list record.
@@ -6329,6 +6343,64 @@ mod tests {
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         parasolid_attribute_field_names(&ctx, &[definition], &[list], &[value], &[])
             .err().expect("attribute field-name relation limit refusal")
+    }
+
+    fn topology_list_reference_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> CodecError {
+        let mut stream = topology_partition_stream();
+        let prefix_len = b"PS\x00\x00".len()
+            + b"XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00".len();
+        put_ref(&mut stream, prefix_len + 24 + 8, 50);
+        let bytes = prt_with_partition(&stream);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let scan = crate::decode::scan(&ctx, root).unwrap();
+        let parsed = crate::native::substrate::ParsedStreams::parse(&ctx, &scan).unwrap();
+        let entity = super::ParasolidEntity51Record {
+            id: "entity".into(), stream_ordinal: 0,
+            xmt: NonNullXmt::try_from(50).unwrap(),
+            sequence: NonZeroU32::new(1).unwrap(),
+            definition_xmt: 20,
+            leading_references: [1; 5],
+            trailing_references: EntityReferences::new(vec![1]).unwrap(),
+            byte_len: 32, inflated_offset: 40,
+        };
+        let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut limited_policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut limited_policy);
+        let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &limited_arena, &limited_policy).unwrap();
+        super::parasolid_topology_attribute_list_references(&limited_ctx, &parsed, &[entity])
+            .err().expect("topology attribute list reference limit refusal")
+    }
+
+    #[test]
+    fn topology_list_reference_refuses_collection_limit() {
+        let error = topology_list_reference_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn topology_list_reference_refuses_retained_limit() {
+        let error = topology_list_reference_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn topology_list_reference_refuses_scoped_limit() {
+        let error = topology_list_reference_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn topology_list_reference_refuses_work_limit() {
+        let error = topology_list_reference_limit_error(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
 
     #[test]
