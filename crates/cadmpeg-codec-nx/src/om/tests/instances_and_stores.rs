@@ -9,6 +9,10 @@ use crate::om::indexed_sections;
 use crate::om::offset_store_control_class_ordinals;
 use crate::om::offset_store_control_form;
 use crate::om::offset_store_control_values;
+fn thru_curve_payload_branch_group_for_test(record: crate::om::operation_record::OperationPayload<'_>) -> Option<crate::om::thru_curve_branches::ThruCurveGroup<()>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::thru_curve_branches::thru_curve_payload_branch_group(ctx, record)).unwrap()
+}
+
 fn surface_feature_payload_branches_for_test(record: crate::om::operation_record::OperationPayload<'_>) -> Option<crate::om::surface_branches::SurfaceFeaturePayloadBranches> {
     crate::test_support::with_decode_context(|ctx| crate::om::surface_branches::surface_feature_payload_branches(ctx, record)).unwrap()
 }
@@ -702,7 +706,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     append_standard_branch(&mut branched, 0x15, 0x33, 0x34);
     branched.extend([0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
     branched.extend([0xaa, 0xbb]);
-    let group = crate::om::thru_curve_branches::thru_curve_payload_branch_group(
+    let group = thru_curve_payload_branch_group_for_test(
         crate::om::operation_record::OperationPayload::new(
             &branched,
             record.payload_offset(),
@@ -740,7 +744,7 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     extended.extend([1, 5, 0, 0, 0, 0, 1, 5, 2, 3, 3, 2, 1, 5, 0, 1, 1, 1, 0, 0]);
     extended.extend([0xff, 1, 2, 0xf0, 0x45, 0, 0x81, 0x48]);
     extended.extend([0, 0, 0, 0, 0, 0, 0xff, 0xff, 1]);
-    let group = crate::om::thru_curve_branches::thru_curve_payload_branch_group(
+    let group = thru_curve_payload_branch_group_for_test(
         crate::om::operation_record::OperationPayload::new(
             &extended,
             record.payload_offset(),
@@ -1769,3 +1773,5 @@ mod operation_body_limits;
 mod boolean_limits;
 
 mod surface_branch_limits;
+
+mod thru_curve_branch_limits;
