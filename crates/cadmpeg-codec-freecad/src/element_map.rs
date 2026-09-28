@@ -15,6 +15,10 @@ use crate::native::{
 use crate::resource::{append_retained, collection_vec, materialized_bytes, reserve_vec_items, retained_join, retained_string, retained_suffix};
 use crate::topology_transfer::TopologyOccurrence;
 
+fn element_map_malformed(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
+    crate::resource::malformed_charged(ctx, message, "FreeCAD element map diagnostic")
+}
+
 const MAX_TABLE_ENTRIES: usize = 10_000_000;
 const MAX_MAP_NODES: usize = 1_000_000;
 const MAX_GROUPS: usize = 1_000_000;
@@ -48,7 +52,7 @@ pub(crate) fn parse(
     let text = std::str::from_utf8(document)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
-        .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
+        .map_err(|error| element_map_malformed(ctx, format_args!("invalid Document.xml: {error}")))?;
     validate_string_hasher_framing(xml.root_element())?;
     let mut entry_data = HashMap::new();
     for entry in entries {
@@ -62,8 +66,8 @@ pub(crate) fn parse(
     let mut tables = Vec::new();
     for node in xml.descendants().filter(|node| node.has_tag_name("StringHasher")) {
         let index = tables.len();
-        let save_all = require_bool(node.attribute("saveall").unwrap_or("0"))?;
-        let threshold = parse_decimal(node.attribute("threshold").unwrap_or("0"), "threshold")?;
+        let save_all = require_bool(ctx, node.attribute("saveall").unwrap_or("0"))?;
+        let threshold = parse_decimal(ctx, node.attribute("threshold").unwrap_or("0"), "threshold")?;
         let owner_property = owning_property(ctx, node, properties)?;
         let new_layout = node.attribute("new").is_some_and(|value| value != "0");
         let data_node = if new_layout {
@@ -75,15 +79,15 @@ pub(crate) fn parse(
         let inline_bytes = source_entry.is_none().then(|| node_text_bytes(ctx, data_node)).transpose()?;
         let bytes = if let Some(name) = source_entry {
             *entry_data.get(name).ok_or_else(|| {
-                CodecError::malformed(format_args!("StringHasher references missing entry {name}"))
+                element_map_malformed(ctx, format_args!("StringHasher references missing entry {name}"))
             })?
         } else {
             inline_bytes.as_ref().map_or(&[] as &[u8], |(bytes, _)| bytes.as_slice())
         };
         let declared_count = if source_entry.is_some() {
-            let header_count = string_table_header_count(bytes)?;
+            let header_count = string_table_header_count(ctx, bytes)?;
             if !new_layout {
-                let xml_count = parse_count(data_node, "StringHasher")?;
+                let xml_count = parse_count(ctx, data_node, "StringHasher")?;
                 if xml_count != header_count {
                     return Err(CodecError::Malformed(
                         "string-table XML and side-entry counts disagree".into(),
@@ -92,7 +96,7 @@ pub(crate) fn parse(
             }
             header_count
         } else {
-            parse_count(data_node, "StringHasher")?
+            parse_count(ctx, data_node, "StringHasher")?
         };
         let entries = parse_string_table(ctx, bytes, declared_count, source_entry.is_some())?;
         reserve_vec_items(ctx, &mut tables, 1, "FreeCAD string table records")?;
@@ -115,24 +119,24 @@ pub(crate) fn parse(
         .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
         let property_xml = roxmltree::Document::parse(property.xml.text()).map_err(|error| {
-            CodecError::malformed(format_args!(
+            element_map_malformed(ctx, format_args!(
                 "invalid shape property XML {}: {error}",
                 property.id
             ))
         })?;
-        let Some((part, carrier)) = direct_element_map(property_xml.root_element())? else {
+        let Some((part, carrier)) = direct_element_map(ctx, property_xml.root_element())? else {
             continue;
         };
         let version = retained_string(ctx, part.attribute("ElementMap").unwrap_or(""), "FreeCAD element map version")?;
         let hasher_index = part
             .attribute("HasherIndex")
-            .map(|value| parse_usize(value, "HasherIndex"))
+            .map(|value| parse_usize(ctx, value, "HasherIndex"))
             .transpose()?;
         let payload = match carrier {
             ElementMapCarrier::New(map_node) => {
                 let declared_count = map_node
                     .attribute("count")
-                    .map(|count| parse_usize(count, "ElementMap2 count"))
+                    .map(|count| parse_usize(ctx, count, "ElementMap2 count"))
                     .transpose()?;
                 let source_entry = map_node
                     .attribute("file")
@@ -142,7 +146,7 @@ pub(crate) fn parse(
                 let inline_bytes = source_entry.is_none().then(|| node_text_bytes(ctx, map_node)).transpose()?;
                 let bytes = if let Some(name) = source_entry.as_deref() {
                     *entry_data.get(name).ok_or_else(|| {
-                        CodecError::malformed(format_args!(
+                        element_map_malformed(ctx, format_args!(
                             "ElementMap2 references missing entry {name}"
                         ))
                     })?
@@ -188,7 +192,7 @@ pub(crate) fn parse(
     Ok((StringTables::try_from(tables)?, maps))
 }
 
-fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
+fn string_table_header_count(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<usize, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("string table is not UTF-8".into()))?;
     let mut tokens = text.split_ascii_whitespace();
@@ -200,9 +204,9 @@ fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
     let count = tokens
         .next()
         .ok_or_else(|| CodecError::Malformed("string-table side entry has no count".into()))?;
-    let count = parse_usize(count, "string-table header count")?;
+    let count = parse_usize(ctx, count, "string-table header count")?;
     if count > MAX_TABLE_ENTRIES {
-        return Err(CodecError::malformed(format_args!(
+        return Err(element_map_malformed(ctx, format_args!(
             "string-table entry count exceeds {MAX_TABLE_ENTRIES}"
         )));
     }
@@ -345,6 +349,7 @@ fn is_shape_property(node: roxmltree::Node<'_, '_>) -> bool {
 }
 
 fn direct_element_map<'a, 'input>(
+    ctx: &DecodeContext<'_>,
     root: roxmltree::Node<'a, 'input>,
 ) -> Result<Option<(roxmltree::Node<'a, 'input>, ElementMapCarrier<'a, 'input>)>, CodecError> {
     let mut part = None;
@@ -400,7 +405,7 @@ fn direct_element_map<'a, 'input>(
     }
     let is_new = marker
         .attribute("new")
-        .map(require_bool)
+        .map(|value| require_bool(ctx, value))
         .transpose()?
         .unwrap_or(false);
     let Some((map_index, map)) = map else {
@@ -430,7 +435,7 @@ fn direct_element_map<'a, 'input>(
     )))
 }
 
-fn element_map_size(parsed: &ParsedMap) -> Result<usize, CodecError> {
+fn element_map_size(ctx: &DecodeContext<'_>, parsed: &ParsedMap) -> Result<usize, CodecError> {
     let root = parsed.maps.root();
     let mapped_name_count = root
         .groups
@@ -446,7 +451,7 @@ fn element_map_size(parsed: &ParsedMap) -> Result<usize, CodecError> {
             let count = child.split_ascii_whitespace().nth(2).ok_or_else(|| {
                 CodecError::Malformed("element-map child descriptor has no count".into())
             })?;
-            parse_usize(count, "element-map child count")
+            parse_usize(ctx, count, "element-map child count")
         })
         .try_fold(0_usize, |total, count| {
             total
@@ -477,7 +482,8 @@ fn parse_legacy_element_map(
     let source_entry = marker
         .attribute("file")
         .filter(|name| !name.is_empty())
-        .map(str::to_owned);
+        .map(|name| retained_string(ctx, name, "FreeCAD legacy element map side-entry name"))
+        .transpose()?;
     if let Some(name) = source_entry.as_deref() {
         let bytes = *entry_data.get(name).ok_or_else(|| {
             CodecError::Malformed("legacy ElementMap references missing entry".into())
@@ -489,8 +495,8 @@ fn parse_legacy_element_map(
         if first == "BeginElementMap" && header.next() == Some("v1") {
             let parsed = parse_element_map(ctx, bytes, true)?;
             let declared_count = match marker.attribute("count") {
-                Some(count) => parse_usize(count, "ElementMap count")?,
-                None => element_map_size(&parsed)?,
+                Some(count) => parse_usize(ctx, count, "ElementMap count")?,
+                None => element_map_size(ctx, &parsed)?,
             };
             return Ok(Some(MapPayload {
                 source_entry,
@@ -507,7 +513,7 @@ fn parse_legacy_element_map(
         )?));
     }
 
-    let declared_count = parse_count(marker, "ElementMap")?;
+    let declared_count = parse_count(ctx, marker, "ElementMap")?;
     if declared_count == 0 {
         return Ok(None);
     }
@@ -535,8 +541,8 @@ fn parse_legacy_stream(
     let mut tokens = text.split_ascii_whitespace();
     let count = expected_count.map_or_else(
         || {
-            parse_usize(
-                next_token(&mut tokens, "element-map record count")?,
+            parse_usize(ctx,
+                next_token(ctx, &mut tokens, "element-map record count")?,
                 "element-map record count",
             )
         },
@@ -563,10 +569,10 @@ fn parse_legacy_records<'a>(
     }
     let mut records = crate::resource::collection_vec(ctx, count, "FreeCAD legacy element records")?;
     for _ in 0..count {
-        let indexed_name = retained_string(ctx, next_token(tokens, "legacy element indexed name")?, "FreeCAD legacy indexed name")?;
-        let mapped_name = retained_string(ctx, next_token(tokens, "legacy mapped name")?, "FreeCAD legacy mapped name")?;
-        let sid_count = parse_usize(
-            next_token(tokens, "legacy string-id count")?,
+        let indexed_name = retained_string(ctx, next_token(ctx, tokens, "legacy element indexed name")?, "FreeCAD legacy indexed name")?;
+        let mapped_name = retained_string(ctx, next_token(ctx, tokens, "legacy mapped name")?, "FreeCAD legacy mapped name")?;
+        let sid_count = parse_usize(ctx,
+            next_token(ctx, tokens, "legacy string-id count")?,
             "legacy string-id count",
         )?;
         if sid_count > MAX_NAMES {
@@ -577,7 +583,7 @@ fn parse_legacy_records<'a>(
         let mut string_ids = crate::resource::collection_vec(ctx, sid_count, "FreeCAD legacy string IDs")?;
         for _ in 0..sid_count {
             string_ids.push(
-                next_token(tokens, "legacy string id")?
+                next_token(ctx, tokens, "legacy string id")?
                     .parse::<i64>()
                     .map_err(|_| CodecError::Malformed("invalid legacy string id".into()))?,
             );
@@ -758,11 +764,11 @@ fn node_text_bytes<'a>(
     Ok((bytes, reservation))
 }
 
-fn parse_count(node: roxmltree::Node<'_, '_>, kind: &str) -> Result<usize, CodecError> {
+fn parse_count(ctx: &DecodeContext<'_>, node: roxmltree::Node<'_, '_>, kind: &str) -> Result<usize, CodecError> {
     let count = node.attribute("count").unwrap_or("0");
-    let count = parse_usize(count, &format!("{kind} count"))?;
+    let count = parse_usize(ctx, count, &format!("{kind} count"))?;
     if count > MAX_TABLE_ENTRIES {
-        return Err(CodecError::malformed(format_args!(
+        return Err(element_map_malformed(ctx, format_args!(
             "{kind} count exceeds limit"
         )));
     }
@@ -772,37 +778,37 @@ fn parse_count(node: roxmltree::Node<'_, '_>, kind: &str) -> Result<usize, Codec
 /// Reads an element-map boolean attribute, which is `0`, `1`, `false` or `true`.
 ///
 /// Any other text is malformed.
-fn require_bool(value: &str) -> Result<bool, CodecError> {
+fn require_bool(ctx: &DecodeContext<'_>, value: &str) -> Result<bool, CodecError> {
     match value {
         "0" | "false" => Ok(false),
         "1" | "true" => Ok(true),
-        _ => Err(CodecError::malformed(format_args!(
+        _ => Err(element_map_malformed(ctx, format_args!(
             "invalid boolean {value:?}"
         ))),
     }
 }
 
-fn parse_decimal(value: &str, field: &str) -> Result<i64, CodecError> {
+fn parse_decimal(ctx: &DecodeContext<'_>, value: &str, field: &str) -> Result<i64, CodecError> {
     value
         .parse()
-        .map_err(|_| CodecError::malformed(format_args!("invalid {field} {value:?}")))
+        .map_err(|_| element_map_malformed(ctx, format_args!("invalid {field} {value:?}")))
 }
 
-fn parse_usize(value: &str, field: &str) -> Result<usize, CodecError> {
+fn parse_usize(ctx: &DecodeContext<'_>, value: &str, field: &str) -> Result<usize, CodecError> {
     value
         .parse()
-        .map_err(|_| CodecError::malformed(format_args!("invalid {field} {value:?}")))
+        .map_err(|_| element_map_malformed(ctx, format_args!("invalid {field} {value:?}")))
 }
 
-fn parse_hex(value: &str, field: &str) -> Result<i64, CodecError> {
+fn parse_hex(ctx: &DecodeContext<'_>, value: &str, field: &str) -> Result<i64, CodecError> {
     let (negative, digits) = value
         .strip_prefix('-')
         .map_or((false, value), |digits| (true, digits));
     if digits.is_empty() {
-        return Err(CodecError::malformed(format_args!("empty {field}")));
+        return Err(element_map_malformed(ctx, format_args!("empty {field}")));
     }
     let value = i64::from_str_radix(digits, 16)
-        .map_err(|_| CodecError::malformed(format_args!("invalid {field} {value:?}")))?;
+        .map_err(|_| element_map_malformed(ctx, format_args!("invalid {field} {value:?}")))?;
     Ok(if negative { -value } else { value })
 }
 
@@ -821,7 +827,7 @@ fn parse_string_table(
                 "string-table side entry has invalid header".into(),
             ));
         }
-        if parse_usize(scanner.token()?, "string-table header count")? != declared_count {
+        if parse_usize(ctx, scanner.token()?, "string-table header count")? != declared_count {
             return Err(CodecError::Malformed(
                 "string-table XML and side-entry counts disagree".into(),
             ));
@@ -845,7 +851,7 @@ fn parse_string_table(
             "string-table record has incomplete numeric header".into(),
         ))?;
         let relative = encoded_id_field.starts_with('-');
-        let encoded_id = parse_hex(encoded_id_field, "string id")?;
+        let encoded_id = parse_hex(ctx, encoded_id_field, "string id")?;
         let string_id = if relative {
             previous_id
                 .checked_add(-encoded_id)
@@ -857,7 +863,7 @@ fn parse_string_table(
             .map_err(|_| CodecError::Malformed("invalid string-table flags".into()))?;
         let mut components = Vec::new();
         for (position, field) in fields.enumerate() {
-            let encoded = parse_hex(field, "string component")?;
+            let encoded = parse_hex(ctx, field, "string component")?;
             let component = if relative {
                 if let Some(previous) = output.last().and_then(|entry: &StringTableEntry| entry.components.get(position)) {
                     previous.checked_add(encoded).ok_or_else(|| {
@@ -962,7 +968,7 @@ impl<'a> TextScanner<'a> {
                 "string-table text has invalid line-count prefix".into(),
             ));
         }
-        let line_count = parse_usize(&self.text[count_start..self.position], "text line count")?;
+        let line_count = parse_usize(ctx, &self.text[count_start..self.position], "text line count")?;
         self.position += 1;
         let content_start = self.position;
         for _ in 0..=line_count {
@@ -997,41 +1003,41 @@ fn parse_element_map(
         .map_err(|_| CodecError::Malformed("element map is not UTF-8".into()))?;
     let mut tokens = text.split_whitespace();
     if side_entry {
-        expect(&mut tokens, "BeginElementMap")?;
-        expect(&mut tokens, "v1")?;
+        expect(ctx, &mut tokens, "BeginElementMap")?;
+        expect(ctx, &mut tokens, "v1")?;
     }
-    let map_id = next_u64(&mut tokens, "element-map id")?;
-    expect(&mut tokens, "PostfixCount")?;
-    let postfix_count = next_count(&mut tokens, "postfix count", MAX_NAMES)?;
+    let map_id = next_u64(ctx, &mut tokens, "element-map id")?;
+    expect(ctx, &mut tokens, "PostfixCount")?;
+    let postfix_count = next_count(ctx, &mut tokens, "postfix count", MAX_NAMES)?;
     let mut postfixes = collection_vec(ctx, postfix_count, "FreeCAD element map postfixes")?;
     for _ in 0..postfix_count {
-        postfixes.push(retained_string(ctx, next_token(&mut tokens, "postfix")?, "FreeCAD element map postfix text")?);
+        postfixes.push(retained_string(ctx, next_token(ctx, &mut tokens, "postfix")?, "FreeCAD element map postfix text")?);
     }
-    expect(&mut tokens, "MapCount")?;
-    let map_count = next_count(&mut tokens, "map count", MAX_MAP_NODES)?;
+    expect(ctx, &mut tokens, "MapCount")?;
+    let map_count = next_count(ctx, &mut tokens, "map count", MAX_MAP_NODES)?;
     // Each map node consumes at least one whitespace-separated token, so its count
     // cannot exceed the element map's byte length.
     let map_capacity = bounded_len(map_count as u64, 1, text.len())
         .ok_or_else(|| CodecError::Malformed("element-map node count exceeds input".into()))?;
     let mut maps = crate::resource::collection_vec(ctx, map_capacity, "FreeCAD element map nodes")?;
     for expected_index in 1..=map_count {
-        expect(&mut tokens, "ElementMap")?;
-        let index = next_count(&mut tokens, "map index", MAX_MAP_NODES)?;
+        expect(ctx, &mut tokens, "ElementMap")?;
+        let index = next_count(ctx, &mut tokens, "map index", MAX_MAP_NODES)?;
         if index != expected_index {
             return Err(CodecError::Malformed(
                 "element-map node indices are not contiguous".into(),
             ));
         }
-        let node_id = next_u64(&mut tokens, "map node id")?;
-        let group_count = next_count(&mut tokens, "group count", MAX_GROUPS)?;
+        let node_id = next_u64(ctx, &mut tokens, "map node id")?;
+        let group_count = next_count(ctx, &mut tokens, "group count", MAX_GROUPS)?;
         // Each group consumes at least one token, so its count cannot exceed the byte length.
         let group_capacity = bounded_len(group_count as u64, 1, text.len())
             .ok_or_else(|| CodecError::Malformed("element-map group count exceeds input".into()))?;
         let mut groups = crate::resource::collection_vec(ctx, group_capacity, "FreeCAD element map groups")?;
         for _ in 0..group_count {
-            let indexed_name = retained_string(ctx, next_token(&mut tokens, "indexed name")?, "FreeCAD indexed element name")?;
-            expect(&mut tokens, "ChildCount")?;
-            let child_count = next_count(&mut tokens, "child count", MAX_NAMES)?;
+            let indexed_name = retained_string(ctx, next_token(ctx, &mut tokens, "indexed name")?, "FreeCAD indexed element name")?;
+            expect(ctx, &mut tokens, "ChildCount")?;
+            let child_count = next_count(ctx, &mut tokens, "child count", MAX_NAMES)?;
             // Each child consumes at least one token, so its count cannot exceed the byte length.
             let child_capacity =
                 bounded_len(child_count as u64, 1, text.len()).ok_or_else(|| {
@@ -1040,12 +1046,12 @@ fn parse_element_map(
             let mut children = crate::resource::collection_vec(ctx, child_capacity, "FreeCAD element map children")?;
             for _ in 0..child_count {
                 let fields = (0..7)
-                    .map(|_| next_token(&mut tokens, "child descriptor"))
+                    .map(|_| next_token(ctx, &mut tokens, "child descriptor"))
                     .collect::<Result<Vec<_>, _>>()?;
                 children.push(retained_join(ctx, &fields, " ", "FreeCAD element child descriptor")?);
             }
-            expect(&mut tokens, "NameCount")?;
-            let name_count = next_count(&mut tokens, "name count", MAX_NAMES)?;
+            expect(ctx, &mut tokens, "NameCount")?;
+            let name_count = next_count(ctx, &mut tokens, "name count", MAX_NAMES)?;
             // Each name consumes at least one token, so its count cannot exceed the byte length.
             let name_capacity = bounded_len(name_count as u64, 1, text.len()).ok_or_else(|| {
                 CodecError::Malformed("element-map name count exceeds input".into())
@@ -1054,7 +1060,7 @@ fn parse_element_map(
             for _ in 0..name_count {
                 let mut chain = Vec::new();
                 loop {
-                    let encoded = next_token(&mut tokens, "mapped name")?;
+                    let encoded = next_token(ctx, &mut tokens, "mapped name")?;
                     if encoded == "0" {
                         break;
                     }
@@ -1069,7 +1075,7 @@ fn parse_element_map(
                 names,
             });
         }
-        expect(&mut tokens, "EndMap")?;
+        expect(ctx, &mut tokens, "EndMap")?;
         maps.push(ElementMapNode {
             map_id: node_id,
             groups,
@@ -1098,7 +1104,7 @@ fn parse_mapped_name(ctx: &DecodeContext<'_>, encoded: &str, postfixes: &[String
                     "indexed mapped name has incomplete dictionary fields".into(),
                 ));
             }
-            let dictionary = parse_usize(dictionary, "mapped-name prefix index")?;
+            let dictionary = parse_usize(ctx, dictionary, "mapped-name prefix index")?;
             let prefix = postfixes
                 .get(dictionary.checked_sub(1).ok_or_else(|| {
                     CodecError::Malformed("mapped-name prefix index is zero".into())
@@ -1106,7 +1112,7 @@ fn parse_mapped_name(ctx: &DecodeContext<'_>, encoded: &str, postfixes: &[String
                 .ok_or_else(|| {
                     CodecError::Malformed("mapped-name prefix index is out of range".into())
                 })?;
-            let element = usize::try_from(parse_hex(fields[1], "mapped-name element index")?)
+            let element = usize::try_from(parse_hex(ctx, fields[1], "mapped-name element index")?)
                 .map_err(|_| CodecError::Malformed("negative mapped-name element index".into()))?;
             (retained_suffix(ctx, prefix, &element.to_string(), "FreeCAD mapped name base")?, 2, 3)
         } else if let Some(base) = fields[0]
@@ -1123,7 +1129,7 @@ fn parse_mapped_name(ctx: &DecodeContext<'_>, encoded: &str, postfixes: &[String
         .get(postfix_position)
         .ok_or_else(|| CodecError::Malformed("mapped name has no postfix index".into()))
         .and_then(|value| {
-            usize::try_from(parse_hex(value, "mapped-name postfix index")?)
+            usize::try_from(parse_hex(ctx, value, "mapped-name postfix index")?)
                 .map_err(|_| CodecError::Malformed("negative mapped-name postfix index".into()))
         })?;
     let mut resolved = base;
@@ -1135,7 +1141,7 @@ fn parse_mapped_name(ctx: &DecodeContext<'_>, encoded: &str, postfixes: &[String
     let id_count = fields.iter().skip(id_position).filter(|value| !value.is_empty()).count();
     let mut string_ids = collection_vec(ctx, id_count, "FreeCAD mapped name string IDs")?;
     for value in fields.iter().skip(id_position).filter(|value| !value.is_empty()) {
-        string_ids.push(parse_hex(value, "mapped-name string id")?);
+        string_ids.push(parse_hex(ctx, value, "mapped-name string id")?);
     }
     Ok(ElementMappedName {
         encoded: retained_string(ctx, encoded, "FreeCAD encoded mapped name")?,
@@ -1146,21 +1152,23 @@ fn parse_mapped_name(ctx: &DecodeContext<'_>, encoded: &str, postfixes: &[String
 }
 
 fn next_token<'a>(
+    ctx: &DecodeContext<'_>,
     tokens: &mut impl Iterator<Item = &'a str>,
     field: &str,
 ) -> Result<&'a str, CodecError> {
     tokens
         .next()
-        .ok_or_else(|| CodecError::malformed(format_args!("element map ends before {field}")))
+        .ok_or_else(|| element_map_malformed(ctx, format_args!("element map ends before {field}")))
 }
 
 fn expect<'a>(
+    ctx: &DecodeContext<'_>,
     tokens: &mut impl Iterator<Item = &'a str>,
     expected: &str,
 ) -> Result<(), CodecError> {
-    let actual = next_token(tokens, expected)?;
+    let actual = next_token(ctx, tokens, expected)?;
     if actual != expected {
-        return Err(CodecError::malformed(format_args!(
+        return Err(element_map_malformed(ctx, format_args!(
             "expected element-map token {expected:?}, found {actual:?}"
         )));
     }
@@ -1168,24 +1176,26 @@ fn expect<'a>(
 }
 
 fn next_count<'a>(
+    ctx: &DecodeContext<'_>,
     tokens: &mut impl Iterator<Item = &'a str>,
     field: &str,
     limit: usize,
 ) -> Result<usize, CodecError> {
-    let value = parse_usize(next_token(tokens, field)?, field)?;
+    let value = parse_usize(ctx, next_token(ctx, tokens, field)?, field)?;
     if value > limit {
-        return Err(CodecError::malformed(format_args!("{field} exceeds limit")));
+        return Err(element_map_malformed(ctx, format_args!("{field} exceeds limit")));
     }
     Ok(value)
 }
 
 fn next_u64<'a>(
+    ctx: &DecodeContext<'_>,
     tokens: &mut impl Iterator<Item = &'a str>,
     field: &str,
 ) -> Result<u64, CodecError> {
-    next_token(tokens, field)?
+    next_token(ctx, tokens, field)?
         .parse()
-        .map_err(|_| CodecError::malformed(format_args!("invalid {field}")))
+        .map_err(|_| element_map_malformed(ctx, format_args!("invalid {field}")))
 }
 
 #[cfg(test)]

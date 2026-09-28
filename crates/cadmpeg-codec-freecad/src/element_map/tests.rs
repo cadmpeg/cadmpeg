@@ -37,6 +37,28 @@
     }
 
     #[test]
+    fn element_map_diagnostic_refuses_at_matching_retained_limit() {
+        crate::test_support::assert_retained_refusal_at(
+            &[], "FreeCAD element map diagnostic", |ctx| {
+                Err::<(), _>(super::element_map_malformed(
+                    ctx, format_args!("expected element-map token {:?}, found {:?}", "MapCount", "Other"),
+                ))
+            },
+        );
+    }
+
+    #[test]
+    fn legacy_side_entry_name_refuses_at_matching_retained_limit() {
+        let xml = roxmltree::Document::parse("<ElementMap file=\"Shape.Map.txt\"/>")
+            .expect("valid legacy carrier");
+        crate::test_support::assert_retained_refusal_at(
+            &[], "FreeCAD legacy element map side-entry name", |ctx| {
+                super::parse_legacy_element_map(ctx, xml.root_element(), 1, &Default::default())
+            },
+        );
+    }
+
+    #[test]
     fn string_table_capacity_refuses_on_collection_limit() {
         let bytes = b"1.c name\n";
         let result = with_collection_limit(bytes, 0, |ctx| {
