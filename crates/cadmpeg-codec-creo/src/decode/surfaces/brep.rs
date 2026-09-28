@@ -256,25 +256,39 @@ impl BrepTransferDiagnostics {
 
     pub(in super::super) fn face_admission_rejection_records(
         &self,
-    ) -> Vec<CreoFaceAdmissionRejectionRecord> {
-        self.face_rejection_diagnostics
-            .iter()
-            .map(|diagnostic| {
-                let detail = &diagnostic.detail;
-                CreoFaceAdmissionRejectionRecord {
-                    id: format!("creo:brep:face_admission_rejection#{}", detail.face_id),
-                    face_id: detail.face_id,
-                    reason: diagnostic.reason.key(),
-                    boundary_half_edges: detail
-                        .boundary_half_edges
-                        .iter()
-                        .copied()
-                        .map(half_edge_ref)
-                        .collect(),
-                    vertex_ids: detail.vertex_ids.clone(),
-                }
-            })
-            .collect()
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Vec<CreoFaceAdmissionRejectionRecord>, cadmpeg_core::CodecError> {
+        let mut records = Vec::new();
+        for diagnostic in &self.face_rejection_diagnostics {
+            let detail = &diagnostic.detail;
+            let id = ctx.format_retained(
+                format_args!("creo:brep:face_admission_rejection#{}", detail.face_id),
+                "creo B-rep rejection record IDs",
+            )?;
+            let mut boundary_half_edges = Vec::new();
+            ctx.try_reserve_items(
+                &mut boundary_half_edges,
+                detail.boundary_half_edges.len(),
+                "creo B-rep rejection half edges",
+            )?;
+            boundary_half_edges.extend(detail.boundary_half_edges.iter().copied().map(half_edge_ref));
+            let mut vertex_ids = Vec::new();
+            ctx.try_reserve_items(
+                &mut vertex_ids,
+                detail.vertex_ids.len(),
+                "creo B-rep rejection vertex IDs",
+            )?;
+            vertex_ids.extend_from_slice(&detail.vertex_ids);
+            ctx.try_reserve_items(&mut records, 1, "creo B-rep rejection records")?;
+            records.push(CreoFaceAdmissionRejectionRecord {
+                id,
+                face_id: detail.face_id,
+                reason: diagnostic.reason.key(),
+                boundary_half_edges,
+                vertex_ids,
+            });
+        }
+        Ok(records)
     }
 
     pub(in super::super) fn record_coverage(

@@ -307,7 +307,10 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
             .collect::<Vec<_>>(),
         vec![10, 11, 12, 13]
     );
-    let records = diagnostics.face_admission_rejection_records();
+    let records = crate::decode::with_test_decode_ctx(|ctx| {
+        diagnostics.face_admission_rejection_records(ctx)
+    })
+    .expect("service rejection records admitted");
     assert_eq!(records.len(), 6);
     assert_eq!(records[0].id, "creo:brep:face_admission_rejection#10");
     assert_eq!(records[0].face_id, 10);
@@ -320,6 +323,94 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
     assert_eq!(coverage["brep_emitted_face_count"], 1);
     assert_eq!(coverage["brep_rejected_face_count"], 6);
     assert_eq!(coverage["brep_rejected_face_missing_loops_count"], 6);
+}
+
+fn rejection_record_limit_error(
+    collection_limit: Option<u64>,
+    retained_limit: Option<u64>,
+) -> CodecError {
+    let mut diagnostics = BrepTransferDiagnostics::default();
+    diagnostics.reject_face_with_detail(
+        FaceAdmissionRejection::UnresolvedBoundaryVertices,
+        FaceAdmissionDetail {
+            face_id: 17,
+            boundary_half_edges: vec![crate::topology::HalfEdgeId {
+                curve_id: 4,
+                side: crate::topology::Side::Zero,
+            }],
+            vertex_ids: vec![9],
+        },
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    if let Some(limit) = collection_limit {
+        policy.limits.max_collection_items = limit;
+    }
+    if let Some(limit) = retained_limit {
+        policy.limits.max_retained_bytes = limit;
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    diagnostics.face_admission_rejection_records(&ctx)
+        .err()
+        .expect("rejection record allocation refused")
+}
+
+#[test]
+fn brep_rejection_record_id_refuses_retained_limit() {
+    let error = rejection_record_limit_error(None, Some(0));
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo B-rep rejection record IDs"));
+}
+
+#[test]
+fn brep_rejection_half_edges_refuse_collection_limit() {
+    let error = rejection_record_limit_error(Some(0), None);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep rejection half edges"));
+}
+
+#[test]
+fn brep_rejection_vertex_ids_refuse_collection_limit() {
+    let error = rejection_record_limit_error(Some(1), None);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep rejection vertex IDs"));
+}
+
+#[test]
+fn brep_rejection_record_rows_refuse_collection_limit() {
+    let error = rejection_record_limit_error(Some(2), None);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo B-rep rejection records"));
+}
+
+#[test]
+fn brep_rejection_record_preserves_nested_operands_under_service_profile() {
+    let mut diagnostics = BrepTransferDiagnostics::default();
+    diagnostics.reject_face_with_detail(
+        FaceAdmissionRejection::UnresolvedBoundaryVertices,
+        FaceAdmissionDetail {
+            face_id: 17,
+            boundary_half_edges: vec![crate::topology::HalfEdgeId {
+                curve_id: 4,
+                side: crate::topology::Side::Zero,
+            }],
+            vertex_ids: vec![9],
+        },
+    );
+    let records = crate::decode::with_test_decode_ctx(|ctx| {
+        diagnostics.face_admission_rejection_records(ctx)
+    })
+    .expect("service rejection records admitted");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].id, "creo:brep:face_admission_rejection#17");
+    assert_eq!(records[0].reason, "unresolved_boundary_vertices");
+    assert_eq!(records[0].boundary_half_edges[0].curve_id, 4);
+    assert_eq!(records[0].vertex_ids, [9]);
 }
 
 #[test]
