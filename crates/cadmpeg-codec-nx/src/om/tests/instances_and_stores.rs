@@ -993,10 +993,13 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
 
 #[test]
 fn om_operation_terminal_discriminator_requires_one_complete_lane() {
+    let scan = |record| crate::test_support::with_decode_context(|ctx| {
+        crate::om::terminal_discriminator::operation_terminal_discriminator(ctx, record)
+    }).unwrap();
     let label = "EXTRUDE";
     let payload = b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let lane = crate::om::terminal_discriminator::operation_terminal_discriminator(record).unwrap();
+    let lane = scan(record).unwrap();
     assert_eq!(lane.origin(), 200);
     assert_eq!(
         lane.type_indices().map(|(token, _)| token.value()),
@@ -1034,13 +1037,13 @@ fn om_operation_terminal_discriminator_requires_one_complete_lane() {
     )
     .unwrap();
     assert_eq!(
-        crate::om::terminal_discriminator::operation_terminal_discriminator(subtract),
+        scan(subtract),
         Some(lane.clone())
     );
 
     let truncated = &payload[..payload.len() - 1];
     assert!(
-        crate::om::terminal_discriminator::operation_terminal_discriminator(
+        scan(
             crate::om::operation_record::OperationPayload::new(
                 truncated,
                 record.payload_offset(),
@@ -1054,7 +1057,7 @@ fn om_operation_terminal_discriminator_requires_one_complete_lane() {
     let mut ambiguous = payload[..payload.len() - 1].to_vec();
     ambiguous.extend_from_slice(payload);
     assert!(
-        crate::om::terminal_discriminator::operation_terminal_discriminator(
+        scan(
             crate::om::operation_record::OperationPayload::new(
                 &ambiguous,
                 record.payload_offset(),

@@ -876,7 +876,7 @@ impl NativeModel {
         );
         let feature_operation_common_frames = feature_operation_common_frames(container);
         let feature_operation_terminal_discriminators =
-            feature_operation_terminal_discriminators(container);
+            feature_operation_terminal_discriminators(ctx, container)?;
         let feature_operation_terminal_frames =
             feature_operation_terminal_frames(container, &feature_operation_common_frames);
         let feature_operation_state_journal_uses = feature_operation_state_journal_uses(
