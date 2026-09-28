@@ -7060,16 +7060,22 @@ pub(super) fn feature_extrude_payload_headers(
 
 /// Decode exact terminal discriminator lanes from bounded operation payloads.
 pub(super) fn feature_operation_terminal_discriminators(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureOperationTerminalDiscriminator> {
+) -> Result<Vec<FeatureOperationTerminalDiscriminator>, cadmpeg_core::CodecError> {
     let mut lanes = Vec::new();
+    let mut failure = None;
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(frame) = crate::om::terminal_discriminator::operation_terminal_discriminator(
-                record.payload_view(),
-            )
-            .and_then(|frame| frame.relocate(entry_offset)) else {
+            if failure.is_some() { return; }
+            let frame = match crate::om::terminal_discriminator::operation_terminal_discriminator(
+                ctx, record.payload_view(),
+            ) {
+                Ok(frame) => frame,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let Some(frame) = frame.and_then(|frame| frame.relocate(entry_offset)) else {
                 return;
             };
             lanes.push(FeatureOperationTerminalDiscriminator {
@@ -7079,7 +7085,7 @@ pub(super) fn feature_operation_terminal_discriminators(
             });
         },
     );
-    lanes
+    if let Some(error) = failure { Err(error) } else { Ok(lanes) }
 }
 
 /// Decode typed scalar clauses anchored to operation body-reference fields.
