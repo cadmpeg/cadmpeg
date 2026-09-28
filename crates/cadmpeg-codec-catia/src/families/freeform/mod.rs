@@ -453,9 +453,13 @@ pub(super) fn try_decode_freeform_surfaces(
                 .filter(|pcurve| pcurve.class_21_suffix_scalar.is_some())
                 .count()
         });
-        let typed_class_21_pcurve_count =
-            crate::families::b5::graph::typed_class_21_pcurves_from_records(&census_object_records)
-                .len();
+        let typed_class_21_pcurve_count = match
+            crate::families::b5::graph::typed_class_21_pcurves_from_records(
+                ctx, &census_object_records,
+            ) {
+                Ok(pcurves) => pcurves.len(),
+                Err(error) => return Some(Err(error)),
+            };
         let typed_parameter_incidences = match
             crate::families::b5::graph::typed_parameter_incidences_from_records(
                 ctx, &census_object_records,

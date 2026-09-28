@@ -1245,19 +1245,20 @@ fn parse_from_records_with_class21(
         .iter()
         .filter_map(|record| parse_profile(record).map(|profile| (record.object_id, profile)))
         .collect();
-    let mut pcurves: BTreeMap<u32, B5Pcurve> = records
-        .iter()
-        .filter_map(|record| {
-            let pcurve = match record.class {
-                0x18 => parse_line_pcurve(record),
-                0x19 => parse_circle_pcurve(record),
-                0x1a => parse_class_1a_pcurve(record),
-                0x21 => parse_pcurve(record),
-                _ => None,
-            }?;
-            Some((record.object_id, pcurve))
-        })
-        .collect();
+    let mut pcurves = BTreeMap::new();
+    for record in records {
+        let pcurve = match record.class {
+            0x18 => parse_line_pcurve(record),
+            0x19 => parse_circle_pcurve(record),
+            0x1a => parse_class_1a_pcurve(record),
+            0x21 => parse_pcurve(ctx, record)?,
+            _ => None,
+        };
+        if let Some(pcurve) = pcurve {
+            crate::resource::insert_btree_map(ctx, &mut pcurves, record.object_id, pcurve,
+                "catia_b5_graph_pcurves")?;
+        }
+    }
     let mut conflicting_pcurves = HashSet::new();
     let mut circle_candidates = BTreeMap::<u32, Vec<B5Pcurve>>::new();
     for pcurve in circle_pcurves_from_frames(bytes, frames) {
@@ -4448,7 +4449,11 @@ fn rotate_about_axis(point: [f64; 3], origin: [f64; 3], axis: [f64; 3], angle: f
     )
 }
 
-fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+fn parse_pcurve(
+    ctx: &DecodeContext<'_>,
+    record: &B5Record,
+) -> Result<Option<B5Pcurve>, CodecError> {
+    (|| -> Option<Result<B5Pcurve, CodecError>> {
     if record.family != 0xb5 || record.class != 0x21 || record.payload.first() != Some(&0x81) {
         return None;
     }
@@ -4473,17 +4478,21 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     position += 1;
     let mut view = View::over_retained(&record.payload);
     view.seek(position)?;
-    let mut distinct_knots = Vec::with_capacity(knot_count);
+    let mut distinct_knots = Vec::new();
     for _ in 0..knot_count {
-        distinct_knots.push(FiniteReal::new(view.f64_le()?)?);
+        let knot = FiniteReal::new(view.f64_le()?)?;
+        if let Err(error) = crate::resource::push(ctx, &mut distinct_knots, knot,
+            "catia_b5_class21_distinct_knots") { return Some(Err(error)) }
     }
     position = view.position();
     if !distinct_knots.windows(2).all(|pair| pair[0] < pair[1]) {
         return None;
     }
-    let mut multiplicities = Vec::with_capacity(knot_count);
+    let mut multiplicities = Vec::new();
     for _ in 0..knot_count {
-        multiplicities.push(wire::tokens::compact_uint(&record.payload, &mut position)?);
+        let multiplicity = wire::tokens::compact_uint(&record.payload, &mut position)?;
+        if let Err(error) = crate::resource::push(ctx, &mut multiplicities, multiplicity,
+            "catia_b5_class21_multiplicities") { return Some(Err(error)) }
     }
     let endpoint_multiplicity = degree + 1;
     if multiplicities != [endpoint_multiplicity; 2] {
@@ -4491,11 +4500,13 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     }
     let pole_count = endpoint_multiplicity;
     view.seek(position)?;
-    let mut control_points = Vec::with_capacity(usize::try_from(pole_count).ok()?);
+    let mut control_points = Vec::new();
     for _ in 0..pole_count {
         let u = view.f64_le()?;
         let v = view.f64_le()?;
-        control_points.push(FiniteVector::new([u, v])?);
+        let point = FiniteVector::new([u, v])?;
+        if let Err(error) = crate::resource::push(ctx, &mut control_points, point,
+            "catia_b5_class21_control_points") { return Some(Err(error)) }
     }
     position = view.position();
     let tail = record.payload.get(position..)?;
@@ -4512,7 +4523,7 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     {
         return None;
     }
-    Some(B5Pcurve {
+    Some(Ok(B5Pcurve {
         object_id: record.object_id,
         surface,
         degree,
@@ -4524,7 +4535,8 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         parameterization: B5PcurveParameterization::Translated { native_origin },
         class_21_suffix_scalar: Some(suffix_scalar),
         lifted_endpoints: None,
-    })
+    }))
+    })().transpose()
 }
 
 fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
@@ -6093,16 +6105,23 @@ fn typed_class_21_pcurves(bytes: &[u8]) -> BTreeMap<u32, B5Pcurve> {
     let records = crate::test_support::with_service_context(|ctx| {
         records_from_frames(ctx, bytes, &frames)
     }).expect("service budget");
-    typed_class_21_pcurves_from_records(&records)
+    crate::test_support::with_service_context(|ctx| {
+        typed_class_21_pcurves_from_records(ctx, &records)
+    }).expect("service budget")
 }
 
 pub(in crate::families) fn typed_class_21_pcurves_from_records(
+    ctx: &DecodeContext<'_>,
     records: &[B5Record],
-) -> BTreeMap<u32, B5Pcurve> {
-    records
-        .iter()
-        .filter_map(|record| parse_pcurve(record).map(|pcurve| (record.object_id, pcurve)))
-        .collect()
+) -> Result<BTreeMap<u32, B5Pcurve>, CodecError> {
+    let mut pcurves = BTreeMap::new();
+    for record in records {
+        if let Some(pcurve) = parse_pcurve(ctx, record)? {
+            crate::resource::insert_btree_map(ctx, &mut pcurves, record.object_id, pcurve,
+                "catia_b5_typed_class21_pcurves")?;
+        }
+    }
+    Ok(pcurves)
 }
 
 /// Read every structurally complete parameter incidence independently of
