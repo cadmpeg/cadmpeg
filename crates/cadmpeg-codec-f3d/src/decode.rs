@@ -3674,6 +3674,58 @@ fn collect_mesh_outcome(
     Ok(())
 }
 
+fn mesh_texture_asset_bytes(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    entry_name: &str,
+) -> Result<Vec<u8>, CodecError> {
+    ctx.copy_retained(
+        scan.entry_bytes(entry_name)?,
+        "retain F3D mesh texture bytes",
+    )
+}
+
+fn clone_mesh_texture_table(
+    ctx: &DecodeContext<'_>,
+    table: &[(String, cadmpeg_ir::assets::AssetId)],
+) -> Result<Vec<(String, cadmpeg_ir::assets::AssetId)>, CodecError> {
+    let mut copy = Vec::new();
+    for (source_id, asset) in table {
+        let source_id = copy_decode_string(ctx, source_id, "copy F3D mesh texture table source ID")?;
+        let asset = cadmpeg_ir::assets::AssetId::mint(copy_decode_string(
+            ctx,
+            asset.as_str(),
+            "copy F3D mesh texture table asset ID",
+        )?)
+        .map_err(CodecError::malformed)?;
+        push_decode_item(ctx, &mut copy, (source_id, asset), "copy F3D mesh texture table")?;
+    }
+    Ok(copy)
+}
+
+fn insert_mesh_texture_table(
+    ctx: &DecodeContext<'_>,
+    tables: &mut std::collections::HashMap<
+        String,
+        Vec<(String, cadmpeg_ir::assets::AssetId)>,
+    >,
+    tessellation_id: &str,
+    table: &[(String, cadmpeg_ir::assets::AssetId)],
+) -> Result<(), CodecError> {
+    if tables.contains_key(tessellation_id) {
+        return Err(CodecError::Malformed(
+            "F3D mesh tessellation belongs to more than one texture table".into(),
+        ));
+    }
+    ctx.charge_collection_items(1, "index F3D mesh texture tables")?;
+    tables
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("index F3D mesh texture tables", 0, 1))?;
+    let key = copy_decode_string(ctx, tessellation_id, "retain F3D mesh texture table key")?;
+    tables.insert(key, clone_mesh_texture_table(ctx, table)?);
+    Ok(())
+}
+
 /// Project each mesh body's container geometry into the tessellation arena.
 ///
 /// A mesh body carries no B-rep topology: its geometry is a triangle list, and
@@ -3707,53 +3759,62 @@ fn project_mesh_bodies(
         let media_type = std::path::Path::new(texture.file.filename())
             .extension()
             .and_then(|extension| extension.to_str())
-            .and_then(|extension| match extension.to_ascii_lowercase().as_str() {
-                "jpg" | "jpeg" => Some("image/jpeg"),
-                "png" => Some("image/png"),
-                _ => None,
+            .and_then(|extension| {
+                if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
+                    Some("image/jpeg")
+                } else if extension.eq_ignore_ascii_case("png") {
+                    Some("image/png")
+                } else {
+                    None
+                }
             })
             .map(str::to_owned);
-        texture_assets.push(
-            cadmpeg_ir::assets::Asset::try_new(
-                texture.asset.clone(),
-                Some(texture.file.filename().to_owned()),
+        let asset = cadmpeg_ir::assets::Asset::try_new(
+                cadmpeg_ir::assets::AssetId::mint(copy_decode_string(
+                    ctx,
+                    texture.asset.as_str(),
+                    "retain F3D mesh texture asset ID",
+                )?)
+                .map_err(CodecError::malformed)?,
+                Some(copy_decode_string(ctx, texture.file.filename(), "retain F3D mesh texture filename")?),
                 media_type,
                 cadmpeg_ir::assets::AssetContent::Embedded {
                     data: cadmpeg_ir::assets::AssetData::new(
-                        scan.entry_bytes(texture.file.archive_entry_name())?
-                            .to_vec(),
+                        mesh_texture_asset_bytes(ctx, scan, texture.file.archive_entry_name())?,
                     )
                     .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
                 },
-                Some(crate::ids::native_scope(texture.file.archive_entry_name())),
+                Some(crate::ids::native_scope_charged(ctx, texture.file.archive_entry_name())?),
             )
-            .map_err(CodecError::Malformed)?,
-        );
+            .map_err(CodecError::Malformed)?;
+        push_decode_item(ctx, &mut texture_assets, asset, "collect F3D mesh texture assets")?;
     }
     extend_unique_assets(ctx, &mut ir.model.assets, texture_assets)?;
     let mut texture_tables = std::collections::HashMap::new();
     for feature in &native.design_mesh_features {
-        let texture_table = feature
-            .texture_table
-            .resources_in_flags_order(ctx)?
-            .into_iter()
-            .map(|texture| {
-                (
-                    texture.resource_guid.as_str().to_owned(),
-                    texture.asset.clone(),
-                )
-            })
-            .collect::<Vec<_>>();
+        let mut texture_table = Vec::new();
+        for texture in feature.texture_table.resources_in_flags_order(ctx)? {
+            let source_id = copy_decode_string(
+                ctx,
+                texture.resource_guid.as_str(),
+                "retain F3D mesh texture resource GUID",
+            )?;
+            let asset = cadmpeg_ir::assets::AssetId::mint(copy_decode_string(
+                ctx,
+                texture.asset.as_str(),
+                "retain F3D mesh texture table asset ID",
+            )?)
+            .map_err(CodecError::malformed)?;
+            push_decode_item(
+                ctx,
+                &mut texture_table,
+                (source_id, asset),
+                "collect F3D mesh texture resource table",
+            )?;
+        }
         for body in feature.bodies() {
             if let Some(tessellation_id) = &body.tessellation_id {
-                if texture_tables
-                    .insert(tessellation_id.clone(), texture_table.clone())
-                    .is_some()
-                {
-                    return Err(CodecError::Malformed(
-                        "F3D mesh tessellation belongs to more than one texture table".into(),
-                    ));
-                }
+                insert_mesh_texture_table(ctx, &mut texture_tables, tessellation_id, &texture_table)?;
             }
         }
     }

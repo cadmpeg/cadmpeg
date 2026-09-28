@@ -279,6 +279,91 @@ fn failed_mesh_resource_limit_propagates() {
 }
 
 #[test]
+fn mesh_texture_asset_bytes_refuse_retained_limit() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let (scan_ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let entry_name = &scan.entries.first().unwrap().name;
+    assert!(!scan.entry_bytes(entry_name).unwrap().is_empty());
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::mesh_texture_asset_bytes(&limited, &scan, entry_name).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D mesh texture bytes"));
+}
+
+#[test]
+fn mesh_texture_asset_collection_refuses_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut assets = Vec::new();
+    let error = super::super::push_decode_item(
+        &ctx,
+        &mut assets,
+        1_u32,
+        "collect F3D mesh texture assets",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D mesh texture assets"));
+}
+
+fn one_texture_table() -> Vec<(String, cadmpeg_ir::assets::AssetId)> {
+    vec![(
+        "resource:one".into(),
+        cadmpeg_ir::assets::AssetId::mint("f3d:model:asset#one").unwrap(),
+    )]
+}
+
+#[test]
+fn mesh_texture_table_copy_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let error = super::super::clone_mesh_texture_table(&ctx, &one_texture_table()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3D mesh texture table"));
+}
+
+#[test]
+fn mesh_texture_table_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut tables = std::collections::HashMap::new();
+    let error = super::super::insert_mesh_texture_table(
+        &ctx,
+        &mut tables,
+        "tessellation:one",
+        &one_texture_table(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D mesh texture tables"));
+    assert!(tables.is_empty());
+}
+
+#[test]
+fn mesh_texture_table_key_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut tables = std::collections::HashMap::new();
+    let error = super::super::insert_mesh_texture_table(
+        &ctx,
+        &mut tables,
+        "tessellation:one",
+        &one_texture_table(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D mesh texture table key"));
+    assert!(tables.is_empty());
+}
+
+#[test]
 fn archive_member_dialect_clone_refuses_collection_limit() {
     let bytes = crate::test_support::zip_test::synthetic_f3d(true);
     let arena = DecodeArena::new();
