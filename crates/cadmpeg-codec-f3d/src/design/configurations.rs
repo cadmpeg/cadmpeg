@@ -12,9 +12,57 @@ use crate::records::configuration::{
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, Visitor};
-use serde::Deserialize;
 use std::collections::HashSet;
 use std::fmt;
+
+fn format_configuration_diagnostic(
+    ctx: Option<&DecodeContext<'_>>,
+    arguments: fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let Some(ctx) = ctx else { return Ok(arguments.to_string()); };
+    struct ChargedFormatter<'a, 'b> {
+        ctx: &'a DecodeContext<'b>,
+        text: String,
+        operation: &'static str,
+        refusal: Option<CodecError>,
+    }
+    impl fmt::Write for ChargedFormatter<'_, '_> {
+        fn write_str(&mut self, part: &str) -> fmt::Result {
+            let result = (|| -> Result<(), CodecError> {
+                let len = u64::try_from(part.len()).map_err(|_| {
+                    self.ctx.refuse_codec_limit(self.operation, 0, 1)
+                })?;
+                self.ctx.charge_retained(len, self.operation)?;
+                self.text.try_reserve(part.len()).map_err(|_| {
+                    self.ctx.refuse_codec_limit(self.operation, 0, 1)
+                })?;
+                Ok(())
+            })();
+            if let Err(error) = result {
+                self.refusal = Some(error);
+                return Err(fmt::Error);
+            }
+            self.text.push_str(part);
+            Ok(())
+        }
+    }
+    let mut formatter = ChargedFormatter {
+        ctx,
+        text: String::new(),
+        operation,
+        refusal: None,
+    };
+    if fmt::write(&mut formatter, arguments).is_err() {
+        return Err(formatter.refusal.unwrap_or_else(|| {
+            CodecError::malformed("configuration diagnostic formatting failed")
+        }));
+    }
+    ctx.charge_retained(u64::try_from(formatter.text.len()).map_err(|_| {
+        ctx.refuse_codec_limit(operation, 0, 1)
+    })?, operation)?;
+    Ok(formatter.text)
+}
 
 fn copy_configuration_text(
     ctx: Option<&DecodeContext<'_>>,
@@ -60,10 +108,51 @@ fn configuration_scalar_text(
     }
 }
 
-#[derive(Deserialize)]
-struct ConfigurationMemberOrder<'a> {
-    #[serde(default, borrow)]
-    configurations: Option<&'a serde_json::value::RawValue>,
+struct ConfigurationMemberOrderSeed<'a, 'b> {
+    ctx: Option<&'a DecodeContext<'b>>,
+    refusal: &'a mut Option<CodecError>,
+}
+
+impl<'de> DeserializeSeed<'de> for ConfigurationMemberOrderSeed<'_, '_> {
+    type Value = Vec<String>;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_map(self)
+    }
+}
+
+impl<'de> Visitor<'de> for ConfigurationMemberOrderSeed<'_, '_> {
+    type Value = Vec<String>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("struct ConfigurationMemberOrder")
+    }
+
+    fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        let mut names = Vec::new();
+        let mut seen_configurations = false;
+        while let Some(field) = map.next_key::<String>()? {
+            if field == "configurations" {
+                if seen_configurations {
+                    return Err(serde::de::Error::duplicate_field("configurations"));
+                }
+                seen_configurations = true;
+                names = map.next_value_seed(OrderedVariantNamesSeed {
+                    ctx: self.ctx,
+                    refusal: &mut *self.refusal,
+                })?;
+            } else {
+                map.next_value::<IgnoredAny>()?;
+            }
+        }
+        Ok(names)
+    }
 }
 
 struct OrderedVariantNamesSeed<'a, 'b> {
@@ -97,9 +186,16 @@ impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
         let mut unique = HashSet::new();
         while let Some(name) = map.next_key::<String>()? {
             if unique.contains(&name) {
-                return Err(serde::de::Error::custom(format!(
-                    "duplicate configuration variant {name:?}"
-                )));
+                let message = format_configuration_diagnostic(self.ctx,
+                    format_args!("duplicate configuration variant {name:?}"),
+                    "f3d duplicate configuration variant diagnostic");
+                return match message {
+                    Ok(message) => Err(serde::de::Error::custom(message)),
+                    Err(error) => {
+                        *self.refusal = Some(error);
+                        Err(serde::de::Error::custom("configuration variant resource limit"))
+                    }
+                };
             }
             if let Some(ctx) = self.ctx {
                 let charge = (|| -> Result<String, CodecError> {
@@ -146,12 +242,14 @@ fn parse_configuration_variant_order(
     let invalid = |error| CodecError::malformed(format_args!(
         "invalid F3D configuration variant order {entry_name}: {error}"
     ));
-    let order: ConfigurationMemberOrder<'_> = serde_json::from_slice(bytes).map_err(invalid)?;
-    let Some(raw) = order.configurations else { return Ok(Vec::new()); };
     let mut refusal = None;
-    let mut deserializer = serde_json::Deserializer::from_str(raw.get());
-    let result = OrderedVariantNamesSeed { ctx, refusal: &mut refusal }
-        .deserialize(&mut deserializer);
+    let mut deserializer = serde_json::Deserializer::from_slice(bytes);
+    let result = ConfigurationMemberOrderSeed { ctx, refusal: &mut refusal }
+        .deserialize(&mut deserializer)
+        .and_then(|names| {
+            deserializer.end()?;
+            Ok(names)
+        });
     match result {
         Ok(names) => Ok(names),
         Err(error) => Err(refusal.unwrap_or_else(|| invalid(error))),
@@ -504,6 +602,11 @@ mod tests {
         assert!(parse_configuration_variant_order(None,
             "table.dsgcfg",
             br#"{"configurations":{"Small":{},"Small":{}}}"#,
+        )
+        .is_err());
+        assert!(parse_configuration_variant_order(None,
+            "table.dsgcfg",
+            br#"{"configurations":null}"#,
         )
         .is_err());
     }
@@ -892,5 +995,33 @@ mod tests {
                     if failure.dimension == dimension && failure.operation == operation
             ), "operation {operation}");
         }
+    }
+
+    #[test]
+    fn configuration_duplicate_variant_diagnostic_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let bytes = br#"{"configurations":{"Small":{},"Small":{}}}"#;
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 5;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            parse_configuration_variant_order(Some(&ctx), "table.dsgcfg", bytes),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d duplicate configuration variant diagnostic"
+        ));
+
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(
+            parse_configuration_variant_order(Some(&ctx), "table.dsgcfg", bytes)
+                .unwrap_err().to_string(),
+            parse_configuration_variant_order(None, "table.dsgcfg", bytes)
+                .unwrap_err().to_string(),
+        );
     }
 }
