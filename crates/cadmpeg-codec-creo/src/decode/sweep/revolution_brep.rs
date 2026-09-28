@@ -346,7 +346,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ir,
                 Surface {
                     id: surface_id.clone(),
-                    geometry: surface_geometry.clone(),
+                    geometry: surface_geometry,
                     source_object: None,
                 },
             )?;
