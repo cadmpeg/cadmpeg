@@ -110,14 +110,29 @@ fn new_support_uv_budget() -> SupportUvBudget<'static> {
     WorkBudget::new(MAX_SUPPORT_UV_SAMPLES)
 }
 
-pub(super) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
-    parameters
-        .first()
-        .into_iter()
-        .chain(parameters)
-        .chain(parameters.last())
-        .copied()
-        .collect()
+pub(super) fn linear_knots(
+    parameters: &[f64],
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit> {
+    if parameters.is_empty() {
+        return Ok(Vec::new());
+    }
+    let count = parameters.len().checked_add(2).ok_or_else(|| {
+        cadmpeg_core::decode::ResourceLimit {
+            dimension: cadmpeg_core::decode::ResourceDimension::Codec("nx linear knot count"),
+            reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+            limit: 0,
+            used: 0,
+            additional: cadmpeg_core::decode::u64_from_index(parameters.len()),
+            operation: "nx linear knot count",
+        }
+    })?;
+    let mut knots = Vec::new();
+    let _reservation = geometry_budget.reserve_vec(&mut knots, count, "nx linear knots")?;
+    knots.extend(parameters.first().copied());
+    knots.extend_from_slice(parameters);
+    knots.extend(parameters.last().copied());
+    Ok(knots)
 }
 
 // Keep the object-map, serialized lanes, and shared geometry budget explicit:
@@ -637,7 +652,7 @@ pub(super) fn complete_ext11_support_uv_with_budget(
             let replacement = PcurveGeometry::Nurbs {
                 nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     1,
-                    linear_knots(parameters),
+                    linear_knots(parameters, geometry_budget)?,
                     control_points,
                     None,
                     false,
@@ -1385,7 +1400,7 @@ fn complete_support_uv_wave(
                     let parameter_range = samples.parameter_range();
                     let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                         1,
-                        linear_knots(parameters),
+                        linear_knots(parameters, geometry_budget)?,
                         uv,
                         None,
                         false,
@@ -1741,7 +1756,7 @@ fn complete_coupled_support_uv(
                 let parameter_range = samples.parameter_range();
                 let nurbs = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     1,
-                    linear_knots(parameters),
+                    linear_knots(parameters, geometry_budget)?,
                     lanes[side].clone(),
                     None,
                     false,

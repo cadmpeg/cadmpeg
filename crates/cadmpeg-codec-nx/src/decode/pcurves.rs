@@ -2971,10 +2971,26 @@ fn transfer_intersection_pcurve_with_budget(
             return Ok(None);
         };
     }
+    let mut sample_parameters = Vec::new();
+    let _parameter_reservation = geometry_budget.reserve_vec(
+        &mut sample_parameters,
+        samples.len(),
+        "nx transferred pcurve parameters",
+    )?;
+    let mut control_points = Vec::new();
+    let _control_reservation = geometry_budget.reserve_vec(
+        &mut control_points,
+        samples.len(),
+        "nx transferred pcurve controls",
+    )?;
+    for sample in &samples {
+        sample_parameters.push(sample.0);
+        control_points.push(sample.1);
+    }
     let nurbs = PcurveNurbs::from_lanes(
         1,
-        linear_knots(&samples.iter().map(|sample| sample.0).collect::<Vec<_>>()),
-        samples.iter().map(|sample| sample.1).collect(),
+        linear_knots(&sample_parameters, geometry_budget)?,
+        control_points,
         None,
         false,
     )?;
