@@ -708,8 +708,12 @@ pub(crate) fn terminal_feature_body_ids(
 }
 
 impl NativeModel {
-    pub(crate) fn has_untransferred_parasolid_attribute_fields(&self) -> bool {
+    pub(crate) fn has_untransferred_parasolid_attribute_fields(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
         parasolid_topology_attribute_fields_have_untransferred_values(
+            ctx,
             &self.parasolid.parasolid_attribute_definitions,
             &self.parasolid.parasolid_entity_51_records,
             &self.parasolid.parasolid_attribute_field_uses,
