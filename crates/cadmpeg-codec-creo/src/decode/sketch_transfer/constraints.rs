@@ -1511,7 +1511,7 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
         .transpose()?
         .unwrap_or_default();
     let unique_segment_ids = unique_section_segment_external_ids(definition);
-    let segments = section_segment_rows(definition);
+    let segments = section_segment_rows(ctx, definition)?;
     crate::decode::collect_items(ctx, section_equation_point_on_line_constraint_rows(ctx, definition, &ambiguous_point_ids)?
         .into_iter()
         .filter_map(|equation| {
@@ -1897,7 +1897,7 @@ pub(in super::super) fn section_dimension_constraints(
     let Some(relations) = &definition.relations else {
         return Ok(Vec::new());
     };
-    let segments = section_segment_rows(definition);
+    let segments = section_segment_rows(ctx, definition)?;
 
     let known_entities = section_entity_external_ids(definition);
     let ambiguous_point_ids = definition
