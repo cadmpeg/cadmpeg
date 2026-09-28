@@ -362,11 +362,12 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_circular_pattern_construction_with_owners(
+                    ctx,
                     bytes,
                     &records,
                     &scope,
                     parameter_owners,
-                );
+                )?;
                 if let scope::DesignScopePayloadMut::CPattern(slot)
                 | scope::DesignScopePayloadMut::CircularPattern(slot)
                 | scope::DesignScopePayloadMut::ReseauC(slot) = scope.payload_mut()
