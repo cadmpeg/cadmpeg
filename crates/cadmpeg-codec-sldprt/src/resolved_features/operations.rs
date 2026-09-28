@@ -630,15 +630,17 @@ pub(crate) fn enrich_history_split_lines(
             let Some(tool) = split_line_source_sketch(feature, &history.features) else {
                 continue;
             };
-            if !tools.contains_key(&feature.id) {
+            let value = copy_retained_string(ctx, &tool.id, "retain SLDPRT split-line tool ID")?;
+            if let Some(existing) = tools.get_mut(&feature.id) {
+                *existing = value;
+            } else {
                 ctx.charge_collection_items(1, "index SLDPRT split-line tools")?;
                 tools.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit("index SLDPRT split-line tools", u64::MAX - 1, u64::MAX)
                 })?;
+                let key = copy_retained_string(ctx, &feature.id, "retain SLDPRT split-line tool key")?;
+                tools.insert(key, value);
             }
-            let key = copy_retained_string(ctx, &feature.id, "retain SLDPRT split-line tool key")?;
-            let value = copy_retained_string(ctx, &tool.id, "retain SLDPRT split-line tool ID")?;
-            tools.insert(key, value);
         }
     }
     for feature in histories
