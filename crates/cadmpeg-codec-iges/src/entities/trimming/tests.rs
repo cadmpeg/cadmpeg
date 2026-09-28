@@ -194,6 +194,18 @@ fn implicit_outer_boundary_refuses_curve_id_storage() {
     );
     assert_trimming_collection_refusal(&bytes, "iges implicit boundary curve IDs");
     assert_trimming_retained_refusal(&bytes, "iges implicit boundary curve ID text");
+    assert_trimming_collection_refusal(&bytes, "iges implicit boundary pcurve IDs");
+    assert_trimming_retained_refusal(&bytes, "iges implicit boundary pcurve ID text");
+    assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
+}
+
+#[test]
+fn trimmed_pcurve_uses_refuse_nested_storage() {
+    let bytes = trimmed_plane_with_inner_loop_file();
+    for operation in ["iges trimming coedge pcurve uses", "iges trimming pcurve slots"] {
+        assert_trimming_collection_refusal(&bytes, operation);
+    }
+    assert_trimming_retained_refusal(&bytes, "iges trimming pcurve ID copy");
     assert!(IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).is_ok());
 }
 
