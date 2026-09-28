@@ -61,16 +61,26 @@ struct BodyCandidate {
 
 impl BodyCandidate {
     fn into_node(self, ctx: &DecodeContext<'_>) -> Result<BodyNode, CodecError> {
-                    ctx.charge_collection_items(
-                self.ownership_len as u64,
-                "copy Parasolid body ownership references",
-            )?;
+        let count = u64::try_from(self.ownership_len).map_err(|_| {
+            ctx.refuse_codec_limit("copy Parasolid body ownership references", u64::MAX - 1, u64::MAX)
+        })?;
+        ctx.charge_collection_items(
+            count,
+            "copy Parasolid body ownership references",
+        )?;
+        let mut ownership_refs = Vec::new();
+        ctx.reserve_precharged_vec(
+            &mut ownership_refs,
+            self.ownership_len,
+            "copy Parasolid body ownership references",
+        )?;
+        ownership_refs.extend_from_slice(&self.ownership_refs[..self.ownership_len]);
 
         Ok(BodyNode {
             attr: self.attr,
             node_id: self.node_id,
             topology_refs: self.topology_refs,
-            ownership_refs: self.ownership_refs[..self.ownership_len].to_vec(),
+            ownership_refs,
             kind: self.kind,
             offset: self.offset,
             end: self.end,
@@ -84,14 +94,13 @@ impl BodyNode {
         self.topology_refs[0]
     }
 
-    fn region_head_candidates(&self) -> Vec<u32> {
-        let mut refs = self.ownership_refs.clone();
-        if refs.is_empty() {
-            refs.extend(self.topology_refs);
-        }
-        refs.sort_unstable();
-        refs.dedup();
-        refs
+    fn region_head_candidates(&self) -> impl Iterator<Item = u32> + '_ {
+        let refs = if self.ownership_refs.is_empty() {
+            &self.topology_refs[..]
+        } else {
+            self.ownership_refs.as_slice()
+        };
+        refs.iter().copied()
     }
 }
 
