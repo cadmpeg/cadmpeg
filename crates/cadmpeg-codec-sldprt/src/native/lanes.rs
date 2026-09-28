@@ -194,18 +194,29 @@ pub(super) fn admit(
 }
 
 pub(crate) fn expected_lanes(native: &SldprtNative) -> Vec<(&FeatureInputLane, FeatureInputLane)> {
-    let expected_primary_lanes = native
+    let mut expected_primary_lanes = native
         .feature_input_lanes
         .iter()
         .filter(|lane| !is_supplemental_config_lane(lane))
         .cloned()
         .collect::<Vec<_>>();
-    let expected_supplemental_lanes = native
+    let mut expected_supplemental_lanes = native
         .feature_input_lanes
         .iter()
         .filter(|lane| is_supplemental_config_lane(lane))
         .cloned()
         .collect::<Vec<_>>();
+    for lane in expected_primary_lanes
+        .iter_mut()
+        .chain(&mut expected_supplemental_lanes)
+    {
+        let scalars = crate::resolved_features::scalars::named_scalars(
+            &lane.native_payload,
+            &lane.id,
+            &lane.names,
+        );
+        rebuild_scalar_relations(lane, scalars);
+    }
     expected_lane_pairs(native, expected_primary_lanes, expected_supplemental_lanes).collect()
 }
 
@@ -245,6 +256,18 @@ fn expected_lanes_charged<'a>(
             .filter(|lane| is_supplemental_config_lane(lane))
             .cloned(),
     );
+    for lane in expected_primary_lanes
+        .iter_mut()
+        .chain(&mut expected_supplemental_lanes)
+    {
+        let scalars = crate::resolved_features::scalars::named_scalars_charged(
+            ctx,
+            &lane.native_payload,
+            &lane.id,
+            &lane.names,
+        )?;
+        rebuild_scalar_relations(lane, scalars);
+    }
     let mut expected = Vec::new();
     ctx.reserve_precharged_vec(
         &mut expected,
@@ -264,23 +287,6 @@ fn expected_lane_pairs<'a>(
     mut expected_primary_lanes: Vec<FeatureInputLane>,
     mut expected_supplemental_lanes: Vec<FeatureInputLane>,
 ) -> impl Iterator<Item = (&'a FeatureInputLane, FeatureInputLane)> + 'a {
-    for lane in expected_primary_lanes
-        .iter_mut()
-        .chain(&mut expected_supplemental_lanes)
-    {
-        lane.scalars = crate::resolved_features::scalars::named_scalars(
-            &lane.native_payload,
-            &lane.id,
-            &lane.names,
-        );
-        lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
-            &lane.id,
-            &lane.classes,
-            &lane.scalars,
-        );
-        lane.references =
-            crate::resolved_features::markers::reference_cells(&lane.scalars, &lane.classes);
-    }
     crate::resolved_features::bindings::bind_scalar_operands(
         &native.feature_histories,
         &mut expected_primary_lanes,
@@ -331,4 +337,18 @@ fn expected_lane_pairs<'a>(
                 .filter(|lane| is_supplemental_config_lane(lane))
                 .zip(expected_supplemental_lanes),
         )
+}
+
+fn rebuild_scalar_relations(
+    lane: &mut FeatureInputLane,
+    scalars: Vec<crate::records::FeatureInputScalar>,
+) {
+    lane.scalars = scalars;
+    lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
+        &lane.id,
+        &lane.classes,
+        &lane.scalars,
+    );
+    lane.references =
+        crate::resolved_features::markers::reference_cells(&lane.scalars, &lane.classes);
 }
