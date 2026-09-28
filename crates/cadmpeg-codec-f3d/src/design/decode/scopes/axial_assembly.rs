@@ -20,13 +20,15 @@ use crate::records::feature::assembly::DesignAssemblyOperandFrame;
 use crate::records::feature::assembly::DesignAssemblyOperandQualifier;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
 pub(super) fn bind_joint_origin_frames_from_assemblies(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     scopes: &mut [DesignParameterScope],
-) {
+) -> Result<(), CodecError> {
     let mut candidates = Vec::new();
     let mut envelopes = Vec::new();
     for scope in scopes.iter() {
@@ -38,6 +40,10 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             .and_then(assembly::DesignAssemblyAlignment::operand_frames)
         {
             for frame in frames {
+                ctx.charge_collection_items(1, "f3d joint-origin frame candidates")?;
+                candidates.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d joint-origin frame candidates allocation", 0, 1)
+                })?;
                 candidates.push((
                     frame.reference_record_index,
                     frame.transform,
@@ -47,7 +53,15 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             }
         }
         if let Some((joint_origin, frame)) = exact_single_joint_origin_frame(bytes, scope) {
+            ctx.charge_collection_items(1, "f3d joint-origin assembly envelopes")?;
+            envelopes.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d joint-origin assembly envelopes allocation", 0, 1)
+            })?;
             envelopes.push((scope.record_index, joint_origin, frame.transform));
+            ctx.charge_collection_items(1, "f3d joint-origin frame candidates")?;
+            candidates.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d joint-origin frame candidates allocation", 0, 1)
+            })?;
             candidates.push((
                 joint_origin,
                 frame.transform,
@@ -89,11 +103,21 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             }
         }
     }
-    let resolved_origins = scopes
-        .iter()
-        .filter(|scope| scope.kind() == scope::DesignFeatureKind::JointOrigin)
-        .filter_map(|scope| Some((scope.record_index, scope.joint_origin_transform()?)))
-        .collect::<HashMap<_, _>>();
+    let mut resolved_origins = HashMap::new();
+    for scope in scopes.iter().filter(|scope| {
+        scope.kind() == scope::DesignFeatureKind::JointOrigin
+    }) {
+        let Some(transform) = scope.joint_origin_transform() else {
+            continue;
+        };
+        if !resolved_origins.contains_key(&scope.record_index) {
+            ctx.charge_collection_items(1, "f3d resolved joint origins")?;
+            resolved_origins.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d resolved joint origins allocation", 0, 1)
+            })?;
+        }
+        resolved_origins.insert(scope.record_index, transform);
+    }
     for (assembly_record_index, joint_origin_record_index, transform) in envelopes {
         if resolved_origins.get(&joint_origin_record_index) != Some(&transform) {
             continue;
@@ -114,6 +138,7 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             });
         }
     }
+    Ok(())
 }
 
 /// Bind the pathless axial assembly selectors after every scope in the Design

@@ -11,6 +11,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use crate::test_support::push_marked_reference;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
 fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
@@ -164,6 +165,8 @@ fn append_transform_record(bytes: &mut Vec<u8>, record_index: u32, translation: 
 )]
 #[test]
 fn pattern_constructions_require_exact_scalar_and_operand_frames() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
     let scope_record_index = 10_u32;
     let count_record_index = 20_u32;
     let angle_record_index = 30_u32;
@@ -1009,7 +1012,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         *slot = Some(axial_alignment.clone());
     }
     let mut linked_scopes = [linked_assembly, first_joint_origin, second_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&axial_assembly_bytes, &mut linked_scopes);
+    bind_joint_origin_frames_from_assemblies(&ctx, &axial_assembly_bytes, &mut linked_scopes).unwrap();
     assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));
     assert_eq!(
         linked_scopes[1].joint_origin_transform(),
@@ -1080,7 +1083,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         })
         .unwrap();
     let mut single_frame_scopes = [single_frame_assembly, single_frame_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut single_frame_scopes);
+    bind_joint_origin_frames_from_assemblies(&ctx, &single_frame_bytes, &mut single_frame_scopes).unwrap();
     assert_eq!(
         single_frame_scopes[1].joint_origin_transform_offset(),
         Some(36)
@@ -1109,7 +1112,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     transform[2][3] += 1.0;
     frame.joint_origin_transform = transform.try_into().unwrap();
     let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
+    bind_joint_origin_frames_from_assemblies(&ctx, &single_frame_bytes, &mut conflicting_scopes).unwrap();
     assert_eq!(
         conflicting_scopes[0].assembly_alignment().and_then(
             crate::records::feature::assembly::DesignAssemblyAlignment::joint_origin_scope_record_index
@@ -1125,7 +1128,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         *slot = None;
     }
     let mut invalid_single_frame_scopes = [single_frame_scopes[0].clone(), invalid_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut invalid_single_frame_scopes);
+    bind_joint_origin_frames_from_assemblies(&ctx, &single_frame_bytes, &mut invalid_single_frame_scopes).unwrap();
     assert_eq!(
         invalid_single_frame_scopes[1].joint_origin_transform(),
         None
