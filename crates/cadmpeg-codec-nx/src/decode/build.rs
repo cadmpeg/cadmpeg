@@ -1171,7 +1171,7 @@ pub(super) fn try_decode_geometry(
                                 .get(&pcurve)
                                 .and_then(|index| ir.model.pcurves.get_mut(*index)),
                         ) {
-                            normalize_pcurve_parameters(&mut carrier.geometry, &support).is_some()
+                            normalize_pcurve_parameters(ctx, &mut carrier.geometry, &support)?.is_some()
                         } else {
                             false
                         };
