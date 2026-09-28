@@ -1070,7 +1070,7 @@ fn validate_loaded(
     validate_construction_operand_groups(&ctx, &mut findings)?;
     validate_path_feature_operand_roles(&ctx, &mut findings);
     validate_extrude_parameter_operands(&ctx, &mut findings);
-    let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings);
+    let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings)?;
     validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records)?;
     let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings);
     let edge_identity_records =
@@ -5273,16 +5273,12 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
 fn validate_fillet_radius_groups<'a>(
     ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
-) -> HashSet<(&'a str, u32)> {
+) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
-    let construction_groups_by_index = native
-        .design_construction_operand_groups
-        .iter()
-        .map(|group| ((design_stream(&group.id), group.record_index), group))
-        .collect::<std::collections::HashMap<_, _>>();
+    let construction_groups_by_index = &ctx.operand_groups_by_index;
     let mut fillet_radius_group_records = HashSet::new();
     let mut fillet_radius_group_slots = HashSet::new();
     for assignment in &native.design_fillet_radius_groups {
@@ -5375,28 +5371,37 @@ fn validate_fillet_radius_groups<'a>(
                     };
                     let start = radius(*start_radius_parameter_record_index, "StartRadius");
                     let end = radius(*end_radius_parameter_record_index, "EndRadius");
-                    let middle = midpoint_records
-                        .iter()
-                        .map(|row| radius(row.radius_parameter_record_index, "MidRadius"))
-                        .collect::<Option<Vec<_>>>();
-                    let positions = midpoint_records
-                        .iter()
-                        .map(|row| {
-                            assignment_parameter(row.parameter_record_index)
-                                .filter(|parameter| {
-                                    parameter.source_kind() == "MidParams"
-                                        && parameter.unit().is_none()
-                                        && (0.0..1.0).contains(&parameter.evaluated_value().get())
-                                })
-                                .map(|parameter| parameter.evaluated_value().get())
-                        })
-                        .collect::<Option<Vec<_>>>();
-                    start.zip(end).zip(middle).zip(positions).is_some_and(
-                        |(((start, end), middle), positions)| {
-                            (start > 0.0 || end > 0.0 || middle.iter().any(|r| *r > 0.0))
-                                && positions.windows(2).all(|pair| pair[0] < pair[1])
-                        },
-                    )
+                    let mut middle_positive = false;
+                    let mut previous_position = None;
+                    let mut middle_valid = true;
+                    for row in midpoint_records {
+                        let Some(middle_radius) =
+                            radius(row.radius_parameter_record_index, "MidRadius")
+                        else {
+                            middle_valid = false;
+                            break;
+                        };
+                        let Some(position) = assignment_parameter(row.parameter_record_index)
+                            .filter(|parameter| {
+                                parameter.source_kind() == "MidParams"
+                                    && parameter.unit().is_none()
+                                    && (0.0..1.0).contains(&parameter.evaluated_value().get())
+                            })
+                            .map(|parameter| parameter.evaluated_value().get())
+                        else {
+                            middle_valid = false;
+                            break;
+                        };
+                        if previous_position.is_some_and(|previous| previous >= position) {
+                            middle_valid = false;
+                            break;
+                        }
+                        middle_positive |= middle_radius > 0.0;
+                        previous_position = Some(position);
+                    }
+                    start.zip(end).is_some_and(|(start, end)| {
+                        middle_valid && (start > 0.0 || end > 0.0 || middle_positive)
+                    })
                 }
             }
             && assignment
@@ -5406,23 +5411,19 @@ fn validate_fillet_radius_groups<'a>(
                         parameter.source_kind() == "TangencyWeight" && parameter.unit().is_none()
                     })
                 })
-            && fillet_radius_group_records.insert((native_stream, assignment.group_record_index))
-            && fillet_radius_group_slots.insert((
-                native_stream,
-                assignment.scope_record_index,
-                assignment.group_ordinal,
-            ));
+            && ctx.insert_unique(&mut fillet_radius_group_records,
+                (native_stream, assignment.group_record_index),
+                "index F3D Fillet radius group records")?
+            && ctx.insert_unique(&mut fillet_radius_group_slots,
+                (native_stream, assignment.scope_record_index, assignment.group_ordinal),
+                "index F3D Fillet radius group slots")?;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design Fillet radius group has an invalid parameter assignment"
-                    .into(),
-                entity: Some(assignment.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design Fillet radius group has an invalid parameter assignment",
+                Some(ctx.copy_entity(&assignment.id)?))?;
         }
     }
-    fillet_radius_group_records
+    Ok(fillet_radius_group_records)
 }
 
 /// Report Fillet operand groups that carry no radius assignment.
