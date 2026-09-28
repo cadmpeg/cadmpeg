@@ -2,6 +2,7 @@
 //! Object-model, data-block, expression, and external-reference extractors and record types.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt::Write;
 
 use serde::{Deserialize, Serialize};
 
@@ -2804,24 +2805,95 @@ pub(super) fn external_references(
     ctx: &DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<ExternalReference>, cadmpeg_core::CodecError> {
-    let mut ordinals = BTreeMap::<String, u32>::new();
-    Ok(container
-        .external_reference_strings(ctx)?
-        .into_iter()
-        .map(|(entry, relative, path)| {
-            let ordinal = ordinals.entry(entry.name.clone()).or_default();
-            let current = *ordinal;
-            *ordinal += 1;
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            ExternalReference {
-                id: format!("nx:external-reference:{}#{current}", entry.name),
-                ordinal: current,
-                path,
-                source_entry: entry.name.clone(),
-                source_offset: entry_offset + relative as u64,
-            }
+    let strings = container.external_reference_strings(ctx)?;
+    let count = strings.len();
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    let ordinal_bytes = strings
+        .iter()
+        .try_fold(0usize, |total, (entry, _, _)| {
+            total.checked_add(entry.name.len())
         })
-        .collect::<Vec<_>>())
+        .and_then(|text_bytes| {
+            count
+                .checked_mul(std::mem::size_of::<(String, u32)>())
+                .and_then(|slots| slots.checked_add(text_bytes))
+        })
+        .ok_or_else(|| ctx.refuse_codec_limit("nx external reference ordinals", 0, count_u64))?;
+    let _ordinal_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(ordinal_bytes),
+        "nx external reference ordinals",
+    )?;
+    ctx.charge_collection_items(count_u64, "nx external references")?;
+    let record_bytes = count
+        .checked_mul(std::mem::size_of::<ExternalReference>())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx external references", 0, count_u64))?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(record_bytes),
+        "nx external references",
+    )?;
+    let mut ordinals = BTreeMap::<String, u32>::new();
+    let mut references = Vec::new();
+    references
+        .try_reserve_exact(count)
+        .map_err(|_| ctx.refuse_codec_limit("nx external references", 0, count_u64))?;
+    for (entry, relative, path) in strings {
+        let current = if let Some(ordinal) = ordinals.get_mut(entry.name.as_str()) {
+            let current = *ordinal;
+            *ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("nx external reference ordinal", 0, count_u64)
+            })?;
+            current
+        } else {
+            ctx.charge_collection_items(1, "nx external reference ordinals")?;
+            let mut key = String::new();
+            key.try_reserve_exact(entry.name.len()).map_err(|_| {
+                ctx.refuse_codec_limit("nx external reference ordinals", 0, count_u64)
+            })?;
+            key.push_str(&entry.name);
+            ordinals.insert(key, 1);
+            0
+        };
+        let digits = if current == 0 {
+            1
+        } else {
+            usize::try_from(current.ilog10())
+                .map_err(|_| ctx.refuse_codec_limit("nx external reference identity", 0, count_u64))?
+                + 1
+        };
+        let id_len = "nx:external-reference:"
+            .len()
+            .checked_add(entry.name.len())
+            .and_then(|len| len.checked_add(1))
+            .and_then(|len| len.checked_add(digits))
+            .ok_or_else(|| ctx.refuse_codec_limit("nx external reference identity", 0, count_u64))?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(id_len),
+            "nx external reference identity",
+        )?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_len)
+            .map_err(|_| ctx.refuse_codec_limit("nx external reference identity", 0, count_u64))?;
+        write!(&mut id, "nx:external-reference:{}#{current}", entry.name)
+            .map_err(|_| ctx.refuse_codec_limit("nx external reference identity", 0, count_u64))?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(entry.name.len()),
+            "nx external reference source entry",
+        )?;
+        let mut source_entry = String::new();
+        source_entry.try_reserve_exact(entry.name.len()).map_err(|_| {
+            ctx.refuse_codec_limit("nx external reference source entry", 0, count_u64)
+        })?;
+        source_entry.push_str(&entry.name);
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        references.push(ExternalReference {
+            id,
+            ordinal: current,
+            path,
+            source_entry,
+            source_offset: entry_offset + relative as u64,
+        });
+    }
+    Ok(references)
 }
 
 /// Decode exact indexed external-reference record prefixes.
