@@ -181,7 +181,7 @@ fn separates_complete_reference_class_and_member_regions() {
     append_declaration(&mut bytes, b"m_second", &[0x10, 0x02]);
     append_declaration(&mut bytes, b"m_tail", &[0x11, 0x03]);
 
-    let registry = crate::om::registry::type_registry(&bytes, 0, bytes.len());
+    let registry = crate::test_support::with_decode_context(|ctx| crate::om::registry::type_registry(ctx, &bytes, 0, bytes.len())).unwrap();
     assert_eq!(registry.definitions.len(), 2);
     assert_eq!(registry.definitions[0].name, "UGS::OM::RootObject");
     assert_eq!(registry.definitions[1].name, "UGS::OM::ChildObject");
@@ -202,7 +202,7 @@ fn separates_complete_reference_class_and_member_regions() {
     assert_eq!(registry.field_start, member_start);
 
     let fields =
-        crate::om::registry::all_field_definitions(&bytes, registry.field_start, bytes.len());
+        crate::test_support::with_decode_context(|ctx| crate::om::registry::all_field_definitions(ctx, &bytes, registry.field_start, bytes.len())).unwrap();
     assert_eq!(fields.len(), 3);
     assert_eq!(fields[0].name, "m_first");
     assert_eq!(
@@ -224,7 +224,7 @@ fn separates_complete_reference_class_and_member_regions() {
 
     let mut one_byte_gap = bytes;
     one_byte_gap[member_start - 1] = 0x28;
-    let variant = crate::om::registry::type_registry(&one_byte_gap, 0, one_byte_gap.len());
+    let variant = crate::test_support::with_decode_context(|ctx| crate::om::registry::type_registry(ctx, &one_byte_gap, 0, one_byte_gap.len())).unwrap();
     assert_eq!(variant.definitions.len(), 2);
     assert_eq!(variant.field_start, first_member_start);
 }

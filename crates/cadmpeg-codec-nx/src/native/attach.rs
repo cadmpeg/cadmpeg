@@ -162,7 +162,7 @@ fn attach_indexed_om_unknowns(
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let object_sections = scan.container.indexed_om_sections();
+    let object_sections = scan.container.indexed_om_sections(ctx)?;
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         match &section.store {
@@ -223,7 +223,7 @@ pub(super) fn attach(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
-    let has_object_sections = !scan.container.indexed_om_sections().is_empty();
+    let has_object_sections = !scan.container.indexed_om_sections(ctx)?.is_empty();
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     if model.is_empty() && !has_object_sections {
         return Ok(());

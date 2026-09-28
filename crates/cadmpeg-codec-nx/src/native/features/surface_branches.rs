@@ -162,12 +162,13 @@ impl TryFrom<SurfaceBranchWire> for FeatureSurfaceConstructionBranch {
 }
 
 /// Resolve branch references without assigning section or guide semantics.
-pub(in crate::native) fn feature_surface_construction_branches(
+pub(in crate::native) fn feature_surface_construction_branches(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureSurfaceConstructionBranch> {
-    let indexed = container.indexed_om_sections();
+) -> Result<Vec<FeatureSurfaceConstructionBranch>, cadmpeg_core::CodecError>
+{
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut branches = Vec::new();
-    visit_feature_history_operation_records(
+    visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(group) = surface_feature_payload_branches(record.payload_view()) else {
@@ -186,8 +187,8 @@ pub(in crate::native) fn feature_surface_construction_branches(
                 })
             }));
         },
-    );
-    branches
+    )?;
+    Ok(branches)
 }
 
 #[cfg(test)]

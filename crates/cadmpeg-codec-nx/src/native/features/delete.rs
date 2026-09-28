@@ -160,12 +160,13 @@ impl TryFrom<DeleteReferenceFieldWire> for FeatureDeleteReferenceField {
 
 /// Decode exact `DELETE` payload reference fields and independently resolve
 /// their non-null slots without assigning a target object family.
-pub(in crate::native) fn feature_delete_reference_fields(
+pub(in crate::native) fn feature_delete_reference_fields(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureDeleteReferenceField> {
-    let indexed = container.indexed_om_sections();
+) -> Result<Vec<FeatureDeleteReferenceField>, cadmpeg_core::CodecError>
+{
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut fields = Vec::new();
-    visit_feature_history_operation_records(
+    visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(field) = DeleteReferences::read(record.payload_view()) else {
@@ -186,18 +187,19 @@ pub(in crate::native) fn feature_delete_reference_fields(
                 references,
             });
         },
-    );
-    fields
+    )?;
+    Ok(fields)
 }
 
 /// Reconstruct one ordered logical payload from each complete same-store
 /// non-null `DELETE` reference field.
-pub(in crate::native) fn feature_delete_construction_payloads(
+pub(in crate::native) fn feature_delete_construction_payloads(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     fields: &[FeatureDeleteReferenceField],
-) -> Vec<FeatureDeleteConstructionPayload> {
-    let blocks = offset_data_block_bytes(container);
-    fields
+) -> Result<Vec<FeatureDeleteConstructionPayload>, cadmpeg_core::CodecError>
+{
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    Ok(fields
         .iter()
         .filter_map(|field| {
             let data_blocks = field
@@ -225,7 +227,7 @@ pub(in crate::native) fn feature_delete_construction_payloads(
                 content,
             })
         })
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]

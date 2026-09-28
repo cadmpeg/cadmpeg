@@ -41,7 +41,7 @@ const EPS_SHIFTED_SCALAR_ROUNDING: f64 = 2.0e-12;
 #[test]
 fn om_index_pairs_object_ids_with_bounded_entity_records() {
     let bytes = indexed_om_section();
-    let sections = indexed_sections(&bytes);
+    let sections = crate::test_support::with_decode_context(|ctx| indexed_sections(ctx, &bytes)).unwrap();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].base, 8);
     let records = sections[0].as_fixed().expect("fixed store");
@@ -1276,7 +1276,7 @@ fn om_data_block_object_references_require_complete_field_frames() {
 #[test]
 fn om_size_frame_bounds_its_type_declarations() {
     let bytes = size_framed_om_section();
-    let sections = sections(&bytes);
+    let sections = crate::test_support::with_decode_context(|ctx| sections(ctx, &bytes)).unwrap();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].offset, 0);
     assert_eq!(sections[0].byte_len, bytes.len());
@@ -1294,7 +1294,7 @@ fn om_size_frame_bounds_its_type_declarations() {
 
     let mut truncated = bytes;
     truncated.pop();
-    assert!(crate::om::sections(&truncated).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::om::sections(ctx, &truncated)).unwrap().is_empty());
 }
 
 #[test]
@@ -1302,19 +1302,19 @@ fn om_size_frame_accepts_exact_terminal_twelve_byte_envelope() {
     let mut bytes = size_framed_om_section();
     let payload_len = u32::try_from(bytes.len() - 12).expect("short OM fixture");
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
-    let sections = sections(&bytes);
+    let sections = crate::test_support::with_decode_context(|ctx| sections(ctx, &bytes)).unwrap();
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].byte_len, bytes.len());
     assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
 
     bytes.push(0);
-    assert!(crate::om::sections(&bytes).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::om::sections(ctx, &bytes)).unwrap().is_empty());
 }
 
 #[test]
 fn om_size_frame_uses_validated_internal_record_area_pointer() {
     let bytes = size_framed_om_section_with_record_area();
-    let section = sections(&bytes).remove(0);
+    let section = crate::test_support::with_decode_context(|ctx| sections(ctx, &bytes)).unwrap().remove(0);
     let offset = section.record_area.expect("record area").offset;
     assert_eq!(offset, size_framed_om_section().len() + 20);
     assert_eq!(
@@ -1325,7 +1325,7 @@ fn om_size_frame_uses_validated_internal_record_area_pointer() {
 
     let mut invalid = bytes;
     invalid[offset + 12] = 1;
-    assert_eq!(sections(&invalid)[0].record_area, None);
+    assert_eq!(crate::test_support::with_decode_context(|ctx| sections(ctx, &invalid)).unwrap()[0].record_area, None);
 }
 
 fn legacy_feature_om_section_with_record_area() -> Vec<u8> {
@@ -1355,7 +1355,7 @@ fn legacy_feature_om_section_with_record_area() -> Vec<u8> {
 #[test]
 fn om_feature_section_accepts_the_legacy_record_area_pointer_and_product_frame() {
     let bytes = legacy_feature_om_section_with_record_area();
-    let section = sections(&bytes).remove(0);
+    let section = crate::test_support::with_decode_context(|ctx| sections(ctx, &bytes)).unwrap().remove(0);
     let record_area_offset = section.record_area.expect("record area").offset;
     assert_eq!(
         record_area_offset,
@@ -1375,7 +1375,7 @@ fn om_feature_section_accepts_the_legacy_record_area_pointer_and_product_frame()
 
     let mut invalid = bytes;
     invalid[record_area_offset + 13] = 0x02;
-    assert!(sections(&invalid)[0].record_area.is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| sections(ctx, &invalid)).unwrap()[0].record_area.is_none());
 }
 
 #[test]
@@ -1406,7 +1406,7 @@ fn om_registry_uses_the_bounded_record_area_as_its_registry_end() {
     let payload_len = u32::try_from(bytes.len() - 16).expect("synthetic section fits");
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
 
-    let section = sections(&bytes).remove(0);
+    let section = crate::test_support::with_decode_context(|ctx| sections(ctx, &bytes)).unwrap().remove(0);
     assert_eq!(
         section.fields.last().expect("late field").name,
         "m_lateField"

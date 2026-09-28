@@ -659,13 +659,14 @@ pub(super) fn body_alias_roots(bindings: &[SegmentBodyBinding]) -> Option<BTreeM
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.
-pub(super) fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
+pub(super) fn segment_om_links(ctx: &cadmpeg_core::decode::DecodeContext<'_>, container: &Container) -> Result<Vec<SegmentOmLink>, cadmpeg_core::CodecError>
+{
     let Some((entry, index)) = container.segment_index() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
     let sections = container
-        .om_sections()
+        .om_sections(ctx)?
         .into_iter()
         .filter(|(candidate, _)| candidate.name == entry.name)
         .map(|(_, section)| (section.offset, classify_om_schema_role(&section)))
@@ -710,7 +711,7 @@ pub(super) fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
             });
         }
     }
-    links
+    Ok(links)
 }
 
 /// Resolve segment-index words that point to validated compressed wrappers.

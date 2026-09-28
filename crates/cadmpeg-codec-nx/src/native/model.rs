@@ -592,13 +592,13 @@ pub(crate) fn extract_segment_lineage(
     streams: &[Stream],
 ) -> Result<SegmentLineage, CodecError> {
     let bindings = segment_body_bindings(ctx, container, streams)?;
-    let labels = feature_operation_labels(container);
-    let references = feature_body_references(container);
-    let blocks = data_blocks(container);
-    let inputs = feature_input_blocks(container);
+    let labels = feature_operation_labels(ctx, container)?;
+    let references = feature_body_references(ctx, container)?;
+    let blocks = data_blocks(ctx, container)?;
+    let inputs = feature_input_blocks(ctx, container)?;
     let body_data_block_uses = feature_body_data_block_uses(&references, &inputs, &blocks);
-    let body_reference_occurrences = feature_body_reference_occurrences(container);
-    let members = feature_operation_body_members(container);
+    let body_reference_occurrences = feature_body_reference_occurrences(ctx, container)?;
+    let members = feature_operation_body_members(ctx, container)?;
     let operands = feature_operation_body_operands(
         &members,
         &body_reference_occurrences,
@@ -606,7 +606,7 @@ pub(crate) fn extract_segment_lineage(
         &blocks,
         &bindings,
     );
-    let booleans = feature_boolean_operations(container);
+    let booleans = feature_boolean_operations(ctx, container)?;
     let statuses = segment_body_lineage_statuses(
         &labels,
         &references,
@@ -738,9 +738,9 @@ impl NativeModel {
             Some(lineage) => lineage,
             None => extract_segment_lineage(ctx, container, streams)?,
         };
-        let data_block_object_frames = data_block_object_frames(container);
+        let data_block_object_frames = data_block_object_frames(ctx, container)?;
         let segment_index_rows = segment_index_rows(ctx, container)?;
-        let segment_om_links = segment_om_links(container);
+        let segment_om_links = segment_om_links(ctx, container)?;
         let segment_stream_links = segment_stream_links(ctx, container, streams)?;
         let mut linked_deltas = BTreeSet::new();
         for link in segment_stream_links
@@ -830,19 +830,19 @@ impl NativeModel {
             &parasolid_entity_51_records,
             &parasolid_attribute_class_uses,
         );
-        let om_record_areas = om_record_areas(container);
-        let audit_trail_rows = audit_trail_rows(container);
-        let operation_state_journal_groups = operation_state_journal_groups(container);
-        let operation_state_counters = operation_state_counters(container);
+        let om_record_areas = om_record_areas(ctx, container)?;
+        let audit_trail_rows = audit_trail_rows(ctx, container)?;
+        let operation_state_journal_groups = operation_state_journal_groups(ctx, container)?;
+        let operation_state_counters = operation_state_counters(ctx, container)?;
         let operation_state_groups = operation_state_groups(ctx, container)?;
         let operation_state_messages = operation_state_messages(ctx, container)?;
         let operation_state_statuses = operation_state_statuses(ctx, container)?;
         let operation_state_slot_lanes = operation_state_slot_lanes(ctx, container)?;
-        let feature_operation_records = feature_operation_records(container);
-        let feature_unlabeled_operation_records = feature_unlabeled_operation_records(container);
+        let feature_operation_records = feature_operation_records(ctx, container)?;
+        let feature_unlabeled_operation_records = feature_unlabeled_operation_records(ctx, container)?;
         let feature_unlabeled_operation_body_writes =
-            feature_unlabeled_operation_body_writes(container);
-        let feature_operation_body_writes = feature_operation_body_writes(container);
+            feature_unlabeled_operation_body_writes(ctx, container)?;
+        let feature_operation_body_writes = feature_operation_body_writes(ctx, container)?;
         let feature_operation_body_image_segment_uses = feature_operation_body_image_segment_uses(
             &feature_operation_body_writes,
             &segment_body_bindings,
@@ -866,27 +866,27 @@ impl NativeModel {
             &parasolid_group_records,
             &parasolid_group_members,
         );
-        let feature_operation_tagged_references = feature_operation_object_references(
+        let feature_operation_tagged_references = feature_operation_object_references(ctx,
             container,
             crate::om::direct_reference::ReferenceFieldKind::Tagged17,
-        );
-        let feature_operation_data_block_references = feature_operation_object_references(
+        )?;
+        let feature_operation_data_block_references = feature_operation_object_references(ctx,
             container,
             crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
-        );
-        let feature_operation_common_frames = feature_operation_common_frames(container);
+        )?;
+        let feature_operation_common_frames = feature_operation_common_frames(ctx, container)?;
         let feature_operation_terminal_discriminators =
             feature_operation_terminal_discriminators(ctx, container)?;
         let feature_operation_terminal_frames =
-            feature_operation_terminal_frames(container, &feature_operation_common_frames);
+            feature_operation_terminal_frames(ctx, container, &feature_operation_common_frames)?;
         let feature_operation_state_journal_uses = feature_operation_state_journal_uses(
             &feature_operation_labels,
             &feature_operation_records,
             &feature_operation_terminal_frames,
             &operation_state_journal_groups,
         );
-        let feature_payload_strings = feature_payload_strings(container);
-        let feature_symbolic_threads = feature_symbolic_threads(container);
+        let feature_payload_strings = feature_payload_strings(ctx, container)?;
+        let feature_symbolic_threads = feature_symbolic_threads(ctx, container)?;
         let feature_threaded_hole_templates = feature_threaded_hole_templates(
             &feature_operation_labels,
             &feature_operation_records,
@@ -898,16 +898,16 @@ impl NativeModel {
             &feature_payload_strings,
         );
         let feature_simple_hole_repeated_scalar_lanes =
-            feature_simple_hole_repeated_scalar_lanes(container);
+            feature_simple_hole_repeated_scalar_lanes(ctx, container)?;
         let feature_simple_hole_repeated_scalar_lane_block_references =
-            feature_simple_hole_repeated_scalar_lane_block_references(container);
+            feature_simple_hole_repeated_scalar_lane_block_references(ctx, container)?;
         let feature_simple_hole_construction_groups = feature_simple_hole_construction_groups(
             &feature_operation_labels,
             &feature_simple_hole_repeated_scalar_lanes,
             &feature_simple_hole_repeated_scalar_lane_block_references,
         );
         let feature_hole_package_construction_group_lanes =
-            feature_hole_package_construction_group_lanes(container);
+            feature_hole_package_construction_group_lanes(ctx, container)?;
         let feature_hole_package_construction_group_uses =
             feature_hole_package_construction_group_uses(
                 &feature_hole_package_construction_group_lanes,
@@ -1035,24 +1035,24 @@ impl NativeModel {
             &display_jt_segments,
             &display_jt_documents,
         )?;
-        let feature_datum_csys_constructions = feature_datum_csys_constructions(container);
+        let feature_datum_csys_constructions = feature_datum_csys_constructions(ctx, container)?;
         let feature_datum_csys_payloads =
-            feature_datum_csys_payloads(container, &feature_datum_csys_constructions);
+            feature_datum_csys_payloads(ctx, container, &feature_datum_csys_constructions)?;
         let feature_datum_csys_payload_scalar_pairs =
-            feature_datum_csys_payload_scalar_pairs(container, &feature_datum_csys_payloads);
+            feature_datum_csys_payload_scalar_pairs(ctx, container, &feature_datum_csys_payloads)?;
         let feature_datum_csys_payload_fixed_pairs =
-            feature_datum_csys_payload_fixed_pairs(container, &feature_datum_csys_payloads);
+            feature_datum_csys_payload_fixed_pairs(ctx, container, &feature_datum_csys_payloads)?;
         let feature_datum_csys_payload_scalars =
-            feature_datum_csys_payload_scalars(container, &feature_datum_csys_payloads);
+            feature_datum_csys_payload_scalars(ctx, container, &feature_datum_csys_payloads)?;
         let feature_datum_csys_descriptors =
             feature_datum_csys_descriptors(ctx, container, &feature_datum_csys_constructions)?;
-        let feature_datum_plane_headers = feature_datum_plane_headers(container);
+        let feature_datum_plane_headers = feature_datum_plane_headers(ctx, container)?;
         let feature_datum_plane_block_uses =
             feature_datum_plane_block_uses(&feature_datum_plane_headers, &feature_input_blocks);
         let feature_datum_plane_payloads =
             feature_datum_plane_payloads(ctx, container, &feature_datum_plane_headers)?;
         let feature_datum_plane_payload_scalar_pairs =
-            feature_datum_plane_payload_scalar_pairs(container, &feature_datum_plane_payloads);
+            feature_datum_plane_payload_scalar_pairs(ctx, container, &feature_datum_plane_payloads)?;
         let feature_datum_plane_descriptors =
             feature_datum_plane_descriptors(ctx, container, &feature_datum_plane_headers)?;
         let feature_datum_plane_csys_identity_uses = feature_datum_plane_csys_identity_uses(
@@ -1061,119 +1061,119 @@ impl NativeModel {
         );
         let feature_datum_csys_block_uses =
             feature_datum_csys_block_uses(&feature_datum_csys_constructions, &feature_input_blocks);
-        let feature_sketch_references = feature_sketch_references(container);
-        let feature_projected_curve_references = feature_projected_curve_references(container);
+        let feature_sketch_references = feature_sketch_references(ctx, container)?;
+        let feature_projected_curve_references = feature_projected_curve_references(ctx, container)?;
         let feature_projected_curve_construction_payloads =
-            feature_projected_curve_construction_payloads(
+            feature_projected_curve_construction_payloads(ctx,
                 container,
                 &feature_operation_labels,
                 &feature_projected_curve_references,
-            );
+            )?;
         let feature_projected_curve_construction_strings =
-            feature_projected_curve_construction_strings(
+            feature_projected_curve_construction_strings(ctx,
                 container,
                 &feature_projected_curve_construction_payloads,
-            );
-        let feature_fset_reference_graphs = feature_fset_reference_graphs(container);
+            )?;
+        let feature_fset_reference_graphs = feature_fset_reference_graphs(ctx, container)?;
         let feature_fset_construction_payloads =
-            feature_fset_construction_payloads(container, &feature_fset_reference_graphs);
-        let feature_delete_reference_fields = feature_delete_reference_fields(container);
+            feature_fset_construction_payloads(ctx, container, &feature_fset_reference_graphs)?;
+        let feature_delete_reference_fields = feature_delete_reference_fields(ctx, container)?;
         let feature_delete_construction_payloads =
-            feature_delete_construction_payloads(container, &feature_delete_reference_fields);
-        let feature_pattern_references = feature_pattern_references(container);
+            feature_delete_construction_payloads(ctx, container, &feature_delete_reference_fields)?;
+        let feature_pattern_references = feature_pattern_references(ctx, container)?;
         let feature_pattern_counted_reference_lanes =
-            feature_pattern_counted_reference_lanes(container);
-        let feature_pattern_construction_payloads = feature_pattern_construction_payloads(
+            feature_pattern_counted_reference_lanes(ctx, container)?;
+        let feature_pattern_construction_payloads = feature_pattern_construction_payloads(ctx,
             container,
             &feature_operation_labels,
             &feature_pattern_references,
-        );
+        )?;
         let feature_pattern_construction_strings =
-            feature_pattern_construction_strings(container, &feature_pattern_construction_payloads);
-        let feature_pattern_construction_fixed_lanes = feature_pattern_construction_fixed_lanes(
+            feature_pattern_construction_strings(ctx, container, &feature_pattern_construction_payloads)?;
+        let feature_pattern_construction_fixed_lanes = feature_pattern_construction_fixed_lanes(ctx,
             container,
             &feature_pattern_construction_payloads,
-        );
-        let feature_pattern_transform_lanes = feature_pattern_transform_lanes(container);
-        let feature_multi_instance_output_lanes = feature_multi_instance_output_lanes(container);
+        )?;
+        let feature_pattern_transform_lanes = feature_pattern_transform_lanes(ctx, container)?;
+        let feature_multi_instance_output_lanes = feature_multi_instance_output_lanes(ctx, container)?;
         let feature_identical_instance_output_lanes =
             feature_identical_instance_output_lanes(ctx, container)?;
-        let feature_point_construction_headers = feature_point_construction_headers(container);
+        let feature_point_construction_headers = feature_point_construction_headers(ctx, container)?;
         let feature_point_construction_scalar_lanes =
-            feature_point_construction_scalar_lanes(container, &feature_point_construction_headers);
+            feature_point_construction_scalar_lanes(ctx, container, &feature_point_construction_headers)?;
         let feature_draft_construction_references =
-            feature_draft_construction_references(container);
+            feature_draft_construction_references(ctx, container)?;
         let feature_draft_construction_index_lanes =
             feature_draft_construction_index_lanes(ctx, container)?;
         let feature_draft_construction_payloads =
-            feature_draft_construction_payloads(container, &feature_draft_construction_index_lanes);
-        let feature_draft_construction_graph_payloads = feature_draft_construction_graph_payloads(
+            feature_draft_construction_payloads(ctx, container, &feature_draft_construction_index_lanes)?;
+        let feature_draft_construction_graph_payloads = feature_draft_construction_graph_payloads(ctx,
             container,
             &feature_draft_construction_index_lanes,
             &feature_draft_construction_references,
-        );
-        let feature_draft_construction_fixed_lanes = feature_draft_construction_fixed_lanes(
+        )?;
+        let feature_draft_construction_fixed_lanes = feature_draft_construction_fixed_lanes(ctx,
             container,
             &feature_draft_construction_graph_payloads,
-        );
-        let feature_draft_construction_binary32_lanes = feature_draft_construction_binary32_lanes(
+        )?;
+        let feature_draft_construction_binary32_lanes = feature_draft_construction_binary32_lanes(ctx,
             container,
             &feature_draft_construction_graph_payloads,
-        );
-        let feature_draft_construction_graph_strings = feature_draft_construction_graph_strings(
+        )?;
+        let feature_draft_construction_graph_strings = feature_draft_construction_graph_strings(ctx,
             container,
             &feature_draft_construction_graph_payloads,
-        );
-        let feature_draft_construction_identity_frames = feature_draft_construction_identity_frames(
+        )?;
+        let feature_draft_construction_identity_frames = feature_draft_construction_identity_frames(ctx,
             container,
             &feature_draft_construction_payloads,
-        );
+        )?;
         let feature_draft_construction_terminal_lanes =
-            feature_draft_construction_terminal_lanes(container);
+            feature_draft_construction_terminal_lanes(ctx, container)?;
         let feature_surface_construction_references =
-            feature_surface_construction_references(container);
-        let feature_surface_construction_payloads = feature_surface_construction_payloads(
+            feature_surface_construction_references(ctx, container)?;
+        let feature_surface_construction_payloads = feature_surface_construction_payloads(ctx,
             container,
             &feature_surface_construction_references,
-        );
-        let feature_surface_construction_scalar_pairs = feature_surface_construction_scalar_pairs(
+        )?;
+        let feature_surface_construction_scalar_pairs = feature_surface_construction_scalar_pairs(ctx,
             container,
             &feature_surface_construction_payloads,
-        );
+        )?;
         let feature_surface_construction_strings =
             feature_surface_construction_strings(ctx, container, &feature_surface_construction_payloads)?;
         let feature_surface_construction_branches =
-            feature_surface_construction_branches(container);
-        let feature_swp104_leading_branches = feature_swp104_leading_branches(container);
+            feature_surface_construction_branches(ctx, container)?;
+        let feature_swp104_leading_branches = feature_swp104_leading_branches(ctx, container)?;
         let feature_thru_curve_construction_branch_groups =
-            feature_thru_curve_construction_branch_groups(container);
+            feature_thru_curve_construction_branch_groups(ctx, container)?;
         let feature_thru_curve_construction_envelopes =
-            feature_thru_curve_construction_envelopes(container);
-        let feature_extrude_profile_references = feature_extrude_profile_references(container);
-        let feature_extrude_payload_headers = feature_extrude_payload_headers(container);
+            feature_thru_curve_construction_envelopes(ctx, container)?;
+        let feature_extrude_profile_references = feature_extrude_profile_references(ctx, container)?;
+        let feature_extrude_payload_headers = feature_extrude_payload_headers(ctx, container)?;
         let feature_operation_body_scalar_triples =
-            feature_operation_body_scalar_triples(container);
+            feature_operation_body_scalar_triples(ctx, container)?;
         let feature_operation_body_11_continuations =
-            feature_operation_body_11_continuations(container);
+            feature_operation_body_11_continuations(ctx, container)?;
         let feature_operation_body_reference_lanes =
-            feature_operation_body_reference_lanes(container);
+            feature_operation_body_reference_lanes(ctx, container)?;
         let feature_extrude_construction_profiles =
             feature_extrude_construction_profiles(&feature_extrude_profile_references);
-        let feature_extrude_payload_32_branches = feature_extrude_payload_32_branches(container);
+        let feature_extrude_payload_32_branches = feature_extrude_payload_32_branches(ctx, container)?;
         let feature_extrude_32_constructions = feature_extrude_32_constructions(
             &feature_extrude_profile_references,
             &feature_extrude_payload_32_branches,
         );
         let feature_block_construction_references =
-            feature_block_construction_references(container);
+            feature_block_construction_references(ctx, container)?;
         let feature_block_constructions =
             feature_block_constructions(&feature_block_construction_references);
         let feature_block_construction_payloads =
-            feature_block_construction_payloads(container, &feature_block_constructions);
+            feature_block_construction_payloads(ctx, container, &feature_block_constructions)?;
         let feature_block_payload_scalars =
-            feature_block_payload_scalars(container, &feature_block_construction_payloads);
+            feature_block_payload_scalars(ctx, container, &feature_block_construction_payloads)?;
         let feature_block_payload_names =
-            feature_block_payload_names(container, &feature_block_construction_payloads);
+            feature_block_payload_names(ctx, container, &feature_block_construction_payloads)?;
         let feature_block_payload_named_records = feature_block_payload_named_records(
             &feature_block_construction_payloads,
             &feature_block_payload_names,
@@ -1195,21 +1195,21 @@ impl NativeModel {
         let feature_sketch_construction_inputs =
             feature_sketch_construction_inputs(&feature_sketch_records, &feature_sketch_references);
         let feature_sketch_construction_payloads =
-            feature_sketch_construction_payloads(container, &feature_sketch_construction_inputs);
-        let feature_sketch_payload_coordinate_pairs = feature_sketch_payload_coordinate_pairs(
+            feature_sketch_construction_payloads(ctx, container, &feature_sketch_construction_inputs)?;
+        let feature_sketch_payload_coordinate_pairs = feature_sketch_payload_coordinate_pairs(ctx,
             container,
             &feature_sketch_construction_payloads,
-        );
+        )?;
         let feature_sketch_payload_fixed_pairs =
-            feature_sketch_payload_fixed_pairs(container, &feature_sketch_construction_payloads);
+            feature_sketch_payload_fixed_pairs(ctx, container, &feature_sketch_construction_payloads)?;
         let feature_sketch_payload_mixed_pairs =
-            feature_sketch_payload_mixed_pairs(container, &feature_sketch_construction_payloads);
+            feature_sketch_payload_mixed_pairs(ctx, container, &feature_sketch_construction_payloads)?;
         let feature_sketch_payload_scalars =
-            feature_sketch_payload_scalars(container, &feature_sketch_construction_inputs);
+            feature_sketch_payload_scalars(ctx, container, &feature_sketch_construction_inputs)?;
         let feature_sketch_payload_scalar_lanes =
-            feature_sketch_payload_scalar_lanes(container, &feature_sketch_construction_payloads);
+            feature_sketch_payload_scalar_lanes(ctx, container, &feature_sketch_construction_payloads)?;
         let feature_sketch_payload_names =
-            feature_sketch_payload_names(container, &feature_sketch_construction_inputs);
+            feature_sketch_payload_names(ctx, container, &feature_sketch_construction_inputs)?;
         let feature_sketch_payload_named_records = feature_sketch_payload_named_records(
             &feature_sketch_construction_payloads,
             &feature_sketch_payload_names,
@@ -1228,7 +1228,7 @@ impl NativeModel {
             &feature_sketch_payload_scalars,
         );
         let feature_sketch_point_groups = feature_sketch_point_groups(&feature_sketch_points);
-        let offset_store_named_points = offset_store_named_points(container);
+        let offset_store_named_points = offset_store_named_points(ctx, container)?;
         let feature_sketch_named_point_block_uses = feature_sketch_named_point_block_uses(
             &feature_sketch_references,
             &offset_store_named_points,
@@ -1249,11 +1249,11 @@ impl NativeModel {
             &feature_datum_csys_constructions,
             &feature_datum_csys_payload_scalars,
         );
-        let expression_declarations = expression_declarations(container);
+        let expression_declarations = expression_declarations(ctx, container)?;
         let expressions = expressions(ctx, container)?;
-        let classes = class_definitions(container);
-        let fields = field_definitions(container);
-        let object_records = object_records(container);
+        let classes = class_definitions(ctx, container)?;
+        let fields = field_definitions(ctx, container)?;
+        let object_records = object_records(ctx, container)?;
         let (rmfastload_object_id_tables, rmfastload_object_ids) =
             match rmfastload_object_id_table(ctx, container)? {
                 Some((table, object_ids)) => {
@@ -1267,16 +1267,16 @@ impl NativeModel {
                 }
                 None => (Vec::new(), Vec::new()),
             };
-        let data_block_control_forms = data_block_control_forms(container);
-        let data_block_control_values = data_block_control_values(container);
+        let data_block_control_forms = data_block_control_forms(ctx, container)?;
+        let data_block_control_values = data_block_control_values(ctx, container)?;
         let data_block_control_class_references =
             data_block_control_class_references(ctx, container)?;
-        let data_block_control_index_values = data_block_control_index_values(container);
-        let data_block_control_references = data_block_control_references(container);
+        let data_block_control_index_values = data_block_control_index_values(ctx, container)?;
+        let data_block_control_references = data_block_control_references(ctx, container)?;
         let data_block_control_handle_pairs =
             data_block_control_handle_pairs(&data_block_control_references);
         let data_block_references =
-            data_block_references(container, &object_records, &expression_declarations);
+            data_block_references(ctx, container, &object_records, &expression_declarations)?;
         let data_block_counted_index_lanes = data_block_counted_index_lanes(ctx, container)?;
         let data_block_abr_reference_lanes = data_block_abr_reference_lanes(ctx, container)?;
         let data_block_index_rows = data_block_index_rows(ctx, container)?;
@@ -1324,10 +1324,10 @@ impl NativeModel {
             &expression_declarations,
             &expressions,
         );
-        let store_headers = store_headers(container);
-        let string_values = string_values(container);
+        let store_headers = store_headers(ctx, container)?;
+        let string_values = string_values(ctx, container)?;
         let object_uuid_values = object_uuid_values(ctx, container)?;
-        let object_references = object_references(container);
+        let object_references = object_references(ctx, container)?;
         let object_record_handle_pairs = object_record_handle_pairs(&object_references);
         let configurations = configurations(container);
         let part_attributes = part_attributes(container);

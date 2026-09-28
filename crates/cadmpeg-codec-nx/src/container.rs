@@ -374,44 +374,54 @@ impl<'a> Container<'a> {
     }
 
     /// Locate independently size-framed NX object-model sections.
-    pub(crate) fn om_sections(&self) -> Vec<(EntryRef<'_>, crate::om::Section<'_>)> {
-        let framed_cache = self.om_section_cache.get_or_init(|| match &self.data {
+    pub(crate) fn om_sections(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(EntryRef<'_>, crate::om::Section<'_>)>, CodecError> {
+        if self.om_section_cache.get().is_none() {
+            let cache = match &self.data {
             Cow::Borrowed(bytes) => {
                 let bytes: &'a [u8] = bytes;
-                let (sections, _) = parse_framed_section_cache(bytes, &self.entries, false);
+                let (sections, _) = parse_framed_section_cache(ctx, bytes, &self.entries, false)?;
                 FramedSectionCache::Borrowed { sections }
             }
             Cow::Owned(bytes) => {
-                let (sections, layouts) = parse_framed_section_cache(bytes, &self.entries, true);
+                let (sections, layouts) = parse_framed_section_cache(ctx, bytes, &self.entries, true)?;
                 drop(sections);
                 FramedSectionCache::Owned { layouts }
             }
-        });
-        match framed_cache {
+            };
+            // discarded-value: a concurrent reader can fill the same cache first.
+            let _ = self.om_section_cache.set(cache);
+        }
+        let framed_cache = self.om_section_cache.get().ok_or_else(|| ctx.refuse_codec_limit("nx framed OM cache", 0, 1))?;
+        Ok(match framed_cache {
             FramedSectionCache::Borrowed { sections } => sections
                 .iter()
                 .filter_map(|(entry_index, section)| {
                     EntryRef::new(&self.entries, *entry_index).map(|entry| (entry, section.clone()))
                 })
-                .collect(),
+                .collect::<Vec<_>>(),
             FramedSectionCache::Owned { layouts } => layouts
                 .iter()
                 .filter_map(|(entry_index, layout)| {
                     EntryRef::new(&self.entries, *entry_index)
                         .map(|entry| (entry, layout.materialize()))
                 })
-                .collect(),
-        }
+                .collect::<Vec<_>>(),
+        })
     }
 
     /// Locate indexed NX object-model sections in catalogued file entries.
-    pub(crate) fn indexed_om_sections(&self) -> Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)> {
-        let cache = self
-            .indexed_section_layouts
-            .get_or_init(|| match &self.data {
+    pub(crate) fn indexed_om_sections(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)>, CodecError> {
+        if self.indexed_section_layouts.get().is_none() {
+            let cache = match &self.data {
                 Cow::Borrowed(bytes) => {
                     let bytes: &'a [u8] = bytes;
-                    let (sections, _) = parse_indexed_section_cache(bytes, &self.entries, false);
+                    let (sections, _) = parse_indexed_section_cache(ctx, bytes, &self.entries, false)?;
                     let mut blocks = BTreeMap::new();
                     for (section_ordinal, (entry_index, section)) in sections.iter().enumerate() {
                         let Some((control, _, records)) = section.as_offset_only() else {
@@ -439,25 +449,29 @@ impl<'a> Container<'a> {
                     IndexedSectionCache::Borrowed { sections, blocks }
                 }
                 Cow::Owned(bytes) => {
-                    let (_, layouts) = parse_indexed_section_cache(bytes, &self.entries, true);
+                    let (_, layouts) = parse_indexed_section_cache(ctx, bytes, &self.entries, true)?;
                     IndexedSectionCache::Owned { layouts }
                 }
-            });
-        match cache {
+            };
+            // discarded-value: a concurrent reader can fill the same cache first.
+            let _ = self.indexed_section_layouts.set(cache);
+        }
+        let cache = self.indexed_section_layouts.get().ok_or_else(|| ctx.refuse_codec_limit("nx indexed OM cache", 0, 1))?;
+        Ok(match cache {
             IndexedSectionCache::Borrowed { sections, .. } => sections
                 .iter()
                 .filter_map(|(entry_index, section)| {
                     EntryRef::new(&self.entries, *entry_index).map(|entry| (entry, section.clone()))
                 })
-                .collect(),
+                .collect::<Vec<_>>(),
             IndexedSectionCache::Owned { layouts } => layouts
                 .iter()
                 .filter_map(|(entry_index, layout)| {
                     EntryRef::new(&self.entries, *entry_index)
                         .map(|entry| (entry, layout.materialize()))
                 })
-                .collect(),
-        }
+                .collect::<Vec<_>>(),
+        })
     }
 
     /// Return the cached bytes and source offsets of every borrowed offset-store block.
@@ -1159,10 +1173,11 @@ type FramedSections<'a> = Vec<(usize, crate::om::Section<'a>)>;
 type FramedSectionLayouts = Vec<(usize, crate::om::cache::SectionLayout)>;
 
 fn parse_framed_section_cache<'bytes>(
+    ctx: &DecodeContext<'_>,
     bytes: &'bytes [u8],
     entries: &[DirEntry],
     retain_layouts: bool,
-) -> (FramedSections<'bytes>, FramedSectionLayouts) {
+) -> Result<(FramedSections<'bytes>, FramedSectionLayouts), CodecError> {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
     for (entry_index, entry) in entries.iter().enumerate() {
@@ -1175,7 +1190,7 @@ fn parse_framed_section_cache<'bytes>(
         let Some(payload) = bytes.get(offset..offset.saturating_add(size)) else {
             continue;
         };
-        let parsed = crate::om::sections(payload);
+        let parsed = crate::om::sections(ctx, payload)?;
         if parsed.is_empty() {
             continue;
         }
@@ -1191,17 +1206,18 @@ fn parse_framed_section_cache<'bytes>(
             sections.push((entry_index, section));
         }
     }
-    (sections, layouts)
+    Ok((sections, layouts))
 }
 
 type IndexedSections<'a> = Vec<(usize, crate::om::IndexedSection<'a>)>;
 type IndexedSectionLayouts = Vec<(usize, crate::om::cache::IndexedSectionLayout)>;
 
 fn parse_indexed_section_cache<'bytes>(
+    ctx: &DecodeContext<'_>,
     bytes: &'bytes [u8],
     entries: &[DirEntry],
     retain_layouts: bool,
-) -> (IndexedSections<'bytes>, IndexedSectionLayouts) {
+) -> Result<(IndexedSections<'bytes>, IndexedSectionLayouts), CodecError> {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
@@ -1215,7 +1231,7 @@ fn parse_indexed_section_cache<'bytes>(
         let Some(payload) = bytes.get(offset..offset.saturating_add(size)) else {
             continue;
         };
-        let parsed = crate::om::indexed_sections(payload);
+        let parsed = crate::om::indexed_sections(ctx, payload)?;
         if parsed.is_empty() {
             continue;
         }
@@ -1235,7 +1251,7 @@ fn parse_indexed_section_cache<'bytes>(
             sections.push((entry_index, section));
         }
     }
-    (sections, layouts)
+    Ok((sections, layouts))
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].

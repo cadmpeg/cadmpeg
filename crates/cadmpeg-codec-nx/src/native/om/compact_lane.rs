@@ -38,7 +38,7 @@ pub(in crate::native) fn data_block_counted_index_lanes(
     container: &Container,
 ) -> Result<Vec<DataBlockCountedIndexLane>, CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in container.indexed_om_sections().into_iter().enumerate() {
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
         let Some((_, _, records)) = section.as_offset_only() else { continue; };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let block_count = records.len() + 1;
@@ -70,7 +70,7 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
     container: &Container,
 ) -> Result<Vec<DataBlockAbrReferenceLane>, CodecError> {
     let mut output = Vec::new();
-    for (section_ordinal, (entry, section)) in container.indexed_om_sections().into_iter().enumerate() {
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
         let Some((_, storage, records)) = section.as_offset_only() else { continue; };
         let Some(storage_offset) = records.first().map(|record| record.offset) else { continue; };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);

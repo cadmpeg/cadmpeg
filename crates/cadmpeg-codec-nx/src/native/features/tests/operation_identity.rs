@@ -115,11 +115,11 @@ fn feature_label_identity_retains_the_complete_header_ordinal() {
     })
     .expect("feature-history fixture");
 
-    let labels = feature_operation_labels(&container);
+    let labels = crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx,&container)).unwrap();
     assert_eq!(labels.len(), 2);
     assert!(labels[0].id.ends_with("-0000000000"));
     assert!(labels[1].id.ends_with("-0000000002"));
-    let records = feature_operation_records(&container);
+    let records = crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx,&container)).unwrap();
     assert_eq!(records[1].operation_label, labels[1].id);
 }
 
@@ -166,8 +166,8 @@ fn operation_header_identity_survives_offset_store_insertion() {
     })
     .expect("second synthetic container");
 
-    let first_labels = feature_operation_labels(&first);
-    let second_labels = feature_operation_labels(&second);
+    let first_labels = crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx,&first)).unwrap();
+    let second_labels = crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx,&second)).unwrap();
     assert_eq!(
         first_labels[0].objects.values(),
         [Some(1), Some(2), None, None]
@@ -181,8 +181,8 @@ fn operation_header_identity_survives_offset_store_insertion() {
         second_labels[0].stable_identity
     );
 
-    let first_records = feature_operation_records(&first);
-    let second_records = feature_operation_records(&second);
+    let first_records = crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx,&first)).unwrap();
+    let second_records = crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx,&second)).unwrap();
     assert_eq!(
         first_records[0].stable_identity,
         second_records[0].stable_identity
@@ -211,7 +211,7 @@ fn operation_body_write_retains_identity_group_and_image() {
         )
     })
     .expect("synthetic body-write container");
-    let writes = feature_operation_body_writes(&container);
+    let writes = crate::test_support::with_decode_context(|ctx| feature_operation_body_writes(ctx,&container)).unwrap();
     let [first, second] = writes.as_slice() else {
         panic!("two body-write frames");
     };
@@ -244,7 +244,7 @@ fn operation_body_write_resolves_one_unique_image_block() {
     })
     .expect("synthetic body-image store");
 
-    let writes = feature_operation_body_writes(&container);
+    let writes = crate::test_support::with_decode_context(|ctx| feature_operation_body_writes(ctx,&container)).unwrap();
 
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].frame.body_image().value(), 65);
@@ -269,7 +269,7 @@ fn body_image_segment_use_requires_one_plain_alias() {
         )
     })
     .expect("synthetic body-image store");
-    let writes = feature_operation_body_writes(&container);
+    let writes = crate::test_support::with_decode_context(|ctx| feature_operation_body_writes(ctx,&container)).unwrap();
     let binding = |id: &str, stream_kind: crate::parasolid::StreamKind| SegmentBodyBinding {
         id: id.to_string(),
         stream_link: format!("{id}:link"),
@@ -372,7 +372,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         )
     })
     .expect("synthetic body-image store");
-    let writes = feature_operation_body_writes(&container);
+    let writes = crate::test_support::with_decode_context(|ctx| feature_operation_body_writes(ctx,&container)).unwrap();
     let binding =
         |id: &str, stream_ordinal, body_alias_object_index, stream_role| SegmentBodyBinding {
             id: id.to_string(),

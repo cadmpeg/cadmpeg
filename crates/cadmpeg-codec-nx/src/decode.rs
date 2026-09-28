@@ -95,7 +95,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             build_metadata_ir(ctx, root, &scan, &dialects)?;
         let mut body = build_container_body(&scan, dialect_losses, notes);
         body.losses.extend(native_losses);
-        report_untransferred_streams(&scan, &mut body, TypedNative::ContainerOnly);
+        report_untransferred_streams(ctx, &scan, &mut body, TypedNative::ContainerOnly)?;
         return decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities);
     }
 
@@ -115,7 +115,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         build_metadata_ir(ctx, root, &scan, &dialects)?;
     let mut body = build_container_body(&scan, dialect_losses, notes);
     body.losses.extend(native_losses);
-    report_untransferred_streams(&scan, &mut body, TypedNative::Available);
+    report_untransferred_streams(ctx, &scan, &mut body, TypedNative::Available)?;
     decoded(ctx, ir, body, annotations, unknowns, &mut admitted_entities)
 }
 
@@ -141,8 +141,13 @@ fn decoded(
     })
 }
 
-fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native: TypedNative) {
-    let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
+fn report_untransferred_streams(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan,
+    body: &mut DecodeBody,
+    typed_native: TypedNative,
+) -> Result<(), CodecError> {
+    let (control_count, classified_control_count) = offset_store_control_counts(ctx, &scan.container)?;
     if classified_control_count != control_count {
         body.losses.push(NxLossCode::OffsetStoreControlUntyped.note(format!(
             "{} of {control_count} bounded offset-store control block(s) have no admitted complete grammar.",
@@ -172,11 +177,15 @@ fn report_untransferred_streams(scan: &Scan, body: &mut DecodeBody, typed_native
                 )));
         }
     }
+    Ok(())
 }
 
-pub(super) fn offset_store_control_counts(container: &Container) -> (usize, usize) {
-    container
-        .indexed_om_sections()
+pub(super) fn offset_store_control_counts(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<(usize, usize), CodecError> {
+    Ok(container
+        .indexed_om_sections(ctx)?
         .into_iter()
         .filter_map(|(_, section)| {
             section.as_offset_only().map(|(control, _, records)| {
@@ -191,7 +200,7 @@ pub(super) fn offset_store_control_counts(container: &Container) -> (usize, usiz
                         crate::om::offset_store_control_form(control.bytes, first_record).is_some(),
                     ),
             )
-        })
+        }))
 }
 
 /// Aggregate carrier counts across the decoded streams, for reporting.

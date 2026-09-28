@@ -52,7 +52,7 @@ pub(in crate::native) fn object_uuid_values(
     const FRAME_LEN: usize = 2 + 36 + 1;
     let mut values = Vec::new();
     for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections().into_iter().enumerate()
+        container.indexed_om_sections(ctx)?.into_iter().enumerate()
     {
         let Some(records) = section.as_fixed() else {
             continue;

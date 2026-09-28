@@ -194,12 +194,13 @@ pub(in crate::native) enum FeatureFsetReferenceGroup {
 
 /// Decode and resolve exact `FSET` reference graphs without assigning semantic
 /// roles to either reference group.
-pub(in crate::native) fn feature_fset_reference_graphs(
+pub(in crate::native) fn feature_fset_reference_graphs(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureFsetReferenceGraph> {
-    let indexed = container.indexed_om_sections();
+) -> Result<Vec<FeatureFsetReferenceGraph>, cadmpeg_core::CodecError>
+{
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut graphs = Vec::new();
-    visit_feature_history_operation_records(
+    visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(graph) = FsetReferences::read(record.payload_view()) else {
@@ -220,18 +221,19 @@ pub(in crate::native) fn feature_fset_reference_graphs(
                 references,
             });
         },
-    );
-    graphs
+    )?;
+    Ok(graphs)
 }
 
 /// Reconstruct the two ordered logical payloads selected by each complete
 /// same-store `FSET` reference graph.
-pub(in crate::native) fn feature_fset_construction_payloads(
+pub(in crate::native) fn feature_fset_construction_payloads(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     graphs: &[FeatureFsetReferenceGraph],
-) -> Vec<FeatureConstructionPayload> {
-    let blocks = offset_data_block_bytes(container);
-    graphs
+) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError>
+{
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    Ok(graphs
         .iter()
         .flat_map(|graph| {
             let blocks = &blocks;
@@ -279,7 +281,7 @@ pub(in crate::native) fn feature_fset_construction_payloads(
                 })
             })
         })
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]

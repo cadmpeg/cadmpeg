@@ -134,8 +134,8 @@ fn container_cached_operation_labels_preserve_section_materialization() {
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    let direct = crate::om::sections(&payload);
-    let cached = container.om_sections();
+    let direct = crate::test_support::with_decode_context(|ctx| crate::om::sections(ctx, &payload)).unwrap();
+    let cached = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
     assert_eq!(cached.len(), direct.len());
     assert!(container.om_section_cache.get().is_some());
     for ((entry, section), expected) in cached.iter().zip(direct.iter()) {
@@ -147,7 +147,7 @@ fn container_cached_operation_labels_preserve_section_materialization() {
             expected.operation_records_with_label_ordinals()
         );
     }
-    let repeated = container.om_sections();
+    let repeated = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
     assert_eq!(repeated, cached);
     assert!(std::sync::Arc::ptr_eq(
         &cached[0].1.types,
@@ -178,11 +178,11 @@ fn container_caches_owned_section_layouts() {
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    let first = container.om_sections();
-    let second = container.om_sections();
+    let first = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+    let second = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
     assert_eq!(first.len(), 1);
     assert_eq!(second, first);
-    assert_eq!(first[0].1, crate::om::sections(&container.data[17..])[0]);
+    assert_eq!(first[0].1, crate::test_support::with_decode_context(|ctx| crate::om::sections(ctx, &container.data[17..])).unwrap()[0]);
     assert!(container.om_section_cache.get().is_some_and(|cache| {
         matches!(
             cache,
@@ -197,8 +197,8 @@ fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
             .unwrap();
-    let first = container.indexed_om_sections();
-    let second = container.indexed_om_sections();
+    let first = crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+    let second = crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
     assert!(!first.is_empty());
     assert_eq!(first, second);
     assert!(std::sync::Arc::ptr_eq(
@@ -235,7 +235,7 @@ fn container_reuses_borrowed_offset_store_block_index() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
             .unwrap();
-    let _ = container.indexed_om_sections();
+    let _ = crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
     let first = container
         .cached_offset_data_block_bytes()
         .expect("borrowed indexed sections cache their offset-store blocks");

@@ -32,7 +32,10 @@ pub fn deltas(data: &[u8]) {
 }
 
 /// Exercise NX object-model indexed section framing.
-pub fn om(data: &[u8]) {
+pub fn om(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = DecodeArena::new();
+    let policy = fuzz_policy();
+    let (ctx, _) = DecodeContext::from_root_bytes(data, &arena, &policy)?;
     let _ = (
         crate::om_tokens::ROOT_MARKER,
         crate::om_tokens::HOST_GLOBALS,
@@ -50,12 +53,13 @@ pub fn om(data: &[u8]) {
     while let Some(token) = crate::om::compact::NullableCompactIndex::read(data, at) {
         at += token.raw().len();
     }
-    for section in crate::om::indexed_sections(data) {
-        let _ = section.numeric_expressions();
+    for section in crate::om::indexed_sections(&ctx, data)? {
+        drop(section.numeric_expressions());
     }
-    for section in crate::om::sections(data) {
-        let _ = section.operation_body_references();
+    for section in crate::om::sections(&ctx, data)? {
+        drop(section.operation_body_references());
     }
+    Ok(())
 }
 
 /// Exercise NX analytic point extraction.
@@ -157,7 +161,7 @@ mod tests {
     #[test]
     fn wrappers_accept_empty() {
         super::deltas(&[]);
-        super::om(&[]);
+        drop(super::om(&[]));
         super::geometry_points(&[]);
         super::geometry_curves(&[]);
         super::geometry_surfaces(&[]);
@@ -176,8 +180,8 @@ mod tests {
 
     #[test]
     fn om_wrapper_accepts_fixture() {
-        super::om(&crate::test_support::test_om::indexed_om_section());
-        super::om(&crate::test_support::test_om::size_framed_om_section());
+        drop(super::om(&crate::test_support::test_om::indexed_om_section()));
+        drop(super::om(&crate::test_support::test_om::size_framed_om_section()));
     }
 
     #[test]
@@ -225,6 +229,6 @@ mod tests {
             std::str::from_utf8(&bytes).is_err(),
             "the fixture must state no text"
         );
-        super::om(&bytes);
+        drop(super::om(&bytes));
     }
 }

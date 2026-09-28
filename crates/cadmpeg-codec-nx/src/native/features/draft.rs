@@ -659,14 +659,15 @@ impl TryFrom<FeatureDraftConstructionTerminalLaneWire> for FeatureDraftConstruct
 }
 
 /// Decode exact ordered draft construction references without assigning semantic roles.
-pub(in crate::native) fn feature_draft_construction_references(
+pub(in crate::native) fn feature_draft_construction_references(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureDraftConstructionReference> {
-    resolved_feature_payload_references(container, |record, base| {
+) -> Result<Vec<FeatureDraftConstructionReference>, cadmpeg_core::CodecError>
+{
+    Ok(resolved_feature_payload_references(ctx, container, |record, base| {
         crate::om::draft_references::draft_feature_payload_references(record)
             .and_then(|field| field.relocate(base))
             .map(|field| field.references().into_iter().collect())
-    })
+    })?
     .into_iter()
     .map(|reference| {
         let operation_label = format!(
@@ -685,7 +686,7 @@ pub(in crate::native) fn feature_draft_construction_references(
             source_offset: reference.source_offset,
         }
     })
-    .collect()
+    .collect())
 }
 
 /// Decode exact counted compact-index lanes preceding draft construction graphs.
@@ -693,10 +694,10 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<FeatureDraftConstructionIndexLane>, cadmpeg_core::CodecError> {
-    let indexed = container.indexed_om_sections();
+    let indexed = container.indexed_om_sections(ctx)?;
     let mut lanes = Vec::new();
     let mut failure = None;
-    visit_feature_history_operation_records(
+    visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             if failure.is_some() { return; }
@@ -745,17 +746,18 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
                 indices,
             });
         },
-    );
+    )?;
     if let Some(error) = failure { Err(error) } else { Ok(lanes) }
 }
 
 /// Reconstruct ordered logical payloads from resolved draft index lanes.
-pub(in crate::native) fn feature_draft_construction_payloads(
+pub(in crate::native) fn feature_draft_construction_payloads(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     lanes: &[FeatureDraftConstructionIndexLane],
-) -> Vec<FeatureConstructionPayload> {
-    let blocks = offset_data_block_bytes(container);
-    lanes
+) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError>
+{
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    Ok(lanes
         .iter()
         .filter_map(|lane| {
             let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
@@ -779,17 +781,18 @@ pub(in crate::native) fn feature_draft_construction_payloads(
                 content,
             })
         })
-        .collect()
+        .collect())
 }
 
 /// Reconstruct ordered logical payloads from complete draft construction graphs.
-pub(in crate::native) fn feature_draft_construction_graph_payloads(
+pub(in crate::native) fn feature_draft_construction_graph_payloads(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     lanes: &[FeatureDraftConstructionIndexLane],
     references: &[FeatureDraftConstructionReference],
-) -> Vec<FeatureDraftConstructionGraphPayload> {
-    let blocks = offset_data_block_bytes(container);
-    lanes
+) -> Result<Vec<FeatureDraftConstructionGraphPayload>, cadmpeg_core::CodecError>
+{
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    Ok(lanes
         .iter()
         .filter_map(|lane| {
             let FeatureDraftConstructionIndices::Resolved(tokens) = &lane.indices else {
@@ -831,16 +834,17 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
                 content,
             })
         })
-        .collect()
+        .collect())
 }
 
 /// Decode complete signed Q1.55 lanes from reconstructed draft graph payloads.
-pub(in crate::native) fn feature_draft_construction_fixed_lanes(
+pub(in crate::native) fn feature_draft_construction_fixed_lanes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDraftConstructionGraphPayload],
-) -> Vec<FeatureDraftConstructionFixedLane> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
+) -> Result<Vec<FeatureDraftConstructionFixedLane>, cadmpeg_core::CodecError>
+{
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    Ok(payloads
         .iter()
         .flat_map(|payload| {
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
@@ -864,16 +868,17 @@ pub(in crate::native) fn feature_draft_construction_fixed_lanes(
                 })
                 .collect::<Vec<_>>()
         })
-        .collect()
+        .collect())
 }
 
 /// Decode complete shifted-binary32 lanes from reconstructed draft graph payloads.
-pub(in crate::native) fn feature_draft_construction_binary32_lanes(
+pub(in crate::native) fn feature_draft_construction_binary32_lanes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDraftConstructionGraphPayload],
-) -> Vec<FeatureDraftConstructionBinary32Lane> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
+) -> Result<Vec<FeatureDraftConstructionBinary32Lane>, cadmpeg_core::CodecError>
+{
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    Ok(payloads
         .iter()
         .flat_map(|payload| {
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
@@ -897,16 +902,17 @@ pub(in crate::native) fn feature_draft_construction_binary32_lanes(
                 })
                 .collect::<Vec<_>>()
         })
-        .collect()
+        .collect())
 }
 
 /// Decode canonical printable strings from reconstructed draft graph payloads.
-pub(in crate::native) fn feature_draft_construction_graph_strings(
+pub(in crate::native) fn feature_draft_construction_graph_strings(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureDraftConstructionGraphPayload],
-) -> Vec<FeatureDraftConstructionGraphString> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
+) -> Result<Vec<FeatureDraftConstructionGraphString>, cadmpeg_core::CodecError>
+{
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    Ok(payloads
         .iter()
         .flat_map(|payload| {
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
@@ -930,16 +936,17 @@ pub(in crate::native) fn feature_draft_construction_graph_strings(
                 })
                 .collect::<Vec<_>>()
         })
-        .collect()
+        .collect())
 }
 
 /// Decode complete identity frames from reconstructed draft construction payloads.
-pub(in crate::native) fn feature_draft_construction_identity_frames(
+pub(in crate::native) fn feature_draft_construction_identity_frames(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Vec<FeatureDraftConstructionIdentityFrame> {
-    let blocks = offset_data_block_bytes(container);
-    payloads
+) -> Result<Vec<FeatureDraftConstructionIdentityFrame>, cadmpeg_core::CodecError>
+{
+    let blocks = offset_data_block_bytes(ctx, container)?;
+    Ok(payloads
         .iter()
         .flat_map(|payload| {
             let Some(joined) = JoinedPayload::from_source(payload.content.block_ids(), &blocks)
@@ -964,15 +971,16 @@ pub(in crate::native) fn feature_draft_construction_identity_frames(
                 })
                 .collect::<Vec<_>>()
         })
-        .collect()
+        .collect())
 }
 
 /// Decode complete end-anchored terminal lanes from draft construction payloads.
-pub(in crate::native) fn feature_draft_construction_terminal_lanes(
+pub(in crate::native) fn feature_draft_construction_terminal_lanes(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-) -> Vec<FeatureDraftConstructionTerminalLane> {
+) -> Result<Vec<FeatureDraftConstructionTerminalLane>, cadmpeg_core::CodecError>
+{
     let mut lanes = Vec::new();
-    visit_feature_history_operation_records(
+    visit_feature_history_operation_records(ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let Some(lane) = crate::om::draft_terminal::scan(record.payload_view())
@@ -990,8 +998,8 @@ pub(in crate::native) fn feature_draft_construction_terminal_lanes(
                 lane,
             });
         },
-    );
-    lanes
+    )?;
+    Ok(lanes)
 }
 
 use super::deserialize_reference_lane_count;

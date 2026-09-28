@@ -2,6 +2,8 @@
 //! NX OM registry-token framing.
 
 use super::{FieldDefinition, TypeDefinition};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::CodecError;
 use std::num::NonZeroU32;
 
 const FIELD_START_PROBE_LIMIT: usize = 256;
@@ -182,10 +184,18 @@ fn class_registry_layout_at(
     ))
 }
 
-fn complete_type_registry_at(bytes: &[u8], first: usize, end: usize) -> Option<TypeRegistry<'_>> {
+fn complete_type_registry_at<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    first: usize,
+    end: usize,
+) -> Result<Option<TypeRegistry<'a>>, CodecError> {
+    let mut reservation = ctx.reserve_scoped(0, "nx complete type registry")?;
     let mut at = first;
     loop {
-        let declaration = registry_declaration_at(bytes, at, end, b"UGS::")?;
+        let Some(declaration) = registry_declaration_at(bytes, at, end, b"UGS::") else {
+            return Ok(None);
+        };
         at = declaration.name_end() + 1;
         match bytes.get(at) {
             Some(0x01) => {
@@ -193,21 +203,29 @@ fn complete_type_registry_at(bytes: &[u8], first: usize, end: usize) -> Option<T
                 break;
             }
             Some(_) if registry_declaration_at(bytes, at, end, b"UGS::").is_some() => {}
-            _ => return None,
+            _ => return Ok(None),
         }
     }
 
     let mut definitions = Vec::new();
     loop {
         if let Some(field_start) = field_registry_start(bytes, at, end) {
-            return Some(TypeRegistry {
+            reservation.commit()?;
+            return Ok(Some(TypeRegistry {
                 definitions,
                 field_start,
-            });
+            }));
         }
-        let declaration = registry_declaration_at(bytes, at, end, b"UGS::")?;
-        let (_, tail_end) = class_registry_layout_at(bytes, declaration.name_end(), end)?;
-        let registry_tail = bytes.get(declaration.name_end()..tail_end)?;
+        let Some(declaration) = registry_declaration_at(bytes, at, end, b"UGS::") else {
+            return Ok(None);
+        };
+        let Some((_, tail_end)) = class_registry_layout_at(bytes, declaration.name_end(), end) else {
+            return Ok(None);
+        };
+        let Some(registry_tail) = bytes.get(declaration.name_end()..tail_end) else {
+            return Ok(None);
+        };
+        reserve_registry_item(ctx, &mut reservation, &mut definitions)?;
         definitions.push(TypeDefinition {
             offset: declaration.offset,
             name: declaration.name,
@@ -217,7 +235,7 @@ fn complete_type_registry_at(bytes: &[u8], first: usize, end: usize) -> Option<T
         if field_registry_start(bytes, at, end).is_none()
             && registry_declaration_at(bytes, at, end, b"UGS::").is_none()
         {
-            return None;
+            return Ok(None);
         }
     }
 }
@@ -250,31 +268,46 @@ fn field_registry_start(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
 /// Parse the complete reference/class registry when its explicit terminators
 /// and class tails are present. Older or partial layouts use the historical
 /// scanner and retain its exact suffix bytes.
-pub(super) fn type_registry(bytes: &[u8], start: usize, end: usize) -> TypeRegistry<'_> {
-    let complete = (start..end).find_map(|at| {
-        registry_declaration_at(bytes, at, end, b"UGS::")
-            .and_then(|_| complete_type_registry_at(bytes, at, end))
-    });
-    if let Some(registry) = complete {
-        return registry;
+pub(super) fn type_registry<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    start: usize,
+    end: usize,
+) -> Result<TypeRegistry<'a>, CodecError> {
+    let span = end
+        .checked_sub(start)
+        .ok_or_else(|| ctx.refuse_codec_limit("nx type registry range", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(span), "nx type registry scan")?;
+    for at in start..end {
+        if registry_declaration_at(bytes, at, end, b"UGS::").is_some() {
+            if let Some(registry) = complete_type_registry_at(ctx, bytes, at, end)? {
+                return Ok(registry);
+            }
+        }
     }
 
-    let definitions = legacy_type_definitions(bytes, start, end);
+    let definitions = legacy_type_definitions(ctx, bytes, start, end)?;
     let field_start = definitions.last().map_or(start, |definition| {
         definition.offset + definition.name.len() + 2
     });
-    TypeRegistry {
+    Ok(TypeRegistry {
         definitions,
         field_start,
-    }
+    })
 }
 
-fn legacy_type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinition<'_>> {
+fn legacy_type_definitions<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    start: usize,
+    end: usize,
+) -> Result<Vec<TypeDefinition<'a>>, CodecError> {
     let mut out = Vec::new();
     let mut at = start;
     while at < end {
         if let Some(declaration) = registry_declaration_at(bytes, at, end, b"UGS::") {
             let name_end = declaration.name_end();
+            reserve_retained_registry_item(ctx, &mut out, "nx legacy type definitions")?;
             out.push(TypeDefinition {
                 offset: declaration.offset,
                 name: declaration.name,
@@ -290,14 +323,15 @@ fn legacy_type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDe
         let tail_end = out[index + 1].offset;
         out[index].registry_tail = &bytes[tail_start..tail_end];
     }
-    out
+    Ok(out)
 }
 
-pub(super) fn field_definitions(
-    bytes: &[u8],
+pub(super) fn field_definitions<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
     start: usize,
     end: usize,
-) -> Vec<FieldDefinition<'_>> {
+) -> Result<Vec<FieldDefinition<'a>>, CodecError> {
     let mut out = Vec::new();
     let mut search = start;
     let mut limit = start.saturating_add(256).min(end);
@@ -307,29 +341,53 @@ pub(super) fn field_definitions(
         let next = at + definition.name.len() + 2;
         search = next;
         limit = search.saturating_add(256).min(end);
+        reserve_retained_registry_item(ctx, &mut out, "nx field definitions")?;
         out.push(definition);
     }
     bound_field_registry_tails(bytes, &mut out);
-    out
+    Ok(out)
 }
 
-pub(super) fn all_field_definitions(
-    bytes: &[u8],
+pub(super) fn all_field_definitions<'a>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
     start: usize,
     end: usize,
-) -> Vec<FieldDefinition<'_>> {
+) -> Result<Vec<FieldDefinition<'a>>, CodecError> {
     let mut out = Vec::new();
     let mut at = start;
     while at < end {
         if let Some(definition) = field_definition_at(bytes, at, end) {
             at += definition.name.len() + 2;
+            reserve_retained_registry_item(ctx, &mut out, "nx all field definitions")?;
             out.push(definition);
         } else {
             at += 1;
         }
     }
     bound_field_registry_tails(bytes, &mut out);
-    out
+    Ok(out)
+}
+
+fn reserve_registry_item<T>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut ScopedReservation<'_>,
+    items: &mut Vec<T>,
+) -> Result<(), CodecError> {
+    let operation = "nx complete type registry";
+    ctx.charge_collection_items(1, operation)?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()))?;
+    items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+}
+
+fn reserve_retained_registry_item<T>(
+    ctx: &DecodeContext<'_>,
+    items: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), operation)?;
+    items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
 }
 
 fn bound_field_registry_tails<'a>(bytes: &'a [u8], definitions: &mut [FieldDefinition<'a>]) {

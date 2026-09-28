@@ -61,7 +61,7 @@ pub(super) fn summarize(
             scan.count(StreamKind::Preview),
         ),
     )?;
-    let (control_count, classified_control_count) = decode::offset_store_control_counts(c);
+    let (control_count, classified_control_count) = decode::offset_store_control_counts(ctx, c)?;
     if control_count != 0 {
         push_note(
             ctx,
@@ -71,7 +71,7 @@ pub(super) fn summarize(
             ),
         )?;
     }
-    let framed_om_sections = c.om_sections();
+    let framed_om_sections = c.om_sections(ctx)?;
     if !framed_om_sections.is_empty() {
         let declarations = framed_om_sections
             .iter()
@@ -92,7 +92,7 @@ pub(super) fn summarize(
             ),
         )?;
     }
-    let om_sections = c.indexed_om_sections();
+    let om_sections = c.indexed_om_sections(ctx)?;
     if !om_sections.is_empty() {
         let entities = om_sections
             .iter()
