@@ -3521,16 +3521,19 @@ pub(super) struct CreoPcurveEndpointRecord {
 }
 
 pub(super) fn pcurve_endpoint_records(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Vec<(CreoPcurveEndpointRecord, usize)> {
-    let mut records = scan
-        .curves
-        .pcurves
-        .iter()
-        .map(|pcurve| {
-            (
+) -> Result<Vec<(CreoPcurveEndpointRecord, usize)>, CodecError> {
+    let mut records = Vec::new();
+    for pcurve in &scan.curves.pcurves {
+        let id = ctx.format_retained(
+            format_args!("creo:visibgeom:pcurve_endpoints#{}", pcurve.curve_id),
+            "creo native pcurve endpoint record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native pcurve endpoint records")?;
+        records.push((
                 CreoPcurveEndpointRecord {
-                    id: format!("creo:visibgeom:pcurve_endpoints#{}", pcurve.curve_id),
+                    id,
                     curve_id: pcurve.curve_id,
                     faces: pcurve.stored_face_ids(),
                     face_0_endpoints: pcurve.face_0_endpoints,
@@ -3538,16 +3541,17 @@ pub(super) fn pcurve_endpoint_records(
                     source_form: "positional",
                 },
                 pcurve.offset,
-            )
-        })
-        .collect::<Vec<_>>();
-    records.extend(scan.curves.bound_prototype_pcurves.iter().map(|pcurve| {
-        (
+        ));
+    }
+    for pcurve in &scan.curves.bound_prototype_pcurves {
+        let id = ctx.format_retained(
+            format_args!("creo:visibgeom:prototype_pcurve_endpoints#{}", pcurve.curve_id),
+            "creo native prototype pcurve endpoint record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native pcurve endpoint records")?;
+        records.push((
             CreoPcurveEndpointRecord {
-                id: format!(
-                    "creo:visibgeom:prototype_pcurve_endpoints#{}",
-                    pcurve.curve_id
-                ),
+                id,
                 curve_id: pcurve.curve_id,
                 faces: pcurve.stored_face_ids(),
                 face_0_endpoints: pcurve.face_0_endpoints,
@@ -3555,10 +3559,58 @@ pub(super) fn pcurve_endpoint_records(
                 source_form: "prototype",
             },
             pcurve.offset,
-        )
-    }));
+        ));
+    }
     records.sort_by_key(|(_, offset)| *offset);
-    records
+    Ok(records)
+}
+
+#[cfg(test)]
+mod pcurve_endpoint_projection_limit_tests {
+    use super::pcurve_endpoint_records;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    #[test]
+    fn positional_pcurve_endpoint_refuses_collection_limit() {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
+            curve_id: 7, faces: [None; 2],
+            face_0_endpoints: [[0.0; 2]; 2], face_1_endpoints: [[0.0; 2]; 2], offset: 4,
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = match pcurve_endpoint_records(&ctx, &scan) {
+            Err(error) => error,
+            Ok(_) => panic!("the endpoint record exceeds the collection limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native pcurve endpoint records"), "{error:?}");
+    }
+
+    #[test]
+    fn prototype_pcurve_endpoint_refuses_collection_limit() {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        scan.curves.bound_prototype_pcurves.push(crate::curve::BoundPrototypePcurve {
+            curve_id: 8, faces: [None; 2],
+            face_0_endpoints: [[0.0; 2]; 2], face_1_endpoints: [[0.0; 2]; 2], offset: 3,
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = match pcurve_endpoint_records(&ctx, &scan) {
+            Err(error) => error,
+            Ok(_) => panic!("the prototype endpoint record exceeds the collection limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native pcurve endpoint records"), "{error:?}");
+    }
 }
 
 pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionRecord> {
