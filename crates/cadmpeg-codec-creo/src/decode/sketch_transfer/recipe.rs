@@ -5,7 +5,9 @@ use super::super::uniqueness::unique_feature_definition_for_transform;
 use crate::container::ContainerScan;
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::features::{AngularTermination, RevolveExtent};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
+#[cfg(test)]
+use std::collections::BTreeMap;
 
 pub(in super::super) fn feature_recipe(
     scan: &ContainerScan,
@@ -47,6 +49,7 @@ pub(in super::super) fn current_additive_feature_recipe(
         .then(|| recipe.kind())
 }
 
+#[cfg(test)]
 pub(in super::super) fn first_material_feature_by_definition_order(
     target_feature_id: u32,
     material_definition_offsets: &[(u32, usize)],
@@ -70,15 +73,10 @@ pub(in super::super) fn feature_is_first_material_operation(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> bool {
-    let candidate_feature_ids = scan
-        .features
-        .operations
-        .iter()
-        .map(|operation| operation.feature_id)
-        .collect::<BTreeSet<_>>()
-        .into_iter();
-    let mut material_definition_offsets = Vec::new();
-    for candidate in candidate_feature_ids {
+    let mut target_offset = None;
+    let mut earliest_other_offset: Option<usize> = None;
+    for operation in &scan.features.operations {
+        let candidate = operation.feature_id;
         let Some(operation) = current_feature_operation(&scan.features.operations, candidate)
         else {
             continue;
@@ -98,23 +96,32 @@ pub(in super::super) fn feature_is_first_material_operation(
         {
             continue;
         }
-        let transforms = scan
+        let mut transforms = scan
             .features
             .section_transforms
             .iter()
-            .filter(|transform| transform.feature_id == Some(candidate))
-            .collect::<Vec<_>>();
-        let [transform] = transforms.as_slice() else {
+            .filter(|transform| transform.feature_id == Some(candidate));
+        let Some(transform) = transforms.next() else {
             continue;
         };
+        if transforms.next().is_some() {
+            continue;
+        }
         let Some(definition) =
             unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
             continue;
         };
-        material_definition_offsets.push((candidate, definition.offset));
+        if candidate == feature_id {
+            target_offset = Some(definition.offset);
+        } else {
+            earliest_other_offset = Some(earliest_other_offset.map_or(
+                definition.offset,
+                |previous| previous.min(definition.offset),
+            ));
+        }
     }
-    first_material_feature_by_definition_order(feature_id, &material_definition_offsets)
+    target_offset.is_some_and(|target| earliest_other_offset.map_or(true, |other| other > target))
 }
 
 pub(in super::super) fn current_feature_recipe(
