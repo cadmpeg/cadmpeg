@@ -5701,11 +5701,12 @@ fn saved_section_scalar(
 }
 
 fn saved_line_block(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     mut cursor: usize,
     segment_end: usize,
     cache: &scalar::ScalarCache,
-) -> Vec<FeatureSavedEntity> {
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     if payload.get(cursor) == Some(&0xf1) {
         cursor = payload[cursor..segment_end]
             .iter()
@@ -5749,6 +5750,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
                     break;
                 };
+                ctx.try_reserve_items(&mut references, 1, "creo saved line references")?;
                 references.push(reference);
                 cursor = next;
             } else if payload
@@ -5758,6 +5760,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 2) else {
                     break;
                 };
+                ctx.try_reserve_items(&mut references, 1, "creo saved line references")?;
                 references.push(reference);
                 cursor = next;
             } else if payload.get(cursor) == Some(&0xeb) {
@@ -5766,6 +5769,7 @@ fn saved_line_block(
                 };
                 let mut attribute = [0; 5];
                 attribute.copy_from_slice(bytes);
+                ctx.try_reserve_items(&mut attributes, 1, "creo saved line attributes")?;
                 attributes.push(attribute);
                 cursor += 6;
             } else {
@@ -5799,6 +5803,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
                     break;
                 };
+                ctx.try_reserve_items(&mut references, 1, "creo saved line references")?;
                 references.push(reference);
                 cursor = next;
                 continue;
@@ -5810,6 +5815,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 2) else {
                     break;
                 };
+                ctx.try_reserve_items(&mut references, 1, "creo saved line references")?;
                 references.push(reference);
                 cursor = next;
                 continue;
@@ -5820,6 +5826,7 @@ fn saved_line_block(
                 };
                 let mut attribute = [0; 5];
                 attribute.copy_from_slice(bytes);
+                ctx.try_reserve_items(&mut attributes, 1, "creo saved line attributes")?;
                 attributes.push(attribute);
                 cursor += 6;
                 continue;
@@ -5863,6 +5870,7 @@ fn saved_line_block(
             let Ok((reference, next)) = psb::reference_id(payload, reference_start) else {
                 break;
             };
+            ctx.try_reserve_items(&mut references, 1, "creo saved line references")?;
             references.push(reference);
             cursor = next;
         }
@@ -5877,6 +5885,11 @@ fn saved_line_block(
         if row_separator {
             cursor += 1;
         }
+        let body = ctx.copy_retained(
+            &payload[record_offset..record_end],
+            "creo saved line body",
+        )?;
+        ctx.try_reserve_items(&mut entities, 1, "creo saved line block entities")?;
         entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
             entity_id,
             references,
@@ -5885,19 +5898,20 @@ fn saved_line_block(
                 [values[0], values[1], values[2]],
                 [values[3], values[4], values[5]],
             ],
-            body: payload[record_offset..record_end].to_vec(),
+            body,
             offset: record_offset,
         }));
     }
-    entities
+    Ok(entities)
 }
 
 fn saved_line_entities(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> Vec<FeatureSavedEntity> {
+) -> Result<Vec<FeatureSavedEntity>, CodecError> {
     let label = b"\xe0\x00entity(line)\0";
     let mut entities = Vec::new();
     let mut search = start;
@@ -5912,10 +5926,12 @@ fn saved_line_entities(
         .filter_map(|next_label| find_bytes(payload, next_label, body_start, end))
         .min()
         .unwrap_or(end);
-        entities.extend(saved_line_block(payload, body_start, body_end, cache));
+        let block = saved_line_block(ctx, payload, body_start, body_end, cache)?;
+        ctx.try_reserve_items(&mut entities, block.len(), "creo saved line entities")?;
+        entities.extend(block);
         search = body_end;
     }
-    entities
+    Ok(entities)
 }
 
 fn saved_named_scalars<const N: usize>(
@@ -6595,7 +6611,7 @@ fn saved_section(
     let table_end = find_bytes(payload, b"\xe0\x02local_sys\0", table, end)
         .or_else(|| find_bytes(payload, b"\xe0\x00rigid_data\0", table, end))
         .unwrap_or(end);
-    let mut entities = saved_line_entities(payload, table, table_end, cache);
+    let mut entities = saved_line_entities(ctx, payload, table, table_end, cache)?;
     let circular = saved_circular_entities(
         payload,
         table,
