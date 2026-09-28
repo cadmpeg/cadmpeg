@@ -27,6 +27,7 @@ use crate::F3dCodec;
 mod entity_limits;
 mod extrude_group_limits;
 mod construction_group_limits;
+mod operand_group_carrier_limits;
 mod face_group_limits;
 mod face_source_limits;
 mod edge_treatment_limits;
