@@ -164,9 +164,8 @@ fn edge_pcurve_parameter_values(
     edge: u32,
     pcurve: u32,
 ) -> Option<[FiniteReal; 2]> {
-    edge_parameter_incidences
-        .get(&edge)?
-        .map(|incidence_id| {
+    let incidences = edge_parameter_incidences.get(&edge)?;
+    let endpoints = incidences.map(|incidence_id| {
             let incidence = parameter_incidences.get(&incidence_id)?;
             let mut parameters = incidence
                 .lanes
@@ -176,11 +175,8 @@ fn edge_pcurve_parameter_values(
             parameters
                 .all(|other| other == parameter)
                 .then_some(parameter)
-        })
-        .into_iter()
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()
+        });
+    Some([endpoints[0]?, endpoints[1]?])
 }
 
 /// Follow one surface identity through a direct alias map.
@@ -188,14 +184,13 @@ pub(in crate::families) fn canonical_surface_id(
     aliases: &BTreeMap<u32, u32>,
     mut object_id: u32,
 ) -> Option<u32> {
-    let mut visited = HashSet::new();
-    while let Some(&target) = aliases.get(&object_id) {
-        if !visited.insert(object_id) {
-            return None;
+    for _ in 0..=aliases.len() {
+        match aliases.get(&object_id) {
+            Some(&target) => object_id = target,
+            None => return Some(object_id),
         }
-        object_id = target;
     }
-    Some(object_id)
+    None
 }
 
 /// A profile curve swept by a `b5 03 2d` surface of revolution.
@@ -883,8 +878,7 @@ fn topology_runs(
     for range in candidates {
         let population = owned_object_stream_population(ctx, bytes, range.clone())?;
         if let Some(graph) = parse_flat(ctx, &population, refusal)? {
-            ctx.charge_collection_items(1, "catia B5 topology runs")?;
-            graphs.push((range, graph));
+            crate::resource::push(ctx, &mut graphs, (range, graph), "catia B5 topology runs")?;
         }
     }
     Ok(graphs)
@@ -1393,7 +1387,7 @@ fn parse_from_records_with_class21(
     }
     let mut faces = Vec::new();
     for record in records.iter().filter_map(|record| face_records.get(&record.object_id)) {
-        if let Some(face) = parse_face(record, &loops, &surfaces, &surface_aliases) {
+        if let Some(face) = parse_face(ctx, record, &loops, &surfaces, &surface_aliases)? {
             crate::resource::push(ctx, &mut faces, face, "catia_b5_graph_faces")?;
         }
     }
@@ -6107,21 +6101,24 @@ fn is_topology_class(class: u8) -> bool {
 }
 
 fn parse_face(
+    ctx: &DecodeContext<'_>,
     record: &B5FaceRecord,
     loops: &BTreeMap<u32, B5Loop>,
     surfaces: &BTreeMap<u32, B5Surface>,
     surface_aliases: &BTreeMap<u32, u32>,
-) -> Option<B5Face> {
+) -> Result<Option<B5Face>, CodecError> {
     let references = &record.references;
-    let surface = *references.first()?;
+    let Some(&surface) = references.first() else { return Ok(None) };
     if !surfaces.contains_key(&surface) {
-        return None;
+        return Ok(None);
     }
-    let canonical_surface = canonical_surface_id(surface_aliases, surface)?;
+    let Some(canonical_surface) = canonical_surface_id(surface_aliases, surface) else {
+        return Ok(None);
+    };
     let mut loop_ids = Vec::new();
     for &reference in &references[1..] {
         if loops.contains_key(&reference) {
-            loop_ids.push(reference);
+            crate::resource::push(ctx, &mut loop_ids, reference, "catia_b5_face_loop_ids")?;
         } else {
             let repeats_carrier = surfaces.contains_key(&reference)
                 && canonical_surface_id(surface_aliases, reference) == Some(canonical_surface);
@@ -6129,21 +6126,21 @@ fn parse_face(
                 // A distinct surface reference is a multi-surface variant. Its
                 // composition is not represented by the neutral Face type, so
                 // keep the typed record but withhold the face from topology.
-                return None;
+                return Ok(None);
             }
             // A face may repeat its carrier through an alias identity. This is
             // the same carrier incidence, not a multi-surface face.
         }
     }
     if loop_ids.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(B5Face {
+    Ok(Some(B5Face {
         object_id: record.object_id,
         surface,
         loops: loop_ids,
         terminal_control: record.terminal_control,
-    })
+    }))
 }
 
 fn parse_face_record(
