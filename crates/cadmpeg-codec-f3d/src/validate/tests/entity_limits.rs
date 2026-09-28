@@ -525,3 +525,127 @@ fn invalid_history_entity_refuses_retained_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity"));
 }
+
+fn validation_placement(
+    scope_record_index: Option<u32>,
+    ordinal: Option<u32>,
+    member: bool,
+) -> crate::records::sketch_placement::DesignSketchPlacement {
+    use crate::records::sketch_placement::{
+        DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement, DesignSketchVisibility,
+    };
+    DesignSketchPlacement {
+        id: "f3d:Design/BulkStream.dat:sketch-placement#1".into(),
+        scope_record_index,
+        entity_id: crate::records::identity::DesignEntityId::from_parts("sketch", 1),
+        visibility: ordinal.map(|ordinal| {
+            DesignSketchVisibility::new(std::num::NonZeroU32::new(ordinal).unwrap(), 100, true)
+                .unwrap()
+        }),
+        class_tag: crate::records::references::DesignClassTag::try_from("112".to_owned()).unwrap(),
+        record_index: 1,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("112".to_owned())
+            .unwrap(),
+        frame: DesignSketchFrame::new(
+            10,
+            if member {
+                DesignSketchFrameForm::MemberCompact { paired_byte_offset: 20 }
+            } else {
+                DesignSketchFrameForm::ScopeCompact
+            },
+        )
+        .unwrap(),
+    }
+}
+
+fn placement_native(placement: crate::records::sketch_placement::DesignSketchPlacement) -> crate::native::F3dNative {
+    let mut native = crate::native::F3dNative::default();
+    if placement.visibility.is_some() {
+        native.design_entity_headers.push(validation_entity_header(Vec::new()));
+    }
+    native.design_sketch_placements.push(placement);
+    native
+}
+
+fn placement_error(
+    native: crate::native::F3dNative,
+    max_items: u64,
+    max_retained: u64,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained;
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    ctx.decode = Some(&decode);
+    super::super::validate_sketch_placements(&ctx, &mut Vec::new()).unwrap_err()
+}
+
+#[test]
+fn placement_record_index_refuses_collection_limit() {
+    let error = placement_error(placement_native(validation_placement(None, None, true)), 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch placement records"));
+}
+
+#[test]
+fn placement_scope_index_refuses_collection_limit() {
+    let error = placement_error(placement_native(validation_placement(Some(1), None, true)), 1, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch placement scopes"));
+}
+
+#[test]
+fn placement_visibility_ordinal_index_refuses_collection_limit() {
+    let error = placement_error(placement_native(validation_placement(None, Some(1), true)), 1, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch visibility ordinals"));
+}
+
+#[test]
+fn placement_visibility_offset_index_refuses_collection_limit() {
+    let error = placement_error(placement_native(validation_placement(None, Some(1), true)), 2, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch visibility offsets"));
+}
+
+#[test]
+fn placement_visibility_range_refuses_collection_limit() {
+    let error = placement_error(placement_native(validation_placement(None, Some(1), true)), 3, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D sketch visibility ordinal ranges"));
+}
+
+#[test]
+fn placement_invalid_finding_refuses_collection_limit() {
+    let error = placement_error(placement_native(validation_placement(None, None, false)), 1, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn placement_invalid_entity_refuses_retained_limit() {
+    let error = placement_error(placement_native(validation_placement(None, None, false)), u64::MAX, 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity"));
+}
+
+#[test]
+fn placement_noncontiguous_visibility_finding_refuses_collection_limit() {
+    let error = placement_error(placement_native(validation_placement(None, Some(2), true)), 4, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn placement_contiguous_visibility_has_no_finding() {
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let native = placement_native(validation_placement(None, Some(1), true));
+    let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    let mut findings = Vec::new();
+    super::super::validate_sketch_placements(&ctx, &mut findings).unwrap();
+    assert!(findings.is_empty());
+}

@@ -1004,7 +1004,7 @@ fn validate_loaded(
         &native.design_entity_selection_operands,
     );
     validate_face_source_groups(&ctx, &mut findings);
-    validate_sketch_placements(&ctx, &mut findings);
+    validate_sketch_placements(&ctx, &mut findings)?;
     validate_parameter_owners(&ctx, &mut findings);
     validate_parameter_companions(&ctx, &mut findings);
     let dimension_recipe_ids = validate_dimension_recipe_records(&ctx, &mut findings);
@@ -7050,7 +7050,7 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
 }
 
 /// Validate sketch placement frames and their scope links.
-fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let scopes_by_index = &ctx.scopes_by_index;
     let mut placement_records = HashSet::new();
@@ -7059,20 +7059,42 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut visibility_ordinals = HashSet::new();
     for placement in &native.design_sketch_placements {
         let native_stream = design_stream(&placement.id);
-        let unique_record = placement_records.insert((native_stream, placement.record_index));
-        let unique_scope = placement
-            .scope_record_index
-            .is_none_or(|index| placement_scopes.insert((native_stream, index)));
+        let unique_record = ctx.insert_unique(
+            &mut placement_records,
+            (native_stream, placement.record_index),
+            "index F3D sketch placement records",
+        )?;
+        let unique_scope = match placement.scope_record_index {
+            Some(index) => ctx.insert_unique(
+                &mut placement_scopes,
+                (native_stream, index),
+                "index F3D sketch placement scopes",
+            )?,
+            None => true,
+        };
         let scope = placement
             .scope_record_index
             .and_then(|index| scopes_by_index.get(&(native_stream, index)));
-        let visibility_valid = placement.visibility.as_ref().is_none_or(|visibility| {
-            ctx.entities_by_suffix
+        let visibility_valid = if let Some(visibility) = placement.visibility.as_ref() {
+            let header_valid = ctx.entities_by_suffix
                 .get(&(native_stream, placement.entity_id.suffix()))
-                .is_some_and(|entity| visibility.stream_ordinal_offset() > entity.byte_offset)
-                && visibility_ordinals.insert((native_stream, visibility.stream_ordinal.get()))
-                && visibility_offsets.insert((native_stream, visibility.visible_offset()))
-        });
+                .is_some_and(|entity| visibility.stream_ordinal_offset() > entity.byte_offset);
+            if header_valid && ctx.insert_unique(
+                &mut visibility_ordinals,
+                (native_stream, visibility.stream_ordinal.get()),
+                "index F3D sketch visibility ordinals",
+            )? {
+                ctx.insert_unique(
+                    &mut visibility_offsets,
+                    (native_stream, visibility.visible_offset()),
+                    "index F3D sketch visibility offsets",
+                )?
+            } else {
+                false
+            }
+        } else {
+            true
+        };
         let scope_valid = if placement.member_run_head() {
             scope.is_none_or(|scope| {
                 design::design_feature_family(&scope.kind())
@@ -7089,30 +7111,40 @@ fn validate_sketch_placements(ctx: &Ctx, findings: &mut Vec<Finding>) {
         };
         let valid = scope_valid && unique_record && unique_scope && visibility_valid;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design sketch placement has an invalid frame or scope link".into(),
-                entity: Some(placement.id.clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design sketch placement has an invalid frame or scope link",
+                Some(ctx.copy_entity(&placement.id)?),
+            )?;
         }
     }
     let mut visibility_ordinal_ranges = HashMap::<&str, (usize, u32)>::new();
     for (stream, ordinal) in visibility_ordinals {
+        if !visibility_ordinal_ranges.contains_key(stream) {
+            ctx.charge_item("index F3D sketch visibility ordinal ranges")?;
+            visibility_ordinal_ranges.try_reserve(1).map_err(|_| {
+                ctx.decode.map_or_else(
+                    || CodecError::malformed("F3D visibility range allocation failed"),
+                    |decode| decode.refuse_codec_limit("index F3D sketch visibility ordinal ranges", 0, 1),
+                )
+            })?;
+        }
         let (count, maximum) = visibility_ordinal_ranges.entry(stream).or_default();
         *count += 1;
         *maximum = (*maximum).max(ordinal);
     }
     for (stream, (count, maximum)) in visibility_ordinal_ranges {
         if usize::try_from(maximum).ok() != Some(count) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design sketch Geometry member ordinals are not contiguous".into(),
-                entity: Some(stream.to_owned()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design sketch Geometry member ordinals are not contiguous",
+                Some(ctx.copy_entity(stream)?),
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Validate parameter owner frames and their indexed parameter links.
