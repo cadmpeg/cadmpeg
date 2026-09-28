@@ -813,10 +813,25 @@ fn parse_face(bytes: &[u8], offset: usize) -> Option<FaceNode> {
     parse_face_fields(bytes, offset, payload.checked_sub(6)?)
 }
 
-/// Scan one partition-style stream for strictly framed typed ownership nodes.
-fn admit_record(ctx: &DecodeContext<'_>) -> Result<(), CodecError> {
-            ctx.charge_collection_items(1, "admit typed Parasolid record")?;
-
+/// Add one framed typed node and its source offset to the scan result.
+fn push_record<T, F: FnOnce() -> Result<T, CodecError>>(
+    ctx: &DecodeContext<'_>,
+    offsets: &mut HashSet<usize>,
+    records: &mut Vec<T>,
+    offset: usize,
+    record: F,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "admit typed Parasolid record")?;
+    if !offsets.contains(&offset) {
+        ctx.charge_collection_items(1, "index typed Parasolid record offset")?;
+        offsets.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("index typed Parasolid record offset", u64::MAX - 1, u64::MAX)
+        })?;
+    }
+    ctx.reserve_precharged_vec(records, 1, "admit typed Parasolid record")?;
+    let record = record()?;
+    offsets.insert(offset);
+    records.push(record);
     Ok(())
 }
 
@@ -827,60 +842,51 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
     let mut region_offsets = HashSet::new();
     let mut face_offsets = HashSet::new();
     let mut has_edit = false;
+    let work = u64::try_from(bytes.len()).map_err(|_| {
+        ctx.refuse_codec_limit("scan typed Parasolid records", u64::MAX - 1, u64::MAX)
+    })?;
+    ctx.charge_work(work, "scan typed Parasolid records")?;
     for (z, &byte) in bytes.iter().enumerate().skip(2) {
         has_edit |= matches!(byte, b'C' | b'D' | b'I' | b'A');
         if byte != b'Z' || !has_edit {
             continue;
         }
         if let Some(body) = parse_body_layout(bytes, z + 1, z + 1) {
-            admit_record(ctx)?;
-            body_offsets.insert(body.offset);
-            facts.bodies.push(body.into_node(ctx)?);
+            push_record(ctx, &mut body_offsets, &mut facts.bodies, body.offset, || body.into_node(ctx))?;
         }
         if let Some(shell) = parse_shell_fields(bytes, z + 1, z + 1) {
             if !shell_offsets.contains(&shell.offset) {
-                admit_record(ctx)?;
-                shell_offsets.insert(shell.offset);
-                facts.shells.push(shell);
+                push_record(ctx, &mut shell_offsets, &mut facts.shells, shell.offset, || Ok(shell))?;
             }
         }
         if let Some(region) = parse_region_fields(bytes, z + 1, z + 1) {
             if !region_offsets.contains(&region.offset) {
-                admit_record(ctx)?;
-                region_offsets.insert(region.offset);
-                facts.regions.push(region);
+                push_record(ctx, &mut region_offsets, &mut facts.regions, region.offset, || Ok(region))?;
             }
         }
         if let Some(face) = parse_face_fields(bytes, z + 1, z + 1) {
             if !face_offsets.contains(&face.offset) {
-                admit_record(ctx)?;
-                face_offsets.insert(face.offset);
-                facts.faces.push(face);
+                push_record(ctx, &mut face_offsets, &mut facts.faces, face.offset, || Ok(face))?;
             }
         }
     }
+    ctx.charge_work(work, "scan typed Parasolid records")?;
     for offset in 0..bytes.len().checked_sub(2).map_or(0, |end| end) {
         if bytes.get(offset..offset + 2) == Some(&BODY_TAG) {
             if let Some(body) = parse_tagged_body(bytes, offset) {
                 if !body_offsets.contains(&body.offset) {
-                    admit_record(ctx)?;
-                    body_offsets.insert(body.offset);
-                    facts.bodies.push(body.into_node(ctx)?);
+                    push_record(ctx, &mut body_offsets, &mut facts.bodies, body.offset, || body.into_node(ctx))?;
                 }
             }
         }
         if let Some(shell) = parse_shell(bytes, offset) {
             if !shell_offsets.contains(&shell.offset) {
-                admit_record(ctx)?;
-                shell_offsets.insert(shell.offset);
-                facts.shells.push(shell);
+                push_record(ctx, &mut shell_offsets, &mut facts.shells, shell.offset, || Ok(shell))?;
             }
         }
         if let Some(region) = parse_region(bytes, offset) {
             if !region_offsets.contains(&region.offset) {
-                admit_record(ctx)?;
-                region_offsets.insert(region.offset);
-                facts.regions.push(region);
+                push_record(ctx, &mut region_offsets, &mut facts.regions, region.offset, || Ok(region))?;
             }
         }
         if let Some(face) = parse_face(bytes, offset) {
@@ -894,9 +900,7 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
                 // the stronger interpretation.
                 *existing = face;
             } else if !face_offsets.contains(&face.offset) {
-                admit_record(ctx)?;
-                face_offsets.insert(face.offset);
-                facts.faces.push(face);
+                push_record(ctx, &mut face_offsets, &mut facts.faces, face.offset, || Ok(face))?;
             }
         }
     }
@@ -968,6 +972,23 @@ mod tests {
             .expect("service profile admits typed records")
             .bodies
             .is_empty());
+    }
+
+    #[test]
+    fn typed_brep_scan_refuses_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let body = triangle_body();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = u64::try_from(body.len()).expect("body length") - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).expect("root");
+        assert!(matches!(
+            scan(&body, &ctx),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan typed Parasolid records"
+        ));
     }
 
     #[test]
