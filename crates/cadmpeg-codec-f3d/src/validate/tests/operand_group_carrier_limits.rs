@@ -36,7 +36,7 @@ fn native(trailing_only: bool) -> crate::native::F3dNative {
     native
 }
 
-fn native_with_identity() -> crate::native::F3dNative {
+pub(super) fn native_with_identity() -> crate::native::F3dNative {
     use crate::records::{
         mesh::DesignRelaxedGuidText,
         references::DesignClassTag,

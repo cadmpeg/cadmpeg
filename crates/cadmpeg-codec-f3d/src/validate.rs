@@ -5758,10 +5758,10 @@ fn validate_edge_identity_operands<'a>(
         &mut expected_edge_identity_operands,
         expected_face_operands,
     );
-    let expected_edge_identity_operands = expected_edge_identity_operands
+    let expected_edge_identity_operands = collect_index(decode, expected_edge_identity_operands
         .iter()
         .map(|operand| (operand.id.as_str(), operand))
-        .collect::<HashMap<_, _>>();
+        , "index F3D expected edge identity operands")?;
     let mut edge_identity_slots = HashSet::new();
     let mut edge_identity_records = HashSet::new();
     for operand in &native.design_edge_identity_operands {
@@ -5784,19 +5784,18 @@ fn validate_edge_identity_operands<'a>(
             header.byte_offset == operand.byte_offset() && header.class_tag == operand.class_tag
         }) && expected_edge_identity_operands.get(operand.id.as_str())
             == Some(&operand)
-            && edge_identity_slots.insert((
+            && ctx.insert_unique(&mut edge_identity_slots, (
                 native_stream,
                 operand.group_record_index,
                 operand.group_member_ordinal,
-            ))
-            && edge_identity_records.insert((native_stream, operand.record_index()));
+            ), "index F3D edge identity slots")?
+            && ctx.insert_unique(&mut edge_identity_records,
+                (native_stream, operand.record_index()),
+                "index F3D edge identity records")?;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design edge identity operand has an invalid fixed frame".into(),
-                entity: Some(operand.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design edge identity operand has an invalid fixed frame",
+                Some(ctx.copy_entity(&operand.id)?))?;
         }
     }
     Ok(edge_identity_records)
