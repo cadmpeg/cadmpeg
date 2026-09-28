@@ -15,8 +15,9 @@
 //! metadata-only IR and blocking loss notes. [`DecodeOptions::container_only`]
 //! requests the metadata-only path.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::collections::btree_map::Entry;
+use std::hash::Hash;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -343,6 +344,46 @@ fn count_keys<K: Ord>(
     Ok(counts)
 }
 
+fn charged_set<'a, T: Eq + Hash + 'a>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = &'a T>,
+    operation: &'static str,
+) -> Result<HashSet<&'a T>, CodecError> {
+    let mut set = HashSet::new();
+    for value in values {
+        ctx.charge_work(1, operation)?;
+        if !set.contains(value) {
+            ctx.charge_collection_items(1, operation)?;
+            set.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+            set.insert(value);
+        }
+    }
+    Ok(set)
+}
+
+fn has_incoherent_refs<T: Eq + Hash>(
+    ctx: &DecodeContext<'_>,
+    references: &[T],
+    known: &HashSet<&T>,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    let mut seen = HashSet::new();
+    for reference in references {
+        ctx.charge_work(1, operation)?;
+        if seen.contains(reference) || !known.contains(reference) {
+            return Ok(true);
+        }
+        ctx.charge_collection_items(1, operation)?;
+        seen.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+        })?;
+        seen.insert(reference);
+    }
+    Ok(false)
+}
+
 fn append_design_losses(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -471,26 +512,22 @@ fn append_design_losses(
                 "{empty_configuration_names} configuration record(s) have empty names; {ambiguous_configuration_names} configuration record(s) share non-unique names; {ambiguous_configuration_ordinals} configuration record(s) share regeneration ordinals."
             )));
     }
-    let model_body_ids = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| &body.id)
-        .collect::<std::collections::HashSet<_>>();
-    let incoherent_configuration_bodies = ir
-        .model
-        .configurations
-        .iter()
-        .filter(|configuration| {
-            let mut bodies = std::collections::HashSet::new();
-            configuration
-                .bodies
-                .as_deref()
-                .unwrap_or_default()
-                .iter()
-                .any(|body| !bodies.insert(body) || !model_body_ids.contains(body))
-        })
-        .count();
+    let model_body_ids = charged_set(
+        ctx,
+        ir.model.bodies.iter().map(|body| &body.id),
+        "index SLDPRT model body IDs",
+    )?;
+    let mut incoherent_configuration_bodies = 0;
+    for configuration in &ir.model.configurations {
+        if has_incoherent_refs(
+            ctx,
+            configuration.bodies.as_deref().unwrap_or_default(),
+            &model_body_ids,
+            "check SLDPRT configuration body references",
+        )? {
+            incoherent_configuration_bodies += 1;
+        }
+    }
     let unresolved_configuration_bodies = ir
         .model
         .configurations
@@ -503,18 +540,16 @@ fn append_design_losses(
             )));
     }
 
-    let feature_ids = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| &feature.id)
-        .collect::<std::collections::HashSet<_>>();
-    let parameter_ids = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| &parameter.id)
-        .collect::<std::collections::HashSet<_>>();
+    let feature_ids = charged_set(
+        ctx,
+        ir.model.features.iter().map(|feature| &feature.id),
+        "index SLDPRT feature IDs",
+    )?;
+    let parameter_ids = charged_set(
+        ctx,
+        ir.model.parameters.iter().map(|parameter| &parameter.id),
+        "index SLDPRT parameter IDs",
+    )?;
     let incomplete_configuration_feature_snapshots = ir
         .model
         .configurations
@@ -889,22 +924,17 @@ fn append_design_losses(
                 "{unresolved_output_scopes} feature(s) retain non-empty native output scopes that do not resolve to model bodies."
             )));
     }
-    let body_ids = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| &body.id)
-        .collect::<std::collections::HashSet<_>>();
-    let incoherent_feature_outputs = evaluated_feature_states
-        .iter()
-        .filter(|state| {
-            let mut outputs = std::collections::HashSet::new();
-            state
-                .outputs
-                .iter()
-                .any(|body| !outputs.insert(body) || !body_ids.contains(body))
-        })
-        .count();
+    let mut incoherent_feature_outputs = 0;
+    for state in &evaluated_feature_states {
+        if has_incoherent_refs(
+            ctx,
+            state.outputs,
+            &model_body_ids,
+            "check SLDPRT feature output body references",
+        )? {
+            incoherent_feature_outputs += 1;
+        }
+    }
     if incoherent_feature_outputs > 0 {
         report.losses.push(SldprtLossCode::FeatureIncoherentOutputs.note(format!(
                 "{incoherent_feature_outputs} feature record(s) contain missing or repeated output body references."
