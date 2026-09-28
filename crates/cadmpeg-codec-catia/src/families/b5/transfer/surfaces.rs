@@ -330,7 +330,7 @@ fn profile_nurbs(
     Ok(match profile {
         B5Profile::Line {
             point, direction, ..
-        } => crate::nurbs::note_refusal(
+        } => crate::nurbs::note_refusal(ctx,
             NurbsCurve::from_lanes(
                 1,
                 crate::resource::collect_vec(ctx,
@@ -345,7 +345,7 @@ fn profile_nurbs(
             ),
             refusal,
             format_args!("b5 line profile of a revolution surface: {record}"),
-        ),
+        )?,
         B5Profile::Arc {
             center,
             direction_x,
@@ -440,11 +440,11 @@ pub(super) fn rational_arc(
             return Ok(None);
         }
     }
-    Ok(crate::nurbs::note_refusal(
+    crate::nurbs::note_refusal(ctx,
         NurbsCurve::from_lanes(2, knots, control_points, Some(weights), false),
         refusal,
         format_args!("b5 rational arc profile of a revolution surface: {record}"),
-    ))
+    )
 }
 
 pub(super) fn revolve_nurbs(
@@ -598,7 +598,7 @@ pub(super) fn revolve_nurbs(
             Ok(rows) => rows,
             Err(error) => return Some(Err(error)),
         };
-        let surface = crate::nurbs::note_refusal(
+        let surface = match crate::nurbs::note_refusal(ctx,
             NurbsSurface::from_lanes(
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                     profile.degree(),
@@ -614,7 +614,11 @@ pub(super) fn revolve_nurbs(
             ),
             refusal,
             format_args!("b5 revolution surface built from its profile: {record}"),
-        )?;
+        ) {
+            Ok(Some(surface)) => surface,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         Some(Ok(surface))
     })()
     .transpose()

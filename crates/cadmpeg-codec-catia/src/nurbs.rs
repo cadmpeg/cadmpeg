@@ -81,14 +81,15 @@ impl LaneRefusals {
     /// Record one refusal against the record that stated it.
     fn push(
         &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         record: impl std::fmt::Display,
         error: &cadmpeg_ir::geometry::nurbs::NurbsError,
-    ) {
-        self.notes.push(
-            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid.note(format!(
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        crate::resource::push_loss(ctx, &mut self.notes,
+            crate::loss::CatiaLossCode::GeometryAnalyticPayloadInvalid,
+            format_args!(
                 "A CATIA carrier record states lanes the IR carrier refuses: {record} states {error}"
-            )),
-        );
+            ), "catia_nurbs_refusal_loss")
     }
 
     /// Record one refusal a lane solver stated, against the record that stated
@@ -157,15 +158,16 @@ fn readable_range(
 /// record of another kind: the reader answers `None` for the record it is
 /// reading, and the refusal travels, named, in the sink the caller owns.
 pub(crate) fn note_refusal<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     result: Result<T, cadmpeg_ir::geometry::nurbs::NurbsError>,
     refusal: &mut LaneRefusals,
     record: impl std::fmt::Display,
-) -> Option<T> {
+) -> Result<Option<T>, cadmpeg_core::CodecError> {
     match result {
-        Ok(value) => Some(value),
+        Ok(value) => Ok(Some(value)),
         Err(error) => {
-            refusal.push(record, &error);
-            None
+            refusal.push(ctx, record, &error)?;
+            Ok(None)
         }
     }
 }
@@ -185,35 +187,34 @@ pub(crate) fn reverse_pcurve_geometry(
     if !readable_range(ctx, range, true, refusal, record)? {
         return Ok(None);
     }
-    Ok((|| match geometry {
+    match geometry {
         PcurveGeometry::Line(line_pcurve) => {
             let origin = line_pcurve.origin().as_raw();
             let direction = line_pcurve.direction().as_raw();
             let origin = FinitePoint2::new(Point2::new(
                 range[1].mul_add(direction.u, range[0].mul_add(direction.u, origin.u)),
                 range[1].mul_add(direction.v, range[0].mul_add(direction.v, origin.v)),
-            ))?;
-            Some(PcurveGeometry::Line(
+            ));
+            Ok(origin.map(|origin| PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::new(
                     origin,
                     line_pcurve.direction().reversed(),
                 ),
-            ))
+            )))
         }
         PcurveGeometry::Nurbs { nurbs } => {
             if !pcurve_weights_are_positive(nurbs) {
-                return None;
+                return Ok(None);
             }
             let reversed_knots = reverse_knots(nurbs.knots(), range);
             let mut poles = nurbs.pole_rows().clone();
             poles.reverse();
-            match PcurveNurbs::new(nurbs.degree(), reversed_knots, poles, nurbs.periodic()) {
-                Ok(nurbs) => Some(PcurveGeometry::Nurbs { nurbs }),
-                Err(error) => note_refusal(Err(error), refusal, record),
-            }
+            note_refusal(ctx,
+                PcurveNurbs::new(nurbs.degree(), reversed_knots, poles, nurbs.periodic()),
+                refusal, record).map(|nurbs| nurbs.map(|nurbs| PcurveGeometry::Nurbs { nurbs }))
         }
-        _ => None,
-    })())
+        _ => Ok(None),
+    }
 }
 
 /// Reverse a supported model-space curve over an increasing native range.
@@ -239,18 +240,18 @@ pub(crate) fn reverse_curve_geometry(
         refusal.push_range(ctx, record, range)?;
         return Ok(None);
     }
-    Ok((|| match geometry {
+    match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
             let direction = line_curve.direction();
             let length = range[1] - range[0];
-            let origin = FinitePoint3::new(origin.translated(*direction.as_raw(), range[1]))?;
-            Some((
+            let origin = FinitePoint3::new(origin.translated(*direction.as_raw(), range[1]));
+            Ok(origin.map(|origin| (
                 CurveGeometry::Solved(SolvedCurveGeometry::Line(
                     cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction.reversed()),
                 )),
                 [0.0, length],
-            ))
+            )))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
             let axis = *circle_curve.frame().axis().as_raw();
@@ -259,11 +260,10 @@ pub(crate) fn reverse_curve_geometry(
             let tangent = axis.cross(reference);
             let end = range[1];
             let reference = reference.scale(end.cos()) + tangent.scale(end.sin());
-            let frame = OrthonormalFrame3::from_units(
-                circle_curve.frame().axis().reversed(),
-                UnitVector3::new(reference)?,
-            )?;
-            Some((
+            let frame = UnitVector3::new(reference).and_then(|reference|
+                OrthonormalFrame3::from_units(
+                    circle_curve.frame().axis().reversed(), reference));
+            Ok(frame.map(|frame| (
                 CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::new(
                         circle_curve.center(),
@@ -272,19 +272,15 @@ pub(crate) fn reverse_curve_geometry(
                     ),
                 )),
                 [0.0, sweep],
-            ))
+            )))
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            match reverse_nurbs_curve(nurbs, range) {
-                Ok(curve) => Some((
-                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-                    range,
-                )),
-                Err(error) => note_refusal(Err(error), refusal, record),
-            }
+            note_refusal(ctx, reverse_nurbs_curve(nurbs, range), refusal, record)
+                .map(|curve| curve.map(|curve| (
+                    CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)), range)))
         }
-        _ => None,
-    })())
+        _ => Ok(None),
+    }
 }
 
 /// Reflect knots without summing the interval endpoints. Subtracting from
@@ -670,7 +666,7 @@ pub(crate) fn circular_helix_cache(
     controls.extend(samples.into_iter().map(|(_, point)| point));
     let curve = match NurbsCurve::from_lanes(1, knots, controls, None, false) {
         Ok(curve) => curve,
-        Err(error) => return Ok(note_refusal(Err(error), refusal, record)),
+        Err(error) => return note_refusal(ctx, Err(error), refusal, record),
     };
     Ok(FitTolerance::try_new(fit_tolerance).ok().map(|fit_tolerance| CircularHelixCache {
         curve,
@@ -902,6 +898,37 @@ mod tests {
         }).expect("service profile admits range note");
         assert_eq!(notes.len(), 1);
         assert!(notes[0].message.contains("source range states [2, 1]"));
+    }
+
+    #[test]
+    fn nurbs_refusal_note_refuses_retained_and_collection_limits() {
+        let short_weight_lane = || {
+            PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                Some(vec![1.0]),
+                false,
+            )
+        };
+        let refused = crate::test_support::with_retained_limit(0, |ctx| {
+            super::note_refusal(ctx, short_weight_lane(), &mut LaneRefusals::new(), "test record")
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_nurbs_refusal_loss"));
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            super::note_refusal(ctx, short_weight_lane(), &mut LaneRefusals::new(), "test record")
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_nurbs_refusal_loss"));
+        let notes = crate::test_support::with_service_context(|ctx| {
+            let mut refusal = LaneRefusals::new();
+            let value = super::note_refusal(ctx, short_weight_lane(), &mut refusal, "test record")?;
+            Ok::<_, cadmpeg_core::CodecError>((value, refusal.take_notes()))
+        }).expect("service profile admits NURBS refusal note");
+        assert!(notes.0.is_none());
+        assert_eq!(notes.1.len(), 1);
+        assert!(notes.1[0].message.contains("test record"));
     }
 
     #[test]
@@ -1551,16 +1578,18 @@ mod tests {
                 false,
             )
         };
-        let first = super::note_refusal(
+        let first = crate::test_support::with_service_context(|ctx| super::note_refusal(
+            ctx,
             short_weight_lane(),
             &mut refusal,
             "consolidated_a5_03_32 at byte 64",
-        );
-        let second = super::note_refusal(
+        )).expect("service profile admits NURBS refusal note");
+        let second = crate::test_support::with_service_context(|ctx| super::note_refusal(
+            ctx,
             short_weight_lane(),
             &mut refusal,
             "consolidated_a5_03_32 at byte 128",
-        );
+        )).expect("service profile admits NURBS refusal note");
         assert!(first.is_none(), "the refused record states no pcurve");
         assert!(second.is_none(), "the refused record states no pcurve");
         let notes = refusal.take_notes();

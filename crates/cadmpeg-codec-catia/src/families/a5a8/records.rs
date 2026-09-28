@@ -602,7 +602,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
     let mut poles = Vec::new();
     crate::resource::reserve_vec(ctx, &mut poles, control_points.len(), "catia A5 rolling ball poles")?;
     poles.extend(control_points.into_iter().map(|point| Point3::new(point[0], point[1], point[2])));
-    Ok(crate::nurbs::note_refusal(
+    crate::nurbs::note_refusal(ctx,
         NurbsCurve::from_lanes(
             A5FreeformCurve::DEGREE,
             knots,
@@ -615,7 +615,7 @@ pub(in crate::families) fn rolling_ball_limit_curve(
             "consolidated_a5_03_32 rolling-ball limit curve at byte {}",
             jet.pos
         ),
-    ))
+    )
 }
 
 /// One position in an `a5/a6/a7 03 39` jet.
@@ -780,11 +780,11 @@ fn parse_a5_nurbs_curve(
         };
         knots.extend(std::iter::repeat_n(knot, multiplicity));
     }
-    Ok(crate::nurbs::note_refusal(
+    crate::nurbs::note_refusal(ctx,
         NurbsCurve::from_lanes(degree, knots, control_points, None, false),
         refusal,
         format_args!("a5 NURBS curve record at byte {}", frame.pos),
-    ).map(|geometry| A5NurbsCurve {
+    ).map(|geometry| geometry.map(|geometry| A5NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
         geometry,
@@ -1423,7 +1423,7 @@ fn a8_surface_from_external_grid(
     let control_points = grid_rows(ctx, control_points, row_len, "catia_a8_external_pole_rows")?;
     let weights = weights.map(|values| grid_rows(ctx, values, row_len,
         "catia_a8_external_weight_rows")).transpose()?;
-    Ok(crate::nurbs::note_refusal(
+    crate::nurbs::note_refusal(ctx,
         cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(control_points, weights)
             .and_then(|poles| {
                 NurbsSurface::new(
@@ -1435,7 +1435,7 @@ fn a8_surface_from_external_grid(
             }),
         refusal,
         format_args!("a8 NURBS surface record #{} at byte {}", header.object_id, header.pos),
-    ).map(|geometry| FreeformSurface {
+    ).map(|geometry| geometry.map(|geometry| FreeformSurface {
         pos: header.pos,
         identity: Some(header.object_id),
         geometry,
@@ -1684,7 +1684,7 @@ fn a5_surface(
     let control_points = grid_rows(ctx, control_points, v_count, "catia_a5_surface_pole_rows")?;
     let weights = weights.map(|values| grid_rows(ctx, values, v_count,
         "catia_a5_surface_weight_rows")).transpose()?;
-    Ok(crate::nurbs::note_refusal(
+    crate::nurbs::note_refusal(ctx,
         cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(control_points, weights)
             .and_then(|poles| {
                 NurbsSurface::new(
@@ -1696,7 +1696,7 @@ fn a5_surface(
             }),
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
-    ).map(|geometry| FreeformSurface { pos, identity: None, geometry }))
+    ).map(|geometry| geometry.map(|geometry| FreeformSurface { pos, identity: None, geometry }))
 }
 
 struct ParsedA8SurfaceHeader {
@@ -1912,7 +1912,7 @@ fn a8_surface_from_parsed(
     let control_points = grid_rows(ctx, control_points, v_count, "catia_a8_inline_pole_rows")?;
     let weights = rational.then(|| grid_rows(ctx, weights, v_count,
         "catia_a8_inline_weight_rows")).transpose()?;
-    Ok(crate::nurbs::note_refusal(
+    crate::nurbs::note_refusal(ctx,
         cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(control_points, weights)
             .and_then(|poles| {
                 NurbsSurface::new(
@@ -1924,7 +1924,7 @@ fn a8_surface_from_parsed(
             }),
         refusal,
         format_args!("a8 NURBS surface record #{object_id} at byte {pos}"),
-    ).map(|geometry| FreeformSurface {
+    ).map(|geometry| geometry.map(|geometry| FreeformSurface {
         pos,
         identity: Some(object_id),
         geometry,

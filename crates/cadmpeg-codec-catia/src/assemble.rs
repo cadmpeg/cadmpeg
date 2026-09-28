@@ -805,7 +805,7 @@ pub(crate) fn rational_pcurve_arc(
         false,
     ) {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
-        Err(error) => Ok(crate::nurbs::note_refusal(Err(error), refusal, record)),
+        Err(error) => crate::nurbs::note_refusal(ctx, Err(error), refusal, record),
     }
 }
 
@@ -834,7 +834,7 @@ pub(crate) fn quintic_jet_pcurve(
         false,
     ) {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
-        Err(error) => Ok(crate::nurbs::note_refusal(Err(error), refusal, record)),
+        Err(error) => crate::nurbs::note_refusal(ctx, Err(error), refusal, record),
     }
 }
 
