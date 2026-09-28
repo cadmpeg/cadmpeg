@@ -6137,6 +6137,7 @@ fn synthesize_cylinder_seams(
             ))
         };
         if let (Some(pa), Some(pb)) = (seam_point(ea), seam_point(eb)) {
+            ctx.reserve_collection_vec(&mut candidates, 1, "collect Parasolid cylinder seam candidates")?;
             candidates.push((
                 face.id.clone(),
                 a.id.clone(),
@@ -6207,6 +6208,7 @@ fn synthesize_cylinder_seams(
             annotations.exactness(id, Exactness::Derived);
         }
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.curves, 1, "collect Parasolid cylinder seam curves")?;
         out.curves.push(Curve {
             id: curve_id.clone(),
             source_object: None,
@@ -6218,6 +6220,7 @@ fn synthesize_cylinder_seams(
             )),
         });
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.edges, 1, "collect Parasolid cylinder seam edges")?;
         out.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, norm]))
@@ -6229,6 +6232,7 @@ fn synthesize_cylinder_seams(
         reserve_graph_map_key(ctx, &mut coedge_indices, &seam_a, "index generated Parasolid seam coedges")?;
         coedge_indices.insert(seam_a.clone(), out.coedges.len());
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.coedges, 1, "collect Parasolid cylinder seam coedges")?;
         out.coedges.push(Coedge {
             id: seam_a.clone(),
             owner_loop: loop_a.clone(),
@@ -6241,6 +6245,7 @@ fn synthesize_cylinder_seams(
         reserve_graph_map_key(ctx, &mut coedge_indices, &seam_b, "index generated Parasolid seam coedges")?;
         coedge_indices.insert(seam_b.clone(), out.coedges.len());
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.coedges, 1, "collect Parasolid cylinder seam coedges")?;
         out.coedges.push(Coedge {
             id: seam_b.clone(),
             owner_loop: loop_a.clone(),
@@ -6251,7 +6256,10 @@ fn synthesize_cylinder_seams(
             pcurves: Vec::new(),
         });
         let ring_ids = [circle_a.clone(), seam_a, circle_b.clone(), seam_b];
-        let ring = cadmpeg_ir::topology::LoopRing::new(ring_ids.to_vec(), Vec::new()).map_err(
+        let mut ring_members = Vec::new();
+        ctx.reserve_collection_vec(&mut ring_members, ring_ids.len(), "build Parasolid cylinder seam ring")?;
+        ring_members.extend(ring_ids.iter().cloned());
+        let ring = cadmpeg_ir::topology::LoopRing::new(ring_members, Vec::new()).map_err(
             |error| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "generated periodic seam ring is invalid: {error}"
@@ -6267,8 +6275,11 @@ fn synthesize_cylinder_seams(
             lp.boundary = cadmpeg_ir::topology::LoopBoundary::Ring(ring);
         }
         if let Some(face) = out.faces.iter_mut().find(|face| face.id == face_id) {
-            face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(vec![loop_a]);
+            face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(
+                ctx.alloc_filled(1, loop_a, "bind Parasolid cylinder seam loop")?
+            );
         }
+        reserve_graph_set_key(ctx, &mut removed, &loop_b, "track replaced Parasolid seam loops")?;
         removed.insert(loop_b);
     }
     out.loops.retain(|lp| !removed.contains(&lp.id));
@@ -6311,8 +6322,8 @@ fn synthesize_sphere_seams(
         let center = sphere_surface.center().get();
         let axis = sphere_surface.frame().axis().as_raw();
         let radius = sphere_surface.radius().get();
-        let face_loops = face.loops.to_vec();
-        let [loop_id] = face_loops.as_slice() else {
+        let mut face_loops = face.loops.iter();
+        let (Some(loop_id), None) = (face_loops.next(), face_loops.next()) else {
             continue;
         };
         let Some(coedge_ids) = loop_coedges.get(loop_id).copied() else {
@@ -6321,12 +6332,16 @@ fn synthesize_sphere_seams(
         if coedge_ids.len() != 4 {
             continue;
         }
-        let seam_edges = coedge_ids
-            .iter()
-            .filter_map(|coedge| coedge_edges.get(coedge).copied())
-            .filter_map(|edge| edge_indices.get(edge).map(|index| (edge.clone(), *index)))
-            .filter(|(_, index)| out.edges[*index].curve().is_none())
-            .collect::<Vec<_>>();
+        let mut seam_edges = Vec::new();
+        for coedge in coedge_ids {
+            ctx.charge_work(1, "select Parasolid sphere seam edges")?;
+            if let Some(index) = coedge_edges.get(coedge).and_then(|edge| edge_indices.get(*edge)) {
+                if out.edges[*index].curve().is_none() {
+                    ctx.reserve_collection_vec(&mut seam_edges, 1, "collect Parasolid sphere seam edges")?;
+                    seam_edges.push(*index);
+                }
+            }
+        }
         let circle_count = coedge_ids
             .iter()
             .filter_map(|coedge| coedge_edges.get(coedge).copied())
@@ -6343,7 +6358,7 @@ fn synthesize_sphere_seams(
                     })
             })
             .count();
-        if let [(_, edge_index)] = seam_edges.as_slice() {
+        if let [edge_index] = seam_edges.as_slice() {
             if circle_count != 3 {
                 continue;
             }
@@ -6357,6 +6372,7 @@ fn synthesize_sphere_seams(
             // the nearer pole lets a stale or reversed endpoint change the
             // sphere parameterization.
             let point = north;
+            ctx.reserve_collection_vec(&mut existing, 1, "collect Parasolid sphere seam repairs")?;
             existing.push((*edge_index, point));
         }
     }
@@ -6391,6 +6407,7 @@ fn synthesize_sphere_seams(
             .tag("derived_sphere_seam");
         annotations.exactness(curve_id.as_str(), Exactness::Derived);
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.curves, 1, "collect repaired Parasolid sphere seam curves")?;
         out.curves.push(Curve {
             id: curve_id.clone(),
             source_object: None,
@@ -6456,7 +6473,7 @@ fn synthesize_sphere_seams(
                 center.y + radius * axis.y,
                 center.z + radius * axis.z,
             );
-            let mut pole_vertices = lp
+            let pole_candidates = lp
                 .coedges()
                 .iter()
                 .filter_map(|id| coedges.get(id))
@@ -6469,16 +6486,23 @@ fn synthesize_sphere_seams(
                         let dz = point.z - seam_point.z;
                         dx * dx + dy * dy + dz * dz <= EPS_POINT_DISTANCE
                     })
-                })
-                .cloned()
-                .collect::<Vec<_>>();
+                });
+            let mut pole_vertices = Vec::new();
+            for vertex in pole_candidates {
+                ctx.reserve_collection_vec(&mut pole_vertices, 1, "collect Parasolid sphere pole vertices")?;
+                pole_vertices.push(vertex.clone());
+            }
             pole_vertices.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             pole_vertices.dedup();
+            let mut ring = Vec::new();
+            ctx.reserve_collection_vec(&mut ring, lp.coedges().len(), "copy Parasolid sphere seam ring")?;
+            ring.extend_from_slice(lp.coedges());
+            ctx.reserve_collection_vec(&mut candidates, 1, "collect Parasolid sphere seam candidates")?;
             candidates.push((
                 face_index,
                 face.id.clone(),
                 lp.id.clone(),
-                lp.coedges().to_vec(),
+                ring,
                 seam_point,
                 pole_vertices.first().cloned(),
             ));
@@ -6531,9 +6555,11 @@ fn synthesize_sphere_seams(
                     annotations.exactness(id, Exactness::Derived);
                 }
                 admit_brep_entity(ctx)?;
+                ctx.reserve_collection_vec(&mut out.points, 1, "collect Parasolid sphere seam points")?;
                 out.points
                     .push(Point::new(point_id.clone(), degenerate.point(), None));
                 admit_brep_entity(ctx)?;
+                ctx.reserve_collection_vec(&mut out.vertices, 1, "collect Parasolid sphere seam vertices")?;
                 out.vertices.push(Vertex {
                     id: vertex_id.clone(),
                     point: point_id,
@@ -6554,12 +6580,14 @@ fn synthesize_sphere_seams(
             annotations.exactness(id, Exactness::Derived);
         }
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.curves, 1, "collect Parasolid sphere seam curves")?;
         out.curves.push(Curve {
             id: curve_id.clone(),
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
         });
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.edges, 1, "collect Parasolid sphere seam edges")?;
         out.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
@@ -6572,6 +6600,7 @@ fn synthesize_sphere_seams(
             continue;
         };
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.pcurves, 1, "collect Parasolid sphere seam pcurves")?;
         out.pcurves.push(Pcurve {
             id: pcurve_id.clone(),
             geometry: PcurveGeometry::Line(pcurve),
@@ -6581,10 +6610,22 @@ fn synthesize_sphere_seams(
                 None,
             ),
         });
+        ctx.reserve_collection_vec(&mut ring, 1, "extend Parasolid sphere seam ring")?;
         ring.push(coedge_id.clone());
         reserve_graph_map_key(ctx, &mut coedge_indices, &coedge_id, "index generated Parasolid sphere coedges")?;
         coedge_indices.insert(coedge_id.clone(), out.coedges.len());
+        let mut pcurve_uses = Vec::new();
+        ctx.reserve_collection_vec(&mut pcurve_uses, 1, "bind Parasolid sphere seam pcurve")?;
+        pcurve_uses.push(cadmpeg_ir::topology::PcurveUse {
+            pcurve: pcurve_id,
+            isoparametric: None,
+            parameter_range: Some(
+                cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, std::f64::consts::TAU])
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
+        });
         admit_brep_entity(ctx)?;
+        ctx.reserve_collection_vec(&mut out.coedges, 1, "collect Parasolid sphere seam coedges")?;
         out.coedges.push(Coedge {
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
@@ -6592,14 +6633,7 @@ fn synthesize_sphere_seams(
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
             use_curve: None,
-            pcurves: vec![cadmpeg_ir::topology::PcurveUse {
-                pcurve: pcurve_id,
-                isoparametric: None,
-                parameter_range: Some(
-                    cadmpeg_ir::geometry::DirectedParameterRange::new([0.0, std::f64::consts::TAU])
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                ),
-            }],
+            pcurves: pcurve_uses,
         });
         let ring = cadmpeg_ir::topology::LoopRing::new(ring, Vec::new()).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!(
