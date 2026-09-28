@@ -158,7 +158,7 @@ impl<'a> ParameterExpressionParser<'a> {
                 if !self.take(')') {
                     return None;
                 }
-                return function.apply(&arguments);
+                return function.apply(arguments);
             }
             if token.eq_ignore_ascii_case("pi") {
                 return Some(ParameterValue::Real(FiniteReal::new(std::f64::consts::PI)?));
@@ -545,7 +545,13 @@ impl ParameterFunction {
         }
     }
 
-    pub(super) fn apply(self, arguments: &[ParameterValue]) -> Option<ParameterValue> {
+    pub(super) fn apply(self, arguments: Vec<ParameterValue>) -> Option<ParameterValue> {
+        if let Self::Iif = self {
+            let [condition, when_true, when_false]: [ParameterValue; 3] =
+                arguments.try_into().ok()?;
+            return conditional_parameter_value(&condition, when_true, when_false);
+        }
+        let arguments = arguments.as_slice();
         let unary = || {
             let [argument] = arguments else {
                 return None;
@@ -559,16 +565,7 @@ impl ParameterFunction {
             Some(value.get())
         };
         Some(match self {
-            Self::Iif => {
-                let [condition, when_true, when_false] = arguments else {
-                    return None;
-                };
-                return conditional_parameter_value(
-                    condition,
-                    when_true.clone(),
-                    when_false.clone(),
-                );
-            }
+            Self::Iif => return None,
             Self::Abs => match unary()? {
                 ParameterValue::Length(value) => ParameterValue::Length(value.abs()),
                 ParameterValue::Angle(value) => ParameterValue::Angle(value.abs()),
@@ -674,11 +671,11 @@ mod tests {
         assert!(add_parameter_values(largest.clone(), largest.clone(), false).is_none());
         assert!(multiply_parameter_values(largest.clone(), two.clone(), false).is_none());
         assert!(exponentiate_parameter_value(&largest, &two).is_none());
-        assert!(ParameterFunction::Exp.apply(&[largest]).is_none());
+        assert!(ParameterFunction::Exp.apply(vec![largest]).is_none());
         let negative = ParameterValue::Real(FiniteReal::new(-1.0).unwrap());
         assert!(ParameterFunction::Log
-            .apply(std::slice::from_ref(&negative))
+            .apply(vec![negative.clone()])
             .is_none());
-        assert!(ParameterFunction::Sqr.apply(&[negative]).is_none());
+        assert!(ParameterFunction::Sqr.apply(vec![negative]).is_none());
     }
 }

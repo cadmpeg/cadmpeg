@@ -200,7 +200,7 @@ fn formatted_text_dimensions_are_strings_only_for_txd_parameters() {
 fn solidworks_sign_function_is_three_way() {
     for (argument, expected) in [(-2, -1), (0, 0), (2, 1)] {
         assert_eq!(
-            eval::ParameterFunction::Sgn.apply(&[ParameterValue::Integer(argument)]),
+            eval::ParameterFunction::Sgn.apply(vec![ParameterValue::Integer(argument)]),
             Some(ParameterValue::Integer(expected))
         );
     }
@@ -210,12 +210,12 @@ fn solidworks_sign_function_is_three_way() {
 fn integer_function_preserves_discrete_integer_values() {
     for value in [i64::MIN, -(1_i64 << 53) - 1, (1_i64 << 53) + 1, i64::MAX] {
         assert_eq!(
-            eval::ParameterFunction::Int.apply(&[ParameterValue::Integer(value)]),
+            eval::ParameterFunction::Int.apply(vec![ParameterValue::Integer(value)]),
             Some(ParameterValue::Integer(value))
         );
     }
     assert_eq!(
-        eval::ParameterFunction::Int.apply(&[ParameterValue::Real(
+        eval::ParameterFunction::Int.apply(vec![ParameterValue::Real(
             cadmpeg_ir::scalar::FiniteReal::new(-3.75).unwrap()
         )]),
         Some(ParameterValue::Integer(-3))
