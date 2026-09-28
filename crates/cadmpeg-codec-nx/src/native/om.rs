@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::container::Container;
 use cadmpeg_core::decode::DecodeContext;
@@ -2345,17 +2346,52 @@ pub(super) enum DataBlockRole {
 /// The source entry and block role scope the exact bytes. Callers must only
 /// admit the value when this key is unique in that scope; equal bytes at two
 /// positions are not distinguishable without an additional serialized owner.
-fn stable_data_block_identity(source_entry: &str, role: DataBlockRole, bytes: &[u8]) -> String {
-    let mut seed = Vec::with_capacity(source_entry.len() + bytes.len() + 18);
-    seed.extend_from_slice(b"nx:om:data-block\0");
-    seed.extend_from_slice(source_entry.as_bytes());
-    seed.push(0);
-    seed.push(match role {
+fn data_block_digest(
+    ctx: &DecodeContext<'_>,
+    source_entry: &str,
+    role: DataBlockRole,
+    bytes: &[u8],
+) -> Result<[u8; 32], CodecError> {
+    let work = source_entry
+        .len()
+        .checked_add(bytes.len())
+        .and_then(|sum| sum.checked_add(18))
+        .ok_or_else(|| ctx.refuse_codec_limit("nx data block identity digest", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "nx data block identity digest",
+    )?;
+    let mut digest = Sha256::new();
+    digest.update(b"nx:om:data-block\0");
+    digest.update(source_entry.as_bytes());
+    digest.update([0, match role {
         DataBlockRole::Control => 0,
         DataBlockRole::Column => 1,
-    });
-    seed.extend_from_slice(bytes);
-    format!("nx:om:data-block:{}", cadmpeg_ir::hash::sha256_hex(&seed))
+    }]);
+    digest.update(bytes);
+    Ok(digest.finalize().into())
+}
+
+fn data_block_hex(
+    ctx: &DecodeContext<'_>,
+    digest: &[u8; 32],
+    prefix: &'static str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let length = prefix
+        .len()
+        .checked_add(64)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
+    let mut text = String::new();
+    text.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    text.push_str(prefix);
+    for byte in digest {
+        write!(&mut text, "{byte:02x}")
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    Ok(text)
 }
 
 /// Self-framed printable string carried by one NX OM record.
@@ -3732,79 +3768,137 @@ pub(super) fn data_blocks(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<DataBlock>, cadmpeg_core::CodecError> {
-    let mut candidates = Vec::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections(ctx)?.into_iter().enumerate()
-    {
+    let sections = container.indexed_om_sections(ctx)?;
+    let mut count = 0usize;
+    for (_, section) in &sections {
+        if let Some((_, _, records)) = section.as_offset_only() {
+            count = count
+                .checked_add(records.len())
+                .and_then(|count| count.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit("count NX data blocks", 0, 1))?;
+        }
+    }
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    let map_bytes = count
+        .checked_mul(std::mem::size_of::<([u8; 32], usize)>() * 4)
+        .ok_or_else(|| ctx.refuse_codec_limit("reserve NX data block identities", 0, 1))?;
+    let _map_guard = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(map_bytes),
+        "reserve NX data block identities",
+    )?;
+    let mut identity_counts = BTreeMap::<[u8; 32], usize>::new();
+    for (entry, section) in &sections {
+        let Some((control, _, records)) = section.as_offset_only() else {
+            continue;
+        };
+        for (role, block) in std::iter::once((DataBlockRole::Control, control))
+            .chain(records.iter().map(|record| (DataBlockRole::Column, record)))
+        {
+            let digest = data_block_digest(ctx, &entry.name, role, block.bytes)?;
+            if !identity_counts.contains_key(&digest) {
+                ctx.charge_collection_items(1, "NX data block identities")?;
+            }
+            let count = identity_counts.entry(digest).or_default();
+            *count = count
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("count NX data block identities", 0, 1))?;
+        }
+    }
+
+    ctx.charge_collection_items(count_u64, "NX data block records")?;
+    let output_bytes = count
+        .checked_mul(std::mem::size_of::<DataBlock>())
+        .ok_or_else(|| ctx.refuse_codec_limit("retain NX data block records", 0, 1))?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(output_bytes),
+        "retain NX data block records",
+    )?;
+    let mut output = Vec::new();
+    output
+        .try_reserve_exact(count)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX data block records", 0, count_u64))?;
+    for (section_ordinal, (entry, section)) in sections.iter().enumerate() {
         let Some((control, _, records)) = section.as_offset_only() else {
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let section_offset = entry_offset + section.base_offset() as u64;
-        candidates.push((
-            section_ordinal,
-            0usize,
-            DataBlockRole::Control,
-            entry.name.clone(),
-            section_offset,
-            entry_offset,
-            control.clone(),
-        ));
-        candidates.extend(
-            records
-                .iter()
-                .cloned()
-                .enumerate()
-                .map(|(record_ordinal, block)| {
-                    (
-                        section_ordinal,
-                        record_ordinal + 1,
-                        DataBlockRole::Column,
-                        entry.name.clone(),
-                        section_offset,
-                        entry_offset,
-                        block,
-                    )
-                }),
-        );
-    }
+        let section_offset = entry_offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(section.base_offset()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX data block section offset", 0, 1))?;
+        for (block_ordinal, (role, block)) in std::iter::once((DataBlockRole::Control, control))
+            .chain(records.iter().map(|record| (DataBlockRole::Column, record)))
+            .enumerate()
+        {
+            let stable_digest = data_block_digest(ctx, &entry.name, role, block.bytes)?;
+            let stable_identity = if identity_counts.get(&stable_digest) == Some(&1) {
+                Some(data_block_hex(
+                    ctx,
+                    &stable_digest,
+                    "nx:om:data-block:",
+                    "retain NX data block identity",
+                )?)
+            } else {
+                None
+            };
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(block.bytes.len()),
+                "hash NX data block",
+            )?;
+            let digest = cadmpeg_ir::hash::sha256(block.bytes);
+            let sha256 = crate::native::hex::Sha256Hex::try_from(data_block_hex(
+                ctx,
+                &digest,
+                "",
+                "retain NX data block digest",
+            )?)
+            .map_err(|message| CodecError::Malformed(message.into()))?;
 
-    let mut identity_counts = BTreeMap::<String, usize>::new();
-    for (_, _, role, source_entry, _, _, block) in &candidates {
-        let identity = stable_data_block_identity(source_entry, *role, block.bytes);
-        *identity_counts.entry(identity).or_default() += 1;
-    }
+            let id_length = "nx:om-data-blocks-"
+                .len()
+                .checked_add(section_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+                .and_then(|length| length.checked_add(":block#".len()))
+                .and_then(|length| {
+                    length.checked_add(block_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1))
+                })
+                .ok_or_else(|| ctx.refuse_codec_limit("retain NX data block id", 0, 1))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(id_length),
+                "retain NX data block id",
+            )?;
+            let mut id = String::new();
+            id.try_reserve_exact(id_length)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX data block id", 0, 1))?;
+            write!(&mut id, "nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}")
+                .map_err(|_| ctx.refuse_codec_limit("write NX data block id", 0, 1))?;
 
-    Ok(candidates
-        .into_iter()
-        .map(
-            |(
-                section_ordinal,
-                block_ordinal,
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                "retain NX data block source entry",
+            )?;
+            let mut source_entry = String::new();
+            source_entry.try_reserve_exact(entry.name.len()).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX data block source entry", 0, 1)
+            })?;
+            source_entry.push_str(&entry.name);
+            output.push(DataBlock {
+                id,
+                section_ordinal: u32::try_from(section_ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX data block section ordinal", 0, 1))?,
+                block_ordinal: u32::try_from(block_ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX data block ordinal", 0, 1))?,
                 role,
-                source_entry,
                 section_offset,
-                entry_offset,
-                block,
-            )| {
-                let sha256 = crate::native::hex::Sha256Hex::digest(block.bytes);
-                let stable_identity = stable_data_block_identity(&source_entry, role, block.bytes);
-                DataBlock {
-                    id: format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
-                    section_ordinal: section_ordinal as u32,
-                    block_ordinal: block_ordinal as u32,
-                    role,
-                    section_offset,
-                    byte_len: block.bytes.len() as u64,
-                    sha256,
-                    stable_identity: (identity_counts.get(&stable_identity) == Some(&1))
-                        .then_some(stable_identity),
-                    source_entry,
-                    source_offset: entry_offset + block.offset as u64,
-                }
-            },
-        )
-        .collect())
+                byte_len: cadmpeg_core::decode::u64_from_index(block.bytes.len()),
+                sha256,
+                stable_identity,
+                source_entry,
+                source_offset: entry_offset
+                    .checked_add(cadmpeg_core::decode::u64_from_index(block.offset))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX data block source offset", 0, 1))?,
+            });
+        }
+    }
+    Ok(output)
 }
 
 /// Classify every admitted complete offset-only store control lane.
@@ -6090,31 +6184,42 @@ mod tests {
     #[test]
     fn stable_data_block_identity_excludes_position_and_scopes_role() {
         let bytes = [0x01, 0x02, 0x03];
-        let identity = super::stable_data_block_identity(
-            "/Root/UG_PART/UG_PART",
-            super::DataBlockRole::Column,
-            &bytes,
-        );
+        let digest = |source, role| {
+            with_test_ctx(|ctx| super::data_block_digest(ctx, source, role, &bytes)).unwrap()
+        };
+        let identity = digest("/Root/UG_PART/UG_PART", super::DataBlockRole::Column);
         assert_eq!(
             identity,
-            super::stable_data_block_identity(
-                "/Root/UG_PART/UG_PART",
-                super::DataBlockRole::Column,
-                &bytes,
-            )
+            digest("/Root/UG_PART/UG_PART", super::DataBlockRole::Column)
         );
         assert_ne!(
             identity,
-            super::stable_data_block_identity(
-                "/Root/UG_PART/UG_PART",
-                super::DataBlockRole::Control,
-                &bytes,
-            )
+            digest("/Root/UG_PART/UG_PART", super::DataBlockRole::Control)
         );
         assert_ne!(
             identity,
-            super::stable_data_block_identity("/Root/other", super::DataBlockRole::Column, &bytes)
+            digest("/Root/other", super::DataBlockRole::Column)
         );
+    }
+
+    #[test]
+    fn data_blocks_refuses_identity_work_at_caller_limit() {
+        let file =
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
+        let container = with_test_ctx(|ctx| container::scan_bytes(ctx, &file)).unwrap();
+        with_test_ctx(|ctx| container.indexed_om_sections(ctx)).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+        let error = super::data_blocks(&ctx, &container).err().expect("work refusal");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+                    && limit.operation == "nx data block identity digest"
+        ));
     }
 
     #[test]
