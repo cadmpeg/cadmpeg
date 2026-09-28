@@ -438,6 +438,87 @@ fn historical_selected_arrangement_region_refuses_collection_limit() {
     panic!("no arrangement region refusal");
 }
 
+fn assert_extrude_selection_refusal(operation: &'static str, matched: bool, retained: bool) {
+    let group = DesignExtrudeSelectionGroup::try_from(
+        crate::records::topology::extrude_selection::DesignExtrudeSelectionGroupWire {
+            id: "f3d:Design/BulkStream.dat:selection-group#9".into(),
+            scope_record_index: 7,
+            scope_reference_ordinal: 0,
+            record_index: 9,
+            byte_offset: 0,
+            class_tag: "277".to_owned(),
+            member_count_offset: 32,
+            members: vec![10],
+            member_offsets: vec![37],
+            opaque_index: 1,
+            opaque_index_offset: 47,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 51,
+            variant: false,
+            paired_class_tag: "277".to_owned(),
+            paired_byte_offset: 100,
+        },
+    ).unwrap();
+    let mut member = historical_point_member();
+    member.id = "f3d:Design/BulkStream.dat:selection-member#10".into();
+    member.historical = None;
+    member.resolved_geometry = Some(SketchRelationOperand::Curve {
+        record_index: 10, primary_id: 100, secondary_id: 0,
+    });
+    let mut sketch = empty_sketch();
+    if matched {
+        let entity = neutral_sketch_curve_id(&sketch.id, 100, 0);
+        sketch.profiles.try_push(vec![SketchEntityUse { entity, reversed: false }]).unwrap();
+    }
+    let arrangement_budget = WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK);
+    for limit in 0..16 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let scope_histories = HashMap::new();
+        let resolution = ExtrudeProfileResolution {
+            entities: &[], spatial_sketches: &[], spatial_entities: &[],
+            histories: &[], scope_histories: &scope_histories,
+            linear_tolerance: 0.000001, angular_tolerance: 0.000000001,
+            arrangement_budget: &arrangement_budget, ctx: Some(&ctx),
+        };
+        match super::super::resolved_extrude_profile_selection(
+            &sketch.id, &group, std::slice::from_ref(&member), &sketch,
+            resolution.scoped(&[]), None, None,
+        ) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {}
+            other => panic!("expected extrude selection refusal at {operation}: {other:?}"),
+        }
+    }
+    panic!("no extrude selection refusal at {operation}");
+}
+
+#[test]
+fn extrude_selection_member_refuses_collection_limit() {
+    assert_extrude_selection_refusal("f3d extrude selection member", true, false);
+}
+
+#[test]
+fn extrude_selected_profile_refuses_collection_limit() {
+    assert_extrude_selection_refusal("f3d extrude selected profile", true, false);
+}
+
+#[test]
+fn extrude_selection_group_id_refuses_retained_limit() {
+    assert_extrude_selection_refusal("f3d extrude selection group id", false, true);
+}
+
+#[test]
+fn extrude_selection_group_refuses_collection_limit() {
+    assert_extrude_selection_refusal("f3d extrude selection group", false, false);
+}
+
 fn transition_state(
     state_id: i64,
     topology: AsmHistoricalTopology,
