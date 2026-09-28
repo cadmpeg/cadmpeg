@@ -800,11 +800,12 @@ impl NativeModel {
         let parasolid_entity_62_unicode_records = value_records.unicode;
         let parasolid_field_names_records = parasolid_field_names_records(ctx, streams)?;
         let parasolid_attribute_field_names = parasolid_attribute_field_names(
+            ctx,
             &parasolid_attribute_definitions,
             &parasolid_field_names_records,
             &parasolid_entity_54_string_records,
             &parasolid_entity_62_unicode_records,
-        );
+        )?;
         let parasolid_entity_51_numeric_uses = parasolid_entity_51_numeric_uses(
             ctx,
             &parasolid_entity_51_records,
