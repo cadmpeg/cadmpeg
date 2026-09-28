@@ -207,17 +207,16 @@ fn source_parameter_range(
     tolerance: f64,
 ) -> Result<Option<FiniteVector<2>>, CodecError> {
     let point_position = |vertex: &VertexId| {
-        let point_id = ir
+        let point_id = &ir
             .model
             .vertices
             .iter()
             .find(|item| item.id == *vertex)?
-            .point
-            .clone();
+            .point;
         ir.model
             .points
             .iter()
-            .find(|item| item.id == point_id)
+            .find(|item| &item.id == point_id)
             .map(|point| point.position().get())
     };
     let mut chosen = None;
@@ -825,23 +824,24 @@ pub(super) fn project(
             &crate::ids::Stem::directory(entry.sequence).part(crate::ids::Word::End),
         );
         let edge_id = crate::ids::edge(&crate::ids::Stem::directory(entry.sequence));
-        let procedural = match distance_law
+        let range = distance_law
             .transpose()
             .and_then(|distance_law| match distance_law {
                 Some(distance_law) => {
                     cadmpeg_ir::geometry::CurveOffsetRange::variable([start, end], distance_law)
                 }
                 None => cadmpeg_ir::geometry::CurveOffsetRange::uniform([start, end]),
-            })
-            .and_then(|range| {
+            });
+        let payload = match range {
+            Ok(range) => {
+                let source_id = clone_optional_identity(ctx, &offset_source_id, "iges offset procedural source identity")?;
                 cadmpeg_ir::geometry::curve_payloads::OffsetCurveConstruction::with_unit_plane_normal(
-                    offset_source_id.clone(),
-                    distance,
-                    normal,
-                    Some(range),
+                    source_id, distance, normal, Some(range),
                 )
-            })
-            .map(|admitted_payload| {
+            }
+            Err(error) => Err(error),
+        };
+        let procedural = match payload.map(|admitted_payload| {
                 ProceduralCurve::new(
                     crate::ids::procedural_curve(&crate::ids::Stem::directory(entry.sequence)),
                     ProceduralCurveDefinition::Offset(admitted_payload),
