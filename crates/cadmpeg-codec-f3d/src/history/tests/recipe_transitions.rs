@@ -769,7 +769,7 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     let active_candidates = vec![source_face("old", 10), source_face("new", 10)];
     assert_eq!(
         select_legacy_extrude_face_candidate(
-            &active_candidates,
+            active_candidates.clone(),
             &AsmHistoricalTopology::default(),
             &HashSet::new(),
             Some("old"),
@@ -778,7 +778,7 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     );
     assert_eq!(
         select_legacy_extrude_face_candidate(
-            &active_candidates,
+            active_candidates,
             &AsmHistoricalTopology::default(),
             &HashSet::new(),
             Some("missing"),
@@ -798,7 +798,7 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     changed.insert(21);
     assert_eq!(
         select_legacy_extrude_face_candidate(
-            &historical_candidates,
+            historical_candidates,
             &topology,
             &changed,
             Some("new"),
@@ -807,7 +807,7 @@ fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
     );
     assert_eq!(
         select_legacy_extrude_face_candidate(
-            &[FaceId::mint("f3d:brep:entity#20").expect("identity grammar")],
+            vec![FaceId::mint("f3d:brep:entity#20").expect("identity grammar")],
             &topology,
             &changed,
             None,

@@ -4600,7 +4600,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             }
         }
         if operand.resolved_face_slots.is_empty() {
-            if let Some(candidates) = &legacy_face_candidates {
+            if let Some(candidates) = legacy_face_candidates {
                 match select_legacy_extrude_face_candidate(
                     candidates,
                     topology,
@@ -5381,7 +5381,13 @@ fn complete_body_face_slots(topology: &AsmHistoricalTopology, body: i64) -> Opti
 
 fn active_brep_face_matches_source(face: &cadmpeg_ir::ids::FaceId, source: &str) -> bool {
     face.as_str().starts_with("f3d:brep:entity#")
-        || face.as_str().starts_with(&format!("f3d:brep/{source}/"))
+        || face_in_brep_source(face.as_str(), source)
+}
+
+fn face_in_brep_source(id: &str, source: &str) -> bool {
+    id.strip_prefix("f3d:brep/")
+        .and_then(|tail| tail.strip_prefix(source))
+        .is_some_and(|tail| tail.starts_with('/'))
 }
 
 #[derive(Debug, PartialEq)]
@@ -5391,37 +5397,46 @@ enum LegacyFaceResolution {
 }
 
 fn select_legacy_extrude_face_candidate(
-    candidates: &[cadmpeg_ir::ids::FaceId],
+    mut candidates: Vec<cadmpeg_ir::ids::FaceId>,
     topology: &AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
     history_source: Option<&str>,
 ) -> Option<LegacyFaceResolution> {
-    let preceding = faces_in_topology(candidates, topology);
-    let changed_preceding = preceding
-        .iter()
-        .filter(|face| stable_ref(face.as_str()).is_some_and(|slot| changed_faces.contains(&slot)))
-        .cloned()
-        .collect::<Vec<_>>();
-    for faces in [&changed_preceding, &preceding] {
-        if let [face] = faces.as_slice() {
+    for changed_only in [true, false] {
+        let mut faces = candidates.iter().filter(|face| {
+            stable_ref(face.as_str()).is_some_and(|slot| {
+                topology.faces.contains(&slot)
+                    && (!changed_only || changed_faces.contains(&slot))
+            })
+        });
+        let face = faces.next();
+        if faces.next().is_none() {
+            let Some(face) = face else {
+                continue;
+            };
             if let Some(slot) = stable_ref(face.as_str()) {
                 return Some(LegacyFaceResolution::Historical(slot));
             }
         }
     }
     if let Some(source) = history_source {
-        let source_candidates = candidates
-            .iter()
-            .filter(|face| face.as_str().starts_with(&format!("f3d:brep/{source}/")))
-            .collect::<Vec<_>>();
-        if let [face] = source_candidates.as_slice() {
-            return Some(LegacyFaceResolution::Active((*face).clone()));
+        let unique_index = {
+            let mut matches = candidates
+                .iter()
+                .enumerate()
+                .filter(|(_, face)| face_in_brep_source(face.as_str(), source));
+            let first = matches.next().map(|(index, _)| index);
+            first.filter(|_| matches.next().is_none())
+        };
+        if let Some(index) = unique_index {
+            return Some(LegacyFaceResolution::Active(candidates.swap_remove(index)));
         }
     }
-    let [face] = candidates else {
-        return None;
-    };
-    Some(LegacyFaceResolution::Active(face.clone()))
+    if candidates.len() == 1 {
+        candidates.pop().map(LegacyFaceResolution::Active)
+    } else {
+        None
+    }
 }
 
 /// One body/native selection row, minting the non-blank native member at the
