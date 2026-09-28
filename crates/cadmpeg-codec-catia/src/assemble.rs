@@ -632,29 +632,24 @@ pub(crate) fn preserve_raw_payload(
 /// layer was not recovered. The raw payload is their byte-backed owner; this
 /// avoids inventing topology or procedural relationships.
 pub(crate) fn link_payload_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     payload: &mut UnknownRecord,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let links = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| surface.id.as_str().to_owned())
-        .chain(
-            ir.model
-                .curves
-                .iter()
-                .map(|curve| curve.id.as_str().to_owned()),
-        )
-        .collect::<Vec<_>>();
+    let mut links = Vec::new();
+    for id in ir.model.surfaces.iter().map(|surface| surface.id.as_str())
+        .chain(ir.model.curves.iter().map(|curve| curve.id.as_str()))
+    {
+        let id = resource::copy_retained_str(ctx, id, "catia_payload_link_id")?;
+        resource::push(ctx, &mut links, id, "catia_payload_links")?;
+    }
     if links.is_empty() {
         return Ok(());
     }
     *payload.links_mut() = links;
-    annotations
-        .derived(payload.id(), "links")
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+    resource::derived_annotation(ctx, annotations, payload.id().as_str(), "links",
+        "catia_payload_links_annotation")?;
     Ok(())
 }
 
@@ -841,6 +836,40 @@ mod route_tests {
     use cadmpeg_ir::units::FinitePoint2;
 
     use cadmpeg_ir::unknown::UnknownRecord;
+
+    #[test]
+    fn payload_carrier_links_refuse_collection_and_retained_limits() {
+        let mut ir = CadIr::empty();
+        let id = CurveId::mint("catia:test:curve#link".to_string())
+            .expect("identity grammar");
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            let mut payload = UnknownRecord::retained(
+                UnknownId::mint("catia:test:unknown#payload".to_string())
+                    .expect("identity grammar"),
+                0,
+                Vec::new(),
+                Vec::new(),
+            );
+            let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+            super::link_payload_carriers(ctx, &ir, &mut payload, &mut annotations)?;
+            Ok::<_, cadmpeg_core::CodecError>(payload.links().to_vec())
+        };
+        assert_eq!(crate::test_support::with_service_context(run)
+            .expect("service resource budget"), [id.as_str()]);
+        assert!(matches!(
+            crate::test_support::with_collection_limit(0, run),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+        assert!(matches!(
+            crate::test_support::with_retained_limit(0, run),
+            Err(cadmpeg_core::CodecError::ResourceLimit(_))
+        ));
+    }
 
     fn rational_pcurve_arc(
         center: [f64; 2], radius: f64, range: [f64; 2],

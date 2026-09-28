@@ -355,7 +355,9 @@ pub(in crate::families) fn try_decode_e5(
         )]
         };
         insert_unresolved_carrier_loss(&ir, &mut losses);
-        link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
+        if let Err(error) = link_payload_carriers(ctx, &ir, &mut unknowns[payload_index], &mut annotations) {
+            return Some(Err(error));
+        }
         let annotations = annotations.build();
         Some(Ok(FamilyOutput {
             ir,

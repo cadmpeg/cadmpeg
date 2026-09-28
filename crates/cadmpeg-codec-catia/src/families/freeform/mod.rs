@@ -834,7 +834,9 @@ pub(super) fn try_decode_freeform_surfaces(
             ))]
         };
         insert_unresolved_carrier_loss(&ir, &mut losses);
-        link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations).ok()?;
+        if let Err(error) = link_payload_carriers(ctx, &ir, &mut unknowns[payload_index], &mut annotations) {
+            return Some(Err(error));
+        }
         let annotations = annotations.build();
         let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
         coverage.record(
