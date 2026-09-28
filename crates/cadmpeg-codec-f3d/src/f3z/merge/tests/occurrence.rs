@@ -148,7 +148,12 @@ fn merged_component_root_occurrences_become_children_of_the_outer_instance() {
         },
     ];
 
-    reparent_component_roots(&mut occurrences, &outer);
+    reparent_component_roots(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut occurrences,
+        &outer,
+    )
+    .unwrap();
 
     assert!(matches!(
         occurrences[0].parent,
@@ -158,6 +163,37 @@ fn merged_component_root_occurrences_become_children_of_the_outer_instance() {
         occurrences[1].parent,
         OccurrenceParent::Occurrence { ref occurrence } if occurrence == &root_child
     ));
+}
+
+#[test]
+fn reparent_component_root_refuses_retained_identity_limit() {
+    use cadmpeg_ir::ids::OccurrenceId;
+    use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    let parent = OccurrenceId::mint("f3d:model:occurrence#xref-0-0").unwrap();
+    policy.limits.max_retained_bytes = u64::try_from(parent.as_str().len() - 1).unwrap();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let mut occurrences = vec![Occurrence {
+        id: OccurrenceId::mint("f3d:model:occurrence#child").unwrap(),
+        prototype: PrototypeReference::Unresolved {},
+        parent: OccurrenceParent::Root {},
+        ordinal: 0,
+        transform: Transform::identity(),
+        linked_prototype: None,
+        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+        name: None,
+        visible: None,
+        link: None,
+        native_ref: None,
+    }];
+
+    let error = reparent_component_roots(&ctx, &mut occurrences, &parent).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "copy F3Z parent occurrence identity"));
+    assert!(matches!(occurrences[0].parent, OccurrenceParent::Root {}));
 }
 
 #[test]
