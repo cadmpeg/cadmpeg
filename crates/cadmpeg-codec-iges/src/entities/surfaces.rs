@@ -1607,8 +1607,11 @@ pub(super) fn project(
                 super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "tabulated direction is zero or non-finite"))?;
                 continue;
             };
-            let placed_solved = (entry.transform != 0).then(|| directrix_solved.clone());
+            let placed_solved = (entry.transform != 0)
+                .then(|| super::geometry_copy::copy_solved_curve(directrix_solved, ctx))
+                .transpose()?;
             let procedural_directrix = if let Some(placed_solved) = placed_solved {
+                if let Some(ctx) = ctx { ctx.charge_collection_items(1, "iges exact placed curve box")?; }
                 let placed_id = crate::ids::curve(
                     &crate::ids::Stem::directory(entry.sequence)
                         .tail(crate::ids::Word::PlacedDirectrix),
@@ -1945,8 +1948,11 @@ pub(super) fn project(
             let source_interval = source_parameter_interval(&directrix_geometry, carrier_interval);
             let mut procedural_directrix = crate::decode_resource::clone_optional_identity(ctx, &generatrix_id, "iges surface identity copy")?;
             let mut procedural_axis = admitted_axis;
-            let placed_solved = (entry.transform != 0).then(|| directrix_solved.clone());
+            let placed_solved = (entry.transform != 0)
+                .then(|| super::geometry_copy::copy_solved_curve(directrix_solved, ctx))
+                .transpose()?;
             if let Some(placed_solved) = placed_solved {
+                if let Some(ctx) = ctx { ctx.charge_collection_items(1, "iges exact placed curve box")?; }
                 let Some(orientation) = similarity_orientation(transform) else {
                     super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", "placement cannot preserve the exact revolution parameterization"))?;
                     continue;

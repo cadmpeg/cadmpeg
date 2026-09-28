@@ -100,6 +100,14 @@ fn surface_identity_copies_refuse_at_retained_byte_limit() {
 }
 
 #[test]
+fn exact_placed_surface_carriers_refuse_nested_curve_box() {
+    for bytes in [placed_tabulated_hyperbola_file(), placed_hyperbola_surface_of_revolution_file()] {
+        IgesCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+        assert_surface_collection_refusal(&bytes, "iges exact placed curve box");
+    }
+}
+
+#[test]
 fn type122_projection_refuses_tabulated_carrier_rows_knots_and_slots() {
     let bytes = placed_tabulated_line_file();
     for operation in [
