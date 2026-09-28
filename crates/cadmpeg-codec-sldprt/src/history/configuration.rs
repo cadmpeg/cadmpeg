@@ -117,8 +117,8 @@ pub(crate) fn enrich_history_semantic(
     crate::resolved_features::reference_geometry::enrich_history_reference_planes(histories, lanes);
     crate::resolved_features::reference_geometry::enrich_history_reference_points(ctx, histories, lanes)?;
     crate::resolved_features::reference_geometry::enrich_history_coordinate_systems(
-        histories, lanes,
-    );
+        ctx, histories, lanes,
+    )?;
     crate::pmi::enrich_history_parameters(ctx, histories, pmi_dimensions)?;
     apply_evaluated_parameters(histories);
     crate::resolved_features::reference_geometry::enrich_history_reference_axes(ctx, histories, lanes)?;

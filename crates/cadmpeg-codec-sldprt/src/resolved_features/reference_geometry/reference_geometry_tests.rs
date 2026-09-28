@@ -316,7 +316,11 @@ fn solved_coordinate_system_projects_orthogonalized_flipped_frame() {
         [1, 1, 0],
     );
     let mut histories = vec![coordinate_system_history()];
-    super::enrich_history_coordinate_systems(&mut histories, &[record.lane]);
+    super::enrich_history_coordinate_systems(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut histories,
+        &[record.lane],
+    ).unwrap();
     assert_eq!(
         histories[0].features[0].properties.get("Origin"),
         Some(&"125mm,-250mm,500mm".to_string())
@@ -651,7 +655,11 @@ fn solved_coordinate_system_rejects_cross_lane_disagreement() {
         [0, 0, 0],
     );
     let mut histories = vec![coordinate_system_history()];
-    super::enrich_history_coordinate_systems(&mut histories, &[first.lane, second.lane]);
+    super::enrich_history_coordinate_systems(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut histories,
+        &[first.lane, second.lane],
+    ).unwrap();
     assert!(histories[0].features[0].properties.is_empty());
 }
 
@@ -1930,3 +1938,4 @@ fn compact_offset_plane_source_requires_the_reference_record() {
 mod offset_planes;
 mod plane_frames;
 mod reference_points;
+mod coordinate_systems;
