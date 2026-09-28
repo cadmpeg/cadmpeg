@@ -22,6 +22,18 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+fn topology_bound_plane_service(
+    points: impl IntoIterator<Item = [f64; 3]>,
+) -> Option<PlaneEquation> {
+    crate::decode::with_test_decode_ctx(|ctx| topology_bound_plane(ctx, points))
+        .expect("service topology plane")
+}
+
+fn analytic_curve_plane_service(geometry: &CurveGeometry) -> Option<PlaneEquation> {
+    crate::decode::with_test_decode_ctx(|ctx| analytic_curve_plane(ctx, geometry))
+        .expect("service analytic curve plane")
+}
+
 #[test]
 fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -78,7 +90,7 @@ fn nurbs_curve(
 
 #[test]
 fn topology_boundary_points_define_one_plane() {
-    let plane = topology_bound_plane([
+    let plane = topology_bound_plane_service([
         [4.0, 0.0, 2.0],
         [1.0, 3.0, 2.0],
         [1.0, 0.0, 2.0],
@@ -89,8 +101,8 @@ fn topology_boundary_points_define_one_plane() {
     assert_eq!(plane.origin, [1.0, 0.0, 2.0]);
     assert_eq!(plane.normal, [0.0, 0.0, 1.0]);
 
-    assert!(topology_bound_plane([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]).is_none());
-    assert!(topology_bound_plane([
+    assert!(topology_bound_plane_service([[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]]).is_none());
+    assert!(topology_bound_plane_service([
         [0.0, 0.0, 0.0],
         [1.0, 0.0, 0.0],
         [0.0, 1.0, 0.0],
@@ -100,8 +112,26 @@ fn topology_boundary_points_define_one_plane() {
 }
 
 #[test]
+fn topology_bound_plane_refuses_candidate_point_vector() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = match topology_bound_plane(
+        &ctx,
+        [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+    ) {
+        Ok(_) => panic!("one topology point exceeds collection limit"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo topology plane candidate points"));
+}
+
+#[test]
 fn analytic_conic_boundary_defines_its_plane() {
-    let plane = analytic_curve_plane(&CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+    let plane = analytic_curve_plane_service(&CurveGeometry::Solved(SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(3.0, 4.0, 5.0),
             Vector3::new(0.0, 0.0, -2.0)
@@ -116,7 +146,7 @@ fn analytic_conic_boundary_defines_its_plane() {
     assert_eq!(plane.origin, [3.0, 4.0, 5.0]);
     assert_eq!(plane.normal, [0.0, 0.0, -1.0]);
     assert!(
-        analytic_curve_plane(&CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        analytic_curve_plane_service(&CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0)
@@ -139,7 +169,7 @@ fn complete_nurbs_boundaries_supply_only_provable_plane_evidence() {
         ],
         None,
     );
-    let plane = analytic_curve_plane(&planar).expect("planar NURBS boundary");
+    let plane = analytic_curve_plane_service(&planar).expect("planar NURBS boundary");
     assert_eq!(plane.origin[2], 2.0);
     assert_eq!(plane.normal, [0.0, 0.0, 1.0]);
 
@@ -154,7 +184,7 @@ fn complete_nurbs_boundaries_supply_only_provable_plane_evidence() {
         ],
         None,
     );
-    assert!(analytic_curve_plane(&nonplanar).is_none());
+    assert!(analytic_curve_plane_service(&nonplanar).is_none());
 
     let line = nurbs_curve(
         1,
@@ -177,6 +207,31 @@ fn complete_nurbs_boundaries_supply_only_provable_plane_evidence() {
         None,
     );
     assert!(analytic_boundary_line(&bent).is_none());
+}
+
+#[test]
+fn analytic_nurbs_plane_refuses_control_point_vector() {
+    let geometry = nurbs_curve(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
+            Point3::new(0.0, 0.0, 2.0),
+            Point3::new(1.0, 0.0, 2.0),
+            Point3::new(1.0, 1.0, 2.0),
+        ],
+        None,
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = match analytic_curve_plane(&ctx, &geometry) {
+        Ok(_) => panic!("one NURBS control point exceeds collection limit"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo topology plane candidate points"));
 }
 
 #[test]
@@ -237,8 +292,13 @@ fn agreed_topology_plane_refuses_boundary_line_vector() {
 }
 
 #[test]
+fn agreed_topology_plane_refuses_candidate_point_copy() {
+    assert_boundary_plane_refusal(2, "creo topology plane candidate points");
+}
+
+#[test]
 fn agreed_topology_plane_refuses_candidate_vector() {
-    assert_boundary_plane_refusal(2, "creo plane boundary candidates");
+    assert_boundary_plane_refusal(3, "creo plane boundary candidates");
 }
 
 #[test]

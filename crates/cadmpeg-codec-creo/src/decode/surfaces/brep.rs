@@ -1333,11 +1333,12 @@ pub(in super::super) fn transfer_native_brep(
             continue;
         }
         let ordered = ordered_face_loops(
+            ctx,
             loops.clone(),
             planes.get(&face_id).copied(),
             &incidence,
             solved_vertices,
-        )
+        )?
         .or_else(|| {
             let surface_id = native_surface_id(scan, face_id);
             let surface = exactly_one(
