@@ -8768,8 +8768,8 @@ fn consolidated_edge_nodes(
     }
     let mut use_runs = HashMap::new();
     for run in crate::families::consolidated::records::consolidated_edge_use_runs_from_records(
-        bytes, records,
-    ) {
+        ctx, bytes, records,
+    )? {
         let Some(uses) = native_consolidated_edge_uses(&run.uses) else { continue };
         crate::resource::insert_map(ctx, &mut use_runs, run.node.pos,
             (uses, run.definition.map(native_consolidated_edge_definition)),
@@ -8777,8 +8777,8 @@ fn consolidated_edge_nodes(
     }
     let mut analytic_circles = HashMap::new();
     for run in crate::families::consolidated::records::consolidated_analytic_circle_edge_runs_from_records(
-        bytes, records,
-    ) {
+        ctx, bytes, records,
+    )? {
         let Some(circle) = circle_ids.get(&(run.circle.pos as u64)) else { continue };
         let circle = crate::resource::copy_retained_str(ctx, circle, "catia_native_analytic_edge_circle_id")?;
         crate::resource::insert_map(ctx, &mut analytic_circles, run.node.pos,
@@ -8787,8 +8787,8 @@ fn consolidated_edge_nodes(
     }
     let mut class25_descriptors = HashMap::new();
     for run in crate::families::consolidated::records::consolidated_class25_edge_runs_from_records(
-        bytes, records,
-    ) {
+        ctx, bytes, records,
+    )? {
         crate::resource::insert_map(ctx, &mut class25_descriptors, run.node.pos,
             CatiaConsolidatedClass25Descriptor {
                 byte_offset: run.descriptor.pos as u64,

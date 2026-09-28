@@ -734,6 +734,56 @@ fn consolidated_edge_use_run_accepts_compact_successor_layout() {
 }
 
 #[test]
+fn consolidated_edge_use_indexes_clones_and_definitions_refuse_collection_limits() {
+    use std::collections::HashSet;
+
+    let mut bytes = vec![0xb2, 0x03, 0x24, 0x04, 0x05, 0x81, 0x05, 0x0f, 0x87];
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut refused = HashSet::new();
+    for limit in 0..128 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+            refused.insert(error.operation);
+        }
+    }
+    for operation in [
+        "catia_edge_use_metadata_index",
+        "catia_edge_use_node_index",
+        "catia_edge_use_preceding_definition_payload",
+        "catia_b2_use_clone_payload",
+        "catia_b2_use_clone_references",
+        "catia_edge_use_runs",
+    ] {
+        assert!(refused.contains(operation), "{operation} did not refuse");
+    }
+}
+
+#[test]
+fn consolidated_successor_definition_refuses_collection_limit() {
+    let bytes = [
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f, 0x07, 0x0b, 0x21, 0xb2, 0x03, 0x24, 0x04,
+        0x05, 0x81, 0x29, 0x0f, 0x87, 0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 0x05, 0x2d, 0x88, 0xb2,
+        0x03, 0x06, 0x04, 0x05, 0x82, 0x09, 0x31, 0x84,
+    ];
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut found = false;
+    for limit in 0..128 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::consolidated_edge_use_runs_from_records(ctx, &bytes, &records)
+        });
+        if matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_edge_use_succeeding_definition_payload") {
+            found = true;
+            break;
+        }
+    }
+    assert!(found);
+}
+
+#[test]
 fn compact_owner_ordinal_selects_the_owned_edge_node() {
     let bytes = [
         0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x08, 0x05, 0x82,
@@ -1227,6 +1277,114 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
         crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(&broken)
             .is_empty()
     );
+}
+
+#[test]
+fn analytic_circle_edge_carriers_and_retained_frames_refuse_collection_limits() {
+    use std::collections::HashSet;
+
+    fn record(class: u8, token: u8, payload: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0xb2, 0x03, class, payload.len() as u8, token];
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+    let mut parameter = vec![0x05, 0x00];
+    parameter.extend_from_slice(&12.0_f64.to_le_bytes());
+    parameter.extend_from_slice(&34.0_f64.to_le_bytes());
+    let mut circle = vec![0x05];
+    for value in [12.0_f64, 34.0, 5.0, 0.0, 10.0] {
+        circle.extend_from_slice(&value.to_le_bytes());
+    }
+    circle.push(0x01);
+    circle.extend_from_slice(&0.0_f64.to_le_bytes());
+    let mut definition = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
+    for value in [0.0_f64, 10.0, 0.001, 4.0, 9.0, 1.0, -2.0, 0.001] {
+        definition.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut bytes = record(0x18, 0x15, &parameter);
+    bytes.extend_from_slice(&record(0x19, 0x05, &circle));
+    bytes.extend_from_slice(&record(0x23, 0x05, &definition));
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut refused = HashSet::new();
+    for limit in 0..256 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::consolidated_analytic_circle_edge_runs_from_records(ctx, &bytes, &records)
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+            refused.insert(error.operation);
+        }
+    }
+    for operation in [
+        "catia_analytic_circle_carriers",
+        "catia_analytic_circle_use_runs",
+        "catia_analytic_circle_test_definition_payload",
+        "catia_analytic_circle_descriptor_payload",
+        "catia_analytic_circle_edge_runs",
+    ] {
+        assert!(refused.contains(operation), "{operation} did not refuse");
+    }
+}
+
+#[test]
+fn class25_edge_descriptor_and_runs_refuse_collection_limits() {
+    use std::collections::HashSet;
+
+    let mut descriptor = vec![0x08, 0x34, 0x12, 0x02];
+    descriptor.extend_from_slice(&3.0_f64.to_le_bytes());
+    descriptor.extend_from_slice(&7.0_f64.to_le_bytes());
+    let mut definition = vec![0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
+    for value in [1.0_f64, 2.0, 0.001, 3.0, 4.0, 1.0, 5.0, 0.001] {
+        definition.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut bytes = vec![0xb2, 0x03, 0x18, descriptor.len() as u8, 0x05];
+    bytes.extend_from_slice(&descriptor);
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x25, definition.len() as u8, 0x05]);
+    bytes.extend_from_slice(&definition);
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut refused = HashSet::new();
+    for limit in 0..256 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::consolidated_class25_edge_runs_from_records(ctx, &bytes, &records)
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+            refused.insert(error.operation);
+        }
+    }
+    for operation in [
+        "catia_class25_edge_descriptors",
+        "catia_class25_edge_use_runs",
+        "catia_class25_edge_descriptor_values",
+        "catia_class25_edge_runs",
+    ] {
+        assert!(refused.contains(operation), "{operation} did not refuse");
+    }
+}
+
+#[test]
+fn class25_edge_run_accepts_segmented_finite_lane_and_rejects_unknown_marker() {
+    let mut descriptor = vec![0x08, 0x34, 0x12, 0x02];
+    descriptor.extend_from_slice(&3.0_f64.to_le_bytes());
+    descriptor.extend_from_slice(&7.0_f64.to_le_bytes());
+    let mut definition = vec![0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
+    for value in [1.0_f64, 2.0, 0.001, 3.0, 4.0] {
+        definition.extend_from_slice(&value.to_le_bytes());
+    }
+    let marker = definition.len();
+    definition.push(0x82);
+    for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 0.001] {
+        definition.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut bytes = vec![0xb2, 0x03, 0x18, descriptor.len() as u8, 0x05];
+    bytes.extend_from_slice(&descriptor);
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x25, definition.len() as u8, 0x05]);
+    let definition_start = bytes.len();
+    bytes.extend_from_slice(&definition);
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    assert_eq!(super::consolidated_class25_edge_runs(&bytes).len(), 1);
+    bytes[definition_start + marker] = 0x84;
+    assert!(super::consolidated_class25_edge_runs(&bytes).is_empty());
 }
 
 #[test]

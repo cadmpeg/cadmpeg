@@ -17,7 +17,8 @@ use crate::test_support::test_b2::{
     b2_offset_support_stream, b2_owner_chart_stream, b2_owner_chart_stream_with_extended_bridge,
     b2_owner_packet_stream, b2_parameter_point_stream, b2_pcurve_stream, b2_plane_carrier_stream,
     b2_range_origin_cylinder_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
-    b2_revolution_stream, b2_sphere_stream, b2_topology_metadata_stream, b2_torus_stream,
+    b2_revolution_stream, b2_sphere_stream, b2_topology_edge_run_stream,
+    b2_topology_metadata_stream, b2_torus_stream,
     b2_width_coded_owner_chart_stream, b2_width_coded_owner_packet_stream,
     b2_width_coded_owner_with_allocation_stream, b3_cylinder_stream, b3_offset_support_stream,
 };
@@ -1215,6 +1216,47 @@ fn b2_topology_metadata_parser_preserves_refs_and_sense_code() {
     assert_eq!(uses[0].sense(), Some(B2UseSense::Sense88));
     assert!(uses[0].references().is_none());
     assert_eq!(uses[0].payload, [1, 2, 3, 0x88]);
+}
+
+#[test]
+fn b2_use_payload_references_and_rows_refuse_collection_limits() {
+    use std::collections::HashSet;
+
+    let mut refused = HashSet::new();
+    for bytes in [b2_topology_metadata_stream(), b2_topology_edge_run_stream()] {
+        let records = crate::wire::records::consolidated_records(&bytes);
+        for limit in 0..128 {
+            let result = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::b2_use_metadata_from_records(ctx, &bytes, &records)
+            });
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+                refused.insert(error.operation);
+            }
+        }
+    }
+    for operation in ["catia_b2_use_payload", "catia_b2_use_references", "catia_b2_uses"] {
+        assert!(refused.contains(operation), "{operation} did not refuse");
+    }
+}
+
+#[test]
+fn b2_class25_scalar_lane_and_descriptor_refuse_collection_limits() {
+    let mut payload = vec![0x08, 0x34, 0x12, 0x02];
+    payload.extend_from_slice(&3.0_f64.to_le_bytes());
+    payload.extend_from_slice(&7.0_f64.to_le_bytes());
+    let mut bytes = vec![0xb2, 0x03, 0x18, 0x14, 0x05];
+    bytes.extend_from_slice(&payload);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    for (limit, operation) in [
+        (1, "catia_b2_class25_values"),
+        (2, "catia_b2_class25_descriptors"),
+    ] {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::b2_class25_descriptors_from_records(ctx, &bytes, &records)
+        });
+        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation));
+    }
 }
 
 #[test]
