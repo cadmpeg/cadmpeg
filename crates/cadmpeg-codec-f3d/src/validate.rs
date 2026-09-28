@@ -1128,18 +1128,18 @@ fn validate_loaded(
     validate_sketch_placements(&ctx, &mut findings)?;
     validate_parameter_owners(&ctx, &mut findings)?;
     validate_parameter_companions(&ctx, &mut findings)?;
-    let dimension_recipe_ids = validate_dimension_recipe_records(&ctx, &mut findings);
-    validate_dimension_companion_recipes(&ctx, &mut findings, &dimension_recipe_ids);
-    let locus_pair_companions = validate_dimension_locus_pairs(&ctx, &mut findings);
-    validate_dimension_annotation_frames(&ctx, &mut findings);
-    validate_dimension_presentation_frames(&ctx, &mut findings);
-    let locus_group_companions = validate_dimension_locus_groups(&ctx, &mut findings);
+    let dimension_recipe_ids = validate_dimension_recipe_records(&ctx, &mut findings)?;
+    validate_dimension_companion_recipes(&ctx, &mut findings, &dimension_recipe_ids)?;
+    let locus_pair_companions = validate_dimension_locus_pairs(&ctx, &mut findings)?;
+    validate_dimension_annotation_frames(&ctx, &mut findings)?;
+    validate_dimension_presentation_frames(&ctx, &mut findings)?;
+    let locus_group_companions = validate_dimension_locus_groups(&ctx, &mut findings)?;
     validate_dimension_null_locus_pairs(
         &ctx,
         &mut findings,
         &locus_pair_companions,
         &locus_group_companions,
-    );
+    )?;
     validate_parameters(&ctx, &mut findings)?;
     validate_entity_headers(&ctx, &mut findings)?;
     validate_sketch_relations(&ctx, &mut findings)?;
@@ -7380,7 +7380,7 @@ fn validate_parameter_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>)
 fn validate_dimension_recipe_records<'a>(
     ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
-) -> HashSet<(&'a str, &'a str)> {
+) -> Result<HashSet<(&'a str, &'a str)>, CodecError> {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
@@ -7458,18 +7458,16 @@ fn validate_dimension_recipe_records<'a>(
             && dimension_companion
             && companion_order_matches
             && recipe_frame_matches
-            && dimension_recipe_ids.insert((native_stream, record.recipe_id.as_str()));
+            && ctx.insert_unique(&mut dimension_recipe_ids,
+                (native_stream, record.recipe_id.as_str()),
+                "index F3D dimension recipe IDs")?;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design dimension recipe has an invalid indexed-record owner"
-                    .into(),
-                entity: Some(record.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design dimension recipe has an invalid indexed-record owner",
+                Some(ctx.copy_entity(&record.id)?))?;
         }
     }
-    dimension_recipe_ids
+    Ok(dimension_recipe_ids)
 }
 
 /// Report dimension companions owning an unresolved construction recipe.
@@ -7477,7 +7475,7 @@ fn validate_dimension_companion_recipes<'a>(
     ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
     dimension_recipe_ids: &HashSet<(&'a str, &'a str)>,
-) {
+) -> Result<(), CodecError> {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
@@ -7498,22 +7496,19 @@ fn validate_dimension_companion_recipes<'a>(
                 })
             })
         {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design dimension companion has an unowned construction recipe"
-                    .into(),
-                entity: Some(companion.id().to_owned()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design dimension companion has an unowned construction recipe",
+                Some(ctx.copy_entity(companion.id())?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate dimension locus pairs; returns their companion set.
 fn validate_dimension_locus_pairs<'a>(
     ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
-) -> HashSet<(&'a str, u32)> {
+) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
@@ -7523,9 +7518,11 @@ fn validate_dimension_locus_pairs<'a>(
     let mut locus_pair_companions = HashSet::new();
     for pair in &native.design_dimension_locus_pairs {
         let native_stream = design_stream(&pair.id);
-        let unique_index = locus_pair_indices.insert((native_stream, pair.record_index));
-        let unique_companion =
-            locus_pair_companions.insert((native_stream, pair.companion_record_index));
+        let unique_index = ctx.insert_unique(&mut locus_pair_indices,
+            (native_stream, pair.record_index), "index F3D dimension locus pairs")?;
+        let unique_companion = ctx.insert_unique(&mut locus_pair_companions,
+            (native_stream, pair.companion_record_index),
+            "index F3D dimension locus pair companions")?;
         let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
             pair.byte_offset() >= companion.byte_offset().saturating_add(58)
@@ -7560,20 +7557,16 @@ fn validate_dimension_locus_pairs<'a>(
             && unique_index
             && unique_companion;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design dimension locus pair has an invalid frame or geometry link"
-                    .into(),
-                entity: Some(pair.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design dimension locus pair has an invalid frame or geometry link",
+                Some(ctx.copy_entity(&pair.id)?))?;
         }
     }
-    locus_pair_companions
+    Ok(locus_pair_companions)
 }
 
 /// Validate dimension annotation frames and their operand runs.
-fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
@@ -7584,7 +7577,9 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
     let mut annotation_frame_indices = HashSet::new();
     for frame in &native.design_dimension_annotation_frames {
         let native_stream = design_stream(&frame.id);
-        let unique_index = annotation_frame_indices.insert((native_stream, frame.record_index));
+        let unique_index = ctx.insert_unique(&mut annotation_frame_indices,
+            (native_stream, frame.record_index),
+            "index F3D dimension annotation frames")?;
         let governing_owner = owners_by_index
             .get(&(native_stream, frame.governing_owner_record_index))
             .copied();
@@ -7643,39 +7638,35 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
             && operands_valid
             && owner_is_sketch;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design dimension annotation frame has invalid links or offsets"
-                    .into(),
-                entity: Some(frame.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design dimension annotation frame has invalid links or offsets",
+                Some(ctx.copy_entity(&frame.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate direct dimension presentation frames and their sketch-owner joins.
-fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
     let companions_by_index = &ctx.companions_by_index;
     let entities_by_suffix = &ctx.entities_by_suffix;
     let sketch_geometry_indices = &ctx.sketch_geometry_indices;
-    let sketch_scope_by_entity = native
-        .design_sketch_placements
-        .iter()
-        .filter_map(|placement| {
+    let sketch_scope_by_entity = collect_index(ctx.decode,
+        native.design_sketch_placements.iter().filter_map(|placement| {
             Some((
                 (design_stream(&placement.id), placement.entity_id.suffix()),
                 placement.scope_record_index?,
             ))
-        })
-        .collect::<HashMap<_, _>>();
+        }), "index F3D dimension presentation sketch scopes")?;
     let mut presentation_frame_indices = HashSet::new();
     for frame in &native.design_dimension_presentation_frames {
         let native_stream = design_stream(&frame.id);
-        let unique_index = presentation_frame_indices.insert((native_stream, frame.record_index));
+        let unique_index = ctx.insert_unique(&mut presentation_frame_indices,
+            (native_stream, frame.record_index),
+            "index F3D dimension presentation frames")?;
         let owner = owners_by_index.get(&(native_stream, frame.governing_owner_record_index));
         let parameter =
             parameters_by_index.get(&(native_stream, frame.governing_parameter_record_index));
@@ -7738,22 +7729,19 @@ fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>
             && operands_valid
             && owner_is_sketch;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design dimension presentation frame has invalid links or offsets"
-                    .into(),
-                entity: Some(frame.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design dimension presentation frame has invalid links or offsets",
+                Some(ctx.copy_entity(&frame.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate dimension locus groups; returns their companion set.
 fn validate_dimension_locus_groups<'a>(
     ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
-) -> HashSet<(&'a str, u32)> {
+) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
@@ -7764,8 +7752,11 @@ fn validate_dimension_locus_groups<'a>(
     let mut locus_group_companions = HashSet::new();
     for group in &native.design_dimension_locus_groups {
         let native_stream = design_stream(&group.id);
-        let unique_index = locus_group_indices.insert((native_stream, group.record_index));
-        locus_group_companions.insert((native_stream, group.companion_record_index));
+        let unique_index = ctx.insert_unique(&mut locus_group_indices,
+            (native_stream, group.record_index), "index F3D dimension locus groups")?;
+        ctx.insert_unique(&mut locus_group_companions,
+            (native_stream, group.companion_record_index),
+            "index F3D dimension locus group companions")?;
         let companion = companions_by_index.get(&(native_stream, group.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
             group.byte_offset >= companion.byte_offset().saturating_add(58)
@@ -7802,16 +7793,10 @@ fn validate_dimension_locus_groups<'a>(
                     .saturating_add(1)
                 && sketch_geometry_indices.contains(&(native_stream, locus.returned.value))
         });
-        let mut locus_members = group
-            .loci
-            .iter()
-            .map(|locus| locus.geometry_record_index)
-            .collect::<Vec<_>>();
-        let mut return_members = group
-            .loci
-            .iter()
-            .map(|locus| locus.returned.value)
-            .collect::<Vec<_>>();
+        let mut locus_members = ctx.collect_vec(group.loci.iter().map(|locus| locus.geometry_record_index),
+            "collect F3D dimension locus members")?;
+        let mut return_members = ctx.collect_vec(group.loci.iter().map(|locus| locus.returned.value),
+            "collect F3D dimension return members")?;
         locus_members.sort_unstable();
         return_members.sort_unstable();
         let owner_is_sketch = entities_by_suffix
@@ -7842,16 +7827,12 @@ fn validate_dimension_locus_groups<'a>(
             && unique_index
             && frame_does_not_overlap;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design dimension locus group has an invalid counted frame or geometry link"
-                    .into(),
-                entity: Some(group.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design dimension locus group has an invalid counted frame or geometry link",
+                Some(ctx.copy_entity(&group.id)?))?;
         }
     }
-    locus_group_companions
+    Ok(locus_group_companions)
 }
 
 /// Validate null-locus dimension pairs against typed companions.
@@ -7860,7 +7841,7 @@ fn validate_dimension_null_locus_pairs<'a>(
     findings: &mut Vec<Finding>,
     locus_pair_companions: &HashSet<(&'a str, u32)>,
     locus_group_companions: &HashSet<(&'a str, u32)>,
-) {
+) -> Result<(), CodecError> {
     let native = ctx.native;
     let parameters_by_index = &ctx.parameters_by_index;
     let owners_by_index = &ctx.owners_by_index;
@@ -7870,9 +7851,11 @@ fn validate_dimension_null_locus_pairs<'a>(
     let mut null_locus_pair_companions = HashSet::new();
     for pair in &native.design_dimension_null_locus_pairs {
         let native_stream = design_stream(&pair.id);
-        let unique_index = null_locus_pair_indices.insert((native_stream, pair.record_index));
-        let unique_companion =
-            null_locus_pair_companions.insert((native_stream, pair.companion_record_index));
+        let unique_index = ctx.insert_unique(&mut null_locus_pair_indices,
+            (native_stream, pair.record_index), "index F3D null-locus dimension pairs")?;
+        let unique_companion = ctx.insert_unique(&mut null_locus_pair_companions,
+            (native_stream, pair.companion_record_index),
+            "index F3D null-locus dimension companions")?;
         let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
             pair.byte_offset() >= companion.byte_offset().saturating_add(58)
@@ -7910,16 +7893,12 @@ fn validate_dimension_null_locus_pairs<'a>(
             && unique_index
             && unique_companion;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message:
-                    "Fusion Design null-locus dimension pair has an invalid frame or geometry link"
-                        .into(),
-                entity: Some(pair.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design null-locus dimension pair has an invalid frame or geometry link",
+                Some(ctx.copy_entity(&pair.id)?))?;
         }
     }
+    Ok(())
 }
 
 /// Validate parameter record identity uniqueness.

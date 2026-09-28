@@ -36,6 +36,7 @@ mod parameter_scope_collection_limits;
 mod path_feature_limits;
 mod extrude_parameter_limits;
 mod mesh_feature_limits;
+mod dimension_validation_limits;
 mod body_recipe_limits;
 mod edge_operand_limits;
 mod edge_treatment_vertex_limits;
