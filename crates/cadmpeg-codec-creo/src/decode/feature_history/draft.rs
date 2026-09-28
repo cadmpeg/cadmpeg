@@ -346,16 +346,22 @@ pub(in super::super) fn schema_feature_definition(
             &scan.features.entity_tables,
             &scan.surfaces.rows,
         );
-        let stepped_dimensions = (stepped_form == Some(HoleForm::Counterbore))
-            .then(|| counterbore_dimensions(scan, ir, feature_id))
-            .flatten();
-        let stepped_directed = (stepped_form == Some(HoleForm::Counterbore))
-            .then(|| counterbore_directed_placement(scan, ir, source_carriers, feature_id))
-            .flatten();
-        let stepped_axis = (stepped_form == Some(HoleForm::Counterbore)
-            && stepped_directed.is_none())
-        .then(|| counterbore_axis_placement(scan, ir, feature_id))
-        .flatten();
+        let stepped_dimensions = if stepped_form == Some(HoleForm::Counterbore) {
+            counterbore_dimensions(ctx, scan, ir, feature_id)?
+        } else {
+            None
+        };
+        let stepped_directed = if stepped_form == Some(HoleForm::Counterbore) {
+            counterbore_directed_placement(ctx, scan, ir, source_carriers, feature_id)?
+        } else {
+            None
+        };
+        let stepped_axis = if stepped_form == Some(HoleForm::Counterbore)
+            && stepped_directed.is_none() {
+            counterbore_axis_placement(ctx, scan, ir, feature_id)?
+        } else {
+            None
+        };
         let drilled_recipe = simple_drilled_hole_recipe(
             feature_id,
             &scan.features.entity_tables,

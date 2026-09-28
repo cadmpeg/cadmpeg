@@ -385,7 +385,7 @@ pub(in super::super) fn transfer_hole_cylinders(
         let counterbore = if simple.is_some() {
             None
         } else {
-            counterbore_patch_geometries(scan, ir, feature_id)
+            counterbore_patch_geometries(ctx, scan, ir, feature_id)?
         };
         let simple_rows = simple.into_iter().flat_map(|hole| {
             hole.cylinder_rows.into_iter().map(move |row| (row, hole.geometry))
@@ -1178,7 +1178,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         let row_local_frame_selected = (stored_frame_agrees || witnessed_frame_replaces_stored)
             && (feature_class != Some(SchemaClass::Round) || mechanism.row_local_under_round());
         if feature_class == Some(SchemaClass::Hole)
-            && counterbore_dimensions(scan, ir, row.feature_id).is_some_and(|dimensions| {
+            && counterbore_dimensions(ctx, scan, ir, row.feature_id)?.is_some_and(|dimensions| {
                 !counterbore_dimension_tuple_matches_radius(dimensions, frame.radius().get())
             })
         {
