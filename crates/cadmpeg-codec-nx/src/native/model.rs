@@ -1383,7 +1383,7 @@ impl NativeModel {
         let object_uuid_values = object_uuid_values(ctx, container)?;
         let object_references = object_references(ctx, container)?;
         let object_record_handle_pairs = object_record_handle_pairs(&object_references);
-        let configurations = configurations(container);
+        let configurations = configurations(ctx, container)?;
         let part_attributes = part_attributes(container);
         let configuration_attribute_uses =
             configuration_attribute_uses(ctx, &configurations, &part_attributes)?;
