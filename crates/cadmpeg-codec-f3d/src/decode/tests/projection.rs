@@ -14,7 +14,7 @@
 use cadmpeg_test_support::wire;
 
 use super::super::{
-    bind_mesh_feature_definitions, design_projection_gaps, face_selection_is_resolved,
+    bind_mesh_feature_definitions, face_selection_is_resolved,
     feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
     mesh_texture_assignments, report_design_projection_gaps, MeshProjection,
 };
@@ -28,6 +28,13 @@ fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("test decode context");
     run(&ctx)
+}
+
+fn design_projection_gaps(
+    ir: &cadmpeg_ir::document::CadIr,
+    native: &F3dNative,
+) -> super::super::DesignProjectionGaps {
+    with_test_ctx(|ctx| super::super::design_projection_gaps(ctx, ir, native).unwrap())
 }
 
 #[test]
