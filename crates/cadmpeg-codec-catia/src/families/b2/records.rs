@@ -1630,13 +1630,13 @@ pub(crate) fn b2_adjacent_face_counted_owners_from_records(
 #[cfg(test)]
 fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
     let records = consolidated_records(data);
-    b2_parameter_points_from_records(data, &records)
+    b2_parameter_points_from_records(data, &records).collect()
 }
 
-pub(crate) fn b2_parameter_points_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<B2ParameterPoint> {
+pub(crate) fn b2_parameter_points_from_records<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2ParameterPoint> + 'a {
     family_frames_from_records(records, ConsolidatedFamily::B, 0x18)
         .into_iter()
         .filter_map(|frame| {
@@ -1674,7 +1674,6 @@ pub(crate) fn b2_parameter_points_from_records(
                 payload,
             })
         })
-        .collect()
 }
 
 /// Decode complete consolidated class-`0x27` plane-carrier records.
@@ -2719,13 +2718,13 @@ pub(crate) fn b2_resolved_revolutions_from_records(
 #[cfg(test)]
 fn b2_line_profiles(data: &[u8]) -> Vec<B2LineProfile> {
     let records = consolidated_records(data);
-    b2_line_profiles_from_records(data, &records)
+    b2_line_profiles_from_records(data, &records).collect()
 }
 
-pub(crate) fn b2_line_profiles_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<B2LineProfile> {
+pub(crate) fn b2_line_profiles_from_records<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2LineProfile> + 'a {
     family_frames_from_records(records, ConsolidatedFamily::B, 0x0e)
         .into_iter()
         .filter_map(|frame| {
@@ -2745,7 +2744,6 @@ pub(crate) fn b2_line_profiles_from_records(
                 range,
             })
         })
-        .collect()
 }
 
 /// Decode `b2 03 2b` doubly periodic torus charts.

@@ -7533,7 +7533,8 @@ mod consolidated_cylinder_limit_tests {
 #[cfg(test)]
 mod consolidated_analytic_limit_tests {
     use super::{consolidated_circles, consolidated_cones, consolidated_revolutions,
-        consolidated_spheres, consolidated_tori};
+        consolidated_spheres, consolidated_tori, consolidated_parameter_points,
+        consolidated_line_profiles};
     use cadmpeg_core::CodecError;
 
     #[test]
@@ -7576,18 +7577,45 @@ mod consolidated_analytic_limit_tests {
         assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
             if error.operation == "catia_native_revolution_id"));
     }
+
+    #[test]
+    fn native_parameter_points_and_line_profiles_refuse_output_and_id_limits() {
+        let bytes = crate::test_support::test_b2::b2_parameter_point_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            consolidated_parameter_points(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_parameter_points"));
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            consolidated_parameter_points(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_parameter_point_id"));
+        let bytes = crate::test_support::test_b2::b2_line_profile_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            consolidated_line_profiles(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_line_profiles"));
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            consolidated_line_profiles(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_line_profile_id"));
+    }
 }
 
 fn consolidated_parameter_points(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedParameterPoint> {
+) -> Result<Vec<CatiaConsolidatedParameterPoint>, CodecError> {
     use crate::families::b2::records::B2ParameterPointPayload;
 
-    crate::families::b2::records::b2_parameter_points_from_records(bytes, records)
-        .into_iter()
-        .enumerate()
-        .map(|(index, point)| {
+    let mut points = Vec::new();
+    for (index, point) in crate::families::b2::records::b2_parameter_points_from_records(bytes, records).enumerate() {
             let payload = match point.payload {
                 B2ParameterPointPayload::Scalar { value } => {
                     CatiaConsolidatedParameterPointPayload::Scalar { value }
@@ -7602,16 +7630,18 @@ fn consolidated_parameter_points(
                     CatiaConsolidatedParameterPointPayload::FiveScalars { values }
                 }
             };
-            CatiaConsolidatedParameterPoint {
-                id: format!("catia:consolidated:parameter-point#{index}"),
+            let value = CatiaConsolidatedParameterPoint {
+                id: crate::resource::format_usize_id(ctx, "catia:consolidated:parameter-point#", index, 0,
+                    "catia_native_parameter_point_id")?,
                 byte_offset: point.pos as u64,
                 byte_len: (point.end - point.pos) as u64,
                 prefix: point.prefix,
                 control: point.control,
                 payload,
-            }
-        })
-        .collect()
+            };
+            crate::resource::push(ctx, &mut points, value, "catia_native_parameter_points")?;
+    }
+    Ok(points)
 }
 
 fn consolidated_plane_carriers(
@@ -7799,20 +7829,23 @@ fn consolidated_revolutions(
 }
 
 fn consolidated_line_profiles(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedLineProfile> {
-    crate::families::b2::records::b2_line_profiles_from_records(bytes, records)
-        .into_iter()
-        .enumerate()
-        .map(|(index, line)| CatiaConsolidatedLineProfile {
-            id: format!("catia:consolidated:line-profile#{index}"),
+) -> Result<Vec<CatiaConsolidatedLineProfile>, CodecError> {
+    let mut profiles = Vec::new();
+    for (index, line) in crate::families::b2::records::b2_line_profiles_from_records(bytes, records).enumerate() {
+        let value = CatiaConsolidatedLineProfile {
+            id: crate::resource::format_usize_id(ctx, "catia:consolidated:line-profile#", index, 0,
+                "catia_native_line_profile_id")?,
             byte_offset: line.pos as u64,
             origin: line.origin.coordinates().into(),
             direction: line.direction,
             range: line.range,
-        })
-        .collect()
+        };
+        crate::resource::push(ctx, &mut profiles, value, "catia_native_line_profiles")?;
+    }
+    Ok(profiles)
 }
 
 fn consolidated_spheres(
@@ -9273,14 +9306,14 @@ impl CatiaNative {
         let consolidated_class5b5c_records =
             consolidated_class5b5c_records(bytes, consolidated_records);
         let consolidated_parameter_points =
-            consolidated_parameter_points(bytes, consolidated_records);
+            consolidated_parameter_points(ctx, bytes, consolidated_records)?;
         let consolidated_cone_faces =
             consolidated_cone_faces(bytes, consolidated_records, &consolidated_parameter_points);
         let consolidated_cones = consolidated_cones(ctx, bytes, consolidated_records)?;
         let consolidated_cylinders = consolidated_cylinders(ctx, bytes, consolidated_records)?;
         let (consolidated_groups, consolidated_embedded_cylinders) =
             consolidated_cylinder_groups(ctx, bytes, consolidated_records)?;
-        let consolidated_line_profiles = consolidated_line_profiles(bytes, consolidated_records);
+        let consolidated_line_profiles = consolidated_line_profiles(ctx, bytes, consolidated_records)?;
         let mut consolidated_owner_packets =
             consolidated_owner_packets(ctx, bytes, consolidated_records)?;
         resolve_owner_chart_support_aliases(&mut consolidated_owner_packets, &alias_rows);

@@ -490,7 +490,7 @@ pub(super) fn try_decode_freeform_surfaces(
             &scan.data,
             &consolidated_records,
         )
-        .len();
+        .count();
         let resolved_consolidated_revolutions =
             match crate::families::b2::records::b2_resolved_revolutions_from_records(
                 ctx, &scan.data, &consolidated_records,
