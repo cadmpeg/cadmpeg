@@ -5,6 +5,7 @@ use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::index_from_u32;
 
 use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::design::decode::text::copy_ascii_retained;
 use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
@@ -603,13 +604,34 @@ pub(crate) fn bind_recipe_reference_candidates(
 
 /// Join dimension programs to byte-identical edge-recipe program tails.
 pub(crate) fn bind_dimension_recipe_edge_operands(
+    ctx: &DecodeContext<'_>,
     records: &mut [DesignDimensionRecipeRecord],
     operands: &[DesignEdgeOperand],
-) {
+) -> Result<(), CodecError> {
     for record in records {
-        record.matching_edge_operand_ids =
-            dimension_recipe_matching_edge_operand_ids(record, operands);
+        let mut ids = Vec::new();
+        for operand in operands.iter().filter(|operand| dimension_recipe_edge_matches(record, operand)) {
+            push_dimension_recipe_edge_id(ctx, &mut ids, &operand.id)?;
+        }
+        ids.sort();
+        ids.dedup();
+        record.matching_edge_operand_ids = ids;
     }
+    Ok(())
+}
+
+fn push_dimension_recipe_edge_id(
+    ctx: &DecodeContext<'_>,
+    ids: &mut Vec<String>,
+    id: &str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "f3d dimension recipe edge IDs")?;
+    let id = copy_ascii_retained(ctx, id, "f3d dimension recipe edge ID text")?;
+    ids.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d dimension recipe edge ID allocation", 0, 1)
+    })?;
+    ids.push(id);
+    Ok(())
 }
 
 pub(crate) fn dimension_recipe_matching_edge_operand_ids(
@@ -618,27 +640,29 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
 ) -> Vec<String> {
     let mut ids = operands
         .iter()
-        .filter(|operand| {
-            if native_stream(&operand.id) != native_stream(&record.id) {
-                return false;
-            }
-            let Some(tail) = operand
-                .recipe_program
-                .get(7..)
-                .filter(|tail| !tail.is_empty())
-            else {
-                return false;
-            };
-            record
-                .program
-                .windows(tail.len())
-                .any(|window| window == tail)
-        })
+        .filter(|operand| dimension_recipe_edge_matches(record, operand))
         .map(|operand| operand.id.clone())
         .collect::<Vec<_>>();
     ids.sort();
     ids.dedup();
     ids
+}
+
+fn dimension_recipe_edge_matches(
+    record: &DesignDimensionRecipeRecord,
+    operand: &DesignEdgeOperand,
+) -> bool {
+    if native_stream(&operand.id) != native_stream(&record.id) {
+        return false;
+    }
+    let Some(tail) = operand
+        .recipe_program
+        .get(7..)
+        .filter(|tail| !tail.is_empty())
+    else {
+        return false;
+    };
+    record.program.windows(tail.len()).any(|window| window == tail)
 }
 
 pub(super) fn recipe_record_prefix(

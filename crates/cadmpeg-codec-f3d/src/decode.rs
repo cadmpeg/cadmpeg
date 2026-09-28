@@ -4874,9 +4874,10 @@ fn extend_related_design_records(
         &native.persistent_subentity_tags,
     )?;
     crate::design::decode::dimension_frames::bind_dimension_recipe_edge_operands(
+        ctx,
         &mut native.design_dimension_recipe_records,
         &native.design_edge_operands,
-    );
+    )?;
     Ok(())
 }
 
