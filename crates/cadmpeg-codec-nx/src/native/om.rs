@@ -3758,12 +3758,31 @@ fn registry_definitions<T>(
     kind: RegistryKind,
     project: impl Fn(RegistryDefinition) -> T,
 ) -> Result<Vec<T>, cadmpeg_core::CodecError> {
-    let framed = container
-        .om_sections(ctx)?
+    let framed_sections = container.om_sections(ctx)?;
+    let indexed_sections = container.indexed_om_sections(ctx)?;
+    let maximum = framed_sections
+        .iter()
+        .map(|(_, section)| match kind {
+            RegistryKind::Class => section.types.len(),
+            RegistryKind::Field => section.fields.len(),
+        })
+        .chain(indexed_sections.iter().map(|(_, section)| match kind {
+            RegistryKind::Class => section.types.len(),
+            RegistryKind::Field => section.fields.len(),
+        }))
+        .try_fold(0usize, |total, count| total.checked_add(count))
+        .ok_or_else(|| ctx.refuse_codec_limit("nx registry definition index", 0, 1))?;
+    let index_bytes = maximum
+        .checked_mul(std::mem::size_of::<((usize, usize), T)>())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx registry definition index", 0, 1))?;
+    let _index_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(index_bytes),
+        "nx registry definition index",
+    )?;
+    let framed = framed_sections
         .into_iter()
         .map(|(entry, section)| (entry, section.offset, section.types, section.fields, true));
-    let indexed = container
-        .indexed_om_sections(ctx)?
+    let indexed = indexed_sections
         .into_iter()
         .map(|(entry, section)| {
             (
@@ -3778,43 +3797,73 @@ fn registry_definitions<T>(
     for (entry, section_offset, types, fields, replace) in framed.chain(indexed) {
         let entry_index = entry.index();
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let (label, declarations) = match kind {
-            RegistryKind::Class => (
-                "class",
-                types
-                    .iter()
-                    .map(|d| (d.offset, d.name, d.registry_tail))
-                    .collect::<Vec<_>>(),
-            ),
-            RegistryKind::Field => (
-                "field",
-                fields
-                    .iter()
-                    .map(|d| (d.offset, d.name, d.registry_tail))
-                    .collect::<Vec<_>>(),
-            ),
+        let (marker, count) = match kind {
+            RegistryKind::Class => (":class#", types.len()),
+            RegistryKind::Field => (":field#", fields.len()),
         };
-        for (ordinal, (offset, name, tail)) in declarations.into_iter().enumerate() {
+        for ordinal in 0..count {
+            ctx.charge_work(1, "nx registry definitions")?;
+            let (offset, name, tail) = match kind {
+                RegistryKind::Class => {
+                    let declaration = &types[ordinal];
+                    (declaration.offset, declaration.name, declaration.registry_tail)
+                }
+                RegistryKind::Field => {
+                    let declaration = &fields[ordinal];
+                    (declaration.offset, declaration.name, declaration.registry_tail)
+                }
+            };
             let key = (entry_index, offset);
             if !replace && definitions.contains_key(&key) {
                 continue;
             }
+            let Some((&trailing_code, registry_suffix)) = tail.split_first() else {
+                continue;
+            };
+            ctx.charge_collection_items(1, "nx registry definition index")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
+                "nx registry definition records",
+            )?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("nx registry definition ordinal", 0, 1))?;
+            let section_offset = entry_offset
+                .checked_add(cadmpeg_core::decode::u64_from_index(section_offset))
+                .ok_or_else(|| ctx.refuse_codec_limit("nx registry section offset", 0, 1))?;
+            let source_offset = entry_offset
+                .checked_add(cadmpeg_core::decode::u64_from_index(offset))
+                .ok_or_else(|| ctx.refuse_codec_limit("nx registry definition offset", 0, 1))?;
             definitions.insert(
                 key,
                 project(RegistryDefinition {
-                    id: format!("nx:om-entry-{entry_index}:{label}#{offset}"),
-                    name: name.to_owned(),
-                    ordinal: ordinal as u32,
-                    trailing_code: tail[0],
-                    registry_suffix: tail[1..].to_vec(),
-                    section_offset: entry_offset + section_offset as u64,
-                    source_entry: entry.name.clone(),
-                    source_offset: entry_offset + offset as u64,
+                    id: retained_om_index_id(
+                        ctx,
+                        "nx:om-entry-",
+                        entry_index,
+                        marker,
+                        cadmpeg_core::decode::u64_from_index(offset),
+                        "nx registry definition id",
+                    )?,
+                    name: copy_om_retained_text(ctx, name, "nx registry definition name")?,
+                    ordinal,
+                    trailing_code,
+                    registry_suffix: ctx.copy_retained(registry_suffix, "nx registry suffix")?,
+                    section_offset,
+                    source_entry: copy_om_retained_text(ctx, &entry.name, "nx registry source entry")?,
+                    source_offset,
                 }),
             );
         }
     }
-    Ok(definitions.into_values().collect())
+    let count = definitions.len();
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    ctx.charge_collection_items(count_u64, "nx registry definition output")?;
+    let mut output = Vec::new();
+    output.try_reserve_exact(count).map_err(|_| {
+        ctx.refuse_codec_limit("nx registry definition output", 0, count_u64)
+    })?;
+    output.extend(definitions.into_values());
+    Ok(output)
 }
 
 /// Decode class definitions from every framed OM section.

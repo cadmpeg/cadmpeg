@@ -3,6 +3,8 @@ use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::test_support::test_bytes::zlib_compress;
 use crate::test_support::test_prt::assembly_with_external_paths;
 use crate::test_support::test_prt::prt_with_arrangements;
+use crate::test_support::test_prt::prt_with_indexed_om_section;
+use crate::test_support::test_prt::prt_with_size_framed_om_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::test_support::test_prt::prt_with_two_bodies_and_rmfastload;
 use crate::test_support::test_prt::rmfastload_prt;
@@ -762,6 +764,116 @@ fn part_attribute_route_refuses_work_limit() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "nx part attribute XML scan"), "{error:?}");
+}
+
+fn class_definition_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ClassDefinition>, CodecError> {
+    let file = prt_with_indexed_om_section();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("class definition container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    super::super::class_definitions(&ctx, &container)
+}
+
+fn field_definition_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::FieldDefinition>, CodecError> {
+    let file = prt_with_size_framed_om_section();
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("field definition container");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    super::super::field_definitions(&ctx, &container)
+}
+
+#[test]
+fn registry_class_route_preserves_definition() {
+    let classes = class_definition_result(|_| {}).expect("class definition");
+    assert_eq!(classes.len(), 1);
+    assert_eq!(classes[0].name, "UGS::EXP_expression");
+}
+
+#[test]
+fn registry_class_route_refuses_collection_limit() {
+    let error = class_definition_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("class definition exceeds collection budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems), "{error:?}");
+}
+
+#[test]
+fn registry_class_route_refuses_retained_limit() {
+    let error = class_definition_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("class definition exceeds retained budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes), "{error:?}");
+}
+
+#[test]
+fn registry_class_route_refuses_scoped_limit() {
+    let error = class_definition_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .expect_err("class definition exceeds scoped budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes), "{error:?}");
+}
+
+#[test]
+fn registry_class_route_refuses_work_limit() {
+    let error = class_definition_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("class definition exceeds work budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits), "{error:?}");
+}
+
+#[test]
+fn registry_field_route_preserves_definitions() {
+    let fields = field_definition_result(|_| {}).expect("field definitions");
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].name, "m_target");
+}
+
+#[test]
+fn registry_field_route_refuses_collection_limit() {
+    let error = field_definition_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("field definitions exceed collection budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems), "{error:?}");
+}
+
+#[test]
+fn registry_field_route_refuses_retained_limit() {
+    let error = field_definition_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("field definitions exceed retained budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes), "{error:?}");
+}
+
+#[test]
+fn registry_field_route_refuses_scoped_limit() {
+    let error = field_definition_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .expect_err("field definitions exceed scoped budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes), "{error:?}");
+}
+
+#[test]
+fn registry_field_route_refuses_work_limit() {
+    let error = field_definition_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("field definitions exceed work budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits), "{error:?}");
 }
 
 #[test]
