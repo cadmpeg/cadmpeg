@@ -125,6 +125,106 @@ fn face_appearance_color_index_refuses_collection_limit() {
         if limit.operation == "index F3D face appearance colors"));
 }
 
+fn face_assignment() -> crate::materials::FaceAppearanceAssignment {
+    crate::materials::FaceAppearanceAssignment {
+        face_guid: "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb".into(),
+        visual_guid: crate::records::references::DesignVisualToken::try_from(
+            "11111111-2222-3333-4444-555555555555_Post2015".to_owned(),
+        ).unwrap(),
+        color: None,
+    }
+}
+
+fn face_assignment_ir() -> cadmpeg_ir::document::CadIr {
+    use cadmpeg_ir::appearance::Appearance;
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let assignment = face_assignment();
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.attributes.push(SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint("f3d:test:attribute#face").unwrap(),
+        target: AttributeTarget::Face(cadmpeg_ir::ids::FaceId::mint("f3d:test:face#one").unwrap()),
+        name: "ATTRIB_CUSTOM-attrib".into(),
+        values: vec![
+            AttributeValue::String("NEUTRON_Material_attrib_def".into()),
+            AttributeValue::String(assignment.face_guid),
+        ],
+    });
+    ir.model.appearances.push(Appearance {
+        id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#one").unwrap(),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        textures: Vec::new(),
+        visual_guid: Some(assignment.visual_guid.to_string()),
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: None,
+        properties: Default::default(),
+    });
+    ir
+}
+
+macro_rules! face_join_refuses_collection_limit {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            let arena = DecodeArena::new();
+            let ctx = context(&arena, $limit);
+            let mut ir = face_assignment_ir();
+            let error = super::super::resolve_face_appearance_bindings(&ctx, &mut ir, &[face_assignment()]).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == $operation));
+        }
+    };
+}
+
+face_join_refuses_collection_limit!(face_material_guid_index_refuses_collection_limit, 1, "index F3D face material GUIDs");
+face_join_refuses_collection_limit!(faces_by_material_guid_index_refuses_collection_limit, 2, "index F3D faces by material GUID");
+face_join_refuses_collection_limit!(face_material_group_refuses_collection_limit, 3, "collect F3D faces by material GUID");
+face_join_refuses_collection_limit!(new_face_binding_index_refuses_collection_limit, 4, "index F3D new appearance faces");
+face_join_refuses_collection_limit!(face_binding_collection_refuses_collection_limit, 5, "collect F3D face appearance bindings");
+face_join_refuses_collection_limit!(face_binding_append_refuses_collection_limit, 6, "append F3D face appearance bindings");
+
+#[test]
+fn face_assignment_index_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let error = super::super::resolve_face_appearance_bindings(&ctx, &mut ir, &[face_assignment()]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D face appearance assignments"));
+}
+
+#[test]
+fn face_appearance_binding_id_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let assignment = face_assignment();
+    let face = cadmpeg_ir::ids::FaceId::mint("f3d:test:face#one").unwrap();
+    let error = crate::ids::face_appearance_binding_id_charged(
+        &ctx, &assignment.face_guid, &assignment.visual_guid, &face,
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+}
+
+#[test]
+fn face_appearance_binding_id_preserves_identity_text() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    let assignment = face_assignment();
+    let face = cadmpeg_ir::ids::FaceId::mint("f3d:test:face#one").unwrap();
+    let charged = crate::ids::face_appearance_binding_id_charged(
+        &ctx, &assignment.face_guid, &assignment.visual_guid, &face,
+    ).unwrap();
+    let original = crate::ids::face_appearance_binding_id(
+        &assignment.face_guid, assignment.visual_guid.identity_key(), &face,
+    ).unwrap();
+    assert_eq!(charged, original);
+}
+
 macro_rules! append_refuses_collection_limit {
     ($name:ident, $operation:literal) => {
         #[test]

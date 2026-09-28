@@ -150,6 +150,58 @@ pub(crate) fn face_appearance_binding_id(
     ))
 }
 
+fn write_escaped_identity_component(
+    formatter: &mut std::fmt::Formatter<'_>,
+    source: &str,
+) -> std::fmt::Result {
+    for character in source.chars() {
+        if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+            let mut bytes = [0; 4];
+            for byte in character.encode_utf8(&mut bytes).as_bytes() {
+                write!(formatter, "%{byte:02X}")?;
+            }
+        } else {
+            write!(formatter, "{character}")?;
+        }
+    }
+    Ok(())
+}
+
+struct FaceBindingKey<'a> {
+    face_guid: &'a str,
+    visual_guid: &'a str,
+    face: &'a str,
+    escaped_face_len: usize,
+}
+
+impl std::fmt::Display for FaceBindingKey<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}:{}:{}:", self.face_guid, self.visual_guid, self.escaped_face_len)?;
+        write_escaped_identity_component(formatter, self.face)
+    }
+}
+
+/// Compose a face appearance binding ID with its caller's decode budget.
+pub(crate) fn face_appearance_binding_id_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    face_guid: &str,
+    visual_guid: &crate::records::references::DesignVisualToken,
+    face: &cadmpeg_ir::ids::FaceId,
+) -> Result<cadmpeg_ir::ids::AppearanceBindingId, cadmpeg_core::CodecError> {
+    let escaped_face_len = escaped_scope_len(ctx, face.as_str(), "retain F3D face appearance binding ID")?;
+    let id = native_scoped_id_charged(ctx, "appearance", "face", FaceBindingKey {
+        face_guid,
+        visual_guid,
+        face: face.as_str(),
+        escaped_face_len,
+    })?;
+    cadmpeg_ir::ids::AppearanceBindingId::mint(id).map_err(|error| {
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "F3D face appearance binding identity is invalid: {error}"
+        ))
+    })
+}
+
 /// Build a T-spline identity from its source entry key.
 pub(crate) fn subd_id(
     source_key: &str,
@@ -470,16 +522,7 @@ struct EncodedParameterKey<'a> {
 impl std::fmt::Display for EncodedParameterKey<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "{}:", self.encoded_len)?;
-        for character in self.stream.chars() {
-            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-                let mut bytes = [0; 4];
-                for byte in character.encode_utf8(&mut bytes).as_bytes() {
-                    write!(formatter, "%{byte:02X}")?;
-                }
-            } else {
-                write!(formatter, "{character}")?;
-            }
-        }
+        write_escaped_identity_component(formatter, self.stream)?;
         write!(formatter, "{}", self.record_index)
     }
 }
