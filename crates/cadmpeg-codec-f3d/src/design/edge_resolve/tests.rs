@@ -24,6 +24,7 @@ mod partition_allocation;
 mod fixed_fillet_allocation;
 mod hem_allocation;
 mod reference_assignment_allocation;
+mod radius_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
@@ -71,23 +72,23 @@ fn identity_radius_candidates_require_member_local_evidence() {
     let mut first = identity(10, &[(17, 3.0), (18, 5.0)]);
     let mut second = identity(11, &[(19, 3.0), (20, 5.0)]);
     assert_eq!(
-        radius_edge_identity_group_candidates(&[&first], 3.0),
+        radius_edge_identity_group_candidates(&[&first], 3.0, None).unwrap(),
         Some(vec![17])
     );
     assert_eq!(
-        radius_edge_identity_group_candidates(&[&first, &second], 3.0),
+        radius_edge_identity_group_candidates(&[&first, &second], 3.0, None).unwrap(),
         None
     );
     let copied = identity(11, &[(17, 3.0), (18, 5.0)]);
     assert_eq!(
-        radius_edge_identity_group_candidates(&[&first, &copied], 3.0),
+        radius_edge_identity_group_candidates(&[&first, &copied], 3.0, None).unwrap(),
         None
     );
 
     first.resolved_edge_slot = Some(17);
     second.resolved_edge_slots = vec![19, 20];
     assert_eq!(
-        radius_edge_identity_group_candidates(&[&first, &second], 3.0),
+        radius_edge_identity_group_candidates(&[&first, &second], 3.0, None).unwrap(),
         Some(vec![17, 19, 20])
     );
 }

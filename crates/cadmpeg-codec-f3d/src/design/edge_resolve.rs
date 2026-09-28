@@ -810,9 +810,10 @@ fn resolved_edge_group_with_transition_chain(
         .is_some_and(|edges| {
             edges.len() == members.len() || recipe_supports_transition_chain(edges)
         });
-    let identity_radius_slots = treatment_radius.and_then(|radius| {
-        radius_edge_identity_group_candidates(identity_matches.as_ref()?, radius)
-    });
+    let identity_radius_slots = match (treatment_radius, identity_matches.as_ref()) {
+        (Some(radius), Some(matches)) => radius_edge_identity_group_candidates(matches, radius, ctx)?,
+        _ => None,
+    };
     let has_complete_identity_selection = identity_matches.as_ref().is_some_and(|operands| {
         !operands.is_empty()
             && (operands.iter().all(|operand| {
@@ -990,30 +991,34 @@ fn resolved_edge_group_with_transition_chain(
         exact_slots = changed_reference_edge_group_candidates(&matched_operands, ctx)?;
     }
     let transition_slots = || -> Result<Option<Vec<i64>>, CodecError> {
-        let mut slots = treatment_radius
-            .and_then(|radius| radius_edge_group_candidates(&matched_operands, radius))
-            .or_else(|| {
-                treatment_radius.and_then(|radius| {
-                    identity_matches.as_ref().and_then(|operands| {
-                        radius_edge_identity_group_candidates(operands, radius)
-                    })
-                })
-            })
-            .or_else(|| {
+        let mut slots = match treatment_radius {
+            Some(radius) => radius_edge_group_candidates(&matched_operands, radius, ctx)?,
+            None => None,
+        };
+        if slots.is_none() {
+            slots = match (treatment_radius, identity_matches.as_ref()) {
+                (Some(radius), Some(operands)) =>
+                    radius_edge_identity_group_candidates(operands, radius, ctx)?,
+                _ => None,
+            };
+        }
+        if slots.is_none() {
+            slots =
                 context_only_edge_group_candidates(matched_operands.iter().map(|operand| {
                     (
                         resolved_edge_operand(operand),
                         operand.changed_boundary_edge_slots.as_slice(),
                     )
-                }))
-            })
-            .or_else(|| {
+                }));
+        }
+        if slots.is_none() {
+            slots =
                 changed_boundary_count_edge_group_candidates(
                     matched_operands
                         .iter()
                         .map(|operand| operand.recipe_selectors.as_slice()),
-                )
-            });
+                );
+        }
         if slots.is_none() {
             slots = deleted_reference_edge_group_candidates(&matched_operands, ctx)?;
         }
@@ -1526,28 +1531,29 @@ fn edge_group_assignment_candidates<'a>(
 pub(super) fn radius_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     radius: f64,
-) -> Option<Vec<i64>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<i64>>, CodecError> {
     if operands.is_empty() || !radius.is_finite() || radius <= 0.0 {
-        return None;
+        return Ok(None);
     }
     let tolerance = EPS_EDGE_RESOLVE_RADIUS_EDGE_GROUP_CANDIDATES_E9 * (1.0 + radius.abs());
     let mut chain = Vec::new();
     for operand in operands {
         if let Some(edge) = resolved_edge_operand(operand) {
-            chain.push(edge);
+            push_edge_item(ctx, &mut chain, edge, "f3d radius recipe edge")?;
         }
-        chain.extend(
-            operand
+        for edge in operand
                 .treatment_radius_candidates
                 .iter()
                 .filter(|candidate| (candidate.radius.get() - radius).abs() <= tolerance)
-                .map(|candidate| candidate.edge_slot),
-        );
+                .map(|candidate| candidate.edge_slot) {
+            push_edge_item(ctx, &mut chain, edge, "f3d radius candidate edge")?;
+        }
     }
     chain.sort_unstable();
     chain.dedup();
     if chain.is_empty() {
-        return None;
+        return Ok(None);
     }
     for operand in operands {
         let has_radius_candidate = operand
@@ -1558,18 +1564,19 @@ pub(super) fn radius_edge_group_candidates(
             && !has_radius_candidate
             && !operand.changed_boundary_edge_slots.is_empty()
         {
-            return None;
+            return Ok(None);
         }
     }
-    Some(chain)
+    Ok(Some(chain))
 }
 
 fn radius_edge_identity_group_candidates(
     operands: &[&DesignEdgeIdentityOperand],
     radius: f64,
-) -> Option<Vec<i64>> {
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<i64>>, CodecError> {
     if operands.is_empty() || !radius.is_finite() || radius <= 0.0 {
-        return None;
+        return Ok(None);
     }
     let tolerance =
         EPS_EDGE_RESOLVE_RADIUS_EDGE_IDENTITY_GROUP_CANDIDATES_E9 * (1.0 + radius.abs());
@@ -1580,29 +1587,37 @@ fn radius_edge_identity_group_candidates(
     let use_transition_radius = operands.len() == 1;
     let mut chain = Vec::new();
     for operand in operands {
-        let mut contribution = operand
+        let mut contribution = Vec::new();
+        for edge in operand
             .resolved_edge_slot
             .iter()
             .copied()
             .chain(operand.resolved_edge_slots.iter().copied())
-            .collect::<Vec<_>>();
+        {
+            push_edge_item(ctx, &mut contribution, edge,
+                "f3d radius identity resolved edge")?;
+        }
         if use_transition_radius {
-            contribution.extend(
-                operand
+            for edge in operand
                     .treatment_radius_candidates
                     .iter()
                     .filter(|candidate| (candidate.radius.get() - radius).abs() <= tolerance)
-                    .map(|candidate| candidate.edge_slot),
-            );
+                    .map(|candidate| candidate.edge_slot) {
+                push_edge_item(ctx, &mut contribution, edge,
+                    "f3d radius identity candidate edge")?;
+            }
         }
         if contribution.is_empty() {
-            return None;
+            return Ok(None);
         }
-        chain.extend(contribution);
+        for edge in contribution {
+            push_edge_item(ctx, &mut chain, edge,
+                "f3d radius identity chain edge")?;
+        }
     }
     chain.sort_unstable();
     chain.dedup();
-    (!chain.is_empty()).then_some(chain)
+    Ok((!chain.is_empty()).then_some(chain))
 }
 
 fn unique_edge_assignment_with_context(
@@ -2607,8 +2622,8 @@ pub(super) fn project_fixed_fillet_with_corners(
             }
             or_none!(radius_edge_identity_group_candidates(
                 &identities,
-                radius.get()
-            ));
+                radius.get(), ctx
+            )?);
             *group
         };
         vec![group]

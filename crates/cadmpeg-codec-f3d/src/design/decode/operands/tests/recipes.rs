@@ -480,15 +480,17 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(
         crate::design::edge_resolve::radius_edge_group_candidates(
             &[&edge_operand, &second_operand],
-            3.0
-        ),
+            3.0,
+            None,
+        ).unwrap(),
         Some(vec![17, 18])
     );
     assert_eq!(
         crate::design::edge_resolve::radius_edge_group_candidates(
             &[&edge_operand, &second_operand],
-            4.0
-        ),
+            4.0,
+            None,
+        ).unwrap(),
         None
     );
     let mut chain_left = edge_operand.clone();
@@ -513,8 +515,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(
         crate::design::edge_resolve::radius_edge_group_candidates(
             &[&chain_left, &chain_right],
-            3.0
-        ),
+            3.0,
+            None,
+        ).unwrap(),
         Some(vec![17, 18, 19, 20])
     );
     let mut context_operand = edge_operand.clone();
@@ -523,24 +526,27 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(
         crate::design::edge_resolve::radius_edge_group_candidates(
             &[&edge_operand, &context_operand],
-            3.0
-        ),
+            3.0,
+            None,
+        ).unwrap(),
         None
     );
     context_operand.changed_boundary_edge_slots.clear();
     assert_eq!(
         crate::design::edge_resolve::radius_edge_group_candidates(
             &[&edge_operand, &context_operand],
-            3.0
-        ),
+            3.0,
+            None,
+        ).unwrap(),
         Some(vec![17, 18])
     );
     context_operand.changed_boundary_edge_slots = vec![15, 16];
     assert_eq!(
         crate::design::edge_resolve::radius_edge_group_candidates(
             &[&edge_operand, &context_operand],
-            3.0
-        ),
+            3.0,
+            None,
+        ).unwrap(),
         None
     );
     let mut resolved_operand = edge_operand.clone();
