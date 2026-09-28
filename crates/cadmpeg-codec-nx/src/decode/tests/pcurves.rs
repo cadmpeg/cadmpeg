@@ -359,9 +359,17 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
 
     let procedural_start = ir.model.procedural_curves.len();
     let mut annotations = AnnotationBuilder::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
     let transfer_budget = WorkBudget::new(usize::MAX);
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(usize::MAX);
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
+        &ctx,
         &mut ir,
         &mut annotations,
         procedural_start,
@@ -377,6 +385,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     };
     assert!(parameterization.is_none());
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
+        &ctx,
         &mut ir,
         &mut annotations,
         0,
