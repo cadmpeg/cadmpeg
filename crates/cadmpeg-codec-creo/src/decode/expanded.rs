@@ -7,7 +7,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::ContainerScan;
 
-use super::coverage::{source_section, surface_family};
+use super::coverage::{source_section_ref, surface_family};
 use super::native::{emit_uniform, store_arena};
 use super::native_records::{
     CreoFc05CircleRecord, CreoFc05CylinderCapPairRecord, CreoFeatureSurfaceReplayAssociation,
@@ -205,12 +205,19 @@ pub(super) fn half_edge_ref(id: crate::topology::HalfEdgeId) -> CreoHalfEdgeRef 
     }
 }
 
-pub(super) fn fc05_circle_records(scan: &ContainerScan) -> Vec<CreoFc05CircleRecord> {
-    scan.curves
-        .fc05_circles
-        .iter()
-        .map(|record| CreoFc05CircleRecord {
-            id: format!("creo:curve:fc05_circle#{}", record.curve_id),
+pub(super) fn fc05_circle_records<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &'a ContainerScan<'_>,
+) -> Result<Vec<CreoFc05CircleRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.curves.fc05_circles {
+        let id = ctx.format_retained(
+            format_args!("creo:curve:fc05_circle#{}", record.curve_id),
+            "creo native FC05 circle IDs",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native FC05 circle records")?;
+        records.push(CreoFc05CircleRecord {
+            id,
             curve_id: record.curve_id,
             center_row_frame: record.center_row_frame,
             radius_mm: record.radius_mm,
@@ -220,35 +227,42 @@ pub(super) fn fc05_circle_records(scan: &ContainerScan) -> Vec<CreoFc05CircleRec
             point_count: record.point_count,
             max_residual: record.max_residual,
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
-pub(super) fn fc05_cylinder_cap_pair_records(
-    scan: &ContainerScan,
-) -> Vec<CreoFc05CylinderCapPairRecord> {
-    scan.curves
-        .fc05_cylinder_cap_pairs
-        .iter()
-        .map(|record| CreoFc05CylinderCapPairRecord {
-            id: format!("creo:surface:fc05_cylinder_cap_pair#{}", record.surface_id),
+pub(super) fn fc05_cylinder_cap_pair_records<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &'a ContainerScan<'_>,
+) -> Result<Vec<CreoFc05CylinderCapPairRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for record in &scan.curves.fc05_cylinder_cap_pairs {
+        let id = ctx.format_retained(
+            format_args!("creo:surface:fc05_cylinder_cap_pair#{}", record.surface_id),
+            "creo native FC05 cap pair IDs",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native FC05 cap pair records")?;
+        records.push(CreoFc05CylinderCapPairRecord {
+            id,
             surface_id: record.surface_id,
-            cap_edges: record.cap_edges.clone(),
+            cap_edges: &record.cap_edges,
             center_row_frame: record.center_row_frame,
             radius_mm: record.radius_mm,
             reference_direction_row_frame: record.reference_direction_row_frame,
             parameter_sign: record.parameter_sense.as_i8(),
-            cap_ordinates_row_frame: record.cap_ordinates_row_frame.clone(),
+            cap_ordinates_row_frame: &record.cap_ordinates_row_frame,
             offset: record.offset,
-            source_section: source_section(scan, record.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, record.offset),
+        });
+    }
+    Ok(records)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{double_xar_records, primitive_scalar_array_records};
+    use super::{double_xar_records, fc05_circle_records, fc05_cylinder_cap_pair_records, primitive_scalar_array_records};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     fn primitive_scan() -> crate::container::ContainerScan<'static> {
@@ -263,6 +277,34 @@ mod tests {
             field: crate::primdata::PrimitiveArrayField::Points,
             offset: 0,
             values: vec![cadmpeg_ir::scalar::FiniteReal::new(2.5).expect("finite scalar")],
+        });
+        scan.curves.fc05_circles.push(crate::curve::Fc05Circle {
+            curve_id: 20,
+            center_row_frame: [3.0, 4.0],
+            radius_mm: 2.0,
+            sample_direction_row_frame: cadmpeg_ir::units::HypotDirection2::normalized_with_length([1.0, 0.0])
+                .expect("unit sample direction").0,
+            angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+                sense: crate::curve::ParameterSense::Increasing,
+                reference_direction_row_frame: [1.0, 0.0],
+            },
+            cap_ordinate_row_frame: Some(-5.0),
+            point_count: 8,
+            max_residual: 0.0,
+            offset: 0,
+        });
+        scan.curves.fc05_cylinder_cap_pairs.push(crate::curve::Fc05CylinderCapPair {
+            surface_id: 10,
+            cap_edges: vec![
+                crate::curve::Fc05CapEdge { curve_id: 20, cap_plane_id: 11, cap_ordinate_row_frame: -5.0 },
+                crate::curve::Fc05CapEdge { curve_id: 21, cap_plane_id: 12, cap_ordinate_row_frame: 7.0 },
+            ],
+            center_row_frame: [3.0, 4.0],
+            radius_mm: 2.0,
+            reference_direction_row_frame: [1.0, 0.0],
+            parameter_sense: crate::curve::ParameterSense::Increasing,
+            cap_ordinates_row_frame: vec![-5.0, 7.0],
+            offset: 0,
         });
         scan
     }
@@ -340,5 +382,67 @@ mod tests {
         assert_eq!(value["id"], "creo:solid_primdata:scalar_array#pts:0");
         assert_eq!(value["field"], "pts");
         assert_eq!(value["values"], serde_json::json!([2.5]));
+    }
+
+    #[test]
+    fn native_fc05_circle_id_refuses_retained_limit() {
+        let limit = "creo:curve:fc05_circle#20".len() as u64 - 1;
+        let error = with_limits(limit, 1, |ctx, scan| {
+            let records = fc05_circle_records(ctx, scan)?;
+            Ok(serde_json::json!(records.len()))
+        }).expect_err("FC05 circle ID needs full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native FC05 circle IDs"));
+    }
+
+    #[test]
+    fn native_fc05_circle_row_refuses_collection_limit() {
+        let error = with_limits(u64::MAX, 0, |ctx, scan| {
+            let records = fc05_circle_records(ctx, scan)?;
+            Ok(serde_json::json!(records.len()))
+        }).expect_err("one FC05 circle needs one output row");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native FC05 circle records"));
+        let value = with_limits(u64::MAX, 1, |ctx, scan| {
+            let records = fc05_circle_records(ctx, scan)?;
+            Ok(serde_json::to_value(&records[0]).expect("record JSON"))
+        }).expect("one FC05 circle record");
+        assert_eq!(value["id"], "creo:curve:fc05_circle#20");
+        assert_eq!(value["radius_mm"], 2.0);
+        assert_eq!(value["point_count"], 8);
+    }
+
+    #[test]
+    fn native_fc05_cap_pair_id_refuses_retained_limit() {
+        let limit = "creo:surface:fc05_cylinder_cap_pair#10".len() as u64 - 1;
+        let error = with_limits(limit, 1, |ctx, scan| {
+            let records = fc05_cylinder_cap_pair_records(ctx, scan)?;
+            Ok(serde_json::json!(records.len()))
+        }).expect_err("FC05 cap-pair ID needs full retained length");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native FC05 cap pair IDs"));
+    }
+
+    #[test]
+    fn native_fc05_cap_pair_row_refuses_collection_limit() {
+        let error = with_limits(u64::MAX, 0, |ctx, scan| {
+            let records = fc05_cylinder_cap_pair_records(ctx, scan)?;
+            Ok(serde_json::json!(records.len()))
+        }).expect_err("one FC05 cap pair needs one output row");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native FC05 cap pair records"));
+        let value = with_limits(u64::MAX, 1, |ctx, scan| {
+            let records = fc05_cylinder_cap_pair_records(ctx, scan)?;
+            Ok(serde_json::to_value(&records[0]).expect("record JSON"))
+        }).expect("one FC05 cap-pair record");
+        assert_eq!(value["id"], "creo:surface:fc05_cylinder_cap_pair#10");
+        assert_eq!(value["curve_ids"], serde_json::json!([20, 21]));
+        assert_eq!(value["cap_plane_ids"], serde_json::json!([11, 12]));
+        assert_eq!(value["curve_cap_ordinates_row_frame"], serde_json::json!([-5.0, 7.0]));
+        assert_eq!(value["cap_ordinates_row_frame"], serde_json::json!([-5.0, 7.0]));
     }
 }
