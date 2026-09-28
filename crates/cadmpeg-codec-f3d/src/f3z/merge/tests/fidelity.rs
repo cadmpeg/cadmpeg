@@ -155,3 +155,47 @@ fn source_rescoping_refuses_provenance_stream_handle_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "create F3Z provenance stream handle"));
 }
+
+#[test]
+fn fidelity_append_charged_preserves_source_metadata() {
+    let mut charged = SourceFidelity::default();
+    charged
+        .append_charged(&cadmpeg_test_support::service_decode_context(), source("member"))
+        .unwrap();
+    let mut plain = SourceFidelity::default();
+    plain.append(source("member")).unwrap();
+    assert_eq!(charged, plain);
+}
+
+#[test]
+fn fidelity_append_refuses_provenance_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut builder = AnnotationBuilder::new();
+    let stream = StreamHandle::new(cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap());
+    builder.note(ID, &stream, 7);
+    let other = SourceFidelity::with_annotations(builder.build());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = SourceFidelity::default().append_charged(&ctx, other).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "append source provenance"));
+}
+
+#[test]
+fn fidelity_append_refuses_retained_record_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (_, records) = source("member").into_parts();
+    let mut other = SourceFidelity::default();
+    for (id, record) in records {
+        other.insert_retained_record(id, record).unwrap();
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = SourceFidelity::default().append_charged(&ctx, other).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "append source records"));
+}

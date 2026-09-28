@@ -622,6 +622,32 @@ impl Annotations {
     ///
     /// Every provenance owns its stream name, so there is no catalog to rebase.
     /// A collision leaves this annotation set unchanged.
+    pub fn append_charged(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut other: Self,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        for id in other.provenance.keys().chain(other.exactness.keys()) {
+            if self.provenance.contains_key(id) || self.exactness.contains_key(id) {
+                return Err(AnnotationIdentityCollision {
+                    id: copy_annotation_text(ctx, id, "copy colliding annotation identity")?,
+                }
+                .into());
+            }
+        }
+        let provenance_count = u64::try_from(other.provenance.len())
+            .map_err(|_| ctx.refuse_codec_limit("append source provenance", 0, u64::MAX))?;
+        let exactness_count = u64::try_from(other.exactness.len())
+            .map_err(|_| ctx.refuse_codec_limit("append source exactness", 0, u64::MAX))?;
+        ctx.charge_collection_items(provenance_count, "append source provenance")?;
+        ctx.charge_collection_items(exactness_count, "append source exactness")?;
+        self.provenance.append(&mut other.provenance);
+        self.exactness.append(&mut other.exactness);
+        Ok(())
+    }
+
+    /// Append annotations with disjoint identities without a decode context.
+    /// A collision leaves this annotation set unchanged.
     pub fn append(&mut self, mut other: Self) -> Result<(), AnnotationIdentityCollision> {
         for id in other.provenance.keys().chain(other.exactness.keys()) {
             if self.provenance.contains_key(id) || self.exactness.contains_key(id) {
