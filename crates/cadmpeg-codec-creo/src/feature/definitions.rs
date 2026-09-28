@@ -4234,7 +4234,7 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
     let Ok((_, next)) = psb::reference_id(payload, table_reference_start) else {
         return Some(result);
     };
-    let table_reference = payload[table_reference_start..next].to_vec();
+    let table_reference = &payload[table_reference_start - 1..next];
     cursor = next;
     if payload.get(cursor..cursor + 2) != Some(&[0xfb, 0xe2]) {
         return Some(result);
@@ -4250,9 +4250,6 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
 
     let row_count = index_from_u32(reference_count);
     let mut reference_plane_rows = Vec::new();
-    let mut separator = vec![0xf2, psb::token::ENTITY_REF];
-    separator.extend_from_slice(&table_reference);
-    separator.push(0xe2);
     for row in 0..row_count {
         let (Some(plane_id), next) = segment_int(payload, cursor) else {
             break;
@@ -4293,10 +4290,12 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
             reference_flip,
         });
         if row + 1 < row_count {
-            let Some(separator_at) = find_bytes(payload, &separator, cursor, end) else {
+            let Some(separator_at) =
+                find_class_close(payload, cursor, end, 0xf2, table_reference)
+            else {
                 break;
             };
-            cursor = separator_at + separator.len();
+            cursor = separator_at + table_reference.len() + 2;
         }
     }
     result.reference_planes = ReferencePlanes::Positional(reference_plane_rows);
@@ -4555,20 +4554,15 @@ fn dimension_table(
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
         let reference_start = cursor + 1;
         let (value, next) = psb::reference_id(payload, reference_start).ok()?;
-        reference_bytes = payload.get(reference_start..next).map(<[u8]>::to_vec);
+        reference_bytes = payload.get(cursor..next);
         cursor = next;
         Some(value)
     } else {
         None
     };
     let region_end = find_bytes(payload, b"\xe0\x00relat_ptr\0", cursor, end).unwrap_or(end);
-    let mut separator = vec![0xf3, psb::token::ENTITY_REF];
-    if let Some(bytes) = &reference_bytes {
-        separator.extend_from_slice(bytes);
-    }
-    separator.push(0xe2);
-    let first_end = if reference_bytes.is_some() {
-        find_bytes(payload, &separator, cursor, region_end).unwrap_or(region_end)
+    let first_end = if let Some(class) = reference_bytes {
+        find_class_close(payload, cursor, region_end, 0xf3, class).unwrap_or(region_end)
     } else {
         region_end
     };
@@ -4576,15 +4570,16 @@ fn dimension_table(
     if let Some(row) = labeled_dimension(payload, cursor, first_end, cache) {
         rows.push(row);
     }
-    if reference_bytes.is_some() {
+    if let Some(class) = reference_bytes {
+        let separator_len = class.len() + 2;
         let mut replay = first_end;
         while replay < region_end && rows.len() < index_from_u32(declared_count) {
-            if payload.get(replay..replay + separator.len()) != Some(separator.as_slice()) {
+            if !class_close_at(payload, replay, 0xf3, class) {
                 break;
             }
-            replay += separator.len();
+            replay += separator_len;
             let next_separator =
-                find_bytes(payload, &separator, replay, region_end).unwrap_or(region_end);
+                find_class_close(payload, replay, region_end, 0xf3, class).unwrap_or(region_end);
             let Some(row) = positional_dimension(payload, replay, next_separator, cache) else {
                 break;
             };
@@ -4620,7 +4615,7 @@ fn positional_dimension_table(
                 table,
                 declared_count,
                 after_reference + 2,
-                payload[reference_start..after_reference].to_vec(),
+                &payload[reference_start - 1..after_reference],
             )
         })
     })?;
@@ -4628,13 +4623,11 @@ fn positional_dimension_table(
     let (_, after_row_class) = psb::reference_id(payload, cursor + 1).ok()?;
     cursor = after_row_class;
 
-    let mut separator = vec![0xf3, psb::token::ENTITY_REF];
-    separator.extend_from_slice(&reference_bytes);
-    separator.push(0xe2);
+    let separator_len = reference_bytes.len() + 2;
     let mut rows = Vec::new();
     let row_limit = index_from_u32(declared_count);
     while cursor < end && rows.len() < row_limit {
-        let row_end = find_bytes(payload, &separator, cursor, end).unwrap_or(end);
+        let row_end = find_class_close(payload, cursor, end, 0xf3, reference_bytes).unwrap_or(end);
         let Some(row) = positional_dimension(payload, cursor, row_end, cache) else {
             break;
         };
@@ -4642,10 +4635,10 @@ fn positional_dimension_table(
         if rows.len() == row_limit {
             break;
         }
-        if payload.get(row_end..row_end + separator.len()) != Some(separator.as_slice()) {
+        if !class_close_at(payload, row_end, 0xf3, reference_bytes) {
             break;
         }
-        cursor = row_end + separator.len();
+        cursor = row_end + separator_len;
     }
     Some(FeatureDimensionTable {
         declared_count,
@@ -4661,7 +4654,7 @@ fn self_described_positional_dimension_table(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<FeatureDimensionTable> {
-    let mut candidates = Vec::new();
+    let mut candidate = None;
     for table in start..end {
         if payload.get(table) != Some(&psb::token::ARRAY_OPEN) {
             continue;
@@ -4676,26 +4669,26 @@ fn self_described_positional_dimension_table(
         if payload.get(after_reference..after_reference + 2) != Some(&[0xfb, 0xe2]) {
             continue;
         }
-        let Some(candidate) = positional_dimension_table(payload, table, end, table_class, cache)
+        let Some(found) = positional_dimension_table(payload, table, end, table_class, cache)
         else {
             continue;
         };
-        if candidate.offset == table
+        if found.offset == table
             && declared_count > 1
-            && candidate.declared_count == declared_count
-            && usize::try_from(declared_count).ok() == Some(candidate.rows.len())
-            && candidate
+            && found.declared_count == declared_count
+            && usize::try_from(declared_count).ok() == Some(found.rows.len())
+            && found
                 .rows
                 .iter()
                 .all(|row| matches!(row.dimension_type, 0x01..=0x05 | 0x0a))
         {
-            candidates.push(candidate);
+            if candidate.is_some() {
+                return None;
+            }
+            candidate = Some(found);
         }
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    candidate
 }
 
 fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp> {
