@@ -5,14 +5,15 @@ use cadmpeg_ir::{
     features::{ParameterId, ParameterValue},
     scalar::{Angle, FiniteReal, Length},
 };
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use super::ParameterAliasView;
 use crate::history::literals::parse_parameter_literal;
 
-enum Token {
+enum Token<'a> {
     Quoted(String),
-    Bare(String),
+    Bare(Cow<'a, str>),
 }
 
 pub(super) struct ParameterExpressionParser<'a> {
@@ -176,7 +177,7 @@ impl<'a> ParameterExpressionParser<'a> {
         }
     }
 
-    fn token(&mut self) -> Option<Token> {
+    fn token(&mut self) -> Option<Token<'a>> {
         let rest = &self.input[self.offset..];
         if let Some((marker, prefix)) = [
             ("<MOD-DIAM>", "<MOD-DIAM>"),
@@ -191,7 +192,7 @@ impl<'a> ParameterExpressionParser<'a> {
             let Token::Bare(value) = self.token()? else {
                 return None;
             };
-            return Some(Token::Bare(format!("{prefix}{value}")));
+            return Some(Token::Bare(Cow::Owned(format!("{prefix}{value}"))));
         }
         if rest.starts_with('"') {
             self.offset += 1;
@@ -227,7 +228,7 @@ impl<'a> ParameterExpressionParser<'a> {
             }
             self.offset += character.len_utf8();
         }
-        (self.offset > start).then(|| Token::Bare(self.input[start..self.offset].to_string()))
+        (self.offset > start).then(|| Token::Bare(Cow::Borrowed(&self.input[start..self.offset])))
     }
 
     fn skip_space(&mut self) {
