@@ -18,6 +18,91 @@ use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::codec::DecodeOptions;
 use std::io::Cursor;
 
+#[test]
+fn f3z_report_note_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap().0;
+    let error = super::super::push_note(&ctx, &mut Vec::new(), format_args!("root {}", "model.f3d"))
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3Z report notes"));
+}
+
+#[test]
+fn f3z_report_note_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap().0;
+    let error = super::super::push_note(&ctx, &mut Vec::new(), format_args!("root {}", "model.f3d"))
+        .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3Z report note"));
+}
+
+#[test]
+fn f3z_report_loss_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap().0;
+    let error = super::super::push_loss(
+        &ctx,
+        &mut Vec::new(),
+        F3dLossCode::DrawingDocumentOmitted,
+        format_args!("drawing {}", "drawing.f2d"),
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3Z report losses"));
+}
+
+#[test]
+fn f3z_report_loss_append_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap().0;
+    let incoming = vec![F3dLossCode::DrawingDocumentOmitted.note("drawing")];
+    let error = super::super::append_losses(&ctx, &mut Vec::new(), incoming).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "append F3Z report losses"));
+}
+
+#[test]
+fn f3z_document_digest_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let normal_policy = cadmpeg_core::decode::DecodePolicy::default();
+    let normal = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &normal_policy,
+    ).unwrap().0;
+    let dialect = crate::dialect::F3dDialect::classify_f3z(&normal, &["part.f3d"]).unwrap();
+    let source = cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(dialect),
+        std::collections::BTreeMap::new(),
+    );
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let limited = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap().0;
+    let error = super::super::finalize_result(
+        &limited,
+        cadmpeg_ir::CadIr::empty(),
+        source,
+        cadmpeg_ir::codec::DecodeBody::new(
+            cadmpeg_ir::report::decode::DecodeTransfer::full(false),
+        ),
+        cadmpeg_ir::SourceFidelity::default(),
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "record F3Z document digest"));
+}
+
 fn drawing_archive_for_root_limit_tests() -> Vec<u8> {
     let description = br#"{"designDescription":{"designGraphs":[{"rootIds":[10],"designObjects":[{"id":10,"relativePath":"drawing.f2d","contentType":"f2d","references":[{"type":"DERIVED","ids":[11]}]},{"id":11,"relativePath":"model.f3d","contentType":"f3d","references":[]}] }]}}"#;
     f3z_archive_with_design_description(

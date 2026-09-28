@@ -57,7 +57,7 @@ fn copy_string_charged(
     Ok(copy)
 }
 
-fn format_retained(
+pub(crate) fn format_retained(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
     args: std::fmt::Arguments<'_>,
@@ -99,7 +99,7 @@ fn push_summary_note(
     Ok(())
 }
 
-fn copy_summary_entries(
+pub(crate) fn copy_summary_entries(
     ctx: &DecodeContext<'_>,
     entries: &[ContainerEntry],
 ) -> Result<Vec<ContainerEntry>, CodecError> {
