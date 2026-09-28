@@ -1058,7 +1058,10 @@ fn b2_counted_owner_maps_mixed_tokens_to_local_edge_ordinals() {
 
 #[test]
 fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
-    let records = crate::families::b2::records::b2_cone_faces(&b2_cone_face_stream());
+    let records = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_cone_faces(ctx, &b2_cone_face_stream())
+            .expect("service decode")
+    });
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].program.len(), 16);
     assert_eq!(records[0].angular_scale, finite(1.5));
@@ -1070,7 +1073,30 @@ fn b2_cone_face_parser_reads_program_scale_and_half_angle() {
     let mut degenerate = b2_cone_face_stream();
     let half_angle = degenerate.len() - 8;
     degenerate[half_angle..].copy_from_slice(&0.0_f64.to_le_bytes());
-    assert!(crate::families::b2::records::b2_cone_faces(&degenerate).is_empty());
+    assert!(crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_cone_faces(ctx, &degenerate)
+            .expect("service decode")
+    }).is_empty());
+}
+
+#[test]
+fn b2_cone_face_program_and_output_refuse_resource_limits() {
+    let bytes = b2_cone_face_stream();
+    for (limit, operation) in [
+        (15, "catia_b2_cone_face_program"),
+        (16, "catia_b2_cone_faces"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            crate::families::b2::records::b2_cone_faces(ctx, &bytes)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation));
+    }
+    let limited = crate::test_support::with_retained_limit(15, |ctx| {
+        crate::families::b2::records::b2_cone_faces(ctx, &bytes)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b2_cone_face_program"));
 }
 
 #[test]
@@ -1084,7 +1110,10 @@ fn b2_cone_face_parser_reads_a_complete_nested_frame() {
     );
     bytes.push(0x05);
     bytes.extend(nested);
-    let records = crate::families::b2::records::b2_cone_faces(&bytes);
+    let records = crate::test_support::with_service_context(|ctx| {
+        crate::families::b2::records::b2_cone_faces(ctx, &bytes)
+            .expect("service decode")
+    });
     let [record] = records.as_slice() else {
         panic!("one nested cone-face chart")
     };

@@ -7374,48 +7374,124 @@ mod consolidated_class_record_limit_tests {
     }
 }
 
+#[cfg(test)]
+mod consolidated_cone_face_limit_tests {
+    use super::{consolidated_cone_faces, consolidated_parameter_points};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn native_cone_face_output_and_id_refuse_limits() {
+        let bytes = crate::test_support::test_b2::b2_cone_face_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(17, |ctx| {
+            consolidated_cone_faces(ctx, &bytes, &records, &[])
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_cone_faces"));
+        let limited = crate::test_support::with_retained_limit(16, |ctx| {
+            consolidated_cone_faces(ctx, &bytes, &records, &[])
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_cone_face_id"));
+    }
+
+    #[test]
+    fn native_cone_face_parameter_links_refuse_collection_limits() {
+        let bytes = crate::test_support::test_b2::b2_cone_face_parameter_point_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let points = crate::test_support::with_service_context(|ctx| {
+            consolidated_parameter_points(ctx, &bytes, &records)
+        }).expect("service decode");
+        assert_eq!(points.len(), 4);
+        for (limit, operation) in [
+            (0, "catia_native_cone_face_point_index"),
+            (4, "catia_native_cone_face_class18_ends"),
+            (25, "catia_native_cone_face_positions"),
+            (29, "catia_native_cone_face_parameter_points"),
+        ] {
+            let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+                consolidated_cone_faces(ctx, &bytes, &records, &points)
+            });
+            assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+                if error.operation == operation));
+        }
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            consolidated_cone_faces(ctx, &bytes, &records, &points)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_cone_face_point_index_id"));
+        let indexed_id_bytes = u64::try_from(points.iter().map(|point| point.id.len()).sum::<usize>())
+            .expect("fixture ids fit u64");
+        let limited = crate::test_support::with_retained_limit(indexed_id_bytes + 16, |ctx| {
+            consolidated_cone_faces(ctx, &bytes, &records, &points)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_cone_face_parameter_id"));
+    }
+}
+
 fn consolidated_cone_faces(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
     parameter_points: &[CatiaConsolidatedParameterPoint],
-) -> Vec<CatiaConsolidatedConeFace> {
-    let point_ids = parameter_points
-        .iter()
-        .map(|point| (point.byte_offset, point.id.clone()))
-        .collect::<HashMap<_, _>>();
-    let class18_ends = records
-        .iter()
-        .filter(|record| {
-            record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x18
-        })
-        .filter_map(|record| record.range().map(|range| (range.start, range.end)))
-        .collect::<HashMap<_, _>>();
-    crate::families::b2::records::b2_cone_faces(bytes)
-        .into_iter()
-        .enumerate()
-        .map(|(index, face)| {
+) -> Result<Vec<CatiaConsolidatedConeFace>, CodecError> {
+    let mut point_ids = HashMap::new();
+    for point in parameter_points {
+        let id = crate::resource::copy_retained_str(ctx, &point.id,
+            "catia_native_cone_face_point_index_id")?;
+        crate::resource::insert_map(ctx, &mut point_ids, point.byte_offset, id,
+            "catia_native_cone_face_point_index")?;
+    }
+    let mut class18_ends = HashMap::new();
+    for record in records.iter().filter(|record| {
+        record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x18
+    }) {
+        if let Some(range) = record.range() {
+            crate::resource::insert_map(ctx, &mut class18_ends, range.start, range.end,
+                "catia_native_cone_face_class18_ends")?;
+        }
+    }
+    let mut output = Vec::new();
+    for (index, face) in crate::families::b2::records::b2_cone_faces(ctx, bytes)?.into_iter().enumerate() {
             let mut positions = Vec::new();
             let mut next = face.end;
             while let Some(&end) = class18_ends.get(&next) {
-                positions.push(next as u64);
+                let position = u64::try_from(next).map_err(|_| ctx.refuse_codec_limit(
+                    "catia_native_cone_face_positions", u64::MAX, u64::MAX))?;
+                crate::resource::push(ctx, &mut positions, position,
+                    "catia_native_cone_face_positions")?;
                 next = end;
             }
-            let parameter_points = positions
-                .iter()
-                .map(|position| point_ids.get(position).cloned())
-                .collect::<Option<Vec<_>>>()
-                .unwrap_or_default();
-            CatiaConsolidatedConeFace {
-                id: format!("catia:consolidated:cone-face#{index}"),
-                byte_offset: face.pos as u64,
-                byte_len: (face.end - face.pos) as u64,
+            let mut bound_points = Vec::new();
+            for position in positions {
+                let Some(id) = point_ids.get(&position) else {
+                    bound_points.clear();
+                    break;
+                };
+                let id = crate::resource::copy_retained_str(ctx, id,
+                    "catia_native_cone_face_parameter_id")?;
+                crate::resource::push(ctx, &mut bound_points, id,
+                    "catia_native_cone_face_parameter_points")?;
+            }
+            let byte_offset = u64::try_from(face.pos).map_err(|_| ctx.refuse_codec_limit(
+                "catia_native_cone_face_offset", u64::MAX, u64::MAX))?;
+            let byte_len = u64::try_from(face.end - face.pos).map_err(|_| ctx.refuse_codec_limit(
+                "catia_native_cone_face_length", u64::MAX, u64::MAX))?;
+            let value = CatiaConsolidatedConeFace {
+                id: crate::resource::format_usize_id(ctx, "catia:consolidated:cone-face#", index, 0,
+                    "catia_native_cone_face_id")?,
+                byte_offset,
+                byte_len,
                 program: face.program,
                 angular_scale: face.angular_scale,
                 half_angle: face.half_angle,
-                parameter_points,
-            }
-        })
-        .collect()
+                parameter_points: bound_points,
+            };
+            crate::resource::push(ctx, &mut output, value,
+                "catia_native_cone_faces")?;
+    }
+    Ok(output)
 }
 
 fn consolidated_cones(ctx: &DecodeContext<'_>, bytes: &[u8], records: &[ConsolidatedRecord]) -> Result<Vec<CatiaConsolidatedCone>, CodecError> {
@@ -9393,7 +9469,7 @@ impl CatiaNative {
         let consolidated_parameter_points =
             consolidated_parameter_points(ctx, bytes, consolidated_records)?;
         let consolidated_cone_faces =
-            consolidated_cone_faces(bytes, consolidated_records, &consolidated_parameter_points);
+            consolidated_cone_faces(ctx, bytes, consolidated_records, &consolidated_parameter_points)?;
         let consolidated_cones = consolidated_cones(ctx, bytes, consolidated_records)?;
         let consolidated_cylinders = consolidated_cylinders(ctx, bytes, consolidated_records)?;
         let (consolidated_groups, consolidated_embedded_cylinders) =
