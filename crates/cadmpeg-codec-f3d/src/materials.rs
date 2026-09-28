@@ -783,7 +783,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     for assignment in &assignments {
         if appearance_for_assignment(&out, assignment)?.is_none() {
             push_material_item(ctx, &mut out, Appearance {
-                id: crate::ids::appearance_id(assignment.visual_guid.identity_key()),
+                id: crate::ids::appearance_id_charged(ctx, &assignment.visual_guid)?,
                 name: copy_material_option(ctx, assignment.visual_preset.as_ref().map(|field| field.value.as_str()), "copy F3D assigned appearance name")?,
                 asset_guid: Some(copy_material_text(ctx, &assignment.visual_guid, "copy F3D assigned asset GUID")?),
                 library_id: None,
@@ -827,10 +827,11 @@ pub(crate) fn decode_with_body_bindings<'a>(
             continue;
         };
         push_material_item(ctx, &mut bindings, AppearanceBinding {
-            id: crate::ids::body_appearance_binding_id(
+            id: crate::ids::body_appearance_binding_id_charged(
+                ctx,
                 over.entity_suffix,
-                over.visual_guid.identity_key(),
-            ),
+                &over.visual_guid,
+            )?,
             target: AppearanceTarget::Body(copy_body_id(ctx, &over.body)?),
             appearance: copy_appearance_id(ctx, &appearance.id)?,
             source_entity_id: None,
@@ -922,13 +923,7 @@ fn appearances_from_schema_records(
             });
             let base_color = appearance_base_color(record);
             let appearance = Appearance {
-                id: crate::ids::appearance_id(
-                    cadmpeg_ir::ids::IdentityKey::try_new(&record.guid).map_err(|error| {
-                        CodecError::malformed(format_args!(
-                            "F3D appearance identity is invalid: {error}"
-                        ))
-                    })?,
-                ),
+                id: crate::ids::appearance_id_charged(ctx, &record.guid)?,
                 name: Some(copy_material_text(ctx, &record.base, "copy F3D appearance name")?),
                 asset_guid: Some(copy_material_text(ctx, &record.guid, "copy F3D appearance GUID")?),
                 library_id: library_id(ctx, &record.asset_lib_id)?,
@@ -1621,15 +1616,11 @@ fn bind_bodies(
             continue;
         };
         push_material_item(ctx, &mut out, AppearanceBinding {
-            id: crate::ids::assignment_appearance_binding_id(
+            id: crate::ids::assignment_appearance_binding_id_charged(
+                ctx,
                 assignment.entity_id.as_str(),
-                assignment.visual_guid.identity_key(),
-            )
-            .map_err(|error| {
-                CodecError::malformed(format_args!(
-                    "F3D appearance binding identity is invalid: {error}"
-                ))
-            })?,
+                &assignment.visual_guid,
+            )?,
             target: AppearanceTarget::Body(body),
             appearance: copy_appearance_id(ctx, &appearance.id)?,
             source_entity_id: Some(copy_material_text(ctx, assignment.entity_id.as_str(), "copy F3D binding entity ID")?),
@@ -2239,11 +2230,7 @@ fn decode_fixed_record(ctx: &DecodeContext<'_>, record: &[u8]) -> Result<Option<
         properties,
     )?;
     Ok(Some(Appearance {
-        id: crate::ids::appearance_id(cadmpeg_ir::ids::IdentityKey::try_new(&guid).map_err(
-            |error| {
-                CodecError::malformed(format_args!("F3D appearance identity is invalid: {error}"))
-            },
-        )?),
+        id: crate::ids::appearance_id_charged(ctx, &guid)?,
         name: Some(base),
         asset_guid: Some(copy_material_text(ctx, &guid, "copy F3D fixed appearance GUID")?),
         library_id: library_id(ctx, &asset_lib_id)?,
