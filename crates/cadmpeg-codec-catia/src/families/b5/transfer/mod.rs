@@ -213,7 +213,7 @@ pub(in crate::families) fn transfer(
                         .is_some_and(|loop_| loop_.surface == face.surface)
                 })
         });
-        let loop_owner_counts = face_loop_owner_counts(&graph.faces);
+        let loop_owner_counts = face_loop_owner_counts(admission.ctx, &graph.faces)?;
         graph.faces.retain(|face| {
             face.loops
                 .iter()
