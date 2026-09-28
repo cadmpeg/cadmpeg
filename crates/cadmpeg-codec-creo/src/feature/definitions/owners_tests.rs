@@ -166,6 +166,25 @@ fn pending_trimmed_definition(external_ids: &[u32]) -> FeatureDefinition {
     definition
 }
 
+#[test]
+fn trim_external_id_uniqueness_uses_admitted_sorted_ids() {
+    for (ids, unique) in [
+        (&[9, 10][..], true),
+        (&[9, 9][..], false),
+        (&[9, 10, 9][..], false),
+    ] {
+        let definition = pending_trimmed_definition(ids);
+        assert_eq!(
+            definition
+                .trim_entities
+                .as_ref()
+                .expect("trim table")
+                .has_unique_external_ids(),
+            unique,
+        );
+    }
+}
+
 fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable {
     FeatureEntityTable::new(
         owner,

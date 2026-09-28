@@ -570,12 +570,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             continue;
         };
         let points = resolved_section_points(ctx, definition)?;
-        let solved = definition
-            .trim_entities
-            .iter()
-            .flat_map(|trim_entities| &trim_entities.rows)
-            .filter_map(|row| trim_segment_id(definition, row))
-            .collect::<BTreeSet<_>>();
+        let solved = extrusion_solved_segment_ids(ctx, definition)?;
         for segment in complete_section_segment_rows(ctx, definition)?
             .iter()
             .filter(|segment| solved.contains(&segment.external_id))
@@ -730,8 +725,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     ),
                 )
                 .then_some((surface_id, internal_id, spline))
-            })
-            .collect::<Vec<_>>();
+            });
         let Some(span) =
             resolved_feature_extrusion_span(scan, ir, source_carriers, definition, transform)
         else {
@@ -912,6 +906,25 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         }
     }
     Ok(transferred)
+}
+
+fn extrusion_solved_segment_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &crate::feature::definitions::FeatureDefinition,
+) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
+    let mut solved = BTreeSet::new();
+    for id in definition
+        .trim_entities
+        .iter()
+        .flat_map(|trim_entities| &trim_entities.rows)
+        .filter_map(|row| trim_segment_id(definition, row))
+    {
+        if !solved.contains(&id) {
+            ctx.charge_collection_items(1, "creo extrusion solved segment ID nodes")?;
+        }
+        solved.insert(id);
+    }
+    Ok(solved)
 }
 
 #[cfg(test)]

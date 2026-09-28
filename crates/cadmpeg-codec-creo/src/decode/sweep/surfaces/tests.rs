@@ -145,6 +145,42 @@ fn saved_spline_definition() -> crate::feature::definitions::FeatureDefinition {
 }
 
 #[test]
+fn extrusion_solved_segment_ids_refuse_before_tree_node() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut definition = saved_spline_definition();
+    definition.trim_entities = Some(crate::feature::definitions::FeatureTrimEntityTable {
+        declared_count: None,
+        entity_ref: None,
+        entry_ref: None,
+        buckets: Vec::new(),
+        rows: vec![crate::feature::definitions::FeatureTrimEntity {
+            external_id: 7,
+            mode: None,
+            vertices: [1, 2],
+            kind: crate::feature::definitions::TrimEntityKind::Line,
+            offset: 0,
+        }],
+        solved_external_ids: vec![7],
+        offset: 0,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::extrusion_solved_segment_ids(&ctx, &definition)
+        .expect_err("one solved ID exceeds zero nodes");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo extrusion solved segment ID nodes"), "{error:?}");
+    let ids = crate::decode::with_test_decode_ctx(|ctx| {
+        super::extrusion_solved_segment_ids(ctx, &definition)
+    })
+    .expect("service solved segment ID");
+    assert_eq!(ids, std::collections::BTreeSet::from([7]));
+}
+
+#[test]
 fn malformed_saved_spline_reports_transfer_loss() {
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.definitions.push(saved_spline_definition());
