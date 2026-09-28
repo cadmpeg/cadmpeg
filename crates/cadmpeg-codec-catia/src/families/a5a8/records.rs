@@ -1154,34 +1154,42 @@ fn rolling_ball_site(values: [FiniteReal; 10]) -> Option<RollingBallSite> {
 /// Decode framed `a8 <flag> 20` UV jet records.
 #[must_use]
 #[cfg(test)]
-fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
-    object_stream_frames(data)
-        .into_iter()
+fn a8_pcurves(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Vec<A8Pcurve>, CodecError> {
+    let mut pcurves = Vec::new();
+    for frame in object_stream_frames(data)
         .filter(|frame| frame.class == 0x20 && data.get(frame.pos) == Some(&0xa8))
-        .filter_map(|frame| {
-            parse_object_stream_pcurve(data, frame.payload, frame.end, frame.object_id)
-        })
-        .collect()
+    {
+        if let Some(pcurve) = parse_object_stream_pcurve(ctx, data, frame.payload, frame.end, frame.object_id)? {
+            crate::resource::push(ctx, &mut pcurves, pcurve, "catia_a8_pcurves")?;
+        }
+    }
+    Ok(pcurves)
 }
 
 /// Decode framed `a8 <flag> 20` and `b5 <flag> 20` object-stream UV jet records.
 #[must_use]
-pub(in crate::families) fn object_stream_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
-    object_stream_frames(data)
-        .into_iter()
-        .filter(|frame| frame.class == 0x20)
-        .filter_map(|frame| {
-            parse_object_stream_pcurve(data, frame.payload, frame.end, frame.object_id)
-        })
-        .collect()
+pub(in crate::families) fn object_stream_pcurves(
+    ctx: &DecodeContext<'_>, data: &[u8],
+) -> Result<Vec<A8Pcurve>, CodecError> {
+    let mut pcurves = Vec::new();
+    for frame in object_stream_frames(data).filter(|frame| frame.class == 0x20) {
+        if let Some(pcurve) = parse_object_stream_pcurve(ctx, data, frame.payload, frame.end, frame.object_id)? {
+            crate::resource::push(ctx, &mut pcurves, pcurve, "catia_object_stream_pcurves")?;
+        }
+    }
+    Ok(pcurves)
 }
 
 fn parse_object_stream_pcurve(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     payload: usize,
     end: usize,
     object_id: u32,
-) -> Option<A8Pcurve> {
+) -> Result<Option<A8Pcurve>, CodecError> {
+    let Some((support_id, mode, count, knot_start, array_starts, range)) = (|| {
     let mut at = payload + 1;
     let support_id = object_stream_reference(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
@@ -1201,18 +1209,26 @@ fn parse_object_stream_pcurve(
     if at.checked_add(known_bytes)? > end {
         return None;
     }
-    let read_finite = |at: &mut usize| -> Option<Vec<FiniteReal>> {
-        let mut values = Vec::with_capacity(count);
+    let scan_finite = |at: &mut usize| -> Option<usize> {
+        let start = *at;
         for _ in 0..count {
-            values.push(f64_le(data, *at)?);
+            f64_le(data, *at)?;
             *at += 8;
         }
-        Some(values)
+        Some(start)
     };
-    let knots = read_finite(&mut at)?;
-    let mut multiplicities = Vec::with_capacity(count);
+    let knot_start = at;
+    let mut previous_knot = None;
     for _ in 0..count {
-        multiplicities.push(compact_int(data, &mut at)?);
+        let knot = f64_le(data, at)?;
+        if previous_knot.is_some_and(|previous| knot <= previous) { return None }
+        previous_knot = Some(knot);
+        at += 8;
+    }
+    for index in 0..count {
+        let multiplicity = compact_int(data, &mut at)?;
+        if (index == 0 || index + 1 == count) && multiplicity != 6 { return None }
+        if index != 0 && index + 1 != count && multiplicity != 3 { return None }
     }
     if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
         return None;
@@ -1222,50 +1238,52 @@ fn parse_object_stream_pcurve(
     if at.checked_add(array_bytes.checked_add(18)?)? > end {
         return None;
     }
-    let u = read_finite(&mut at)?;
-    let v = read_finite(&mut at)?;
-    let du = read_finite(&mut at)?;
-    let dv = read_finite(&mut at)?;
+    let u = scan_finite(&mut at)?;
+    let v = scan_finite(&mut at)?;
+    let du = scan_finite(&mut at)?;
+    let dv = scan_finite(&mut at)?;
     if data.get(at) != Some(&0x05) {
         return None;
     }
     at += 1;
-    let ddu = read_finite(&mut at)?;
-    let ddv = read_finite(&mut at)?;
+    let ddu = scan_finite(&mut at)?;
+    let ddv = scan_finite(&mut at)?;
     let range = [f64_le(data, at)?, f64_le(data, at + 8)?];
     at += 16;
     if data.get(at) != Some(&0x07)
         || mode % 4 != 1
-        || !knots.windows(2).all(|pair| pair[0] < pair[1])
-        || multiplicities.first() != Some(&6)
-        || multiplicities.last() != Some(&6)
-        || multiplicities[1..multiplicities.len() - 1]
-            .iter()
-            .any(|multiplicity| *multiplicity != 3)
         || range[0] >= range[1]
         || end != at + 1
     {
         return None;
     }
-    Some(A8Pcurve {
+    Some((support_id, mode, count, knot_start, [u, v, du, dv, ddu, ddv], range))
+    })() else { return Ok(None) };
+    let mut sites = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut sites, count, "catia_object_stream_pcurve_sites")?;
+    for index in 0..count {
+        let offset = index * 8;
+        let Some(knot) = f64_le(data, knot_start + offset) else { return Ok(None) };
+        let mut values = [knot; 6];
+        for (slot, start) in values.iter_mut().zip(array_starts) {
+            let Some(value) = f64_le(data, start + offset) else { return Ok(None) };
+            *slot = value;
+        }
+        sites.push(A8PcurveSite {
+            knot,
+            point: [values[0], values[1]].into(),
+            first_derivative: [values[2], values[3]].into(),
+            second_derivative: [values[4], values[5]].into(),
+        });
+    }
+    Ok(Some(A8Pcurve {
         object_id,
         support_id,
         #[cfg(test)]
         mode,
-        sites: knots
-            .into_iter()
-            .zip(u.into_iter().zip(v))
-            .zip(du.into_iter().zip(dv))
-            .zip(ddu.into_iter().zip(ddv))
-            .map(|(((knot, (u, v)), (du, dv)), (ddu, ddv))| A8PcurveSite {
-                knot,
-                point: [u, v].into(),
-                first_derivative: [du, dv].into(),
-                second_derivative: [ddu, ddv].into(),
-            })
-            .collect(),
+        sites,
         range,
-    })
+    }))
 }
 
 /// Decode common-form object-stream NURBS surfaces.  Every variable-length

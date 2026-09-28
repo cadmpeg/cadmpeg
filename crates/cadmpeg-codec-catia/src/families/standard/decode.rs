@@ -3939,7 +3939,7 @@ pub(super) fn standard_object_evidence_from_streams(
                 "catia_standard_requested_pcurves")?;
         }
         let mut pcurves = HashMap::<u32, Option<crate::families::a5a8::records::A8Pcurve>>::new();
-        for pcurve in crate::families::a5a8::records::object_stream_pcurves(&stream)
+        for pcurve in crate::families::a5a8::records::object_stream_pcurves(ctx, &stream)?
             .into_iter()
             .filter(|pcurve| requested_pcurves.contains(&pcurve.object_id))
         {
