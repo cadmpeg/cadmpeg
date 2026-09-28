@@ -3590,11 +3590,11 @@ fn visit_feature_history_unlabeled_operation_records(
         u64,
         usize,
         crate::om::UnlabeledOperationRecord<'_>,
-    ),
+    ) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
     visit_feature_history_sections(ctx, container, |section, key, entry_offset| {
         for (ordinal, record) in section.unlabeled_operation_records_with_ordinals(ctx)? {
-            visit(section, key, entry_offset, ordinal, record);
+            visit(section, key, entry_offset, ordinal, record)?;
         }
         Ok(())
     })
@@ -3775,6 +3775,52 @@ fn copy_operation_text(
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(value.len())))?;
     text.push_str(value);
     Ok(text)
+}
+
+fn format_unlabeled_history_id(
+    ctx: &DecodeContext<'_>,
+    kind: &'static str,
+    section_key: &str,
+    operation_ordinal: usize,
+    subordinal: Option<usize>,
+) -> Result<String, CodecError> {
+    fn decimal_width(mut value: usize) -> usize {
+        let mut digits = 1;
+        while value >= 10 {
+            value /= 10;
+            digits += 1;
+        }
+        digits.max(10)
+    }
+    let prefix = "nx:feature-history:";
+    let mut length = prefix.len()
+        .checked_add(kind.len())
+        .and_then(|length| length.checked_add(1))
+        .and_then(|length| length.checked_add(section_key.len()))
+        .and_then(|length| length.checked_add(1))
+        .and_then(|length| length.checked_add(decimal_width(operation_ordinal)))
+        .ok_or_else(|| ctx.refuse_codec_limit("retain NX unlabeled history identity", 0, 1))?;
+    if let Some(subordinal) = subordinal {
+        length = length
+            .checked_add(1)
+            .and_then(|length| length.checked_add(decimal_width(subordinal)))
+            .ok_or_else(|| ctx.refuse_codec_limit("retain NX unlabeled history identity", 0, 1))?;
+    }
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(length),
+        "retain NX unlabeled history identity",
+    )?;
+    let mut id = String::new();
+    id.try_reserve_exact(length).map_err(|_| {
+        ctx.refuse_codec_limit("allocate NX unlabeled history identity", 0, 1)
+    })?;
+    write!(&mut id, "{prefix}{kind}#{section_key}-{operation_ordinal:010}")
+        .map_err(|_| ctx.refuse_codec_limit("format NX unlabeled history identity", 0, 1))?;
+    if let Some(subordinal) = subordinal {
+        write!(&mut id, "-{subordinal:010}")
+            .map_err(|_| ctx.refuse_codec_limit("format NX unlabeled history identity", 0, 1))?;
+    }
+    Ok(id)
 }
 
 /// Decode ordered operation labels from feature-history record areas.
@@ -3987,12 +4033,24 @@ pub(super) fn feature_unlabeled_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
+            let id = format_unlabeled_history_id(ctx, "unlabeled-operation-record", section_key, operation_ordinal, None)?;
+            let ordinal = u32::try_from(operation_ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX unlabeled operation ordinal", 0, 1))?;
             if let Some(record) = FeatureUnlabeledOperationRecord::from_source(
-                format!("nx:feature-history:unlabeled-operation-record#{section_key}-{operation_ordinal:010}"),
-                operation_ordinal as u32, entry_offset, record,
-            ) {
+                ctx, id, ordinal, entry_offset, record,
+            )? {
+                ctx.charge_entities(1, "NX unlabeled operation record")?;
+                ctx.charge_collection_items(1, "NX unlabeled operation records")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureUnlabeledOperationRecord>()),
+                    "retain NX unlabeled operation record",
+                )?;
+                records.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("allocate NX unlabeled operation records", 0, 1)
+                })?;
                 records.push(record);
             }
+            Ok(())
         },
     )?;
     Ok(records)
@@ -4005,26 +4063,13 @@ pub(super) fn feature_unlabeled_operation_body_writes(
 ) -> Result<Vec<FeatureOperationBodyWrite>, cadmpeg_core::CodecError> {
     let indexed = container.indexed_om_sections(ctx)?;
     let mut writes = Vec::new();
-    let mut failure = None;
     visit_feature_history_unlabeled_operation_records(
         ctx,
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            if failure.is_some() {
-                return;
-            }
-            let decoded = match crate::om::unlabeled_operation_body_write_frames(ctx, record) {
-                Ok(decoded) => decoded,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let operation_record = format!(
-                "nx:feature-history:unlabeled-operation-record#{section_key}-{operation_ordinal:010}"
-            );
+            let decoded = crate::om::unlabeled_operation_body_write_frames(ctx, record)?;
             for (ordinal, write) in decoded.into_iter().enumerate() {
-                let Some(offset) = entry_offset.checked_add(write.offset() as u64) else {
+                let Some(offset) = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(write.offset())) else {
                     continue;
                 };
                 let Some(frame) = crate::om::body_write::BodyWriteFrame::<u64>::new(
@@ -4036,22 +4081,31 @@ pub(super) fn feature_unlabeled_operation_body_writes(
                 ) else {
                     continue;
                 };
+                let id = format_unlabeled_history_id(ctx, "unlabeled-operation-body-write", section_key, operation_ordinal, Some(ordinal))?;
+                let operation_record = format_unlabeled_history_id(ctx, "unlabeled-operation-record", section_key, operation_ordinal, None)?;
+                let ordinal = u32::try_from(ordinal)
+                    .map_err(|_| ctx.refuse_codec_limit("NX unlabeled body write ordinal", 0, 1))?;
+                ctx.charge_entities(1, "NX unlabeled operation body write")?;
+                ctx.charge_collection_items(1, "NX unlabeled operation body writes")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureOperationBodyWrite>()),
+                    "retain NX unlabeled operation body write",
+                )?;
+                writes.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("allocate NX unlabeled operation body writes", 0, 1)
+                })?;
                 writes.push(FeatureOperationBodyWrite {
                     operation_label: None,
-                    id: format!(
-                        "nx:feature-history:unlabeled-operation-body-write#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                    ),
-                    operation_record: operation_record.clone(),
-                    ordinal: ordinal as u32,
+                    id,
+                    operation_record,
+                    ordinal,
                     body_image_data_block: unique_offset_data_block(&indexed, frame.body_image().value()),
                     frame,
                 });
             }
+            Ok(())
         },
     )?;
-    if let Some(error) = failure {
-        return Err(error);
-    }
     Ok(writes)
 }
 
