@@ -8,11 +8,11 @@ use crate::families::b5::graph::{
     face_surface_references, incidence_vertex_coordinates, lift_parameter_incidence,
     loop_chain_closes, loop_metadata as parse_loop_metadata, loop_references,
     loop_references_and_metadata,
-    merge_pcurve_candidate, merge_surface_candidate, parameter_incidence, parse_face,
+    parameter_incidence, parse_face,
     parse_face_record, parse_loop, parse_loop_record, pcurve_endpoints,
     pcurve_nurbs_knots,
-    pcurve_parameter_domain, point_index, resolve_surface_aliases,
-    sphere_great_circle_point, surface_alias_carrier, typed_face_records_from_records,
+    pcurve_parameter_domain, point_index,
+    sphere_great_circle_point, typed_face_records_from_records,
     typed_loop_records_from_records,
     B5FaceRecord, B5IncidenceLane,
     B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension, B5OpaquePcurve,
@@ -23,6 +23,48 @@ use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn merge_pcurve_candidate(
+    pcurves: &mut BTreeMap<u32, B5Pcurve>,
+    conflicts: &mut HashSet<u32>,
+    candidate: B5Pcurve,
+) {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::merge_pcurve_candidate(ctx, pcurves, conflicts, candidate)
+    }).expect("service budget");
+}
+
+fn merge_surface_candidate(
+    surfaces: &mut BTreeMap<u32, B5Surface>,
+    conflicts: &mut HashSet<u32>,
+    object_id: u32,
+    candidate: B5Surface,
+) -> bool {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::merge_surface_candidate(ctx, surfaces, conflicts, object_id, candidate)
+    }).expect("service budget")
+}
+
+fn resolve_surface_aliases(
+    records: &[B5Record],
+    by_id: &HashMap<u32, &B5Record>,
+    surfaces: &mut BTreeMap<u32, B5Surface>,
+    conflicts: &mut HashSet<u32>,
+) -> bool {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::resolve_surface_aliases(ctx, records, by_id, surfaces, conflicts)
+    }).expect("service budget")
+}
+
+fn surface_alias_carrier(
+    object_id: u32,
+    by_id: &HashMap<u32, &B5Record>,
+    surfaces: &BTreeMap<u32, B5Surface>,
+) -> Option<B5Surface> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::surface_alias_carrier(ctx, object_id, by_id, surfaces)
+    }).expect("service budget")
+}
 
 fn resolve_targeted_surface(
     object_id: u32,
@@ -283,6 +325,65 @@ fn loop_rejects_a_pcurve_bound_to_another_surface() {
         &surfaces,
     )
     .is_none());
+}
+
+#[test]
+fn b5_candidate_indexes_and_alias_walk_refuse_collection_limits() {
+    let pcurve = test_pcurve(1, 10);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::merge_pcurve_candidate(
+            ctx, &mut BTreeMap::new(), &mut HashSet::new(), pcurve.clone(),
+        )
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_pcurve_candidates"));
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::merge_pcurve_candidate(
+            ctx, &mut BTreeMap::from([(1, pcurve.clone())]),
+            &mut HashSet::new(), test_pcurve(1, 11),
+        )
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_conflicting_pcurves"));
+    let plane = B5Surface::Plane {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::merge_surface_candidate(
+            ctx, &mut BTreeMap::new(), &mut HashSet::new(), 1, plane.clone(),
+        )
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_surface_candidates"));
+    let mut other = plane.clone();
+    if let B5Surface::Plane { origin, .. } = &mut other {
+        *origin = crate::test_support::test_b5::point([1.0, 0.0, 0.0]);
+    }
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::merge_surface_candidate(
+            ctx, &mut BTreeMap::from([(1, plane.clone())]), &mut HashSet::new(), 1,
+            other.clone(),
+        )
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_conflicting_surfaces"));
+    let surfaces = BTreeMap::from([(1, B5Surface::Unknown {
+        family: 0xb5, class: 0x27, payload: vec![1, 2, 3],
+    })]);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::surface_alias_carrier(ctx, 1, &HashMap::new(), &surfaces)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_surface_alias_visits"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        super::super::merge_surface_candidate(
+            ctx, &mut BTreeMap::new(), &mut HashSet::new(), 1, plane,
+        )
+    }).expect("service budget"), true);
 }
 
 #[test]
