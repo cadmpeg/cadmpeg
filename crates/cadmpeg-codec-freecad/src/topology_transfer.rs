@@ -1136,11 +1136,15 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).map_err(
                         |error| {
-                            CodecError::malformed(format_args!(
-                                "FCStd face {} loop {} has invalid ring: {error}",
-                                face_id,
-                                loop_index + 1
-                            ))
+                            crate::resource::malformed_charged(
+                                self.ctx,
+                                format_args!(
+                                    "FCStd face {} loop {} has invalid ring: {error}",
+                                    face_id,
+                                    loop_index + 1,
+                                ),
+                                "FreeCAD face ring diagnostic",
+                            )
                         },
                     )?,
                 ),
