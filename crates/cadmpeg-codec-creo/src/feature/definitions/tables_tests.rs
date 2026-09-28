@@ -7,7 +7,7 @@ use crate::feature::definitions::definitions_in_ranges;
 use crate::feature::definitions::depdb_definitions;
 use crate::feature::definitions::dimension_table as parse_dimension_table;
 use crate::feature::definitions::entity_intersection;
-use crate::feature::definitions::equation_table;
+use crate::feature::definitions::equation_table as parse_equation_table;
 use crate::feature::definitions::feature_relation_triples as parse_feature_relation_triples;
 use crate::feature::definitions::feature_skamps as parse_feature_skamps;
 use crate::feature::definitions::named_solver_table_header;
@@ -267,6 +267,11 @@ fn positional_section_3d(
         parse_positional_section_3d(ctx, payload, start, end)
     })
     .expect("positional section admitted")
+}
+
+fn equation_table(payload: &[u8], start: usize, end: usize) -> Option<crate::feature::definitions::FeatureEquationTable> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_equation_table(ctx, payload, start, end))
+        .expect("equation table admitted")
 }
 
 fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<crate::feature::definitions::FeatureSkamp> {
@@ -1335,6 +1340,67 @@ fn equation_table_accepts_final_row_at_table_separator() {
     assert_eq!(table.rows.len(), 1);
     assert_eq!(table.rows[0].equation_id, 1);
     assert_eq!(table.rows[0].body, [1, 4, 0x11, 0x12, 0xf6]);
+}
+
+const EQUATION_LIMIT_INPUT: &[u8] = b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+    \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+    \x01\x04\x11\x12\xf6\xe2";
+
+fn equation_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Option<crate::feature::definitions::FeatureEquationTable>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(EQUATION_LIMIT_INPUT, &arena, &policy)
+        .expect("equation root admitted");
+    parse_equation_table(&ctx, EQUATION_LIMIT_INPUT, 0, EQUATION_LIMIT_INPUT.len())
+}
+
+#[test]
+fn equation_prototype_body_refuses_before_retained_copy() {
+    assert!(matches!(equation_with_limits(3, 10), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo equation prototype body"));
+}
+
+#[test]
+fn equation_arguments_refuse_before_vec_growth() {
+    assert!(matches!(equation_with_limits(1, 20), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo equation arguments"));
+}
+
+#[test]
+fn equation_argument_body_refuses_before_retained_copy() {
+    assert!(matches!(equation_with_limits(3, 12), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo equation argument body"));
+}
+
+#[test]
+fn equation_auxiliary_body_refuses_before_retained_copy() {
+    assert!(matches!(equation_with_limits(3, 13), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo equation auxiliary body"));
+}
+
+#[test]
+fn equation_row_body_refuses_before_retained_copy() {
+    assert!(matches!(equation_with_limits(3, 19), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo equation row body"));
+}
+
+#[test]
+fn equation_row_refuses_before_vec_growth() {
+    assert!(matches!(equation_with_limits(2, 20), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo equation rows"));
+    let table = equation_with_limits(3, 20).expect("equation admitted").expect("table present");
+    assert_eq!(table.rows[0].arguments, [Some(17), Some(18)]);
 }
 
 #[test]

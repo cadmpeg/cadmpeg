@@ -63,45 +63,48 @@ impl SectionFunctionSixDistance {
 }
 
 pub(super) fn section_equation_function_six_distance_values(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<(SectionScalarVariable, f64)> {
-    section_equation_function_six_distance_rows(definition, coordinates, ambiguous_point_ids)
+) -> Result<Vec<(SectionScalarVariable, f64)>, CodecError> {
+    crate::decode::collect_items(ctx, section_equation_function_six_distance_rows(ctx, definition, coordinates, ambiguous_point_ids)?
         .into_iter()
         .filter_map(|equation| Some((equation.radius, equation.coordinate_distance()?)))
-        .collect()
+        , "creo section equation six distance values")
 }
 
 pub(in crate::decode) fn section_equation_function_six_distance_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionFunctionSixDistance> {
+) -> Result<Vec<SectionFunctionSixDistance>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
     let row = |ordinal: Option<u32>| {
         usize::try_from(ordinal?)
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
@@ -187,7 +190,7 @@ pub(in crate::decode) fn section_equation_function_six_distance_rows(
                 offset: equation.offset,
             })
         })
-        .collect()
+        , "creo section equation function six distance rows")
 }
 
 #[derive(Clone, Copy)]
@@ -244,45 +247,48 @@ fn section_equation_dimension_scalar_value(
 }
 
 pub(super) fn section_equation_unsigned_coordinate_distances(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionUnsignedCoordinateDistance> {
-    section_equation_unsigned_coordinate_distance_rows(definition, ambiguous_point_ids)
+) -> Result<Vec<SectionUnsignedCoordinateDistance>, CodecError> {
+    crate::decode::collect_items(ctx, section_equation_unsigned_coordinate_distance_rows(ctx, definition, ambiguous_point_ids)?
         .into_iter()
         .filter(|constraint| constraint.active)
-        .collect()
+        , "creo section unsigned coordinate distances")
 }
 
 pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionUnsignedCoordinateDistance> {
+) -> Result<Vec<SectionUnsignedCoordinateDistance>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(dimensions) = definition
         .dimensions
         .as_ref()
         .filter(|table| feature_dimension_table_complete(table))
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
@@ -329,38 +335,40 @@ pub(in crate::decode) fn section_equation_unsigned_coordinate_distance_rows(
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
-        .collect()
+        , "creo section equation unsigned coordinate distance rows")
 }
 
 pub(in crate::decode) fn section_equation_radius_dimensions(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> Vec<SectionRadiusDimension> {
+) -> Result<Vec<SectionRadiusDimension>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(dimensions) = definition
         .dimensions
         .as_ref()
         .filter(|table| feature_dimension_table_complete(table))
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
@@ -417,7 +425,7 @@ pub(in crate::decode) fn section_equation_radius_dimensions(
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
-        .collect()
+        , "creo section equation radius dimensions")
 }
 
 #[derive(Clone, Copy)]
@@ -431,39 +439,42 @@ pub(in crate::decode) struct SectionPointOnLineConstraint {
 }
 
 pub(super) fn section_equation_point_on_line_constraints(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<(u32, u32, u32)> {
-    section_equation_point_on_line_constraint_rows(definition, ambiguous_point_ids)
+) -> Result<Vec<(u32, u32, u32)>, CodecError> {
+    crate::decode::collect_items(ctx, section_equation_point_on_line_constraint_rows(ctx, definition, ambiguous_point_ids)?
         .into_iter()
         .filter(|constraint| constraint.active)
         .map(|constraint| (constraint.target, constraint.first, constraint.second))
-        .collect()
+        , "creo section point on line constraints")
 }
 
 pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionPointOnLineConstraint> {
+) -> Result<Vec<SectionPointOnLineConstraint>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
@@ -535,7 +546,7 @@ pub(in crate::decode) fn section_equation_point_on_line_constraint_rows(
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
-        .collect()
+        , "creo section equation point on line constraint rows")
 }
 
 #[derive(Clone, Copy)]
@@ -548,38 +559,41 @@ pub(in crate::decode) struct SectionEqualLengthConstraint {
 }
 
 pub(super) fn section_equation_equal_length_constraints(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionEqualLengthConstraint> {
-    section_equation_equal_length_constraint_rows(definition, ambiguous_point_ids)
+) -> Result<Vec<SectionEqualLengthConstraint>, CodecError> {
+    crate::decode::collect_items(ctx, section_equation_equal_length_constraint_rows(ctx, definition, ambiguous_point_ids)?
         .into_iter()
         .filter(|constraint| constraint.active)
-        .collect()
+        , "creo section equal length constraints")
 }
 
 pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<SectionEqualLengthConstraint> {
+) -> Result<Vec<SectionEqualLengthConstraint>, CodecError> {
     let Some(variables) = definition
         .variables
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(equations) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if declared_count != equations.rows.len() + 1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let scalar_equality_values = section_equation_scalar_equality_values(definition);
+    let scalar_equality_values = section_equation_scalar_equality_values(ctx, definition)?;
+    crate::decode::collect_items(ctx,
     equations
         .rows
         .iter()
@@ -632,7 +646,7 @@ pub(in crate::decode) fn section_equation_equal_length_constraint_rows(
                 active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
-        .collect()
+        , "creo section equation equal length constraint rows")
 }
 
 pub(super) type SectionCoordinateVariable = (u32, SectionAxis);

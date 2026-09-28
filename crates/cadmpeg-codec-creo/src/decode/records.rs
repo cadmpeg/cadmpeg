@@ -2415,12 +2415,13 @@ pub(super) fn sketch_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<Vec<CreoSketchRecord>, cadmpeg_core::CodecError> {
-    scan.features
-        .definitions
-        .iter()
-        .filter(|definition| feature_definition_has_sketch_design(definition))
-        .map(|definition| {
-            Ok(CreoSketchRecord {
+    let mut records = Vec::new();
+    for definition in &scan.features.definitions {
+        if !feature_definition_has_sketch_design(ctx, definition)? {
+            continue;
+        }
+        ctx.try_reserve_items(&mut records, 1, "creo sketch records")?;
+        records.push(CreoSketchRecord {
                 id: feature_sketch_record_id_in_scan(scan, definition),
                 definition_id: definition.identity.id(),
                 owner_feature_id: definition.identity.owner_feature_id(),
@@ -2486,10 +2487,11 @@ pub(super) fn sketch_records(
                         .collect()
                 },
                 equations: crate::feature::definitions::equation_table(
+                    ctx,
                     &definition.body,
                     0,
                     definition.body.len(),
-                )
+                )?
                 .into_iter()
                 .flat_map(|table| table.rows)
                 .map(|equation| CreoSketchEquation {
@@ -2815,9 +2817,9 @@ pub(super) fn sketch_records(
                         offset: triple.offset,
                     })
                     .collect(),
-            })
-        })
-        .collect()
+        });
+    }
+    Ok(records)
 }
 
 pub(super) fn sketch_section_point_records(

@@ -870,36 +870,24 @@ pub(super) fn source_meta(
             .map(|relations| relations.rows.len())
             .sum::<usize>(),
     );
+    let mut equation_table_count = 0;
+    let mut equation_count = 0;
+    for definition in &scan.features.definitions {
+        if let Some(equations) = crate::feature::definitions::equation_table(
+            ctx,
+            &definition.body,
+            0,
+            definition.body.len(),
+        )? {
+            equation_table_count += 1;
+            equation_count += equations.rows.len();
+        }
+    }
     coverage.record(
         crate::coverage::DECODED_FEATURE_EQUATION_TABLE_COUNT,
-        scan.features
-            .definitions
-            .iter()
-            .filter(|definition| {
-                crate::feature::definitions::equation_table(
-                    &definition.body,
-                    0,
-                    definition.body.len(),
-                )
-                .is_some()
-            })
-            .count(),
+        equation_table_count,
     );
-    coverage.record(
-        crate::coverage::DECODED_FEATURE_EQUATION_COUNT,
-        scan.features
-            .definitions
-            .iter()
-            .filter_map(|definition| {
-                crate::feature::definitions::equation_table(
-                    &definition.body,
-                    0,
-                    definition.body.len(),
-                )
-            })
-            .map(|equations| equations.rows.len())
-            .sum::<usize>(),
-    );
+    coverage.record(crate::coverage::DECODED_FEATURE_EQUATION_COUNT, equation_count);
     coverage.record(
         crate::coverage::DECODED_FEATURE_SAVED_ENTITY_COUNT,
         scan.features

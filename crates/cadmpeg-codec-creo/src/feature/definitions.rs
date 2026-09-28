@@ -2013,58 +2013,71 @@ fn equation_argument_slots(
 }
 
 fn equation_arguments(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     offset: &mut usize,
     end: usize,
     explicit_count: Option<usize>,
-) -> Option<Vec<Option<u32>>> {
+) -> Result<Option<Vec<Option<u32>>>, CodecError> {
     let mut arguments = Vec::new();
     while match explicit_count {
         Some(count) => arguments.len() < count,
         None => *offset < end && payload.get(*offset) != Some(&0xf6),
     } {
         let before = *offset;
-        let (slots, slot_count) = equation_argument_slots(payload, offset)?;
+        let Some((slots, slot_count)) = equation_argument_slots(payload, offset) else {
+            return Ok(None);
+        };
         if *offset <= before
             || *offset > end
             || explicit_count.is_some_and(|count| arguments.len() + slot_count > count)
         {
-            return None;
+            return Ok(None);
         }
+        ctx.try_reserve_items(&mut arguments, slot_count, "creo equation arguments")?;
         arguments.extend_from_slice(&slots[..slot_count]);
     }
-    explicit_count
+    Ok(explicit_count
         .is_none_or(|count| arguments.len() == count)
-        .then_some(arguments)
+        .then_some(arguments))
 }
 
 /// Decode the structurally framed `eqtn_arr` solver table in one bounded
 /// feature definition.
 pub(crate) fn equation_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Option<FeatureEquationTable> {
+) -> Result<Option<FeatureEquationTable>, CodecError> {
     if start > end || end > payload.len() {
-        return None;
+        return Ok(None);
     }
-    let table = find_bytes(payload, b"eqtn_arr\0", start, end)?;
+    let Some(table) = find_bytes(payload, b"eqtn_arr\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"eqtn_arr\0".len();
     if payload.get(cursor) == Some(&0xf2) {
         cursor += 1;
     }
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-    let (declared_count, after_count) = next_bounded_compact_int(payload, cursor + 1)?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
+    let Some((declared_count, after_count)) = next_bounded_compact_int(payload, cursor + 1) else {
+        return Ok(None);
+    };
     cursor = after_count;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
-        let (entity_ref, next) = psb::reference_id(payload, cursor + 1).ok()?;
+        let Ok((entity_ref, next)) = psb::reference_id(payload, cursor + 1) else {
+            return Ok(None);
+        };
         cursor = next;
         Some(entity_ref)
     } else {
         None
     };
     if payload.get(cursor..cursor + 2) != Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
-        return None;
+        return Ok(None);
     }
     cursor += 2;
 
@@ -2078,17 +2091,22 @@ pub(crate) fn equation_table(
     .min()
     .unwrap_or(end);
     let prototype_start = cursor;
-    let prototype_reference = find_bytes(
+    let Some(prototype_reference) = find_bytes(
         payload,
         &[0xf1, psb::token::ENTITY_REF],
         prototype_start,
         rows_end,
-    )?;
-    let (_, after_prototype_reference) =
-        psb::reference_id(payload, prototype_reference + 2).ok()?;
-    let prototype_end = (payload.get(after_prototype_reference) == Some(&0xe2))
-        .then_some(after_prototype_reference + 1)?;
-    let prototype_body = payload[prototype_start..prototype_end].to_vec();
+    ) else {
+        return Ok(None);
+    };
+    let Ok((_, after_prototype_reference)) = psb::reference_id(payload, prototype_reference + 2) else {
+        return Ok(None);
+    };
+    if payload.get(after_prototype_reference) != Some(&0xe2) {
+        return Ok(None);
+    }
+    let prototype_end = after_prototype_reference + 1;
+    let prototype_body = ctx.copy_retained(&payload[prototype_start..prototype_end], "creo equation prototype body")?;
     cursor = prototype_end;
 
     let mut rows = Vec::new();
@@ -2101,7 +2119,9 @@ pub(crate) fn equation_table(
             break;
         };
         let explicit_argument_count = if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
-            let (count, next) = next_bounded_compact_int(payload, cursor + 1)?;
+            let Some((count, next)) = next_bounded_compact_int(payload, cursor + 1) else {
+                return Ok(None);
+            };
             cursor = next;
             Some(count)
         } else {
@@ -2109,15 +2129,21 @@ pub(crate) fn equation_table(
         };
         let arguments_start = cursor;
         let explicit_argument_count_usize = match explicit_argument_count {
-            Some(count) => Some(usize::try_from(count).ok()?),
+            Some(count) => {
+                let Some(count) = usize::try_from(count).ok() else {
+                    return Ok(None);
+                };
+                Some(count)
+            },
             None => None,
         };
         let Some(arguments) = equation_arguments(
+            ctx,
             payload,
             &mut cursor,
             rows_end,
             explicit_argument_count_usize,
-        ) else {
+        )? else {
             break;
         };
         let arguments_body_end = cursor;
@@ -2126,7 +2152,6 @@ pub(crate) fn equation_table(
             break;
         }
         cursor += 1;
-        let auxiliary_body = payload[auxiliary_start..cursor].to_vec();
         let row_end = if payload.get(cursor) == Some(&0xe2) {
             cursor += 1;
             cursor
@@ -2137,25 +2162,29 @@ pub(crate) fn equation_table(
         } else {
             break;
         };
+        let arguments_body = ctx.copy_retained(&payload[arguments_start..arguments_body_end], "creo equation argument body")?;
+        let auxiliary_body = ctx.copy_retained(&payload[auxiliary_start..auxiliary_start + 1], "creo equation auxiliary body")?;
+        let body = ctx.copy_retained(&payload[row_start..row_end], "creo equation row body")?;
+        ctx.try_reserve_items(&mut rows, 1, "creo equation rows")?;
         rows.push(FeatureEquation {
             equation_id,
             function_id,
             explicit_argument_count,
             arguments,
-            arguments_body: payload[arguments_start..arguments_body_end].to_vec(),
+            arguments_body,
             auxiliary_body,
-            body: payload[row_start..row_end].to_vec(),
+            body,
             offset: row_start,
         });
     }
 
-    Some(FeatureEquationTable {
+    Ok(Some(FeatureEquationTable {
         declared_count,
         entity_ref,
         prototype_body,
         rows,
         offset: table,
-    })
+    }))
 }
 
 /// Decode instantiated placement-instruction rows from one bounded feature

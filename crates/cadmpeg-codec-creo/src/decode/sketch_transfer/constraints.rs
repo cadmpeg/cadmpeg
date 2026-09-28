@@ -748,14 +748,15 @@ fn reconcile_section_segment_radius_constraint(
 }
 
 pub(in super::super) fn section_equation_radius_dimension_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let Some(segments) = definition.segments.as_ref() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(dimensions) = definition.dimensions.as_ref() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let unique_segment_ids = unique_section_segment_external_ids(definition);
     let mut entities_by_radius = BTreeMap::<u32, Vec<u32>>::new();
@@ -766,10 +767,12 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
         ) && unique_segment_ids.contains(&segment.external_id)
     }) {
         if let Some(radius) = segment.radius_ref {
-            entities_by_radius
-                .entry(radius)
-                .or_default()
-                .push(segment.external_id);
+            if !entities_by_radius.contains_key(&radius) {
+                ctx.charge_collection_items(1, "creo equation radius group nodes")?;
+            }
+            let entities = entities_by_radius.entry(radius).or_default();
+            ctx.try_reserve_items(entities, 1, "creo equation radius group entities")?;
+            entities.push(segment.external_id);
         }
     }
     for segment in segments
@@ -777,42 +780,47 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
         .circles()
         .filter(|segment| unique_segment_ids.contains(&segment.external_id))
     {
-        entities_by_radius
-            .entry(segment.radius_ref)
-            .or_default()
-            .push(segment.external_id);
+        if !entities_by_radius.contains_key(&segment.radius_ref) {
+            ctx.charge_collection_items(1, "creo equation radius group nodes")?;
+        }
+        let entities = entities_by_radius.entry(segment.radius_ref).or_default();
+        ctx.try_reserve_items(entities, 1, "creo equation radius group entities")?;
+        entities.push(segment.external_id);
     }
 
-    section_equation_radius_dimensions(definition)
+    crate::decode::collect_items(ctx, section_equation_radius_dimensions(ctx, definition)?
         .into_iter()
-        .flat_map(|equation| {
+        .filter_map(|equation| {
             let Some((dimension, parameter)) =
                 usize::try_from(equation.scalar.1).ok().and_then(|ordinal| {
                     resolved_feature_dimension_parameter(sketch, dimensions, ordinal)
                 })
             else {
-                return Vec::new();
+                return None;
             };
             let Some(dimension_value) = dimension
                 .value
                 .resolved()
                 .filter(|value| value.is_finite() && *value > 0.0)
             else {
-                return Vec::new();
+                return None;
             };
             if dimension.dimension_type != 3
                 || !(FiniteReal::new(dimension_value))
                     .zip(FiniteReal::new(equation.value.get()))
                     .is_some_and(|(first, second)| approximately_equal(first, second))
             {
-                return Vec::new();
+                return None;
             }
+            Some((equation, parameter))
+        })
+        .flat_map(|(equation, parameter)| {
             entities_by_radius
                 .get(&equation.radius)
                 .into_iter()
                 .flatten()
                 .copied()
-                .filter_map(|external_id| {
+                .filter_map(move |external_id| {
                     Some({
                         let entity = sketch_entity_id(sketch, external_id)?;
                         (
@@ -848,25 +856,26 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
                         )
                     })
                 })
-                .collect::<Vec<_>>()
         })
-        .collect()
+        , "creo equation radius dimension constraints")
 }
 
 pub(in super::super) fn section_equation_equal_distance_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
-    super::super::sketch::equations_coordinate::section_equation_equal_length_constraint_rows(
+    crate::decode::collect_items(ctx, super::super::sketch::equations_coordinate::section_equation_equal_length_constraint_rows(
+        ctx,
         definition,
         &ambiguous_point_ids,
-    )
+    )?
     .into_iter()
     .filter_map(|equation| {
         let first = SketchDistancePair {
@@ -902,19 +911,20 @@ pub(in super::super) fn section_equation_equal_distance_constraints(
             equation.offset,
         ))
     })
-    .collect()
+    , "creo section equation equal distance constraints")
 }
 
 fn section_equation_radius_dimension_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> BTreeMap<SectionScalarVariable, Option<(ParameterId, f64)>> {
+) -> Result<BTreeMap<SectionScalarVariable, Option<(ParameterId, f64)>>, cadmpeg_core::CodecError> {
     let mut dimension_parameters =
         BTreeMap::<SectionScalarVariable, Option<(ParameterId, f64)>>::new();
     let Some(dimensions) = definition.dimensions.as_ref() else {
-        return dimension_parameters;
+        return Ok(dimension_parameters);
     };
-    for equation in section_equation_radius_dimensions(definition) {
+    for equation in section_equation_radius_dimensions(ctx, definition)? {
         let Some(ordinal) = usize::try_from(equation.scalar.1).ok() else {
             continue;
         };
@@ -937,6 +947,9 @@ fn section_equation_radius_dimension_parameters(
         }
         let candidate = (parameter, dimension_value);
         for variable in [equation.radius_variable, equation.scalar] {
+            if !dimension_parameters.contains_key(&variable) {
+                ctx.charge_collection_items(1, "creo equation dimension parameter nodes")?;
+            }
             let slot = dimension_parameters
                 .entry(variable)
                 .or_insert_with(|| Some(candidate.clone()));
@@ -945,7 +958,7 @@ fn section_equation_radius_dimension_parameters(
             }
         }
     }
-    dimension_parameters
+    Ok(dimension_parameters)
 }
 
 fn section_equation_dimension_parameter(
@@ -974,9 +987,9 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
-    let dimension_parameters = section_equation_radius_dimension_parameters(definition, sketch);
+    let dimension_parameters = section_equation_radius_dimension_parameters(ctx, definition, sketch)?;
     let constraints =
-        section_equation_function_six_distance_rows(definition, &coordinates, &ambiguous_point_ids)
+        section_equation_function_six_distance_rows(ctx, definition, &coordinates, &ambiguous_point_ids)?
             .into_iter()
             .filter_map(|equation| {
                 let distance = equation.constraint_distance()?;
@@ -1034,10 +1047,11 @@ pub(in super::super) fn section_equation_function_forty_two_midpoint_coordinate_
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
     let constraints = section_equation_function_forty_two_midpoint_coordinate_rows(
+        ctx,
         definition,
         &coordinates,
         &ambiguous_point_ids,
-    )
+    )?
     .into_iter()
     .filter_map(|equation| {
         let value = equation.value?;
@@ -1097,10 +1111,11 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
     let constraints = section_equation_function_thirty_one_point_coordinate_rows(
+        ctx,
         definition,
         &coordinates,
         &ambiguous_point_ids,
-    )
+    )?
     .into_iter()
     .filter_map(|equation| {
         let [u, v] = equation.values;
@@ -1144,10 +1159,11 @@ pub(in super::super) fn section_equation_function_thirty_one_point_coordinate_co
 }
 
 pub(super) fn section_equation_function_sixteen_angle_difference_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
-    section_equation_function_sixteen_angle_difference_rows(definition)
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    crate::decode::collect_items(ctx, section_equation_function_sixteen_angle_difference_rows(ctx, definition)?
         .into_iter()
         .filter_map(|equation| {
             Some({
@@ -1182,14 +1198,15 @@ pub(super) fn section_equation_function_sixteen_angle_difference_constraints(
                 )
             })
         })
-        .collect()
+        , "creo section equation function sixteen angle difference constraints")
 }
 
 pub(super) fn section_equation_function_five_scalar_equality_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
-    section_equation_function_five_scalar_equality_rows(definition)
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    crate::decode::collect_items(ctx, section_equation_function_five_scalar_equality_rows(ctx, definition)?
         .into_iter()
         .filter_map(|equation| {
             Some({
@@ -1222,7 +1239,7 @@ pub(super) fn section_equation_function_five_scalar_equality_constraints(
                 )
             })
         })
-        .collect()
+        , "creo section equation function five scalar equality constraints")
 }
 
 pub(in super::super) fn section_equation_polar_distance_constraints(
@@ -1237,9 +1254,9 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
-    let dimension_parameters = section_equation_radius_dimension_parameters(definition, sketch);
+    let dimension_parameters = section_equation_radius_dimension_parameters(ctx, definition, sketch)?;
     let constraints =
-        section_equation_radial_constraint_rows(definition, &coordinates, &ambiguous_point_ids)
+        section_equation_radial_constraint_rows(ctx, definition, &coordinates, &ambiguous_point_ids)?
             .into_iter()
             .filter_map(|equation| {
                 let distance = equation.radius_value?;
@@ -1291,16 +1308,17 @@ pub(in super::super) fn section_equation_polar_distance_constraints(
 }
 
 pub(in super::super) fn section_equation_native_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     typed_offsets: &BTreeSet<usize>,
-) -> Vec<(SketchConstraint, usize)> {
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let Some(table) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    table
+    crate::decode::collect_items(ctx, table
         .rows
         .into_iter()
         .filter(|equation| !typed_offsets.contains(&equation.offset))
@@ -1413,13 +1431,14 @@ pub(in super::super) fn section_equation_native_constraints(
                 )
             })
         })
-        .collect()
+        , "creo native equation constraints")
 }
 
 pub(in super::super) fn section_equation_same_coordinate_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
@@ -1427,10 +1446,11 @@ pub(in super::super) fn section_equation_same_coordinate_constraints(
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
     let rows = super::super::sketch::equations_scalar::section_equation_coordinate_equality_rows(
+        ctx,
         definition,
         &ambiguous_point_ids,
-    );
-    rows.into_iter()
+    )?;
+    crate::decode::collect_items(ctx, rows.into_iter()
         .filter(|equation| matches!(equation.function_id, 2 | 10 | 13))
         .filter_map(|equation| {
             let first = section_point_locus(definition, sketch, equation.first)?;
@@ -1469,13 +1489,14 @@ pub(in super::super) fn section_equation_same_coordinate_constraints(
                 equation.offset,
             ))
         })
-        .collect()
+        , "creo section equation same coordinate constraints")
 }
 
 pub(in super::super) fn section_equation_point_on_line_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
@@ -1484,7 +1505,7 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
         .unwrap_or_default();
     let unique_segment_ids = unique_section_segment_external_ids(definition);
     let segments = section_segment_rows(definition);
-    section_equation_point_on_line_constraint_rows(definition, &ambiguous_point_ids)
+    crate::decode::collect_items(ctx, section_equation_point_on_line_constraint_rows(ctx, definition, &ambiguous_point_ids)?
         .into_iter()
         .filter_map(|equation| {
             let point = section_point_locus(definition, sketch, equation.target)?;
@@ -1554,7 +1575,7 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                 equation.offset,
             ))
         })
-        .collect()
+        , "creo section equation point on line constraints")
 }
 
 pub(in super::super) fn section_equation_axis_distance_constraints(
@@ -1572,10 +1593,11 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
     let constraints = section_equation_function_forty_three_axis_distance_rows(
+        ctx,
         definition,
         &resolved_section_coordinates(ctx, definition)?,
         &ambiguous_point_ids,
-    )
+    )?
     .into_iter()
     .filter_map(|equation| {
         let first = section_point_locus(definition, sketch, equation.first)?;
@@ -1635,11 +1657,12 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
 }
 
 pub(in super::super) fn section_equation_unsigned_distance_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
     let Some(dimensions) = definition.dimensions.as_ref() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let ambiguous_point_ids = definition
         .variables
@@ -1647,7 +1670,7 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
         .filter(|variables| variables.is_complete())
         .map(|variables| variables.reconciled_points().1)
         .unwrap_or_default();
-    section_equation_unsigned_coordinate_distance_rows(definition, &ambiguous_point_ids)
+    crate::decode::collect_items(ctx, section_equation_unsigned_coordinate_distance_rows(ctx, definition, &ambiguous_point_ids)?
         .into_iter()
         .filter_map(|equation| {
             let first = section_point_locus(definition, sketch, equation.first)?;
@@ -1695,7 +1718,7 @@ pub(in super::super) fn section_equation_unsigned_distance_constraints(
                 equation.offset,
             ))
         })
-        .collect()
+        , "creo section equation unsigned distance constraints")
 }
 
 fn circular_dimension_constraint(
@@ -2257,7 +2280,7 @@ mod tests {
         let sketch =
             SketchId::mint("creo:model:sketch#angle-difference").expect("valid test fixture");
         let constraints =
-            section_equation_function_sixteen_angle_difference_constraints(&definition, &sketch);
+            crate::decode::with_test_decode_ctx(|ctx| section_equation_function_sixteen_angle_difference_constraints(ctx, &definition, &sketch)).expect("section_equation_function_sixteen_angle_difference_constraints admitted");
         assert_eq!(constraints.len(), 1);
         assert_eq!(constraints[0].1, 28);
         assert_eq!(constraints[0].0.active, Some(true));
@@ -2330,7 +2353,7 @@ mod tests {
         let sketch =
             SketchId::mint("creo:model:sketch#scalar-equality").expect("valid test fixture");
         let constraints =
-            section_equation_function_five_scalar_equality_constraints(&definition, &sketch);
+            crate::decode::with_test_decode_ctx(|ctx| section_equation_function_five_scalar_equality_constraints(ctx, &definition, &sketch)).expect("section_equation_function_five_scalar_equality_constraints admitted");
         assert_eq!(constraints.len(), 1);
         assert_eq!(constraints[0].0.active, Some(true));
         assert_eq!(
@@ -2345,7 +2368,7 @@ mod tests {
         conflicting.variables.as_mut().expect("variables").rows[1].value =
             crate::feature::definitions::ScalarLane::Value(3.5);
         assert!(
-            section_equation_function_five_scalar_equality_constraints(&conflicting, &sketch,)
+            crate::decode::with_test_decode_ctx(|ctx| section_equation_function_five_scalar_equality_constraints(ctx, &conflicting, &sketch,)).expect("section_equation_function_five_scalar_equality_constraints admitted")
                 .is_empty()
         );
     }

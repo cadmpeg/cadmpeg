@@ -86,12 +86,10 @@ pub(in super::super) fn transfer_sketches(
         .map(|parameter| parameter.id.clone())
         .collect::<BTreeSet<_>>();
     available_parameter_ids.extend(planned_feature_dimension_parameter_ids(scan));
-    for definition in scan
-        .features
-        .definitions
-        .iter()
-        .filter(|definition| feature_definition_has_sketch_design(definition))
-    {
+    for definition in &scan.features.definitions {
+        if !feature_definition_has_sketch_design(ctx, definition)? {
+            continue;
+        }
         let transform = definition.section_3d.as_ref().and_then(|section| {
             unique_feature_section_transform(
                 &scan.features.section_transforms,
@@ -770,18 +768,18 @@ pub(in super::super) fn transfer_sketches(
             ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
             constraints.push(constraint);
         }
-        let equation_constraints =
+        let equation_constraints = crate::decode::collect_items(ctx,
             section_equation_axis_distance_constraints(ctx, definition, &sketch_id)?
                 .into_iter()
                 .chain(section_equation_unsigned_distance_constraints(
-                    definition, &sketch_id,
-                ))
+                    ctx, definition, &sketch_id,
+                )?)
                 .chain(section_equation_point_on_line_constraints(
-                    definition, &sketch_id,
-                ))
+                    ctx, definition, &sketch_id,
+                )?)
                 .chain(section_equation_same_coordinate_constraints(
-                    definition, &sketch_id,
-                ))
+                    ctx, definition, &sketch_id,
+                )?)
                 .chain(
                     section_equation_function_thirty_one_point_coordinate_constraints(
                         ctx, definition, &sketch_id,
@@ -793,16 +791,16 @@ pub(in super::super) fn transfer_sketches(
                     )?,
                 )
                 .chain(section_equation_function_five_scalar_equality_constraints(
-                    definition, &sketch_id,
-                ))
+                    ctx, definition, &sketch_id,
+                )?)
                 .chain(
                     section_equation_function_sixteen_angle_difference_constraints(
-                        definition, &sketch_id,
-                    ),
+                        ctx, definition, &sketch_id,
+                    )?,
                 )
                 .chain(section_equation_radius_dimension_constraints(
-                    definition, &sketch_id,
-                ))
+                    ctx, definition, &sketch_id,
+                )?)
                 .chain(section_equation_polar_distance_constraints(
                     ctx, definition, &sketch_id,
                 )?)
@@ -810,9 +808,9 @@ pub(in super::super) fn transfer_sketches(
                     ctx, definition, &sketch_id,
                 )?)
                 .chain(section_equation_equal_distance_constraints(
-                    definition, &sketch_id,
-                ))
-                .collect::<Vec<_>>();
+                    ctx, definition, &sketch_id,
+                )?)
+                , "creo sketch equation constraints")?;
         let equation_offsets = equation_constraints
             .iter()
             .map(|(_, offset)| *offset)
@@ -858,7 +856,7 @@ pub(in super::super) fn transfer_sketches(
                 .filter(|offset| !rejected_equation_offsets.contains(offset)),
         );
         for (constraint, offset) in
-            section_equation_native_constraints(definition, &sketch_id, &typed_equation_offsets)
+            section_equation_native_constraints(ctx, definition, &sketch_id, &typed_equation_offsets)?
         {
             annotate(
                 annotations,

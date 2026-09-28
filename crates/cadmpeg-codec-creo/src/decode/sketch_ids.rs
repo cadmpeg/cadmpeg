@@ -12,11 +12,10 @@ use super::native_records::{CreoSketchBucketHeader, CreoSketchTableHeader, CreoS
 use super::uniqueness::exactly_one;
 
 pub(super) fn feature_definition_has_sketch_design(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
-) -> bool {
-    definition.variables.is_some()
-        || crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
-            .is_some()
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if definition.variables.is_some()
         || definition.segments.is_some()
         || definition.trim_entities.is_some()
         || definition.trim_vertices.is_some()
@@ -25,6 +24,10 @@ pub(super) fn feature_definition_has_sketch_design(
         || definition.saved_section.is_some()
         || definition.dimensions.is_some()
         || definition.relations.is_some()
+    {
+        return Ok(true);
+    }
+    Ok(crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?.is_some())
 }
 
 pub(super) fn sketch_table_headers(
@@ -52,7 +55,7 @@ pub(super) fn sketch_table_headers(
         )?;
     }
     if let Some(table) =
-        crate::feature::definitions::equation_table(&definition.body, 0, definition.body.len())
+        crate::feature::definitions::equation_table(ctx, &definition.body, 0, definition.body.len())?
     {
         push(
             CreoSketchTableKind::Equations {
