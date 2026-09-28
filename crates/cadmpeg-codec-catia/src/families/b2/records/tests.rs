@@ -29,6 +29,24 @@ fn parsed_b2_nurbs_curves(data: &[u8]) -> Vec<crate::families::b2::records::B2Nu
     })
 }
 
+fn parsed_owner_identity_targets(
+    data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Vec<crate::families::b2::records::B2OwnerIdentityTarget> {
+    crate::test_support::with_service_context(|ctx| {
+        super::b2_owner_identity_targets_from_records(ctx, data, records).expect("service decode")
+    })
+}
+
+fn parsed_owner_charts(
+    data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Vec<crate::families::b2::records::B2OwnerChart> {
+    crate::test_support::with_service_context(|ctx| {
+        super::b2_owner_charts_from_records(ctx, data, records).expect("service decode")
+    })
+}
+
 #[test]
 fn b_family_pcurve_parser_reads_six_channel_uv_jet() {
     let pcurves = crate::families::b2::records::b2_pcurves(&b2_pcurve_stream());
@@ -383,7 +401,7 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
     let (mut bytes, target_positions, owner_pos) = b2_width_coded_owner_with_allocation_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     let targets =
-        crate::families::b2::records::b2_owner_identity_targets_from_records(&bytes, &records);
+        parsed_owner_identity_targets(&bytes, &records);
 
     assert_eq!(
         targets
@@ -419,14 +437,14 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
     };
     assert_eq!(packet.source_index, 1);
     assert!(
-        crate::families::b2::records::b2_owner_identity_targets_from_records(&bytes, &records)
+        parsed_owner_identity_targets(&bytes, &records)
             .is_empty()
     );
 
     bytes.insert(owner_pos, 0x00);
     let records = crate::wire::records::consolidated_records(&bytes);
     assert!(
-        crate::families::b2::records::b2_owner_identity_targets_from_records(&bytes, &records)
+        parsed_owner_identity_targets(&bytes, &records)
             .is_empty()
     );
 }
@@ -438,9 +456,33 @@ fn fixed_owner_backward_identities_do_not_cross_group_separator() {
     let records = crate::wire::records::consolidated_records(&bytes);
 
     assert!(
-        crate::families::b2::records::b2_owner_identity_targets_from_records(&bytes, &records)
+        parsed_owner_identity_targets(&bytes, &records)
             .is_empty()
     );
+}
+
+#[test]
+fn fixed_owner_identity_indexes_and_targets_refuse_collection_limits() {
+    use std::collections::HashSet;
+
+    let (bytes, _, _) = b2_width_coded_owner_with_allocation_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut refused = HashSet::new();
+    for limit in 0..128 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::b2_owner_identity_targets_from_records(ctx, &bytes, &records)
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+            refused.insert(error.operation);
+        }
+    }
+    for operation in [
+        "catia_b2_owner_identity_packets",
+        "catia_b2_owner_identity_allocations",
+        "catia_b2_owner_identity_targets",
+    ] {
+        assert!(refused.contains(operation), "{operation} did not refuse");
+    }
 }
 
 #[test]
@@ -512,7 +554,7 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
     ] {
         let bytes = b2_owner_chart_stream(carrier_class);
         let records = crate::wire::records::consolidated_records(&bytes);
-        let [chart] = crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records)
+        let [chart] = parsed_owner_charts(&bytes, &records)
             .try_into()
             .unwrap_or_else(|charts: Vec<_>| {
                 panic!("one class-{carrier_class:02x} owner chart, got {charts:?}")
@@ -579,7 +621,7 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
             ],
         );
         assert!(
-            crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records).is_empty()
+            parsed_owner_charts(&bytes, &records).is_empty()
         );
     }
 }
@@ -603,7 +645,7 @@ fn owner_chart_applies_to_width_coded_identity_dialect() {
         assert_eq!(packets[0].references, [278, 1, 276, 2, 277, 3, 199, 4, 279]);
 
         let records = crate::wire::records::consolidated_records(&bytes);
-        let [chart] = crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records)
+        let [chart] = parsed_owner_charts(&bytes, &records)
             .try_into()
             .unwrap_or_else(|charts: Vec<_>| {
                 panic!("one width-coded class-{carrier_class:02x} owner chart, got {charts:?}")
@@ -629,7 +671,7 @@ fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
 
     let bytes = b2_owner_chart_stream_with_extended_bridge();
     let records = crate::wire::records::consolidated_records(&bytes);
-    let [chart] = crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records)
+    let [chart] = parsed_owner_charts(&bytes, &records)
         .try_into()
         .unwrap_or_else(|charts: Vec<_>| panic!("one extended owner chart, got {charts:?}"));
     let B2OwnerChartBridge::Extended { references, .. } = chart.bridge else {
@@ -664,7 +706,7 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
     wrong_selector[side_05.payload().unwrap().start] = 0x09;
     let records = crate::wire::records::consolidated_records(&wrong_selector);
     assert!(
-        crate::families::b2::records::b2_owner_charts_from_records(&wrong_selector, &records)
+        parsed_owner_charts(&wrong_selector, &records)
             .is_empty()
     );
 
@@ -673,7 +715,7 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
         .copy_from_slice(&8.0f64.to_le_bytes());
     let records = crate::wire::records::consolidated_records(&wrong_bound);
     assert!(
-        crate::families::b2::records::b2_owner_charts_from_records(&wrong_bound, &records)
+        parsed_owner_charts(&wrong_bound, &records)
             .is_empty()
     );
 
@@ -681,8 +723,32 @@ fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
     separated.insert(side_05.byte_offset(), 0x00);
     let records = crate::wire::records::consolidated_records(&separated);
     assert!(
-        crate::families::b2::records::b2_owner_charts_from_records(&separated, &records).is_empty()
+        parsed_owner_charts(&separated, &records).is_empty()
     );
+}
+
+#[test]
+fn owner_chart_indexes_and_rows_refuse_collection_limits() {
+    use std::collections::HashSet;
+
+    let bytes = b2_owner_chart_stream(0x28);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let mut refused = HashSet::new();
+    for limit in 0..128 {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::b2_owner_charts_from_records(ctx, &bytes, &records)
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+            refused.insert(error.operation);
+        }
+    }
+    for operation in [
+        "catia_b2_owner_chart_owners",
+        "catia_b2_owner_chart_points",
+        "catia_b2_owner_charts",
+    ] {
+        assert!(refused.contains(operation), "{operation} did not refuse");
+    }
 }
 
 #[test]

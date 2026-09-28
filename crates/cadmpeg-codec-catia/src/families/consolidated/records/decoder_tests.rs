@@ -22,6 +22,7 @@ use crate::test_support::test_a5a8::{
 use crate::test_support::test_b2::{
     b2_circle_stream, b2_cylinder_stream, b2_edge_block_stream, b2_edge_parameter_stream_for,
     b2_embedded_cylinder_stream_with_object_id, b2_fixed_owner_boundary_cycle_stream,
+    b2_fixed_owner_boundary_face_node_cycle_stream,
     b2_line_profile_stream, b2_plane_carrier_stream, b2_resolved_revolution_stream,
     b2_topology_edge_run_stream, b3_cylinder_stream,
 };
@@ -29,6 +30,16 @@ use crate::test_support::test_b5::append_b5_record;
 use crate::test_support::test_bytes::{be32, le_f32};
 use crate::test_support::test_container::{standard_catpart, standard_catpart_from_streams};
 use crate::CatiaCodec;
+
+fn parsed_owner_boundary_cycles(
+    bytes: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Vec<crate::families::consolidated::records::ConsolidatedOwnerBoundaryCycle> {
+    crate::test_support::with_service_context(|ctx| {
+        super::consolidated_owner_boundary_cycles_from_records(ctx, bytes, records)
+            .expect("service decode")
+    })
+}
 
 #[test]
 fn object_stream_vertices_exclude_framed_payload_markers() {
@@ -913,7 +924,7 @@ fn fixed_owner_boundary_cycle_rejects_cross_source_endpoint_network() {
     let (bytes, _, _, endpoint_records) = b2_fixed_owner_boundary_cycle_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(
-        crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
+        parsed_owner_boundary_cycles(
             &bytes, &records,
         )
         .len(),
@@ -926,13 +937,45 @@ fn fixed_owner_boundary_cycle_rejects_cross_source_endpoint_network() {
         [0..split, split..bytes.len()],
     );
     assert!(
-        crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
+        parsed_owner_boundary_cycles(
             &bytes,
             &split_records,
         )
         .is_empty(),
         "a fixed-owner cycle cannot join endpoint records across bounded sources"
     );
+}
+
+#[test]
+fn fixed_owner_boundary_indexes_and_nested_targets_refuse_collection_limits() {
+    use std::collections::HashSet;
+
+    let mut refused = HashSet::new();
+    for bytes in [
+        b2_fixed_owner_boundary_cycle_stream().0,
+        b2_fixed_owner_boundary_face_node_cycle_stream().0,
+    ] {
+        let records = crate::wire::records::consolidated_records(&bytes);
+        for limit in 0..256 {
+            let result = crate::test_support::with_collection_limit(limit, |ctx| {
+                super::consolidated_owner_boundary_cycles_from_records(ctx, &bytes, &records)
+            });
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(error)) = result {
+                refused.insert(error.operation);
+            }
+        }
+    }
+    for operation in [
+        "catia_owner_boundary_endpoints",
+        "catia_owner_boundary_face_nodes",
+        "catia_owner_boundary_record_indices",
+        "catia_owner_boundary_record_sources",
+        "catia_owner_boundary_target_entries",
+        "catia_owner_boundary_target_groups",
+        "catia_owner_boundary_cycles",
+    ] {
+        assert!(refused.contains(operation), "{operation} did not refuse");
+    }
 }
 
 #[test]
