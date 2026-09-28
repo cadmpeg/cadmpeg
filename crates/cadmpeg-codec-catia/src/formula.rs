@@ -107,23 +107,31 @@ pub(crate) fn transfer_parameters(
             else {
                 continue;
             };
-            relation_program_parameters
-                .entry(candidate.parameter.id.clone())
-                .and_modify(|existing| {
-                    if existing.as_ref().is_some_and(|input| {
-                        input.1 != candidate.parameter_type || input.0 != candidate.parameter
-                    }) {
-                        *existing = None;
-                    }
-                })
-                .or_insert_with(|| Some((candidate.parameter.clone(), candidate.parameter_type)));
+            if let Some(existing) = relation_program_parameters.get_mut(&candidate.parameter.id) {
+                if existing.as_ref().is_some_and(|input| {
+                    input.1 != candidate.parameter_type || input.0 != candidate.parameter
+                }) {
+                    *existing = None;
+                }
+            } else {
+                let id = resource::copy_id(ctx, candidate.parameter.id.as_str(), ParameterId::mint,
+                    "catia_relation_program_index_id")?;
+                let parameter = copy_design_parameter(ctx, &candidate.parameter)?;
+                resource::insert_btree_map(ctx, &mut relation_program_parameters, id,
+                    Some((parameter, candidate.parameter_type)),
+                    "catia_relation_program_parameter_index")?;
+            }
             match candidates.get(&candidate.parameter.id) {
                 Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
-                    conflicting_inputs.insert(candidate.parameter.id);
+                    resource::insert_btree_set(ctx, &mut conflicting_inputs,
+                        candidate.parameter.id, "catia_formula_conflicting_inputs")?;
                 }
                 Some(_) => {}
                 None => {
-                    candidates.insert(candidate.parameter.id.clone(), candidate);
+                    let id = resource::copy_id(ctx, candidate.parameter.id.as_str(), ParameterId::mint,
+                        "catia_formula_candidate_index_id")?;
+                    resource::insert_btree_map(ctx, &mut candidates, id, candidate,
+                        "catia_formula_candidates")?;
                 }
             }
         }
@@ -245,10 +253,10 @@ pub(crate) fn transfer_parameters(
         } else {
             type_checked_expression.clone()
         };
-        let input_parameters = transferred
+        let input_parameters = resource::try_collect_vec(ctx, transferred
             .iter()
-            .map(|candidate| (candidate.parameter.clone(), candidate.parameter_type))
-            .collect::<Vec<_>>();
+            .map(|candidate| Ok((copy_design_parameter(ctx, &candidate.parameter)?,
+                candidate.parameter_type))), "catia_formula_input_parameters")?;
         if let Some(output) = formula
             .output_entity
             .reference
@@ -315,7 +323,7 @@ pub(crate) fn transfer_parameters(
         }
 
         for candidate in transferred {
-            merge_formula_parameter_candidate(&mut candidates, &mut conflicting_inputs, candidate);
+            merge_formula_parameter_candidate(ctx, &mut candidates, &mut conflicting_inputs, candidate)?;
         }
     }
 
@@ -360,7 +368,7 @@ pub(crate) fn transfer_parameters(
             continue;
         };
         programs.push(program);
-        merge_formula_parameter_candidate(&mut candidates, &mut conflicting_inputs, candidate);
+        merge_formula_parameter_candidate(ctx, &mut candidates, &mut conflicting_inputs, candidate)?;
     }
 
     for id in &conflicting_inputs {
@@ -1316,10 +1324,11 @@ struct FormulaProgramCandidate {
 }
 
 fn merge_formula_parameter_candidate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
     conflicting_inputs: &mut BTreeSet<ParameterId>,
     mut candidate: FormulaParameterCandidate,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     match candidates.get_mut(&candidate.parameter.id) {
         Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
             match (
@@ -1328,14 +1337,22 @@ fn merge_formula_parameter_candidate(
             ) {
                 (true, true) => {}
                 (true, false) => {
-                    conflicting_inputs.insert(candidate.parameter.id);
+                    resource::insert_btree_set(ctx, conflicting_inputs,
+                        candidate.parameter.id, "catia_formula_conflicting_inputs")?;
                 }
                 (false, true) => {
-                    conflicting_inputs.insert(candidate.parameter.id.clone());
-                    candidates.insert(candidate.parameter.id.clone(), candidate);
+                    let conflict = resource::copy_id(ctx, candidate.parameter.id.as_str(),
+                        ParameterId::mint, "catia_formula_conflict_id")?;
+                    resource::insert_btree_set(ctx, conflicting_inputs, conflict,
+                        "catia_formula_conflicting_inputs")?;
+                    let key = resource::copy_id(ctx, candidate.parameter.id.as_str(),
+                        ParameterId::mint, "catia_formula_candidate_index_id")?;
+                    resource::insert_btree_map(ctx, candidates, key, candidate,
+                        "catia_formula_candidates")?;
                 }
                 (false, false) => {
-                    conflicting_inputs.insert(candidate.parameter.id);
+                    resource::insert_btree_set(ctx, conflicting_inputs,
+                        candidate.parameter.id, "catia_formula_conflicting_inputs")?;
                 }
             }
         }
@@ -1343,9 +1360,13 @@ fn merge_formula_parameter_candidate(
             if !existing.role.is_formula_output() && candidate.role.is_formula_output() =>
         {
             candidate.role = FormulaParameterRole::FormulaOutput {
-                fallback: Some((existing.parameter.clone(), existing.parameter_type)),
+                fallback: Some((copy_design_parameter(ctx, &existing.parameter)?,
+                    existing.parameter_type)),
             };
-            candidates.insert(candidate.parameter.id.clone(), candidate);
+            let key = resource::copy_id(ctx, candidate.parameter.id.as_str(),
+                ParameterId::mint, "catia_formula_candidate_index_id")?;
+            resource::insert_btree_map(ctx, candidates, key, candidate,
+                "catia_formula_candidates")?;
         }
         Some(existing)
             if existing.role.is_formula_output() && !candidate.role.is_formula_output() =>
@@ -1356,9 +1377,13 @@ fn merge_formula_parameter_candidate(
         }
         Some(_) => {}
         None => {
-            candidates.insert(candidate.parameter.id.clone(), candidate);
+            let key = resource::copy_id(ctx, candidate.parameter.id.as_str(),
+                ParameterId::mint, "catia_formula_candidate_index_id")?;
+            resource::insert_btree_map(ctx, candidates, key, candidate,
+                "catia_formula_candidates")?;
         }
     }
+    Ok(())
 }
 
 fn relation_program_output_candidate(
@@ -1603,6 +1628,64 @@ fn copy_parameter_value(
         ParameterValue::String(text) => ParameterValue::String(resource::copy_retained_str(
             ctx, text, "catia_formula_parameter_value_copy")?),
         other => other.clone(),
+    })
+}
+
+fn copy_design_parameter(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &DesignParameter,
+) -> Result<DesignParameter, cadmpeg_core::CodecError> {
+    let operation = "catia_formula_parameter_copy";
+    let id = resource::copy_id(ctx, source.id.as_str(), ParameterId::mint, operation)?;
+    let owner = source.owner.as_ref().map(|owner| resource::copy_id(ctx,
+        owner.as_str(), cadmpeg_ir::features::FeatureId::mint, operation)).transpose()?;
+    let name = resource::copy_retained_str(ctx, &source.name, operation)?;
+    let expression = resource::copy_retained_str(ctx, &source.expression, operation)?;
+    let value = source.value.as_ref().map(|value| copy_parameter_value(ctx, value)).transpose()?;
+    let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
+    if !source.dependencies.is_empty() {
+        ctx.charge_collection_items(source.dependencies.len() as u64, operation)?;
+        dependencies.try_reserve(source.dependencies.len()).map_err(|_|
+            resource::allocation_failed(0, 0, source.dependencies.len(), operation))?;
+        for dependency in source.dependencies.iter() {
+            dependencies.insert(resource::copy_id(ctx, dependency.as_str(), ParameterId::mint,
+                operation)?);
+        }
+    }
+    let mut properties = BTreeMap::new();
+    for (key, value) in &source.properties {
+        let key = resource::copy_retained_str(ctx, key.as_str(), operation)?;
+        let key = cadmpeg_core::text::NonBlankString::new(key)
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank CATIA parameter property"))?;
+        let value = resource::copy_retained_str(ctx, value, operation)?;
+        resource::insert_btree_map(ctx, &mut properties, key, value, operation)?;
+    }
+    let pmi = match &source.pmi {
+        Some(pmi) => {
+            let subtype = match &pmi.subtype {
+                cadmpeg_ir::features::PmiDimensionSubtype::Native(kind) =>
+                    cadmpeg_ir::features::PmiDimensionSubtype::Native(
+                        resource::copy_retained_str(ctx, kind, operation)?),
+                other => other.clone(),
+            };
+            Some(cadmpeg_ir::features::ParameterPmi {
+                subtype,
+                precision: pmi.precision,
+                display_text: pmi.display_text.as_ref().map(|value|
+                    resource::copy_retained_str(ctx, value, operation)).transpose()?,
+                basic: pmi.basic,
+                inspection: pmi.inspection,
+                reference_only: pmi.reference_only,
+                native_ref: resource::copy_retained_str(ctx, &pmi.native_ref, operation)?,
+            })
+        }
+        None => None,
+    };
+    let native_ref = source.native_ref.as_ref().map(|value|
+        resource::copy_retained_str(ctx, value, operation)).transpose()?;
+    Ok(DesignParameter {
+        id, owner, ordinal: source.ordinal, name, expression,
+        display: source.display, value, dependencies, properties, pmi, native_ref,
     })
 }
 
@@ -3587,6 +3670,47 @@ mod parser_tests {
             &unset_candidate(FormulaParameterType::Length),
             &unset_candidate(FormulaParameterType::Real)
         ));
+    }
+
+    #[test]
+    fn formula_design_parameter_copy_refuses_nested_admission() {
+        let mut parameter = unset_candidate(FormulaParameterType::String).parameter;
+        parameter.dependencies.insert(ParameterId::mint(
+            "synthetic:test:id#dependency".to_string()).expect("identity grammar"));
+        parameter.properties.insert(cadmpeg_core::nonblank_literal!("source"),
+            "value".to_string());
+        let retained = crate::test_support::with_retained_limit(0, |ctx| {
+            super::copy_design_parameter(ctx, &parameter)
+        });
+        assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_formula_parameter_copy"));
+        let collection = crate::test_support::with_collection_limit(0, |ctx| {
+            super::copy_design_parameter(ctx, &parameter)
+        });
+        assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_formula_parameter_copy"));
+        let admitted = crate::test_support::with_service_context(|ctx| {
+            super::copy_design_parameter(ctx, &parameter)
+        }).expect("service profile admits parameter copy");
+        assert_eq!(admitted, parameter);
+    }
+
+    #[test]
+    fn formula_candidate_index_refuses_collection_limit() {
+        let candidate = unset_candidate(FormulaParameterType::String);
+        let refused = crate::test_support::with_collection_limit(0, |ctx| {
+            super::merge_formula_parameter_candidate(ctx, &mut BTreeMap::new(),
+                &mut std::collections::BTreeSet::new(), candidate)
+        });
+        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_formula_candidates"));
+        let candidate = unset_candidate(FormulaParameterType::String);
+        let mut candidates = BTreeMap::new();
+        crate::test_support::with_service_context(|ctx| {
+            super::merge_formula_parameter_candidate(ctx, &mut candidates,
+                &mut std::collections::BTreeSet::new(), candidate)
+        }).expect("service profile admits candidate");
+        assert_eq!(candidates.len(), 1);
     }
 
     #[test]
