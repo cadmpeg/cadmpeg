@@ -3832,17 +3832,22 @@ pub(super) fn feature_operation_labels(
     let block_identities = operation_header_block_identities(ctx, container)?;
     let mut labels = Vec::new();
     for (section_ordinal, link) in feature_history_sections(ctx, container)?.into_iter().enumerate() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sections.len()), "match NX feature label section")?;
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-            entry
-                .file_span()
-                .map_or(section.offset as u64, |(offset, _)| {
-                    offset + section.offset as u64
-                })
-                == link.location.section_offset()
+            entry.file_span()
+                .map_or(Some(cadmpeg_core::decode::u64_from_index(section.offset)), |(offset, _)| {
+                    offset.checked_add(cadmpeg_core::decode::u64_from_index(section.offset))
+                }) == Some(link.location.section_offset())
         }) else {
             continue;
         };
-        let section_key = format!("{section_ordinal:010}");
+        let section_key_len = section_ordinal.checked_ilog10().map_or(1, |digits| digits as usize + 1).max(10);
+        let _section_key_guard = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(section_key_len), "NX feature label section key")?;
+        let mut section_key = String::new();
+        section_key.try_reserve_exact(section_key_len)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX feature label section key", 0, 1))?;
+        write!(&mut section_key, "{section_ordinal:010}")
+            .map_err(|_| ctx.refuse_codec_limit("write NX feature label section key", 0, 1))?;
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let records = section.operation_records_with_label_ordinals(ctx)?;
         let record_count = cadmpeg_core::decode::u64_from_index(records.len());
