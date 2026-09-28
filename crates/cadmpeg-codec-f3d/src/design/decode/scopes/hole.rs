@@ -58,7 +58,10 @@ pub(in crate::design::decode) fn exact_hole_construction(
     if scope.kind() != required_scope_kind {
         return None;
     }
-    let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
+    let face_selection = match exact_hole_face_selection(ctx, bytes, records, scope, stream_types) {
+        Ok(face_selection) => face_selection,
+        Err(error) => return Some(Err(error)),
+    };
     let mut candidate = None;
     for record_index in scope.reference_members().values() {
         let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
@@ -110,11 +113,12 @@ pub(in crate::design::decode) fn exact_hole_construction(
 }
 
 fn exact_hole_face_selection(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
-) -> Option<DesignHoleFaceSelection> {
+) -> Result<Option<DesignHoleFaceSelection>, CodecError> {
     let mut candidate = None;
     for record_index in scope.reference_members().values() {
         if stream_types.get(&u64::from(*record_index)) != Some(&(HOLE_FACE_SELECTION_TYPE_GUID, 1))
@@ -134,12 +138,14 @@ fn exact_hole_face_selection(
             if after_tag != start + 7 || View::u32_le_at(bytes, after_tag) != Some(*record_index) {
                 continue;
             }
+            let Ok(start_offset) = u64::try_from(start) else { return Ok(None); };
             let Some(frame) = parse_entity_selection_frame(
+                ctx,
                 bytes,
                 *record_index,
-                u64::try_from(start).ok()?,
+                start_offset,
                 class_tag.as_str(),
-            ) else {
+            ).transpose()? else {
                 continue;
             };
             let Ok(asset_id) =
@@ -170,11 +176,11 @@ fn exact_hole_face_selection(
                 next_byte_offset: frame.next_byte_offset,
             };
             if candidate.replace(next).is_some() {
-                return None;
+                return Ok(None);
             }
         }
     }
-    candidate
+    Ok(candidate)
 }
 
 fn hole_construction_frame_at(

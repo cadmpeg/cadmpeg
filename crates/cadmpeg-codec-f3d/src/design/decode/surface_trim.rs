@@ -46,12 +46,16 @@ fn exact_surface_trim_operation(
     let (selection_byte_offset, _) = records.frames(selection_record_index).next()?;
     let selection_class_tag =
         exact_indexed_header_at(bytes, selection_byte_offset, selection_record_index)?;
-    let selection = parse_entity_selection_frame(
+    let selection = match parse_entity_selection_frame(
+        ctx,
         bytes,
         selection_record_index,
         u64::try_from(selection_byte_offset).ok()?,
         &selection_class_tag,
-    )?;
+    )? {
+        Ok(selection) => selection,
+        Err(error) => return Some(Err(error)),
+    };
 
     let mut chain_start = usize::try_from(selection.next_byte_offset).ok()?;
     let mut next_chain_record = || {
@@ -100,7 +104,7 @@ fn exact_surface_trim_operation(
         return None;
     }
     let total_cells = u64::from(trailing_value);
-    Some((
+    Some(Ok((
         selection_record_index,
         selection_byte_offset,
         selection,
@@ -117,14 +121,13 @@ fn exact_surface_trim_operation(
         total_cells,
         primary,
         paired,
-    ))
+    )))
     })();
-    let Some((selection_record_index, selection_byte_offset, selection, chain_records,
+    let Some(parsed_prefix) = parsed_prefix else { return Ok(None); };
+    let (selection_record_index, selection_byte_offset, selection, chain_records,
         cell_table_record_index, cell_table_class_tag,
         cell_table_paired_class_tag, cell_count_offset, cell_count_usize, entries_start,
-        trailing_value_offset, trailing_zero_offset, trailing_value, total_cells, primary, paired)) = parsed_prefix else {
-        return Ok(None);
-    };
+        trailing_value_offset, trailing_zero_offset, trailing_value, total_cells, primary, paired) = parsed_prefix?;
     let count = u64::try_from(cell_count_usize)
         .map_err(|_| ctx.refuse_codec_limit("f3d surface-trim cell count", 0, 1))?;
     ctx.charge_collection_items(count, "f3d surface-trim cell entries")?;

@@ -342,12 +342,13 @@ pub(crate) fn bind_mirror_constructions(
                     None,
                 )
             } else if crate::design::decode::operands::parse_entity_selection_operand(
+                ctx,
                 bytes,
                 plane_group,
                 0,
                 plane_header,
             )
-            .is_some()
+            .transpose()?.is_some()
                 || face_recipe
             {
                 (None, Some(*plane_member))

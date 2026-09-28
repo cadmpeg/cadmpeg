@@ -423,7 +423,7 @@ pub(crate) fn bind_work_point_input_carriers(
                 continue;
             }
             if let Some(selection) =
-                parse_work_point_sketch_point_frame(bytes, input.record_index(), header.byte_offset)
+                parse_work_point_sketch_point_frame(ctx, bytes, input.record_index(), header.byte_offset).transpose()?
             {
                 let point_matches = sketch_points
                     .iter()
@@ -474,11 +474,12 @@ pub(crate) fn bind_work_point_input_carriers(
                 continue;
             }
             let Some(selection) = parse_entity_selection_frame(
+                ctx,
                 bytes,
                 input.record_index(),
                 header.byte_offset,
                 header.class_tag.as_str(),
-            ) else {
+            ).transpose()? else {
                 continue;
             };
             let Ok(primary_identity) = u32::try_from(selection.primary_identity) else {
@@ -3511,10 +3512,16 @@ pub(crate) fn decode_entity_selection_operands(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            if let Some(mut operand) = parse_entity_selection_operand(bytes, group, ordinal, header)
+            if let Some(mut operand) = parse_entity_selection_operand(ctx, bytes, group, ordinal, header).transpose()?
             {
-                operand.id =
-                    ids::native_design_entity_selection_operand_id(&entry.name, header.byte_offset);
+                operand.id = design_record_id_charged(
+                    ctx, &entry.name, ":design-entity-selection-operand#", header.byte_offset,
+                    "f3d entity selection operand ID", "f3d entity selection operand ID allocation",
+                )?;
+                ctx.charge_collection_items(1, "f3d entity selection operand output")?;
+                out.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d entity selection operand output allocation", 0, 1)
+                })?;
                 out.push(operand);
             }
         }
@@ -3524,17 +3531,22 @@ pub(crate) fn decode_entity_selection_operands(
 }
 
 pub(super) fn parse_entity_selection_operand(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
-) -> Option<DesignEntitySelectionOperand> {
-    let frame = parse_entity_selection_frame(
+) -> Option<Result<DesignEntitySelectionOperand, CodecError>> {
+    let frame = match parse_entity_selection_frame(
+        ctx,
         bytes,
         header.record_index,
         header.byte_offset,
         header.class_tag.as_str(),
-    )?;
+    )? {
+        Ok(frame) => frame,
+        Err(error) => return Some(Err(error)),
+    };
     DesignEntitySelectionOperand::try_new(
         crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
             id: String::new(),
@@ -3561,6 +3573,7 @@ pub(super) fn parse_entity_selection_operand(
         },
     )
     .ok()
+    .map(Ok)
 }
 
 /// Persistent identity payload shared by entity-selection consumers that do
@@ -3594,10 +3607,11 @@ pub(in crate::design::decode) struct EntitySelectionPrefix {
 }
 
 pub(super) fn parse_entity_selection_prefix(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     record_index: u32,
-) -> Option<EntitySelectionPrefix> {
+) -> Option<Result<EntitySelectionPrefix, CodecError>> {
     // Persistent selections use a ten-byte prelude and a u32 presence value.
     // Face-recipe selections add two prelude bytes, encode presence as one
     // byte, and add three zero bytes before the first UTF-16 length.
@@ -3632,8 +3646,16 @@ pub(super) fn parse_entity_selection_prefix(
     } else {
         return None;
     };
-    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_start, 1..=256)?;
-    let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+    let (asset_id, after_asset_id) = match lp_utf16_bounded_charged(ctx, bytes, asset_start, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
+    let (context_id, after_context_id) = match lp_utf16_bounded_charged(ctx, bytes, after_asset_id, 1..=256) {
+        Ok(Some(value)) => value,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
@@ -3641,13 +3663,13 @@ pub(super) fn parse_entity_selection_prefix(
     {
         return None;
     }
-    Some(EntitySelectionPrefix {
+    Some(Ok(EntitySelectionPrefix {
         asset_id,
         asset_id_offset: u64::try_from(asset_start.checked_add(4)?).ok()?,
         context_id,
         context_id_offset: u64::try_from(after_asset_id.checked_add(4)?).ok()?,
         after_context_id,
-    })
+    }))
 }
 
 /// Match the selected curve identity carried by a nested entity-selection frame.
@@ -3687,12 +3709,16 @@ struct WorkPointSketchPointFrame {
 /// presence marker, two marked `u32` slots separated by zero `u32` values,
 /// and the following point-data record.
 fn parse_work_point_sketch_point_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     record_index: u32,
     byte_offset: u64,
-) -> Option<WorkPointSketchPointFrame> {
+) -> Option<Result<WorkPointSketchPointFrame, CodecError>> {
     let start = usize::try_from(byte_offset).ok()?;
-    let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
+    let prefix = match parse_entity_selection_prefix(ctx, bytes, start, record_index)? {
+        Ok(prefix) => prefix,
+        Err(error) => return Some(Err(error)),
+    };
     let paired_at = next_indexed_record_offset(bytes, prefix.after_context_id + 8)?;
     let nested_one_at = next_indexed_record_offset(bytes, paired_at + indexed_header::LEN)?;
     let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + indexed_header::LEN)?;
@@ -3737,7 +3763,7 @@ fn parse_work_point_sketch_point_frame(
         bytes,
         identity_at + sketch_point_identity::POINT_PERSISTENT_ID,
     )?);
-    Some(WorkPointSketchPointFrame {
+    Some(Ok(WorkPointSketchPointFrame {
         asset_id: prefix.asset_id,
         asset_id_offset: prefix.asset_id_offset,
         context_id: prefix.context_id,
@@ -3756,18 +3782,22 @@ fn parse_work_point_sketch_point_frame(
         .ok()?,
         next_record_index,
         next_byte_offset: u64::try_from(next_at).ok()?,
-    })
+    }))
 }
 
 /// Parse the nested persistent-entity frame without assigning group ownership.
 pub(super) fn parse_entity_selection_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     record_index: u32,
     byte_offset: u64,
     class_tag: &str,
-) -> Option<EntitySelectionFrame> {
+) -> Option<Result<EntitySelectionFrame, CodecError>> {
     let start = usize::try_from(byte_offset).ok()?;
-    let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
+    let prefix = match parse_entity_selection_prefix(ctx, bytes, start, record_index)? {
+        Ok(prefix) => prefix,
+        Err(error) => return Some(Err(error)),
+    };
     let paired_at = next_indexed_record_offset(bytes, prefix.after_context_id + 8)?;
     let nested_one_at = next_indexed_record_offset(bytes, paired_at + 11)?;
     let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + 11)?;
@@ -3863,10 +3893,10 @@ pub(super) fn parse_entity_selection_frame(
     } else {
         return None;
     };
-    Some(EntitySelectionFrame {
+    Some(Ok(EntitySelectionFrame {
         record_index,
         byte_offset,
-        class_tag: class_tag.to_owned().try_into().ok()?,
+        class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         asset_id: prefix.asset_id,
         asset_id_offset: prefix.asset_id_offset,
         context_id: prefix.context_id,
@@ -3878,7 +3908,7 @@ pub(super) fn parse_entity_selection_frame(
         secondary,
         next_record_index,
         next_byte_offset: u64::try_from(next_at).ok()?,
-    })
+    }))
 }
 
 /// Decode whole-body construction operands that contain one persistent body recipe.
