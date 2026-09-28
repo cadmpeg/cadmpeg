@@ -888,7 +888,7 @@ fn parse_flat(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
     let frames = collect_object_stream_frames(ctx, bytes)?;
-    let records = records_from_frames(bytes, &frames);
+    let records = records_from_frames(ctx, bytes, &frames)?;
     parse_from_records(ctx, bytes, &records, &frames, true, refusal)
 }
 
@@ -898,7 +898,7 @@ pub(in crate::families) fn parse_from_frames(
     frames: &[ObjectFrame],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
-    let records = records_from_frames(bytes, frames);
+    let records = records_from_frames(ctx, bytes, frames)?;
     parse_from_records(ctx, bytes, &records, frames, true, refusal)
 }
 
@@ -1029,7 +1029,7 @@ fn parse_from_records_with_class21(
         })
         .collect();
     let mut conflicting_surfaces = HashSet::new();
-    for surface_id in topology_surface_references(records) {
+    for surface_id in topology_surface_references(ctx, records)? {
         if surfaces.contains_key(&surface_id) {
             continue;
         }
@@ -1850,9 +1850,13 @@ pub(in crate::families) fn edge_support_pcurve_references_from_frames(
                 })
                 .or_insert(Some(wrapper));
         } else if frame.family == 0xb5 && frame.class == 0x23 {
-            let Some(references) = record_references(&record).try_into().ok() else {
+            let mut references = record_references(&record);
+            let (Some(first), Some(second), None) =
+                (references.next(), references.next(), references.next())
+            else {
                 continue;
             };
+            let references = [first, second];
             wrappers
                 .entry(frame.object_id)
                 .and_modify(|stored| {
@@ -2349,7 +2353,8 @@ fn implicit_pcurve_bindings(
                     .is_some_and(|incidence| incidence.lanes.iter().any(|lane| lane.curve == pcurve)))
             };
             let curve_wrapper_contains = by_id.get(&edge.support).is_some_and(|wrapper| {
-                matches!(wrapper.class, 0x23..=0x25) && record_references(wrapper).contains(&pcurve)
+                matches!(wrapper.class, 0x23..=0x25)
+                    && record_references(wrapper).any(|reference| reference == pcurve)
             });
             if !(curve_wrapper_contains
                 || endpoint_incidence_contains(edge.parameter_incidences[0])?
@@ -4915,11 +4920,16 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
 #[cfg(test)]
 fn records(bytes: &[u8]) -> Vec<B5Record> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    records_from_frames(bytes, &frames)
+    crate::test_support::with_service_context(|ctx| records_from_frames(ctx, bytes, &frames))
+        .expect("service budget")
 }
 
-fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
-    records_from_frames_budgeted(bytes, frames, None)
+fn records_from_frames(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+) -> Result<Vec<B5Record>, CodecError> {
+    records_from_frames_budgeted(ctx, bytes, frames, None)
 }
 
 /// Dependency-admission fixpoint with an optional session work budget.
@@ -4929,12 +4939,14 @@ fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
 /// made a large population spend its bounded work slice on repeated scans
 /// before the selected topology graph could be parsed.
 fn records_from_frames_budgeted(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget<'_>>,
-) -> Vec<B5Record> {
-    let (mut records, candidates) = framed_records_and_dependency_candidates(bytes, frames, budget);
-    admit_dependency_records(bytes, &mut records, &candidates, budget)
+) -> Result<Vec<B5Record>, CodecError> {
+    let (mut records, candidates) =
+        framed_records_and_dependency_candidates(ctx, bytes, frames, budget)?;
+    admit_dependency_records(ctx, bytes, &mut records, &candidates, budget)
 }
 
 /// Materialize one already-indexed topology population.
@@ -4943,32 +4955,43 @@ fn records_from_frames_budgeted(
 /// topology record as it is materialized, then charges each admitted
 /// dependency in the existing closure fixpoint.
 fn records_from_indexed_frames_budgeted(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget<'_>>,
-) -> Option<Vec<B5Record>> {
+) -> Result<Option<Vec<B5Record>>, CodecError> {
     let (mut records, candidates) =
-        indexed_topology_records_and_dependency_candidates(bytes, frames, budget)?;
-    let records = admit_dependency_records(bytes, &mut records, &candidates, budget);
+        match indexed_topology_records_and_dependency_candidates(ctx, bytes, frames, budget)? {
+            Some(indexed) => indexed,
+            None => return Ok(None),
+        };
+    let records = admit_dependency_records(ctx, bytes, &mut records, &candidates, budget)?;
     if budget.is_some_and(WorkBudget::exhausted) {
-        None
+        Ok(None)
     } else {
-        Some(records)
+        Ok(Some(records))
     }
 }
 
 fn admit_dependency_records(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &mut Vec<B5Record>,
     candidates: &DependencyCandidates,
     budget: Option<&WorkBudget<'_>>,
-) -> Vec<B5Record> {
-    let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
-    let mut pending: HashSet<u32> = records
-        .iter()
-        .flat_map(record_references)
-        .filter(|object_id| candidates.get(object_id).is_some_and(Option::is_some))
-        .collect();
+) -> Result<Vec<B5Record>, CodecError> {
+    let mut existing = HashSet::new();
+    let mut pending = HashSet::new();
+    for record in records.iter() {
+        crate::resource::insert_set(ctx, &mut existing, record.object_id,
+            "catia_b5_existing_dependency_ids")?;
+        for reference in record_references(record) {
+            if candidates.get(&reference).is_some_and(Option::is_some) {
+                crate::resource::insert_set(ctx, &mut pending, reference,
+                    "catia_b5_pending_dependency_ids")?;
+            }
+        }
+    }
     let mut admitted = HashSet::new();
     loop {
         pending.retain(|object_id| !existing.contains(object_id) && !admitted.contains(object_id));
@@ -4978,43 +5001,47 @@ fn admit_dependency_records(
         if budget.is_some_and(|budget| !budget.charge_by(pending.len())) {
             break;
         }
-        let mut found = pending
-            .iter()
-            .filter_map(|object_id| {
-                candidates
-                    .get(object_id)
-                    .and_then(Option::as_ref)
-                    .and_then(|frame| record_from_frame(bytes, frame))
-            })
-            .collect::<Vec<_>>();
+        let mut found = Vec::new();
+        for object_id in &pending {
+            if let Some(frame) = candidates.get(object_id).and_then(Option::as_ref) {
+                if let Some(record) = record_from_frame(ctx, bytes, frame)? {
+                    crate::resource::push(ctx, &mut found, record,
+                        "catia_b5_found_dependency_records")?;
+                }
+            }
+        }
         if found.is_empty() {
             break;
         }
         found.sort_unstable_by_key(|record| record.offset);
         pending.clear();
         for candidate in found {
-            admitted.insert(candidate.object_id);
-            pending.extend(
-                record_references(&candidate)
-                    .into_iter()
-                    .filter(|object_id| candidates.get(object_id).is_some_and(Option::is_some)),
-            );
-            records.push(candidate);
+            crate::resource::insert_set(ctx, &mut admitted, candidate.object_id,
+                "catia_b5_admitted_dependency_ids")?;
+            for reference in record_references(&candidate) {
+                if candidates.get(&reference).is_some_and(Option::is_some) {
+                    crate::resource::insert_set(ctx, &mut pending, reference,
+                        "catia_b5_pending_dependency_ids")?;
+                }
+            }
+            crate::resource::push(ctx, records, candidate,
+                "catia_b5_admitted_dependency_records")?;
         }
     }
-    std::mem::take(records)
+    Ok(std::mem::take(records))
 }
 
 /// Build the topology records and the exact dependency index in one frame
 /// pass. The two views used to scan the same frame slice independently, which
 /// spent the bounded selection budget twice before dependency closure began.
 fn framed_records_and_dependency_candidates(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget<'_>>,
-) -> (Vec<B5Record>, DependencyCandidates) {
+) -> Result<(Vec<B5Record>, DependencyCandidates), CodecError> {
     if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
-        return (Vec::new(), HashMap::new());
+        return Ok((Vec::new(), HashMap::new()));
     }
 
     let mut records = Vec::<(usize, B5Record)>::new();
@@ -5024,24 +5051,24 @@ fn framed_records_and_dependency_candidates(
         if is_reference_dependency_class(frame.family, frame.class)
             && frame_payload(bytes, frame).is_some()
         {
-            candidates
-                .entry(frame.object_id)
-                .and_modify(|slot| {
+            if let Some(slot) = candidates.get_mut(&frame.object_id) {
                     if slot
                         .as_ref()
                         .is_some_and(|existing| !same_object_frame(bytes, existing, frame))
                     {
                         *slot = None;
                     }
-                })
-                .or_insert(Some(*frame));
+            } else {
+                crate::resource::insert_map(ctx, &mut candidates, frame.object_id, Some(*frame),
+                    "catia_b5_dependency_candidates")?;
+            }
         }
         if !((frame.family == 0xb5 && is_topology_class(frame.class))
             || (frame.family == 0xa8 && matches!(frame.class, 0x34 | 0x62)))
         {
             continue;
         }
-        let Some(record) = record_from_frame(bytes, frame) else {
+        let Some(record) = record_from_frame(ctx, bytes, frame)? else {
             continue;
         };
         if seen
@@ -5052,28 +5079,34 @@ fn framed_records_and_dependency_candidates(
         {
             continue;
         }
-        seen.insert(frame.object_id, (record.class, record.payload.clone()));
-        records.push((frame.end, record));
+        let seen_payload = crate::resource::copy_retained_slice(ctx, &record.payload,
+            "catia_b5_seen_record_payload")?;
+        crate::resource::insert_map(ctx, &mut seen, frame.object_id, (record.class, seen_payload),
+            "catia_b5_seen_records")?;
+        crate::resource::push(ctx, &mut records, (frame.end, record),
+            "catia_b5_framed_records")?;
     }
     records.sort_unstable_by(|(left_end, left), (right_end, right)| {
         left_end
             .cmp(right_end)
             .then_with(|| right.offset.cmp(&left.offset))
     });
-    (
-        records.into_iter().map(|(_, record)| record).collect(),
-        candidates,
-    )
+    let mut ordered = Vec::new();
+    for (_, record) in records {
+        crate::resource::push(ctx, &mut ordered, record, "catia_b5_ordered_framed_records")?;
+    }
+    Ok((ordered, candidates))
 }
 
 /// Build topology records and dependency candidates from an existing frame
 /// index without charging a second frame walk. Candidate identity conflicts
 /// remain ambiguous until the dependency is requested.
 fn indexed_topology_records_and_dependency_candidates(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget<'_>>,
-) -> Option<(Vec<B5Record>, DependencyCandidates)> {
+) -> Result<Option<(Vec<B5Record>, DependencyCandidates)>, CodecError> {
     let mut records = Vec::<(usize, B5Record)>::new();
     let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
     let mut candidates = DependencyCandidates::new();
@@ -5081,17 +5114,17 @@ fn indexed_topology_records_and_dependency_candidates(
         if is_reference_dependency_class(frame.family, frame.class)
             && frame_payload(bytes, frame).is_some()
         {
-            candidates
-                .entry(frame.object_id)
-                .and_modify(|slot| {
+            if let Some(slot) = candidates.get_mut(&frame.object_id) {
                     if slot
                         .as_ref()
                         .is_some_and(|existing| !same_object_frame(bytes, existing, frame))
                     {
                         *slot = None;
                     }
-                })
-                .or_insert(Some(*frame));
+            } else {
+                crate::resource::insert_map(ctx, &mut candidates, frame.object_id, Some(*frame),
+                    "catia_b5_indexed_dependency_candidates")?;
+            }
         }
         if !((frame.family == 0xb5 && is_topology_class(frame.class))
             || (frame.family == 0xa8 && matches!(frame.class, 0x34 | 0x62)))
@@ -5099,9 +5132,9 @@ fn indexed_topology_records_and_dependency_candidates(
             continue;
         }
         if budget.is_some_and(|budget| !budget.charge()) {
-            return None;
+            return Ok(None);
         }
-        let record = record_from_frame(bytes, frame)?;
+        let Some(record) = record_from_frame(ctx, bytes, frame)? else { return Ok(None) };
         if seen
             .get(&frame.object_id)
             .is_some_and(|(seen_class, seen_payload)| {
@@ -5110,18 +5143,24 @@ fn indexed_topology_records_and_dependency_candidates(
         {
             continue;
         }
-        seen.insert(frame.object_id, (record.class, record.payload.clone()));
-        records.push((frame.end, record));
+        let seen_payload = crate::resource::copy_retained_slice(ctx, &record.payload,
+            "catia_b5_indexed_seen_payload")?;
+        crate::resource::insert_map(ctx, &mut seen, frame.object_id, (record.class, seen_payload),
+            "catia_b5_indexed_seen_records")?;
+        crate::resource::push(ctx, &mut records, (frame.end, record),
+            "catia_b5_indexed_topology_records")?;
     }
     records.sort_unstable_by(|(left_end, left), (right_end, right)| {
         left_end
             .cmp(right_end)
             .then_with(|| right.offset.cmp(&left.offset))
     });
-    Some((
-        records.into_iter().map(|(_, record)| record).collect(),
-        candidates,
-    ))
+    let mut ordered = Vec::new();
+    for (_, record) in records {
+        crate::resource::push(ctx, &mut ordered, record,
+            "catia_b5_ordered_indexed_records")?;
+    }
+    Ok(Some((ordered, candidates)))
 }
 
 fn same_object_frame(bytes: &[u8], left: &ObjectFrame, right: &ObjectFrame) -> bool {
@@ -5138,14 +5177,20 @@ fn frame_payload<'a>(bytes: &'a [u8], frame: &ObjectFrame) -> Option<&'a [u8]> {
     bytes.get(frame.start.checked_add(header)?..frame.end)
 }
 
-fn record_from_frame(bytes: &[u8], frame: &ObjectFrame) -> Option<B5Record> {
-    Some(B5Record {
+fn record_from_frame(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    frame: &ObjectFrame,
+) -> Result<Option<B5Record>, CodecError> {
+    let Some(payload) = frame_payload(bytes, frame) else { return Ok(None) };
+    Ok(Some(B5Record {
         offset: frame.start,
         family: frame.family,
         class: frame.class,
         object_id: frame.object_id,
-        payload: frame_payload(bytes, frame)?.to_vec(),
-    })
+        payload: crate::resource::copy_retained_slice(ctx, payload,
+            "catia_b5_record_payload")?,
+    }))
 }
 
 #[cfg(test)]
@@ -5172,7 +5217,9 @@ fn framed_records(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
             class,
             object_id,
         };
-        let Some(record) = record_from_frame(bytes, &frame) else {
+        let Some(record) = crate::test_support::with_service_context(|ctx| {
+            record_from_frame(ctx, bytes, &frame)
+        }).expect("service budget") else {
             continue;
         };
         if seen
@@ -5530,7 +5577,7 @@ pub(in crate::families) fn select_object_stream_population(
         let mut census_records = Vec::new();
         for run in &runs {
             let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
-            let records = records_from_frames_budgeted(&streams[run.stream_index], frames, budget);
+            let records = records_from_frames_budgeted(ctx, &streams[run.stream_index], frames, budget)?;
             if budget.is_some_and(WorkBudget::exhausted) {
                 return Ok(exhausted());
             }
@@ -5547,7 +5594,7 @@ pub(in crate::families) fn select_object_stream_population(
     let selected_stream = &streams[selected.stream_index];
     let selected_frames = &stream_frames[selected.stream_index][selected.frame_range.clone()];
     let Some(selected_records) =
-        records_from_indexed_frames_budgeted(selected_stream, selected_frames, budget)
+        records_from_indexed_frames_budgeted(ctx, selected_stream, selected_frames, budget)?
     else {
         return Ok(exhausted());
     };
@@ -5568,7 +5615,7 @@ pub(in crate::families) fn select_object_stream_population(
             continue;
         }
         let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
-        let records = records_from_frames_budgeted(&streams[run.stream_index], frames, budget);
+        let records = records_from_frames_budgeted(ctx, &streams[run.stream_index], frames, budget)?;
         if budget.is_some_and(WorkBudget::exhausted) {
             return Ok(exhausted());
         }
@@ -5590,7 +5637,7 @@ pub(in crate::families) fn select_object_stream_population(
         record.offset -= selected.range.start;
     }
     if topology {
-        let referenced = topology_surface_references(&records);
+        let referenced = topology_surface_references(ctx, &records)?;
         let mut owned_ids = HashSet::new();
         for record in &records {
             crate::resource::insert_set(ctx, &mut owned_ids, record.object_id,
@@ -5654,7 +5701,7 @@ pub(in crate::families) fn select_object_stream_population(
             }
         }
         if source.len() != selected.range.len() {
-            records = records_from_frames(&source, &frames);
+            records = records_from_frames(ctx, &source, &frames)?;
         }
     }
     Ok(ObjectStreamSelection::Selected {
@@ -5675,8 +5722,8 @@ fn owned_object_stream_population(
 ) -> Result<Vec<u8>, CodecError> {
     let run = &stream[topology_run.clone()];
     let run_frames = collect_object_stream_frames(ctx, run)?;
-    let run_records = records_from_frames(run, &run_frames);
-    let referenced = topology_surface_references(&run_records);
+    let run_records = records_from_frames(ctx, run, &run_frames)?;
+    let referenced = topology_surface_references(ctx, &run_records)?;
     let mut owned_ids = HashSet::new();
     for record in &run_records {
         crate::resource::insert_set(ctx, &mut owned_ids, record.object_id,
@@ -5730,28 +5777,30 @@ fn owned_object_stream_population(
     Ok(population)
 }
 
-fn record_references(record: &B5Record) -> Vec<u32> {
+fn record_references(record: &B5Record) -> impl Iterator<Item = u32> + '_ {
     let mut position = 0;
-    let Some(count) = counted_cardinality(&record.payload, &mut position) else {
-        return Vec::new();
-    };
+    let count = counted_cardinality(&record.payload, &mut position).unwrap_or_default();
     (0..count)
-        .map_while(|_| wire::tokens::object_ref(&record.payload, &mut position, true))
-        .collect()
+        .map_while(move |_| wire::tokens::object_ref(&record.payload, &mut position, true))
 }
 
-fn topology_surface_references(records: &[B5Record]) -> HashSet<u32> {
-    records
-        .iter()
-        .filter_map(|record| {
-            let references = record_references(record);
-            match record.class {
-                0x5f => references.first().copied(),
-                0x62 => references.last().copied(),
-                _ => None,
-            }
-        })
-        .collect()
+fn topology_surface_references(
+    ctx: &DecodeContext<'_>,
+    records: &[B5Record],
+) -> Result<HashSet<u32>, CodecError> {
+    let mut surfaces = HashSet::new();
+    for record in records {
+        let reference = match record.class {
+            0x5f => record_references(record).next(),
+            0x62 => record_references(record).last(),
+            _ => None,
+        };
+        if let Some(reference) = reference {
+            crate::resource::insert_set(ctx, &mut surfaces, reference,
+                "catia_b5_topology_surface_references")?;
+        }
+    }
+    Ok(surfaces)
 }
 
 fn is_referenced_geometry_class(family: u8, class: u8) -> bool {
@@ -5904,7 +5953,9 @@ fn parse_face_record(
 #[cfg(test)]
 fn typed_face_records(bytes: &[u8]) -> BTreeMap<u32, B5FaceRecord> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = crate::test_support::with_service_context(|ctx| {
+        records_from_frames(ctx, bytes, &frames)
+    }).expect("service budget");
     crate::test_support::with_service_context(|ctx| {
         typed_face_records_from_records(ctx, &records).expect("service decode")
     })
@@ -5929,7 +5980,9 @@ pub(in crate::families) fn typed_face_records_from_records(
 #[cfg(test)]
 fn typed_loop_records(bytes: &[u8]) -> BTreeMap<u32, B5Loop> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = crate::test_support::with_service_context(|ctx| {
+        records_from_frames(ctx, bytes, &frames)
+    }).expect("service budget");
     crate::test_support::with_service_context(|ctx| {
         typed_loop_records_from_records(ctx, &records).expect("service decode")
     })
@@ -5954,7 +6007,9 @@ pub(in crate::families) fn typed_loop_records_from_records(
 #[cfg(test)]
 fn typed_edge_records(bytes: &[u8]) -> BTreeMap<u32, B5Edge> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = crate::test_support::with_service_context(|ctx| {
+        records_from_frames(ctx, bytes, &frames)
+    }).expect("service budget");
     crate::test_support::with_service_context(|ctx| {
         typed_edge_records_from_records(ctx, &records).expect("service decode")
     })
@@ -5979,7 +6034,9 @@ pub(in crate::families) fn typed_edge_records_from_records(
 #[cfg(test)]
 fn typed_vertex_incidence_links(bytes: &[u8]) -> BTreeMap<u32, B5VertexIncidenceLink> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = crate::test_support::with_service_context(|ctx| {
+        records_from_frames(ctx, bytes, &frames)
+    }).expect("service budget");
     crate::test_support::with_service_context(|ctx| {
         typed_vertex_incidence_links_from_records(ctx, &records).expect("service decode")
     })
@@ -6004,7 +6061,9 @@ pub(in crate::families) fn typed_vertex_incidence_links_from_records(
 #[cfg(test)]
 fn typed_class_21_pcurves(bytes: &[u8]) -> BTreeMap<u32, B5Pcurve> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = crate::test_support::with_service_context(|ctx| {
+        records_from_frames(ctx, bytes, &frames)
+    }).expect("service budget");
     typed_class_21_pcurves_from_records(&records)
 }
 
@@ -6022,7 +6081,9 @@ pub(in crate::families) fn typed_class_21_pcurves_from_records(
 #[cfg(test)]
 fn typed_parameter_incidences(bytes: &[u8]) -> BTreeMap<u32, B5ParameterIncidence> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = crate::test_support::with_service_context(|ctx| {
+        records_from_frames(ctx, bytes, &frames)
+    }).expect("service budget");
     crate::test_support::with_service_context(|ctx| {
         typed_parameter_incidences_from_records(ctx, &records).expect("service decode")
     })
@@ -6047,7 +6108,9 @@ pub(in crate::families) fn typed_parameter_incidences_from_records(
 #[cfg(test)]
 fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<u32>> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    let records = records_from_frames(bytes, &frames);
+    let records = crate::test_support::with_service_context(|ctx| {
+        records_from_frames(ctx, bytes, &frames)
+    }).expect("service budget");
     crate::test_support::with_service_context(|ctx| {
         typed_vertex_incidence_rosters_from_records(ctx, &records).expect("service decode")
     })
@@ -6107,7 +6170,7 @@ pub(in crate::families) fn edge_face_references_from_frames(
     bytes: &[u8],
     frames: &[ObjectFrame],
 ) -> Result<HashMap<u32, HashSet<u32>>, CodecError> {
-    let records = records_from_frames(bytes, frames);
+    let records = records_from_frames(ctx, bytes, frames)?;
     let mut edge_ids = HashSet::new();
     for record in records.iter().filter(|record| record.family == 0xb5 && record.class == 0x5e) {
         crate::resource::insert_set(ctx, &mut edge_ids, record.object_id,

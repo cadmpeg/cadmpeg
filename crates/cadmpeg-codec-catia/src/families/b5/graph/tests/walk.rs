@@ -1,13 +1,15 @@
 use crate::families::b5::graph::controls::{B5EdgeTerminalControl, B5VertexIncidenceControl};
 use crate::families::b5::graph::tests::object_stream_pcurve;
 use crate::families::b5::graph::{
-    a8_class21_pcurves, collect_object_stream_frames, edge_vertex_references, face_loop_owner_counts, framed_records,
+    a8_class21_pcurves, admit_dependency_records, collect_object_stream_frames,
+    edge_vertex_references, face_loop_owner_counts, framed_records,
     implicit_pcurve_bindings, is_referenced_geometry_class, object_stream_frames,
     object_stream_populations, object_stream_run_ranges, parameter_incidence, parse,
     parse_a8_class21_pcurve, parse_edge, parse_extrusion_directrix, parse_extrusion_surface,
     parse_extrusion_surface_with_context, parse_flat, parse_from_frames, parse_from_records,
     parse_supported_surface, parse_vertex_incidence_link, propagate_vertex_points, records,
-    records_from_frames, records_from_frames_budgeted, select_object_stream_population,
+    record_from_frame, records_from_frames, records_from_frames_budgeted,
+    select_object_stream_population, topology_surface_references,
     supported_surface_parameters_match_carrier, supported_surface_pcurves_match, surface_node,
     targeted_geometry_graph, topology_root_run_ranges, topology_runs, typed_class_21_pcurves,
     typed_class_21_pcurves_from_records, typed_edge_records, typed_edge_records_from_records,
@@ -17,7 +19,7 @@ use crate::families::b5::graph::{
     typed_vertex_incidence_links_from_records, typed_vertex_incidence_rosters,
     typed_vertex_incidence_rosters_from_records, B5Edge, B5ExtrusionDirectrix, B5ExtrusionSurface,
     B5IncidenceLane, B5OffsetSurface, B5Record, B5SupportedSurface, B5SupportedSurfaceParameters,
-    B5Surface, B5VertexIncidenceLink,
+    B5Surface, B5VertexIncidenceLink, ObjectFrame,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -581,7 +583,9 @@ fn wide_header_loop_is_a_topology_root_for_population_selection() {
 fn indexed_frame_parse_matches_one_shot_parse() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
-    let records = records_from_frames(&bytes, &frames);
+    let records = crate::test_support::with_service_context(|ctx| {
+        records_from_frames(ctx, &bytes, &frames)
+    }).expect("service budget");
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| parse(
@@ -699,13 +703,67 @@ fn typed_vertex_incidence_link_index_refuses_collection_limit() {
 fn budgeted_dependency_admission_matches_one_shot_records() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
-    let expected = records_from_frames(&bytes, &frames);
+    let expected = crate::test_support::with_service_context(|ctx| {
+        records_from_frames(ctx, &bytes, &frames)
+    }).expect("service budget");
     let budget = cadmpeg_core::decode::WorkBudget::new(10_000);
 
-    let actual = records_from_frames_budgeted(&bytes, &frames, Some(&budget));
+    let actual = crate::test_support::with_service_context(|ctx| {
+        records_from_frames_budgeted(ctx, &bytes, &frames, Some(&budget))
+    }).expect("service budget");
 
     assert_eq!(actual, expected);
     assert!(!budget.exhausted());
+}
+
+#[test]
+fn b5_record_payload_and_dependency_closure_refuse_caller_limits() {
+    let bytes = [0u8; 9];
+    let frame = ObjectFrame {
+        start: 0,
+        end: bytes.len(),
+        family: 0xb5,
+        class: 0x18,
+        object_id: 9,
+    };
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        record_from_frame(ctx, &bytes, &frame)
+    });
+    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_record_payload"));
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5f,
+        object_id: 7,
+        payload: vec![0x81, 0x89],
+    };
+    let candidates = HashMap::from([(9, Some(frame))]);
+    for (limit, operation) in [
+        (0, "catia_b5_existing_dependency_ids"),
+        (1, "catia_b5_pending_dependency_ids"),
+        (2, "catia_b5_record_payload"),
+        (3, "catia_b5_found_dependency_records"),
+        (4, "catia_b5_admitted_dependency_ids"),
+        (5, "catia_b5_admitted_dependency_records"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            admit_dependency_records(ctx, &bytes, &mut vec![record.clone()], &candidates, None)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation));
+    }
+    let surfaces = crate::test_support::with_collection_limit(0, |ctx| {
+        topology_surface_references(ctx, std::slice::from_ref(&record))
+    });
+    assert!(matches!(surfaces, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_topology_surface_references"));
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        admit_dependency_records(ctx, &bytes, &mut vec![record.clone()], &candidates, None)
+    }).expect("service budget").len(), 2);
+    assert_eq!(crate::test_support::with_service_context(|ctx| {
+        topology_surface_references(ctx, &[record])
+    }).expect("service budget"), std::collections::HashSet::from([9]));
 }
 
 #[test]
