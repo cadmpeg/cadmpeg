@@ -2023,18 +2023,18 @@ pub(super) fn complete_coupled_support_uv_with_geometry_budget_for_test(
     .expect("the coupled support-uv wave pairs its lanes");
 }
 
-pub(super) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
+pub(super) fn complete_parameterization_equivalent_support_uv(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+) -> Result<(), cadmpeg_core::CodecError> {
     let replacements = {
-        let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-        ir.model
-            .procedural_curves
-            .iter()
-            .enumerate()
-            .filter_map(|(procedural_index, procedural)| {
+        let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
+        let mut replacements = Vec::new();
+        for (procedural_index, procedural) in ir.model.procedural_curves.iter().enumerate() {
                 let ProceduralCurveDefinition::Intersection { context, .. } =
                     procedural.definition()
                 else {
-                    return None;
+                    continue;
                 };
                 let missing = context.sides().each_ref().map(|side| {
                     pcurve_requires_completion(side.pcurve.as_ref().map(|pcurve| &pcurve.geometry))
@@ -2042,7 +2042,7 @@ pub(super) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
                 let target = match missing {
                     [true, false] => 0,
                     [false, true] => 1,
-                    _ => return None,
+                    _ => continue,
                 };
                 let source = 1 - target;
                 let (Some(target_surface), Some(source_surface), Some(_)) = (
@@ -2050,16 +2050,21 @@ pub(super) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
                     context.sides()[source].surface.as_ref(),
                     context.sides()[source].pcurve.as_ref(),
                 ) else {
-                    return None;
+                    continue;
                 };
-                parameterization_equivalent_surfaces_with_index(
+                if parameterization_equivalent_surfaces_with_index(
                     &model_index,
                     target_surface,
                     source_surface,
-                )
-                .then_some((procedural_index, target, source))
-            })
-            .collect::<Vec<_>>()
+                ) {
+                    ctx.charge_collection_items(1, "nx equivalent support UV replacements")?;
+                    replacements.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("nx equivalent support UV replacements", 0, 1)
+                    })?;
+                    replacements.push((procedural_index, target, source));
+                }
+        }
+        replacements
     };
     for (procedural_index, side, source) in replacements {
         let Some(context) = ir.model.procedural_curves[procedural_index].intersection_context_mut()
@@ -2073,9 +2078,10 @@ pub(super) fn complete_parameterization_equivalent_support_uv(ir: &mut CadIr) {
                 .as_ref()
                 .map(|pcurve| &pcurve.geometry),
         ) {
-            context.copy_pcurve(source, side);
+            context.try_copy_pcurve_for_decode(ctx, source, side)?;
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]

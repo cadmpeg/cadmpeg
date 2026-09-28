@@ -6970,6 +6970,32 @@ impl IntcurveSupportContext {
         target.pcurve.clone_from(&source.pcurve);
     }
 
+    /// Copy a support pcurve under a decoder's allocation limits.
+    pub fn try_copy_pcurve_for_decode(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        source: usize,
+        target: usize,
+    ) -> Result<(), CodecError> {
+        if source == target {
+            return Ok(());
+        }
+        let copied = self.sides[source]
+            .pcurve
+            .as_ref()
+            .map(|pcurve| {
+                Ok::<_, CodecError>(SupportPcurve::new(
+                    pcurve
+                        .geometry
+                        .try_clone_for_decode(ctx, "intersection support pcurve copy")?,
+                    pcurve.parameter_range,
+                ))
+            })
+            .transpose()?;
+        self.sides[target].pcurve = copied;
+        Ok(())
+    }
+
     /// Return the ordered support sides.
     #[must_use]
     pub const fn sides(&self) -> &[IntcurveSupportSide; 2] {

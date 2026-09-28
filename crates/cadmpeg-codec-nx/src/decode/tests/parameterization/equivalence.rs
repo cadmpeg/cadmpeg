@@ -117,7 +117,10 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         &offsets[0],
         &offsets[1]
     ));
-    complete_parameterization_equivalent_support_uv(&mut ir);
+    crate::test_support::with_decode_context(|ctx| {
+        complete_parameterization_equivalent_support_uv(ctx, &mut ir)
+    })
+    .expect("equivalent support copy");
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[0].definition()
     else {
@@ -234,5 +237,40 @@ fn cyclic_offset_supports_are_not_parameterization_equivalent() {
         &ir,
         &surfaces[0],
         &surfaces[1],
+    ));
+}
+
+#[test]
+fn equivalent_support_completion_refuses_model_index_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::geometry::Surface;
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId::mint("test:model:entity#equivalence-limit-surface")
+            .expect("identity grammar"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("plane frame"),
+        )),
+        source_object: None,
+    });
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("bounded test input");
+
+    assert!(matches!(
+        complete_parameterization_equivalent_support_uv(&ctx, &mut ir),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "model procedural surface carriers"
     ));
 }
