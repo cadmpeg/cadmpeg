@@ -32,6 +32,40 @@ fn native_fastload_result(
     super::super::rmfastload_object_id_table(&ctx, &container)
 }
 
+fn store_header_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
+    let file = prt_with_indexed_om_section();
+    let scan_arena = DecodeArena::new();
+    let scan_policy = DecodePolicy::service();
+    let (scan_ctx, _) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
+    let container = container::scan_bytes(&scan_ctx, file.as_slice()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::super::store_headers(&ctx, &container).unwrap_err()
+}
+
+#[test]
+fn store_header_route_refuses_collection_limit() {
+    let error = store_header_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn store_header_route_refuses_retained_limit() {
+    let error = store_header_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn store_header_route_refuses_work_limit() {
+    let error = store_header_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits));
+}
+
 fn assert_fastload_limit(error: &CodecError, dimension: ResourceDimension, operation: &str) {
     let CodecError::ResourceLimit(limit) = error else {
         panic!("FastLoad must return a resource refusal: {error}");

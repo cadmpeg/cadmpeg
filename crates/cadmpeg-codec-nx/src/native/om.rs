@@ -5309,45 +5309,42 @@ pub(super) fn store_headers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
 ) -> Result<Vec<StoreHeader>, cadmpeg_core::CodecError> {
-    Ok(container
-        .indexed_om_sections(ctx)?
-        .into_iter()
-        .enumerate()
-        .filter_map(|(section_ordinal, (entry, section))| {
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            match &section.store {
-                IndexedStore::Fixed { records } => records.iter().find_map(|record| {
-                    crate::om::store_version(record.bytes, record.offset).map(|version| {
-                        StoreHeader::Fixed(FixedStoreHeader {
-                            object_id: record.object_id.0,
-                            header: OffsetStoreHeader {
-                                id: format!("nx:om-store-headers:store#{section_ordinal}"),
-                                section_ordinal: section_ordinal as u32,
-                                version: version.value.into_owned(),
-                                source_entry: entry.name.clone(),
-                                source_offset: entry_offset + version.offset as u64,
-                            },
-                        })
-                    })
+    let mut output = Vec::new();
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections(ctx)?.into_iter().enumerate() {
+        let candidate = match &section.store {
+            IndexedStore::Fixed { records } => records.iter().find_map(|record| {
+                crate::om::store_version(record.bytes, record.offset)
+                    .map(|version| (Some(record.object_id.0), version))
+            }),
+            IndexedStore::OffsetOnly { control, records, .. } =>
+                std::iter::once(control).chain(records.iter()).find_map(|record| {
+                    crate::om::store_version(record.bytes, record.offset)
+                        .map(|version| (None, version))
                 }),
-                IndexedStore::OffsetOnly {
-                    control, records, ..
-                } => std::iter::once(control)
-                    .chain(records.iter())
-                    .find_map(|record| {
-                        crate::om::store_version(record.bytes, record.offset).map(|version| {
-                            StoreHeader::OffsetOnly(OffsetStoreHeader {
-                                id: format!("nx:om-store-headers:store#{section_ordinal}"),
-                                section_ordinal: section_ordinal as u32,
-                                version: version.value.into_owned(),
-                                source_entry: entry.name.clone(),
-                                source_offset: entry_offset + version.offset as u64,
-                            })
-                        })
-                    }),
-            }
-        })
-        .collect())
+        };
+        let Some((object_id, version)) = candidate else { continue; };
+        let section_ordinal_u32 = u32::try_from(section_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX store header section ordinal", 0, 1))?;
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let source_offset = entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(version.offset))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX store header source offset", 0, 1))?;
+        ctx.charge_collection_items(1, "NX store headers")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<StoreHeader>()), "retain NX store header")?;
+        output.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX store headers", 0, 1))?;
+        let header = OffsetStoreHeader {
+            id: retained_om_number_id(ctx, "nx:om-store-headers:store#", cadmpeg_core::decode::u64_from_index(section_ordinal), "NX store header id")?,
+            section_ordinal: section_ordinal_u32,
+            version: version.value.try_into_owned_for_decode(ctx)?,
+            source_entry: copy_om_retained_text(ctx, &entry.name, "NX store header source entry")?,
+            source_offset,
+        };
+        output.push(match object_id {
+            Some(object_id) => StoreHeader::Fixed(FixedStoreHeader { object_id, header }),
+            None => StoreHeader::OffsetOnly(header),
+        });
+    }
+    Ok(output)
 }
 
 /// Decode self-framed printable values from bounded NX OM records.
