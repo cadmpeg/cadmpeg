@@ -482,10 +482,13 @@ pub(super) fn try_decode_freeform_surfaces(
                 Err(error) => return Some(Err(error)),
             };
         let a5_nurbs_curve_count = a5_nurbs_curves.len();
-        let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles_from_records(
-            &scan.data,
-            &consolidated_records,
-        );
+        let b2_spatial_circles = match crate::resource::collect_vec(ctx,
+            crate::families::b2::records::b2_spatial_circles_from_records(
+                &scan.data, &consolidated_records,
+            ), "catia_freeform_spatial_circles") {
+            Ok(circles) => circles,
+            Err(error) => return Some(Err(error)),
+        };
         let b2_line_profile_count = crate::families::b2::records::b2_line_profiles_from_records(
             &scan.data,
             &consolidated_records,
@@ -3153,6 +3156,25 @@ fn append_a8_rolling_ball_pools(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn freeform_spatial_circle_collection_refuses_before_growth() {
+        let mut bytes = vec![0xb2, 0x03, 0x0f, 112, 0x05];
+        let cosine = 0.696_706_709_347_165_3_f64;
+        let sine = 0.717_356_090_899_522_8_f64;
+        for value in [17.0, 23.0, 13.0, cosine, -sine, 0.0, sine, cosine,
+            -0.0, 7.0, 0.0, 11.2, 1.0, -16.391_148_575_128_55] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            crate::resource::collect_vec(ctx,
+                crate::families::b2::records::b2_spatial_circles_from_records(&bytes, &records),
+                "catia_freeform_spatial_circles")
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_freeform_spatial_circles"));
+    }
+
     use super::{
         append_consolidated_line_profiles, append_freeform_surface_pools,
         append_resolved_consolidated_surface_curves, attach_standalone_wires,
