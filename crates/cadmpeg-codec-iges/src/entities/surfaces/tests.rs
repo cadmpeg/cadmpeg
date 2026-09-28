@@ -11,6 +11,7 @@ use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry};
+use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::Point3;
 
@@ -46,6 +47,28 @@ use crate::test_support::test_tabulated_surfaces::{
 use crate::IgesCodec;
 
 use crate::global::GlobalTable;
+
+#[test]
+fn surface_grid_error_fields_refuse_retained_limit_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext};
+
+    let point = FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap();
+    let cases = [
+        (vec![Vec::new()], Vec::<Vec<f64>>::new(), 8_u64),
+        (vec![Vec::new()], vec![vec![1.0]], 12_u64),
+        (vec![vec![point]], vec![vec![0.0]], 12_u64),
+    ];
+    for (rows, weights, cap) in cases {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = super::pair_admitted_surface_poles(
+            Some(&ctx), rows, Some(weights), "outer", "inner",
+        );
+        assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges surface grid error field"));
+    }
+}
 
 const EPS_RATIONAL_RULED: f64 = 1.0e-10;
 const EPS_LINEAR_BEZIER_RULED: f64 = 1.0e-5;

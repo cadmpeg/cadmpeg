@@ -1503,12 +1503,14 @@ fn concatenate_nurbs<T>(
     let poles = if rational {
         let mut weighted = reserve_optional_vec(ctx, control_points.len(), "iges composite joined weighted poles")?;
         for (index, (point, weight)) in control_points.into_iter().zip(weights).enumerate() {
-            let weight = NonZeroReal::new(weight).ok_or_else(|| NurbsError::UnusableWeight {
-                field: "poles".to_owned(),
-                index,
-                weight,
-            })?;
-            weighted.push(WeightedPole3 { point, weight });
+            let Some(admitted_weight) = NonZeroReal::new(weight) else {
+                let field = match ctx {
+                    Some(ctx) => crate::decode_resource::format_retained(ctx, format_args!("poles"), "iges composite weight error field")?,
+                    None => "poles".to_owned(),
+                };
+                return Err(NurbsError::UnusableWeight { field, index, weight }.into());
+            };
+            weighted.push(WeightedPole3 { point, weight: admitted_weight });
         }
         NurbsPoles3::Rational { points: weighted }
     } else {
