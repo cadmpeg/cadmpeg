@@ -1610,4 +1610,73 @@ fn sketch_indexed_vectors_refuse_outer_and_inner_limits() {
     }
 }
 
+#[test]
+fn closed_sketch_profile_collections_refuse_matching_limits() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    for operation in [
+        "f3d closed sketch profile member",
+        "f3d closed sketch circle profile",
+        "f3d closed sketch edge",
+        "f3d closed sketch endpoint",
+        "f3d closed sketch union parent",
+        "f3d closed sketch edge nodes",
+        "f3d closed sketch edge order",
+        "f3d closed sketch pending edge",
+        "f3d closed sketch component edge",
+        "f3d closed sketch tangent profile",
+        "f3d closed sketch branched profile",
+        "f3d closed sketch component profile member",
+        "f3d closed sketch component profile",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut items = Vec::new();
+        assert!(matches!(
+            super::push_geometry_item(Some(&ctx), &mut items, 1, operation),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ), "operation {operation}");
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut seen = std::collections::HashSet::new();
+    assert!(matches!(
+        super::insert_geometry_set(Some(&ctx), &mut seen, 1,
+            "f3d closed sketch component seen"),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d closed sketch component seen"
+    ));
+}
+
+#[test]
+fn closed_sketch_profile_id_copies_refuse_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    for operation in [
+        "f3d closed sketch profile entity id",
+        "f3d closed sketch component profile id",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::copy_geometry_id::<SketchEntityId>(Some(&ctx),
+                "synthetic:test:id#edge", operation),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation
+        ), "operation {operation}");
+    }
+}
+
 mod predicates;
