@@ -6,6 +6,8 @@ use super::definitions::{
     FeatureConicSegment, FeatureOpaqueSegment, FeaturePointSegment, FeatureReferenceLineSegment,
     FeatureSegment,
 };
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,102 +51,66 @@ impl SegmentRow {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct OrderedRow {
-    ordinal: usize,
-    row: SegmentRow,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Identity {
-    Unique(OrderedRow),
-    Conflict {
-        first: OrderedRow,
-        second: OrderedRow,
-        rest: Vec<OrderedRow>,
-    },
-}
-
-impl Identity {
-    fn rows(&self) -> impl Iterator<Item = &OrderedRow> {
-        let (first, second, rest) = match self {
-            Self::Unique(row) => (row, None, &[][..]),
-            Self::Conflict {
-                first,
-                second,
-                rest,
-            } => (first, Some(second), rest.as_slice()),
-        };
-        std::iter::once(first).chain(second).chain(rest)
-    }
-}
-
 /// An ID resolves only while its source row is unique across all families.
 /// Conflicting rows remain available for the native record projection.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct SegmentRows {
-    identities: BTreeMap<u32, Identity>,
+    rows: Vec<SegmentRow>,
+    identities: BTreeMap<u32, Option<usize>>,
 }
 
+#[cfg(test)]
 impl FromIterator<SegmentRow> for SegmentRows {
     fn from_iter<T: IntoIterator<Item = SegmentRow>>(rows: T) -> Self {
         let mut result = Self::default();
-        for (ordinal, row) in rows.into_iter().enumerate() {
-            result.insert_ordered(OrderedRow { ordinal, row });
+        for row in rows {
+            result.insert(row);
         }
         result
     }
 }
 
 impl SegmentRows {
-    #[cfg(test)]
-    pub(crate) fn insert(&mut self, row: SegmentRow) {
-        self.insert_ordered(OrderedRow {
-            ordinal: self.len(),
-            row,
-        });
-    }
-
-    fn insert_ordered(&mut self, row: OrderedRow) {
-        let id = row.row.external_id();
-        let identity = match self.identities.remove(&id) {
-            None => Identity::Unique(row),
-            Some(Identity::Unique(first)) => Identity::Conflict {
-                first,
-                second: row,
-                rest: Vec::new(),
-            },
-            Some(Identity::Conflict {
-                first,
-                second,
-                mut rest,
-            }) => {
-                rest.push(row);
-                Identity::Conflict {
-                    first,
-                    second,
-                    rest,
+    pub(crate) fn from_parsed_rows(
+        ctx: &DecodeContext<'_>,
+        rows: Vec<SegmentRow>,
+    ) -> Result<Self, CodecError> {
+        let mut identities = BTreeMap::new();
+        for (ordinal, row) in rows.iter().enumerate() {
+            match identities.entry(row.external_id()) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo segment identity nodes")?;
+                    entry.insert(Some(ordinal));
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.insert(None);
                 }
             }
-        };
-        self.identities.insert(id, identity);
+        }
+        Ok(Self { rows, identities })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn insert(&mut self, row: SegmentRow) {
+        let id = row.external_id();
+        let ordinal = self.rows.len();
+        match self.identities.entry(id) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(Some(ordinal));
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+        self.rows.push(row);
     }
 
     pub(crate) fn len(&self) -> usize {
-        self.identities
-            .values()
-            .map(|identity| match identity {
-                Identity::Unique(_) => 1,
-                Identity::Conflict { rest, .. } => 2 + rest.len(),
-            })
-            .sum()
+        self.rows.len()
     }
 
     pub(crate) fn get(&self, id: u32) -> Option<&SegmentRow> {
-        match self.identities.get(&id)? {
-            Identity::Unique(row) => Some(&row.row),
-            Identity::Conflict { .. } => None,
-        }
+        self.rows.get((*self.identities.get(&id)?)?)
     }
 
     pub(crate) fn contains_id(&self, id: u32) -> bool {
@@ -158,27 +124,20 @@ impl SegmentRows {
     pub(crate) fn unique_ids(&self) -> impl Iterator<Item = u32> + '_ {
         self.identities
             .iter()
-            .filter_map(|(&id, identity)| matches!(identity, Identity::Unique(_)).then_some(id))
+            .filter_map(|(&id, ordinal)| ordinal.map(|_| id))
     }
 
     pub(crate) fn conflicting_ids(&self) -> impl Iterator<Item = u32> + '_ {
-        self.identities.iter().filter_map(|(&id, identity)| {
-            matches!(identity, Identity::Conflict { .. }).then_some(id)
-        })
+        self.identities
+            .iter()
+            .filter_map(|(&id, ordinal)| ordinal.is_none().then_some(id))
     }
 
     fn select<'a, T: 'a>(
         &'a self,
         select: impl Fn(&'a SegmentRow) -> Option<&'a T>,
     ) -> impl Iterator<Item = &'a T> {
-        let mut rows = self
-            .identities
-            .values()
-            .flat_map(Identity::rows)
-            .filter_map(|row| Some((row.ordinal, select(&row.row)?)))
-            .collect::<Vec<_>>();
-        rows.sort_unstable_by_key(|(ordinal, _)| *ordinal);
-        rows.into_iter().map(|(_, row)| row)
+        self.rows.iter().filter_map(select)
     }
 
     #[cfg(test)]
@@ -187,21 +146,8 @@ impl SegmentRows {
     }
 
     pub(crate) fn add_offset(&mut self, base: usize) {
-        for identity in self.identities.values_mut() {
-            match identity {
-                Identity::Unique(row) => row.row.add_offset(base),
-                Identity::Conflict {
-                    first,
-                    second,
-                    rest,
-                } => {
-                    first.row.add_offset(base);
-                    second.row.add_offset(base);
-                    for row in rest {
-                        row.row.add_offset(base);
-                    }
-                }
-            }
+        for row in &mut self.rows {
+            row.add_offset(base);
         }
     }
 

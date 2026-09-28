@@ -2181,8 +2181,15 @@ fn placement_instruction_rows(
     rows
 }
 
-fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegmentTable> {
-    let table = find_bytes(payload, b"segtab_ptr\0", start, end)?;
+fn segment_table(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Result<Option<FeatureSegmentTable>, CodecError> {
+    let Some(table) = find_bytes(payload, b"segtab_ptr\0", start, end) else {
+        return Ok(None);
+    };
     let mut cursor = table + b"segtab_ptr\0".len();
     while payload
         .get(cursor)
@@ -2190,21 +2197,27 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
     {
         cursor += 1;
     }
-    segment_table_body(payload, table, cursor, end, PrototypeRow::Present)
+    segment_table_body(ctx, payload, table, cursor, end, PrototypeRow::Present)
 }
 
 fn positional_segment_table(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Option<FeatureSegmentTable> {
+) -> Result<Option<FeatureSegmentTable>, CodecError> {
     const NAME_WINDOW: usize = 256;
     let name_search_end = start
         .checked_add(NAME_WINDOW)
         .map_or(end, |window_end| window_end.min(end));
-    let name_end = find_bytes(payload, b"S2D", start, name_search_end)?;
-    let cursor = payload[name_end..end].iter().position(|&byte| byte == 0)? + name_end + 1;
-    segment_table_body(payload, cursor, cursor, end, PrototypeRow::Elided)
+    let Some(name_end) = find_bytes(payload, b"S2D", start, name_search_end) else {
+        return Ok(None);
+    };
+    let Some(nul) = payload[name_end..end].iter().position(|&byte| byte == 0) else {
+        return Ok(None);
+    };
+    let cursor = nul + name_end + 1;
+    segment_table_body(ctx, payload, cursor, cursor, end, PrototypeRow::Elided)
 }
 
 /// Whether a segment table's declared count includes an elided prototype row.
@@ -2217,14 +2230,17 @@ enum PrototypeRow {
 }
 
 fn segment_table_body(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     table: usize,
     mut cursor: usize,
     end: usize,
     prototype_row: PrototypeRow,
-) -> Option<FeatureSegmentTable> {
+) -> Result<Option<FeatureSegmentTable>, CodecError> {
     let has_elided_prototype = prototype_row == PrototypeRow::Elided;
-    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Ok(None);
+    }
     let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
     cursor = after_count;
     let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
@@ -2234,13 +2250,15 @@ fn segment_table_body(
     } else {
         None
     };
-    let (close, after_close_ref) = (cursor..end).find_map(|offset| {
+    let Some((close, after_close_ref)) = (cursor..end).find_map(|offset| {
         (payload.get(offset..offset + 2) == Some(&[0xf2, psb::token::ENTITY_REF])).then_some(())?;
         let (class, after_reference) = psb::reference_id(payload, offset + 2).ok()?;
         (entity_ref.is_none_or(|expected| class == expected)
             && payload.get(after_reference) == Some(&0xe2))
         .then_some((offset, after_reference))
-    })?;
+    }) else {
+        return Ok(None);
+    };
     let named_values = |label: &[u8], count: usize| -> Option<(usize, [Option<u32>; 7])> {
         let offset = find_bytes(payload, label, cursor, close)?;
         let mut p = offset + label.len();
@@ -2294,19 +2312,27 @@ fn segment_table_body(
     .filter_map(|label| find_bytes(payload, label, cursor, end))
     .min()
     .unwrap_or(end);
-    let mut rows = named_row
-        .and_then(typed_segment_row)
-        .into_iter()
-        .collect::<Vec<_>>();
+    let mut rows = Vec::new();
+    if let Some(row) = named_row.and_then(typed_segment_row) {
+        ctx.try_reserve_items(&mut rows, 1, "creo segment rows")?;
+        rows.push(row);
+    }
     let first_row = cursor;
     // The declared count of an elided-prototype table counts the prototype row
     // that the body does not carry. A declared count below that one row states
     // a body-row count the table cannot hold, and refuses the table.
     let declared_body_rows = match prototype_row {
-        PrototypeRow::Elided => declared_count.checked_sub(1)?,
+        PrototypeRow::Elided => {
+            let Some(count) = declared_count.checked_sub(1) else {
+                return Ok(None);
+            };
+            count
+        }
         PrototypeRow::Present => declared_count,
     };
-    let row_limit = usize::try_from(declared_body_rows).ok()?;
+    let Ok(row_limit) = usize::try_from(declared_body_rows) else {
+        return Ok(None);
+    };
     while cursor < region_end && rows.len() < row_limit {
         let row_start = cursor;
         let kind_offset = if matches!(
@@ -2368,7 +2394,7 @@ fn segment_table_body(
             continue;
         };
         if payload.get(p) == Some(&0xe2) {
-            if let Some(row) = typed_segment_row(FeatureOpaqueSegment {
+            if let Some(mut row) = typed_segment_row(FeatureOpaqueSegment {
                 kind,
                 directions,
                 point_ids: [point0, point1],
@@ -2378,9 +2404,21 @@ fn segment_table_body(
                 radius_ref,
                 radius2_ref,
                 external_id,
-                body: payload[row_start..=p].to_vec(),
+                body: Vec::new(),
                 offset: row_start,
             }) {
+                match &mut row {
+                    SegmentRow::Opaque(opaque) => {
+                        opaque.body =
+                            ctx.copy_retained(&payload[row_start..=p], "creo segment row body")?;
+                    }
+                    SegmentRow::Ordinary(segment) => {
+                        segment.body =
+                            ctx.copy_retained(&payload[row_start..=p], "creo segment row body")?;
+                    }
+                    _ => {}
+                }
+                ctx.try_reserve_items(&mut rows, 1, "creo segment rows")?;
                 rows.push(row);
             }
             cursor = p + 1;
@@ -2388,13 +2426,13 @@ fn segment_table_body(
             cursor += 1;
         }
     }
-    Some(FeatureSegmentTable {
+    Ok(Some(FeatureSegmentTable {
         declared_count,
         has_elided_prototype,
         entity_ref,
-        rows: rows.into_iter().collect(),
+        rows: SegmentRows::from_parsed_rows(ctx, rows)?,
         offset: table,
-    })
+    }))
 }
 
 fn typed_segment_row(row: FeatureOpaqueSegment) -> Option<SegmentRow> {
@@ -6370,9 +6408,10 @@ pub(crate) fn definition_revolution_extents(
 }
 
 fn definitions_in_ranges(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
-) -> Vec<FeatureDefinition> {
+) -> Result<Vec<FeatureDefinition>, CodecError> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut result = Vec::new();
     let mut replay_dimension_class = None;
@@ -6472,11 +6511,11 @@ fn definitions_in_ranges(
         if !positional {
             replay_variable_class = variables.as_ref().and_then(|table| table.entity_ref);
         }
-        let segments = segment_table(payload, start, end).or_else(|| {
-            positional
-                .then(|| positional_segment_table(payload, start, end))
-                .flatten()
-        });
+        let segments = match segment_table(ctx, payload, start, end)? {
+            Some(segments) => Some(segments),
+            None if positional => positional_segment_table(ctx, payload, start, end)?,
+            None => None,
+        };
         let trim_entities = trim_entity_table(payload, start, end).or_else(|| {
             if positional {
                 positional_trim_entity_table(
@@ -6645,7 +6684,7 @@ fn definitions_in_ranges(
             offset: start,
         });
     }
-    result
+    Ok(result)
 }
 
 fn contextual_references(
@@ -6745,7 +6784,10 @@ fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
 /// definition-space parameter frames.
-pub(crate) fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
+pub(crate) fn definitions(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut starts = definition_starts(payload);
     let retained_offsets = starts
         .iter()
@@ -6761,16 +6803,19 @@ pub(crate) fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
     starts.extend(replay_starts);
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     starts.dedup_by_key(|entry| entry.0);
-    definitions_in_ranges(payload, &starts)
+    Ok(definitions_in_ranges(ctx, payload, &starts)?
         .into_iter()
         .filter(|definition| retained_offsets.contains(&definition.offset))
-        .collect()
+        .collect())
 }
 
 /// Decode labelled and positional feature definitions embedded directly in a
 /// DEPDB section. A labelled `gsec2d_ptr` definition supplies the table schema
 /// for its following positional `S2D` instances.
-pub(crate) fn depdb_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
+pub(crate) fn depdb_definitions(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut starts = definition_starts(payload);
     starts.extend(depdb_gsec2d_starts(payload));
     let replay_markers = s2d_replay_starts(payload);
@@ -6783,7 +6828,7 @@ pub(crate) fn depdb_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
     starts.extend(replay_starts);
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     starts.dedup_by_key(|entry| entry.0);
-    definitions_in_ranges(payload, &starts)
+    definitions_in_ranges(ctx, payload, &starts)
 }
 
 fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
@@ -6836,7 +6881,10 @@ fn claimed_s2d_replay_markers(
 
 /// Decode unlabeled positional `S2D` replay instances without assigning an
 /// owner. Ownership remains absent unless an independent entity join proves it.
-pub(crate) fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
+pub(crate) fn positional_replay_definitions(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut starts = definition_starts(payload);
     let replay_markers = s2d_replay_starts(payload);
     let claimed_markers = claimed_s2d_replay_markers(payload, &starts, &replay_markers);
@@ -6852,18 +6900,19 @@ pub(crate) fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefini
     starts.extend(replay_starts);
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     starts.dedup_by_key(|entry| entry.0);
-    definitions_in_ranges(payload, &starts)
+    Ok(definitions_in_ranges(ctx, payload, &starts)?
         .into_iter()
         .filter(|definition| pending_offsets.contains(&definition.offset))
-        .collect()
+        .collect())
 }
 
 /// Decode one standalone DEPDB `gsec2d_ptr` section with an optional proven owner.
 /// The sole `gsec2d_ptr` starts the range, so no contextual owner pair occurs inside it.
 pub(crate) fn depdb_section_definition(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     owner_feature_id: Option<u32>,
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
     const GSEC: &[u8] = b"gsec2d_ptr\0";
     const NAME: &[u8] = b"name\0S2D";
     const NAME_WINDOW: usize = 128;
@@ -6873,29 +6922,35 @@ pub(crate) fn depdb_section_definition(
         .enumerate()
         .filter_map(|(offset, window)| (window == GSEC).then_some(offset))
         .collect::<Vec<_>>();
-    let [start] = starts.as_slice() else {
-        return None;
+    let Some((start, section_id, end)) = (|| {
+        let [start] = starts.as_slice() else {
+            return None;
+        };
+        let name_search_end = start
+            .checked_add(NAME_WINDOW)
+            .map_or(payload.len(), |window_end| window_end.min(payload.len()));
+        let name = find_bytes(payload, NAME, *start, name_search_end)? + NAME.len();
+        let name_end = payload[name..name_search_end]
+            .iter()
+            .position(|byte| *byte == 0)?
+            + name;
+        let digits = payload.get(name..name_end)?;
+        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        let section_id = String::from_utf8_lossy(digits).parse::<u32>().ok()?;
+        let end = find_bytes(payload, PREFIX, *start + GSEC.len(), payload.len())
+            .unwrap_or(payload.len());
+        Some((*start, section_id, end))
+    })() else {
+        return Ok(None);
     };
-    let name_search_end = start
-        .checked_add(NAME_WINDOW)
-        .map_or(payload.len(), |window_end| window_end.min(payload.len()));
-    let name = find_bytes(payload, NAME, *start, name_search_end)? + NAME.len();
-    let name_end = payload[name..name_search_end]
-        .iter()
-        .position(|byte| *byte == 0)?
-        + name;
-    let digits = payload.get(name..name_end)?;
-    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-        return None;
-    }
-    let section_id = String::from_utf8_lossy(digits).parse::<u32>().ok()?;
-    let end =
-        find_bytes(payload, PREFIX, *start + GSEC.len(), payload.len()).unwrap_or(payload.len());
-    definitions_in_ranges(
+    Ok(definitions_in_ranges(
+        ctx,
         &payload[..end],
-        &[(*start, NonZeroU32::new(section_id), owner_feature_id, true)],
-    )
-    .pop()
+        &[(start, NonZeroU32::new(section_id), owner_feature_id, true)],
+    )?
+    .pop())
 }
 
 /// Bind an owner omitted by `feat_id` through the section's unique generated
@@ -7261,6 +7316,57 @@ mod tests {
         VariableType,
     };
 
+    fn one_segment_with_limits(
+        collection_limit: u64,
+        retained_limit: u64,
+    ) -> Result<super::FeatureSegmentTable, cadmpeg_core::CodecError> {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let mut payload = b"\xf8\x01\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2".to_vec();
+        payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2]);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)?;
+        Ok(segment_table_body(&ctx, &payload, 0, 0, payload.len(), PrototypeRow::Present)?
+            .expect("complete segment table"))
+    }
+
+    #[test]
+    fn segment_row_vec_refuses_before_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+
+        assert_eq!(one_segment_with_limits(2, u64::MAX).expect("one row admitted").rows.len(), 1);
+        let error = one_segment_with_limits(0, u64::MAX).expect_err("row needs one item");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo segment rows"));
+    }
+
+    #[test]
+    fn segment_identity_node_refuses_before_insertion() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+
+        let error = one_segment_with_limits(1, u64::MAX).expect_err("ID node needs one item");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo segment identity nodes"));
+    }
+
+    #[test]
+    fn segment_body_copy_refuses_before_retention() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+
+        let error = one_segment_with_limits(2, 0).expect_err("row body needs retained bytes");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo segment row body"));
+    }
+
     #[test]
     fn variable_classes_normalize_known_codes_and_preserve_unknown_codes() {
         for (code, class) in [
@@ -7288,14 +7394,24 @@ mod tests {
         let zero = b"\xf8\x00\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
         let one = b"\xf8\x01\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
 
-        assert!(segment_table_body(zero, 0, 0, zero.len(), PrototypeRow::Elided).is_none());
+        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+            segment_table_body(ctx, zero, 0, 0, zero.len(), PrototypeRow::Elided)
+        })
+        .expect("segment table admitted")
+        .is_none());
         assert_eq!(
-            segment_table_body(one, 0, 0, one.len(), PrototypeRow::Elided)
+            crate::decode::with_test_decode_ctx(|ctx| {
+                segment_table_body(ctx, one, 0, 0, one.len(), PrototypeRow::Elided)
+            })
+                .expect("segment table admitted")
                 .map(|table| (table.declared_count, table.rows.ordinary().count())),
             Some((1, 0))
         );
         assert_eq!(
-            segment_table_body(zero, 0, 0, zero.len(), PrototypeRow::Present)
+            crate::decode::with_test_decode_ctx(|ctx| {
+                segment_table_body(ctx, zero, 0, 0, zero.len(), PrototypeRow::Present)
+            })
+                .expect("segment table admitted")
                 .map(|table| table.declared_count),
             Some(0)
         );

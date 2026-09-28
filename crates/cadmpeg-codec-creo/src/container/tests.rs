@@ -1149,10 +1149,12 @@ fn section_owner_range_refuses_before_counted_vec_growth() {
 }
 
 fn one_feature_definition() -> crate::feature::definitions::FeatureDefinition {
-    crate::feature::definitions::depdb_section_definition(
-        b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0",
-        None,
-    )
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::feature::definitions::depdb_section_definition(
+            ctx, b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0", None,
+        )
+    })
+    .expect("section definition admitted")
     .expect("one bounded section definition")
 }
 

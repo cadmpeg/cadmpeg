@@ -9,7 +9,7 @@ use crate::feature::definitions::definitions;
 use crate::feature::definitions::positional_replay_definitions;
 use crate::feature::definitions::positional_segment_table;
 use crate::feature::definitions::segment_table;
-use crate::feature::definitions::segment_table_body;
+use crate::feature::definitions::segment_table_body as parse_segment_table_body;
 use crate::feature::definitions::DefinitionIdentity;
 use crate::feature::definitions::FeatureBoundedCurveSegment;
 use crate::feature::definitions::FeatureCenteredLineSegment;
@@ -34,6 +34,19 @@ use crate::feature::operations::OperationName;
 use crate::feature::rows::FeatureGeometryTable;
 use crate::feature::rows::FeatureGeometryTableKind;
 use std::collections::BTreeSet;
+
+fn segment_table_body(
+    payload: &[u8],
+    table: usize,
+    cursor: usize,
+    end: usize,
+    prototype_row: crate::feature::definitions::PrototypeRow,
+) -> Option<crate::feature::definitions::FeatureSegmentTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_segment_table_body(ctx, payload, table, cursor, end, prototype_row)
+    })
+    .expect("segment table admitted")
+}
 
 fn definition_revolution_extents(
     definitions: &[FeatureDefinition],
@@ -617,7 +630,10 @@ fn positional_replays_exclude_the_contextually_owned_instance() {
             \xe0\x00ref_model_info\0\xe3S2D0004\0owned\
             \xe3S2D0004\0pending";
 
-    let decoded = positional_replay_definitions(payload);
+    let decoded = crate::decode::with_test_decode_ctx(|ctx| {
+        positional_replay_definitions(ctx, payload)
+    })
+    .expect("replay definitions admitted");
 
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].identity.id(), 917);
@@ -630,7 +646,8 @@ fn positional_replays_exclude_the_contextually_owned_instance() {
 fn unlabeled_replay_boundary_ends_the_preceding_definition() {
     let payload = b"feat_defs_917\0template\xe3S2D0004\0replay";
 
-    let decoded = definitions(payload);
+    let decoded = crate::decode::with_test_decode_ctx(|ctx| definitions(ctx, payload))
+        .expect("definitions admitted");
 
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].body, b"feat_defs_917\0template");
@@ -642,7 +659,8 @@ fn positional_saved_section_starts_an_owned_definition() {
             template\0\xe0\x01feat_id\0\x2a\xe0\x00ref_model_info\0\
             \xe0\x00name\0S2D0004\0saved";
 
-    let decoded = definitions(payload);
+    let decoded = crate::decode::with_test_decode_ctx(|ctx| definitions(ctx, payload))
+        .expect("definitions admitted");
 
     assert_eq!(decoded.len(), 2);
     assert_eq!(decoded[0].identity.id(), 917);
@@ -663,7 +681,8 @@ fn positional_saved_section_replays_its_segment_table() {
     payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
     payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2]);
 
-    let decoded = definitions(&payload);
+    let decoded = crate::decode::with_test_decode_ctx(|ctx| definitions(ctx, &payload))
+        .expect("definitions admitted");
     let segments = decoded[1].segments.as_ref().expect("positional segtab");
 
     assert_eq!(segments.declared_count, 3);
@@ -697,8 +716,11 @@ fn positional_segment_table_stops_at_the_next_s2d_record() {
     payload.extend_from_slice(b"\xe3S2D0004\0");
     payload.extend_from_slice(&[2, 0, 0, 0, 1, 2, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2]);
 
-    let segments = positional_segment_table(&payload, 0, payload.len())
-        .expect("first positional segment table");
+    let segments = crate::decode::with_test_decode_ctx(|ctx| {
+        positional_segment_table(ctx, &payload, 0, payload.len())
+    })
+    .expect("segment table admitted")
+    .expect("first positional segment table");
 
     assert_eq!(segments.declared_count, 3);
     assert!(segments.has_elided_prototype);
@@ -724,7 +746,11 @@ fn positional_segment_extent_excludes_rows_after_the_declared_extent() {
     payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
     payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2]);
 
-    let segments = positional_segment_table(&payload, 0, payload.len()).expect("positional segtab");
+    let segments = crate::decode::with_test_decode_ctx(|ctx| {
+        positional_segment_table(ctx, &payload, 0, payload.len())
+    })
+    .expect("segment table admitted")
+    .expect("positional segtab");
 
     assert!(segments.has_elided_prototype);
     assert_eq!(segments.rows.ordinary().count(), 1);
@@ -742,7 +768,11 @@ fn positional_segment_rows_follow_variable_structural_trailers() {
     payload.extend_from_slice(&[0xe3, 0xe2, 0x81, 0x18, 0x07, 0xe2]);
     payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2]);
 
-    let segments = positional_segment_table(&payload, 0, payload.len()).expect("positional segtab");
+    let segments = crate::decode::with_test_decode_ctx(|ctx| {
+        positional_segment_table(ctx, &payload, 0, payload.len())
+    })
+    .expect("segment table admitted")
+    .expect("positional segtab");
 
     assert!(segments.is_complete());
     assert_eq!(segments.rows.ordinary().count(), 2);
@@ -759,20 +789,22 @@ fn positional_segment_rows_follow_variable_structural_trailers() {
 #[test]
 fn segment_tables_retain_extents_without_decoded_rows() {
     let named = b"segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
-    let segments = segment_table(named, 0, named.len()).expect("named segtab header");
+    let segments = crate::decode::with_test_decode_ctx(|ctx| {
+        segment_table(ctx, named, 0, named.len())
+    })
+    .expect("segment table admitted")
+    .expect("named segtab header");
     assert_eq!(segments.declared_count, 2);
     assert_eq!(segments.entity_ref, Some(1));
     assert!(segments.rows.ordinary().next().is_none());
     assert!(!segments.is_complete());
 
     let positional = b"\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
-    let segments = segment_table_body(
-        positional,
-        0,
-        0,
-        positional.len(),
+    let segments = crate::decode::with_test_decode_ctx(|ctx| parse_segment_table_body(
+        ctx, positional, 0, 0, positional.len(),
         crate::feature::definitions::PrototypeRow::Present,
-    )
+    ))
+    .expect("segment table admitted")
     .expect("positional segtab header");
     assert_eq!(segments.declared_count, 2);
     assert_eq!(segments.entity_ref, Some(1));
@@ -784,13 +816,11 @@ fn segment_tables_retain_extents_without_decoded_rows() {
 fn segment_table_prototype_close_requires_the_header_class() {
     let payload = b"\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x02\xe2";
 
-    assert!(segment_table_body(
-        payload,
-        0,
-        0,
-        payload.len(),
+    assert!(crate::decode::with_test_decode_ctx(|ctx| parse_segment_table_body(
+        ctx, payload, 0, 0, payload.len(),
         crate::feature::definitions::PrototypeRow::Elided
-    )
+    ))
+    .expect("segment table admitted")
     .is_none());
 }
 
@@ -804,7 +834,11 @@ fn segment_tables_type_section_reference_lines() {
         .to_vec();
     payload.extend_from_slice(&[0x19, 0, 1, 0, 10, 11, 0xf6, 0, 0, 0xf6, 0xf6, 1, 0xe2]);
 
-    let segments = segment_table(&payload, 0, payload.len()).expect("segment table");
+    let segments = crate::decode::with_test_decode_ctx(|ctx| {
+        segment_table(ctx, &payload, 0, payload.len())
+    })
+    .expect("segment table admitted")
+    .expect("segment table");
 
     assert!(segments.is_complete());
     assert!(segments.rows.ordinary().next().is_none());

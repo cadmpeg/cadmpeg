@@ -270,7 +270,8 @@ fn positional_definition_inherits_the_labeled_dimension_table_class() {
         .to_vec();
     payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
 
-    let decoded = definitions(&payload);
+    let decoded = crate::decode::with_test_decode_ctx(|ctx| definitions(ctx, &payload))
+        .expect("definitions admitted");
     let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
 
     assert_eq!(decoded[1].identity.owner_feature_id(), Some(42));
@@ -289,7 +290,8 @@ fn depdb_gsec2d_definition_anchors_positional_table_replay() {
         .to_vec();
     payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
 
-    let decoded = depdb_definitions(&payload);
+    let decoded = crate::decode::with_test_decode_ctx(|ctx| depdb_definitions(ctx, &payload))
+        .expect("definitions admitted");
     let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
 
     assert_eq!(decoded.len(), 2);
@@ -569,10 +571,10 @@ fn named_gsec3d_uses_the_outer_plane_id_before_reference_rows() {
             \xe0\x01flip_flag\0\x00\
             \xe0\x00p_saved_result\0";
 
-    let definitions = definitions_in_ranges(
-        &payload[..],
-        &[(0, std::num::NonZeroU32::new(1), None, false)],
-    );
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| definitions_in_ranges(
+        ctx, &payload[..], &[(0, std::num::NonZeroU32::new(1), None, false)],
+    ))
+    .expect("definitions admitted");
     let section = definitions[0].section_3d.as_ref().expect("named gsec3d");
 
     assert_eq!(section.sketch_plane_entity_id, Some(42));
@@ -938,13 +940,14 @@ fn positional_definition_preserves_its_named_solver_tables() {
     ]);
     payload.extend_from_slice(b"\xf1\xf7\x6a\xe2");
 
-    let definitions = definitions_in_ranges(
-        &payload,
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| definitions_in_ranges(
+        ctx, &payload,
         &[
             (0, std::num::NonZeroU32::new(1), None, false),
             (positional_start, std::num::NonZeroU32::new(2), None, true),
         ],
-    );
+    ))
+    .expect("definitions admitted");
     let relations = definitions[1].relations.as_ref().expect("relations");
 
     assert_eq!(relations.skamps().len(), 1);
