@@ -12,6 +12,46 @@ use crate::loss::F3dLossCode;
 use cadmpeg_core::dialect::{Admission, DialectMatch};
 use std::collections::BTreeMap;
 
+fn with_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test input");
+    f(&ctx)
+}
+
+fn classify_document(version: &str) -> DialectMatch {
+    with_context(|ctx| F3dDialect::classify_document(ctx, version).expect("dialect classification"))
+}
+
+fn classify_f3z(members: &[&str]) -> DialectMatch {
+    with_context(|ctx| F3dDialect::classify_f3z(ctx, members).expect("F3Z classification"))
+}
+
+#[test]
+fn manifest_dialect_classification_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test input");
+    let error = F3dDialect::classify_document(&ctx, "3-2-0-0").unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "classify F3D manifest dialect"));
+}
+
+#[test]
+fn f3z_dialect_classification_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test input");
+    let error = F3dDialect::classify_f3z(&ctx, &["Part.f3d"]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "classify F3Z root document members"));
+}
+
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() -> Result<(), Box<dyn std::error::Error>> {
     cadmpeg_test_support::assert_dialect_rows_closed(&F3dDialect::ALL.map(F3dDialect::id), FORMAT)?;
@@ -42,7 +82,7 @@ fn duplicate_kernel_identity_is_omitted_with_a_typed_loss() {
 
 #[test]
 fn a_document_match_names_its_row_and_records_the_version_the_parse_read() {
-    let matched = F3dDialect::classify_document("3-2-0-0");
+    let matched = classify_document("3-2-0-0");
 
     assert_eq!(matched.format(), FORMAT);
     assert_eq!(matched.dialect().as_str(), "f3d:manifest-3-2-0-0");
@@ -58,7 +98,7 @@ fn a_version_only_drift_lands_on_the_recovery_row_and_charges_the_loss() {
     // The parse ran the `3-2-0-0` layout and it fitted. The declaration names
     // no row this codec knows, so the reading is recorded verbatim, the row is
     // the recovery row, and the admission names the strategy applied.
-    let matched = F3dDialect::classify_document("3-3-0-0");
+    let matched = classify_document("3-3-0-0");
 
     assert_eq!(
         matched.declared()[DECLARED_TOP_LEVEL_MANIFEST_VERSION],
@@ -93,7 +133,7 @@ fn a_residual_match_charges_without_inventing_a_substituted_grammar() {
 
 #[test]
 fn an_f3z_match_names_its_row_and_records_the_root_members() {
-    let matched = F3dDialect::classify_f3z(&["Assembly.f3d", "Part.f3d"]);
+    let matched = classify_f3z(&["Assembly.f3d", "Part.f3d"]);
 
     assert_eq!(matched.format(), FORMAT);
     assert_eq!(matched.dialect().as_str(), "f3d:f3z-multi-document");
@@ -115,8 +155,8 @@ fn the_identity_rows_are_admitted_and_charge_nothing() {
     // A row parsed with the strategy it declares carries no recovery. The loss
     // and the admission are read from one value, so this pins both halves.
     for matched in [
-        F3dDialect::classify_document("3-2-0-0"),
-        F3dDialect::classify_f3z(&["Part.f3d"]),
+        classify_document("3-2-0-0"),
+        classify_f3z(&["Part.f3d"]),
     ] {
         assert_eq!(matched.admission(), &Admission::Admitted);
         assert!(dialect_loss(&matched).is_none());
@@ -127,8 +167,8 @@ fn the_identity_rows_are_admitted_and_charge_nothing() {
 fn the_totality_row_is_the_only_row_a_foreign_version_reaches() {
     assert_eq!(F3dDialect::Unknown.id().as_str(), "f3d:unknown");
     for matched in [
-        F3dDialect::classify_document("3-2-0-0"),
-        F3dDialect::classify_f3z(&["Part.f3d"]),
+        classify_document("3-2-0-0"),
+        classify_f3z(&["Part.f3d"]),
     ] {
         assert_ne!(
             matched.dialect().as_str(),
@@ -136,7 +176,7 @@ fn the_totality_row_is_the_only_row_a_foreign_version_reaches() {
         );
     }
     assert_eq!(
-        F3dDialect::classify_document("4-0-0-0").dialect().as_str(),
+        classify_document("4-0-0-0").dialect().as_str(),
         F3dDialect::Unknown.id().as_str()
     );
 }
