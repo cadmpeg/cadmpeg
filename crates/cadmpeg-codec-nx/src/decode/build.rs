@@ -1347,7 +1347,7 @@ pub(super) fn try_decode_geometry(
         )?;
         support_uv_geometry_budget.clear_blend_frame_cache();
         coupled_support_uv_geometry_budget.clear_blend_frame_cache();
-        complete_parameterization_equivalent_support_uv(&mut ir);
+        complete_parameterization_equivalent_support_uv(ctx, &mut ir)?;
         let mut completed_endpoint_witnesses = BTreeMap::new();
         support_uv_lane_geometry_exhausted |=
             complete_support_uv_with_budget_and_endpoint_witnesses(
