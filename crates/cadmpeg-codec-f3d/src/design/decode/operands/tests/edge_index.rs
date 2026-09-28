@@ -2,6 +2,7 @@
 use crate::design::decode::operands::{
     decode_edge_operands, decode_edge_treatment_vertex_operands, insert_edge_member_index,
     bind_work_plane_constructions,
+    bind_vertex_recipe_candidates,
 };
 use crate::records::decal::DesignRecordHeader;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -104,4 +105,39 @@ fn work_plane_header_index_refuses_collection_limit() {
                     && failure.operation == "f3d work plane header index"
         ));
     });
+}
+
+#[test]
+fn vertex_recipe_scope_identity_refuses_materialized_limit() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignParameterScopeDraft};
+    let mut scope = DesignParameterScope::try_new(DesignParameterScopeDraft {
+        id: "f3d:Design/BulkStream.dat:scope#12".to_owned(),
+        byte_offset: 1000,
+        class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned()).unwrap(),
+        record_index: 12,
+        frame_length: 200,
+        kind_offset: 1100,
+        feature_ordinal: std::num::NonZeroU32::MIN,
+        feature_ordinal_offset: 0,
+        history_state_id: None,
+        previous_history_state_id: None,
+        previous_history_state_id_offset: None,
+        reference_count_offset: 1080,
+        reference_members: crate::records::identity::ReferenceRun::from_columns(
+            vec![100], vec![1085], "reference_members",
+        ).unwrap(),
+        payload: DesignFeatureKind::WorkPoint.try_into().unwrap(),
+        unclosed_construction_operand_groups: Vec::new(),
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap(),
+        paired_byte_offset: 1200,
+    }.with_fixture_layout()).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_materialized_bytes = scope.id.len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        bind_vertex_recipe_candidates(&ctx, std::slice::from_mut(&mut scope), &[]),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::MaterializedBytes
+    ));
 }

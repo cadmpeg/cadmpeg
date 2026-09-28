@@ -621,11 +621,12 @@ pub(crate) fn bind_work_plane_constructions(
 
 /// Bind persistent subentity candidates carried by decoded vertex recipes.
 pub(crate) fn bind_vertex_recipe_candidates(
+    ctx: &DecodeContext<'_>,
     scopes: &mut [DesignParameterScope],
     tags: &[PersistentSubentityTag],
-) {
+) -> Result<(), CodecError> {
     for scope in scopes {
-        let scope_id = scope.id.clone();
+        let (_scope_reservation, scope_id) = copy_scoped_stream(ctx, &scope.id)?;
         if let Some(construction) = scope.work_plane_construction_mut() {
             for reference in construction.recipe_references_mut() {
                 bind_recipe_reference_candidates(reference, tags, Some(&scope_id));
@@ -640,6 +641,7 @@ pub(crate) fn bind_vertex_recipe_candidates(
             }
         }
     }
+    Ok(())
 }
 
 /// Bind active fallback candidates for edge-treatment corner recipes.

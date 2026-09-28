@@ -4770,9 +4770,10 @@ fn extend_related_design_records(
         &native.design_parameters,
     )?;
     crate::design::decode::operands::bind_vertex_recipe_candidates(
+        ctx,
         &mut native.design_parameter_scopes,
         &native.persistent_subentity_tags,
-    );
+    )?;
     crate::history::bind_vertex_recipe_history(
         &mut native.design_parameter_scopes,
         &native.design_feature_timelines,
