@@ -89,7 +89,10 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
         (second, BTreeSet::from([8])),
     ]);
 
-    assert!(select_active_body(&mut ir, &body_node_ids, &[7]));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        select_active_body(ctx, &mut ir, &body_node_ids, &[7])
+    })
+    .unwrap());
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.bodies[0].id, first);
     assert_eq!(
@@ -110,12 +113,14 @@ fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
         (second, BTreeSet::from([8, 9])),
     ]);
 
-    let selected = rmfastload_selected_bodies(&body_node_ids, &[7, 8]);
-    assert_eq!(selected, BTreeSet::from([first]));
-    assert_eq!(
-        rmfastload_stream_indices(&selected),
-        Some(BTreeSet::from([3]))
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        let selected = rmfastload_selected_bodies(ctx, &body_node_ids, &[7, 8]).unwrap();
+        assert_eq!(selected, BTreeSet::from([first]));
+        assert_eq!(
+            rmfastload_stream_indices(ctx, &selected).unwrap(),
+            Some(BTreeSet::from([3]))
+        );
+    });
 }
 
 #[test]

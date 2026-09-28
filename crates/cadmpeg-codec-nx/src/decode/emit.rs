@@ -1753,6 +1753,37 @@ pub(super) fn source_meta(
             )?;
         }
     }
+    for (index, layer) in dialects.iter().enumerate() {
+        if index != 0 {
+            ctx.charge_collection_items(1, "nx source dialect layers")?;
+        }
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(layer.dialect().as_str().len()),
+            "nx source dialect identity",
+        )?;
+        if let Some(instance) = layer.instance() {
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(instance.len()),
+                "nx source dialect instance",
+            )?;
+        }
+        if let cadmpeg_core::dialect::Admission::Unverified { using } = layer.admission() {
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(using.as_str().len()),
+                "nx source dialect grammar",
+            )?;
+        }
+        for (name, value) in layer.declared() {
+            ctx.charge_collection_items(1, "nx source dialect declarations")?;
+            let bytes = name.as_str().len().checked_add(value.len()).ok_or_else(|| {
+                ctx.refuse_codec_limit("nx source dialect declaration text", 0, 1)
+            })?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(bytes),
+                "nx source dialect declaration text",
+            )?;
+        }
+    }
     ctx.charge_collection_items(
         cadmpeg_core::decode::u64_from_index(attributes.len()),
         "nx source attribute names",
