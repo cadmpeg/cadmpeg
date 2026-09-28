@@ -13,7 +13,6 @@ use crate::om::offset_store_control_values;
 use crate::om::operation_body_11_continuations;
 use crate::om::operation_body_members;
 use crate::om::operation_body_reference_lanes;
-use crate::om::operation_labels;
 use crate::om::pattern_references::PatternReferences;
 use crate::om::point_feature_payload_header;
 use crate::om::point_feature_scalar_lane;
@@ -43,6 +42,10 @@ fn multi_instance_output_payload_lane(
     record: crate::om::operation_record::OperationPayload<'_>,
 ) -> Option<crate::om::MultiInstanceOutputPayloadLane> {
     with_test_ctx(|ctx| crate::om::multi_instance_output_payload_lane(ctx, record)).unwrap()
+}
+
+fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<crate::om::OperationLabel<'_>> {
+    with_test_ctx(|ctx| crate::om::operation_labels(ctx, bytes, base_offset)).unwrap()
 }
 
 fn one_multi_instance_output_payload() -> Vec<u8> {

@@ -31,10 +31,8 @@ use crate::om::operation_body_reference;
 use crate::om::operation_body_references;
 use crate::om::operation_body_write_frames;
 use crate::om::operation_common_frames;
-use crate::om::operation_labels;
 use crate::om::operation_payload_strings;
 use crate::om::operation_payload_text_frames;
-use crate::om::operation_records_with_labels_and_ordinals;
 use crate::om::operation_terminal_frame;
 use crate::om::sections;
 use crate::om::simple_hole_repeated_scalar_lane;
@@ -49,6 +47,14 @@ use crate::test_support::test_om::size_framed_om_section_with_record_area;
 
 const EPS_NAMED_POINT_ROUNDING: f64 = 1.0e-12;
 const EPS_SHIFTED_SCALAR_ROUNDING: f64 = 2.0e-12;
+
+fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<crate::om::OperationLabel<'_>> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_labels(ctx, bytes, base_offset)).unwrap()
+}
+
+fn operation_records_with_labels_and_ordinals<'a>(bytes: &'a [u8], base_offset: usize, labels: &[crate::om::OperationLabel<'a>]) -> Vec<(usize, crate::om::operation_record::OperationRecord<'a>)> {
+    crate::test_support::with_decode_context(|ctx| crate::om::operation_records_with_labels_and_ordinals(ctx, bytes, base_offset, labels)).unwrap()
+}
 
 #[test]
 fn om_index_pairs_object_ids_with_bounded_entity_records() {

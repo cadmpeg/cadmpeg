@@ -3576,9 +3576,10 @@ fn visit_feature_history_operation_records(
     ),
 ) -> Result<(), CodecError> {
     visit_feature_history_sections(ctx, container, |section, key, entry_offset| {
-        for (ordinal, record) in section.operation_records_with_label_ordinals() {
+        for (ordinal, record) in section.operation_records_with_label_ordinals(ctx)? {
             visit(section, key, entry_offset, ordinal, record);
         }
+        Ok(())
     })
 }
 
@@ -3594,9 +3595,10 @@ fn visit_feature_history_unlabeled_operation_records(
     ),
 ) -> Result<(), CodecError> {
     visit_feature_history_sections(ctx, container, |section, key, entry_offset| {
-        for (ordinal, record) in section.unlabeled_operation_records_with_ordinals() {
+        for (ordinal, record) in section.unlabeled_operation_records_with_ordinals(ctx)? {
             visit(section, key, entry_offset, ordinal, record);
         }
+        Ok(())
     })
 }
 
@@ -3718,7 +3720,7 @@ pub(super) fn feature_operation_labels(ctx: &cadmpeg_core::decode::DecodeContext
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         labels.extend(
             section
-                .operation_records_with_label_ordinals()
+                .operation_records_with_label_ordinals(ctx)?
                 .into_iter()
                 .map(|(ordinal, record)| {
                     let label = record.label();
@@ -8144,7 +8146,7 @@ pub(super) fn feature_parameter_uses(
 
 fn visit_feature_history_sections(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     container: &Container,
-    mut visit: impl FnMut(&crate::om::Section<'_>, &str, u64),
+    mut visit: impl FnMut(&crate::om::Section<'_>, &str, u64) -> Result<(), cadmpeg_core::CodecError>,
 ) -> Result<(), cadmpeg_core::CodecError>
 {
     let sections = container.om_sections(ctx)?;
@@ -8161,7 +8163,7 @@ fn visit_feature_history_sections(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         };
         let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        visit(section, &section_key, entry_offset);
+        visit(section, &section_key, entry_offset)?;
     }
     Ok(())
 }

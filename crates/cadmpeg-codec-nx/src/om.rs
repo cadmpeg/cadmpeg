@@ -1132,11 +1132,13 @@ impl<'a> Section<'a> {
     /// Bound operation records and retain their ordinal in the complete label sequence.
     pub(crate) fn operation_records_with_label_ordinals(
         &self,
-    ) -> Vec<(usize, OperationRecord<'a>)> {
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(usize, OperationRecord<'a>)>, CodecError> {
         let Some((base_offset, bytes)) = self.record_area_parts() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         operation_records_with_labels_and_ordinals(
+            ctx,
             bytes,
             base_offset,
             &self.cached_operation_labels,
@@ -1146,11 +1148,12 @@ impl<'a> Section<'a> {
     /// Bound validated operation headers that have no complete label frame.
     pub(crate) fn unlabeled_operation_records_with_ordinals(
         &self,
-    ) -> Vec<(usize, UnlabeledOperationRecord<'a>)> {
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(usize, UnlabeledOperationRecord<'a>)>, CodecError> {
         let Some((base_offset, bytes)) = self.record_area_parts() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        unlabeled_operation_records_with_ordinals(bytes, base_offset, &self.cached_operation_labels)
+        unlabeled_operation_records_with_ordinals(ctx, bytes, base_offset, &self.cached_operation_labels)
     }
 
     /// Decode the bounded state-counter map of a feature-history record area.
@@ -1237,7 +1240,7 @@ impl<'a> Section<'a> {
             return Ok(None);
         };
         let Some((_, last_record)) = self
-            .operation_records_with_label_ordinals()
+            .operation_records_with_label_ordinals(ctx)?
             .into_iter()
             .last()
         else {
@@ -1330,27 +1333,34 @@ impl<'a> Section<'a> {
     }
 
     /// Decode unambiguous primary body references from bounded operation records.
-    pub(crate) fn operation_body_references(&self) -> Vec<(usize, OperationBodyReference)> {
-        self.operation_records_with_label_ordinals()
-            .into_iter()
-            .filter_map(|(ordinal, record)| {
-                operation_body_reference(record.body_view()).map(|reference| (ordinal, reference))
-            })
-            .collect()
+    pub(crate) fn operation_body_references(&self, ctx: &DecodeContext<'_>) -> Result<Vec<(usize, OperationBodyReference)>, CodecError> {
+        let mut references = Vec::new();
+        for (ordinal, record) in self.operation_records_with_label_ordinals(ctx)? {
+            if let Some(reference) = operation_body_reference(record.body_view()) {
+                reserve_om_retained_item(ctx, &mut references, "nx section operation body references")?;
+                references.push((ordinal, reference));
+            }
+        }
+        Ok(references)
     }
 }
 
 /// Decode complete feature-operation headers and their label frames.
-fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<'_>> {
-    validated_operation_headers(bytes, base_offset)
-        .into_iter()
-        .filter_map(|header| operation_label_at(bytes, base_offset, header))
-        .collect()
+fn operation_labels<'a>(ctx: &DecodeContext<'_>, bytes: &'a [u8], base_offset: usize) -> Result<Vec<OperationLabel<'a>>, CodecError> {
+    let mut labels = Vec::new();
+    for header in validated_operation_headers(ctx, bytes, base_offset)? {
+        if let Some(label) = operation_label_at(bytes, base_offset, header) {
+            reserve_om_retained_item(ctx, &mut labels, "nx operation labels")?;
+            labels.push(label);
+        }
+    }
+    Ok(labels)
 }
 
-fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<OperationHeader> {
+fn validated_operation_headers(ctx: &DecodeContext<'_>, bytes: &[u8], base_offset: usize) -> Result<Vec<OperationHeader>, CodecError> {
     const PREFIX: &[u8] = &[0x80, 0xcd, 0x01, 0x04, 0x01];
     const SCALAR_LEN: usize = 8;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes.len()), "scan NX operation headers")?;
     let mut headers = Vec::new();
     for marker in bytes
         .windows(PREFIX.len())
@@ -1375,9 +1385,10 @@ fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<Operatio
         else {
             continue;
         };
+        reserve_om_retained_item(ctx, &mut headers, "nx operation headers")?;
         headers.push(header);
     }
-    headers
+    Ok(headers)
 }
 
 fn operation_label_at(
@@ -1411,15 +1422,15 @@ fn operation_label_at(
 }
 
 fn operation_records_with_labels_and_ordinals<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     base_offset: usize,
     labels: &[OperationLabel<'a>],
-) -> Vec<(usize, OperationRecord<'a>)> {
-    let headers = validated_operation_headers(bytes, base_offset);
-    headers
-        .iter()
-        .enumerate()
-        .filter_map(|(ordinal, header)| {
+) -> Result<Vec<(usize, OperationRecord<'a>)>, CodecError> {
+    let headers = validated_operation_headers(ctx, bytes, base_offset)?;
+    let mut records = Vec::new();
+    for (ordinal, header) in headers.iter().enumerate() {
+        let record = (|| {
             let label = labels
                 .iter()
                 .find(|label| label.header.offset() == header.offset())?;
@@ -1427,24 +1438,26 @@ fn operation_records_with_labels_and_ordinals<'a>(
             let end = headers
                 .get(ordinal + 1)
                 .map_or(bytes.len(), |next| next.offset() - base_offset);
-            Some((
-                ordinal,
-                OperationRecord::new(bytes.get(start..end)?, *label)?,
-            ))
-        })
-        .collect()
+            Some(OperationRecord::new(bytes.get(start..end)?, *label)?)
+        })();
+        if let Some(record) = record {
+            reserve_om_retained_item(ctx, &mut records, "nx labeled operation records")?;
+            records.push((ordinal, record));
+        }
+    }
+    Ok(records)
 }
 
 fn unlabeled_operation_records_with_ordinals<'a>(
+    ctx: &DecodeContext<'_>,
     bytes: &'a [u8],
     base_offset: usize,
     labels: &[OperationLabel<'a>],
-) -> Vec<(usize, UnlabeledOperationRecord<'a>)> {
-    let headers = validated_operation_headers(bytes, base_offset);
-    headers
-        .iter()
-        .enumerate()
-        .filter_map(|(ordinal, header)| {
+) -> Result<Vec<(usize, UnlabeledOperationRecord<'a>)>, CodecError> {
+    let headers = validated_operation_headers(ctx, bytes, base_offset)?;
+    let mut records = Vec::new();
+    for (ordinal, header) in headers.iter().enumerate() {
+        let record = (|| {
             if labels
                 .iter()
                 .any(|label| label.header.offset() == header.offset())
@@ -1455,12 +1468,14 @@ fn unlabeled_operation_records_with_ordinals<'a>(
             let end = headers
                 .get(ordinal + 1)
                 .map_or(bytes.len(), |next| next.offset() - base_offset);
-            Some((
-                ordinal,
-                UnlabeledOperationRecord::new(*header, bytes.get(start..end)?)?,
-            ))
-        })
-        .collect()
+            Some(UnlabeledOperationRecord::new(*header, bytes.get(start..end)?)?)
+        })();
+        if let Some(record) = record {
+            reserve_om_retained_item(ctx, &mut records, "nx unlabeled operation records")?;
+            records.push((ordinal, record));
+        }
+    }
+    Ok(records)
 }
 
 /// Decode ordered `03|04, length, text, 00` frames from one operation payload.
@@ -3741,8 +3756,10 @@ pub(crate) fn sections<'a>(
             offset: start,
             bytes: &bytes[start..end],
         });
-        let cached_operation_labels =
-            record_area.map_or_else(Vec::new, |area| operation_labels(area.bytes, area.offset));
+        let cached_operation_labels = match record_area {
+            Some(area) => operation_labels(ctx, area.bytes, area.offset)?,
+            None => Vec::new(),
+        };
         reserve_om_retained_item(ctx, &mut out, "nx framed OM sections")?;
         out.push(Section {
             offset,
