@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::decode::operands::decode_fillet_radius_groups;
+use fillet_limits::decode_fillet_radius_groups;
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::feature_project::project_parameter_design;
@@ -1153,6 +1153,8 @@ fn localized_fillet_owner(
     }
     owner
 }
+
+mod fillet_limits;
 
 #[test]
 fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {

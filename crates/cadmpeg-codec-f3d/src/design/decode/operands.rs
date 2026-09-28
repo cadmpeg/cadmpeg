@@ -6,6 +6,7 @@ use crate::records::topology::{
 };
 
 use cadmpeg_core::container::ContainerRole;
+use std::fmt::Write;
 
 use crate::bytes::{is_guid_relaxed, lp_utf16_bounded, take_reference};
 use crate::design::decode::text::{copy_ascii_retained, lp_ascii_filtered_view, lp_utf16_bounded_charged, relaxed_guid_end};
@@ -1997,21 +1998,87 @@ pub(in crate::design) fn assign_extrude_face_roles(
 }
 
 /// Pair Fillet construction-operand groups with their radius inputs.
+fn collect_fillet_items<T>(
+    ctx: &DecodeContext<'_>,
+    values: impl Iterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut out = Vec::new();
+    for value in values {
+        ctx.charge_collection_items(1, operation)?;
+        out.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d Fillet collection allocation", 0, 1)
+        })?;
+        out.push(value);
+    }
+    Ok(out)
+}
+
+fn push_fillet_radius_group(
+    ctx: &DecodeContext<'_>,
+    out: &mut Vec<DesignFilletRadiusGroup>,
+    stream: &str,
+    group_ordinal: u32,
+    group: &DesignConstructionOperandGroup,
+    law: DesignFilletRadiusLaw,
+    tangency_weight_parameter_record_index: Option<u32>,
+) -> Result<(), CodecError> {
+    let edge_operand_record_indices = collect_fillet_items(
+        ctx,
+        group.members().iter().map(|member| member.value),
+        "f3d Fillet edge operand indices",
+    )?;
+    let mut id = copy_ascii_retained(ctx, stream, "f3d Fillet group stream ID")?;
+    const SUFFIX: &str = ":design-fillet-radius-group#";
+    let digits = group.record_index.checked_ilog10().unwrap_or(0) + 1;
+    let additional = SUFFIX.len().checked_add(usize::try_from(digits).map_err(|_| {
+        ctx.refuse_codec_limit("f3d Fillet group ID length", 0, 1)
+    })?).ok_or_else(|| ctx.refuse_codec_limit("f3d Fillet group ID length", 0, 1))?;
+    ctx.charge_retained(u64::try_from(additional).map_err(|_| {
+        ctx.refuse_codec_limit("f3d Fillet group ID length", 0, 1)
+    })?, "f3d Fillet group ID suffix")?;
+    id.try_reserve(additional).map_err(|_| {
+        ctx.refuse_codec_limit("f3d Fillet group ID allocation", 0, 1)
+    })?;
+    id.push_str(SUFFIX);
+    write!(id, "{}", group.record_index).map_err(|_| {
+        ctx.refuse_codec_limit("f3d Fillet group ID allocation", 0, 1)
+    })?;
+    ctx.charge_collection_items(1, "f3d Fillet group output")?;
+    out.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d Fillet group output allocation", 0, 1)
+    })?;
+    out.push(DesignFilletRadiusGroup {
+        id,
+        scope_record_index: group.scope_record_index,
+        group_ordinal,
+        group_record_index: group.record_index,
+        edge_operand_record_indices,
+        law,
+        tangency_weight_parameter_record_index,
+    });
+    Ok(())
+}
+
 pub(crate) fn decode_fillet_radius_groups(
+    ctx: &DecodeContext<'_>,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
     owners: &[DesignParameterOwner],
     parameters: &[DesignParameter],
-) -> Vec<DesignFilletRadiusGroup> {
-    let parameters = parameters
-        .iter()
-        .filter_map(|parameter| {
-            Some((
-                (native_stream(&parameter.id)?, parameter.record_index),
-                parameter,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+) -> Result<Vec<DesignFilletRadiusGroup>, CodecError> {
+    let mut parameter_index = HashMap::new();
+    for parameter in parameters {
+        let Some(stream) = native_stream(&parameter.id) else { continue; };
+        let key = (stream, parameter.record_index);
+        if !parameter_index.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d Fillet parameter index")?;
+            parameter_index.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d Fillet parameter index allocation", 0, 1)
+            })?;
+        }
+        parameter_index.insert(key, parameter);
+    }
     let mut out = Vec::new();
     for scope in scopes
         .iter()
@@ -2020,15 +2087,14 @@ pub(crate) fn decode_fillet_radius_groups(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let mut scope_groups = groups
+        let mut scope_groups = collect_fillet_items(ctx, groups
             .iter()
             .filter(|group| {
                 native_stream(&group.id) == Some(stream)
                     && group.scope_record_index == scope.record_index
-            })
-            .collect::<Vec<_>>();
+            }), "f3d Fillet scope groups")?;
         scope_groups.sort_by_key(|group| group.scope_reference_ordinal);
-        let mut owned_parameters = owners
+        let mut owned_parameters = collect_fillet_items(ctx, owners
             .iter()
             .filter(|owner| {
                 native_stream(owner.id()) == Some(stream)
@@ -2037,23 +2103,20 @@ pub(crate) fn decode_fillet_radius_groups(
             .filter_map(|owner| {
                 Some((
                     owner.local_ordinal(),
-                    *parameters.get(&(stream, owner.parameter_record_index()))?,
+                    *parameter_index.get(&(stream, owner.parameter_record_index()))?,
                 ))
-            })
-            .collect::<Vec<_>>();
+            }), "f3d Fillet owned parameters")?;
         owned_parameters.sort_by_key(|(ordinal, _)| *ordinal);
-        let radii = owned_parameters
+        let radii = collect_fillet_items(ctx, owned_parameters
             .iter()
             .filter_map(|(_, parameter)| {
                 (parameter.source_kind() == "Radius").then_some(*parameter)
-            })
-            .collect::<Vec<_>>();
-        let weights = owned_parameters
+            }), "f3d Fillet radius parameters")?;
+        let weights = collect_fillet_items(ctx, owned_parameters
             .iter()
             .filter_map(|(_, parameter)| {
                 (parameter.source_kind() == "TangencyWeight").then_some(*parameter)
-            })
-            .collect::<Vec<_>>();
+            }), "f3d Fillet weight parameters")?;
         if owned_parameters.len() == radii.len() + weights.len()
             && scope_groups.len() == radii.len()
             && (weights.is_empty() || weights.len() == scope_groups.len())
@@ -2062,35 +2125,25 @@ pub(crate) fn decode_fillet_radius_groups(
                 let Ok(group_ordinal) = u32::try_from(ordinal) else {
                     continue;
                 };
-                out.push(DesignFilletRadiusGroup {
-                    id: format!("{stream}:design-fillet-radius-group#{}", group.record_index),
-                    scope_record_index: scope.record_index,
-                    group_ordinal,
-                    group_record_index: group.record_index,
-                    edge_operand_record_indices: group
-                        .members()
-                        .iter()
-                        .map(|member| member.value)
-                        .collect(),
-                    law: DesignFilletRadiusLaw::Constant {
+                push_fillet_radius_group(ctx, &mut out, stream, group_ordinal, group,
+                    DesignFilletRadiusLaw::Constant {
                         radius_parameter_record_index: radius.record_index,
                     },
-                    tangency_weight_parameter_record_index: weights
+                    weights
                         .get(ordinal)
                         .map(|parameter| parameter.record_index),
-                });
+                )?;
             }
             continue;
         }
         let [group] = scope_groups.as_slice() else {
             continue;
         };
-        let chord_lengths = owned_parameters
+        let chord_lengths = collect_fillet_items(ctx, owned_parameters
             .iter()
             .filter_map(|(_, parameter)| {
                 (parameter.source_kind() == "ChordLen").then_some(parameter.record_index)
-            })
-            .collect::<Vec<_>>();
+            }), "f3d Fillet chord lengths")?;
         // TangencyWeight is optional for the chordal law; older records carry
         // only the required ChordLen input.
         if (weights.is_empty() && owned_parameters.len() == 1)
@@ -2099,36 +2152,26 @@ pub(crate) fn decode_fillet_radius_groups(
             let [chord_length] = chord_lengths.as_slice() else {
                 continue;
             };
-            out.push(DesignFilletRadiusGroup {
-                id: format!("{stream}:design-fillet-radius-group#{}", group.record_index),
-                scope_record_index: scope.record_index,
-                group_ordinal: 0,
-                group_record_index: group.record_index,
-                edge_operand_record_indices: group
-                    .members()
-                    .iter()
-                    .map(|member| member.value)
-                    .collect(),
-                law: DesignFilletRadiusLaw::Chordal {
+            push_fillet_radius_group(ctx, &mut out, stream, 0, group,
+                DesignFilletRadiusLaw::Chordal {
                     chord_length_parameter_record_index: *chord_length,
                 },
-                tangency_weight_parameter_record_index: weights
+                weights
                     .first()
                     .map(|parameter| parameter.record_index),
-            });
+            )?;
             continue;
         }
         let asymmetric_offsets = |kind: &str| {
-            owned_parameters
+            collect_fillet_items(ctx, owned_parameters
                 .iter()
                 .filter_map(|(_, parameter)| {
                     (parameter.source_kind() == kind).then_some(parameter.record_index)
-                })
-                .collect::<Vec<_>>()
+                }), "f3d Fillet asymmetric offsets")
         };
         let (offset_one, offset_two) = (
-            asymmetric_offsets("EdgeOffset1"),
-            asymmetric_offsets("EdgeOffset2"),
+            asymmetric_offsets("EdgeOffset1")?,
+            asymmetric_offsets("EdgeOffset2")?,
         );
         if owned_parameters.len() == 3 {
             if let ([offset_one], [offset_two], [weight]) = (
@@ -2136,38 +2179,28 @@ pub(crate) fn decode_fillet_radius_groups(
                 offset_two.as_slice(),
                 weights.as_slice(),
             ) {
-                out.push(DesignFilletRadiusGroup {
-                    id: format!("{stream}:design-fillet-radius-group#{}", group.record_index),
-                    scope_record_index: scope.record_index,
-                    group_ordinal: 0,
-                    group_record_index: group.record_index,
-                    edge_operand_record_indices: group
-                        .members()
-                        .iter()
-                        .map(|member| member.value)
-                        .collect(),
-                    law: DesignFilletRadiusLaw::Asymmetric {
+                push_fillet_radius_group(ctx, &mut out, stream, 0, group,
+                    DesignFilletRadiusLaw::Asymmetric {
                         offset_one_parameter_record_index: *offset_one,
                         offset_two_parameter_record_index: *offset_two,
                     },
-                    tangency_weight_parameter_record_index: Some(weight.record_index),
-                });
+                    Some(weight.record_index),
+                )?;
                 continue;
             }
         }
         let records = |kind: &str| {
-            owned_parameters
+            collect_fillet_items(ctx, owned_parameters
                 .iter()
                 .filter_map(|(_, parameter)| {
                     (parameter.source_kind() == kind).then_some(parameter.record_index)
-                })
-                .collect::<Vec<_>>()
+                }), "f3d Fillet variable parameters")
         };
         let (start, end, middle_radii, middle_parameters) = (
-            records("StartRadius"),
-            records("EndRadius"),
-            records("MidRadius"),
-            records("MidParams"),
+            records("StartRadius")?,
+            records("EndRadius")?,
+            records("MidRadius")?,
+            records("MidParams")?,
         );
         let ([start], [end]) = (start.as_slice(), end.as_slice()) else {
             continue;
@@ -2182,37 +2215,28 @@ pub(crate) fn decode_fillet_radius_groups(
         {
             continue;
         }
-        out.push(DesignFilletRadiusGroup {
-            id: format!("{stream}:design-fillet-radius-group#{}", group.record_index),
-            scope_record_index: scope.record_index,
-            group_ordinal: 0,
-            group_record_index: group.record_index,
-            edge_operand_record_indices: group
-                .members()
-                .iter()
-                .map(|member| member.value)
-                .collect(),
-            law: DesignFilletRadiusLaw::Variable {
+        let middle = collect_fillet_items(ctx, middle_radii
+            .into_iter()
+            .zip(middle_parameters)
+            .map(|(radius_parameter_record_index, parameter_record_index)| {
+                crate::records::topology::fillet::DesignFilletMidpoint {
+                    radius_parameter_record_index,
+                    parameter_record_index,
+                }
+            }), "f3d Fillet middle parameters")?;
+        push_fillet_radius_group(ctx, &mut out, stream, 0, group,
+            DesignFilletRadiusLaw::Variable {
                 start_radius_parameter_record_index: *start,
                 end_radius_parameter_record_index: *end,
-                middle: middle_radii
-                    .into_iter()
-                    .zip(middle_parameters)
-                    .map(|(radius_parameter_record_index, parameter_record_index)| {
-                        crate::records::topology::fillet::DesignFilletMidpoint {
-                            radius_parameter_record_index,
-                            parameter_record_index,
-                        }
-                    })
-                    .collect(),
+                middle,
             },
-            tangency_weight_parameter_record_index: weights
+            weights
                 .first()
                 .map(|parameter| parameter.record_index),
-        });
+        )?;
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
-    out
+    Ok(out)
 }
 
 /// Remove fixed Fillet interpretations of frames that are indexed parameter owners.
@@ -2220,20 +2244,14 @@ pub(crate) fn disambiguate_fixed_fillet_parameters(
     scopes: &mut [DesignParameterScope],
     owners: &[DesignParameterOwner],
 ) {
-    let indexed_scopes = owners
-        .iter()
-        .filter_map(|owner| {
-            Some((
-                native_stream(owner.id())?.to_owned(),
-                owner.scope_record_index(),
-            ))
-        })
-        .collect::<HashSet<_>>();
     for scope in scopes {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        if indexed_scopes.contains(&(stream.to_owned(), scope.record_index)) {
+        if owners.iter().any(|owner| {
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+        }) {
             if let crate::records::feature::scope::DesignScopePayloadMut::Fillet(slot)
             | crate::records::feature::scope::DesignScopePayloadMut::Conge(slot)
             | crate::records::feature::scope::DesignScopePayloadMut::Abrundung(slot)
