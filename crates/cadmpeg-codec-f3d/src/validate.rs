@@ -1116,7 +1116,7 @@ fn validate_loaded(
         &edge_identity_records,
         &edge_treatment_vertex_records,
     )?;
-    let face_operand_records = validate_face_operands(&ctx, &mut findings, &expected_face_operands);
+    let face_operand_records = validate_face_operands(&ctx, &mut findings, &expected_face_operands)?;
     validate_face_group_member_resolution(
         &ctx,
         &mut findings,
@@ -6641,46 +6641,43 @@ fn validate_face_operands<'a>(
     ctx: &Ctx<'a, '_>,
     findings: &mut Vec<Finding>,
     expected_face_operands: &[records::topology::face::DesignFaceOperand],
-) -> HashSet<(&'a str, u32, u32)> {
+) -> Result<HashSet<(&'a str, u32, u32)>, CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let scopes_by_index = &ctx.scopes_by_index;
     let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
-    let face_groups_by_index = native
-        .design_construction_operand_groups
-        .iter()
-        .map(|group| ((design_stream(&group.id), group.record_index), group))
-        .collect::<HashMap<_, _>>();
-    let expected_face_operands = expected_face_operands
-        .iter()
-        .map(|operand| (operand.id.as_str(), operand))
-        .collect::<HashMap<_, _>>();
+    let face_groups_by_index = collect_index(ctx.decode,
+        native.design_construction_operand_groups.iter()
+            .map(|group| ((design_stream(&group.id), group.record_index), group)),
+        "index F3D face operand groups")?;
+    let expected_face_operands = collect_index(ctx.decode,
+        expected_face_operands.iter().map(|operand| (operand.id.as_str(), operand)),
+        "index F3D expected face operands")?;
     let mut face_operand_records = HashSet::new();
     for operand in &native.design_face_operands {
         let native_stream = design_stream(&operand.id);
         let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
         let header = records_by_index.get(&(native_stream, operand.record_index()));
         let recipe = recipes_by_id.get(operand.recipe_id.as_str());
-        let mut expected_faces = recipe
+        let mut expected_faces = ctx.collect_vec(recipe
             .and_then(|recipe| recipe.record_index)
             .map(|record_index| i64::from(record_index.value))
             .filter(|value| *value >= 0)
-            .map(|design_reference| {
+            .into_iter()
+            .flat_map(|design_reference| {
                 native
                     .persistent_subentity_tags
                     .iter()
-                    .filter(|tag| {
+                    .filter(move |tag| {
                         crate::ids::same_native_occurrence(&tag.id, &operand.id)
                             && tag.design_references.contains(&design_reference)
                     })
                     .filter_map(|tag| match &tag.target {
-                        cadmpeg_ir::attributes::AttributeTarget::Face(id) => Some(id.clone()),
+                        cadmpeg_ir::attributes::AttributeTarget::Face(id) => Some(id),
                         _ => None,
                     })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+            }), "collect F3D expected operand faces")?;
         expected_faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         expected_faces.dedup();
         let mut expected_references = design::decode::dimension_frames::decode_recipe_references(
@@ -6700,25 +6697,24 @@ fn validate_face_operands<'a>(
             .and_then(|recipe| recipe.record_index)
             .map(|record_index| i64::from(record_index.value))
             .filter(|value| *value >= 0);
-        let referenced_faces = expected_references
+        let referenced_faces = ctx.collect_set(expected_references
             .iter()
             .filter(|reference| Some(reference.design_reference) == recipe_design_reference)
-            .flat_map(|reference| &reference.candidate_faces)
-            .collect::<HashSet<_>>();
-        let expected_unreferenced_faces = expected_faces
+            .flat_map(|reference| &reference.candidate_faces),
+            "index F3D referenced operand faces")?;
+        let expected_unreferenced_faces = ctx.collect_vec(expected_faces
             .iter()
-            .filter(|face| !referenced_faces.contains(face))
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut expected_alternate_selector_faces = expected_references
+            .copied()
+            .filter(|face| !referenced_faces.contains(face)),
+            "collect F3D unreferenced operand faces")?;
+        let mut expected_alternate_selector_faces = ctx.collect_vec(expected_references
             .iter()
             .filter(|reference| Some(reference.design_reference) == recipe_design_reference)
-            .flat_map(|reference| &reference.alternate_selector_faces)
-            .cloned()
-            .collect::<Vec<_>>();
+            .flat_map(|reference| &reference.alternate_selector_faces),
+            "collect F3D alternate selector operand faces")?;
         expected_alternate_selector_faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         expected_alternate_selector_faces.dedup();
-        let expected_node_offsets = operand
+        let expected_node_offsets = ctx.collect_vec(operand
             .recipe_program
             .windows(3)
             .enumerate()
@@ -6727,9 +6723,8 @@ fn validate_face_operands<'a>(
                 operand
                     .recipe_program_offset
                     .saturating_add(u64_from_index(index).saturating_mul(4))
-            })
-            .collect::<Vec<_>>();
-        let expected_nodes = expected_node_offsets
+            }), "collect F3D face recipe node offsets")?;
+        let expected_nodes = ctx.collect_vec(expected_node_offsets
             .iter()
             .copied()
             .zip(
@@ -6738,8 +6733,7 @@ fn validate_face_operands<'a>(
                     .copied()
                     .skip(1)
                     .chain(std::iter::once(operand.next_byte_offset())),
-            )
-            .collect::<Vec<_>>();
+            ), "collect F3D face recipe nodes")?;
         let valid_program =
             match design::decode::operands::face_recipe_program_kind(&operand.recipe_program) {
                 Some(design::decode::operands::FaceRecipeProgramKind::Terminal) => {
@@ -6979,11 +6973,12 @@ fn validate_face_operands<'a>(
                 == operand
                     .recipe_program_offset
                     .saturating_add(u64_from_index(operand.recipe_program.len()).saturating_mul(4))
-            && (historical_candidates_retained || operand.candidate_faces == expected_faces)
             && (historical_candidates_retained
-                || operand.unreferenced_candidate_faces == expected_unreferenced_faces)
+                || face_ids_match_refs(&operand.candidate_faces, &expected_faces))
             && (historical_candidates_retained
-                || operand.alternate_selector_candidate_faces == expected_alternate_selector_faces)
+                || face_ids_match_refs(&operand.unreferenced_candidate_faces, &expected_unreferenced_faces))
+            && (historical_candidates_retained
+                || face_ids_match_refs(&operand.alternate_selector_candidate_faces, &expected_alternate_selector_faces))
             && expected_history.is_some_and(|expected| {
                 operand.preceding_candidate_faces == expected.preceding_candidate_faces
                     && operand.changed_candidate_faces == expected.changed_candidate_faces
@@ -6994,22 +6989,24 @@ fn validate_face_operands<'a>(
                     && recipe.kind == operand.recipe_kind
                     && recipe.byte_offset > operand.recipe_record_byte_offset()
                     && recipe.byte_offset < operand.next_byte_offset()
-            })
-            && face_operand_records.insert((
+            });
+        let valid = valid && ctx.insert_unique(&mut face_operand_records, (
                 native_stream,
                 operand.scope_record_index,
                 operand.record_index(),
-            ));
+            ), "index F3D face operand records")?;
         if !valid {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design face operand has an invalid scope or recipe frame".into(),
-                entity: Some(operand.id.clone()),
-            });
+            ctx.push_constant_finding(findings, Check::NativeLinks,
+                "Fusion Design face operand has an invalid scope or recipe frame",
+                Some(ctx.copy_entity(&operand.id)?))?;
         }
     }
-    face_operand_records
+    Ok(face_operand_records)
+}
+
+fn face_ids_match_refs(actual: &[cadmpeg_ir::ids::FaceId], expected: &[&cadmpeg_ir::ids::FaceId]) -> bool {
+    actual.len() == expected.len()
+        && actual.iter().zip(expected).all(|(actual, expected)| actual == *expected)
 }
 
 /// Report face-group members with no resolved recipe operand.
