@@ -37,7 +37,6 @@ use cadmpeg_ir::CadIr;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone)]
 struct BoundarySegment {
     model_curve: u32,
     pcurves: Vec<u32>,
@@ -45,14 +44,13 @@ struct BoundarySegment {
     parameter_curves_authoritative: bool,
 }
 
-#[derive(Clone)]
 struct BoundaryDefinition {
     surface: u32,
     segments: Vec<BoundarySegment>,
 }
 
-struct BoundaryItem {
-    segment: BoundarySegment,
+struct BoundaryItem<'a> {
+    segment: &'a BoundarySegment,
     model_curve: CurveId,
     source_edge: Edge,
     start: FinitePoint3,
@@ -2154,7 +2152,7 @@ pub(super) fn project(
         let mut linear_boundary_candidates = reserve_vec(ctx, boundary_sequences.len(), "iges trimming linear candidates")?;
         let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
-            let Some(boundary) = boundaries.get(&sequence).cloned() else {
+            let Some(boundary) = boundaries.get(&sequence) else {
                 super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed-surface boundary definition is missing"))?;
                 valid = false;
                 break;
@@ -2303,7 +2301,7 @@ pub(super) fn project(
                     pcurves.clear();
                 }
                 items.push(BoundaryItem {
-                    segment: segment.clone(),
+                    segment,
                     model_curve: model_curve_id,
                     source_edge,
                     start,
@@ -2315,7 +2313,12 @@ pub(super) fn project(
                 break;
             }
             if implicit_outer_domain {
-                implicit_boundary_curves.extend(items.iter().map(|item| item.model_curve.clone()));
+                reserve_vec_growth(ctx, &mut implicit_boundary_curves, items.len(), "iges implicit boundary curve IDs")?;
+                for item in &items {
+                    implicit_boundary_curves.push(copy_optional_identity(
+                        Some(ctx), item.model_curve.as_str(), "iges implicit boundary curve ID text",
+                    )?);
+                }
             }
             let traversal = |item: &BoundaryItem| {
                 if item.segment.sense == Sense::Forward {
