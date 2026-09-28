@@ -95,6 +95,12 @@ pub(super) fn support_uv_budget_exhausted(budget: &SupportUvBudget<'_>) -> bool 
     budget.exhausted() || budget.remaining() == 0
 }
 
+fn refuse_geometry_work(
+    budget: &GeometryWorkBudget<'_>,
+) -> Result<(), cadmpeg_core::decode::ResourceLimit> {
+    budget.resource_refusal().map_or(Ok(()), Err)
+}
+
 fn support_uv_lane_geometry_work_limit(sample_count: usize, remaining: usize) -> usize {
     sample_count
         .saturating_mul(SUPPORT_UV_GEOMETRY_WORK_PER_SAMPLE)
@@ -259,6 +265,7 @@ fn support_uv_lane_matches_surface_with_budget(
     };
     for (uv, point) in values.iter().zip(points) {
         if geometry_budget.exhausted() {
+            refuse_geometry_work(geometry_budget)?;
             return Ok(false);
         }
         if uv.iter().any(|value| missing_support_parameter(*value)) {
@@ -905,7 +912,11 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
         for (procedural_id, samples, fit_tolerance, _) in pending {
             let points = &samples.points_charged(ctx)?;
             let parameters = &samples.parameters_charged(ctx)?;
-            if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
+            if geometry_budget.exhausted() {
+                refuse_geometry_work(geometry_budget)?;
+                break;
+            }
+            if support_uv_budget_exhausted(support_budget) {
                 break;
             }
             let Some(procedural) = index.procedural_curves(procedural_id.as_str()) else {
@@ -919,7 +930,11 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                 continue;
             };
             for (side, support) in context.sides().iter().enumerate() {
-                if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
+                if geometry_budget.exhausted() {
+                    refuse_geometry_work(geometry_budget)?;
+                    break;
+                }
+                if support_uv_budget_exhausted(support_budget) {
                     break;
                 }
                 if validated_lanes.contains(&(
@@ -954,7 +969,15 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                 let mut endpoints = [None, None];
                 for (sample_index, (parameter, point)) in parameters.iter().zip(points).enumerate()
                 {
-                    if geometry_budget.exhausted() || !support_budget.charge() {
+                    if geometry_budget.exhausted() {
+                        refuse_geometry_work(geometry_budget)?;
+                        fully_validated = false;
+                        break;
+                    }
+                    if !support_budget.charge() {
+                        if let Some(limit) = ctx.resource_refusal() {
+                            return Err(limit.into());
+                        }
                         fully_validated = false;
                         break;
                     }
@@ -992,7 +1015,10 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     let parent_exhausted = parent_geometry_budget
                         .consume_child(lane_geometry_budget)
                         .is_err();
-                    lane_geometry_exhausted |= lane_geometry_budget.exhausted() || parent_exhausted;
+                    let child_exhausted = lane_geometry_budget.exhausted();
+                    refuse_geometry_work(lane_geometry_budget)?;
+                    refuse_geometry_work(parent_geometry_budget)?;
+                    lane_geometry_exhausted |= child_exhausted || parent_exhausted;
                 }
                 if inconsistent {
                     ctx.charge_collection_items(1, "nx inconsistent support UV lanes")?;
@@ -1100,7 +1126,9 @@ fn complete_support_uv_wave(
     endpoint_witnesses: &mut EndpointWitnesses,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let mut lane_geometry_exhausted = false;
-    if !support_uv_budget_exhausted(support_budget) && !geometry_budget.exhausted() {
+    let geometry_exhausted = geometry_budget.exhausted();
+    refuse_geometry_work(geometry_budget)?;
+    if !support_uv_budget_exhausted(support_budget) && !geometry_exhausted {
         let mut replacements = Vec::new();
         let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
         let model_index = cadmpeg_ir::index::ModelIndex::try_new_model_only_for_decode(ir, ctx)?;
@@ -1230,6 +1258,9 @@ fn complete_support_uv_wave(
                     let mut all_parameters_certified = true;
                     for (point_index, point) in points.iter().enumerate() {
                         if !support_budget.charge() {
+                            if let Some(limit) = ctx.resource_refusal() {
+                                return Err(limit.into());
+                            }
                             return Ok(None);
                         }
                         let serialized_seeds = serialized_support_uv_seed_candidates(
@@ -1437,7 +1468,10 @@ fn complete_support_uv_wave(
                     let parent_exhausted = parent_geometry_budget
                         .consume_child(&lane_geometry_budget)
                         .is_err();
-                    lane_geometry_exhausted |= lane_geometry_budget.exhausted() || parent_exhausted;
+                    let child_exhausted = lane_geometry_budget.exhausted();
+                    refuse_geometry_work(&lane_geometry_budget)?;
+                    refuse_geometry_work(parent_geometry_budget)?;
+                    lane_geometry_exhausted |= child_exhausted || parent_exhausted;
                     ctx.charge_collection_items(1, "nx support UV failed retries")?;
                     failed_attempts.insert(
                         attempt_key,
@@ -1575,7 +1609,10 @@ fn complete_support_uv_wave(
                 let parent_exhausted = parent_geometry_budget
                     .consume_child(&lane_geometry_budget)
                     .is_err();
-                lane_geometry_exhausted |= lane_geometry_budget.exhausted() || parent_exhausted;
+                let child_exhausted = lane_geometry_budget.exhausted();
+                refuse_geometry_work(&lane_geometry_budget)?;
+                refuse_geometry_work(parent_geometry_budget)?;
+                lane_geometry_exhausted |= child_exhausted || parent_exhausted;
             }
         }
         let mut cache_backed_constructions = BTreeSet::<ProceduralCurveId>::new();
@@ -1626,7 +1663,9 @@ fn complete_support_uv_wave(
     // Independent inverse admission is the cheapest certified route. Run
     // coupled continuation only after this wave has had a chance to fill the
     // same lanes, so difficult nested supports are reserved for residuals.
-    if !coupled_geometry_budget.exhausted() {
+    let coupled_geometry_exhausted = coupled_geometry_budget.exhausted();
+    refuse_geometry_work(coupled_geometry_budget)?;
+    if !coupled_geometry_exhausted {
         coupled_geometry_budget.clear_blend_frame_cache();
         lane_geometry_exhausted |= complete_coupled_support_uv(
             ctx,
@@ -1745,6 +1784,7 @@ fn complete_coupled_support_uv(
     endpoint_witnesses: &mut EndpointWitnesses,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     if geometry_budget.exhausted() {
+        refuse_geometry_work(geometry_budget)?;
         return Ok(false);
     }
     let mut lane_geometry_exhausted = false;
@@ -1837,6 +1877,9 @@ fn complete_coupled_support_uv(
         let missing_lanes = missing.iter().filter(|missing| **missing).count();
         if !coupled_support_budget.charge_by(work_units(points.len().saturating_mul(missing_lanes)))
         {
+            if let Some(limit) = ctx.resource_refusal() {
+                return Err(limit.into());
+            }
             break;
         }
         let seeds = std::array::from_fn(|side| {
@@ -1884,7 +1927,10 @@ fn complete_coupled_support_uv(
             let parent_exhausted = parent_geometry_budget
                 .consume_child(&lane_geometry_budget)
                 .is_err();
-            lane_geometry_exhausted |= lane_geometry_budget.exhausted() || parent_exhausted;
+            let child_exhausted = lane_geometry_budget.exhausted();
+            refuse_geometry_work(&lane_geometry_budget)?;
+            refuse_geometry_work(parent_geometry_budget)?;
+            lane_geometry_exhausted |= child_exhausted || parent_exhausted;
             continue;
         };
         for side in 0..2 {
@@ -1960,7 +2006,10 @@ fn complete_coupled_support_uv(
         let parent_exhausted = parent_geometry_budget
             .consume_child(&lane_geometry_budget)
             .is_err();
-        lane_geometry_exhausted |= lane_geometry_budget.exhausted() || parent_exhausted;
+        let child_exhausted = lane_geometry_budget.exhausted();
+        refuse_geometry_work(&lane_geometry_budget)?;
+        refuse_geometry_work(parent_geometry_budget)?;
+        lane_geometry_exhausted |= child_exhausted || parent_exhausted;
     }
     drop(model_index);
     for (procedural_id, side, pcurve) in replacements {
@@ -2769,6 +2818,32 @@ mod tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::CollectionItems
                     && limit.operation == "model procedural surface carriers"
+        ));
+    }
+
+    #[test]
+    fn support_uv_completion_propagates_geometry_work_refusal() {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("bounded test input");
+        let support_budget = ctx.work_budget(10);
+        let geometry_budget = GeometryWorkBudget::from_context(&ctx, 0);
+        assert!(!geometry_budget.charge());
+        let mut ir = CadIr::empty();
+        let mut endpoint_witnesses = BTreeMap::new();
+
+        assert!(matches!(
+            complete_support_uv_with_budget_and_endpoint_witnesses(
+                &ctx,
+                &mut ir,
+                &[],
+                (&support_budget, &geometry_budget),
+                (&support_budget, &geometry_budget),
+                &mut endpoint_witnesses,
+            ),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::Codec("nx adaptive geometry work")
         ));
     }
 
