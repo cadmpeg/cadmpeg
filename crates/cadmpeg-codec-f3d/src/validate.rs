@@ -1040,13 +1040,14 @@ fn validate_loaded(
         &native.asm_histories,
     )?;
     history::bind_face_operand_history_candidates(
+        decode,
         &mut expected_face_operands,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.construction_recipes,
         &native.asm_histories,
         &scope_histories,
-    );
+    )?;
     let decoded_profile_face_groups = collect_index_set(decode, native
         .design_face_operands
         .iter()
@@ -6402,12 +6403,13 @@ fn validate_edge_operands<'a>(
         &native.asm_histories,
     )?;
     history::bind_edge_operand_history_candidates(
+        decode,
         &mut expected_edge_operands,
         &native.design_parameter_scopes,
         &native.construction_recipes,
         &native.asm_histories,
         &scope_histories,
-    );
+    )?;
     let expected_edge_operands = collect_index(decode,
         expected_edge_operands.iter().map(|operand| (operand.id.as_str(), operand)),
         "index F3D expected edge operands")?;

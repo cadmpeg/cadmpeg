@@ -4587,15 +4587,24 @@ fn linked_previous_state_id(history: &AsmHistory, state: &AsmDeltaState) -> Opti
     }
 }
 
-fn history_state_index(history: &AsmHistory) -> HashMap<i64, Option<&AsmDeltaState>> {
+fn history_state_index<'h>(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    history: &'h AsmHistory,
+) -> Result<HashMap<i64, Option<&'h AsmDeltaState>>, cadmpeg_core::CodecError> {
     let mut states = HashMap::new();
     for state in &history.states {
+        if !states.contains_key(&state.state_id) {
+            charge_history_item(decode, "index F3D history states")?;
+            states.try_reserve(1).map_err(|_| {
+                history_reserve_error(decode, "index F3D history states")
+            })?;
+        }
         states
             .entry(state.state_id)
             .and_modify(|state| *state = None)
             .or_insert(Some(state));
     }
-    states
+    Ok(states)
 }
 
 fn exact_face_selection_group<'a>(
@@ -4703,15 +4712,16 @@ fn direct_face_recipe_candidates(
 }
 
 pub(crate) fn bind_face_operand_history_candidates(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     operands: &mut [crate::records::topology::face::DesignFaceOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     recipes: &[crate::records::recipes::ConstructionRecipe],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     if projection_was_finalized(histories) {
-        return;
+        return Ok(());
     }
     let recipe_record_indices = recipes
         .iter()
@@ -4764,7 +4774,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         }) else {
             continue;
         };
-        let states = history_state_index(history);
+        let states = history_state_index(decode, history)?;
         let Some(topology) = previous.topology() else {
             continue;
         };
@@ -4789,7 +4799,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             operand.alternate_selector_candidate_faces.clear();
         }
         let Some(changed_faces) =
-            face_changes_across_state_chain(state, previous_state_id, &states)
+            face_changes_across_state_chain(decode, state, previous_state_id, &states)?
         else {
             continue;
         };
@@ -5048,12 +5058,14 @@ pub(crate) fn bind_face_operand_history_candidates(
         }
     }
     bind_profile_face_group_cardinality(
+        decode,
         operands,
         scopes,
         operand_groups,
         histories,
         scope_histories,
-    );
+    )?;
+    Ok(())
 }
 
 /// Resolve a Draft face whose persistent selector lane is ambiguous in the
@@ -5556,17 +5568,11 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         else {
             continue;
         };
-        let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
-        for state in &history.states {
-            states
-                .entry(state.state_id)
-                .and_modify(|state| *state = None)
-                .or_insert(Some(state));
-        }
+        let states = history_state_index(decode, history)?;
         let Some(topology) = previous.topology() else {
             continue;
         };
-        if face_changes_across_state_chain(state, previous.state_id, &states).is_none() {
+        if face_changes_across_state_chain(decode, state, previous.state_id, &states)?.is_none() {
             continue;
         }
         let Some(source) = historical_brep_source(&previous.id) else {
@@ -5993,12 +5999,13 @@ fn resolve_direct_face_recipe_clauses(
 }
 
 fn bind_profile_face_group_cardinality(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     operands: &mut [crate::records::topology::face::DesignFaceOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for scope in scopes {
         let scoped_history = if scope_histories.contains_key(&scope.id) {
             let Some(history) = bound_scope_history(&scope.id, scope_histories, histories) else {
@@ -6051,10 +6058,16 @@ fn bind_profile_face_group_cardinality(
             let Some((history, state, previous)) = history_pair else {
                 continue;
             };
-            let states = history_state_index(history);
+            let states = history_state_index(decode, history)?;
+            let changed_faces = face_changes_across_state_chain(
+                decode,
+                state,
+                previous_state_id,
+                &states,
+            )?;
             let (Some(topology), Some(changed_faces)) = (
                 previous.topology(),
-                face_changes_across_state_chain(state, previous_state_id, &states),
+                changed_faces,
             ) else {
                 continue;
             };
@@ -6103,6 +6116,7 @@ fn bind_profile_face_group_cardinality(
             }
         }
     }
+    Ok(())
 }
 
 fn profile_face_group_cardinality_candidates(
@@ -6141,44 +6155,83 @@ fn profile_face_group_cardinality_candidates(
 }
 
 fn face_changes_across_state_chain<'a>(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     state: &'a AsmDeltaState,
     previous_state_id: i64,
     states: &HashMap<i64, Option<&'a AsmDeltaState>>,
-) -> Option<HashSet<i64>> {
+) -> Result<Option<HashSet<i64>>, cadmpeg_core::CodecError> {
     let mut current = state;
     let mut visited = HashSet::new();
     let mut changed = HashSet::new();
     while current.state_id != previous_state_id {
-        if !visited.insert(current.state_id) {
-            return None;
+        if !history_hash_set_insert(
+            decode,
+            &mut visited,
+            current.state_id,
+            "track F3D face change state chain",
+        )? {
+            return Ok(None);
         }
-        let transition = current.transition.as_ref()?;
-        changed.extend(transition.topology.faces.deleted.iter().copied());
-        changed.extend(transition.topology.faces.updated.iter().copied());
-        current = states.get(&transition.previous_state_id?)?.as_ref()?;
+        let Some(transition) = current.transition.as_ref() else {
+            return Ok(None);
+        };
+        for face in transition
+            .topology
+            .faces
+            .deleted
+            .iter()
+            .chain(&transition.topology.faces.updated)
+        {
+            history_hash_set_insert(decode, &mut changed, *face, "collect F3D changed faces")?;
+        }
+        let Some(previous) = transition
+            .previous_state_id
+            .and_then(|id| states.get(&id).copied().flatten())
+        else {
+            return Ok(None);
+        };
+        current = previous;
     }
-    Some(changed)
+    Ok(Some(changed))
 }
 
 fn edge_changes_across_state_chain<'a>(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     state: &'a AsmDeltaState,
     previous_state_id: i64,
     states: &HashMap<i64, Option<&'a AsmDeltaState>>,
-) -> Option<(HashSet<i64>, HashSet<i64>)> {
+) -> Result<Option<(HashSet<i64>, HashSet<i64>)>, cadmpeg_core::CodecError> {
     let mut current = state;
     let mut visited = HashSet::new();
     let mut deleted = HashSet::new();
     let mut updated = HashSet::new();
     while current.state_id != previous_state_id {
-        if !visited.insert(current.state_id) {
-            return None;
+        if !history_hash_set_insert(
+            decode,
+            &mut visited,
+            current.state_id,
+            "track F3D edge change state chain",
+        )? {
+            return Ok(None);
         }
-        let transition = current.transition.as_ref()?;
-        deleted.extend(transition.topology.edges.deleted.iter().copied());
-        updated.extend(transition.topology.edges.updated.iter().copied());
-        current = states.get(&transition.previous_state_id?)?.as_ref()?;
+        let Some(transition) = current.transition.as_ref() else {
+            return Ok(None);
+        };
+        for edge in &transition.topology.edges.deleted {
+            history_hash_set_insert(decode, &mut deleted, *edge, "collect F3D deleted edges")?;
+        }
+        for edge in &transition.topology.edges.updated {
+            history_hash_set_insert(decode, &mut updated, *edge, "collect F3D updated edges")?;
+        }
+        let Some(previous) = transition
+            .previous_state_id
+            .and_then(|id| states.get(&id).copied().flatten())
+        else {
+            return Ok(None);
+        };
+        current = previous;
     }
-    Some((deleted, updated))
+    Ok(Some((deleted, updated)))
 }
 
 fn historical_face_support_contexts(
@@ -6611,14 +6664,15 @@ fn side_one_recipe_edge(
 }
 
 pub(crate) fn bind_edge_operand_history_candidates(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     operands: &mut [crate::records::topology::edge_identity::DesignEdgeOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     recipes: &[crate::records::recipes::ConstructionRecipe],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     if projection_was_finalized(histories) {
-        return;
+        return Ok(());
     }
     let recipe_record_indices = recipes
         .iter()
@@ -6702,14 +6756,14 @@ pub(crate) fn bind_edge_operand_history_candidates(
             operand.candidate_faces =
                 historical_recipe_faces(i64::from(*recipe_record_index), topology);
         }
-        let states = history_state_index(history);
+        let states = history_state_index(decode, history)?;
         let Some(changed_faces) =
-            face_changes_across_state_chain(state, previous_state_id, &states)
+            face_changes_across_state_chain(decode, state, previous_state_id, &states)?
         else {
             continue;
         };
         let Some((chain_deleted_edges, chain_updated_edges)) =
-            edge_changes_across_state_chain(state, previous_state_id, &states)
+            edge_changes_across_state_chain(decode, state, previous_state_id, &states)?
         else {
             continue;
         };
@@ -6892,6 +6946,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
             &operand.preceding_boundary_edge_slots,
         );
     }
+    Ok(())
 }
 
 /// A resolved axis with finite origin and unit direction.
