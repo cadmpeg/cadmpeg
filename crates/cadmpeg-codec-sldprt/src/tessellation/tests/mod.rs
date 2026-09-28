@@ -1028,7 +1028,8 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
 
 #[test]
 fn cylindrical_trim_uses_the_short_boundary_arc() {
-    let (start, span) = circular_interval(&[0.0, std::f64::consts::FRAC_PI_2]).unwrap();
+    let mut angles = vec![0.0, std::f64::consts::FRAC_PI_2];
+    let (start, span) = circular_interval(&mut angles).unwrap();
     assert_eq!(start, 0.0);
     assert_eq!(span, std::f64::consts::FRAC_PI_2);
     assert!(circular_interval_contains(
