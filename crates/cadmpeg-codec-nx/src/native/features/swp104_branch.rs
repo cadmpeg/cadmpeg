@@ -260,7 +260,7 @@ mod tests {
                     let record =
                         crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104")
                             .unwrap();
-                    let source = crate::om::swp104_payload_leading_branch(record).unwrap();
+                    let source = crate::test_support::with_decode_context(|ctx| crate::om::swp104_payload_leading_branch(ctx, record)).unwrap().unwrap();
                     let branch = FeatureSwp104LeadingBranch::from_source(
                         "branch".to_owned(),
                         "operation".to_owned(),

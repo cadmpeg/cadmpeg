@@ -2068,38 +2068,47 @@ pub(crate) fn point_feature_scalar_lane(
 /// Decode the exact leading construction branch in a bounded `SWP104`
 /// payload.
 pub(crate) fn swp104_payload_leading_branch(
+    ctx: &DecodeContext<'_>,
     record: OperationPayload<'_>,
-) -> Option<Swp104PayloadLeadingBranch> {
+) -> Result<Option<Swp104PayloadLeadingBranch>, CodecError> {
     const HEADER: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
-    (record.name() == "SWP104").then_some(())?;
-    let discriminator = NonZeroU8::new(*record.payload().first()?)?;
-    (record.payload().get(1..5) == Some(&HEADER)).then_some(())?;
-
-    let [a, b, c, d] = std::array::from_fn::<_, 4, _>(|i| {
-        ShiftedBinary64::read(record.payload().get(5 + i * 8..13 + i * 8)?)
-    });
-    let scalars = [a?, b?, c?, d?];
-    let mut at = 37;
-
-    let leading_zero = record.payload().get(at) == Some(&0x00);
-    at += usize::from(leading_zero);
-    let mode = NonZeroU8::new(*record.payload().get(at)?)?;
-    (*record.payload().get(at + 1)? == 0x01).then_some(())?;
-    let declared_count @ 2.. = *record.payload().get(at + 2)? else {
-        return None;
-    };
-    at += 3;
-    let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
+    if record.name() != "SWP104" { return Ok(None); }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(record.payload().len()), "scan NX SWP104 leading branch")?;
+    let Some((discriminator, scalars, leading_zero, mode, declared_count, mut at)) = (|| {
+        let discriminator = NonZeroU8::new(*record.payload().first()?)?;
+        (record.payload().get(1..5) == Some(&HEADER)).then_some(())?;
+        let [a, b, c, d] = std::array::from_fn::<_, 4, _>(|i| {
+            ShiftedBinary64::read(record.payload().get(5 + i * 8..13 + i * 8)?)
+        });
+        let scalars = [a?, b?, c?, d?];
+        let mut at = 37;
+        let leading_zero = record.payload().get(at) == Some(&0x00);
+        at += usize::from(leading_zero);
+        let mode = NonZeroU8::new(*record.payload().get(at)?)?;
+        (*record.payload().get(at + 1)? == 0x01).then_some(())?;
+        let declared_count @ 2.. = *record.payload().get(at + 2)? else { return None };
+        at += 3;
+        Some((discriminator, scalars, leading_zero, mode, declared_count, at))
+    })() else { return Ok(None) };
+    let len = usize::from(declared_count) - 1;
+    let count = cadmpeg_core::decode::u64_from_index(len);
+    let operation = "NX SWP104 members";
+    ctx.charge_collection_items(count, operation)?;
+    let retained = count.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<reference_index::PayloadIndexToken>()))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, count))?;
+    ctx.charge_retained(retained, operation)?;
+    let mut members = Vec::new();
+    members.try_reserve_exact(len).map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
     for _ in 1..declared_count {
-        let object_index = reference_index::PayloadIndexToken::read(record.payload().get(at..)?)?;
+        let Some(object_index) = record.payload().get(at..).and_then(reference_index::PayloadIndexToken::read) else { return Ok(None) };
         let width = object_index.raw().len();
         at += width;
         members.push(object_index);
     }
 
     let witnessed_count = if record.payload().get(at) == Some(&0x01) {
-        let count @ 2.. = *record.payload().get(at + 1)? else {
-            return None;
+        let Some(count @ 2..) = record.payload().get(at + 1).copied() else {
+            return Ok(None);
         };
         Some(count)
     } else {
@@ -2113,27 +2122,31 @@ pub(crate) fn swp104_payload_leading_branch(
     };
     let state_lane = Swp104StateLane::from_parts(
         witnessed_count,
-        record.payload().get(at..at + state_len)?.to_vec(),
+        match record.payload().get(at..at + state_len) {
+            Some(bytes) => ctx.copy_retained(bytes, "NX SWP104 state lane")?,
+            None => return Ok(None),
+        },
     )
-    .ok()?;
+    .ok();
+    let Some(state_lane) = state_lane else { return Ok(None) };
     at += state_len;
-    (record.payload().get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
+    if record.payload().get(at..at + 3) != Some(&[0xff, 0x01, 0x02]) { return Ok(None); }
     at += 3;
-    let object_index = reference_index::PayloadIndexToken::read(record.payload().get(at..)?)?;
+    let Some(object_index) = record.payload().get(at..).and_then(reference_index::PayloadIndexToken::read) else { return Ok(None) };
     let width = object_index.raw().len();
     at += width;
     let terminal = object_index;
-    (*record.payload().get(at)? == 0x00).then_some(())?;
+    if record.payload().get(at) != Some(&0x00) { return Ok(None); }
 
-    Some(Swp104PayloadLeadingBranch {
+    Ok(Some(Swp104PayloadLeadingBranch {
         discriminator,
         scalars,
         leading_zero,
         mode,
         state_lane,
-        members: BranchItems::new(members).ok()?,
+        members: match BranchItems::new(members) { Ok(members) => members, Err(_) => return Ok(None) },
         terminal,
-    })
+    }))
 }
 
 /// Decode the fixed two-scalar header in a bounded `EXTRUDE` payload.

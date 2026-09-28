@@ -18,7 +18,9 @@ use crate::om::point_feature_payload_header;
 use crate::om::point_feature_scalar_lane;
 use crate::om::product_record_count_within;
 use crate::om::store_version;
-use crate::om::swp104_payload_leading_branch;
+fn swp104_payload_leading_branch(record: crate::om::operation_record::OperationPayload<'_>) -> Option<crate::om::Swp104PayloadLeadingBranch> {
+    crate::test_support::with_decode_context(|ctx| crate::om::swp104_payload_leading_branch(ctx, record)).unwrap()
+}
 use crate::om::BooleanOperationKind;
 use crate::om::OffsetStoreControlForm;
 use crate::om::OperationBodyReferenceLaneValues;
@@ -28,6 +30,8 @@ use crate::test_support::test_om::control_root_offset_only_indexed_om_section;
 use crate::test_support::test_om::indexed_om_section;
 use crate::test_support::test_om::offset_only_indexed_om_section;
 use cadmpeg_core::decode::View;
+
+mod swp104_limits;
 
 fn extrude_payload_32_branch_test(record: crate::om::operation_record::OperationBodyInput<'_>) -> Option<crate::om::extrude_32::Extrude32Frame<()>> {
     crate::test_support::with_decode_context(|ctx| crate::om::extrude_32::extrude_payload_32_branch(ctx, record)).unwrap()
