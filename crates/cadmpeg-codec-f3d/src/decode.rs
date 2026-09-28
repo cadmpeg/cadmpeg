@@ -2495,9 +2495,10 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         extend_unique_assets(&mut self.ir.model.assets, decal_assets)?;
         crate::design::configurations::bind_configuration_parameter_overrides(
+            Some(self.ctx),
             &mut self.ir.model.configurations,
             &self.ir.model.parameters,
-        );
+        )?;
         self.ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
             &self.ir.model.features,
             &self.native.design_parameter_scopes,

@@ -22,9 +22,10 @@ pub(super) fn validate_configuration_projection(
     let mut projected =
         crate::design::configurations::project_configurations(&native.design_configurations)?;
     crate::design::configurations::bind_configuration_parameter_overrides(
+        None,
         &mut projected,
         &target.model.parameters,
-    );
+    )?;
     crate::design::configurations::bind_configuration_suppressed_features(
         &mut projected,
         &target.model.features,
