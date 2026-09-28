@@ -3160,27 +3160,60 @@ pub(super) fn external_reference_tail_reference_pairs(
         let Some(bytes) = container.bounded_entry_bytes(source_offset, record.tail_byte_len) else {
             continue;
         };
-        out.extend(
+        for (ordinal, (offset, persistent_handle, tagged_reference)) in
             crate::container::parse_extref_reference_pairs(ctx, bytes)?
                 .into_iter()
                 .enumerate()
-                .map(|(ordinal, (offset, persistent_handle, tagged_reference))| {
-                    let record_key = record
-                        .id
-                        .split_once('#')
-                        .map_or(record.id.as_str(), |(_, key)| key);
-                    ExternalReferenceTailReferencePair {
-                        id: format!(
-                            "nx:external-reference:tail-reference-pair#{record_key}-{ordinal}"
-                        ),
-                        handle_set_record: record.id.clone(),
-                        ordinal: ordinal as u32,
-                        persistent_handle,
-                        tagged_reference,
-                        source_offset: source_offset + offset as u64,
-                    }
-                }),
-        );
+        {
+            ctx.charge_collection_items(1, "nx native external reference tail pairs")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ExternalReferenceTailReferencePair>()),
+                "nx native external reference tail pairs",
+            )?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("nx native external reference tail pairs", 0, 1)
+            })?;
+            let record_key = record
+                .id
+                .split_once('#')
+                .map_or(record.id.as_str(), |(_, key)| key);
+            let prefix = "nx:external-reference:tail-reference-pair#";
+            let digits = ordinal.checked_ilog10().map_or(1, |n| n + 1);
+            let id_len = prefix
+                .len()
+                .checked_add(record_key.len())
+                .and_then(|len| len.checked_add(1))
+                .and_then(|len| len.checked_add(usize::try_from(digits).ok()?))
+                .ok_or_else(|| ctx.refuse_codec_limit("nx native external reference tail pair id", 0, 1))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(id_len),
+                "nx native external reference tail pair id",
+            )?;
+            let mut id = String::new();
+            id.try_reserve_exact(id_len).map_err(|_| {
+                ctx.refuse_codec_limit("nx native external reference tail pair id", 0, 1)
+            })?;
+            write!(&mut id, "{prefix}{record_key}-{ordinal}").map_err(|_| {
+                ctx.refuse_codec_limit("nx native external reference tail pair id", 0, 1)
+            })?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("nx native external reference tail pair ordinal", 0, 1))?;
+            let source_offset = source_offset
+                .checked_add(cadmpeg_core::decode::u64_from_index(offset))
+                .ok_or_else(|| ctx.refuse_codec_limit("nx native external reference tail pair offset", 0, 1))?;
+            out.push(ExternalReferenceTailReferencePair {
+                id,
+                handle_set_record: copy_om_retained_text(
+                    ctx,
+                    &record.id,
+                    "nx native external reference tail pair link",
+                )?,
+                ordinal,
+                persistent_handle,
+                tagged_reference,
+                source_offset,
+            });
+        }
     }
     Ok(out)
 }
