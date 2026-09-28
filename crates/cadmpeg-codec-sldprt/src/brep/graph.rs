@@ -406,6 +406,19 @@ fn collect_graph_ids<'a>(
     Ok(collected)
 }
 
+fn collect_graph_map<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    entries: impl IntoIterator<Item = (K, V)>,
+    operation: &'static str,
+) -> Result<HashMap<K, V>, cadmpeg_core::CodecError> {
+    let mut collected = HashMap::new();
+    for (key, value) in entries {
+        reserve_graph_map_key(ctx, &mut collected, &key, operation)?;
+        collected.insert(key, value);
+    }
+    Ok(collected)
+}
+
 fn copy_surface_carrier_geometry(
     ctx: &DecodeContext<'_>,
     geometry: &SurfaceGeometry,
@@ -3044,19 +3057,18 @@ fn derive_planar_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let loop_faces: HashMap<_, _> = out
-        .loops
-        .iter()
-        .map(|lp| (lp.id.clone(), lp.face.clone()))
-        .collect();
-    let faces: HashMap<_, _> = out.faces.iter().map(|face| (&face.id, face)).collect();
-    let surfaces: HashMap<_, _> = out
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, surface))
-        .collect();
-    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
-    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
+    let loop_faces = collect_graph_map(ctx,
+        out.loops.iter().map(|lp| (&lp.id, &lp.face)),
+        "index Parasolid pcurve loop faces")?;
+    let faces = collect_graph_map(ctx, out.faces.iter().map(|face| (&face.id, face)),
+        "index Parasolid pcurve faces")?;
+    let surfaces = collect_graph_map(ctx,
+        out.surfaces.iter().map(|surface| (&surface.id, surface)),
+        "index Parasolid pcurve surfaces")?;
+    let edges = collect_graph_map(ctx, out.edges.iter().map(|edge| (&edge.id, edge)),
+        "index Parasolid pcurve edges")?;
+    let curves = collect_graph_map(ctx, out.curves.iter().map(|curve| (&curve.id, curve)),
+        "index Parasolid pcurve curves")?;
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         let Some(face_id) = loop_faces.get(&coedge.owner_loop) else {
@@ -3210,12 +3222,9 @@ fn derive_planar_pcurves(
         };
         derived.push((coedge.id.clone(), id, pcurve));
     }
-    let coedge_indices = out
-        .coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| (coedge.id.clone(), index))
-        .collect::<HashMap<_, _>>();
+    let coedge_indices = collect_graph_map(ctx,
+        out.coedges.iter().enumerate().map(|(index, coedge)| (coedge.id.clone(), index)),
+        "index Parasolid derived coedges")?;
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
             out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
@@ -3241,25 +3250,23 @@ fn derive_cylindrical_pcurves(
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut refusals = Vec::new();
-    let loop_faces: HashMap<_, _> = out
-        .loops
-        .iter()
-        .map(|lp| (lp.id.clone(), lp.face.clone()))
-        .collect();
-    let faces: HashMap<_, _> = out.faces.iter().map(|face| (&face.id, face)).collect();
-    let surfaces: HashMap<_, _> = out
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, surface))
-        .collect();
-    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
-    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
-    let points: HashMap<_, _> = out.points.iter().map(|point| (&point.id, point)).collect();
-    let vertex_points: HashMap<_, _> = out
-        .vertices
-        .iter()
-        .filter_map(|vertex| points.get(&vertex.point).map(|point| (&vertex.id, *point)))
-        .collect();
+    let loop_faces = collect_graph_map(ctx,
+        out.loops.iter().map(|lp| (&lp.id, &lp.face)),
+        "index Parasolid pcurve loop faces")?;
+    let faces = collect_graph_map(ctx, out.faces.iter().map(|face| (&face.id, face)),
+        "index Parasolid pcurve faces")?;
+    let surfaces = collect_graph_map(ctx,
+        out.surfaces.iter().map(|surface| (&surface.id, surface)),
+        "index Parasolid pcurve surfaces")?;
+    let edges = collect_graph_map(ctx, out.edges.iter().map(|edge| (&edge.id, edge)),
+        "index Parasolid pcurve edges")?;
+    let curves = collect_graph_map(ctx, out.curves.iter().map(|curve| (&curve.id, curve)),
+        "index Parasolid pcurve curves")?;
+    let points = collect_graph_map(ctx, out.points.iter().map(|point| (&point.id, point)),
+        "index Parasolid pcurve points")?;
+    let vertex_points = collect_graph_map(ctx,
+        out.vertices.iter().filter_map(|vertex| points.get(&vertex.point).map(|point| (&vertex.id, *point))),
+        "index Parasolid pcurve vertex points")?;
     let position = |vertex_id: &VertexId| {
         vertex_points
             .get(vertex_id)
@@ -3545,12 +3552,9 @@ fn derive_cylindrical_pcurves(
             },
         ));
     }
-    let coedge_indices = out
-        .coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| (coedge.id.clone(), index))
-        .collect::<HashMap<_, _>>();
+    let coedge_indices = collect_graph_map(ctx,
+        out.coedges.iter().enumerate().map(|(index, coedge)| (coedge.id.clone(), index)),
+        "index Parasolid derived coedges")?;
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
             out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
@@ -3911,19 +3915,18 @@ fn derive_revolved_circle_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let loop_faces: HashMap<_, _> = out
-        .loops
-        .iter()
-        .map(|lp| (lp.id.clone(), lp.face.clone()))
-        .collect();
-    let faces: HashMap<_, _> = out.faces.iter().map(|face| (&face.id, face)).collect();
-    let surfaces: HashMap<_, _> = out
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, surface))
-        .collect();
-    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
-    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
+    let loop_faces = collect_graph_map(ctx,
+        out.loops.iter().map(|lp| (&lp.id, &lp.face)),
+        "index Parasolid pcurve loop faces")?;
+    let faces = collect_graph_map(ctx, out.faces.iter().map(|face| (&face.id, face)),
+        "index Parasolid pcurve faces")?;
+    let surfaces = collect_graph_map(ctx,
+        out.surfaces.iter().map(|surface| (&surface.id, surface)),
+        "index Parasolid pcurve surfaces")?;
+    let edges = collect_graph_map(ctx, out.edges.iter().map(|edge| (&edge.id, edge)),
+        "index Parasolid pcurve edges")?;
+    let curves = collect_graph_map(ctx, out.curves.iter().map(|curve| (&curve.id, curve)),
+        "index Parasolid pcurve curves")?;
     let dot = |a: [f64; 3], b: cadmpeg_ir::math::Vector3| a[0] * b.x + a[1] * b.y + a[2] * b.z;
     let mut derived = Vec::new();
     for coedge in &out.coedges {
@@ -4048,12 +4051,9 @@ fn derive_revolved_circle_pcurves(
             },
         ));
     }
-    let coedge_indices = out
-        .coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| (coedge.id.clone(), index))
-        .collect::<HashMap<_, _>>();
+    let coedge_indices = collect_graph_map(ctx,
+        out.coedges.iter().enumerate().map(|(index, coedge)| (coedge.id.clone(), index)),
+        "index Parasolid derived coedges")?;
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
             out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
@@ -4104,19 +4104,18 @@ fn derive_spherical_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let loop_faces: HashMap<_, _> = out
-        .loops
-        .iter()
-        .map(|lp| (lp.id.clone(), lp.face.clone()))
-        .collect();
-    let faces: HashMap<_, _> = out.faces.iter().map(|face| (&face.id, face)).collect();
-    let surfaces: HashMap<_, _> = out
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, surface))
-        .collect();
-    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
-    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
+    let loop_faces = collect_graph_map(ctx,
+        out.loops.iter().map(|lp| (&lp.id, &lp.face)),
+        "index Parasolid pcurve loop faces")?;
+    let faces = collect_graph_map(ctx, out.faces.iter().map(|face| (&face.id, face)),
+        "index Parasolid pcurve faces")?;
+    let surfaces = collect_graph_map(ctx,
+        out.surfaces.iter().map(|surface| (&surface.id, surface)),
+        "index Parasolid pcurve surfaces")?;
+    let edges = collect_graph_map(ctx, out.edges.iter().map(|edge| (&edge.id, edge)),
+        "index Parasolid pcurve edges")?;
+    let curves = collect_graph_map(ctx, out.curves.iter().map(|curve| (&curve.id, curve)),
+        "index Parasolid pcurve curves")?;
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -4260,12 +4259,9 @@ fn derive_spherical_pcurves(
             },
         ));
     }
-    let coedge_indices = out
-        .coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| (coedge.id.clone(), index))
-        .collect::<HashMap<_, _>>();
+    let coedge_indices = collect_graph_map(ctx,
+        out.coedges.iter().enumerate().map(|(index, coedge)| (coedge.id.clone(), index)),
+        "index Parasolid derived coedges")?;
     for (coedge_id, id, pcurve) in derived {
         if let Some(index) = coedge_indices.get(&coedge_id) {
             out.coedges[*index].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
@@ -4290,26 +4286,24 @@ fn derive_nurbs_isoparametric_pcurves(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let loop_faces: HashMap<_, _> = out
-        .loops
-        .iter()
-        .map(|lp| (lp.id.clone(), lp.face.clone()))
-        .collect();
-    let faces: HashMap<_, _> = out.faces.iter().map(|face| (&face.id, face)).collect();
-    let surfaces: HashMap<_, _> = out
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, surface))
-        .collect();
-    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
-    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
+    let loop_faces = collect_graph_map(ctx,
+        out.loops.iter().map(|lp| (&lp.id, &lp.face)),
+        "index Parasolid pcurve loop faces")?;
+    let faces = collect_graph_map(ctx, out.faces.iter().map(|face| (&face.id, face)),
+        "index Parasolid pcurve faces")?;
+    let surfaces = collect_graph_map(ctx,
+        out.surfaces.iter().map(|surface| (&surface.id, surface)),
+        "index Parasolid pcurve surfaces")?;
+    let edges = collect_graph_map(ctx, out.edges.iter().map(|edge| (&edge.id, edge)),
+        "index Parasolid pcurve edges")?;
+    let curves = collect_graph_map(ctx, out.curves.iter().map(|curve| (&curve.id, curve)),
+        "index Parasolid pcurve curves")?;
     let mut lane_refusals = crate::lane_refusal::LaneRefusals::new();
-    let vertices: HashMap<_, _> = out
-        .vertices
-        .iter()
-        .map(|vertex| (&vertex.id, vertex))
-        .collect();
-    let points: HashMap<_, _> = out.points.iter().map(|point| (&point.id, point)).collect();
+    let vertices = collect_graph_map(ctx,
+        out.vertices.iter().map(|vertex| (&vertex.id, vertex)),
+        "index Parasolid pcurve vertices")?;
+    let points = collect_graph_map(ctx, out.points.iter().map(|point| (&point.id, point)),
+        "index Parasolid pcurve points")?;
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -4434,12 +4428,9 @@ fn derive_nurbs_isoparametric_pcurves(
             cache,
         ));
     }
-    let coedge_indices = out
-        .coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| (coedge.id.clone(), index))
-        .collect::<HashMap<_, _>>();
+    let coedge_indices = collect_graph_map(ctx,
+        out.coedges.iter().enumerate().map(|(index, coedge)| (coedge.id.clone(), index)),
+        "index Parasolid derived coedges")?;
     // The sink is drained before the `?` below: an error on that route must
     // not drop a refusal the walk above already pushed.
     for record in lane_refusals.take_records() {
@@ -6057,19 +6048,18 @@ fn synthesize_cylinder_seams(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let surfaces: HashMap<_, _> = out
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, surface))
-        .collect();
-    let loops: HashMap<_, _> = out.loops.iter().map(|lp| (&lp.id, lp)).collect();
-    let coedges: HashMap<_, _> = out
-        .coedges
-        .iter()
-        .map(|coedge| (&coedge.id, coedge))
-        .collect();
-    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
-    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
+    let surfaces = collect_graph_map(ctx,
+        out.surfaces.iter().map(|surface| (&surface.id, surface)),
+        "index Parasolid pcurve surfaces")?;
+    let loops = collect_graph_map(ctx, out.loops.iter().map(|lp| (&lp.id, lp)),
+        "index Parasolid seam loops")?;
+    let coedges = collect_graph_map(ctx,
+        out.coedges.iter().map(|coedge| (&coedge.id, coedge)),
+        "index Parasolid seam coedges")?;
+    let edges = collect_graph_map(ctx, out.edges.iter().map(|edge| (&edge.id, edge)),
+        "index Parasolid pcurve edges")?;
+    let curves = collect_graph_map(ctx, out.curves.iter().map(|curve| (&curve.id, curve)),
+        "index Parasolid pcurve curves")?;
     let mut candidates = Vec::new();
     for face in &out.faces {
         let Some(surface) = surfaces.get(&face.surface) else {
@@ -6137,12 +6127,9 @@ fn synthesize_cylinder_seams(
     }
 
     let mut removed = HashSet::new();
-    let mut coedge_indices = out
-        .coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| (coedge.id.clone(), index))
-        .collect::<HashMap<_, _>>();
+    let mut coedge_indices = collect_graph_map(ctx,
+        out.coedges.iter().enumerate().map(|(index, coedge)| (coedge.id.clone(), index)),
+        "index Parasolid seam coedges")?;
     for (face_id, loop_a, loop_b, circle_a, circle_b, vertex_a, vertex_b, pa, pb) in candidates {
         for (vertex_id, position) in [(&vertex_a, pa), (&vertex_b, pb)] {
             let Some(point_id) = out
@@ -6214,6 +6201,7 @@ fn synthesize_cylinder_seams(
             end: vertex_b,
             tolerance: None,
         });
+        reserve_graph_map_key(ctx, &mut coedge_indices, &seam_a, "index generated Parasolid seam coedges")?;
         coedge_indices.insert(seam_a.clone(), out.coedges.len());
         admit_brep_entity(ctx)?;
         out.coedges.push(Coedge {
@@ -6225,6 +6213,7 @@ fn synthesize_cylinder_seams(
             use_curve: None,
             pcurves: Vec::new(),
         });
+        reserve_graph_map_key(ctx, &mut coedge_indices, &seam_b, "index generated Parasolid seam coedges")?;
         coedge_indices.insert(seam_b.clone(), out.coedges.len());
         admit_brep_entity(ctx)?;
         out.coedges.push(Coedge {
@@ -6267,42 +6256,26 @@ fn synthesize_sphere_seams(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let surface_geometry = out
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<HashMap<_, _>>();
-    let loop_coedges = out
-        .loops
-        .iter()
-        .map(|lp| (&lp.id, lp.coedges()))
-        .collect::<HashMap<_, _>>();
-    let coedge_edges = out
-        .coedges
-        .iter()
-        .map(|coedge| (&coedge.id, &coedge.edge))
-        .collect::<HashMap<_, _>>();
-    let edge_indices = out
-        .edges
-        .iter()
-        .enumerate()
-        .map(|(index, edge)| (&edge.id, index))
-        .collect::<HashMap<_, _>>();
-    let curve_geometry = out
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<HashMap<_, _>>();
-    let vertex_points = out
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            out.points
-                .iter()
-                .find(|point| point.id == vertex.point)
+    let surface_geometry = collect_graph_map(ctx,
+        out.surfaces.iter().map(|surface| (&surface.id, &surface.geometry)),
+        "index Parasolid sphere geometry")?;
+    let loop_coedges = collect_graph_map(ctx,
+        out.loops.iter().map(|lp| (&lp.id, lp.coedges())),
+        "index Parasolid sphere loop coedges")?;
+    let coedge_edges = collect_graph_map(ctx,
+        out.coedges.iter().map(|coedge| (&coedge.id, &coedge.edge)),
+        "index Parasolid sphere coedge edges")?;
+    let edge_indices = collect_graph_map(ctx,
+        out.edges.iter().enumerate().map(|(index, edge)| (&edge.id, index)),
+        "index Parasolid sphere edges")?;
+    let curve_geometry = collect_graph_map(ctx,
+        out.curves.iter().map(|curve| (&curve.id, &curve.geometry)),
+        "index Parasolid sphere curves")?;
+    let vertex_points = collect_graph_map(ctx,
+        out.vertices.iter().filter_map(|vertex| {
+            out.points.iter().find(|point| point.id == vertex.point)
                 .map(|point| (&vertex.id, point.position().get()))
-        })
-        .collect::<HashMap<_, _>>();
+        }), "index Parasolid sphere vertex points")?;
     let mut existing = Vec::new();
     for face in &out.faces {
         let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))) =
@@ -6403,19 +6376,18 @@ fn synthesize_sphere_seams(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
 
-    let surfaces: HashMap<_, _> = out
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, surface))
-        .collect();
-    let loops: HashMap<_, _> = out.loops.iter().map(|lp| (&lp.id, lp)).collect();
-    let coedges: HashMap<_, _> = out
-        .coedges
-        .iter()
-        .map(|coedge| (&coedge.id, coedge))
-        .collect();
-    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
-    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
+    let surfaces = collect_graph_map(ctx,
+        out.surfaces.iter().map(|surface| (&surface.id, surface)),
+        "index Parasolid pcurve surfaces")?;
+    let loops = collect_graph_map(ctx, out.loops.iter().map(|lp| (&lp.id, lp)),
+        "index Parasolid seam loops")?;
+    let coedges = collect_graph_map(ctx,
+        out.coedges.iter().map(|coedge| (&coedge.id, coedge)),
+        "index Parasolid seam coedges")?;
+    let edges = collect_graph_map(ctx, out.edges.iter().map(|edge| (&edge.id, edge)),
+        "index Parasolid pcurve edges")?;
+    let curves = collect_graph_map(ctx, out.curves.iter().map(|curve| (&curve.id, curve)),
+        "index Parasolid pcurve curves")?;
     let mut candidates = Vec::new();
     for (face_index, face) in out.faces.iter().enumerate() {
         let Some(surface) = surfaces.get(&face.surface) else {
@@ -6487,12 +6459,9 @@ fn synthesize_sphere_seams(
             ));
         }
     }
-    let mut coedge_indices = out
-        .coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| (coedge.id.clone(), index))
-        .collect::<HashMap<_, _>>();
+    let mut coedge_indices = collect_graph_map(ctx,
+        out.coedges.iter().enumerate().map(|(index, coedge)| (coedge.id.clone(), index)),
+        "index Parasolid seam coedges")?;
     for (face_index, _face, loop_id, mut ring, seam_point, pole_vertex) in candidates {
         let Ok(degenerate) = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(seam_point)
         else {
@@ -6588,6 +6557,7 @@ fn synthesize_sphere_seams(
             ),
         });
         ring.push(coedge_id.clone());
+        reserve_graph_map_key(ctx, &mut coedge_indices, &coedge_id, "index generated Parasolid sphere coedges")?;
         coedge_indices.insert(coedge_id.clone(), out.coedges.len());
         admit_brep_entity(ctx)?;
         out.coedges.push(Coedge {
