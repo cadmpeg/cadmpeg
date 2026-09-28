@@ -390,13 +390,13 @@ pub(super) fn project(
                 && matches!(global.global_table(), GlobalTable::V4_0));
         if projects_as_points {
             for (index, position) in positions.into_iter().enumerate() {
-                let point = crate::ids::point(
+                let point = crate::ids::point_admitted(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
-                );
+                 ctx)?;
                 sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence), Some(ctx))?;
-                let vertex = crate::ids::vertex(
+                let vertex = crate::ids::vertex_admitted(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
-                );
+                 ctx)?;
                 reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges copious neutral points")?;
                 crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
                 ir.model
@@ -456,18 +456,18 @@ pub(super) fn project(
         let start = positions[0];
         let end = positions[positions.len() - 1];
         let stem = crate::ids::Stem::directory(entry.sequence);
-        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         sequences.record_point(&start_point, &stem, Some(ctx))?;
-        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
         sequences.record_point(&end_point, &stem, Some(ctx))?;
-        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
+        let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         let end_vertex = if entry.form == 63 {
             crate::decode_resource::clone_optional_identity(Some(ctx), &start_vertex, "iges copious identity copy")?
         } else {
-            crate::ids::vertex(&stem.tail(crate::ids::Word::End))
+            crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?
         };
-        let curve = crate::ids::curve(&stem);
-        let edge = crate::ids::edge(&stem);
+        let curve = crate::ids::curve_admitted(&stem, ctx)?;
+        let edge = crate::ids::edge_admitted(&stem, ctx)?;
         reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges copious neutral points")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
         ir.model

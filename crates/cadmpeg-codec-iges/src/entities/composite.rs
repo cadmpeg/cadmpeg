@@ -189,26 +189,28 @@ pub(super) fn curve_carrier_id(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-) -> Option<CurveId> {
-    let entry = entries.get(&sequence).copied()?;
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<CurveId>, CodecError> {
+    let Some(entry) = entries.get(&sequence).copied() else { return Ok(None); };
     let carrier_sequence = if entry.entity_type == 142 && entry.form == 0 {
         // Type 142 is a relationship entity. In a Type 102 constituent its
         // curve geometry is the model-space C pointer; the UV B pointer is
         // not a three-dimensional composite segment. This is the same
         // choice made by OCCT's Curve3D transfer path.
-        records
+        let Some(carrier_sequence) = records
             .get(&sequence)
             .and_then(|record| record.integer(4))
             .and_then(|value| {
                 let sequence = u32::try_from(value).ok()?;
                 (sequence % 2 == 1).then_some(sequence)
-            })?
+            }) else { return Ok(None); };
+        carrier_sequence
     } else {
         sequence
     };
-    Some(crate::ids::curve(&crate::ids::Stem::directory(
+    Ok(Some(crate::ids::curve_admitted(&crate::ids::Stem::directory(
         carrier_sequence,
-    )))
+    ), ctx)?))
 }
 
 #[derive(Clone)]
@@ -1948,14 +1950,14 @@ fn project_native_composite(
         });
     }
     let stem = crate::ids::Stem::directory(entry.sequence);
-    let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+    let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
     sequences.record_point(&start_point, &stem, ctx)?;
-    let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+    let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
     sequences.record_point(&end_point, &stem, ctx)?;
-    let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
-    let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
-    let curve_id = crate::ids::curve(&stem);
-    let edge_id = crate::ids::edge(&stem);
+    let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
+    let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
+    let curve_id = crate::ids::curve_admitted(&stem, ctx)?;
+    let edge_id = crate::ids::edge_admitted(&stem, ctx)?;
     reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges composite native point slots")?;
     reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges composite native vertex slots")?;
     crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
@@ -2247,7 +2249,7 @@ fn project_with_type_130_policy(
         };
         let mut curve_carriers = BTreeMap::new();
         for sequence in child_sequences.iter().copied().filter(is_curve_sequence) {
-            if let Some(curve_id) = curve_carrier_id(sequence, &entries, &records) {
+            if let Some(curve_id) = curve_carrier_id(sequence, &entries, &records, ctx)? {
                 crate::decode_resource::insert_optional_btree_map(ctx, &mut curve_carriers, sequence, curve_id, "iges composite child carrier nodes")?;
             }
         }
@@ -2417,14 +2419,14 @@ fn project_with_type_130_policy(
             continue;
         };
         let stem = crate::ids::Stem::directory(entry.sequence);
-        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         sequences.record_point(&start_point, &stem, ctx)?;
-        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
         sequences.record_point(&end_point, &stem, ctx)?;
-        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
-        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
-        let curve_id = crate::ids::curve(&stem);
-        let edge = crate::ids::edge(&stem);
+        let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
+        let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
+        let curve_id = crate::ids::curve_admitted(&stem, ctx)?;
+        let edge = crate::ids::edge_admitted(&stem, ctx)?;
         reserve_optional_vec_growth(ctx, &mut ir.model.points, 2, "iges composite solved point slots")?;
         reserve_optional_vec_growth(ctx, &mut ir.model.vertices, 2, "iges composite solved vertex slots")?;
         crate::decode_resource::admit_optional_entities(ctx, 2, "iges_geometry_composites")?;
@@ -2500,7 +2502,7 @@ fn project_with_type_130_policy(
         let _attached = ir.model.add_procedural_curve(
             curve_id,
             ProceduralCurve::new(
-                crate::ids::procedural_curve(&stem),
+                crate::ids::procedural_curve_admitted(&stem, ctx)?,
                 ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                         boundaries, components, None,

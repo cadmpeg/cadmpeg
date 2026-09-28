@@ -1632,14 +1632,14 @@ pub(crate) fn project_geometry(
             angle = std::f64::consts::TAU;
         }
         let stem = crate::ids::Stem::directory(entry.sequence);
-        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         sequences.record_point(&start_point, &stem, Some(ctx))?;
-        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
         sequences.record_point(&end_point, &stem, Some(ctx))?;
-        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
-        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
-        let curve = crate::ids::curve(&stem);
-        let edge = crate::ids::edge(&stem);
+        let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
+        let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
+        let curve = crate::ids::curve_admitted(&stem, ctx)?;
+        let edge = crate::ids::edge_admitted(&stem, ctx)?;
         reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges circle neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.points.extend([
@@ -1737,7 +1737,7 @@ pub(crate) fn project_geometry(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
             continue;
         };
-        let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
+        let point = crate::ids::point_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence), Some(ctx))?;
         reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges point neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
@@ -1747,7 +1747,7 @@ pub(crate) fn project_geometry(
         if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
-            let vertex = crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence));
+            let vertex = crate::ids::vertex_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
             reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges point neutral vertex slots")?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
             ir.model.vertices.push(Vertex {
@@ -1822,7 +1822,7 @@ pub(crate) fn project_geometry(
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "placement produces a non-finite point"))?;
             continue;
         };
-        let point = crate::ids::point(&crate::ids::Stem::directory(entry.sequence));
+        let point = crate::ids::point_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
         sequences.record_point(&point, &crate::ids::Stem::directory(entry.sequence), Some(ctx))?;
         reserve_vec_growth(ctx, &mut ir.model.points, 1, "iges flash neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
@@ -1832,7 +1832,7 @@ pub(crate) fn project_geometry(
         if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
-            let vertex = crate::ids::vertex(&crate::ids::Stem::directory(entry.sequence));
+            let vertex = crate::ids::vertex_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
             reserve_vec_growth(ctx, &mut ir.model.vertices, 1, "iges flash neutral vertex slots")?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
             ir.model.vertices.push(Vertex {
@@ -1905,7 +1905,7 @@ pub(crate) fn project_geometry(
             .map(|(direction, _)| direction)
             .ok_or_else(|| CodecError::malformed("LineCurve.direction must have unit length"))?;
         let stem = crate::ids::Stem::directory(entry.sequence);
-        let curve = crate::ids::curve(&stem);
+        let curve = crate::ids::curve_admitted(&stem, ctx)?;
         sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
         reserve_vec_growth(ctx, &mut ir.model.curves, 1, "iges line neutral curve slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
@@ -1920,13 +1920,13 @@ pub(crate) fn project_geometry(
             insert_optional_btree_set(Some(ctx), &mut decoded, entry.sequence, "iges line decoded sequences")?;
             continue;
         }
-        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         sequences.record_point(&start_point, &stem, Some(ctx))?;
-        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
         sequences.record_point(&end_point, &stem, Some(ctx))?;
-        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
-        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
-        let edge = crate::ids::edge(&stem);
+        let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
+        let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
+        let edge = crate::ids::edge_admitted(&stem, ctx)?;
         reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges line neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.points.extend([
@@ -2239,14 +2239,14 @@ pub(crate) fn project_geometry(
             continue;
         }
         let stem = crate::ids::Stem::directory(entry.sequence);
-        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+        let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         sequences.record_point(&start_point, &stem, Some(ctx))?;
-        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+        let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
         sequences.record_point(&end_point, &stem, Some(ctx))?;
-        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
-        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
-        let curve = crate::ids::curve(&stem);
-        let edge = crate::ids::edge(&stem);
+        let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
+        let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
+        let curve = crate::ids::curve_admitted(&stem, ctx)?;
+        let edge = crate::ids::edge_admitted(&stem, ctx)?;
         reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges NURBS neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.points.extend([
@@ -2342,9 +2342,9 @@ pub(crate) fn project_geometry(
         .merge_into(&mut decoded, &mut losses, ctx)?;
 
     if !wire_edges.is_empty() || !free_vertices.is_empty() {
-        let body = crate::ids::body(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
-        let region = crate::ids::region(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
-        let shell = crate::ids::shell(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry));
+        let body = crate::ids::body_admitted(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry), ctx)?;
+        let region = crate::ids::region_admitted(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry), ctx)?;
+        let shell = crate::ids::shell_admitted(&crate::ids::Stem::word(crate::ids::Word::FreeGeometry), ctx)?;
         let mut body_regions = reserve_vec(ctx, 1, "iges free wire body regions")?;
         body_regions.push(clone_optional_identity(Some(ctx), &region, "iges geometry neutral identity copy")?);
         reserve_vec_growth(ctx, &mut ir.model.bodies, 1, "iges free wire body slots")?;

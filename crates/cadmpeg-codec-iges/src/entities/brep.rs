@@ -148,10 +148,10 @@ fn topology_vertex(
     if !vertex_ids.contains_key(&(list, index)) {
         ctx.charge_collection_items(1, "iges B-rep topology vertex index")?;
     }
-    let point_id = crate::ids::point(&stem.child(list).slot(index + 1));
+    let point_id = crate::ids::point_admitted(&stem.child(list).slot(index + 1), ctx)?;
     let point = Point::new(crate::decode_resource::clone_optional_identity(Some(ctx), &point_id, "iges B-rep identity copy")?, position, None);
     sequences.record_point(&point_id, stem, Some(ctx))?;
-    let vertex_id = crate::ids::vertex(&stem.child(list).slot(index + 1));
+    let vertex_id = crate::ids::vertex_admitted(&stem.child(list).slot(index + 1), ctx)?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
     candidate.model_mut().points.push(point);
     crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
@@ -228,7 +228,7 @@ fn project_pcurve_uses(
                 .map_err(|_| PcurveProjectionError::Invalid(PcurveMetadata::INVALID_FIT_TOLERANCE)))
             .transpose()?;
         reserve_vec_growth(ctx, &mut candidate.model_mut().pcurves, 1, "iges B-rep pcurve slots")?;
-        let id = crate::ids::pcurve(&id_stem.slot(index));
+        let id = crate::ids::pcurve_admitted(&id_stem.slot(index), ctx)?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
         candidate.model_mut().pcurves.push(Pcurve {
             id: crate::decode_resource::clone_optional_identity(Some(ctx), &id, "iges B-rep identity copy")?,
@@ -841,9 +841,9 @@ pub(super) fn project(
         let mut edges_by_curve: Option<BTreeMap<&str, Vec<usize>>> = None;
         let mut candidate = ModelDraft::new();
         let stem = crate::ids::Stem::directory(entry.sequence);
-        let body_id = crate::ids::body(&stem);
+        let body_id = crate::ids::body_admitted(&stem, ctx)?;
         sequences.record_body(&body_id, entry.sequence, &stem, Some(ctx))?;
-        let region_id = crate::ids::region(&stem);
+        let region_id = crate::ids::region_admitted(&stem, ctx)?;
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
         let mut radial = BTreeMap::<(u32, u32, usize), Vec<CoedgeId>>::new();
@@ -857,13 +857,13 @@ pub(super) fn project(
             } else {
                 std::borrow::Cow::Owned(stem.child(shell_sequence))
             };
-            let shell_id = crate::ids::shell(&shell_stem);
+            let shell_id = crate::ids::shell_admitted(&shell_stem, ctx)?;
             let mut shell_faces = reserve_vec(ctx, shell_definition.faces.len(), "iges B-rep shell face ids")?;
             for &(face_sequence, native_face_sense) in &shell_definition.faces {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = &faces[&face_sequence];
                 let surface_id =
-                    crate::ids::surface(&crate::ids::Stem::directory(face_definition.surface));
+                    crate::ids::surface_admitted(&crate::ids::Stem::directory(face_definition.surface), ctx)?;
                 let Some(support_geometry) = surface_positions
                     .get(surface_id.as_str())
                     .and_then(|position| ir.model.surfaces.get(*position))
@@ -872,12 +872,12 @@ pub(super) fn project(
                     valid = false;
                     break;
                 };
-                let face_id = crate::ids::face(&shell_stem.child(face_sequence));
+                let face_id = crate::ids::face_admitted(&shell_stem.child(face_sequence), ctx)?;
                 sequences.record_face(&face_id, face_sequence, Some(ctx))?;
-                let loop_id_for = |sequence| crate::ids::r#loop(&shell_stem.child(sequence));
+                let loop_id_for = |sequence| crate::ids::loop_admitted(&shell_stem.child(sequence), ctx);
                 for loop_sequence in face_definition.loops.iter() {
                     let uses = &loops[&loop_sequence];
-                    let loop_id = loop_id_for(loop_sequence);
+                    let loop_id = loop_id_for(loop_sequence)?;
                     let edge_use_count = uses.iter().filter(|use_| matches!(use_, LoopUse::Edge { .. })).count();
                     let mut edge_use_indices = reserve_vec(ctx, edge_use_count, "iges B-rep edge-use positions")?;
                     let mut coedge_ids = reserve_vec(ctx, edge_use_count, "iges B-rep coedge ids")?;
@@ -885,7 +885,7 @@ pub(super) fn project(
                     for (index, use_) in uses.iter().enumerate() {
                         if matches!(use_, LoopUse::Edge { .. }) {
                             edge_use_indices.push(index);
-                            let coedge_id = crate::ids::coedge(&shell_stem.child(loop_sequence).slot(index));
+                            let coedge_id = crate::ids::coedge_admitted(&shell_stem.child(loop_sequence).slot(index), ctx)?;
                             insert_optional_btree_map(Some(ctx), &mut coedge_by_use, index, crate::decode_resource::clone_optional_identity(Some(ctx), &coedge_id, "iges B-rep identity copy")?, "iges B-rep coedge use nodes")?;
                             coedge_ids.push(coedge_id);
                         }
@@ -1037,9 +1037,9 @@ pub(super) fn project(
                         let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
                             crate::decode_resource::clone_optional_identity(Some(ctx), id, "iges B-rep identity copy")?
                         } else {
-                            let curve_id = crate::ids::curve(&crate::ids::Stem::directory(
+                            let curve_id = crate::ids::curve_admitted(&crate::ids::Stem::directory(
                                 edge_definition.curve,
-                            ));
+                            ), ctx)?;
                             if edges_by_curve.is_none() {
                                 let mut positions = BTreeMap::<&str, Vec<usize>>::new();
                                 for (position, edge) in ir.model.edges.iter().enumerate() {
@@ -1090,7 +1090,7 @@ pub(super) fn project(
                                     return Err(limit.into());
                                 }
                             };
-                            let id = crate::ids::edge(&stem.child(edge_key.0).slot(edge_key.1 + 1));
+                            let id = crate::ids::edge_admitted(&stem.child(edge_key.0).slot(edge_key.1 + 1), ctx)?;
                             let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
                                 source_edge
@@ -1227,14 +1227,18 @@ pub(super) fn project(
                     let face_loops = match &face_definition.loops {
                         FaceLoopPointers::OuterFirst { outer, inner } => {
                             let mut inner_ids = reserve_vec(ctx, inner.len(), "iges B-rep face inner loop ids")?;
-                            inner_ids.extend(inner.iter().copied().map(loop_id_for));
-                            cadmpeg_ir::topology::FaceLoops::classified(loop_id_for(*outer), inner_ids)
+                            for sequence in inner.iter().copied() {
+                                inner_ids.push(loop_id_for(sequence)?);
+                            }
+                            cadmpeg_ir::topology::FaceLoops::classified(loop_id_for(*outer)?, inner_ids)
                         }
                         FaceLoopPointers::Unclassified { first, rest } => {
                             let count = rest.len().checked_add(1).ok_or_else(|| cadmpeg_core::decode::refuse_local_limit("iges B-rep face unspecified loop ids", u64::MAX, 1))?;
                             let mut loop_ids = reserve_vec(ctx, count, "iges B-rep face unspecified loop ids")?;
-                            loop_ids.push(loop_id_for(*first));
-                            loop_ids.extend(rest.iter().copied().map(loop_id_for));
+                            loop_ids.push(loop_id_for(*first)?);
+                            for sequence in rest.iter().copied() {
+                                loop_ids.push(loop_id_for(sequence)?);
+                            }
                         cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids)
                     }
                 };

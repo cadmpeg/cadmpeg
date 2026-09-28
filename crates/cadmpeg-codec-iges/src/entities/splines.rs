@@ -181,14 +181,14 @@ fn add_edge(
         return Ok(None);
     };
     let stem = crate::ids::Stem::directory(entry.sequence);
-    let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
+    let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
     sequences.record_point(&start_point, &stem, Some(ctx))?;
-    let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
+    let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
     sequences.record_point(&end_point, &stem, Some(ctx))?;
-    let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
-    let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
-    let curve = crate::ids::curve(&stem);
-    let edge = crate::ids::edge(&stem);
+    let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
+    let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
+    let curve = crate::ids::curve_admitted(&stem, ctx)?;
+    let edge = crate::ids::edge_admitted(&stem, ctx)?;
     reserve_vec_growth(ctx, &mut ir.model.points, 2, "iges spline neutral point slots")?;
     crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_splines")?;
     ir.model.points.extend([
@@ -902,12 +902,12 @@ pub(super) fn project(
             }
         };
         sequences.record_surface(
-            &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
+            &crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
             entry.sequence, Some(ctx))?;
         reserve_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges spline neutral surface slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_splines")?;
         ir.model.surfaces.push(Surface {
-            id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
+            id: crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, Some(ctx))?),
         });

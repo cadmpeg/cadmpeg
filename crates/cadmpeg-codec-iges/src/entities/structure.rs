@@ -1761,11 +1761,11 @@ fn plane_face_draft(
     } else {
         None
     };
-    let body_id = crate::ids::body(stem);
+    let body_id = crate::ids::body_admitted(stem, ctx)?;
     sequences.record_body(&body_id, source_sequence, stem, Some(ctx))?;
-    let region_id = crate::ids::region(stem);
-    let shell_id = crate::ids::shell(stem);
-    let face_id = crate::ids::face(stem);
+    let region_id = crate::ids::region_admitted(stem, ctx)?;
+    let shell_id = crate::ids::shell_admitted(stem, ctx)?;
+    let face_id = crate::ids::face_admitted(stem, ctx)?;
     sequences.record_face(&face_id, source_sequence, Some(ctx))?;
     let mut candidate = ModelDraft::new();
     let mut loop_ids = reserve_vec(ctx, boundary_edges.len(), "iges legacy plane loop IDs")?;
@@ -1774,8 +1774,8 @@ fn plane_face_draft(
         reserve_vec_growth(ctx, &mut candidate.model_mut().edges, 1, "iges legacy plane edge slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
         candidate.model_mut().edges.push(edge);
-        let loop_id = crate::ids::r#loop(&stem.slot(boundary_index));
-        let coedge_id = crate::ids::coedge(&stem.slot(boundary_index));
+        let loop_id = crate::ids::loop_admitted(&stem.slot(boundary_index), ctx)?;
+        let coedge_id = crate::ids::coedge_admitted(&stem.slot(boundary_index), ctx)?;
         reserve_vec_growth(ctx, &mut candidate.model_mut().coedges, 1, "iges legacy plane coedge slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
         candidate.model_mut().coedges.push(Coedge {
@@ -1814,7 +1814,7 @@ fn plane_face_draft(
     candidate.model_mut().faces.push(Face {
         id: crate::decode_resource::clone_optional_identity(Some(ctx), &face_id, "iges structure identity copy")?,
         shell: crate::decode_resource::clone_optional_identity(Some(ctx), &shell_id, "iges structure identity copy")?,
-        surface: crate::ids::surface(&crate::ids::Stem::directory(surface_sequence)),
+        surface: crate::ids::surface_admitted(&crate::ids::Stem::directory(surface_sequence), ctx)?,
         sense: Sense::Forward,
         loops: face_loops,
         name: None,
@@ -1962,10 +1962,10 @@ fn legacy_single_parent_face(
                     Ok(message) => LegacyPlaneError::Invalid(message),
                     Err(resource) => LegacyPlaneError::Resource(resource),
                 })?;
-        let edge_id = crate::ids::edge(
+        let edge_id = crate::ids::edge_admitted(
             &crate::ids::Stem::word_directory(crate::ids::Word::LegacySingleParent, entry.sequence)
                 .tail_index(boundary_index),
-        );
+         ctx)?;
         edge.id = crate::decode_resource::clone_optional_identity(Some(ctx), &edge_id, "iges structure identity copy")?;
         edge.end = crate::decode_resource::clone_optional_identity(Some(ctx), &edge.start, "iges structure identity copy")?;
         boundary_edges.push(edge);
@@ -2852,10 +2852,10 @@ pub(super) fn project(
                 ctx,
             ) {
                 Ok(mut edge) => {
-                    edge.id = crate::ids::edge(&crate::ids::Stem::word_directory(
+                    edge.id = crate::ids::edge_admitted(&crate::ids::Stem::word_directory(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,
-                    ));
+                    ), ctx)?;
                     edge.end = crate::decode_resource::clone_optional_identity(Some(ctx), &edge.start, "iges structure identity copy")?;
                     let stem = crate::ids::Stem::word_directory(
                         crate::ids::Word::BoundedPlane,

@@ -37,13 +37,13 @@ fn admit_analytic<T>(
     }
 }
 
-fn point(ir: &CadIr, sequence: u32) -> Option<Point3> {
-    let id = crate::ids::point(&crate::ids::Stem::directory(sequence));
-    ir.model
+fn point(ir: &CadIr, sequence: u32, ctx: Option<&DecodeContext<'_>>) -> Result<Option<Point3>, CodecError> {
+    let id = crate::ids::point_admitted(&crate::ids::Stem::directory(sequence), ctx)?;
+    Ok(ir.model
         .points
         .iter()
         .find(|point| point.id == id)
-        .map(|point| point.position().get())
+        .map(|point| point.position().get()))
 }
 
 #[allow(clippy::many_single_char_names)]
@@ -227,7 +227,7 @@ pub(super) fn project(
             }
         };
         let location_index = pointer(record, 1);
-        let Some(location) = location_index.and_then(|sequence| point(ir, sequence)) else {
+        let Some(location) = location_index.map(|sequence| point(ir, sequence, ctx)).transpose()?.flatten() else {
             push_optional_entity_loss(ctx, &mut losses, entry, format_args!("analytic surface location point is missing"))?;
             continue;
         };
@@ -560,12 +560,12 @@ pub(super) fn project(
             }
         };
         sequences.record_surface(
-            &crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
+            &crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
             entry.sequence, ctx)?;
         reserve_optional_vec_growth(ctx, &mut ir.model.surfaces, 1, "iges analytic-surface slots")?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_analytic_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
+            id: crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
             geometry: result,
             source_object: Some(match source_object(entry, ctx) {
                 Ok(source) => source,
