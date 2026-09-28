@@ -197,7 +197,7 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_hole_construction(ctx, bytes, &records, &scope, &stream_types)?;
+                let construction = exact_hole_construction(ctx, bytes, &records, &scope, &stream_types, scope::DesignFeatureKind::Hole)?;
                 if let scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
                     *slot = construction;
                 }

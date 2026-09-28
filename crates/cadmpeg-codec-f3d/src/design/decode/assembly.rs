@@ -275,13 +275,14 @@ pub(super) fn exact_legacy_as_built_421_operands(
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
-    let mut hole_scope = scope.clone();
-    hole_scope
-        .try_edit(|draft| {
-            draft.payload = crate::records::feature::scope::DesignScopePayload::Hole(None);
-        })
-        .ok()?;
-    let hole = match exact_hole_construction(ctx, bytes, records, &hole_scope, stream_types) {
+    let hole = match exact_hole_construction(
+        ctx,
+        bytes,
+        records,
+        scope,
+        stream_types,
+        crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+    ) {
         Ok(Some(hole)) => hole,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),

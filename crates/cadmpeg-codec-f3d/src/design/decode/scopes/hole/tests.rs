@@ -22,6 +22,7 @@ fn exact_hole_construction(
         records,
         scope,
         stream_types,
+        crate::records::feature::scope::DesignFeatureKind::Hole,
     ).unwrap()
 }
 
@@ -41,6 +42,7 @@ fn hole_input_records_refuse_collection_limit() {
         &records,
         &scope,
         &HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]),
+        crate::records::feature::scope::DesignFeatureKind::Hole,
     );
     assert!(matches!(
         result,
@@ -48,6 +50,36 @@ fn hole_input_records_refuse_collection_limit() {
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d Hole input records"
     ));
+}
+
+#[test]
+fn hole_carrier_reads_borrowed_as_built_scope() {
+    let (bytes, mut scope, _, _) = hole_point_stream();
+    scope.try_edit(|draft| {
+        draft.payload = crate::records::feature::scope::DesignFeatureKind::AsBuilt
+            .try_into()
+            .unwrap();
+    }).unwrap();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let types = HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let construction = exact_hole_construction_with_ctx(
+        &ctx,
+        &bytes,
+        &records,
+        &scope,
+        &types,
+        crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+    ).unwrap();
+    assert_eq!(construction.unwrap().point_record_index, 55);
+    assert!(exact_hole_construction_with_ctx(
+        &ctx,
+        &bytes,
+        &records,
+        &scope,
+        &types,
+        crate::records::feature::scope::DesignFeatureKind::Hole,
+    ).unwrap().is_none());
 }
 
 fn assert_f64_array<const N: usize>(actual: [f64; N], expected: [f64; N]) {

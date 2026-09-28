@@ -52,9 +52,10 @@ pub(in crate::design::decode) fn exact_hole_construction(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
+    required_scope_kind: scope::DesignFeatureKind,
 ) -> Result<Option<DesignHoleConstruction>, CodecError> {
     (|| {
-    if scope.kind() != scope::DesignFeatureKind::Hole {
+    if scope.kind() != required_scope_kind {
         return None;
     }
     let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
