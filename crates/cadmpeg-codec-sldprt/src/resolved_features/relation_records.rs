@@ -11,6 +11,8 @@ use crate::records::{
     FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
     FeatureInputScalar, FeatureInputScalarRole,
 };
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
 fn scalar_name_value<'a>(
@@ -186,30 +188,44 @@ fn relation_declaration_candidates_impl<'a>(
     classes
         .iter()
         .filter_map(|class| {
-            let family = relation_family(&class.name)?;
-            let class_feature = feature_name_at_offset(class.offset, intervals);
-            let scope_end = match relation_scope_end(class, classes, intervals) {
-                RelationScope::Ends(end) => Some(end),
-                RelationScope::Unbounded => None,
-                RelationScope::Unstatable => return None,
-            };
-            let scalar = scalars
-                .iter()
-                .filter(|scalar| {
-                    scalar.offset > class.offset
-                        && scope_end.is_none_or(|end| scalar.offset < end)
-                        && class_feature
-                            .is_none_or(|feature| scalar.feature_ref.as_deref() == Some(feature))
-                        && if allow_dynamic {
-                            relation_signature_for_declaration(family, scalar)
-                        } else {
-                            relation_signature(family, &scalar.operands)
-                        }
-                })
-                .min_by_key(|scalar| scalar.offset)?;
-            Some((class, scalar, family))
+            relation_declaration_candidate(class, classes, scalars, intervals, allow_dynamic)
         })
         .collect()
+}
+
+fn relation_declaration_candidate<'a>(
+    class: &'a FeatureInputClass,
+    classes: &'a [FeatureInputClass],
+    scalars: &'a [FeatureInputScalar],
+    intervals: &[(u64, Option<u64>, String)],
+    allow_dynamic: bool,
+) -> Option<(
+    &'a FeatureInputClass,
+    &'a FeatureInputScalar,
+    FeatureInputRelationFamily,
+)> {
+    let family = relation_family(&class.name)?;
+    let class_feature = feature_name_at_offset(class.offset, intervals);
+    let scope_end = match relation_scope_end(class, classes, intervals) {
+        RelationScope::Ends(end) => Some(end),
+        RelationScope::Unbounded => None,
+        RelationScope::Unstatable => return None,
+    };
+    let scalar = scalars
+        .iter()
+        .filter(|scalar| {
+            scalar.offset > class.offset
+                && scope_end.is_none_or(|end| scalar.offset < end)
+                && class_feature
+                    .is_none_or(|feature| scalar.feature_ref.as_deref() == Some(feature))
+                && if allow_dynamic {
+                    relation_signature_for_declaration(family, scalar)
+                } else {
+                    relation_signature(family, &scalar.operands)
+                }
+        })
+        .min_by_key(|scalar| scalar.offset)?;
+    Some((class, scalar, family))
 }
 
 pub(super) fn unique_relation_declaration_candidates<'a>(
@@ -230,6 +246,66 @@ pub(super) fn unique_relation_declaration_candidates<'a>(
         .into_iter()
         .filter(|(_, scalar, _)| counts.get(scalar.id.as_str()) == Some(&1))
         .collect()
+}
+
+pub(super) fn unique_relation_declaration_candidates_charged<'a>(
+    ctx: &DecodeContext<'_>,
+    classes: &'a [FeatureInputClass],
+    scalars: &'a [FeatureInputScalar],
+    intervals: &[(u64, Option<u64>, String)],
+) -> Result<
+    Vec<(
+        &'a FeatureInputClass,
+        &'a FeatureInputScalar,
+        FeatureInputRelationFamily,
+    )>,
+    CodecError,
+> {
+    let search_steps = classes
+        .len()
+        .checked_add(scalars.len())
+        .and_then(|step| step.checked_add(intervals.len()))
+        .and_then(|step| classes.len().checked_mul(step))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("match SLDPRT relation declarations", u64::MAX - 1, u64::MAX)
+        })?;
+    ctx.charge_work(
+        u64::try_from(search_steps).map_err(|_| {
+            ctx.refuse_codec_limit("match SLDPRT relation declarations", u64::MAX - 1, u64::MAX)
+        })?,
+        "match SLDPRT relation declarations",
+    )?;
+    let mut candidates = Vec::new();
+    for class in classes {
+        if let Some(candidate) =
+            relation_declaration_candidate(class, classes, scalars, intervals, false)
+        {
+            ctx.reserve_collection_vec(&mut candidates, 1, "collect SLDPRT relation candidates")?;
+            candidates.push(candidate);
+        }
+    }
+    let mut counts = HashMap::<&str, usize>::new();
+    for (_, scalar, _) in &candidates {
+        if let Some(count) = counts.get_mut(scalar.id.as_str()) {
+            *count = count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("count SLDPRT relation candidates", u64::MAX - 1, u64::MAX)
+            })?;
+        } else {
+            ctx.charge_collection_items(1, "index SLDPRT relation candidates")?;
+            counts.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT relation candidates", u64::MAX - 1, u64::MAX)
+            })?;
+            counts.insert(scalar.id.as_str(), 1);
+        }
+    }
+    let mut unique = Vec::new();
+    for candidate in candidates {
+        if counts.get(candidate.1.id.as_str()) == Some(&1) {
+            ctx.reserve_collection_vec(&mut unique, 1, "collect SLDPRT unique relations")?;
+            unique.push(candidate);
+        }
+    }
+    Ok(unique)
 }
 
 struct RelationGroup<'a> {

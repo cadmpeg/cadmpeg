@@ -15,7 +15,9 @@ use super::endpoints::{
     wide_indexed_curve_endpoint_indices,
 };
 use super::relation_loci::same_dimension_length;
-use super::relation_records::unique_relation_declaration_candidates;
+use super::relation_records::{
+    unique_relation_declaration_candidates, unique_relation_declaration_candidates_charged,
+};
 use super::scalars::{feature_object_name, operand_kind};
 use super::selections::{marker_local_links, operand_accepts_marker};
 use super::{
@@ -1134,6 +1136,46 @@ pub(crate) fn relation_bindings(
     scalars: &[FeatureInputScalar],
 ) -> Vec<FeatureInputRelationBinding> {
     relation_bindings_scoped(parent, classes, scalars, &[])
+}
+
+pub(crate) fn relation_bindings_charged(
+    ctx: &DecodeContext<'_>,
+    parent: &str,
+    classes: &[FeatureInputClass],
+    scalars: &[FeatureInputScalar],
+) -> Result<Vec<FeatureInputRelationBinding>, CodecError> {
+    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let candidates = unique_relation_declaration_candidates_charged(ctx, classes, scalars, &[])?;
+    let mut bindings = Vec::new();
+    for (class, scalar, family) in candidates {
+        let ordinal = u32::try_from(bindings.len()).map_err(|_| {
+            ctx.refuse_codec_limit("number SLDPRT relation bindings", u64::MAX - 1, u64::MAX)
+        })?;
+        let id = ctx.format_retained(
+            format_args!("sldprt:feature-input:relation-binding#{lane_key}:{}", class.offset),
+            "retain SLDPRT relation binding identity",
+        )?;
+        let parent = copy_reference_text(ctx, parent)?;
+        let class_ref = copy_reference_text(ctx, &class.id)?;
+        let scalar_ref = copy_reference_text(ctx, &scalar.id)?;
+        let feature_ref = scalar
+            .feature_ref
+            .as_deref()
+            .map(|feature| copy_reference_text(ctx, feature))
+            .transpose()?;
+        ctx.reserve_collection_vec(&mut bindings, 1, "collect SLDPRT relation bindings")?;
+        bindings.push(FeatureInputRelationBinding {
+            id,
+            parent,
+            ordinal,
+            offset: class.offset,
+            class_ref,
+            family,
+            scalar_ref,
+            feature_ref,
+        });
+    }
+    Ok(bindings)
 }
 
 pub(super) fn relation_bindings_scoped(

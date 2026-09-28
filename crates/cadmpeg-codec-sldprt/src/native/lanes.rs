@@ -359,11 +359,12 @@ fn rebuild_scalar_relations_charged(
     scalars: Vec<crate::records::FeatureInputScalar>,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     lane.scalars = scalars;
-    lane.relation_bindings = crate::resolved_features::markers::relation_bindings(
+    lane.relation_bindings = crate::resolved_features::markers::relation_bindings_charged(
+        ctx,
         &lane.id,
         &lane.classes,
         &lane.scalars,
-    );
+    )?;
     lane.references = crate::resolved_features::markers::reference_cells_charged(
         ctx,
         &lane.scalars,

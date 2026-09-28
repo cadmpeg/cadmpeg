@@ -26,9 +26,12 @@ use crate::resolved_features::markers::marker_spatial_coordinates;
 use crate::resolved_features::markers::reference_cells;
 use crate::resolved_features::markers::reference_cells_charged;
 use crate::resolved_features::markers::relation_bindings;
+use crate::resolved_features::markers::relation_bindings_charged;
 use crate::resolved_features::markers::relation_bindings_scoped;
 use crate::resolved_features::markers::sketch_input_entities;
 use crate::resolved_features::markers::spatial_sketches;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
@@ -721,6 +724,47 @@ fn relation_binding_requires_family_operand_signature() {
         ))],
     )
     .is_empty());
+}
+
+#[test]
+fn relation_binding_identity_refuses_retained_limit() {
+    let class = FeatureInputClass {
+        id: "class".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 10,
+        name: "sgLLDist".into(),
+    };
+    let operand = |entity_index| FeatureInputOperand {
+        offset: 0,
+        reference_ref: String::new(),
+        kind: FeatureInputOperandKind::E1,
+        entity_index,
+        entity_ref: None,
+    };
+    let scalar = FeatureInputScalar {
+        id: "scalar".into(),
+        parent: "lane".into(),
+        feature_ref: Some("sketch".into()),
+        ordinal: 0,
+        offset: 20,
+        object_id: 1,
+        name: "name".into(),
+        value: cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite test scalar"),
+        role: FeatureInputScalarRole::Driving,
+        operands: vec![operand(0), operand(1)],
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits policy");
+    let Err(CodecError::ResourceLimit(limit)) =
+        relation_bindings_charged(&ctx, "lane", &[class], &[scalar])
+    else {
+        panic!("relation binding identity must use retained budget");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
 }
 
 #[test]
