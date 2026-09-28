@@ -74,6 +74,21 @@ fn insert_profile_set<T: Eq + std::hash::Hash>(
     Ok(items.insert(item))
 }
 
+fn insert_profile_map<K: Eq + std::hash::Hash, V>(
+    ctx: &DecodeContext<'_>,
+    items: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !items.contains_key(&key) {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    items.insert(key, value);
+    Ok(())
+}
+
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
 /// native selection together with the known sketch.
@@ -1053,6 +1068,103 @@ fn copy_profile_spatial_sketch_id(
         "f3d profile spatial sketch id")?)
         .map_err(|_| CodecError::malformed("validated spatial sketch ID is not UTF-8"))?;
     cadmpeg_ir::sketches::SpatialSketchId::try_from(text).map_err(CodecError::malformed)
+}
+
+fn copy_profile_sketch_entity_id(
+    id: &cadmpeg_ir::sketches::SketchEntityId,
+    ctx: &DecodeContext<'_>,
+) -> Result<cadmpeg_ir::sketches::SketchEntityId, CodecError> {
+    let text = copy_profile_text(Some(ctx), id.as_str(), "f3d bound planar curve id")?;
+    cadmpeg_ir::sketches::SketchEntityId::try_from(text).map_err(CodecError::malformed)
+}
+
+fn copy_profile_spatial_entity_id(
+    id: &cadmpeg_ir::sketches::SpatialSketchEntityId,
+    ctx: &DecodeContext<'_>,
+) -> Result<cadmpeg_ir::sketches::SpatialSketchEntityId, CodecError> {
+    let text = copy_profile_text(Some(ctx), id.as_str(), "f3d bound spatial curve id")?;
+    cadmpeg_ir::sketches::SpatialSketchEntityId::try_from(text).map_err(CodecError::malformed)
+}
+
+fn copy_bound_profile(
+    profile: &cadmpeg_ir::features::ProfileRef,
+    ctx: &DecodeContext<'_>,
+) -> Result<cadmpeg_ir::features::ProfileRef, CodecError> {
+    use cadmpeg_ir::features::ProfileRef;
+
+    match profile {
+        ProfileRef::Planar(planar) => Ok(ProfileRef::Planar(copy_bound_planar_profile(planar, ctx)?)),
+        ProfileRef::SpatialSketchProfiles { sketch, profiles } => {
+            let sketch = copy_profile_spatial_sketch_id(sketch, Some(ctx))?;
+            let mut indices = Vec::new();
+            for index in profiles.as_slice() {
+                push_profile_item(Some(ctx), &mut indices, *index,
+                    "f3d bound spatial profile index")?;
+            }
+            ProfileRef::spatial_sketch_profiles(sketch, indices)
+                .map_err(CodecError::malformed)
+        }
+        ProfileRef::SpatialSketchSelection { sketch, selections } => {
+            let sketch = copy_profile_spatial_sketch_id(sketch, Some(ctx))?;
+            let mut ids = Vec::new();
+            for selection in selections.as_slice() {
+                let id = copy_profile_text(Some(ctx), selection,
+                    "f3d bound spatial selection id")?;
+                push_profile_item(Some(ctx), &mut ids, id,
+                    "f3d bound spatial selection")?;
+            }
+            ProfileRef::spatial_sketch_selection(sketch, ids)
+                .map_err(CodecError::malformed)
+        }
+    }
+}
+
+fn copy_bound_planar_profile(
+    profile: &cadmpeg_ir::features::PlanarProfileRef,
+    ctx: &DecodeContext<'_>,
+) -> Result<cadmpeg_ir::features::PlanarProfileRef, CodecError> {
+    use cadmpeg_ir::features::PlanarProfileRef;
+
+    match profile {
+        PlanarProfileRef::Sketch(sketch) => Ok(PlanarProfileRef::Sketch(
+            copy_profile_sketch_id(sketch, Some(ctx))?,
+        )),
+        PlanarProfileRef::Native(id) => Ok(PlanarProfileRef::Native(
+            copy_profile_text(Some(ctx), id, "f3d bound native profile id")?,
+        )),
+        _ => Err(CodecError::malformed("bound planar profile has unsupported resolved form")),
+    }
+}
+
+fn copy_bound_path(
+    path: &cadmpeg_ir::features::PathRef,
+    ctx: &DecodeContext<'_>,
+) -> Result<cadmpeg_ir::features::PathRef, CodecError> {
+    use cadmpeg_ir::features::PathRef;
+
+    match path {
+        PathRef::SketchCurves { sketch, curves } => {
+            let sketch = copy_profile_sketch_id(sketch, Some(ctx))?;
+            let mut ids = Vec::new();
+            for curve in curves.as_slice() {
+                let id = copy_profile_sketch_entity_id(curve, ctx)?;
+                push_profile_item(Some(ctx), &mut ids, id,
+                    "f3d bound planar path curve")?;
+            }
+            PathRef::sketch_curves(sketch, ids).map_err(CodecError::malformed)
+        }
+        PathRef::SpatialSketchCurves { sketch, curves } => {
+            let sketch = copy_profile_spatial_sketch_id(sketch, Some(ctx))?;
+            let mut ids = Vec::new();
+            for curve in curves.as_slice() {
+                let id = copy_profile_spatial_entity_id(curve, ctx)?;
+                push_profile_item(Some(ctx), &mut ids, id,
+                    "f3d bound spatial path curve")?;
+            }
+            PathRef::spatial_sketch_curves(sketch, ids).map_err(CodecError::malformed)
+        }
+        _ => Err(CodecError::malformed("bound path has unsupported resolved form")),
+    }
 }
 
 fn copy_profile_boundary_use(
@@ -2808,10 +2920,12 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         FeatureDefinition, FeatureOperation, LoftSection, PathRef, PlanarProfileRef, ProfileRef,
     };
 
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
+    let mut header_index = HashMap::new();
+    for header in headers {
+        let Some(stream) = native_stream(&header.id) else { continue; };
+        insert_profile_map(ctx, &mut header_index, (stream, header.record_index), header,
+            "f3d loft header index")?;
+    }
     let mut resolved_profiles = HashMap::new();
     for group in groups.iter().filter(|group| {
         matches!(
@@ -2827,7 +2941,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(header) = headers.get(&(stream, group.members()[0].value)) else {
+        let Some(header) = header_index.get(&(stream, group.members()[0].value)) else {
             continue;
         };
         let Some(profile) = parse_sketch_profile(
@@ -2840,41 +2954,40 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         ).transpose()? else {
             continue;
         };
-        let matches = resolution
+        let mut matches = resolution
             .placements
             .iter()
             .filter(|placement| {
                 native_stream(&placement.id) == Some(stream)
                     && placement.entity_id == profile.entity_id
-            })
-            .collect::<Vec<_>>();
-        let [placement] = matches.as_slice() else {
-            continue;
-        };
+            });
+        let Some(placement) = matches.next() else { continue; };
+        if matches.next().is_some() { continue; }
         let spatial_sketch_id = neutral_spatial_sketch_id(placement);
         let resolved = if let Some(spatial_sketch) = resolution
             .spatial_sketches
             .iter()
             .find(|sketch| sketch.id == spatial_sketch_id)
         {
-            resolved_spatial_sketch_profile_regions(stream, &profile, spatial_sketch, resolution, Some(ctx))?
-                .map_or_else(
-                    || {
-                        ProfileRef::spatial_sketch_selection(
-                            spatial_sketch_id.clone(),
-                            vec![group.id.clone()],
-                        )
-                        .unwrap_or_else(|_| {
-                            ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone()))
-                        })
-                    },
-                    |profiles| {
-                        ProfileRef::spatial_sketch_profiles(spatial_sketch_id.clone(), profiles)
-                            .unwrap_or_else(|_| {
-                                ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone()))
-                            })
-                    },
-                )
+            let id = copy_profile_spatial_sketch_id(&spatial_sketch_id, Some(ctx))?;
+            if let Some(profiles) = resolved_spatial_sketch_profile_regions(
+                stream, &profile, spatial_sketch, resolution, Some(ctx))? {
+                match ProfileRef::spatial_sketch_profiles(id, profiles) {
+                    Ok(profile) => profile,
+                    Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
+                        copy_profile_text(Some(ctx), &group.id,
+                            "f3d loft native profile id")?)),
+                }
+            } else {
+                let group_id = copy_profile_text(Some(ctx), &group.id,
+                    "f3d loft spatial selection id")?;
+                match ProfileRef::spatial_sketch_selection(id, vec![group_id]) {
+                    Ok(profile) => profile,
+                    Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
+                        copy_profile_text(Some(ctx), &group.id,
+                            "f3d loft native profile id")?)),
+                }
+            }
         } else {
             let sketch = neutral_sketch_id(placement);
             if !resolution
@@ -2886,7 +2999,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             }
             ProfileRef::Planar(PlanarProfileRef::Sketch(sketch))
         };
-        resolved_profiles.insert(group.id.clone(), resolved);
+        insert_profile_map(ctx, &mut resolved_profiles, group.id.as_str(), resolved,
+            "f3d loft resolved profile index")?;
     }
     let mut resolved_entity_paths = HashMap::new();
     for group in groups.iter().filter(|group| {
@@ -2896,7 +3010,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         ) && !group.members().is_empty()
     }) {
         if let Some(path) = resolved_loft_entity_selection_path(group, resolution, Some(ctx))? {
-            resolved_entity_paths.insert(group.id.clone(), path);
+            insert_profile_map(ctx, &mut resolved_entity_paths, group.id.as_str(), path,
+                "f3d loft resolved path index")?;
         }
     }
     for group in groups
@@ -2960,35 +3075,32 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             curve.secondary_id,
         );
         let profile = spatial_profile_containing_entity(spatial_sketch, &entity);
-        resolved_profiles.insert(
-            group.id.clone(),
-            profile.map_or_else(
-                || {
-                    ProfileRef::spatial_sketch_selection(
-                        spatial_sketch_id.clone(),
-                        vec![operand.id.clone()],
-                    )
-                    .unwrap_or_else(|_| {
-                        ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone()))
-                    })
-                },
-                |profile| {
-                    ProfileRef::spatial_sketch_profiles(spatial_sketch_id.clone(), vec![profile])
-                        .unwrap_or_else(|_| {
-                            ProfileRef::Planar(PlanarProfileRef::Native(group.id.clone()))
-                        })
-                },
-            ),
-        );
+        let id = copy_profile_spatial_sketch_id(&spatial_sketch_id, Some(ctx))?;
+        let resolved = if let Some(profile) = profile {
+            ProfileRef::spatial_sketch_profiles(id, vec![profile])
+        } else {
+            let operand_id = copy_profile_text(Some(ctx), &operand.id,
+                "f3d loft entity selection operand id")?;
+            ProfileRef::spatial_sketch_selection(id, vec![operand_id])
+        };
+        let resolved = match resolved {
+            Ok(profile) => profile,
+            Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(
+                copy_profile_text(Some(ctx), &group.id,
+                    "f3d loft native profile id")?)),
+        };
+        insert_profile_map(ctx, &mut resolved_profiles, group.id.as_str(), resolved,
+            "f3d loft resolved profile index")?;
     }
     for feature in features.iter_mut() {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            edit_result = (|| -> Result<(), CodecError> {
             let FeatureDefinition::Operation(FeatureOperation::Loft {
                 sections, guidance, ..
-            }) = &mut definition
+            }) = definition
             else {
-                break 'feature_edit;
+                return Ok(());
             };
             for section in sections.iter_mut() {
                 let LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(native))) =
@@ -2996,8 +3108,8 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                 else {
                     continue;
                 };
-                if let Some(profile) = resolved_profiles.get(native) {
-                    *section = LoftSection::Profile(profile.clone());
+                if let Some(profile) = resolved_profiles.get(native.as_str()) {
+                    *section = LoftSection::Profile(copy_bound_profile(profile, ctx)?);
                 }
             }
             match guidance {
@@ -3006,39 +3118,44 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
                         let PathRef::Native(native) = guide else {
                             continue;
                         };
-                        if let Some(path) = resolved_entity_paths.get(native) {
-                            *guide = path.clone();
+                        if let Some(path) = resolved_entity_paths.get(native.as_str()) {
+                            *guide = copy_bound_path(path, ctx)?;
                         }
                     }
                 }
                 cadmpeg_ir::features::LoftGuidance::Centerline(centerline) => {
                     if let PathRef::Native(native) = centerline {
-                        if let Some(path) = resolved_entity_paths.get(native) {
-                            *centerline = path.clone();
+                        if let Some(path) = resolved_entity_paths.get(native.as_str()) {
+                            *centerline = copy_bound_path(path, ctx)?;
                         }
                     }
                 }
             }
-        }
-        feature.evaluation.set_definition(definition);
+            Ok(())
+            })();
+        });
+        edit_result?;
     }
     for feature in features.iter_mut() {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            edit_result = (|| -> Result<(), CodecError> {
             let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
-                &mut definition
+                definition
             else {
-                break 'feature_edit;
+                return Ok(());
             };
             let Some(PlanarProfileRef::Native(native)) = construction.profile() else {
-                break 'feature_edit;
+                return Ok(());
             };
-            let Some(ProfileRef::Planar(profile)) = resolved_profiles.get(native) else {
-                break 'feature_edit;
+            let Some(ProfileRef::Planar(profile)) = resolved_profiles.get(native.as_str()) else {
+                return Ok(());
             };
-            construction.set_profile(Some(profile.clone()));
-        }
-        feature.evaluation.set_definition(definition);
+            construction.set_profile(Some(copy_bound_planar_profile(profile, ctx)?));
+            Ok(())
+            })();
+        });
+        edit_result?;
     }
     Ok(())
 }
