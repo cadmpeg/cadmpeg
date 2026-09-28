@@ -987,6 +987,8 @@ fn parse_from_records_with_class21(
     let mut conflicting_object_stream_pcurves = HashSet::new();
     let mut object_stream_pcurve_classes = HashMap::<u32, Option<u8>>::new();
     for candidate in object_stream_candidates {
+        crate::resource::admit_map_entry(ctx, &mut object_stream_pcurve_classes,
+            &candidate.object_id, "catia_b5_object_pcurve_classes")?;
         object_stream_pcurve_classes
             .entry(candidate.object_id)
             .and_modify(|class| {
@@ -996,12 +998,15 @@ fn parse_from_records_with_class21(
             })
             .or_insert(Some(0x20));
         merge_pcurve_candidate(
+            ctx,
             &mut object_stream_pcurve_candidates,
             &mut conflicting_object_stream_pcurves,
             candidate,
-        );
+        )?;
     }
     for candidate in class21_candidates {
+        crate::resource::admit_map_entry(ctx, &mut object_stream_pcurve_classes,
+            &candidate.object_id, "catia_b5_object_pcurve_classes")?;
         object_stream_pcurve_classes
             .entry(candidate.object_id)
             .and_modify(|class| {
@@ -1011,15 +1016,17 @@ fn parse_from_records_with_class21(
             })
             .or_insert(Some(0x21));
         merge_pcurve_candidate(
+            ctx,
             &mut object_stream_pcurve_candidates,
             &mut conflicting_object_stream_pcurves,
             candidate,
-        );
+        )?;
     }
-    let a8_pcurve_supports = object_stream_pcurve_candidates
-        .iter()
-        .map(|(&object_id, pcurve)| (object_id, pcurve.surface))
-        .collect::<HashMap<_, _>>();
+    let mut a8_pcurve_supports = HashMap::new();
+    for (&object_id, pcurve) in &object_stream_pcurve_candidates {
+        crate::resource::insert_map(ctx, &mut a8_pcurve_supports,
+            object_id, pcurve.surface, "catia_b5_a8_pcurve_supports")?;
+    }
     let mut a8_headers = BTreeMap::new();
     for frame in frames {
         if let Some(header) = crate::families::a5a8::records::a8_surface_header_from_object_frame(
@@ -1069,17 +1076,19 @@ fn parse_from_records_with_class21(
         )? else { continue };
         if let Some(object_id) = surface.object_id() {
             merge_surface_candidate(
+                ctx,
                 &mut surfaces,
                 &mut conflicting_surfaces,
                 object_id,
                 B5Surface::Nurbs(surface.geometry),
-            );
+            )?;
         }
     }
     for jet in crate::families::a5a8::records::a8_freeform_curves(ctx, bytes)? {
         if let Some(definition) = crate::families::a5a8::records::rolling_ball_jet_definition(ctx, &jet)?
         {
             merge_surface_candidate(
+                ctx,
                 &mut surfaces,
                 &mut conflicting_surfaces,
                 jet.object_id,
@@ -1087,32 +1096,27 @@ fn parse_from_records_with_class21(
                     carrier_object_id: jet.object_id,
                     definition,
                 },
-            );
+            )?;
         }
     }
-    let object_stream_pcurves = object_stream_pcurve_candidates
-        .iter()
-        .filter_map(|(&object_id, pcurve)| {
-            let class = object_stream_pcurve_classes
-                .get(&object_id)
-                .copied()
-                .flatten()?;
-            Some((
-                object_id,
-                B5ObjectStreamPcurve {
-                    class,
-                    surface: pcurve.surface,
-                    parameter_range: pcurve.parameter_range?,
-                    class_21_suffix_scalar: pcurve.class_21_suffix_scalar,
-                    distinct_knots: pcurve.distinct_knots.clone(),
-                },
-            ))
-        })
-        .collect();
-    let offset_constructions = records
-        .iter()
-        .filter_map(parse_offset_surface_fields)
-        .collect::<Vec<_>>();
+    let mut object_stream_pcurves = BTreeMap::new();
+    for (&object_id, pcurve) in &object_stream_pcurve_candidates {
+        let Some((class, parameter_range)) = object_stream_pcurve_classes
+            .get(&object_id).copied().flatten().zip(pcurve.parameter_range) else { continue };
+        let distinct_knots = crate::resource::copy_retained_slice(ctx, &pcurve.distinct_knots,
+            "catia_b5_object_pcurve_knots")?;
+        crate::resource::insert_btree_map(ctx, &mut object_stream_pcurves, object_id,
+            B5ObjectStreamPcurve {
+                class,
+                surface: pcurve.surface,
+                parameter_range,
+                class_21_suffix_scalar: pcurve.class_21_suffix_scalar,
+                distinct_knots,
+            }, "catia_b5_object_pcurve_index")?;
+    }
+    let offset_constructions = crate::resource::collect_vec(ctx,
+        records.iter().filter_map(parse_offset_surface_fields),
+        "catia_b5_offset_constructions")?;
     let mut extrusion_surfaces = BTreeMap::<u32, B5ExtrusionSurface>::new();
     let has_extrusion_candidates = records
         .iter()
@@ -1136,7 +1140,8 @@ fn parse_from_records_with_class21(
                 ) else {
                     continue;
                 };
-                extrusion_surfaces.insert(record.object_id, extrusion);
+                crate::resource::insert_btree_map(ctx, &mut extrusion_surfaces,
+                    record.object_id, extrusion, "catia_b5_extrusion_surfaces")?;
                 changed = true;
             }
             if !changed {
@@ -1144,16 +1149,13 @@ fn parse_from_records_with_class21(
             }
         }
     }
-    let extrusion_pcurves = extrusion_surfaces
-        .values()
-        .flat_map(|extrusion| {
-            extrusion
-                .directrix
-                .supports()
-                .into_iter()
-                .map(|(_, pcurve, _)| pcurve)
-        })
-        .collect::<HashSet<_>>();
+    let mut extrusion_pcurves = HashSet::new();
+    for extrusion in extrusion_surfaces.values() {
+        for (_, pcurve, _) in extrusion.directrix.supports() {
+            crate::resource::insert_set(ctx, &mut extrusion_pcurves, pcurve,
+                "catia_b5_extrusion_pcurve_ids")?;
+        }
+    }
     let mut offset_surfaces = BTreeMap::new();
     let mut supported_surfaces = BTreeMap::new();
     let has_surface_fixpoint_candidates = !offset_constructions.is_empty()
@@ -1165,17 +1167,18 @@ fn parse_from_records_with_class21(
             if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
                 return Ok(None);
             }
-            let mut changed =
-                resolve_surface_aliases(records, by_id, &mut surfaces, &mut conflicting_surfaces);
+            let mut changed = resolve_surface_aliases(
+                ctx, records, by_id, &mut surfaces, &mut conflicting_surfaces,
+            )?;
             for record in records {
                 let Some(offset) =
                     parse_offset_surface(record, &surfaces, &extrusion_surfaces, by_id)
                 else {
                     continue;
                 };
-                let carrier = if let Some(carrier) = surfaces.get(&offset.carrier_surface).cloned()
+                let carrier = if let Some(carrier) = surfaces.get(&offset.carrier_surface)
                 {
-                    carrier
+                    copy_surface(ctx, carrier)?
                 } else {
                     let Some(record) = by_id.get(&offset.carrier_surface) else {
                         continue;
@@ -1183,59 +1186,65 @@ fn parse_from_records_with_class21(
                     B5Surface::Unknown {
                         family: record.family,
                         class: record.class,
-                        payload: record.payload.clone(),
+                        payload: crate::resource::copy_retained_slice(ctx, &record.payload,
+                            "catia_b5_offset_carrier_payload")?,
                     }
                 };
-                let before = surfaces.get(&record.object_id).cloned();
+                let surface_changed = surfaces.get(&record.object_id) != Some(&carrier);
                 if !merge_surface_candidate(
+                    ctx,
                     &mut surfaces,
                     &mut conflicting_surfaces,
                     offset.carrier_surface,
-                    carrier.clone(),
-                ) || !merge_surface_candidate(
+                    copy_surface(ctx, &carrier)?,
+                )? || !merge_surface_candidate(
+                    ctx,
                     &mut surfaces,
                     &mut conflicting_surfaces,
                     record.object_id,
                     carrier,
-                ) {
+                )? {
                     continue;
                 }
-                let surface_changed = surfaces.get(&record.object_id) != before.as_ref();
                 let metadata_changed = offset_surfaces.get(&record.object_id) != Some(&offset);
-                offset_surfaces.insert(record.object_id, offset);
+                crate::resource::insert_btree_map(ctx, &mut offset_surfaces,
+                    record.object_id, offset, "catia_b5_offset_surfaces")?;
                 changed |= surface_changed || metadata_changed;
             }
             for record in records {
                 let Some(construction) = parse_supported_surface(record) else {
                     continue;
                 };
-                let Some(carrier) = surfaces.get(&construction.carrier_surface).cloned() else {
+                let Some(carrier) = surfaces.get(&construction.carrier_surface) else {
                     continue;
                 };
+                let carrier = copy_surface(ctx, carrier)?;
                 let parameters_match_carrier =
                     supported_surface_parameters_match_carrier(&construction.parameters, &carrier);
-                let before = surfaces.get(&record.object_id).cloned();
+                let surface_changed = surfaces.get(&record.object_id) != Some(&carrier);
                 if merge_surface_candidate(
+                    ctx,
                     &mut surfaces,
                     &mut conflicting_surfaces,
                     record.object_id,
                     carrier,
-                ) && parameters_match_carrier
+                )? && parameters_match_carrier
                     && supported_surface_pcurves_match(&construction, by_id, &a8_pcurve_supports)
                     && construction
                         .support_surfaces
                         .iter()
                         .all(|surface| surfaces.contains_key(surface))
                 {
-                    let surface_changed = surfaces.get(&record.object_id) != before.as_ref();
                     let metadata_changed =
                         supported_surfaces.get(&record.object_id) != Some(&construction);
-                    supported_surfaces.insert(record.object_id, construction);
+                    crate::resource::insert_btree_map(ctx, &mut supported_surfaces,
+                        record.object_id, construction, "catia_b5_supported_surfaces")?;
                     changed |= surface_changed || metadata_changed;
                 }
             }
-            changed |=
-                resolve_surface_aliases(records, by_id, &mut surfaces, &mut conflicting_surfaces);
+            changed |= resolve_surface_aliases(
+                ctx, records, by_id, &mut surfaces, &mut conflicting_surfaces,
+            )?;
             if !changed {
                 break;
             }
@@ -1281,10 +1290,11 @@ fn parse_from_records_with_class21(
             continue;
         };
         if distinct.all(|other| other == candidate) {
-            merge_pcurve_candidate(&mut pcurves, &mut conflicting_pcurves, candidate);
+            merge_pcurve_candidate(ctx, &mut pcurves, &mut conflicting_pcurves, candidate)?;
         } else {
             pcurves.remove(&object_id);
-            conflicting_pcurves.insert(object_id);
+            crate::resource::insert_set(ctx, &mut conflicting_pcurves, object_id,
+                "catia_b5_conflicting_circle_pcurves")?;
         }
     }
     for candidate in object_stream_pcurve_candidates.into_values() {
@@ -1296,7 +1306,7 @@ fn parse_from_records_with_class21(
         {
             continue;
         }
-        merge_pcurve_candidate(&mut pcurves, &mut conflicting_pcurves, candidate);
+        merge_pcurve_candidate(ctx, &mut pcurves, &mut conflicting_pcurves, candidate)?;
     }
     let mut opaque_pcurves: BTreeMap<u32, B5OpaquePcurve> = records
         .iter()
@@ -1461,53 +1471,57 @@ fn parse_from_records_with_class21(
 }
 
 fn merge_pcurve_candidate(
+    ctx: &DecodeContext<'_>,
     pcurves: &mut BTreeMap<u32, B5Pcurve>,
     conflicts: &mut HashSet<u32>,
     candidate: B5Pcurve,
-) {
+) -> Result<(), CodecError> {
     let object_id = candidate.object_id;
     if conflicts.contains(&object_id) {
-        return;
+        return Ok(());
     }
-    match pcurves.entry(object_id) {
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(candidate);
+    match pcurves.get(&object_id) {
+        None => {
+            crate::resource::insert_btree_map(ctx, pcurves, object_id, candidate,
+                "catia_b5_pcurve_candidates")?;
         }
-        std::collections::btree_map::Entry::Occupied(entry) if entry.get() == &candidate => {}
-        std::collections::btree_map::Entry::Occupied(entry) => {
-            entry.remove();
-            conflicts.insert(object_id);
+        Some(existing) if existing == &candidate => {}
+        Some(_) => {
+            pcurves.remove(&object_id);
+            crate::resource::insert_set(ctx, conflicts, object_id,
+                "catia_b5_conflicting_pcurves")?;
         }
     }
+    Ok(())
 }
 
 fn merge_surface_candidate(
+    ctx: &DecodeContext<'_>,
     surfaces: &mut BTreeMap<u32, B5Surface>,
     conflicts: &mut HashSet<u32>,
     object_id: u32,
     candidate: B5Surface,
-) -> bool {
+) -> Result<bool, CodecError> {
     if conflicts.contains(&object_id) {
-        return false;
+        return Ok(false);
     }
-    match surfaces.entry(object_id) {
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            entry.insert(candidate);
+    match surfaces.get(&object_id) {
+        None => {
+            crate::resource::insert_btree_map(ctx, surfaces, object_id, candidate,
+                "catia_b5_surface_candidates")?;
         }
-        std::collections::btree_map::Entry::Occupied(mut entry)
-            if unresolved_surface_candidate(entry.get()) =>
-        {
-            entry.insert(candidate);
+        Some(existing) if unresolved_surface_candidate(existing) => {
+            surfaces.insert(object_id, candidate);
         }
-        std::collections::btree_map::Entry::Occupied(entry)
-            if unresolved_surface_candidate(&candidate) || entry.get() == &candidate => {}
-        std::collections::btree_map::Entry::Occupied(entry) => {
-            entry.remove();
-            conflicts.insert(object_id);
-            return false;
+        Some(existing) if unresolved_surface_candidate(&candidate) || existing == &candidate => {}
+        Some(_) => {
+            surfaces.remove(&object_id);
+            crate::resource::insert_set(ctx, conflicts, object_id,
+                "catia_b5_conflicting_surfaces")?;
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
 }
 
 fn unresolved_surface_candidate(surface: &B5Surface) -> bool {
@@ -1554,50 +1568,55 @@ fn copy_surface(
 }
 
 fn resolve_surface_aliases(
+    ctx: &DecodeContext<'_>,
     records: &[B5Record],
     by_id: &HashMap<u32, &B5Record>,
     surfaces: &mut BTreeMap<u32, B5Surface>,
     conflicts: &mut HashSet<u32>,
-) -> bool {
+) -> Result<bool, CodecError> {
     let mut changed = false;
     for record in records {
         if surface_alias_target(record).is_none() {
             continue;
         }
-        let Some(candidate) = surface_alias_carrier(record.object_id, by_id, surfaces) else {
+        let Some(candidate) = surface_alias_carrier(ctx, record.object_id, by_id, surfaces)? else {
             continue;
         };
-        let before = surfaces.get(&record.object_id).cloned();
-        if merge_surface_candidate(surfaces, conflicts, record.object_id, candidate)
-            && surfaces.get(&record.object_id) != before.as_ref()
+        let unchanged = surfaces.get(&record.object_id) == Some(&candidate);
+        if merge_surface_candidate(ctx, surfaces, conflicts, record.object_id, candidate)?
+            && !unchanged
         {
             changed = true;
         }
     }
-    changed
+    Ok(changed)
 }
 
 fn surface_alias_carrier(
+    ctx: &DecodeContext<'_>,
     mut object_id: u32,
     by_id: &HashMap<u32, &B5Record>,
     surfaces: &BTreeMap<u32, B5Surface>,
-) -> Option<B5Surface> {
+) -> Result<Option<B5Surface>, CodecError> {
     let mut visited = HashSet::new();
     loop {
-        if !visited.insert(object_id) {
-            return None;
+        if !crate::resource::insert_set(ctx, &mut visited, object_id,
+            "catia_b5_surface_alias_visits")? {
+            return Ok(None);
         }
         let Some(record) = by_id.get(&object_id) else {
             return surfaces
                 .get(&object_id)
                 .filter(|surface| !unresolved_surface_candidate(surface))
-                .cloned();
+                .map(|surface| copy_surface(ctx, surface))
+                .transpose();
         };
         let Some(target) = surface_alias_target(record) else {
             return surfaces
                 .get(&object_id)
                 .filter(|surface| !unresolved_surface_candidate(surface))
-                .cloned();
+                .map(|surface| copy_surface(ctx, surface))
+                .transpose();
         };
         object_id = target;
     }
