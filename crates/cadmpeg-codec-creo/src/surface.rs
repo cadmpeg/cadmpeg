@@ -2541,9 +2541,10 @@ fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
 /// owned by uniquely identified plane rows.
 #[must_use]
 pub(crate) fn positional_frame_planes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     parameters: &[SurfaceParameterRecord],
     rows: &[SurfaceRow],
-) -> Vec<OutlinePlane> {
+) -> Result<Vec<OutlinePlane>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     for record in parameters {
         if record.boundary != SurfaceBodyBoundary::CompoundClose
@@ -2649,61 +2650,75 @@ pub(crate) fn positional_frame_planes(
             let corners = &terminal.slots[2..];
             Some((corners[0].offset, corners))
         })();
-        let mut candidates = marked_frames
+        let mut candidates = Vec::new();
+        for (offset, slots) in marked_frames
             .chain(auxiliary_frame)
             .chain(suffixed_auxiliary_frame)
             .chain(terminal_corner_frame)
             .chain(split_terminal_corner_frame)
-            .filter_map(|(offset, slots)| {
-                let values = slots
-                    .iter()
-                    .map(|slot| slot.value)
-                    .collect::<Option<Vec<_>>>()?;
-                values.iter().all(|value| value.is_finite()).then_some(())?;
-                let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
-                let equal = std::array::from_fn::<_, 3, _>(|axis| {
-                    (values[axis] - values[axis + 3]).abs() <= EPS_SURFACE_AGREEMENT * scale
-                });
-                let held = equal
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(axis, equal)| equal.then_some(axis))
-                    .collect::<Vec<_>>();
-                let [axis] = held.as_slice() else {
-                    return None;
-                };
-                let mut origin = [0.0; 3];
-                origin[*axis] = values[*axis];
-                let normal = [
-                    UnitVector3::X_AXIS,
-                    UnitVector3::Y_AXIS,
-                    UnitVector3::Z_AXIS,
-                ][*axis];
-                let u_axis = if *axis == 0 {
-                    UnitVector3::Y_AXIS
-                } else {
-                    UnitVector3::X_AXIS
-                };
-                Some(OutlinePlane {
-                    surface_id: record.surface_id,
-                    origin,
-                    normal,
-                    u_axis,
-                    offset: record.body_offset + offset,
-                })
-            })
-            .collect::<Vec<_>>();
+        {
+            if slots.len() != 6 {
+                continue;
+            }
+            let Some(values) = (|| {
+                let mut values = [0.0; 6];
+                for (index, slot) in slots.iter().enumerate() {
+                    values[index] = slot.value?;
+                }
+                Some(values)
+            })() else {
+                continue;
+            };
+            if !values.iter().all(|value| value.is_finite()) {
+                continue;
+            }
+            let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
+            let equal = std::array::from_fn::<_, 3, _>(|axis| {
+                (values[axis] - values[axis + 3]).abs() <= EPS_SURFACE_AGREEMENT * scale
+            });
+            let mut held = equal
+                .iter()
+                .enumerate()
+                .filter_map(|(axis, equal)| equal.then_some(axis));
+            let Some(axis) = held.next() else {
+                continue;
+            };
+            if held.next().is_some() {
+                continue;
+            }
+            let mut origin = [0.0; 3];
+            origin[axis] = values[axis];
+            let normal = [
+                UnitVector3::X_AXIS,
+                UnitVector3::Y_AXIS,
+                UnitVector3::Z_AXIS,
+            ][axis];
+            let u_axis = if axis == 0 {
+                UnitVector3::Y_AXIS
+            } else {
+                UnitVector3::X_AXIS
+            };
+            ctx.try_reserve_items(&mut candidates, 1, "creo positional plane candidates")?;
+            candidates.push(OutlinePlane {
+                surface_id: record.surface_id,
+                origin,
+                normal,
+                u_axis,
+                offset: record.body_offset + offset,
+            });
+        }
         candidates.dedup_by(|first, second| {
             first.origin == second.origin
                 && first.normal == second.normal
                 && first.u_axis == second.u_axis
         });
         if let [candidate] = candidates.as_slice() {
+            ctx.try_reserve_items(&mut result, 1, "creo positional frame planes")?;
             result.push(candidate.clone());
         }
     }
     result.sort_by_key(|plane| plane.offset);
-    result
+    Ok(result)
 }
 
 /// Place axis-aligned plane outlines whose support frame selects one proven
