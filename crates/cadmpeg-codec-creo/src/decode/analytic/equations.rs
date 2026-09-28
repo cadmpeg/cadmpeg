@@ -337,15 +337,16 @@ pub(in crate::decode) fn plane_intersection_line(
 }
 
 pub(super) fn intersect_two_planes_with_quadric(
+    ctx: &DecodeContext<'_>,
     first: PlaneEquation,
     second: PlaneEquation,
     carrier: CarrierEquation,
-) -> Vec<[f64; 3]> {
+) -> Result<Vec<[f64; 3]>, CodecError> {
     let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(quadric) = carrier_quadric(carrier) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let matrix_origin = matrix_vector(quadric.matrix, line_origin);
     let matrix_direction = matrix_vector(quadric.matrix, direction);
@@ -363,7 +364,8 @@ pub(super) fn intersect_two_planes_with_quadric(
             + abs_dot(quadric.linear, line_origin)
             + quadric.constant.abs(),
     );
-    real_roots(quadratic, linear, constant)
+    let mut points = Vec::new();
+    for point in real_roots(quadratic, linear, constant)
         .into_iter()
         .map(|parameter| {
             std::array::from_fn(|index| line_origin[index] + parameter * direction[index])
@@ -374,7 +376,11 @@ pub(super) fn intersect_two_planes_with_quadric(
                 && point_on_carrier(*point, CarrierEquation::Plane(second))
                 && point_on_carrier(*point, carrier)
         })
-        .collect()
+    {
+        ctx.try_reserve_items(&mut points, 1, "creo plane-quadric line intersections")?;
+        points.push(point);
+    }
+    Ok(points)
 }
 
 fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
@@ -1917,6 +1923,39 @@ mod tests {
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "creo conic intersection parameters"));
         assert_eq!(run(u64::MAX).expect("service budget admits both intersections").len(), 2);
+    }
+
+    #[test]
+    fn plane_quadric_line_intersections_refuse_before_vec_growth() {
+        let first = PlaneEquation {
+            origin: [0.0; 3],
+            normal: [1.0, 0.0, 0.0],
+        };
+        let second = PlaneEquation {
+            origin: [0.0; 3],
+            normal: [0.0, 1.0, 0.0],
+        };
+        let sphere = CarrierEquation::Sphere(SphereEquation {
+            center: [0.0; 3],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 1.0,
+        });
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root fits the collection policy");
+            super::intersect_two_planes_with_quadric(&ctx, first, second, sphere)
+        };
+        let error = run(0).expect_err("one plane-quadric line hit needs an admitted item");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo plane-quadric line intersections"));
+        assert_eq!(
+            run(u64::MAX).expect("service budget admits both intersections"),
+            [[0.0, 0.0, -1.0], [0.0, 0.0, 1.0]]
+        );
     }
 
     #[test]

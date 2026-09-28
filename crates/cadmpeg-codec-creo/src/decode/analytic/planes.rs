@@ -255,22 +255,25 @@ pub(super) fn solve_carriers_with_diagnostics(
                     let intersections =
                         match (cylinders.as_slice(), cones.as_slice(), spheres.as_slice()) {
                             ([cylinder], [], []) => intersect_two_planes_with_quadric(
+                                ctx,
                                 *first,
                                 *second,
                                 CarrierEquation::Cylinder(*cylinder),
                             ),
                             ([], [cone], []) => intersect_two_planes_with_quadric(
+                                ctx,
                                 *first,
                                 *second,
                                 CarrierEquation::Cone(*cone),
                             ),
                             ([], [], [sphere]) => intersect_two_planes_with_quadric(
+                                ctx,
                                 *first,
                                 *second,
                                 CarrierEquation::Sphere(*sphere),
                             ),
-                            _ => Vec::new(),
-                        };
+                            _ => Ok(Vec::new()),
+                        }?;
                     ctx.try_reserve_items(&mut candidates, intersections.len(), "creo carrier triple candidates")?;
                     candidates.extend(intersections);
                 } else if let ([first, second], [torus]) = (planes.as_slice(), tori.as_slice()) {
