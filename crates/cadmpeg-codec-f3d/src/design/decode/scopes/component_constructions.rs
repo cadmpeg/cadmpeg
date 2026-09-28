@@ -108,7 +108,7 @@ pub(super) fn exact_derived_instance_construction(
         relation_at + derived_instance_relation_310::CARRIER_RECORD_INDEX,
     )?;
     let stream = native_stream(&scope.id)?;
-    let candidates = occurrences
+    let mut candidates = occurrences
         .iter()
         .filter(|occurrence| {
             native_stream(&occurrence.id) == Some(stream)
@@ -116,11 +116,13 @@ pub(super) fn exact_derived_instance_construction(
                 && occurrence.record_index == carrier_record_index
                 && occurrence.byte_offset() < relation_at as u64
                 && occurrence.transform().map(|frame| frame.value) == Some(transform)
-        })
-        .collect::<Vec<_>>();
-    let [carrier] = candidates.as_slice() else {
+        });
+    let Some(carrier) = candidates.next() else {
         return None;
     };
+    if candidates.next().is_some() {
+        return None;
+    }
     Some(DesignDerivedInstanceConstruction {
         reference_record_index,
         relation_record_index,
