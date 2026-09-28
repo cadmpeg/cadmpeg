@@ -50,6 +50,16 @@ fn push_profile_item<T>(
     Ok(())
 }
 
+fn copy_profile_text(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let Some(ctx) = ctx else { return Ok(value.to_owned()); };
+    String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
+        .map_err(|_| CodecError::malformed("validated profile text is not UTF-8"))
+}
+
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
 /// native selection together with the known sketch.
@@ -1025,48 +1035,65 @@ pub(super) fn resolved_extrude_profile_selection(
 ) -> Result<cadmpeg_ir::features::ProfileRef, CodecError> {
     use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
-    let mut selection_members = members
-        .iter()
-        .filter(|member| {
+    let mut selection_members = Vec::new();
+    for member in members.iter().filter(|member| {
             native_stream(&member.id) == native_stream(&group.id)
                 && member.group_record_index == group.record_index
-        })
-        .collect::<Vec<_>>();
+        }) {
+        push_profile_item(resolution.ctx, &mut selection_members, member,
+            "f3d extrude selection member")?;
+    }
     selection_members.sort_by_key(|member| member.group_member_ordinal);
     let exact_member_run = selection_members.len() == group.members().len()
         && selection_members
             .iter()
             .zip(group.members())
             .all(|(member, record_index)| member.record_index() == record_index.value);
-    let resolved_profiles = exact_member_run.then(|| {
+    let mut resolved_profiles = None;
+    if exact_member_run {
         let mut selected = Vec::new();
+        let mut complete = true;
         for member in &selection_members {
+            let Some(geometry) = member.resolved_geometry.as_ref() else {
+                complete = false;
+                break;
+            };
             let SketchRelationOperand::Curve {
                 primary_id,
                 secondary_id,
                 ..
-            } = member.resolved_geometry.as_ref()?
+            } = geometry
             else {
-                return None;
+                complete = false;
+                break;
             };
             let entity = neutral_sketch_curve_id(sketch_id, *primary_id, *secondary_id);
-            let matches = sketch
+            let mut matches = sketch
                 .profiles
                 .iter()
                 .enumerate()
-                .filter(|(_, profile)| profile.iter().any(|use_| use_.entity == entity))
-                .map(|(index, _)| u32::try_from(index).ok())
-                .collect::<Option<Vec<_>>>()?;
-            let [profile_index] = matches.as_slice() else {
-                return None;
+                .filter(|(_, profile)| profile.iter().any(|use_| use_.entity == entity));
+            let Some((index, _)) = matches.next() else {
+                complete = false;
+                break;
             };
-            if !selected.contains(profile_index) {
-                selected.push(*profile_index);
+            if matches.next().is_some() {
+                complete = false;
+                break;
+            }
+            let Ok(profile_index) = u32::try_from(index) else {
+                complete = false;
+                break;
+            };
+            if !selected.contains(&profile_index) {
+                push_profile_item(resolution.ctx, &mut selected, profile_index,
+                    "f3d extrude selected profile")?;
             }
         }
-        (!selected.is_empty()).then_some(ResolvedProfileSelection::Loops(selected))
-    });
-    let mut resolved_profiles = resolved_profiles.flatten();
+        if complete && !selected.is_empty() {
+            resolved_profiles = Some(ResolvedProfileSelection::Loops(selected));
+        }
+    }
     if resolved_profiles.is_none() && exact_member_run {
         resolved_profiles = historical_selection_regions(
             &selection_members,
@@ -1089,20 +1116,41 @@ pub(super) fn resolved_extrude_profile_selection(
     if resolved_profiles.is_none() && sketch.profiles.len() == 1 {
         resolved_profiles = Some(ResolvedProfileSelection::Loops(vec![0]));
     }
-    Ok(match resolved_profiles {
-        Some(ResolvedProfileSelection::Loops(profiles)) => ProfileRef::Planar(
-            PlanarProfileRef::sketch_profiles(sketch_id.clone(), profiles)
-                .unwrap_or_else(|_| PlanarProfileRef::Native(group.id.clone())),
-        ),
-        Some(ResolvedProfileSelection::Regions(regions)) => ProfileRef::Planar(
-            PlanarProfileRef::sketch_regions(sketch_id.clone(), regions)
-                .unwrap_or_else(|_| PlanarProfileRef::Native(group.id.clone())),
-        ),
-        None => ProfileRef::Planar(
-            PlanarProfileRef::sketch_selection(sketch_id.clone(), vec![group.id.clone()])
-                .unwrap_or_else(|_| PlanarProfileRef::Native(group.id.clone())),
-        ),
-    })
+    let profile = match resolved_profiles {
+        Some(ResolvedProfileSelection::Loops(profiles)) => {
+            match PlanarProfileRef::sketch_profiles(
+                copy_profile_sketch_id(sketch_id, resolution.ctx)?, profiles,
+            ) {
+                Ok(profile) => profile,
+                Err(_) => PlanarProfileRef::Native(copy_profile_text(resolution.ctx,
+                    &group.id, "f3d extrude fallback group id")?),
+            }
+        }
+        Some(ResolvedProfileSelection::Regions(regions)) => {
+            match PlanarProfileRef::sketch_regions(
+                copy_profile_sketch_id(sketch_id, resolution.ctx)?, regions,
+            ) {
+                Ok(profile) => profile,
+                Err(_) => PlanarProfileRef::Native(copy_profile_text(resolution.ctx,
+                    &group.id, "f3d extrude fallback group id")?),
+            }
+        }
+        None => {
+            let id = copy_profile_text(resolution.ctx, &group.id,
+                "f3d extrude selection group id")?;
+            let mut ids = Vec::new();
+            push_profile_item(resolution.ctx, &mut ids, id,
+                "f3d extrude selection group")?;
+            match PlanarProfileRef::sketch_selection(
+                copy_profile_sketch_id(sketch_id, resolution.ctx)?, ids,
+            ) {
+                Ok(profile) => profile,
+                Err(_) => PlanarProfileRef::Native(copy_profile_text(resolution.ctx,
+                    &group.id, "f3d extrude fallback group id")?),
+            }
+        }
+    };
+    Ok(ProfileRef::Planar(profile))
 }
 
 fn transition_profile_selection(
