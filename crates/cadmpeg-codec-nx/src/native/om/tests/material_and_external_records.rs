@@ -525,6 +525,75 @@ fn native_external_string_uses_route_refuses_work_limit() {
             && limit.operation == "nx external reference slot index"), "{error:?}");
 }
 
+fn native_external_children_result(
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> Result<Vec<super::super::ExternalReferenceRecordChild>, CodecError> {
+    let file = prt_with_named_payloads(&[(
+        "/Root/ExternalReferences",
+        crate::test_support::test_streams::external_reference_stream(),
+    )]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx, file.as_slice())
+    })
+    .expect("indexed external-reference container");
+    let (records, references, uses) = crate::test_support::with_decode_context(|ctx| -> Result<_, CodecError> {
+        let records = super::super::external_reference_records(ctx, &container)?;
+        let references = super::super::external_references(ctx, &container)?;
+        let uses = super::super::external_reference_record_string_uses(ctx, &records, &references)?;
+        Ok((records, references, uses))
+    })
+    .expect("complete external-reference child inputs");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    super::super::external_reference_record_children(&ctx, &records, &references, &uses)
+}
+
+#[test]
+fn native_external_children_route_preserves_child() {
+    let children = native_external_children_result(|_| {}).expect("external child");
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0].id, "nx:external-reference-record:/Root/ExternalReferences#6:child");
+}
+
+#[test]
+fn native_external_children_route_refuses_collection_limit() {
+    let error = native_external_children_result(|policy| policy.limits.max_collection_items = 0)
+        .expect_err("child index exceeds collection budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "nx external reference child index"), "{error:?}");
+}
+
+#[test]
+fn native_external_children_route_refuses_retained_limit() {
+    let error = native_external_children_result(|policy| policy.limits.max_retained_bytes = 0)
+        .expect_err("child record exceeds retained budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "nx native external reference children"), "{error:?}");
+}
+
+#[test]
+fn native_external_children_route_refuses_scoped_limit() {
+    let error = native_external_children_result(|policy| policy.limits.max_materialized_bytes = 0)
+        .expect_err("child index exceeds scoped budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::MaterializedBytes
+            && limit.operation == "nx external reference child index"), "{error:?}");
+}
+
+#[test]
+fn native_external_children_route_refuses_work_limit() {
+    let error = native_external_children_result(|policy| policy.limits.max_work_units = 0)
+        .expect_err("child index exceeds work budget");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "nx external reference child index"), "{error:?}");
+}
+
 #[test]
 fn persistent_handle_identity_bridges_om_and_external_records() {
     let reference = super::super::ObjectReference {
@@ -1095,16 +1164,19 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
         external_reference_record_string_uses(&ctx, std::slice::from_ref(&record), &child_references)
             .expect("complete child string use lane");
     let children = external_reference_record_children(
+        &ctx,
         std::slice::from_ref(&record),
         &child_references,
         &child_uses,
-    );
+    )
+    .expect("complete child record");
     assert_eq!(children.len(), 1);
     assert_eq!(children[0].external_record, record.id);
     assert_eq!(children[0].name_reference, "reference#0");
     assert_eq!(children[0].directory_reference, "reference#1");
     assert!(
-        external_reference_record_children(std::slice::from_ref(&record), &references, &uses)
+        external_reference_record_children(&ctx, std::slice::from_ref(&record), &references, &uses)
+            .expect("non-child record")
             .is_empty()
     );
 
