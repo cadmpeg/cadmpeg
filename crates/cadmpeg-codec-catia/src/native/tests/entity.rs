@@ -496,6 +496,27 @@ fn native_namespace_tokenizes_and_validates_complete_entity_values() {
 }
 
 #[test]
+fn native_entity_value_field_view_refuses_collection_limit() {
+    let value = [0x32, 4, 0, 0, 0];
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
+    let mut bytes = entity_table_record_with_value(1, &value);
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&records));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let record = &native.entity_records[0];
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        record.value_fields_charged(ctx)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_value_fields"));
+    let fields = crate::test_support::with_service_context(|ctx| {
+        record.value_fields_charged(ctx)
+    })
+    .expect("service profile admits entity value fields");
+    assert_eq!(fields, record.value_fields());
+}
+
+#[test]
 fn native_namespace_resolves_and_validates_entity_value_schema_selections() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_entity_value_schema_selection());

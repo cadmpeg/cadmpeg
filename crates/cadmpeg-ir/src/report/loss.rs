@@ -493,6 +493,22 @@ impl NamespacedLossKind {
         }
     }
 
+    /// Constructs a codec-local kind from strings admitted by the caller.
+    ///
+    /// A decoder can reserve and charge both strings before this move.
+    pub fn new_owned(
+        namespace: String,
+        code: String,
+        taxonomy: LossTaxonomy,
+    ) -> Result<Self, LossNamespaceError> {
+        Ok(Self {
+            namespace: LossNamespaceName::try_from(namespace)?,
+            code,
+            taxonomy,
+            strict_floor: taxonomy.strict_floor(),
+        })
+    }
+
     /// Pins the strict-mode severity floor independently of taxonomy.
     #[must_use]
     pub fn with_strict_floor(mut self, floor: Option<Severity>) -> Self {

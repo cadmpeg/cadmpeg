@@ -281,6 +281,23 @@ impl CatiaLossCode {
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
+
+    pub(crate) fn note_charged(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        message: String,
+        operation: &'static str,
+    ) -> Result<LossNote, cadmpeg_core::CodecError> {
+        let namespace = crate::resource::copy_retained_str(ctx, "catia", operation)?;
+        let code = crate::resource::copy_retained_str(ctx, self.code(), operation)?;
+        let kind = cadmpeg_ir::report::loss::NamespacedLossKind::new_owned(
+            namespace,
+            code,
+            self.shared_taxonomy(),
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+        Ok(LossNote::new(kind, message).with_severity(self.severity()))
+    }
 }
 
 #[cfg(test)]

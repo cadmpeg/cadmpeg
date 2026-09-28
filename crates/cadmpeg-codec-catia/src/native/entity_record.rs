@@ -314,6 +314,13 @@ impl CatiaEntityRecord {
         value_block::tokenize(self.value_payload())
     }
 
+    pub(crate) fn value_fields_charged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Vec<value_block::ValueField>, cadmpeg_core::CodecError> {
+        value_block::tokenize_charged(ctx, self.value_payload())
+    }
+
     pub(super) fn record_suffix(&self) -> &[u8] {
         match &self.body {
             CatiaEntityRecordBody::Inline(_) => &[],
