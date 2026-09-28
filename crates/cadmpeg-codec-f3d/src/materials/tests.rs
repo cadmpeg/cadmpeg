@@ -1616,7 +1616,9 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
     }
 
     assert_eq!(
-        crate::materials::browser_body_appearances(&bytes),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::materials::browser_body_appearances(ctx, &bytes).unwrap()
+        }),
         [
             (
                 37_251,

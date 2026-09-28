@@ -274,3 +274,51 @@ fn material_assignment_id_refuses_retained_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D native record ID"));
 }
+
+fn browser_node_bytes(members: &[u64]) -> Vec<u8> {
+    let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let mut bytes = Vec::new();
+    for member in members {
+        bytes.extend_from_slice(&36_u32.to_le_bytes());
+        for unit in guid.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0, 1, 1]);
+        bytes.extend_from_slice(&member.to_le_bytes());
+    }
+    bytes
+}
+
+fn browser_node_error(members: &[u64], max_items: u64) -> cadmpeg_core::CodecError {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    crate::design::decode::body::scanned_browser_node_entities(
+        &ctx,
+        &browser_node_bytes(members),
+    )
+    .unwrap_err()
+}
+
+#[test]
+fn browser_node_scan_refuses_collection_limit() {
+    let error = browser_node_error(&[1], 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D browser node identities"));
+}
+
+#[test]
+fn browser_node_entity_index_refuses_collection_limit() {
+    let error = browser_node_error(&[1], 1);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D browser node entities"));
+}
+
+#[test]
+fn browser_node_ambiguity_index_refuses_collection_limit() {
+    let error = browser_node_error(&[1, 2], 3);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D ambiguous browser nodes"));
+}
