@@ -389,3 +389,104 @@ fn body_bounds_valid_binding_order_has_no_finding() {
     super::super::validate_body_bounds(&ctx, &mut findings).unwrap();
     assert!(findings.is_empty());
 }
+
+fn validation_occurrence(record_index: u32, occurrence_guid: &str) -> crate::records::feature::assembly_features::DesignComponentOccurrence {
+    use crate::records::feature::assembly_features::{
+        DesignComponentOccurrence, DesignComponentOccurrenceDraft, DesignComponentOccurrencePlacement,
+    };
+    DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
+        id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
+        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index,
+        byte_offset: u64::from(record_index) * 10,
+        component_record_index: 700,
+        component_guid: "11111111-2222-4333-8444-555555555555".to_owned().try_into().unwrap(),
+        occurrence_guid: occurrence_guid.to_owned().try_into().unwrap(),
+        placement: DesignComponentOccurrencePlacement::Base,
+    }).unwrap()
+}
+
+fn occurrence_error(
+    native: crate::native::F3dNative,
+    max_items: u64,
+    max_retained: u64,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    policy.limits.max_retained_bytes = max_retained;
+    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    ctx.decode = Some(&decode);
+    super::super::validate_component_occurrences(&ctx, &mut Vec::new()).unwrap_err()
+}
+
+#[test]
+fn occurrence_guid_key_refuses_retained_limit() {
+    let mut native = crate::native::F3dNative::default();
+    native.design_component_occurrences.push(validation_occurrence(
+        100,
+        "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    ));
+    let error = occurrence_error(native, u64::MAX, 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D occurrence GUID index key"));
+}
+
+#[test]
+fn occurrence_guid_index_refuses_collection_limit() {
+    let mut native = crate::native::F3dNative::default();
+    native.design_component_occurrences.push(validation_occurrence(
+        100,
+        "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    ));
+    let error = occurrence_error(native, 0, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D occurrence GUIDs"));
+}
+
+#[test]
+fn occurrence_record_index_refuses_collection_limit() {
+    let mut native = crate::native::F3dNative::default();
+    native.design_component_occurrences.push(validation_occurrence(
+        100,
+        "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    ));
+    let error = occurrence_error(native, 1, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D occurrence record indices"));
+}
+
+#[test]
+fn occurrence_duplicate_finding_refuses_collection_limit() {
+    let mut native = crate::native::F3dNative::default();
+    native.design_component_occurrences.push(validation_occurrence(
+        100,
+        "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    ));
+    native.design_component_occurrences.push(validation_occurrence(
+        101,
+        "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+    ));
+    let error = occurrence_error(native, 2, u64::MAX);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D native validation findings"));
+}
+
+#[test]
+fn occurrence_duplicate_entity_refuses_retained_limit() {
+    let mut native = crate::native::F3dNative::default();
+    native.design_component_occurrences.push(validation_occurrence(
+        100,
+        "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    ));
+    native.design_component_occurrences.push(validation_occurrence(
+        101,
+        "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+    ));
+    let error = occurrence_error(native, u64::MAX, 72);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D validation entity"));
+}
