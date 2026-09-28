@@ -33,6 +33,13 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     )
     .expect("every entity states its typed references");
     assert_eq!(references, vec![target.as_str().to_owned()]);
+    let mut borrowed_references = Vec::new();
+    crate::schema::EntitySchema::visit_reference_ids(
+        &ir.model.product_definitions[0],
+        &mut |reference| borrowed_references.push(reference.to_owned()),
+    )
+    .expect("every entity states its typed references");
+    assert_eq!(borrowed_references, references);
 
     let report = validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail");
     assert!(report.findings.iter().any(|finding| {
