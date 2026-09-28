@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native column rows retain one checked source frame with resolved targets.
 
-use super::{column_storage_block_at, control_index_data_block};
+use super::{column_storage_block_at, copy_om_retained_text, retained_om_index_id};
 use crate::container::Container;
 use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
@@ -79,27 +79,30 @@ pub(in crate::native) fn data_block_index_rows(
     project_column_rows(
         ctx,
         container,
-        |storage, section, block_count, source_base| {
-            Ok(crate::om::column_row::scan::index_rows(ctx, storage)?
-                .into_iter()
-                .filter_map(|row| {
-                    let offset = row.offset();
-                    let frame = row.into_absolute(source_base)?.try_resolve(|atom| {
-                        control_index_data_block(section, block_count, atom.value())
-                    })?;
-                    Some((offset, frame))
-                })
-                .collect())
+        |storage| crate::om::column_row::scan::index_rows(ctx, storage),
+        |row, section, block_count, source_base| {
+            let offset = row.offset();
+            let [a, b, c, d] = row.indices().map(|index| {
+                retained_column_block_id(ctx, section, block_count, index.atom.value())
+            });
+            let mut targets = [a?, b?, c?, d?].into_iter();
+            let Some(frame) = row
+                .into_absolute(source_base)
+                .and_then(|row| row.try_resolve(|_| targets.next().flatten()))
+            else {
+                return Ok(None);
+            };
+            Ok(Some((offset, frame)))
         },
-        |section_ordinal, ordinal, frame, source_entry, opening| DataBlockIndexRow {
-            id: format!("nx:om-data-block-index-rows-{section_ordinal}:row#{ordinal}"),
-            section_ordinal: section_ordinal as u32,
-            ordinal: ordinal as u32,
+        |section_ordinal, section_number, ordinal, frame, source_entry, opening| Ok(DataBlockIndexRow {
+            id: retained_om_index_id(ctx, "nx:om-data-block-index-rows-", section_ordinal, ":row#", u64::from(ordinal), "NX index row id")?,
+            section_ordinal: section_number,
+            ordinal,
             frame,
             source_entry,
             opening_data_block: opening.0,
             opening_block_offset: opening.1,
-        },
+        }),
     )
 }
 
@@ -111,27 +114,31 @@ pub(in crate::native) fn data_block_linked_index_rows(
     project_column_rows(
         ctx,
         container,
-        |storage, section, block_count, source_base| {
-            Ok(crate::om::column_row::scan::linked_rows(ctx, storage)?
-                .into_iter()
-                .filter_map(|row| {
-                    let offset = row.offset();
-                    let frame = row.into_absolute(source_base)?.try_resolve(|atom| {
-                        control_index_data_block(section, block_count, atom.value())
-                    })?;
-                    Some((offset, frame))
-                })
-                .collect())
+        |storage| crate::om::column_row::scan::linked_rows(ctx, storage),
+        |row, section, block_count, source_base| {
+            let offset = row.offset();
+            let target = retained_column_block_id(ctx, section, block_count, row.target_index().atom.value())?;
+            let [a, b, c] = row.indices().map(|index| {
+                retained_column_block_id(ctx, section, block_count, index.atom.value())
+            });
+            let mut targets = [target, a?, b?, c?].into_iter();
+            let Some(frame) = row
+                .into_absolute(source_base)
+                .and_then(|row| row.try_resolve(|_| targets.next().flatten()))
+            else {
+                return Ok(None);
+            };
+            Ok(Some((offset, frame)))
         },
-        |section_ordinal, ordinal, frame, source_entry, opening| DataBlockLinkedIndexRow {
-            id: format!("nx:om-data-block-linked-index-rows-{section_ordinal}:row#{ordinal}"),
-            section_ordinal: section_ordinal as u32,
-            ordinal: ordinal as u32,
+        |section_ordinal, section_number, ordinal, frame, source_entry, opening| Ok(DataBlockLinkedIndexRow {
+            id: retained_om_index_id(ctx, "nx:om-data-block-linked-index-rows-", section_ordinal, ":row#", u64::from(ordinal), "NX linked index row id")?,
+            section_ordinal: section_number,
+            ordinal,
             frame,
             source_entry,
             opening_data_block: opening.0,
             opening_block_offset: opening.1,
-        },
+        }),
     )
 }
 
@@ -143,36 +150,61 @@ pub(in crate::native) fn data_block_target_index_rows(
     project_column_rows(
         ctx,
         container,
-        |storage, section, block_count, source_base| {
-            Ok(crate::om::column_row::scan::target_rows(ctx, storage)?
-                .into_iter()
-                .filter_map(|row| {
-                    let offset = row.offset();
-                    let frame = row.into_absolute(source_base)?.try_resolve(|atom| {
-                        control_index_data_block(section, block_count, atom.value())
-                    })?;
-                    Some((offset, frame))
-                })
-                .collect())
+        |storage| crate::om::column_row::scan::target_rows(ctx, storage),
+        |row, section, block_count, source_base| {
+            let offset = row.offset();
+            let target = retained_column_block_id(ctx, section, block_count, row.target_index().atom.value())?;
+            let [a, b, c] = row.indices().map(|index| {
+                retained_column_block_id(ctx, section, block_count, index.atom.value())
+            });
+            let mut targets = [target, a?, b?, c?].into_iter();
+            let Some(frame) = row
+                .into_absolute(source_base)
+                .and_then(|row| row.try_resolve(|_| targets.next().flatten()))
+            else {
+                return Ok(None);
+            };
+            Ok(Some((offset, frame)))
         },
-        |section_ordinal, ordinal, frame, source_entry, opening| DataBlockTargetIndexRow {
-            id: format!("nx:om-data-block-target-index-rows-{section_ordinal}:row#{ordinal}"),
-            section_ordinal: section_ordinal as u32,
-            ordinal: ordinal as u32,
+        |section_ordinal, section_number, ordinal, frame, source_entry, opening| Ok(DataBlockTargetIndexRow {
+            id: retained_om_index_id(ctx, "nx:om-data-block-target-index-rows-", section_ordinal, ":row#", u64::from(ordinal), "NX target index row id")?,
+            section_ordinal: section_number,
+            ordinal,
             frame,
             source_entry,
             opening_data_block: opening.0,
             opening_block_offset: opening.1,
-        },
+        }),
     )
 }
 
 /// One owner for section framing, source locations and admitted row ordinals.
-fn project_column_rows<F, T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+fn retained_column_block_id(
+    ctx: &DecodeContext<'_>,
+    section_ordinal: usize,
+    block_count: usize,
+    value: u32,
+) -> Result<Option<String>, CodecError> {
+    let Some(ordinal) = usize::try_from(value).ok().filter(|ordinal| *ordinal < block_count) else {
+        return Ok(None);
+    };
+    retained_om_index_id(
+        ctx,
+        "nx:om-data-blocks-",
+        section_ordinal,
+        ":block#",
+        u64_from_index(ordinal),
+        "NX column row block target",
+    )
+    .map(Some)
+}
+
+fn project_column_rows<R, F, T>(
+    ctx: &DecodeContext<'_>,
     container: &Container,
-    scan: impl Fn(&[u8], usize, usize, u64) -> Result<Vec<(usize, F)>, CodecError>,
-    project: impl Fn(usize, usize, F, String, (String, u32)) -> T,
+    scan: impl Fn(&[u8]) -> Result<Vec<R>, CodecError>,
+    resolve: impl Fn(R, usize, usize, u64) -> Result<Option<(usize, F)>, CodecError>,
+    project: impl Fn(usize, u32, u32, F, String, (String, u32)) -> Result<T, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
     let mut result = Vec::new();
     for (section_ordinal, (entry, section)) in
@@ -184,25 +216,131 @@ fn project_column_rows<F, T>(
         let Some(storage_offset) = records.first().map(|record| record.offset) else {
             continue;
         };
-        let source_base = entry.file_span().map_or(0, |(offset, _)| offset) + storage_offset as u64;
-        let rows = scan(storage, section_ordinal, records.len() + 1, source_base)?;
-        for (ordinal, (frame, opening)) in rows
-            .into_iter()
-            .filter_map(|(offset, frame)| {
-                let opening =
-                    column_storage_block_at(section_ordinal, records, storage_offset + offset)?;
-                Some((frame, opening))
-            })
-            .enumerate()
-        {
+        let source_base = entry.file_span().map_or(0, |(offset, _)| offset)
+            .checked_add(u64_from_index(storage_offset))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX column row source base", 0, 1))?;
+        let block_count = records.len()
+            .checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX column row block count", 0, 1))?;
+        let rows = scan(storage)?;
+        let mut ordinal = 0usize;
+        for row in rows {
+            let Some((offset, frame)) = resolve(row, section_ordinal, block_count, source_base)? else {
+                continue;
+            };
+            let Some(opening_offset) = storage_offset.checked_add(offset) else {
+                continue;
+            };
+            ctx.charge_work(u64_from_index(records.len()), "locate NX column row opening")?;
+            let Some((block_ordinal, block_offset)) = column_storage_block_at(records, opening_offset) else {
+                continue;
+            };
+            ctx.charge_collection_items(1, "NX native column rows")?;
+            ctx.charge_retained(u64_from_index(std::mem::size_of::<T>()), "retain NX native column row")?;
+            result.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX native column row", 0, 1))?;
+            let section_number = u32::try_from(section_ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX column row section ordinal", 0, 1))?;
+            let row_number = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX column row ordinal", 0, 1))?;
+            let opening = (
+                retained_om_index_id(ctx, "nx:om-data-blocks-", section_ordinal, ":block#", u64_from_index(block_ordinal), "NX column row opening block")?,
+                block_offset,
+            );
+            let source_entry = copy_om_retained_text(ctx, &entry.name, "NX column row source entry")?;
             result.push(project(
                 section_ordinal,
-                ordinal,
+                section_number,
+                row_number,
                 frame,
-                entry.name.clone(),
+                source_entry,
                 opening,
-            ));
+            )?);
+            ordinal = ordinal.checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX column row ordinal", 0, 1))?;
         }
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{data_block_index_rows, data_block_linked_index_rows, data_block_target_index_rows};
+    use crate::container::{self, Container};
+    use crate::test_support::test_om::offset_only_indexed_om_section;
+    use crate::test_support::test_prt::prt_with_named_payloads;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const INDEX_ROW: &[u8] = b"\x2d\x02\x0b\x2a\x93\x8a\x03\x01\x01\x01\x01\x00\x47\x04\x04\x01\xc0\x44\x04\x00";
+    const LINKED_ROW: &[u8] = b"\x02\x0b\x83\x93\x93\x8c\x16\x01\xff\xff\x90\xfe\x01\x01\x01\x00\x47\x03\x04\x01\xc0\x44\x04\x00";
+    const TARGET_ROW: &[u8] = b"\x02\x01\x01\x01\x16\x01\xff\xff\x90\xfe\x01\x01\x01\x00\x47\x03\x07\x01\xc0\x44\x04\x00";
+
+    fn column_container(row: &[u8]) -> Container<'static> {
+        let mut section = offset_only_indexed_om_section();
+        section.extend_from_slice(row);
+        let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
+        let end_at = index_start + 3 * 4;
+        let section_len = u32::try_from(section.len()).expect("test section length");
+        section[end_at..end_at + 4].copy_from_slice(&section_len.to_le_bytes());
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)]);
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
+            .expect("column row container")
+    }
+
+    type Route = fn(&DecodeContext<'_>, &Container<'_>) -> Result<usize, CodecError>;
+
+    fn index_count(ctx: &DecodeContext<'_>, container: &Container<'_>) -> Result<usize, CodecError> {
+        Ok(data_block_index_rows(ctx, container)?.len())
+    }
+
+    fn linked_count(ctx: &DecodeContext<'_>, container: &Container<'_>) -> Result<usize, CodecError> {
+        Ok(data_block_linked_index_rows(ctx, container)?.len())
+    }
+
+    fn target_count(ctx: &DecodeContext<'_>, container: &Container<'_>) -> Result<usize, CodecError> {
+        Ok(data_block_target_index_rows(ctx, container)?.len())
+    }
+
+    fn route_refusal(row: &[u8], route: Route, dimension: ResourceDimension) -> CodecError {
+        let container = column_container(row);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+            _ => panic!("unsupported test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        route(&ctx, &container).expect_err("column row resource refusal")
+    }
+
+    #[test]
+    fn native_column_row_routes_keep_resolved_frames() {
+        for (row, route) in [(INDEX_ROW, index_count as Route), (LINKED_ROW, linked_count), (TARGET_ROW, target_count)] {
+            let container = column_container(row);
+            assert_eq!(crate::test_support::with_decode_context(|ctx| route(ctx, &container)).expect("resolved row"), 1);
+        }
+    }
+
+    macro_rules! route_limit_test {
+        ($name:ident, $row:ident, $route:ident, $dimension:ident) => {
+            #[test]
+            fn $name() {
+                let error = route_refusal($row, $route, ResourceDimension::$dimension);
+                assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::$dimension), "{error:?}");
+            }
+        };
+    }
+
+    route_limit_test!(native_index_row_refuses_collection_limit, INDEX_ROW, index_count, CollectionItems);
+    route_limit_test!(native_index_row_refuses_retained_limit, INDEX_ROW, index_count, RetainedBytes);
+    route_limit_test!(native_index_row_refuses_work_limit, INDEX_ROW, index_count, WorkUnits);
+    route_limit_test!(native_linked_row_refuses_collection_limit, LINKED_ROW, linked_count, CollectionItems);
+    route_limit_test!(native_linked_row_refuses_retained_limit, LINKED_ROW, linked_count, RetainedBytes);
+    route_limit_test!(native_linked_row_refuses_work_limit, LINKED_ROW, linked_count, WorkUnits);
+    route_limit_test!(native_target_row_refuses_collection_limit, TARGET_ROW, target_count, CollectionItems);
+    route_limit_test!(native_target_row_refuses_retained_limit, TARGET_ROW, target_count, RetainedBytes);
+    route_limit_test!(native_target_row_refuses_work_limit, TARGET_ROW, target_count, WorkUnits);
 }
