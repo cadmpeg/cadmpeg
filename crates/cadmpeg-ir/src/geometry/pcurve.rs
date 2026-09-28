@@ -1805,6 +1805,29 @@ pub struct PcurveNurbs {
 }
 
 impl PcurveNurbs {
+    /// Build from admitted knots and finite pole rows without copying either lane.
+    ///
+    /// The caller owns allocation admission for both inputs.
+    pub fn from_admitted_parts(
+        degree: u32,
+        knots: KnotVector,
+        poles: PcurveNurbsPoles<FinitePoint2>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        if degree == 0 {
+            return Err(NurbsError::Structure(
+                "pcurve NURBS degree must be positive".into(),
+            ));
+        }
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
+        })
+    }
+
     /// Build a parameter-space NURBS with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a

@@ -233,13 +233,47 @@ pub(in super::super) fn circular_pcurve(
         knots.extend([boundary as f64 / segment_count as f64; 2]);
     }
     knots.extend([1.0; 3]);
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-        2,
-        knots,
-        control_points,
-        Some(weights),
-        false,
-    ) {
+    let mut weighted = Vec::new();
+    ctx.try_reserve_items(&mut weighted, pole_count, "creo circular pcurve weighted poles")?;
+    let nurbs = (|| -> Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, cadmpeg_ir::geometry::nurbs::NurbsError> {
+        use cadmpeg_ir::geometry::nurbs::KnotValue;
+        use cadmpeg_ir::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
+        use cadmpeg_ir::scalar::NonZeroReal;
+        use cadmpeg_ir::units::FinitePoint2;
+
+        for (index, &weight) in weights.iter().enumerate() {
+            if NonZeroReal::new(weight).is_none() {
+                return Err(cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
+                    field: "pcurve poles".to_owned(),
+                    index,
+                    weight,
+                });
+            }
+        }
+        for (index, (point, weight)) in control_points.into_iter().zip(weights).enumerate() {
+            let point = FinitePoint2::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })?;
+            let weight = NonZeroReal::new(weight).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::UnusableWeight {
+                    field: "pcurve poles".to_owned(),
+                    index,
+                    weight,
+                }
+            })?;
+            weighted.push(WeightedPole2 { point, weight });
+        }
+        let knots = KnotValue::admit(knots)?;
+        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_parts(
+            2,
+            knots,
+            PcurveNurbsPoles::Rational { points: weighted },
+            false,
+        )
+    })();
+    match nurbs {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
             refusal.note(format!("creo circular pcurve record for {record}"), &error);
