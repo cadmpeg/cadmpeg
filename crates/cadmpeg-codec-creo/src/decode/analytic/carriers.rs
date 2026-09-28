@@ -68,7 +68,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let carriers = placed_carriers(scan, ir, source_carriers);
+    let carriers = placed_carriers(ctx, scan, ir, source_carriers)?;
     let solved_vertices = solved_topological_vertices(
         ctx,
         scan,
@@ -330,24 +330,34 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
 }
 
 pub(in crate::decode) fn placed_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &SourceUnitCarriers,
-) -> BTreeMap<u32, CarrierEquation> {
-    let mut carriers = placed_planes(scan)
-        .into_iter()
-        .map(|(id, plane)| (id, CarrierEquation::Plane(plane)))
-        .collect::<BTreeMap<_, _>>();
+) -> Result<BTreeMap<u32, CarrierEquation>, cadmpeg_core::CodecError> {
+    let mut carriers = BTreeMap::new();
+    for (id, plane) in placed_planes(scan) {
+        insert_placed_carrier(ctx, &mut carriers, id, CarrierEquation::Plane(plane))?;
+    }
     let rows = scan
         .surfaces
         .rows
         .iter()
-        .chain(&scan.surfaces.nonvisible_rows)
-        .collect::<Vec<_>>();
-    let row_ids = rows.iter().map(|row| row.id).collect::<BTreeSet<_>>();
+        .chain(&scan.surfaces.nonvisible_rows);
+    let mut row_ids = BTreeSet::new();
     let mut row_counts = BTreeMap::<u32, usize>::new();
-    for row in &rows {
-        *row_counts.entry(row.id).or_default() += 1;
+    for row in rows {
+        if !row_ids.contains(&row.id) {
+            ctx.charge_collection_items(1, "creo placed carrier row IDs")?;
+            row_ids.insert(row.id);
+        }
+        match row_counts.entry(row.id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() += 1,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo placed carrier row counts")?;
+                entry.insert(1);
+            }
+        }
     }
     for (namespace_rows, parameters) in [
         (&scan.surfaces.rows, &scan.surfaces.parameters),
@@ -363,20 +373,15 @@ pub(in crate::decode) fn placed_carriers(
             if let Some(carrier) =
                 positional_cylinder_carrier(scan, row, parameters, ir, source_carriers)
             {
-                carriers.insert(row.id, carrier);
+                insert_placed_carrier(ctx, &mut carriers, row.id, carrier)?;
                 continue;
             }
             let id = native_surface_id(scan, row.id);
-            let model_surfaces = ir
-                .model
-                .surfaces
-                .iter()
-                .filter(|surface| surface.id == id)
-                .collect::<Vec<_>>();
-            let surface = match model_surfaces.as_slice() {
-                [] => continue,
-                [surface] => surface,
-                _ => {
+            let mut model_surfaces = ir.model.surfaces.iter().filter(|surface| surface.id == id);
+            let surface = match (model_surfaces.next(), model_surfaces.next()) {
+                (None, _) => continue,
+                (Some(surface), None) => surface,
+                (Some(_), Some(_)) => {
                     carriers.remove(&row.id);
                     continue;
                 }
@@ -396,30 +401,24 @@ pub(in crate::decode) fn placed_carriers(
                     None => Some(plane),
                 };
                 if let Some(plane) = agreed {
-                    carriers.insert(row.id, CarrierEquation::Plane(plane));
+                    insert_placed_carrier(ctx, &mut carriers, row.id, CarrierEquation::Plane(plane))?;
                 } else {
                     carriers.remove(&row.id);
                 }
             } else if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface))
             {
-                carriers.insert(row.id, carrier);
+                insert_placed_carrier(ctx, &mut carriers, row.id, carrier)?;
             }
         }
     }
     for datum in &scan.planes.datum_cylinders {
         let id = native_surface_id(scan, datum.id);
-        let model_surfaces = ir
-            .model
-            .surfaces
-            .iter()
-            .filter(|surface| surface.id == id)
-            .collect::<Vec<_>>();
-        let Some(surface) = exactly_one(model_surfaces.into_iter()) else {
+        let Some(surface) = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)) else {
             carriers.remove(&datum.id);
             continue;
         };
         if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
-            carriers.insert(datum.id, carrier);
+            insert_placed_carrier(ctx, &mut carriers, datum.id, carrier)?;
         } else {
             carriers.remove(&datum.id);
         }
@@ -435,7 +434,15 @@ pub(in crate::decode) fn placed_carriers(
         else {
             continue;
         };
-        model_surfaces_by_id.entry(id).or_default().push(surface);
+        let surfaces = match model_surfaces_by_id.entry(id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo rowless carrier groups")?;
+                entry.insert(Vec::new())
+            }
+        };
+        ctx.try_reserve_items(surfaces, 1, "creo rowless carrier members")?;
+        surfaces.push(surface);
     }
     for (id, model_surfaces) in model_surfaces_by_id {
         if row_ids.contains(&id) {
@@ -446,10 +453,23 @@ pub(in crate::decode) fn placed_carriers(
             continue;
         };
         if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
-            carriers.insert(id, carrier);
+            insert_placed_carrier(ctx, &mut carriers, id, carrier)?;
         }
     }
-    carriers
+    Ok(carriers)
+}
+
+fn insert_placed_carrier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    carriers: &mut BTreeMap<u32, CarrierEquation>,
+    id: u32,
+    carrier: CarrierEquation,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !carriers.contains_key(&id) {
+        ctx.charge_collection_items(1, "creo placed carrier nodes")?;
+    }
+    carriers.insert(id, carrier);
+    Ok(())
 }
 
 fn positional_cylinder_carrier(
@@ -475,13 +495,7 @@ fn positional_cylinder_carrier(
         && inline
     {
         let id = native_surface_id(scan, row.id);
-        let model_surfaces = ir
-            .model
-            .surfaces
-            .iter()
-            .filter(|surface| surface.id == id)
-            .collect::<Vec<_>>();
-        if let [surface] = model_surfaces.as_slice() {
+        if let Some(surface) = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)) {
             if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
                 return Some(carrier);
             }
