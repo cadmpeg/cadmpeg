@@ -18,6 +18,8 @@ use cadmpeg_ir::ids::BodyId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+mod value_budget;
+
 fn copy_brep_text(
     ctx: &DecodeContext<'_>,
     value: &str,
@@ -393,6 +395,7 @@ impl Brep {
         let persistent_design_links = std::mem::take(&mut self.persistent_design_links);
         let persistent_subentity_tags = std::mem::take(&mut self.persistent_subentity_tags);
         let creation_timestamps = std::mem::take(&mut self.creation_timestamps);
+        let _value_reservation = value_budget::reserve_projection(ctx, &*self, "project F3D retained BREP value")?;
         let mut value = serde_value::to_value(&*self).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!("BREP serialization failed: {error}"))
         })?;
@@ -436,6 +439,7 @@ impl Brep {
             }
         }
         retain_root_entities(&mut value, &reachable);
+        let _rebuild_reservation = value_budget::reserve_projection(ctx, &value, "rebuild F3D retained BREP value")?;
         let mut retained: Self = crate::value_tree::from_value(value).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!(
                 "retained BREP graph is invalid: {error}"
@@ -479,6 +483,7 @@ impl Brep {
         namespace: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let annotations = std::mem::take(&mut self.asm.annotation_records);
+        let _value_reservation = value_budget::reserve_projection(ctx, &*self, "project F3D qualified BREP value")?;
         let mut value = serde_value::to_value(&*self).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!("BREP serialization failed: {error}"))
         })?;
@@ -493,6 +498,7 @@ impl Brep {
             replacements.insert(id, replacement);
         }
         remap_owned_ids_charged(ctx, &mut value, &replacements)?;
+        let _rebuild_reservation = value_budget::reserve_projection(ctx, &value, "rebuild F3D qualified BREP value")?;
         let mut qualified: Self = crate::value_tree::from_value(value).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!("qualified BREP is invalid: {error}"))
         })?;
