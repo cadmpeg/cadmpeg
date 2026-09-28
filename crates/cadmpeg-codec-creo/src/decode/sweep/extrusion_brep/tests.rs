@@ -62,8 +62,52 @@ fn sketch() -> Sketch {
     }
 }
 
+fn generated_side_coverage_at_limits(
+    collection_limit: u64,
+    materialized_limit: u64,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.entity_tables.push(generated_side_table());
+    scan.surfaces
+        .rows
+        .push(surface_row(31, 7, crate::surface::SurfaceKind::Plane));
+    let definition = definition();
+    let sketch = sketch();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_materialized_bytes = materialized_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    sketch_profiles_cover_generated_extrusion_sides(&ctx, &scan, &definition, 7, &sketch)
+}
+
+#[test]
+fn generated_side_profile_entity_nodes_refuse_limit() {
+    assert!(matches!(generated_side_coverage_at_limits(0, u64::MAX),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion profile entity ID nodes"));
+}
+
+#[test]
+fn generated_side_expected_entity_text_refuses_materialized_limit() {
+    assert!(matches!(generated_side_coverage_at_limits(2, 0),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion expected sketch entity ID"));
+}
+
+#[test]
+fn generated_side_expected_entity_nodes_refuse_limit() {
+    assert!(matches!(generated_side_coverage_at_limits(1, u64::MAX),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion expected entity ID nodes"));
+    assert!(generated_side_coverage_at_limits(2, u64::MAX)
+        .expect("admitted coverage"));
+}
+
 #[test]
 fn generated_side_coverage_rejects_duplicate_surface_rows() {
+    crate::decode::with_test_decode_ctx(|ctx| {
     let definition = definition();
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(generated_side_table());
@@ -72,12 +116,12 @@ fn generated_side_coverage_rejects_duplicate_surface_rows() {
         .push(surface_row(31, 7, crate::surface::SurfaceKind::Plane));
     let sketch = sketch();
 
-    assert!(sketch_profiles_cover_generated_extrusion_sides(
+    assert!(sketch_profiles_cover_generated_extrusion_sides(ctx,
         &scan,
         &definition,
         7,
         &sketch,
-    ));
+    ).expect("admitted profile coverage"));
 
     let mut duplicate_profile = sketch.clone();
     let repeated_use = duplicate_profile.profiles[0][0].clone();
@@ -85,25 +129,27 @@ fn generated_side_coverage_rejects_duplicate_surface_rows() {
         .profiles
         .edit(|profiles| profiles[0].push(repeated_use))
         .expect("valid test fixture");
-    assert!(!sketch_profiles_cover_generated_extrusion_sides(
+    assert!(!sketch_profiles_cover_generated_extrusion_sides(ctx,
         &scan,
         &definition,
         7,
         &duplicate_profile,
-    ));
+    ).expect("admitted profile coverage"));
 
     let duplicate = scan.surfaces.rows[0].clone();
     scan.surfaces.rows.push(duplicate);
-    assert!(!sketch_profiles_cover_generated_extrusion_sides(
+    assert!(!sketch_profiles_cover_generated_extrusion_sides(ctx,
         &scan,
         &definition,
         7,
         &sketch,
-    ));
+    ).expect("admitted profile coverage"));
+    });
 }
 
 #[test]
 fn generated_side_coverage_accepts_explicit_rowless_results() {
+    crate::decode::with_test_decode_ctx(|ctx| {
     let definition = definition();
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     let mut table = generated_side_table();
@@ -151,10 +197,11 @@ fn generated_side_coverage_accepts_explicit_rowless_results() {
         })
         .expect("valid test fixture");
 
-    assert!(sketch_profiles_cover_generated_extrusion_sides(
+    assert!(sketch_profiles_cover_generated_extrusion_sides(ctx,
         &scan,
         &definition,
         7,
         &sketch,
-    ));
+    ).expect("admitted profile coverage"));
+    });
 }
