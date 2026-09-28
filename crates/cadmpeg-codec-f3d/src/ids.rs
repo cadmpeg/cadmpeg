@@ -953,6 +953,58 @@ pub(crate) fn native_scope(name: &str) -> String {
     format!("f3d:{}", identity_key_component(name))
 }
 
+/// Compare an escaped native scope without materializing the encoded entry name.
+pub(crate) fn native_scope_matches(stream: &str, entry: &str) -> bool {
+    fn encoded_len(source: &str) -> Option<usize> {
+        source.chars().try_fold(0usize, |length, character| {
+            let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+                character.len_utf8().checked_mul(3)?
+            } else {
+                character.len_utf8()
+            };
+            length.checked_add(width)
+        })
+    }
+
+    fn encoded_matches(encoded: &str, source: &str) -> bool {
+        const HEX: &[u8; 16] = b"0123456789ABCDEF";
+        let mut actual = encoded.as_bytes().iter();
+        for character in source.chars() {
+            let mut buffer = [0; 4];
+            let bytes = character.encode_utf8(&mut buffer).as_bytes();
+            if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+                for &byte in bytes {
+                    for expected in [b'%', HEX[usize::from(byte >> 4)], HEX[usize::from(byte & 0x0f)]] {
+                        if actual.next() != Some(&expected) {
+                            return false;
+                        }
+                    }
+                }
+            } else {
+                for byte in bytes {
+                    if actual.next() != Some(byte) {
+                        return false;
+                    }
+                }
+            }
+        }
+        actual.next().is_none()
+    }
+
+    let Some(encoded_length) = encoded_len(entry) else {
+        return false;
+    };
+    if let Some(direct) = stream.strip_prefix("f3d:") {
+        if direct.len() == encoded_length && encoded_matches(direct, entry) {
+            return true;
+        }
+    }
+    stream
+        .strip_prefix("f3d:xref/")
+        .and_then(|qualified| qualified.strip_suffix(entry))
+        .is_some_and(|prefix| prefix.ends_with('/'))
+}
+
 /// Build an escaped native scope after admitting its retained byte length.
 pub(crate) fn native_scope_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -1333,6 +1385,18 @@ mod tests {
         let ctx = cadmpeg_test_support::service_decode_context();
         let scope = "A B:#%\u{2003}é";
         assert_eq!(super::native_scope_charged(&ctx, scope).unwrap(), native_scope(scope));
+    }
+
+    #[test]
+    fn native_scope_match_preserves_direct_and_xref_comparisons() {
+        for entry in ["Design/BulkStream.dat", "A B:#%\u{2003}é", ""] {
+            let direct = super::native_scope(entry);
+            assert!(super::native_scope_matches(&direct, entry));
+            assert!(!super::native_scope_matches(&direct, "different"));
+            let xref = format!("f3d:xref/part/{entry}");
+            assert!(super::native_scope_matches(&xref, entry));
+            assert!(!super::native_scope_matches(&format!("{xref}extra"), entry));
+        }
     }
 
     #[test]

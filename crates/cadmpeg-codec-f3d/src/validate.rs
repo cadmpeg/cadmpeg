@@ -55,10 +55,7 @@ fn design_stream(id: &str) -> &str {
 /// Report whether a native `stream` scope contains the design `entry`, either
 /// directly or through an `f3d:xref/` qualifier.
 fn design_stream_contains_entry(stream: &str, entry: &str) -> bool {
-    stream == ids::native_scope(entry)
-        || stream
-            .strip_prefix("f3d:xref/")
-            .is_some_and(|qualified| qualified.ends_with(&format!("/{entry}")))
+    ids::native_scope_matches(stream, entry)
 }
 
 /// Admit the empty reference table used by a legacy Combine tool operand.
