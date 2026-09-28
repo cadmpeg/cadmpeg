@@ -17,7 +17,7 @@ fn counted_lane_positions_follow_every_encoded_width() {
                     bytes.extend_from_slice(member_raw);
                 }
                 bytes.extend_from_slice(&[0x01, 0x11]);
-                let [lane]: [CountedLane; 1] = scan::counted_lanes(&bytes).try_into().unwrap();
+                let [lane]: [CountedLane; 1] = crate::test_support::with_decode_context(|ctx| scan::counted_lanes(ctx, &bytes)).unwrap().try_into().unwrap();
                 assert_eq!(lane.anchor().offset, anchor_offset);
                 assert_eq!(
                     lane.members().map(|index| index.offset).collect::<Vec<_>>(),
@@ -59,7 +59,7 @@ fn abr_lane_positions_include_null_and_extended_widths() {
             bytes.extend_from_slice(raw);
         }
         bytes.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03]);
-        let [lane]: [AbrLane; 1] = scan::abr_lanes(&bytes).try_into().unwrap();
+        let [lane]: [AbrLane; 1] = crate::test_support::with_decode_context(|ctx| scan::abr_lanes(ctx, &bytes)).unwrap().try_into().unwrap();
         assert_eq!(lane.slots().map(|slot| slot.offset), offsets);
         let base = u64::MAX - bytes.len() as u64;
         let absolute = lane.clone().into_absolute(base).unwrap();

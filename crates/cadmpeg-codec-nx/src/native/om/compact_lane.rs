@@ -5,6 +5,8 @@ use super::control_index_data_block;
 use crate::container::Container;
 use crate::om::compact_lane::scan::{abr_lanes, counted_lanes};
 use crate::om::compact_lane::{AbrLane, CountedLane};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::Deserialize;
 use wire::{DataBlockAbrReferenceLaneWire, DataBlockCountedIndexLaneWire};
 
@@ -32,89 +34,64 @@ pub(in crate::native) struct DataBlockAbrReferenceLane {
 
 /// Decode complete in-range counted block-index lanes from offset-only stores.
 pub(in crate::native) fn data_block_counted_index_lanes(
+    ctx: &DecodeContext<'_>,
     container: &Container,
-) -> Vec<DataBlockCountedIndexLane> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((_, _, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let block_count = records.len() + 1;
-            records
-                .iter()
-                .enumerate()
-                .flat_map(|(record_ordinal, block)| {
-                    let block_ordinal = record_ordinal + 1;
-                    counted_lanes(block.bytes)
-                        .into_iter()
-                        .filter_map(|lane| {
-                            let source_base = entry_offset.checked_add(block.offset as u64)?;
-                            lane.into_absolute(source_base)?.try_resolve(|atom| control_index_data_block(section_ordinal, block_count, atom.value()))
-                        })
-                        .enumerate()
-                        .map(
-                            |(ordinal, frame)| DataBlockCountedIndexLane {
-                                id: format!(
-                                    "nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}"
-                                ),
-                                data_block: format!(
-                                    "nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"
-                                ),
-                                ordinal: ordinal as u32,
-                                frame,
-                            },
-                        )
-                        .collect::<Vec<_>>()
-                })
-                .collect()
-        })
-        .collect()
+) -> Result<Vec<DataBlockCountedIndexLane>, CodecError> {
+    let mut output = Vec::new();
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections().into_iter().enumerate() {
+        let Some((_, _, records)) = section.as_offset_only() else { continue; };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let block_count = records.len() + 1;
+        for (record_ordinal, block) in records.iter().enumerate() {
+            let block_ordinal = record_ordinal + 1;
+            let Some(source_base) = entry_offset.checked_add(block.offset as u64) else { continue; };
+            let mut ordinal = 0usize;
+            for lane in counted_lanes(ctx, block.bytes)? {
+                let Some(lane) = lane.into_absolute(source_base) else { continue; };
+                let Some(frame) = lane.try_resolve_charged(ctx, |atom| {
+                    control_index_data_block(section_ordinal, block_count, atom.value())
+                })? else { continue; };
+                output.push(DataBlockCountedIndexLane {
+                    id: format!("nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}"),
+                    data_block: format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
+                    ordinal: ordinal as u32,
+                    frame,
+                });
+                ordinal += 1;
+            }
+        }
+    }
+    Ok(output)
 }
 
 /// Decode complete in-range `ABR` reference lanes from offset-store column storage.
 pub(in crate::native) fn data_block_abr_reference_lanes(
+    ctx: &DecodeContext<'_>,
     container: &Container,
-) -> Vec<DataBlockAbrReferenceLane> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_ordinal, (entry, section))| {
-            let Some((_, storage, records)) = section.as_offset_only() else {
-                return Vec::new();
-            };
-            let Some(storage_offset) = records.first().map(|record| record.offset) else {
-                return Vec::new();
-            };
-            let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-            let Some(source_base) = entry_offset.checked_add(storage_offset as u64) else {
-                return Vec::new();
-            };
-            let block_count = records.len() + 1;
-            abr_lanes(storage)
-                .into_iter()
-                .filter_map(|lane| {
-                    lane.into_absolute(source_base)?.try_resolve(|atom| {
-                        control_index_data_block(section_ordinal, block_count, atom.value())
-                    })
-                })
-                .enumerate()
-                .map(|(ordinal, frame)| DataBlockAbrReferenceLane {
-                    id: format!(
-                        "nx:om-data-block-abr-reference-lanes-{section_ordinal}:lane#{ordinal}"
-                    ),
-                    section_ordinal: section_ordinal as u32,
-                    ordinal: ordinal as u32,
-                    frame,
-                    source_entry: entry.name.clone(),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+) -> Result<Vec<DataBlockAbrReferenceLane>, CodecError> {
+    let mut output = Vec::new();
+    for (section_ordinal, (entry, section)) in container.indexed_om_sections().into_iter().enumerate() {
+        let Some((_, storage, records)) = section.as_offset_only() else { continue; };
+        let Some(storage_offset) = records.first().map(|record| record.offset) else { continue; };
+        let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        let Some(source_base) = entry_offset.checked_add(storage_offset as u64) else { continue; };
+        let block_count = records.len() + 1;
+        let mut ordinal = 0usize;
+        for lane in abr_lanes(ctx, storage)? {
+            let Some(frame) = lane.into_absolute(source_base).and_then(|lane| lane.try_resolve(|atom| {
+                control_index_data_block(section_ordinal, block_count, atom.value())
+            })) else { continue; };
+            output.push(DataBlockAbrReferenceLane {
+                id: format!("nx:om-data-block-abr-reference-lanes-{section_ordinal}:lane#{ordinal}"),
+                section_ordinal: section_ordinal as u32,
+                ordinal: ordinal as u32,
+                frame,
+                source_entry: entry.name.clone(),
+            });
+            ordinal += 1;
+        }
+    }
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -143,7 +120,10 @@ mod tests {
             crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))
                 .expect("required invariant");
 
-        let lanes = crate::native::om::compact_lane::data_block_abr_reference_lanes(&container);
+        let lanes = crate::test_support::with_decode_context(|ctx| {
+            crate::native::om::compact_lane::data_block_abr_reference_lanes(ctx, &container)
+        })
+        .unwrap();
         assert_eq!(lanes.len(), 1);
         assert_eq!(
             lanes[0].frame.slots()[0]
