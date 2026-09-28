@@ -56,6 +56,63 @@ fn copy_decode_string(
     Ok(copy)
 }
 
+fn collect_decode_set<T: Eq + std::hash::Hash>(
+    ctx: &DecodeContext<'_>,
+    items: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<std::collections::HashSet<T>, CodecError> {
+    let mut set = std::collections::HashSet::new();
+    for item in items {
+        insert_decode_set(ctx, &mut set, item, operation)?;
+    }
+    Ok(set)
+}
+
+fn insert_decode_set<T: Eq + std::hash::Hash>(
+    ctx: &DecodeContext<'_>,
+    set: &mut std::collections::HashSet<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !set.contains(&item) {
+        ctx.charge_collection_items(1, operation)?;
+        set.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        set.insert(item);
+    }
+    Ok(())
+}
+
+fn insert_decode_string_set(
+    ctx: &DecodeContext<'_>,
+    set: &mut std::collections::HashSet<String>,
+    item: &str,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !set.contains(item) {
+        let copy = copy_decode_string(ctx, item, "retain complete F3D edge selection ID")?;
+        insert_decode_set(ctx, set, copy, operation)?;
+    }
+    Ok(())
+}
+
+fn collect_decode_map<K: Eq + std::hash::Hash, V>(
+    ctx: &DecodeContext<'_>,
+    items: impl IntoIterator<Item = (K, V)>,
+    operation: &'static str,
+) -> Result<std::collections::HashMap<K, V>, CodecError> {
+    let mut map = std::collections::HashMap::new();
+    for (key, value) in items {
+        if !map.contains_key(&key) {
+            ctx.charge_collection_items(1, operation)?;
+            map.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        }
+        map.insert(key, value);
+    }
+    Ok(map)
+}
+
 fn append_decode_items<T>(
     ctx: &DecodeContext<'_>,
     target: &mut Vec<T>,
@@ -1136,7 +1193,11 @@ fn incomplete_feature_families<'a>(
     Ok(families)
 }
 
-fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGaps {
+fn design_projection_gaps(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    native: &F3dNative,
+) -> Result<DesignProjectionGaps, CodecError> {
     use cadmpeg_ir::features::{
         BodySelection, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection, LinearTermination,
     };
@@ -1145,68 +1206,80 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         ProfileRef,
     };
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
 
-    let source_lost_edge_reference_ids = native
-        .lost_edge_references
-        .iter()
-        .map(|reference| reference.id.as_str())
-        .collect::<HashSet<_>>();
-    let mut complete_edge_selection_native_ids = HashSet::new();
-    let projected_constraint_refs = ir
-        .model
-        .sketch_constraints
-        .iter()
-        .filter_map(|constraint| constraint.native_ref.as_deref())
-        .chain(
-            ir.model
-                .spatial_sketch_constraints
-                .iter()
-                .filter_map(|constraint| constraint.native_ref.as_deref()),
-        )
-        .collect::<HashSet<_>>();
-    let projected_sketch_refs = ir
-        .model
-        .sketches
-        .iter()
-        .filter_map(|sketch| sketch.native_ref.as_deref())
-        .chain(
-            ir.model
-                .spatial_sketches
-                .iter()
-                .filter_map(|sketch| sketch.native_ref.as_deref()),
-        )
-        .collect::<HashSet<_>>();
-    let projected_sketch_entity_refs = ir
-        .model
-        .sketch_entities
-        .iter()
-        .filter_map(|entity| entity.native_ref.as_deref())
-        .chain(
-            ir.model
-                .spatial_sketch_entities
-                .iter()
-                .filter_map(|entity| entity.native_ref.as_deref()),
-        )
-        .collect::<HashSet<_>>();
-    let projected_feature_refs = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| feature.native_ref.as_deref())
-        .collect::<HashSet<_>>();
-    let projected_parameter_refs = ir
-        .model
-        .parameters
-        .iter()
-        .filter_map(|parameter| parameter.native_ref.as_deref())
-        .collect::<HashSet<_>>();
-    let projected_features = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature)))
-        .collect::<HashMap<_, _>>();
+    let source_lost_edge_reference_ids = collect_decode_set(
+        ctx,
+        native.lost_edge_references.iter().map(|reference| reference.id.as_str()),
+        "index F3D lost edge references",
+    )?;
+    let mut complete_edge_selection_native_ids = HashSet::<String>::new();
+    let projected_constraint_refs = collect_decode_set(
+        ctx,
+        ir.model
+            .sketch_constraints
+            .iter()
+            .filter_map(|constraint| constraint.native_ref.as_deref())
+            .chain(
+                ir.model
+                    .spatial_sketch_constraints
+                    .iter()
+                    .filter_map(|constraint| constraint.native_ref.as_deref()),
+            ),
+        "index projected F3D constraints",
+    )?;
+    let projected_sketch_refs = collect_decode_set(
+        ctx,
+        ir.model
+            .sketches
+            .iter()
+            .filter_map(|sketch| sketch.native_ref.as_deref())
+            .chain(
+                ir.model
+                    .spatial_sketches
+                    .iter()
+                    .filter_map(|sketch| sketch.native_ref.as_deref()),
+            ),
+        "index projected F3D sketches",
+    )?;
+    let projected_sketch_entity_refs = collect_decode_set(
+        ctx,
+        ir.model
+            .sketch_entities
+            .iter()
+            .filter_map(|entity| entity.native_ref.as_deref())
+            .chain(
+                ir.model
+                    .spatial_sketch_entities
+                    .iter()
+                    .filter_map(|entity| entity.native_ref.as_deref()),
+            ),
+        "index projected F3D sketch entities",
+    )?;
+    let projected_feature_refs = collect_decode_set(
+        ctx,
+        ir.model
+            .features
+            .iter()
+            .filter_map(|feature| feature.native_ref.as_deref()),
+        "index projected F3D features",
+    )?;
+    let projected_parameter_refs = collect_decode_set(
+        ctx,
+        ir.model
+            .parameters
+            .iter()
+            .filter_map(|parameter| parameter.native_ref.as_deref()),
+        "index projected F3D parameters",
+    )?;
+    let projected_features = collect_decode_map(
+        ctx,
+        ir.model
+            .features
+            .iter()
+            .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature))),
+        "index projected F3D feature records",
+    )?;
     let mut unprojected_history_dependencies = 0;
     let mut ambiguous_history_dependencies = 0;
     let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
@@ -1242,7 +1315,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             unprojected_history_dependencies += 1;
         }
     }
-    let projected_dimension_parameters =
+    let projected_dimension_parameters = collect_decode_set(
+        ctx,
         ir.model
             .sketch_constraints
             .iter()
@@ -1291,15 +1365,15 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                         _ => None,
                     },
                 ),
-            )
-            .cloned()
-            .collect::<HashSet<_>>();
+            ),
+        "index projected F3D dimension parameters",
+    )?;
 
-    let native_sketch_relation_ids = native
-        .sketch_relations
-        .iter()
-        .map(|relation| relation.id.as_str())
-        .collect::<HashSet<_>>();
+    let native_sketch_relation_ids = collect_decode_set(
+        ctx,
+        native.sketch_relations.iter().map(|relation| relation.id.as_str()),
+        "index native F3D sketch relations",
+    )?;
     let mut native_sketch_relations = 0;
     let mut native_dimensions = 0;
     for constraint in &ir.model.sketch_constraints {
@@ -1446,8 +1520,9 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .count(),
         unprojected_dimensions: {
             let container_only = container_only_dimension_parameters(native);
-            let relation_bearing_companions = native
-                .design_parameter_companions
+            let relation_bearing_companions = collect_decode_set(
+                ctx,
+                native.design_parameter_companions
                 .iter()
                 .filter(|companion| {
                     companion
@@ -1456,7 +1531,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 })
                 .filter_map(|companion| {
                     Some((
-                        crate::ids::native_stream(companion.id())?.to_owned(),
+                        crate::ids::native_stream(companion.id())?,
                         companion.record_index(),
                     ))
                 })
@@ -1466,7 +1541,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                         .iter()
                         .filter_map(|pair| {
                             Some((
-                                crate::ids::native_stream(&pair.id)?.to_owned(),
+                                crate::ids::native_stream(&pair.id)?,
                                 pair.governing_companion_record_index,
                             ))
                         }),
@@ -1477,7 +1552,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                         .iter()
                         .filter_map(|pair| {
                             Some((
-                                crate::ids::native_stream(&pair.id)?.to_owned(),
+                                crate::ids::native_stream(&pair.id)?,
                                 pair.governing_companion_record_index,
                             ))
                         }),
@@ -1488,7 +1563,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                         .iter()
                         .filter_map(|frame| {
                             Some((
-                                crate::ids::native_stream(&frame.id)?.to_owned(),
+                                crate::ids::native_stream(&frame.id)?,
                                 frame.governing_companion_record_index,
                             ))
                         }),
@@ -1499,7 +1574,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                         .iter()
                         .filter_map(|group| {
                             Some((
-                                crate::ids::native_stream(&group.id)?.to_owned(),
+                                crate::ids::native_stream(&group.id)?,
                                 group.companion_record_index,
                             ))
                         }),
@@ -1510,22 +1585,23 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                         .iter()
                         .filter_map(|record| {
                             Some((
-                                crate::ids::native_stream(&record.id)?.to_owned(),
+                                crate::ids::native_stream(&record.id)?,
                                 record.companion_record_index,
                             ))
                         }),
-                )
-                .collect::<HashSet<_>>();
-            let relation_bearing_parameters = native
-                .design_parameter_owners
-                .iter()
-                .filter_map(|owner| {
+                ),
+                "index F3D relation-bearing companions",
+            )?;
+            let relation_bearing_parameters = collect_decode_set(
+                ctx,
+                native.design_parameter_owners.iter().filter_map(|owner| {
                     let stream = crate::ids::native_stream(owner.id())?;
                     relation_bearing_companions
-                        .contains(&(stream.to_owned(), owner.companion_record_index()))
+                        .contains(&(stream, owner.companion_record_index()))
                         .then_some((stream, owner.parameter_record_index()))
-                })
-                .collect::<HashSet<_>>();
+                }),
+                "index F3D relation-bearing parameters",
+            )?;
             native
                 .design_parameters
                 .iter()
@@ -1547,25 +1623,37 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .count(),
         ..DesignProjectionGaps::default()
     };
-    let mut edge_selection = |selection: &EdgeSelection| match selection {
-        EdgeSelection::Native(_) => gaps.native_edge_selections += 1,
-        EdgeSelection::Unresolved => gaps.unresolved_edge_selections += 1,
-        EdgeSelection::HistoricalPartial { unresolved, .. } => {
-            gaps.partially_resolved_edge_members += unresolved
-                .iter()
-                .filter(|id| !source_lost_edge_reference_ids.contains(id.as_str()))
-                .count();
+    let mut edge_selection = |selection: &EdgeSelection| -> Result<(), CodecError> {
+        match selection {
+            EdgeSelection::Native(_) => gaps.native_edge_selections += 1,
+            EdgeSelection::Unresolved => gaps.unresolved_edge_selections += 1,
+            EdgeSelection::HistoricalPartial { unresolved, .. } => {
+                gaps.partially_resolved_edge_members += unresolved
+                    .iter()
+                    .filter(|id| !source_lost_edge_reference_ids.contains(id.as_str()))
+                    .count();
+            }
+            EdgeSelection::Resolved { native, .. } => insert_decode_string_set(
+                ctx,
+                &mut complete_edge_selection_native_ids,
+                native.as_str(),
+                "index complete F3D edge selections",
+            )?,
+            EdgeSelection::Generated { native, .. } => insert_decode_string_set(
+                ctx,
+                &mut complete_edge_selection_native_ids,
+                native.as_str(),
+                "index complete F3D edge selections",
+            )?,
+            EdgeSelection::Historical { native, .. } => insert_decode_string_set(
+                ctx,
+                &mut complete_edge_selection_native_ids,
+                native.as_str(),
+                "index complete F3D edge selections",
+            )?,
+            EdgeSelection::All | EdgeSelection::Edges(_) => {}
         }
-        EdgeSelection::Resolved { native, .. } => {
-            complete_edge_selection_native_ids.insert(native.clone());
-        }
-        EdgeSelection::Generated { native, .. } => {
-            complete_edge_selection_native_ids.insert(native.as_str().to_owned());
-        }
-        EdgeSelection::Historical { native, .. } => {
-            complete_edge_selection_native_ids.insert(native.as_str().to_owned());
-        }
-        EdgeSelection::All | EdgeSelection::Edges(_) => {}
+        Ok(())
     };
     let mut face_selection = |selection: &FaceSelection| match selection {
         FaceSelection::Native(_) | FaceSelection::Unresolved => gaps.face_selections += 1,
@@ -1654,7 +1742,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             }
             FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => {
                 for group in groups {
-                    edge_selection(&group.edges);
+                    edge_selection(&group.edges)?;
                 }
             }
             FeatureDefinition::Operation(FeatureOperation::FullRoundFillet { groups }) => {
@@ -1671,7 +1759,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             }
             FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. }) => {
                 for group in groups {
-                    edge_selection(&group.edges);
+                    edge_selection(&group.edges)?;
                 }
             }
             FeatureDefinition::Operation(FeatureOperation::Sweep {
@@ -1728,9 +1816,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 };
                 match construction.as_ref() {
                     DatumPointConstruction::CircleCenter { edge }
-                    | DatumPointConstruction::DistanceOnEdge { edge, .. } => edge_selection(edge),
+                    | DatumPointConstruction::DistanceOnEdge { edge, .. } => edge_selection(edge)?,
                     DatumPointConstruction::TwoEdgeIntersection { edges } => {
-                        edges.iter().for_each(&mut edge_selection);
+                        for edge in edges {
+                            edge_selection(edge)?;
+                        }
                     }
                     DatumPointConstruction::ThreePlaneIntersection { planes } => {
                         planes.iter().for_each(&mut plane);
@@ -1741,7 +1831,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                         edge,
                         plane: reference,
                     } => {
-                        edge_selection(edge);
+                        edge_selection(edge)?;
                         plane(reference);
                     }
                 }
@@ -1752,7 +1842,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 ..
             }) => {
                 match boundary {
-                    cadmpeg_ir::features::SurfaceBoundary::Edges(edges) => edge_selection(edges),
+                    cadmpeg_ir::features::SurfaceBoundary::Edges(edges) => edge_selection(edges)?,
                     cadmpeg_ir::features::SurfaceBoundary::Path(path) => {
                         gaps.path_selections += usize::from(!loft_path_is_resolved(path));
                     }
@@ -1817,25 +1907,28 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             FeatureDefinition::Operation(
                 FeatureOperation::SheetMetalEdgeFlange { edges, .. }
                 | FeatureOperation::SheetMetalHem { edges, .. },
-            ) => edge_selection(edges),
+            ) => edge_selection(edges)?,
             FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }) => {
                 face_selection(faces);
             }
             _ => {}
         }
     }
-    let repaired_lost_edge_reference_ids = native
-        .design_construction_operand_groups
-        .iter()
-        .filter(|group| complete_edge_selection_native_ids.contains(group.id.as_str()))
-        .flat_map(|group| group.lost_edge_references.iter().map(String::as_str))
-        .collect::<HashSet<_>>();
+    let repaired_lost_edge_reference_ids = collect_decode_set(
+        ctx,
+        native
+            .design_construction_operand_groups
+            .iter()
+            .filter(|group| complete_edge_selection_native_ids.contains(group.id.as_str()))
+            .flat_map(|group| group.lost_edge_references.iter().map(String::as_str)),
+        "index repaired F3D lost edge references",
+    )?;
     gaps.unrepaired_lost_edge_references = native
         .lost_edge_references
         .iter()
         .filter(|reference| !repaired_lost_edge_reference_ids.contains(reference.id.as_str()))
         .count();
-    gaps
+    Ok(gaps)
 }
 
 struct IncompleteFamilyCounts<'a>(&'a std::collections::BTreeMap<&'a str, usize>);
@@ -1898,7 +1991,7 @@ fn report_design_projection_gaps(
     ir: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
-    let gaps = design_projection_gaps(ir, native);
+    let gaps = design_projection_gaps(ctx, ir, native)?;
     let incomplete_families = incomplete_feature_families(ctx, ir)?;
     let history_budget_skips = native
         .asm_histories

@@ -2,7 +2,7 @@
 //! Decode-module projection and completeness unit tests.
 
 use super::super::{
-    apply_appearance_base_colors, container_only_dimension_parameters, design_projection_gaps,
+    apply_appearance_base_colors, container_only_dimension_parameters,
     unresolved_dimension_companion_count, DesignProjectionGaps,
 };
 use crate::native::F3dNative;
@@ -17,6 +17,80 @@ use crate::records::{
     sketch_placement::DesignSketchPlacement,
     sketch_relations::SketchRelation,
 };
+
+fn design_projection_gaps(
+    ir: &cadmpeg_ir::document::CadIr,
+    native: &F3dNative,
+) -> DesignProjectionGaps {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .unwrap();
+    super::super::design_projection_gaps(&ctx, ir, native).unwrap()
+}
+
+#[test]
+fn projection_set_index_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = super::super::collect_decode_set(
+        &ctx,
+        ["native:one"],
+        "index projected F3D constraints",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index projected F3D constraints"));
+}
+
+#[test]
+fn projection_map_index_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = super::super::collect_decode_map(
+        &ctx,
+        [("native:one", 1)],
+        "index projected F3D feature records",
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index projected F3D feature records"));
+}
+
+#[test]
+fn lost_edge_reference_index_refuses_collection_limit() {
+    let mut native = F3dNative::default();
+    native.lost_edge_references.push(
+        LostEdgeReference::new(
+            "f3d:test:lost-edge-reference#1".into(),
+            0,
+            "000".into(),
+            0,
+            "001".into(),
+            1,
+        )
+        .unwrap(),
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = super::super::design_projection_gaps(
+        &ctx,
+        &cadmpeg_ir::document::CadIr::empty(),
+        &native,
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D lost edge references"));
+}
 
 #[test]
 fn design_projection_gaps_count_unresolved_body_map_pairs() {
