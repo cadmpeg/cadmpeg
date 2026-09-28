@@ -57,17 +57,32 @@ pub(crate) fn cgm_source_key(
 }
 
 pub(crate) fn annotate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     annotations: &mut AnnotationBuilder,
     id: impl std::fmt::Display,
     stream_name: &str,
     offset: u64,
-    tag: impl Into<String>,
+    tag: impl std::fmt::Display,
     exactness: Exactness,
-) {
-    let id = id.to_string();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("catia:").with_suffix(stream_name));
-    annotations.note(&id, &stream, offset).tag(tag);
-    annotations.exactness(id, exactness);
+) -> Result<(), cadmpeg_core::CodecError> {
+    let id = resource::format_retained(ctx, format_args!("{id}"), "catia_annotation_id")?;
+    let exactness_id = resource::copy_retained_str(ctx, &id, "catia_annotation_exactness_id")?;
+    let stream_name = resource::format_retained(ctx, format_args!("catia:{stream_name}"),
+        "catia_annotation_stream")?;
+    let stream_name = cadmpeg_ir::StreamName::try_from(stream_name)
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+    let stream_bytes = u64::try_from(std::mem::size_of::<cadmpeg_ir::StreamName>())
+        .map_err(|_| ctx.refuse_codec_limit("catia_annotation_stream_handle", u64::MAX, u64::MAX))?;
+    ctx.charge_retained(stream_bytes, "catia_annotation_stream_handle")?;
+    let tag = resource::format_retained(ctx, format_args!("{tag}"), "catia_annotation_tag")?;
+    ctx.charge_collection_items(1, "catia_annotation_provenance")?;
+    if exactness != Exactness::ByteExact {
+        ctx.charge_collection_items(1, "catia_annotation_exactness")?;
+    }
+    let stream = StreamHandle::new(stream_name);
+    annotations.note_owned(id, &stream, offset).tag(tag);
+    annotations.exactness_owned(exactness_id, exactness);
+    Ok(())
 }
 
 /// Judge one candidate neutral model after canonicalizing arena order.
@@ -622,13 +637,13 @@ pub(crate) fn build_metadata_fallback(
     ctx.charge_entities(1, "admit CATIA retained source record")?;
     let bytes = ctx.copy_retained(bytes, "retain CATIA raw payload")?;
     annotate(
+        ctx,
         &mut annotations,
         &id,
         stream,
         0,
-        scan.variant.id().to_string(),
-        Exactness::Unknown,
-    );
+        scan.variant.id(),
+        Exactness::Unknown)?;
     unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
     Ok((ir, annotations.build(), unknowns))
 }
@@ -650,13 +665,13 @@ pub(crate) fn preserve_raw_payload(
     ctx.charge_entities(1, "admit CATIA retained source record")?;
     let bytes = ctx.copy_retained(bytes, "retain CATIA raw payload")?;
     annotate(
+        ctx,
         annotations,
         &id,
         stream,
         0,
-        scan.variant.id().to_string(),
-        Exactness::Unknown,
-    );
+        scan.variant.id(),
+        Exactness::Unknown)?;
     unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
     Ok(unknowns.len() - 1)
 }
@@ -873,6 +888,35 @@ mod route_tests {
     use cadmpeg_ir::units::FinitePoint2;
 
     use cadmpeg_ir::unknown::UnknownRecord;
+
+    #[test]
+    fn annotation_refuses_retained_and_collection_limits() {
+        let retained = crate::test_support::with_retained_limit(0, |ctx| {
+            super::annotate(ctx, &mut cadmpeg_ir::AnnotationBuilder::new(),
+                "catia:test:curve#0", "CATPart", 17,
+                format_args!("record:{:08x}", 7), cadmpeg_ir::Exactness::Derived)
+        });
+        assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_annotation_id"));
+        let collection = crate::test_support::with_collection_limit(0, |ctx| {
+            super::annotate(ctx, &mut cadmpeg_ir::AnnotationBuilder::new(),
+                "catia:test:curve#0", "CATPart", 17,
+                format_args!("record:{:08x}", 7), cadmpeg_ir::Exactness::Derived)
+        });
+        assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_annotation_provenance"));
+        let annotations = crate::test_support::with_service_context(|ctx| {
+            let mut builder = cadmpeg_ir::AnnotationBuilder::new();
+            super::annotate(ctx, &mut builder, "catia:test:curve#0", "CATPart", 17,
+                format_args!("record:{:08x}", 7), cadmpeg_ir::Exactness::Derived)
+                .expect("service profile admits annotation");
+            builder.build()
+        });
+        let note = &annotations.provenance["catia:test:curve#0"];
+        assert_eq!(note.stream(), "catia:CATPart");
+        assert_eq!(note.offset, 17);
+        assert_eq!(note.tag.as_deref(), Some("record:00000007"));
+    }
 
     #[test]
     fn cgm_source_object_identity_refuses_retained_limit() {

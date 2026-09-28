@@ -1999,10 +1999,10 @@ fn standard_face_partition_refuses_each_collection_boundary() {
     .expect("service context admits the initial face");
     let mut second = base_ir.model.faces[0].clone();
     second.id = cadmpeg_ir::ids::FaceId::mint("catia:standard:face#1").expect("identity grammar");
-    crate::assemble::annotate(
-        &mut base_annotations, &second.id, "MainDataStream+SurfacicReps", 0,
+    crate::test_support::with_service_context(|ctx| crate::assemble::annotate(
+        ctx, &mut base_annotations, &second.id, "MainDataStream+SurfacicReps", 0,
         "surfacic_reps_face_sense", cadmpeg_ir::Exactness::ByteExact,
-    );
+    )).expect("service profile admits second face annotation");
     base_ir.model.faces.push(second);
     let components = [vec![0], vec![1]];
     let mut refusals = HashSet::new();

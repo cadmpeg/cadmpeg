@@ -1254,13 +1254,13 @@ fn attach_free_vertices(
     .map_err(cadmpeg_core::CodecError::malformed)?;
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
+            ctx,
             annotations,
             id,
             "MainDataStream+SurfacicReps",
             0,
             "unbound_point_owner",
-            Exactness::Inferred,
-        );
+            Exactness::Inferred)?;
     }
     admission.reserve_entity(&mut ir.model.bodies, "catia_standard_free_vertex_bodies")?;
     let body_id_copy = crate::resource::copy_id(
@@ -1320,13 +1320,13 @@ fn standard_extrusion_support_id(
         surface_object_id,
     );
     annotate(
+        ctx,
         annotations,
         &id,
         "object_stream_b5_03",
         0,
-        format!("surface:{surface_object_id:08x}"),
-        Exactness::ByteExact,
-    );
+        format_args!("surface:{surface_object_id:08x}"),
+        Exactness::ByteExact)?;
     admission.reserve_entity(surfaces, "catia_standard_extrusion_support_surfaces")?;
     surfaces.push(Surface {
         id: crate::resource::copy_id(
@@ -1406,13 +1406,13 @@ fn emit_standard_extrusion_definition(
             };
             let sides = [build_side(first)?, build_side(second)?];
             annotate(
+                ctx,
                 annotations,
                 &directrix_id,
                 "object_stream_a8_03_25",
                 0,
                 "two_support_directrix",
-                Exactness::Unknown,
-            );
+                Exactness::Unknown)?;
             admission.reserve_entity(&mut ir.model.curves, "catia_extrusion_directrix_curves")?;
             ir.model.curves.push(Curve {
                 id: crate::resource::copy_id(
@@ -1433,13 +1433,13 @@ fn emit_standard_extrusion_definition(
                 extrusion.directrix_object_id,
             );
             annotate(
+                ctx,
                 annotations,
                 &procedure_id,
                 "object_stream_a8_03_25",
                 0,
                 "two_surface_pcurve_intersection",
-                Exactness::ByteExact,
-            );
+                Exactness::ByteExact)?;
             admission.reserve_entity(
                 &mut ir.model.procedural_curves,
                 "catia_extrusion_directrix_procedures",
@@ -1479,13 +1479,13 @@ fn emit_standard_extrusion_definition(
             curve, ..
         } => {
             annotate(
+                ctx,
                 annotations,
                 &directrix_id,
                 "object_stream_b5_03_24",
                 0,
                 "support_pcurve_lift",
-                Exactness::Derived,
-            );
+                Exactness::Derived)?;
             admission.reserve_entity(
                 &mut ir.model.curves,
                 "catia_extrusion_surface_directrix_curves",
@@ -1514,13 +1514,13 @@ fn emit_standard_extrusion_definition(
                 source_object_id,
             );
             annotate(
+                ctx,
                 annotations,
                 &source_id,
                 "object_stream_b5_03_24",
                 0,
                 "support_pcurve_lift",
-                Exactness::Derived,
-            );
+                Exactness::Derived)?;
             admission
                 .reserve_entity(&mut ir.model.curves, "catia_extrusion_offset_source_curves")?;
             ir.model.curves.push(Curve {
@@ -1534,13 +1534,13 @@ fn emit_standard_extrusion_definition(
                 source_object: Some(cgm_source(ctx, "curve", source_object_id)?),
             });
             annotate(
+                ctx,
                 annotations,
                 &directrix_id,
                 "object_stream_b5_03_14",
                 0,
                 "fixed_direction_offset_curve",
-                Exactness::Unknown,
-            );
+                Exactness::Unknown)?;
             admission.reserve_entity(
                 &mut ir.model.curves,
                 "catia_extrusion_offset_directrix_curves",
@@ -1564,13 +1564,13 @@ fn emit_standard_extrusion_definition(
                 extrusion.directrix_object_id,
             );
             annotate(
+                ctx,
                 annotations,
                 &procedure_id,
                 "object_stream_b5_03_14",
                 0,
                 "fixed_direction_offset_curve",
-                Exactness::ByteExact,
-            );
+                Exactness::ByteExact)?;
             let support = standard_extrusion_support_id(
                 ctx,
                 annotations,
@@ -2713,14 +2713,14 @@ fn try_decode_standard_population(
                                 ),
                                 support_object_id,
                             );
-                            annotate(
+                            admitted!(annotate(
+                                ctx,
                                 &mut annotations,
                                 &id,
                                 "object_stream_b5_03",
                                 0,
-                                format!("surface:{support_object_id:08x}"),
-                                Exactness::ByteExact,
-                            );
+                                format_args!("surface:{support_object_id:08x}"),
+                                Exactness::ByteExact));
                             if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                                 return Some(Err(error));
                             }
@@ -2743,14 +2743,14 @@ fn try_decode_standard_population(
                             ),
                             support_object_id,
                         );
-                        annotate(
+                        admitted!(annotate(
+                            ctx,
                             &mut annotations,
                             &support_id,
                             "object_stream_b5_03_2c",
                             0,
-                            format!("surface:{support_object_id:08x}"),
-                            Exactness::ByteExact,
-                        );
+                            format_args!("surface:{support_object_id:08x}"),
+                            Exactness::ByteExact));
                         if let Err(error) = admission.reserve_entity(&mut surfaces, "catia_family_emit_surfaces") {
                             return Some(Err(error));
                         }
@@ -2865,14 +2865,14 @@ fn try_decode_standard_population(
                     &cadmpeg_ir::identity_namespace!("catia", "standard", "revolution-profile"),
                     tag,
                 );
-                annotate(
+                admitted!(annotate(
+                    ctx,
                     &mut annotations,
                     &directrix_id,
                     "object_stream_b5_03_2d",
                     0,
                     "profile_curve",
-                    Exactness::Derived,
-                );
+                    Exactness::Derived));
                 annotations.derived(&directrix_id, "geometry").ok()?;
                 if let Err(error) = admission.reserve_entity(&mut ir.model.curves, "catia_family_emit_curves") {
                     return Some(Err(error));
@@ -2922,14 +2922,14 @@ fn try_decode_standard_population(
                     }
                 }
             });
-        annotate(
+        admitted!(annotate(
+            ctx,
             &mut annotations,
             &procedural_id,
             source,
             0,
-            format!("face_object_id:{tag:08x}:result_carrier:{carrier:08x}"),
-            exactness,
-        );
+            format_args!("face_object_id:{tag:08x}:result_carrier:{carrier:08x}"),
+            exactness));
         if attached {
             if let Err(error) = admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces") {
                 return Some(Err(error));
@@ -2967,14 +2967,14 @@ fn try_decode_standard_population(
             &cadmpeg_ir::identity_namespace!("catia", "standard", "pt"),
             i,
         );
-        annotate(
+        admitted!(annotate(
+            ctx,
             &mut annotations,
             &point_id,
             "MainDataStream+SurfacicReps",
             0,
             "vertex_05_08_01",
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact));
         if let Err(error) = admission.reserve_entity(&mut ir.model.points, "catia_family_emit_points") {
             return Some(Err(error));
         }
@@ -2991,14 +2991,14 @@ fn try_decode_standard_population(
             &cadmpeg_ir::identity_namespace!("catia", "standard", "v"),
             i,
         );
-        annotate(
+        admitted!(annotate(
+            ctx,
             &mut annotations,
             &vertex_id,
             "MainDataStream+SurfacicReps",
             0,
             "vertex_05_08_01",
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact));
         annotations.derived(&vertex_id, "point").ok()?;
         if let Err(error) = admission.reserve_entity(&mut ir.model.vertices, "catia_family_emit_vertices") {
             return Some(Err(error));
@@ -3010,7 +3010,7 @@ fn try_decode_standard_population(
         });
     }
     for (id, stream, offset, tag, exactness) in surface_annotations {
-        annotate(&mut annotations, &id, stream, offset as u64, tag, exactness);
+        admitted!(annotate(ctx, &mut annotations, &id, stream, offset as u64, tag, exactness));
     }
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();
@@ -4249,13 +4249,13 @@ fn attach_standard_faces(
             ctx, "catia:standard:face#", face_index, 1, "catia_standard_face_id",
         )?).map_err(CodecError::malformed)?;
         annotate(
+            ctx,
             annotations,
             &face_id,
             "MainDataStream+SurfacicReps",
             *offset as u64,
             "surfacic_reps_face_sense",
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact)?;
         for field in ["shell", "surface", "sense"] {
             annotations
                 .derived(&face_id, field)
@@ -4281,13 +4281,13 @@ fn attach_standard_faces(
         });
     }
     annotate(
+        ctx,
         annotations,
         &body_id,
         "MainDataStream+SurfacicReps",
         0,
         "standard_body",
-        Exactness::Inferred,
-    );
+        Exactness::Inferred)?;
     annotations
         .derived(&body_id, "kind")
         .map_err(cadmpeg_core::CodecError::malformed)?
@@ -4308,13 +4308,13 @@ fn attach_standard_faces(
         visible: None,
     });
     annotate(
+        ctx,
         annotations,
         &region_id,
         "MainDataStream+SurfacicReps",
         0,
         "derived_region",
-        Exactness::Inferred,
-    );
+        Exactness::Inferred)?;
     annotations
         .derived(&region_id, "body")
         .map_err(cadmpeg_core::CodecError::malformed)?
@@ -4331,13 +4331,13 @@ fn attach_standard_faces(
         shells: region_shells,
     });
     annotate(
+        ctx,
         annotations,
         &shell_id,
         "MainDataStream+SurfacicReps",
         0,
         "derived_shell",
-        Exactness::Inferred,
-    );
+        Exactness::Inferred)?;
     annotations
         .derived(&shell_id, "region")
         .map_err(cadmpeg_core::CodecError::malformed)?
@@ -4439,13 +4439,13 @@ fn partition_standard_face_components(
             (shell_id.as_str(), "derived_shell"),
         ] {
             annotate(
+                ctx,
                 annotations,
                 id,
                 "MainDataStream+SurfacicReps",
                 0,
                 tag,
-                Exactness::Inferred,
-            );
+                Exactness::Inferred)?;
         }
         if annotations
             .derived(&region_id, "body")
@@ -6885,13 +6885,13 @@ fn emit_standard_topology(
             edge_index,
         );
         annotate(
+            ctx,
             annotations,
             &id,
             "MainDataStream+SurfacicReps",
             support.pos as u64,
             "standard_spine_edge_row",
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact)?;
         if curve.is_some() {
             annotations
                 .derived(&id, "curve")
@@ -7005,13 +7005,13 @@ fn emit_standard_topology(
                             .colon(coedge_index),
                     );
                     annotate(
+                        ctx,
                         annotations,
                         &id,
                         "MainDataStream+SurfacicReps",
                         support.pos as u64,
                         "derived_surface_parameter_curve",
-                        Exactness::Derived,
-                    );
+                        Exactness::Derived)?;
                     annotations
                         .derived(&id, "geometry")
                         .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -7046,13 +7046,13 @@ fn emit_standard_topology(
                     "catia_standard_coedge_id_copy",
                 )?;
                 annotate(
+                    ctx,
                     annotations,
                     &id,
                     "MainDataStream+SurfacicReps",
                     0,
                     "trim_mesh_boundary_run",
-                    Exactness::ByteExact,
-                );
+                    Exactness::ByteExact)?;
                 for field in ["owner_loop", "edge", "radial_next", "sense"] {
                     annotations
                         .derived(&id, field)
@@ -7116,13 +7116,13 @@ fn emit_standard_topology(
                 });
             }
             annotate(
+                ctx,
                 annotations,
                 &loop_id,
                 "MainDataStream+SurfacicReps",
                 0,
                 "trim_mesh_boundary_cycle",
-                Exactness::ByteExact,
-            );
+                Exactness::ByteExact)?;
             annotations
                 .derived(&loop_id, "face")
                 .map_err(cadmpeg_core::CodecError::malformed)?
@@ -10454,6 +10454,7 @@ fn build_standard_edge_curve(
         support.pos,
     );
     annotate(
+        ctx,
         annotations,
         &id,
         "MainDataStream+SurfacicReps",
@@ -10465,8 +10466,7 @@ fn build_standard_edge_curve(
                 Exactness::Derived
             }
             _ => Exactness::ByteExact,
-        },
-    );
+        })?;
     if matches!(
         &geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
@@ -10580,13 +10580,13 @@ fn build_standard_edge_curve(
                     support.pos,
                 );
                 annotate(
+                    ctx,
                     annotations,
                     &procedural_id,
                     "MainDataStream+SurfacicReps",
                     support.pos as u64,
                     "standard_surface_intersection",
-                    Exactness::Derived,
-                );
+                    Exactness::Derived)?;
                 annotations
                     .derived(&procedural_id, "curve")
                     .map_err(cadmpeg_core::CodecError::malformed)?
@@ -10689,13 +10689,13 @@ fn ensure_native_edge_support_surface(
         }
     };
     annotate(
+        admission.context(),
         annotations,
         &id,
         "CATPart",
         0,
         "native_edge_support_surface",
-        Exactness::ByteExact,
-    );
+        Exactness::ByteExact)?;
     ir.model.surfaces.push(Surface {
         id: id.clone(),
         geometry,
@@ -10710,15 +10710,15 @@ fn ensure_native_edge_support_surface(
     ) = (procedural_id, carrier)
     {
         annotate(
+            admission.context(),
             annotations,
             &procedural_id,
             "object_stream_a8_03_32",
             0,
-            format!(
+            format_args!(
                 "support_surface:{surface_object_id:08x}:result_carrier:{carrier_object_id:08x}"
             ),
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact)?;
         admission.reserve_entity(&mut ir.model.procedural_surfaces, "catia_family_emit_procedural_surfaces")?;
         ir.model.procedural_surfaces.push(ProceduralSurface::new(
             procedural_id,
@@ -11442,13 +11442,13 @@ fn attach_standard_circles(
             admitted_radius,
         );
         annotate(
+            admission.context(),
             annotations,
             &id,
             "MainDataStream+SurfacicReps",
             support.pos as u64,
             "curve_support_60_circle",
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact)?;
         annotations
             .derived(&id, "geometry.axis")
             .map_err(cadmpeg_core::CodecError::malformed)?;
@@ -11665,13 +11665,13 @@ fn attach_standard_lines(
             continue;
         };
         annotate(
+            admission.context(),
             annotations,
             &id,
             "MainDataStream+SurfacicReps",
             support.pos as u64,
             "curve_support_60_line",
-            Exactness::ByteExact,
-        );
+            Exactness::ByteExact)?;
         annotations
             .derived(&id, "geometry.origin")
             .map_err(cadmpeg_core::CodecError::malformed)?
