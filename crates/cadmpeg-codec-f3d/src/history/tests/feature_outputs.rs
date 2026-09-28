@@ -224,7 +224,7 @@ fn bound_output_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecE
 
 #[test]
 fn feature_output_bodies_refuse_collection_limit() {
-    let error = bound_output_error(4, u64::MAX);
+    let error = bound_output_error(6, u64::MAX);
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D feature output bodies"));
 }
@@ -250,4 +250,32 @@ fn feature_output_binding_preserves_base_feature_selection() {
         FeatureDefinition::Operation(FeatureOperation::BaseFeature {
             bodies: BodySelection::Resolved { bodies, native }
         }) if bodies.as_slice() == [body.id] && native == "native:scope"));
+}
+
+#[test]
+fn changed_topology_members_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut delta = crate::history_records::AsmHistoricalTopologyDelta::default();
+    delta.bodies.inserted.push(1);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::changed_family_refs(&ctx, &delta, false).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D changed topology members"));
+}
+
+#[test]
+fn affected_history_bodies_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let (_, _, history, _) = output_binding_inputs();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::affected_body_refs(&ctx, &history.states[0],
+        Some(&history.states[1])).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D affected history bodies"));
 }

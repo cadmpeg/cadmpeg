@@ -1202,7 +1202,7 @@ pub(crate) fn bind_feature_outputs(
                 },
                 None => None,
             };
-            let Some(outputs) = affected_body_refs(state, previous) else {
+            let Some(outputs) = affected_body_refs(ctx, state, previous)? else {
                 continue;
             };
             if !state_outputs.contains_key(&state.state_id) {
@@ -9145,25 +9145,41 @@ fn historical_identity_faces(
 }
 
 fn affected_body_refs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     current: &AsmDeltaState,
     previous: Option<&AsmDeltaState>,
-) -> Option<Vec<i64>> {
-    let transition = current.transition.as_ref()?;
+) -> Result<Option<Vec<i64>>, cadmpeg_core::CodecError> {
+    let Some(transition) = current.transition.as_ref() else { return Ok(None) };
     if transition.previous_state_id != previous.map(|state| state.state_id) {
-        return None;
+        return Ok(None);
     }
-    let current_topology = current.topology()?;
-    let current_changes = changed_family_refs(&transition.topology, false);
-    let mut affected = bodies_intersecting(current_topology, &current_changes)?;
+    let Some(current_topology) = current.topology() else { return Ok(None) };
+    let current_changes = changed_family_refs(ctx, &transition.topology, false)?;
+    let Some(mut affected) = bodies_intersecting(current_topology, &current_changes) else {
+        return Ok(None);
+    };
     if let Some(previous) = previous {
-        let previous_topology = previous.topology()?;
-        let deleted = changed_family_refs(&transition.topology, true);
-        affected.extend(bodies_intersecting(previous_topology, &deleted)?);
+        let Some(previous_topology) = previous.topology() else { return Ok(None) };
+        let deleted = changed_family_refs(ctx, &transition.topology, true)?;
+        let Some(previous_affected) = bodies_intersecting(previous_topology, &deleted) else {
+            return Ok(None);
+        };
+        for body in previous_affected {
+            if !affected.contains(&body) {
+                ctx.charge_collection_items(1, "merge F3D affected history bodies")?;
+            }
+            affected.insert(body);
+        }
     }
-    Some(affected.into_iter().collect())
+    Ok(Some(collect_topology_items(ctx, affected,
+        "collect F3D affected history bodies")?))
 }
 
-fn changed_family_refs(delta: &AsmHistoricalTopologyDelta, deleted: bool) -> BTreeSet<i64> {
+fn changed_family_refs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    delta: &AsmHistoricalTopologyDelta,
+    deleted: bool,
+) -> Result<BTreeSet<i64>, cadmpeg_core::CodecError> {
     let families = [
         &delta.bodies,
         &delta.regions,
@@ -9178,21 +9194,21 @@ fn changed_family_refs(delta: &AsmHistoricalTopologyDelta, deleted: bool) -> BTr
         &delta.curves,
         &delta.pcurves,
     ];
-    families
-        .into_iter()
-        .flat_map(|family| {
-            if deleted {
-                family.deleted.clone()
-            } else {
-                family
-                    .inserted
-                    .iter()
-                    .chain(&family.updated)
-                    .copied()
-                    .collect()
+    let mut changed = BTreeSet::new();
+    for family in families {
+        let members = if deleted {
+            family.deleted.iter().chain([].iter())
+        } else {
+            family.inserted.iter().chain(family.updated.iter())
+        };
+        for &member in members {
+            if !changed.contains(&member) {
+                ctx.charge_collection_items(1, "index F3D changed topology members")?;
             }
-        })
-        .collect()
+            changed.insert(member);
+        }
+    }
+    Ok(changed)
 }
 
 fn bodies_intersecting(
