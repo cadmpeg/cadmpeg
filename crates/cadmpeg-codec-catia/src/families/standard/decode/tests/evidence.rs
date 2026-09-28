@@ -1836,6 +1836,117 @@ fn standard_native_edge_face_carrier_and_candidate_limits_refuse() {
 }
 
 #[test]
+fn standard_face_attachment_refuses_each_collection_boundary() {
+    let brep = crate::test_support::test_topology::standard_quad_topology_stream();
+    let bindings = [(
+        SurfaceId::mint("catia:test:surface#face").expect("identity grammar"),
+        true,
+        0,
+    )];
+    let mut refusals = HashSet::new();
+    for limit in 0..256 {
+        let mut ir = CadIr::empty();
+        let mut annotations = AnnotationBuilder::new();
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            crate::families::standard::decode::attach_standard_faces(
+                ctx, &mut ir, &mut annotations, &bindings, &brep, &mut admission,
+            )
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
+            refusals.insert(refusal.operation);
+        }
+    }
+    for operation in [
+        "catia_standard_shell_face_ids",
+        "catia_standard_model_faces",
+        "catia_standard_body_regions",
+        "catia_standard_model_bodies",
+        "catia_standard_region_shells",
+        "catia_standard_model_regions",
+        "catia_standard_model_shells",
+    ] {
+        assert!(refusals.contains(operation), "missing charge for {operation}");
+    }
+    let mut ir = CadIr::empty();
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::attach_standard_faces(
+            ctx, &mut ir, &mut AnnotationBuilder::new(), &bindings, &brep, &mut admission,
+        )
+    })
+    .expect("service context admits the standard face");
+    assert_eq!(ir.model.faces[0].id.as_str(), "catia:standard:face#0");
+    assert_eq!(ir.model.bodies[0].id.as_str(), "catia:standard:body#0");
+    assert_eq!(ir.model.regions[0].id.as_str(), "catia:standard:region#0-0");
+    assert_eq!(ir.model.shells[0].id.as_str(), "catia:standard:shell#0-0");
+    assert_eq!(ir.model.shells[0].faces().len(), 1);
+}
+
+#[test]
+fn standard_face_partition_refuses_each_collection_boundary() {
+    let brep = crate::test_support::test_topology::standard_quad_topology_stream();
+    let bindings = [(
+        SurfaceId::mint("catia:test:surface#partition").expect("identity grammar"),
+        true,
+        0,
+    )];
+    let mut base_ir = CadIr::empty();
+    let mut base_annotations = AnnotationBuilder::new();
+    crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::attach_standard_faces(
+            ctx, &mut base_ir, &mut base_annotations, &bindings, &brep, &mut admission,
+        )
+    })
+    .expect("service context admits the initial face");
+    let mut second = base_ir.model.faces[0].clone();
+    second.id = cadmpeg_ir::ids::FaceId::mint("catia:standard:face#1").expect("identity grammar");
+    crate::assemble::annotate(
+        &mut base_annotations, &second.id, "MainDataStream+SurfacicReps", 0,
+        "surfacic_reps_face_sense", cadmpeg_ir::Exactness::ByteExact,
+    );
+    base_ir.model.faces.push(second);
+    let components = [vec![0], vec![1]];
+    let mut refusals = HashSet::new();
+    for limit in 0..128 {
+        let mut ir = base_ir.clone();
+        let mut annotations = base_annotations.clone();
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+            crate::families::standard::decode::partition_standard_face_components(
+                ctx, &mut ir, &mut annotations, &components, &mut admission,
+            )
+        });
+        if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
+            refusals.insert(refusal.operation);
+        }
+    }
+    for operation in [
+        "catia_standard_partition_region_ids",
+        "catia_standard_partition_body_regions",
+        "catia_standard_partition_face_ids",
+        "catia_standard_partition_region_shells",
+        "catia_standard_partition_regions",
+        "catia_standard_partition_shells",
+    ] {
+        assert!(refusals.contains(operation), "missing charge for {operation}");
+    }
+    let result = crate::test_support::with_service_context(|ctx| {
+        let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
+        crate::families::standard::decode::partition_standard_face_components(
+            ctx, &mut base_ir, &mut base_annotations, &components, &mut admission,
+        )
+    })
+    .expect("service context admits partitioned faces");
+    assert!(result);
+    assert_eq!(base_ir.model.regions.len(), 2);
+    assert_eq!(base_ir.model.regions[1].id.as_str(), "catia:standard:region#0-1");
+    assert_eq!(base_ir.model.shells[1].id.as_str(), "catia:standard:shell#0-1");
+    assert_eq!(base_ir.model.shells[1].faces()[0].as_str(), "catia:standard:face#1");
+}
+
+#[test]
 fn standard_spline_retains_complete_surface_incidence_pair_domain() {
     let mut ir = CadIr::empty();
     for index in 0..138 {

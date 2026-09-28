@@ -358,6 +358,26 @@ impl Shell {
         }
     }
 
+    /// Construct a shell from a nonempty, already allocated face list.
+    pub fn with_faces(
+        id: ShellId,
+        region: RegionId,
+        faces: Vec<FaceId>,
+    ) -> Result<Self, BodySelectionError> {
+        if faces.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
+        Ok(Self {
+            id,
+            region,
+            members: ShellMembers {
+                faces,
+                wire_edges: Vec::new(),
+                free_vertices: Vec::new(),
+            },
+        })
+    }
+
     /// Construct a shell from a nonempty, already allocated free-vertex list.
     pub fn with_free_vertices(
         id: ShellId,
@@ -391,6 +411,18 @@ impl Shell {
     /// Vertices belonging directly to the shell.
     pub fn free_vertices(&self) -> &[VertexId] {
         &self.members.free_vertices
+    }
+
+    /// Replace the already allocated face list while preserving other members.
+    pub fn replace_faces(&mut self, faces: Vec<FaceId>) -> Result<(), BodySelectionError> {
+        if faces.is_empty()
+            && self.members.wire_edges.is_empty()
+            && self.members.free_vertices.is_empty()
+        {
+            return Err(BodySelectionError::Empty);
+        }
+        self.members.faces = faces;
+        Ok(())
     }
 
     /// Edits topology members and preserves the shell when admission fails.
@@ -1791,6 +1823,26 @@ mod tests {
             .unwrap();
         assert!(shell.faces().is_empty());
         assert_eq!(shell.free_vertices(), &[vertex]);
+    }
+
+    #[test]
+    fn shell_face_list_construction_and_replacement_keep_members() {
+        let shell_id = super::ShellId::mint("test:model:shell#faces").unwrap();
+        let region_id = super::RegionId::mint("test:model:region#faces").unwrap();
+        let first = super::FaceId::mint("test:model:face#first").unwrap();
+        let second = super::FaceId::mint("test:model:face#second").unwrap();
+        assert!(super::Shell::with_faces(shell_id.clone(), region_id.clone(), Vec::new()).is_err());
+        let mut shell = super::Shell::with_faces(
+            shell_id,
+            region_id,
+            vec![first.clone(), second.clone()],
+        )
+        .unwrap();
+        assert_eq!(shell.faces(), &[first.clone(), second.clone()]);
+        assert!(shell.replace_faces(Vec::new()).is_err());
+        assert_eq!(shell.faces(), &[first, second.clone()]);
+        shell.replace_faces(vec![second.clone()]).unwrap();
+        assert_eq!(shell.faces(), &[second]);
     }
 
     #[test]

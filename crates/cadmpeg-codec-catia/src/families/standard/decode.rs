@@ -4056,24 +4056,14 @@ fn attach_standard_faces(
     if face_count == 0 || face_count != bindings.len() {
         return Ok(());
     }
-    let body_id = BodyId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "standard", "body"),
-        cadmpeg_ir::identity_key!("0"),
-    );
-    let region_id = RegionId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "standard", "region"),
-        cadmpeg_ir::identity_key!("0-0"),
-    );
-    let shell_id = ShellId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "standard", "shell"),
-        cadmpeg_ir::identity_key!("0-0"),
-    );
-    let mut face_ids = Vec::with_capacity(face_count);
+    let body_id = crate::resource::copy_id(ctx, "catia:standard:body#0", BodyId::mint, "catia_standard_body_id")?;
+    let region_id = crate::resource::copy_id(ctx, "catia:standard:region#0-0", RegionId::mint, "catia_standard_region_id")?;
+    let shell_id = crate::resource::copy_id(ctx, "catia:standard:shell#0-0", ShellId::mint, "catia_standard_shell_id")?;
+    let mut face_ids = Vec::new();
     for (face_index, (surface, forward, offset)) in bindings.iter().enumerate() {
-        let face_id = FaceId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "standard", "face"),
-            face_index,
-        );
+        let face_id = FaceId::mint(crate::resource::format_usize_id(
+            ctx, "catia:standard:face#", face_index, 1, "catia_standard_face_id",
+        )?).map_err(CodecError::malformed)?;
         annotate(
             annotations,
             &face_id,
@@ -4087,12 +4077,14 @@ fn attach_standard_faces(
                 .derived(&face_id, field)
                 .map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        face_ids.push(face_id.clone());
-        admission.charge()?;
+        crate::resource::push(ctx, &mut face_ids,
+            crate::resource::copy_id(ctx, face_id.as_str(), FaceId::mint, "catia_standard_shell_face_id")?,
+            "catia_standard_shell_face_ids")?;
+        admission.reserve_entity(&mut ir.model.faces, "catia_standard_model_faces")?;
         ir.model.faces.push(Face {
             id: face_id,
-            shell: shell_id.clone(),
-            surface: surface.clone(),
+            shell: crate::resource::copy_id(ctx, shell_id.as_str(), ShellId::mint, "catia_standard_face_shell_id")?,
+            surface: crate::resource::copy_id(ctx, surface.as_str(), SurfaceId::mint, "catia_standard_face_surface_id")?,
             sense: if *forward {
                 Sense::Forward
             } else {
@@ -4117,11 +4109,15 @@ fn attach_standard_faces(
         .map_err(cadmpeg_core::CodecError::malformed)?
         .derived(&body_id, "regions")
         .map_err(cadmpeg_core::CodecError::malformed)?;
-    admission.charge()?;
+    let mut body_regions = Vec::new();
+    crate::resource::push(ctx, &mut body_regions,
+        crate::resource::copy_id(ctx, region_id.as_str(), RegionId::mint, "catia_standard_body_region_id")?,
+        "catia_standard_body_regions")?;
+    admission.reserve_entity(&mut ir.model.bodies, "catia_standard_model_bodies")?;
     ir.model.bodies.push(Body {
-        id: body_id.clone(),
+        id: crate::resource::copy_id(ctx, body_id.as_str(), BodyId::mint, "catia_standard_model_body_id")?,
         kind: BodyKind::Sheet,
-        regions: vec![region_id.clone()],
+        regions: body_regions,
         transform: None,
         name: None,
         color: None,
@@ -4140,11 +4136,15 @@ fn attach_standard_faces(
         .map_err(cadmpeg_core::CodecError::malformed)?
         .derived(&region_id, "shells")
         .map_err(cadmpeg_core::CodecError::malformed)?;
-    admission.charge()?;
+    let mut region_shells = Vec::new();
+    crate::resource::push(ctx, &mut region_shells,
+        crate::resource::copy_id(ctx, shell_id.as_str(), ShellId::mint, "catia_standard_region_shell_id")?,
+        "catia_standard_region_shells")?;
+    admission.reserve_entity(&mut ir.model.regions, "catia_standard_model_regions")?;
     ir.model.regions.push(Region {
-        id: region_id.clone(),
+        id: crate::resource::copy_id(ctx, region_id.as_str(), RegionId::mint, "catia_standard_model_region_id")?,
         body: body_id,
-        shells: vec![shell_id.clone()],
+        shells: region_shells,
     });
     annotate(
         annotations,
@@ -4159,15 +4159,16 @@ fn attach_standard_faces(
         .map_err(cadmpeg_core::CodecError::malformed)?
         .derived(&shell_id, "faces")
         .map_err(cadmpeg_core::CodecError::malformed)?;
-    admission.charge()?;
+    admission.reserve_entity(&mut ir.model.shells, "catia_standard_model_shells")?;
     ir.model.shells.push(
-        Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new())
+        Shell::with_faces(shell_id, region_id, face_ids)
             .map_err(cadmpeg_core::CodecError::malformed)?,
     );
     Ok(())
 }
 
 fn partition_standard_face_components(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     components: &[Vec<usize>],
@@ -4179,46 +4180,49 @@ fn partition_standard_face_components(
     {
         return Ok(false);
     }
-    let body_id = BodyId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "standard", "body"),
-        cadmpeg_ir::identity_key!("0"),
-    );
+    let body_id = crate::resource::copy_id(ctx, "catia:standard:body#0", BodyId::mint, "catia_standard_partition_body_id")?;
     let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == body_id) else {
         return Ok(false);
     };
-    let region_ids: Vec<RegionId> = (0..components.len())
-        .map(|component| {
-            RegionId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "standard", "region"),
-                cadmpeg_ir::identity_key!("0-").then(component),
-            )
-        })
-        .collect();
-    body.regions.clone_from(&region_ids);
+    let mut region_ids = Vec::new();
+    for component in 0..components.len() {
+        let id = RegionId::mint(crate::resource::format_usize_id(
+            ctx, "catia:standard:region#0-", component, 1, "catia_standard_partition_region_id",
+        )?).map_err(CodecError::malformed)?;
+        crate::resource::push(ctx, &mut region_ids, id, "catia_standard_partition_region_ids")?;
+    }
+    let mut body_regions = Vec::new();
+    for id in &region_ids {
+        crate::resource::push(ctx, &mut body_regions,
+            crate::resource::copy_id(ctx, id.as_str(), RegionId::mint, "catia_standard_partition_body_region_id")?,
+            "catia_standard_partition_body_regions")?;
+    }
+    body.regions = body_regions;
     if annotations.derived(&body_id, "regions").is_err() {
         return Ok(false);
     }
 
     for (component, faces) in components.iter().enumerate() {
-        let region_id = region_ids[component].clone();
-        let shell_id = ShellId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "standard", "shell"),
-            cadmpeg_ir::identity_key!("0-").then(component),
-        );
-        let face_ids: Vec<FaceId> = faces
-            .iter()
-            .map(|face| {
-                FaceId::compose(
-                    &cadmpeg_ir::identity_namespace!("catia", "standard", "face"),
-                    face,
-                )
-            })
-            .collect();
+        let region_id = crate::resource::copy_id(ctx, region_ids[component].as_str(), RegionId::mint, "catia_standard_partition_region_copy")?;
+        let shell_id = ShellId::mint(crate::resource::format_usize_id(
+            ctx, "catia:standard:shell#0-", component, 1, "catia_standard_partition_shell_id",
+        )?).map_err(CodecError::malformed)?;
+        let mut face_ids = Vec::new();
+        for &face in faces {
+            let id = FaceId::mint(crate::resource::format_usize_id(
+                ctx, "catia:standard:face#", face, 1, "catia_standard_partition_face_id",
+            )?).map_err(CodecError::malformed)?;
+            crate::resource::push(ctx, &mut face_ids, id, "catia_standard_partition_face_ids")?;
+        }
+        let mut region_shells = Vec::new();
+        crate::resource::push(ctx, &mut region_shells,
+            crate::resource::copy_id(ctx, shell_id.as_str(), ShellId::mint, "catia_standard_partition_region_shell_id")?,
+            "catia_standard_partition_region_shells")?;
         for &face in faces {
             let Some(face) = ir.model.faces.get_mut(face) else {
                 return Ok(false);
             };
-            face.shell = shell_id.clone();
+            face.shell = crate::resource::copy_id(ctx, shell_id.as_str(), ShellId::mint, "catia_standard_partition_face_shell_id")?;
             if annotations.derived(&face.id, "shell").is_err() {
                 return Ok(false);
             }
@@ -4232,7 +4236,7 @@ fn partition_standard_face_components(
             else {
                 return Ok(false);
             };
-            region.shells = vec![shell_id.clone()];
+            region.shells = region_shells;
             let Some(shell) = ir
                 .model
                 .shells
@@ -4241,12 +4245,7 @@ fn partition_standard_face_components(
             else {
                 return Ok(false);
             };
-            if {
-                let members = face_ids;
-                shell.edit_topology(|faces, _, _| *faces = members)
-            }
-            .is_err()
-            {
+            if shell.replace_faces(face_ids).is_err() {
                 return Ok(false);
             }
             continue;
@@ -4271,11 +4270,11 @@ fn partition_standard_face_components(
         {
             return Ok(false);
         }
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.regions, "catia_standard_partition_regions")?;
         ir.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
-            shells: vec![shell_id.clone()],
+            id: crate::resource::copy_id(ctx, region_id.as_str(), RegionId::mint, "catia_standard_partition_model_region_id")?,
+            body: crate::resource::copy_id(ctx, body_id.as_str(), BodyId::mint, "catia_standard_partition_region_body_id")?,
+            shells: region_shells,
         });
         if annotations
             .derived(&shell_id, "region")
@@ -4284,9 +4283,9 @@ fn partition_standard_face_components(
         {
             return Ok(false);
         }
-        admission.charge()?;
+        admission.reserve_entity(&mut ir.model.shells, "catia_standard_partition_shells")?;
         ir.model.shells.push(
-            match Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new()) {
+            match Shell::with_faces(shell_id, region_id, face_ids) {
                 Ok(shell) => shell,
                 Err(_) => {
                     return Ok(false);
@@ -6507,6 +6506,7 @@ fn validate_standard_topology(
         ir.model.bodies[arena_index].kind = kind;
     }
     if !partition_standard_face_components(
+        ctx,
         ir,
         annotations,
         &topology.face_components(ctx)?,
