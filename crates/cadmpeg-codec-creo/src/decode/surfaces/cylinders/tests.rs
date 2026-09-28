@@ -37,6 +37,50 @@ fn circular_sweep_feature_id_nodes_refuse_collection_limit() {
             && resource.operation == "creo circular sweep feature ID nodes"));
 }
 
+#[test]
+fn hole_cylinder_feature_id_nodes_refuse_collection_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    let row = crate::feature::rows::FeatureRow {
+        feature_id: 40,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Hole),
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("row body"),
+        body_offset: 0,
+        offset: 0,
+    };
+    scan.features.rows.extend([row.clone(), row]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::transfer_hole_cylinders(
+        &ctx,
+        &scan,
+        &mut cadmpeg_ir::document::CadIr::empty(),
+        &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+    )
+    .expect_err("feature ID node exceeds limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo hole cylinder feature ID nodes"));
+
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    assert_eq!(
+        super::transfer_hole_cylinders(
+            &ctx,
+            &scan,
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        ).expect("duplicate ID reuses its node"),
+        0
+    );
+}
+
 fn axial_interval_candidate(origin: [f64; 3]) -> crate::surface::PositionalCylinderFrame {
     crate::surface::PositionalCylinderFrame::new(
         origin,
