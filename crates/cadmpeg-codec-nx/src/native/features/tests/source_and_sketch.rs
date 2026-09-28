@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod data_block_object_frames;
+
 use crate::native::features::canonical_feature_history_links;
 use crate::native::features::data_block_object_frame_id;
 use crate::native::features::feature_block_constructions;
@@ -1578,8 +1580,12 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
 
 #[test]
 fn data_block_object_frame_ids_include_the_store_qualifier() {
-    let first = data_block_object_frame_id("nx:om-data-blocks-2:block#17", 0);
-    let second = data_block_object_frame_id("nx:om-data-blocks-3:block#17", 0);
+    let first = crate::test_support::with_decode_context(|ctx| {
+        data_block_object_frame_id(ctx, "nx:om-data-blocks-2:block#17", 0)
+    }).unwrap();
+    let second = crate::test_support::with_decode_context(|ctx| {
+        data_block_object_frame_id(ctx, "nx:om-data-blocks-3:block#17", 0)
+    }).unwrap();
     assert_eq!(first, "nx:om-data-block-object-frames-2:block-frame#17-0");
     assert_eq!(second, "nx:om-data-block-object-frames-3:block-frame#17-0");
     assert_ne!(first, second);
