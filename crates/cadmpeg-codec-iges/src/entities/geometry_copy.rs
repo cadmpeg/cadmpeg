@@ -4,9 +4,10 @@
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::NonEmptyMembers;
-use cadmpeg_ir::geometry::nurbs::{KnotVector, NurbsCurve, NurbsPoles3};
-use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
-use cadmpeg_ir::geometry::{CompositeCurveSegments, PlacedCurve, SolvedCurveGeometry};
+use cadmpeg_ir::geometry::nurbs::{KnotVector, NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis};
+use cadmpeg_ir::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples, PolylineVertex};
+use cadmpeg_ir::geometry::{CompositeCurveSegments, PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::scalar::PositiveReal;
 
 use crate::decode_resource::{clone_optional_identity, reserve_optional_vec};
 
@@ -30,6 +31,92 @@ fn copy_nurbs_curve(
         }
     };
     NurbsCurve::new(curve.degree(), knots, poles, curve.periodic()).map_err(CodecError::malformed)
+}
+
+fn copy_nurbs_surface(
+    surface: &NurbsSurface,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<NurbsSurface, CodecError> {
+    let mut u_knots = reserve_optional_vec(ctx, surface.u_knots().len(), "iges copied support u knots")?;
+    u_knots.extend_from_slice(surface.u_knots().as_slice());
+    let mut v_knots = reserve_optional_vec(ctx, surface.v_knots().len(), "iges copied support v knots")?;
+    v_knots.extend_from_slice(surface.v_knots().as_slice());
+    let u = NurbsSurfaceAxis::new(surface.u_degree(), KnotVector::new(u_knots).map_err(CodecError::malformed)?, surface.u_periodic());
+    let v = NurbsSurfaceAxis::new(surface.v_degree(), KnotVector::new(v_knots).map_err(CodecError::malformed)?, surface.v_periodic());
+    let poles = match surface.pole_grid() {
+        NurbsPoleGrid::Polynomial { rows } => {
+            let mut copied = reserve_optional_vec(ctx, rows.len(), "iges copied support pole rows")?;
+            for row in rows {
+                let mut points = reserve_optional_vec(ctx, row.len(), "iges copied support pole row")?;
+                points.extend_from_slice(row);
+                copied.push(points);
+            }
+            NurbsPoleGrid::Polynomial { rows: copied }
+        }
+        NurbsPoleGrid::Rational { rows } => {
+            let mut copied = reserve_optional_vec(ctx, rows.len(), "iges copied support weighted rows")?;
+            for row in rows {
+                let mut points = reserve_optional_vec(ctx, row.len(), "iges copied support weighted row")?;
+                points.extend_from_slice(row);
+                copied.push(points);
+            }
+            NurbsPoleGrid::Rational { rows: copied }
+        }
+    };
+    NurbsSurface::new(u, v, poles, surface.normal_reversed()).map_err(CodecError::malformed)
+}
+
+fn copy_polygonal_surface(
+    surface: &PolygonalSurface,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<PolygonalSurface, CodecError> {
+    let mut vertices = reserve_optional_vec(ctx, surface.vertices().len(), "iges copied support polygon vertices")?;
+    vertices.extend_from_slice(surface.vertices());
+    let mut triangles = reserve_optional_vec(ctx, surface.triangles().len(), "iges copied support polygon triangles")?;
+    triangles.extend_from_slice(surface.triangles());
+    PolygonalSurface::from_admitted_scaled_deflection(vertices, triangles, surface.chordal_deflection(), PositiveReal::ONE)
+        .map_err(CodecError::malformed)
+}
+
+pub(super) fn copy_solved_surface(
+    geometry: &SolvedSurfaceGeometry,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<SolvedSurfaceGeometry, CodecError> {
+    Ok(match geometry {
+        SolvedSurfaceGeometry::Plane(value) => SolvedSurfaceGeometry::Plane(*value),
+        SolvedSurfaceGeometry::Cylinder(value) => SolvedSurfaceGeometry::Cylinder(*value),
+        SolvedSurfaceGeometry::Cone(value) => SolvedSurfaceGeometry::Cone(*value),
+        SolvedSurfaceGeometry::Sphere(value) => SolvedSurfaceGeometry::Sphere(*value),
+        SolvedSurfaceGeometry::Torus(value) => SolvedSurfaceGeometry::Torus(*value),
+        SolvedSurfaceGeometry::Nurbs(value) => SolvedSurfaceGeometry::Nurbs(copy_nurbs_surface(value, ctx)?),
+        SolvedSurfaceGeometry::Polygonal(value) => SolvedSurfaceGeometry::Polygonal(copy_polygonal_surface(value, ctx)?),
+        SolvedSurfaceGeometry::Transformed(value) => {
+            let _nested = ctx.map(|ctx| ctx.enter_nested("iges_support_surface_copy")).transpose()?;
+            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "iges copied support placement box")?;
+            }
+            SolvedSurfaceGeometry::Transformed(
+                PlacedSurface::try_new(Box::new(copy_solved_surface(value.basis(), ctx)?), *value.transform())
+                    .map_err(CodecError::malformed)?,
+            )
+        }
+        SolvedSurfaceGeometry::Unknown { record } => SolvedSurfaceGeometry::Unknown {
+            record: record.as_ref().map(|id| clone_optional_identity(ctx, id, "iges copied support unknown ID")).transpose()?,
+        },
+    })
+}
+
+pub(super) fn copy_surface_geometry(
+    geometry: &SurfaceGeometry,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<SurfaceGeometry, CodecError> {
+    Ok(match geometry {
+        SurfaceGeometry::Solved(solved) => SurfaceGeometry::Solved(copy_solved_surface(solved, ctx)?),
+        SurfaceGeometry::Procedural { construction, cache } => SurfaceGeometry::Procedural {
+            construction: clone_optional_identity(ctx, construction, "iges copied support construction ID")?,
+            cache: cache.as_ref().map(|solved| copy_solved_surface(solved, ctx)).transpose()?,
+        },
+    })
 }
 
 fn copy_polyline(
@@ -167,5 +254,32 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(copy_solved_curve(&geometry, Some(&ctx)), Err(CodecError::ResourceLimit(limit)) if limit.operation == "iges solved curve copied composite ID"));
+    }
+
+    #[test]
+    fn polygonal_support_copy_admits_vertices_and_triangles() {
+        let polygon = PolygonalSurface::new(
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            vec![[0, 1, 2]],
+            0.0,
+        ).unwrap();
+        for (cap, operation) in [
+            (0, "iges copied support polygon vertices"),
+            (3, "iges copied support polygon triangles"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            assert!(matches!(copy_polygonal_surface(&polygon, Some(&ctx)), Err(CodecError::ResourceLimit(limit)) if limit.operation == operation));
+        }
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert_eq!(copy_polygonal_surface(&polygon, Some(&ctx)).unwrap(), polygon);
     }
 }
