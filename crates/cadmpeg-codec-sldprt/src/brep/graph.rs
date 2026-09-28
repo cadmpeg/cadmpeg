@@ -1311,7 +1311,7 @@ pub(crate) fn decode_bodies(
             append_entity_facts(ctx, &mut facts, scanned_facts)?;
         }
     }
-    decode_graph(ctx, &carriers, &tables, facts, &typed_facts, stream)
+    decode_graph(ctx, &mut carriers, &tables, facts, &typed_facts, stream)
 }
 
 fn decode_body(
@@ -1320,7 +1320,7 @@ fn decode_body(
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
     admit_brep_scan_candidates(ctx, body)?;
-    let carriers = scan_carriers(ctx, body)?;
+    let mut carriers = scan_carriers(ctx, body)?;
     let curve_attrs = carriers.curve_attrs(ctx)?;
     let typed_facts = typed::scan(body, ctx)?;
     let typed_face_attrs = typed_facts.valid_ownership_face_attrs(ctx)?;
@@ -1329,7 +1329,7 @@ fn decode_body(
     let t =
         topology::scan_with_curve_attrs_excluding(ctx, body, &curve_attrs, &typed_face_offsets)?;
     let entity_facts = entity::scan_metadata(ctx, body, false)?;
-    decode_graph(ctx, &carriers, &t, entity_facts, &typed_facts, stream)
+    decode_graph(ctx, &mut carriers, &t, entity_facts, &typed_facts, stream)
 }
 
 fn admit_brep_scan_candidates(
@@ -1600,9 +1600,20 @@ fn sorted_topology_sequences(
     Ok(sequences)
 }
 
+fn copy_graph_stream_name(
+    ctx: &DecodeContext<'_>,
+    stream: &cadmpeg_ir::StreamName,
+) -> Result<cadmpeg_ir::StreamName, cadmpeg_core::CodecError> {
+    let mut name = String::new();
+    ctx.reserve_retained_string(&mut name, stream.as_str().len(), "copy Parasolid graph stream name")?;
+    name.push_str(stream.as_str());
+    cadmpeg_ir::StreamName::try_from(name)
+        .map_err(|_| cadmpeg_core::CodecError::malformed("empty Parasolid graph stream name"))
+}
+
 fn decode_graph(
     ctx: &DecodeContext<'_>,
-    carriers: &CarrierIndex,
+    carriers: &mut CarrierIndex,
     t: &topology::Tables,
     entity_facts: entity::Facts,
     typed_facts: &typed::Facts,
@@ -1629,20 +1640,22 @@ fn decode_graph(
         "collect Parasolid vertex use sequences",
     )?;
 
+    let mut owned_face_colors = Vec::new();
+    for value in face_colors {
+        ctx.reserve_collection_vec(&mut owned_face_colors, 1, "collect Parasolid face colors")?;
+        owned_face_colors.push(OwnedFaceColor {
+            value,
+            source_stream: copy_graph_stream_name(ctx, stream)?,
+            site_key: None,
+        });
+    }
     let mut out = Brep {
-        face_colors: face_colors
-            .into_iter()
-            .map(|value| OwnedFaceColor {
-                value,
-                source_stream: stream.clone(),
-                site_key: None,
-            })
-            .collect(),
+        face_colors: owned_face_colors,
         face_bridge_sequences,
         edge_use_sequences,
         vertex_use_sequences,
         body_modifiers,
-        losses: carriers.lane_refusals.clone(),
+        losses: std::mem::take(&mut carriers.lane_refusals),
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
             unresolved_face_colors: entity_facts.unresolved_face_colors + conflicting_face_colors,
@@ -1651,7 +1664,7 @@ fn decode_graph(
         ..Brep::default()
     };
     let mut annotations = AnnotationBuilder::new();
-    let source_stream = StreamHandle::new(stream.clone());
+    let source_stream = StreamHandle::new(copy_graph_stream_name(ctx, stream)?);
     if t.bridges().is_empty() {
         return Ok(out);
     }
@@ -7484,7 +7497,7 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
         tables.insert_bridge(&ctx, bridge(11, 200, 10)).expect("bridge");
         let decoded = super::decode_graph(
             &ctx,
-            &crate::brep::index::CarrierIndex::default(),
+            &mut crate::brep::index::CarrierIndex::default(),
             &tables,
             super::entity::Facts {
                 entity_count: 1,
