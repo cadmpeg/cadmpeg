@@ -7390,13 +7390,12 @@ fn consolidated_cones(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<Catia
 }
 
 fn consolidated_cylinders(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<CatiaConsolidatedCylinder> {
-    crate::families::b2::records::b2_cylinders_from_records(bytes, records)
-        .into_iter()
-        .enumerate()
-        .map(|(index, cylinder)| {
+) -> Result<Vec<CatiaConsolidatedCylinder>, CodecError> {
+    let mut cylinders = Vec::new();
+    for (index, cylinder) in crate::families::b2::records::b2_cylinders_from_records(bytes, records).enumerate() {
             let payload = match cylinder.layout {
                 crate::families::b2::records::B2CylinderLayout::RangeOrigin { stored_vector } => {
                     CatiaConsolidatedCylinderPayload::RangeOrigin {
@@ -7426,54 +7425,104 @@ fn consolidated_cylinders(
                     }
                 }
             };
-            CatiaConsolidatedCylinder {
-                id: format!("catia:consolidated:cylinder#{index}"),
+            let value = CatiaConsolidatedCylinder {
+                id: crate::resource::format_usize_id(ctx, "catia:consolidated:cylinder#", index, 0, "catia_native_cylinder_id")?,
                 byte_offset: cylinder.pos as u64,
                 origin: cylinder.origin.coordinates().into(),
                 radius: cylinder.radius,
                 u_range: cylinder.u_range,
                 v_range: cylinder.v_range,
                 payload,
-            }
-        })
-        .collect()
+            };
+            crate::resource::push(ctx, &mut cylinders, value, "catia_native_cylinders")?;
+    }
+    Ok(cylinders)
 }
 
 fn consolidated_cylinder_groups(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &[ConsolidatedRecord],
-) -> (
+) -> Result<(
     Vec<CatiaConsolidatedGroup>,
     Vec<CatiaConsolidatedEmbeddedCylinder>,
-) {
+), CodecError> {
     let mut groups = Vec::new();
     let mut cylinders = Vec::new();
-    for (group, embedded) in
-        crate::families::b2::records::b2_cylinder_groups_from_records(bytes, records)
-    {
+    let mut embedded = crate::families::b2::records::b2_embedded_cylinders_from_records(bytes, records).peekable();
+    for group in crate::families::b2::records::b2_groups_from_records(bytes, records) {
+        let group_pos = group.pos;
         let group = CatiaConsolidatedGroup {
-            id: format!("catia:consolidated:group#{}", groups.len()),
+            id: crate::resource::format_usize_id(ctx, "catia:consolidated:group#", groups.len(), 0, "catia_native_group_id")?,
             byte_offset: group.pos as u64,
             group_type: group.group_type,
         };
-        for embedded in embedded {
-            cylinders.push(CatiaConsolidatedEmbeddedCylinder {
-                id: format!("catia:consolidated:embedded-cylinder#{}", cylinders.len()),
-                byte_offset: embedded.pos as u64,
-                group: group.id.clone(),
-                object_id: embedded.object_id,
-                origin: embedded.cylinder.origin.coordinates().into(),
-                radius: embedded.cylinder.radius,
-                u_range: embedded.cylinder.u_range,
-                v_range: embedded.cylinder.v_range,
-                frame_token: embedded.cylinder.frame_token(),
-                axis: embedded.cylinder.frame.axis(),
-                reference_direction: embedded.cylinder.frame.reference(),
-            });
+        while embedded.peek().is_some_and(|entry| entry.wrapper_pos == group_pos) {
+            let Some(entry) = embedded.next() else { break };
+            let value = CatiaConsolidatedEmbeddedCylinder {
+                id: crate::resource::format_usize_id(ctx, "catia:consolidated:embedded-cylinder#", cylinders.len(), 0, "catia_native_embedded_cylinder_id")?,
+                byte_offset: entry.pos as u64,
+                group: crate::resource::copy_retained_str(ctx, &group.id, "catia_native_embedded_cylinder_group")?,
+                object_id: entry.object_id,
+                origin: entry.cylinder.origin.coordinates().into(),
+                radius: entry.cylinder.radius,
+                u_range: entry.cylinder.u_range,
+                v_range: entry.cylinder.v_range,
+                frame_token: entry.cylinder.frame_token(),
+                axis: entry.cylinder.frame.axis(),
+                reference_direction: entry.cylinder.frame.reference(),
+            };
+            crate::resource::push(ctx, &mut cylinders, value, "catia_native_embedded_cylinders")?;
         }
-        groups.push(group);
+        crate::resource::push(ctx, &mut groups, group, "catia_native_cylinder_groups")?;
     }
-    (groups, cylinders)
+    Ok((groups, cylinders))
+}
+
+#[cfg(test)]
+mod consolidated_cylinder_limit_tests {
+    use super::{consolidated_cylinder_groups, consolidated_cylinders};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn native_standalone_cylinder_refuses_uncharged_output_and_id() {
+        let bytes = crate::test_support::test_b2::b2_cylinder_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            consolidated_cylinders(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_cylinders"));
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            consolidated_cylinders(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_cylinder_id"));
+        let cylinders = crate::test_support::with_service_context(|ctx| {
+            consolidated_cylinders(ctx, &bytes, &records)
+        }).expect("service decode");
+        assert_eq!(cylinders.len(), 1);
+    }
+
+    #[test]
+    fn native_embedded_cylinder_and_group_refuse_collection_limit() {
+        let bytes = crate::test_support::test_b2::b2_embedded_cylinder_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            consolidated_cylinder_groups(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_embedded_cylinders"));
+        let limited = crate::test_support::with_collection_limit(1, |ctx| {
+            consolidated_cylinder_groups(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(CodecError::ResourceLimit(error))
+            if error.operation == "catia_native_cylinder_groups"));
+        let (groups, cylinders) = crate::test_support::with_service_context(|ctx| {
+            consolidated_cylinder_groups(ctx, &bytes, &records)
+        }).expect("service decode");
+        assert_eq!((groups.len(), cylinders.len()), (1, 1));
+    }
 }
 
 fn consolidated_parameter_points(
@@ -9137,9 +9186,9 @@ impl CatiaNative {
         let consolidated_cone_faces =
             consolidated_cone_faces(bytes, consolidated_records, &consolidated_parameter_points);
         let consolidated_cones = consolidated_cones(bytes, consolidated_records);
-        let consolidated_cylinders = consolidated_cylinders(bytes, consolidated_records);
+        let consolidated_cylinders = consolidated_cylinders(ctx, bytes, consolidated_records)?;
         let (consolidated_groups, consolidated_embedded_cylinders) =
-            consolidated_cylinder_groups(bytes, consolidated_records);
+            consolidated_cylinder_groups(ctx, bytes, consolidated_records)?;
         let consolidated_line_profiles = consolidated_line_profiles(bytes, consolidated_records);
         let mut consolidated_owner_packets =
             consolidated_owner_packets(ctx, bytes, consolidated_records)?;

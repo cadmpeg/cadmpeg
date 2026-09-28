@@ -2329,7 +2329,7 @@ pub(crate) struct B2Group {
 #[derive(Debug, Clone)]
 pub(crate) struct B2EmbeddedCylinder {
     /// Group-opener byte offset.
-    pub(in crate::families) wrapper_pos: usize,
+    pub(crate) wrapper_pos: usize,
     /// Embedded frame byte offset, including its varying pre-byte.
     pub(crate) pos: usize,
     /// Compact embedded object identifier.
@@ -2343,43 +2343,26 @@ pub(crate) struct B2EmbeddedCylinder {
 #[cfg(test)]
 fn b2_embedded_cylinders(data: &[u8]) -> Vec<B2EmbeddedCylinder> {
     let records = consolidated_records(data);
-    b2_embedded_cylinders_from_records(data, &records)
+    b2_embedded_cylinders_from_records(data, &records).collect()
 }
 
-pub(in crate::families) fn b2_embedded_cylinders_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<B2EmbeddedCylinder> {
-    b2_cylinder_groups_from_records(data, records)
-        .into_iter()
-        .flat_map(|(_, cylinders)| cylinders)
-        .collect()
-}
-
-pub(crate) fn b2_cylinder_groups_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<(B2Group, Vec<B2EmbeddedCylinder>)> {
-    let groups = b2_groups_from_records(data, records);
-    let mut grouped = Vec::with_capacity(groups.len());
-    for (index, group) in groups.iter().enumerate() {
-        let mut out = Vec::new();
-        if group.group_type != 3 {
-            grouped.push((group.clone(), out));
-            continue;
-        }
-        let wrapper_pos = group.pos;
-        let end = groups.get(index + 1).map_or(data.len(), |next| next.pos);
-        let mut search = wrapper_pos + 3;
-        while search + 3 <= end {
-            let Some(relative) = data[search..end]
+pub(crate) fn b2_embedded_cylinders_from_records<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2EmbeddedCylinder> + 'a {
+    let mut groups = b2_groups_from_records(data, records).peekable();
+    let mut active = None::<(usize, usize, usize)>;
+    std::iter::from_fn(move || loop {
+        if let Some((wrapper_pos, search, end)) = active.as_mut() {
+            while *search + 3 <= *end {
+            let Some(relative) = data[*search..*end]
                 .windows(3)
                 .position(|bytes| bytes == [0x03, 0x28, 0x5a])
             else {
                 break;
             };
-            let marker = search + relative;
-            search = marker + 3;
+            let marker = *search + relative;
+            *search = marker + 3;
             let mut payload = marker + 3;
             let Some(object_id) = compact_int(data, &mut payload) else {
                 continue;
@@ -2387,11 +2370,12 @@ pub(crate) fn b2_cylinder_groups_from_records(
             let Some(payload_end) = payload.checked_add(90) else {
                 continue;
             };
-            if payload_end > end {
+            if payload_end > *end {
                 continue;
             }
-            let mut standalone = vec![0xb2, 0x03, 0x28, 0x5a, 0];
-            standalone.extend_from_slice(&data[payload..payload_end]);
+            let mut standalone = [0u8; 95];
+            standalone[..5].copy_from_slice(&[0xb2, 0x03, 0x28, 0x5a, 0]);
+            standalone[5..].copy_from_slice(&data[payload..payload_end]);
             let Some(mut cylinder) = parse_b2_cylinder(
                 &standalone,
                 ConsolidatedFrame {
@@ -2404,16 +2388,20 @@ pub(crate) fn b2_cylinder_groups_from_records(
                 continue;
             };
             cylinder.pos = marker - 1;
-            out.push(B2EmbeddedCylinder {
-                wrapper_pos,
+            return Some(B2EmbeddedCylinder {
+                wrapper_pos: *wrapper_pos,
                 pos: marker - 1,
                 object_id,
                 cylinder,
             });
         }
-        grouped.push((group.clone(), out));
-    }
-    grouped
+            active = None;
+        }
+        let group = groups.next()?;
+        if group.group_type == 3 {
+            active = Some((group.pos, group.pos + 3, groups.peek().map_or(data.len(), |next| next.pos)));
+        }
+    })
 }
 
 fn b2_construction_offset_supports_from_records(
@@ -2892,13 +2880,15 @@ fn b2_group_separators(data: &[u8]) -> Vec<B2GroupSeparator> {
 #[cfg(test)]
 fn b2_groups(data: &[u8]) -> Vec<B2Group> {
     let records = consolidated_records(data);
-    b2_groups_from_records(data, &records)
+    b2_groups_from_records(data, &records).collect()
 }
 
-fn b2_groups_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2Group> {
+pub(crate) fn b2_groups_from_records<'a>(
+    data: &'a [u8], records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2Group> + 'a {
     family_frames_from_records(records, ConsolidatedFamily::B, 0x60)
         .into_iter()
-        .filter_map(|frame| {
+        .filter_map(move |frame| {
             let mut at = frame.payload;
             if compact_int(data, &mut at)? != 32 {
                 return None;
@@ -2909,7 +2899,6 @@ fn b2_groups_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2
                 group_type,
             })
         })
-        .collect()
 }
 
 /// Return the neutral carrier of a decoded B2 slant-coordinate cone chart.
@@ -2948,22 +2937,23 @@ pub(in crate::families) fn b2_torus_geometry(torus: &B2Torus) -> SurfaceGeometry
 #[cfg(test)]
 pub(in crate::families) fn b2_cylinders(data: &[u8]) -> Vec<B2Cylinder> {
     let records = consolidated_records(data);
-    b2_cylinders_from_records(data, &records)
+    b2_cylinders_from_records(data, &records).collect()
 }
 
-pub(crate) fn b2_cylinders_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<B2Cylinder> {
-    let embedded_offsets = b2_embedded_cylinders_from_records(data, records)
-        .into_iter()
-        .map(|embedded| embedded.pos)
-        .collect::<HashSet<_>>();
+pub(crate) fn b2_cylinders_from_records<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2Cylinder> + 'a {
+    let mut embedded = b2_embedded_cylinders_from_records(data, records).peekable();
     family_frames_from_records(records, ConsolidatedFamily::B, 0x28)
         .into_iter()
-        .filter_map(|frame| parse_b2_cylinder(data, frame))
-        .filter(|cylinder| !embedded_offsets.contains(&cylinder.pos))
-        .collect()
+        .filter_map(move |frame| parse_b2_cylinder(data, frame))
+        .filter(move |cylinder| {
+            while embedded.peek().is_some_and(|entry| entry.pos < cylinder.pos) {
+                embedded.next();
+            }
+            embedded.peek().is_none_or(|entry| entry.pos != cylinder.pos)
+        })
 }
 
 fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder> {
