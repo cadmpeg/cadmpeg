@@ -6,11 +6,14 @@ use crate::families::b5::graph::{
     bind_edge_vertices, bind_native_vertices, canonical_point, canonical_surface_id,
     counted_references, distance_squared, edge_support_pcurve_references, evaluate_pcurve,
     face_surface_references, incidence_vertex_coordinates, lift_parameter_incidence,
-    loop_chain_closes, loop_metadata, loop_references, loop_references_and_metadata,
+    loop_chain_closes, loop_metadata as parse_loop_metadata, loop_references,
+    loop_references_and_metadata,
     merge_pcurve_candidate, merge_surface_candidate, parameter_incidence, parse_face,
-    parse_face_record, parse_loop, parse_pcurve, pcurve_endpoints, pcurve_nurbs_knots,
+    parse_face_record, parse_loop, parse_loop_record, parse_pcurve, pcurve_endpoints,
+    pcurve_nurbs_knots,
     pcurve_parameter_domain, point_index, resolve_surface_aliases, resolve_targeted_surface,
     sphere_great_circle_point, surface_alias_carrier, typed_face_records_from_records,
+    typed_loop_records_from_records,
     B5FaceRecord, B5IncidenceLane,
     B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension, B5OpaquePcurve,
     B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization, B5Record,
@@ -20,6 +23,12 @@ use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec<[i16; 3]>)> {
+    crate::test_support::with_service_context(|ctx| {
+        parse_loop_metadata(ctx, bytes, edge_count).expect("service budget")
+    })
+}
 
 #[test]
 fn loop_metadata_accepts_exact_base_and_extended_forms() {
@@ -88,8 +97,9 @@ fn loop_references_require_exact_matching_edge_count_and_metadata() {
             0x01,
         ],
     };
-    let (references, _, edge_controls) =
-        loop_references_and_metadata(&record).expect("exact loop payload");
+    let (references, _, edge_controls) = crate::test_support::with_service_context(|ctx| {
+        loop_references_and_metadata(ctx, &record).expect("service budget")
+    }).expect("exact loop payload");
     assert_eq!(references, [9, 10, 11]);
     assert_eq!(edge_controls, [[1, -1, 1]]);
 
@@ -100,6 +110,40 @@ fn loop_references_require_exact_matching_edge_count_and_metadata() {
     let mut residual = record;
     residual.payload.push(0);
     assert!(loop_references(&residual).is_none());
+}
+
+#[test]
+fn loop_record_nested_collections_refuse_each_limit() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x62,
+        object_id: 400,
+        payload: vec![
+            0x83, 0x89, 0x8a, 0x8b, 0x81, 0x05, 0x05, 0x03,
+            0x01, 0x00, 0xff, 0xff, 0x01, 0x00, 0x01,
+        ],
+    };
+    for (limit, operation) in [
+        (2, "catia_b5_loop_references"),
+        (3, "catia_b5_loop_edge_controls"),
+        (4, "catia_b5_loop_members"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            parse_loop_record(ctx, &record)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation));
+    }
+    let limited_index = crate::test_support::with_collection_limit(5, |ctx| {
+        typed_loop_records_from_records(ctx, std::slice::from_ref(&record))
+    });
+    assert!(matches!(limited_index, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_typed_loop_records"));
+    let parsed = crate::test_support::with_service_context(|ctx| {
+        typed_loop_records_from_records(ctx, &[record])
+    }).expect("service budget");
+    assert_eq!(parsed.get(&400).map(|loop_| loop_.members.len()), Some(1));
 }
 
 #[test]

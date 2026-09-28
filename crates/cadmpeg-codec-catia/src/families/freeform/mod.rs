@@ -427,8 +427,12 @@ pub(super) fn try_decode_freeform_surfaces(
         let resolved_loop_metadata_counts = b5_graph
             .as_ref()
             .map(|graph| loop_metadata_counts(graph.loops.values()));
-        let typed_loop_records =
-            crate::families::b5::graph::typed_loop_records_from_records(&census_object_records);
+        let typed_loop_records = match crate::families::b5::graph::typed_loop_records_from_records(
+            ctx, &census_object_records,
+        ) {
+            Ok(records) => records,
+            Err(error) => return Some(Err(error)),
+        };
         let typed_loop_metadata_counts = (!typed_loop_records.is_empty()).then(|| {
             (
                 loop_metadata_counts(typed_loop_records.values()),

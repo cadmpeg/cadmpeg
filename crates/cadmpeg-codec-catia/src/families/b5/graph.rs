@@ -1320,7 +1320,7 @@ fn parse_from_records_with_class21(
         })
         .collect();
     let implicit_pcurves =
-        implicit_pcurve_bindings(records, by_id, &pcurves, &opaque_pcurves, &surfaces);
+        implicit_pcurve_bindings(ctx, records, by_id, &pcurves, &opaque_pcurves, &surfaces)?;
     for pcurve in pcurves.values_mut() {
         pcurve.lifted_endpoints = surfaces.get(&pcurve.surface).and_then(|surface| {
             let endpoints = [
@@ -1339,22 +1339,15 @@ fn parse_from_records_with_class21(
         parameter_incidences: &parameter_incidences,
     };
     let source_face_count = records.iter().filter(|record| record.class == 0x5f).count();
-    let mut loops: BTreeMap<u32, B5Loop> = records
-        .iter()
-        .filter(|record| record.class == 0x62)
-        .filter_map(|record| parse_loop_record(record).map(|loop_| (record.object_id, loop_)))
-        .filter_map(|(object_id, record)| {
-            parse_loop(
-                &record,
-                by_id,
-                &pcurves,
-                &opaque_pcurves,
-                &implicit_pcurves,
-                &surfaces,
-            )
-            .map(|loop_| (object_id, loop_))
-        })
-        .collect();
+    let mut loops = BTreeMap::new();
+    for record in records.iter().filter(|record| record.class == 0x62) {
+        let Some(parsed) = parse_loop_record(ctx, record)? else { continue };
+        let Some(loop_) = parse_loop(
+            &parsed, by_id, &pcurves, &opaque_pcurves, &implicit_pcurves, &surfaces,
+        ) else { continue };
+        crate::resource::insert_btree_map(ctx, &mut loops, record.object_id, loop_,
+            "catia_b5_graph_loops")?;
+    }
     let mut face_records = BTreeMap::new();
     for record in records.iter().filter(|record| record.class == 0x5f) {
         if let Some(face) = parse_face_record(ctx, record)? {
@@ -2296,16 +2289,17 @@ fn parameter_incidence(record: &B5Record) -> Option<B5ParameterIncidence> {
 }
 
 fn implicit_pcurve_bindings(
+    ctx: &DecodeContext<'_>,
     records: &[B5Record],
     by_id: &HashMap<u32, &B5Record>,
     pcurves: &BTreeMap<u32, B5Pcurve>,
     opaque_pcurves: &BTreeMap<u32, B5OpaquePcurve>,
     surfaces: &BTreeMap<u32, B5Surface>,
-) -> BTreeMap<u32, u32> {
+) -> Result<BTreeMap<u32, u32>, CodecError> {
     let mut bindings = BTreeMap::new();
     let mut ambiguous = HashSet::new();
     for record in records.iter().filter(|record| record.class == 0x62) {
-        let Some(references) = loop_references(record) else {
+        let Some((references, _, _)) = loop_references_and_metadata(ctx, record)? else {
             continue;
         };
         let Some((&surface, occurrences)) = references.split_last() else {
@@ -2342,16 +2336,17 @@ fn implicit_pcurve_bindings(
             {
                 continue;
             }
-            if bindings
-                .insert(pcurve, surface)
+            if crate::resource::insert_btree_map(ctx, &mut bindings, pcurve, surface,
+                "catia_b5_implicit_pcurve_bindings")?
                 .is_some_and(|existing| existing != surface)
             {
-                ambiguous.insert(pcurve);
+                crate::resource::insert_set(ctx, &mut ambiguous, pcurve,
+                    "catia_b5_ambiguous_implicit_pcurves")?;
             }
         }
     }
     bindings.retain(|pcurve, _| !ambiguous.contains(pcurve));
-    bindings
+    Ok(bindings)
 }
 
 pub(super) fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
@@ -5914,16 +5909,23 @@ pub(in crate::families) fn typed_face_records_from_records(
 fn typed_loop_records(bytes: &[u8]) -> BTreeMap<u32, B5Loop> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
     let records = records_from_frames(bytes, &frames);
-    typed_loop_records_from_records(&records)
+    crate::test_support::with_service_context(|ctx| {
+        typed_loop_records_from_records(ctx, &records).expect("service decode")
+    })
 }
 
 pub(in crate::families) fn typed_loop_records_from_records(
+    ctx: &DecodeContext<'_>,
     records: &[B5Record],
-) -> BTreeMap<u32, B5Loop> {
-    records
-        .iter()
-        .filter_map(|record| parse_loop_record(record).map(|loop_| (record.object_id, loop_)))
-        .collect()
+) -> Result<BTreeMap<u32, B5Loop>, CodecError> {
+    let mut loops = BTreeMap::new();
+    for record in records {
+        if let Some(loop_) = parse_loop_record(ctx, record)? {
+            crate::resource::insert_btree_map(ctx, &mut loops, record.object_id, loop_,
+                "catia_b5_typed_loop_records")?;
+        }
+    }
+    Ok(loops)
 }
 
 /// Read every structurally complete physical-edge record independently of
@@ -6080,7 +6082,7 @@ pub(in crate::families) fn edge_face_references_from_frames(
         crate::resource::insert_set(ctx, &mut edge_ids, record.object_id,
             "catia_b5_edge_face_edge_ids")?;
     }
-    let loops = typed_loop_records_from_records(&records);
+    let loops = typed_loop_records_from_records(ctx, &records)?;
     let mut owners = HashMap::<u32, HashSet<u32>>::new();
     for (face, record) in typed_face_records_from_records(ctx, &records)? {
         for loop_id in record.references.iter().skip(1) {
@@ -6132,76 +6134,99 @@ fn parse_loop(
     Some(record.clone())
 }
 
-fn parse_loop_record(record: &B5Record) -> Option<B5Loop> {
-    let (references, metadata, edge_controls) = loop_references_and_metadata(record)?;
-    let surface = *references.last()?;
+fn parse_loop_record(
+    ctx: &DecodeContext<'_>,
+    record: &B5Record,
+) -> Result<Option<B5Loop>, CodecError> {
+    let Some((references, metadata, edge_controls)) = loop_references_and_metadata(ctx, record)? else {
+        return Ok(None);
+    };
+    let Some(&surface) = references.last() else { return Ok(None) };
     let pairs = &references[..references.len() - 1];
     if pairs.len() / 2 != edge_controls.len() {
-        return None;
+        return Ok(None);
     }
-    let members = pairs
-        .chunks_exact(2)
-        .zip(edge_controls)
-        .map(|(pair, controls)| B5LoopMember {
-            pcurve: pair[0],
-            edge: pair[1],
-            controls,
-        })
-        .collect();
-    Some(B5Loop {
+    let members = crate::resource::collect_vec(
+        ctx,
+        pairs.chunks_exact(2).zip(edge_controls).map(|(pair, controls)| B5LoopMember {
+            pcurve: pair[0], edge: pair[1], controls,
+        }),
+        "catia_b5_loop_members",
+    )?;
+    Ok(Some(B5Loop {
         object_id: record.object_id,
         members,
         metadata,
         surface,
+    }))
+}
+
+#[cfg(test)]
+fn loop_references(record: &B5Record) -> Option<Vec<u32>> {
+    crate::test_support::with_service_context(|ctx| {
+        loop_references_and_metadata(ctx, record).expect("service decode")
+            .map(|(references, _, _)| references)
     })
 }
 
-fn loop_references(record: &B5Record) -> Option<Vec<u32>> {
-    loop_references_and_metadata(record).map(|(references, _, _)| references)
-}
-
 fn loop_references_and_metadata(
+    ctx: &DecodeContext<'_>,
     record: &B5Record,
-) -> Option<(Vec<u32>, B5LoopMetadata, Vec<[i16; 3]>)> {
-    (record.class == 0x62).then_some(())?;
+) -> Result<Option<(Vec<u32>, B5LoopMetadata, Vec<[i16; 3]>)>, CodecError> {
+    if record.class != 0x62 { return Ok(None) }
     let mut position = 0;
-    let count = counted_cardinality(&record.payload, &mut position)?;
+    let Some(count) = counted_cardinality(&record.payload, &mut position) else {
+        return Ok(None);
+    };
     if count < 3 || count % 2 == 0 {
-        return None;
+        return Ok(None);
     }
-    let references = (0..count)
-        .map(|_| wire::tokens::object_ref(&record.payload, &mut position, true))
-        .collect::<Option<Vec<_>>>()?;
+    let Some(references) = crate::resource::collect_options(
+        ctx,
+        (0..count).map(|_| wire::tokens::object_ref(&record.payload, &mut position, true)),
+        "catia_b5_loop_references",
+    )? else { return Ok(None) };
     let edge_count = (count - 1) / 2;
-    if counted_cardinality(&record.payload, &mut position)? != edge_count {
-        return None;
+    if counted_cardinality(&record.payload, &mut position) != Some(edge_count) {
+        return Ok(None);
     }
-    let (metadata, edge_controls) = loop_metadata(record.payload.get(position..)?, edge_count)?;
-    Some((references, metadata, edge_controls))
+    let Some(bytes) = record.payload.get(position..) else { return Ok(None) };
+    let Some((metadata, edge_controls)) = loop_metadata(ctx, bytes, edge_count)? else {
+        return Ok(None);
+    };
+    Ok(Some((references, metadata, edge_controls)))
 }
 
-fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec<[i16; 3]>)> {
-    let controls_len = edge_count.checked_mul(3)?.checked_mul(2)?;
-    let controls_end = 3usize.checked_add(controls_len)?;
-    let framing_controls = [
-        B5FramingControl::from_byte(*bytes.first()?)?,
-        B5FramingControl::from_byte(*bytes.get(1)?)?,
-    ];
+fn loop_metadata(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    edge_count: usize,
+) -> Result<Option<(B5LoopMetadata, Vec<[i16; 3]>)>, CodecError> {
+    let Some((controls_end, framing_controls)) = (|| {
+        let controls_len = edge_count.checked_mul(3)?.checked_mul(2)?;
+        let controls_end = 3usize.checked_add(controls_len)?;
+        let framing_controls = [
+            B5FramingControl::from_byte(*bytes.first()?)?,
+            B5FramingControl::from_byte(*bytes.get(1)?)?,
+        ];
+        Some((controls_end, framing_controls))
+    })() else { return Ok(None) };
     if bytes.get(2) != Some(&0x03) || controls_end > bytes.len() {
-        return None;
+        return Ok(None);
     }
-    let edge_controls = bytes[3..controls_end]
-        .chunks_exact(6)
-        .map(|controls| {
+    let Some(edge_controls) = crate::resource::collect_options(
+        ctx,
+        bytes[3..controls_end].chunks_exact(6).map(|controls| {
             let mut view = View::over_retained(controls);
             let controls = [view.i16_le()?, view.i16_le()?, view.i16_le()?];
             controls
                 .iter()
                 .all(|control| matches!(control, -1 | 1))
                 .then_some(controls)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let extension = match bytes.get(controls_end..)? {
+        }),
+        "catia_b5_loop_edge_controls",
+    )? else { return Ok(None) };
+    let extension = (|| -> Option<_> { Some(match bytes.get(controls_end..)? {
         [0x01] => None,
         extended
             if extended.len() == 62
@@ -6237,14 +6262,15 @@ fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec
             })
         }
         _ => return None,
-    };
-    Some((
+    }) })();
+    let Some(extension) = extension else { return Ok(None) };
+    Ok(Some((
         B5LoopMetadata {
             framing_controls,
             extension,
         },
         edge_controls,
-    ))
+    )))
 }
 
 fn counted_cardinality(bytes: &[u8], position: &mut usize) -> Option<usize> {
