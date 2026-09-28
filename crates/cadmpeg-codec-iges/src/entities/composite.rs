@@ -24,6 +24,7 @@ use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 const EPS_COMPOSITE_DEGENERATE: f64 = 1.0e-10;
 
@@ -2031,11 +2032,31 @@ struct CompositeCarrier<'a> {
     join_tolerance: f64,
 }
 
+enum CompositeRefusal {
+    NoChildCarrier,
+    Child(CompositeCurveError),
+    JoinedCarrier(CompositeCurveError),
+    Elevation(CompositeCurveError),
+    Other(CompositeCurveError),
+}
+
+impl fmt::Display for CompositeRefusal {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoChildCarrier => formatter.write_str("a child has no bounded line or NURBS carrier"),
+            Self::Child(error) => write!(formatter, "a child states no curve carrier: {error}"),
+            Self::JoinedCarrier(error) => write!(formatter, "the joined children state no curve carrier: {error}"),
+            Self::Elevation(error) => write!(formatter, "a child does not raise to the composite degree: {error}"),
+            Self::Other(error) => error.fmt(formatter),
+        }
+    }
+}
+
 fn project_degraded_composite(
     ir: &mut CadIr,
     index: &mut CompositeIndex,
     carrier: CompositeCarrier<'_>,
-    reason: &str,
+    reason: impl fmt::Display,
     ctx: Option<&DecodeContext<'_>>,
     sequences: &mut super::geometry::SourceSequences,
     losses: &mut Vec<LossNote>,
@@ -2307,19 +2328,19 @@ fn project_with_type_130_policy(
             match bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx) {
                 Ok(Some((curve, range))) => children.push((curve, range, copy_optional_identity(ctx, curve_id.as_str(), "iges composite projected child curve IDs")?)),
                 Ok(None) => {
-                    child_refusal = Some("a child has no bounded line or NURBS carrier".to_owned());
+                    child_refusal = Some(CompositeRefusal::NoChildCarrier);
                     break;
                 }
                 Err(error) => {
                     let error = error.non_resource()?;
-                    child_refusal = Some(format!("a child states no curve carrier: {error}"));
+                    child_refusal = Some(CompositeRefusal::Child(error));
                     break;
                 }
             }
         }
         if let Some(reason) = child_refusal {
             let edge = project_degraded_composite(
-                ir, &mut index, carrier, &reason, ctx, sequences, &mut losses,
+                ir, &mut index, carrier, reason, ctx, sequences, &mut losses,
             )?;
             if let Some(edge) = edge {
                 reserve_optional_vec_growth(ctx, &mut wire_edges, 1, "iges composite wire edge ids")?;
@@ -2340,14 +2361,10 @@ fn project_with_type_130_policy(
                     // The error names its own cause: a carrier the IR
                     // refuses, or a child that does not raise to the
                     // composite degree.
-                    &match error {
-                        CompositeCurveError::Carrier(error) => {
-                            format!("the joined children state no curve carrier: {error}")
-                        }
-                        CompositeCurveError::Elevation(error) => {
-                            format!("a child does not raise to the composite degree: {error}")
-                        }
-                        error => error.to_string(),
+                    match error {
+                        error @ CompositeCurveError::Carrier(_) => CompositeRefusal::JoinedCarrier(error),
+                        error @ CompositeCurveError::Elevation(_) => CompositeRefusal::Elevation(error),
+                        error => CompositeRefusal::Other(error),
                     },
                     ctx,
                     sequences,
