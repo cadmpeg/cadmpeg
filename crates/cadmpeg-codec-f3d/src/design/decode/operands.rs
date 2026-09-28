@@ -5333,7 +5333,7 @@ fn parse_recipe_operand(
         family_name.len(),
     )?;
     let recipe_prefix_offset = u64::try_from(recipe_prefix_at).ok()?;
-    let recipe_references = decode_recipe_references(&recipe_prefix_bytes, recipe_prefix_offset);
+    let recipe_references = decode_recipe_references(recipe_prefix_bytes, recipe_prefix_offset);
     let recipe_program_at = usize::try_from(recipe.byte_offset)
         .ok()?
         .checked_add(family_name.len())?;
@@ -5341,7 +5341,14 @@ fn parse_recipe_operand(
     if recipe_program_end.checked_sub(recipe_program_at)? > 64 * 1024 {
         return None;
     }
-    let recipe_program = contiguous_i32_program(bytes, recipe_program_at, recipe_program_end)?;
+    let recipe_program = match contiguous_i32_program(ctx, bytes, recipe_program_at, recipe_program_end)? {
+        Ok(program) => program,
+        Err(error) => return Some(Err(error)),
+    };
+    let recipe_prefix_bytes = match ctx.copy_retained(recipe_prefix_bytes, "f3d recipe operand prefix") {
+        Ok(prefix) => prefix,
+        Err(error) => return Some(Err(error)),
+    };
     let recipe_id = match copy_ascii_retained(ctx, &recipe.id, "f3d recipe operand recipe ID") {
         Ok(id) => id,
         Err(error) => return Some(Err(error)),
@@ -5955,7 +5962,7 @@ pub(super) fn parse_face_operand(
         family_name_len,
     )?;
     let recipe_references =
-        decode_recipe_references(&recipe_prefix_bytes, u64::try_from(recipe_prefix_at).ok()?);
+        decode_recipe_references(recipe_prefix_bytes, u64::try_from(recipe_prefix_at).ok()?);
     let recipe_program_at = usize::try_from(recipe.byte_offset)
         .ok()?
         .checked_add(family_name_len)?;
@@ -5963,7 +5970,14 @@ pub(super) fn parse_face_operand(
     if recipe_program_end.checked_sub(recipe_program_at)? > 64 * 1024 {
         return None;
     }
-    let recipe_program = contiguous_i32_program(bytes, recipe_program_at, recipe_program_end)?;
+    let recipe_program = match contiguous_i32_program(ctx, bytes, recipe_program_at, recipe_program_end)? {
+        Ok(program) => program,
+        Err(error) => return Some(Err(error)),
+    };
+    let recipe_prefix_bytes = match ctx.copy_retained(recipe_prefix_bytes, "f3d face operand prefix") {
+        Ok(prefix) => prefix,
+        Err(error) => return Some(Err(error)),
+    };
     let program_kind = face_recipe_program_kind(&recipe_program)?;
     let recipe_program_offset = u64::try_from(recipe_program_at).ok()?;
     let recipe_node_indices = recipe_program

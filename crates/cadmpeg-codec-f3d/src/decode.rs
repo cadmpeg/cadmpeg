@@ -4862,6 +4862,7 @@ fn extend_related_design_records(
         )?;
     native.design_dimension_recipe_records =
         crate::design::decode::dimension_frames::decode_dimension_recipe_records(
+            ctx,
             scan,
             &native.design_parameters,
             &native.design_parameter_owners,
