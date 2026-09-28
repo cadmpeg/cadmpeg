@@ -280,70 +280,79 @@ fn report_unresolved_dimension_companions(
 ) -> Result<(), CodecError> {
     let count = unresolved_dimension_companion_count(ctx, native, ir)?;
     if count != 0 {
-        ctx.charge_collection_items(1, "report unresolved F3D dimensions")?;
-        report
-            .losses
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("report unresolved F3D dimensions", 0, 1))?;
-        report.losses.push(F3dLossCode::DimensionCompanionUntyped.note(format!(
+        push_decode_loss(ctx, report, F3dLossCode::DimensionCompanionUntyped, format_args!(
             "{count} payload-bearing Design dimension companion(s) were retained without a typed locus frame."
-        )));
+        ), "report unresolved F3D dimensions", "retain F3D unresolved dimension loss")?;
     }
     Ok(())
 }
 
-fn report_unresolved_configuration_rules(report: &mut DecodeBody, native: &F3dNative, ir: &CadIr) {
+fn report_unresolved_configuration_rules(
+    ctx: &DecodeContext<'_>,
+    report: &mut DecodeBody,
+    native: &F3dNative,
+    ir: &CadIr,
+) -> Result<(), CodecError> {
     let count = crate::design::configurations::unresolved_configuration_member_count(
         &native.design_configurations,
     );
     if count != 0 {
-        report.losses.push(F3dLossCode::ConfigurationMemberUnassigned.note(format!(
+        push_decode_loss(ctx, report, F3dLossCode::ConfigurationMemberUnassigned, format_args!(
             "{count} Design configuration JSON member(s) were retained without assigned neutral configuration semantics."
-        )));
+        ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
     let count = crate::design::configurations::unresolved_configuration_rule_count(
         &native.design_configurations,
         &ir.model.configurations,
     );
     if count != 0 {
-        report.losses.push(F3dLossCode::ConfigurationRuleUnbound.note(format!(
+        push_decode_loss(ctx, report, F3dLossCode::ConfigurationRuleUnbound, format_args!(
             "{count} nonempty Design configuration rule(s) were retained without an unambiguous neutral activation target."
-        )));
+        ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
     let count = crate::design::configurations::unresolved_configuration_parameter_override_count(
         &ir.model.configurations,
     );
     if count != 0 {
-        report.losses.push(F3dLossCode::ConfigurationParameterOverrideUnbound.note(format!(
+        push_decode_loss(ctx, report, F3dLossCode::ConfigurationParameterOverrideUnbound, format_args!(
             "{count} Design configuration parameter override(s) were retained without an unambiguous neutral parameter identity."
-        )));
+        ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
     let count = crate::design::configurations::unresolved_configuration_suppressed_feature_count(
         &ir.model.configurations,
     );
     if count != 0 {
-        report.losses.push(F3dLossCode::ConfigurationFeatureSuppressionUnbound.note(format!(
+        push_decode_loss(ctx, report, F3dLossCode::ConfigurationFeatureSuppressionUnbound, format_args!(
             "{count} Design configuration feature suppression(s) were retained without an unambiguous neutral feature identity."
-        )));
+        ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
+    Ok(())
 }
 
-fn report_unretained_act_component_links(report: &mut DecodeBody, count: usize) {
+fn report_unretained_act_component_links(
+    ctx: &DecodeContext<'_>,
+    report: &mut DecodeBody,
+    count: usize,
+) -> Result<(), CodecError> {
     if count != 0 {
-        report.losses.push(F3dLossCode::ActComponentLinkUnresolved.note(format!(
+        push_decode_loss(ctx, report, F3dLossCode::ActComponentLinkUnresolved, format_args!(
             "{count} non-root ACT component link(s) remain source-only because their product-structure role is unresolved."
-        )));
+        ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
+    Ok(())
 }
 
-fn report_untyped_material_distances(report: &mut DecodeBody, count: usize) {
+fn report_untyped_material_distances(
+    ctx: &DecodeContext<'_>,
+    report: &mut DecodeBody,
+    count: usize,
+) -> Result<(), CodecError> {
     if count != 0 {
-        report
-            .losses
-            .push(F3dLossCode::MaterialDistanceUnitUntyped.note(format!(
-                "{count} Protein texture Distance property value(s) retain an untyped unit tag; their typed texture carriers were omitted."
-            )));
+        push_decode_loss(ctx, report, F3dLossCode::MaterialDistanceUnitUntyped, format_args!(
+            "{count} Protein texture Distance property value(s) retain an untyped unit tag; their typed texture carriers were omitted."
+        ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
+    Ok(())
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -1832,16 +1841,17 @@ fn push_decode_loss(
     report: &mut DecodeBody,
     code: F3dLossCode,
     args: std::fmt::Arguments<'_>,
+    collection_operation: &'static str,
+    retained_operation: &'static str,
 ) -> Result<(), CodecError> {
-    const OPERATION: &str = "collect F3D projection losses";
-    ctx.charge_collection_items(1, OPERATION)?;
+    ctx.charge_collection_items(1, collection_operation)?;
     report
         .losses
         .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
+        .map_err(|_| ctx.refuse_codec_limit(collection_operation, 0, 1))?;
     report.losses.push(code.note(format_decode_string(
         ctx,
-        "retain F3D projection loss",
+        retained_operation,
         args,
     )?));
     Ok(())
@@ -1863,7 +1873,7 @@ fn report_design_projection_gaps(
     if history_budget_skips != 0 {
         push_decode_loss(ctx, report, F3dLossCode::HistoryBindingBudgetExceeded, format_args!(
             "{history_budget_skips} ASM history stream(s) retain no historical topology because their binding work exceeded the decoder safety budget."
-        ))?;
+        ), "collect F3D projection losses", "retain F3D projection loss")?;
     }
     for error in native
         .asm_histories
@@ -1874,35 +1884,42 @@ fn report_design_projection_gaps(
     {
         push_decode_loss(ctx, report, F3dLossCode::HistoryRecordFramingFailed, format_args!(
             "An ASM history span remains opaque because record framing failed: {error}."
-        ))?;
+        ), "collect F3D projection losses", "retain F3D projection loss")?;
     }
     if gaps.unresolved_body_bindings != 0 {
         push_decode_loss(ctx, report, F3dLossCode::DesignBodyBindingUnresolved, format_args!(
             "{} Design body-map pair(s) do not resolve to a body in the named BREP blob.",
             gaps.unresolved_body_bindings
-        ))?;
+        ), "collect F3D projection losses", "retain F3D projection loss")?;
     }
     if gaps.native_reference_images != 0 {
         push_decode_loss(ctx, report, F3dLossCode::ReferenceImageNativeRetained, format_args!(
             "{} reference-image timeline object(s) retain native Canvas records because no neutral image-plane binding was resolved.",
             gaps.native_reference_images
-        ))?;
+        ), "collect F3D projection losses", "retain F3D projection loss")?;
     }
     if gaps.native_decals != 0 {
         push_decode_loss(ctx, report, F3dLossCode::DecalNativeRetained, format_args!(
             "{} decal timeline object(s) retain native image and mapping records because no neutral decal binding was resolved.",
             gaps.native_decals
-        ))?;
+        ), "collect F3D projection losses", "retain F3D projection loss")?;
     }
     if gaps.unrepaired_lost_edge_references != 0 {
         push_decode_loss(ctx, report, F3dLossCode::EdgeReferenceLostUnrepaired, format_args!(
             "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof.",
             gaps.unrepaired_lost_edge_references
-        ))?;
+        ), "collect F3D projection losses", "retain F3D projection loss")?;
     }
     let mut push = |code: F3dLossCode, count: usize, message: std::fmt::Arguments<'_>| -> Result<(), CodecError> {
         if count != 0 {
-            push_decode_loss(ctx, report, code, message)?;
+            push_decode_loss(
+                ctx,
+                report,
+                code,
+                message,
+                "collect F3D projection losses",
+                "retain F3D projection loss",
+            )?;
         }
         Ok(())
     };
@@ -2931,15 +2948,17 @@ impl<'a> F3dDecodeSession<'a> {
             SessionPath::Geometry(geometry_path) => {
                 let GeometrySessionPath { index, materials } = *geometry_path;
                 report_unretained_act_component_links(
+                    self.ctx,
                     &mut self.report,
                     non_root_act_component_links,
-                );
+                )?;
                 report_unresolved_dimension_companions(self.ctx, &mut self.report, &self.native, &self.ir)?;
-                report_unresolved_configuration_rules(&mut self.report, &self.native, &self.ir);
+                report_unresolved_configuration_rules(self.ctx, &mut self.report, &self.native, &self.ir)?;
                 report_untyped_material_distances(
+                    self.ctx,
                     &mut self.report,
                     materials.untyped_distance_properties,
-                );
+                )?;
                 self.report.notes.extend(materials.notes);
                 self.ir.model.appearances = materials.appearances;
                 self.ir.model.appearance_bindings = materials.bindings;
@@ -2977,9 +2996,10 @@ impl<'a> F3dDecodeSession<'a> {
             SessionPath::Bodyless => {
                 let decoded_materials = materials::decode(self.ctx, scan)?;
                 report_untyped_material_distances(
+                    self.ctx,
                     &mut self.report,
                     decoded_materials.untyped_distance_properties,
-                );
+                )?;
                 self.report.notes.extend(decoded_materials.notes);
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
@@ -3046,7 +3066,7 @@ impl<'a> F3dDecodeSession<'a> {
         let geometry = match path {
             FinalizePath::Geometry(index) => index,
             FinalizePath::Bodyless(inputs) => {
-                report_unretained_act_component_links(&mut self.report, inputs.non_root_act);
+                report_unretained_act_component_links(ctx, &mut self.report, inputs.non_root_act)?;
                 reconcile_appearance_loss(&mut self.report, &self.ir, inputs.has_appearance);
                 let mesh_projection = project_mesh_bodies(
                     ctx,
