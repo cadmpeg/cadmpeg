@@ -748,17 +748,6 @@ pub(crate) fn quintic_jet_bspline<const N: usize>(
     Ok(Some((full_knots, finite_controls)))
 }
 
-pub(crate) fn expand_knots(distinct: &[f64], multiplicities: &[u32]) -> Option<Vec<f64>> {
-    let capacity = multiplicities
-        .iter()
-        .try_fold(0usize, |sum, value| sum.checked_add(*value as usize))?;
-    let mut knots = Vec::with_capacity(capacity);
-    for (&knot, &multiplicity) in distinct.iter().zip(multiplicities) {
-        knots.extend(std::iter::repeat_n(knot, multiplicity as usize));
-    }
-    Some(knots)
-}
-
 pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
     multiplicities
         .iter()

@@ -17,7 +17,7 @@ use crate::test_support::test_a5_bound::{
     a5_nurbs_pair_bound_edge_stream, a5_topology_edge_run_stream, a5_torus_bound_edge_stream,
 };
 use crate::test_support::test_a5a8::{
-    a5_native_edge_identity_stream, a5_pcurve_stream, a6_pcurve_stream,
+    a5_native_edge_identity_stream, a5_pcurve_stream, a5_surface_stream, a6_pcurve_stream,
 };
 use crate::test_support::test_b2::{
     b2_circle_stream, b2_cylinder_stream, b2_edge_block_stream, b2_edge_parameter_stream_for,
@@ -80,6 +80,20 @@ fn a5_edge_block_parser_groups_two_coparametric_pcurves_and_packet() {
 }
 
 #[test]
+fn consolidated_edge_resolution_propagates_a5_surface_limit() {
+    let bytes = a5_surface_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+            ctx, &bytes, &records, &mut crate::nurbs::LaneRefusals::new(),
+        )
+    });
+    assert!(matches!(limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == "catia_a5_distinct_knots"));
+}
+
+#[test]
 fn consolidated_edge_block_groups_b_family_pcurves() {
     let blocks =
         crate::families::consolidated::records::consolidated_edge_blocks(&b2_edge_block_stream());
@@ -127,11 +141,11 @@ fn indexed_resolver_matches_the_one_shot_resolver_identity() {
         };
     let one_shot = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
     let indexed =
-        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+        crate::test_support::with_service_context(|ctx| crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(ctx,
             &bytes,
             &records,
             &mut crate::nurbs::LaneRefusals::new(),
-        );
+        ).expect("service decode"));
     assert_eq!(signature(&indexed), signature(&one_shot));
 }
 

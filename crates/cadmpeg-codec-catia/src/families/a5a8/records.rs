@@ -5,7 +5,7 @@
 
 use super::knot_lane::A8KnotLane;
 use crate::math::distance;
-use crate::nurbs::{expand_knots, pole_count};
+use crate::nurbs::pole_count;
 use crate::wire::bytes::{
     compact_int, f64_le, f64_point, finite_f64_lane, read_f64_array, u32_le_24,
 };
@@ -1518,90 +1518,97 @@ fn grid_rows<T>(
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
 pub(crate) fn a5_surfaces(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<FreeformSurface> {
+) -> Result<Vec<FreeformSurface>, CodecError> {
     let records = consolidated_records(data);
-    a5_surfaces_from_records(data, &records, refusal)
+    a5_surfaces_from_records(ctx, data, &records, refusal)
 }
 
 pub(in crate::families) fn a5_surfaces_from_records(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Vec<FreeformSurface> {
-    family_frames_from_records(records, ConsolidatedFamily::A, 0x34)
-        .into_iter()
-        .filter_map(|frame| a5_surface(data, frame, refusal))
-        .collect()
+) -> Result<Vec<FreeformSurface>, CodecError> {
+    let mut surfaces = Vec::new();
+    for record in records.iter().filter(|record| {
+        record.family == ConsolidatedFamily::A && record.class == 0x34
+    }) {
+        let (Some(payload), Some(end)) = (record.payload(), record.range()) else { continue };
+        let frame = ConsolidatedFrame {
+            pos: record.byte_offset(),
+            payload: payload.start,
+            end: end.end,
+            header_token: record.header_token,
+        };
+        if let Some(surface) = a5_surface(ctx, data, frame, refusal)? {
+            crate::resource::push(ctx, &mut surfaces, surface, "catia_a5_surfaces")?;
+        }
+    }
+    Ok(surfaces)
 }
 
 fn a5_surface(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     frame: ConsolidatedFrame,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<FreeformSurface> {
-    let ConsolidatedFrame {
-        pos, payload, end, ..
-    } = frame;
+) -> Result<Option<FreeformSurface>, CodecError> {
+    let ConsolidatedFrame { pos, payload, end, .. } = frame;
     let mut at = payload;
-    let u_degree = a5_int(*data.get(at)?)?;
+    let Some(u_degree) = data.get(at).and_then(|&byte| a5_int(byte)) else { return Ok(None) };
     at += 1;
-    let u_distinct_count = a5_int(*data.get(at)?)? as usize;
-    at = a5_array_marker(data, at + 1)?;
-    let u_distinct = f64_values(data, &mut at, u_distinct_count, end)?
-        .into_iter()
-        .map(FiniteReal::get)
-        .collect::<Vec<_>>();
-    let v_degree = a5_int(*data.get(at)?)?;
+    let Some(u_distinct_count) = data.get(at).and_then(|&byte| a5_int(byte))
+        .and_then(|count| usize::try_from(count).ok()) else { return Ok(None) };
+    let Some(next) = a5_array_marker(data, at + 1) else { return Ok(None) };
+    at = next;
+    let Some(u_distinct) = a5_distinct_values(ctx, data, &mut at, u_distinct_count, end)?
+        else { return Ok(None) };
+    let Some(v_degree) = data.get(at).and_then(|&byte| a5_int(byte)) else { return Ok(None) };
     at += 1;
-    let v_distinct_count = a5_int(*data.get(at)?)? as usize;
-    at = a5_array_marker(data, at + 1)?;
-    let v_distinct = f64_values(data, &mut at, v_distinct_count, end)?
-        .into_iter()
-        .map(FiniteReal::get)
-        .collect::<Vec<_>>();
-    let mode = *data.get(at)?;
+    let Some(v_distinct_count) = data.get(at).and_then(|&byte| a5_int(byte))
+        .and_then(|count| usize::try_from(count).ok()) else { return Ok(None) };
+    let Some(next) = a5_array_marker(data, at + 1) else { return Ok(None) };
+    at = next;
+    let Some(v_distinct) = a5_distinct_values(ctx, data, &mut at, v_distinct_count, end)?
+        else { return Ok(None) };
+    let Some(&mode) = data.get(at) else { return Ok(None) };
     at += 1;
     if !knots_strictly_increasing(&u_distinct) || !knots_strictly_increasing(&v_distinct) {
-        return None;
+        return Ok(None);
     }
-    let (u_knots, u_count) = a5_knots(&u_distinct, u_degree)?;
-    let (v_knots, v_count) = a5_knots(&v_distinct, v_degree)?;
-    let poles = crate::nurbs_surface_control_count(u_count as usize, v_count as usize)?;
-    if at.checked_add(poles.checked_mul(24)?)? > end {
-        return None;
-    }
-    let mut control_points = Vec::with_capacity(poles);
+    let Some((u_knots, u_count)) = a5_knots(ctx, &u_distinct, u_degree)? else { return Ok(None) };
+    let Some((v_knots, v_count)) = a5_knots(ctx, &v_distinct, v_degree)? else { return Ok(None) };
+    let (Some(u_count), Some(v_count)) = (
+        usize::try_from(u_count).ok(), usize::try_from(v_count).ok(),
+    ) else { return Ok(None) };
+    let Some(poles) = crate::nurbs_surface_control_count(u_count, v_count) else { return Ok(None) };
+    if poles.checked_mul(24).and_then(|bytes| at.checked_add(bytes))
+        .is_none_or(|end_poles| end_poles > end) { return Ok(None) }
+    let mut control_points = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut control_points, poles, "catia_a5_surface_poles")?;
     for _ in 0..poles {
-        control_points.push(f64_point(data, at)?);
+        let Some(point) = f64_point(data, at) else { return Ok(None) };
+        control_points.push(point);
         at += 24;
     }
     let weights = match mode {
         0x01 => None,
-        0x05 => Some(a5_weights(
-            data,
-            &mut at,
-            u_count as usize,
-            v_count as usize,
-            end,
-        )?),
-        _ => return None,
+        0x05 => {
+            let Some(weights) = a5_weights(ctx, data, &mut at, u_count, v_count, end)?
+                else { return Ok(None) };
+            Some(weights)
+        }
+        _ => return Ok(None),
     };
-    if !valid_a5_surface_tail(data, at, end) {
-        return None;
-    }
-    Some(FreeformSurface {
-        pos,
-        identity: None,
-        geometry: crate::nurbs::note_refusal(
-            cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(
-                control_points
-                    .chunks(v_count as usize)
-                    .map(<[_]>::to_vec)
-                    .collect(),
-                weights.map(|values| values.chunks(v_count as usize).map(<[_]>::to_vec).collect()),
-            )
+    if !valid_a5_surface_tail(data, at, end) { return Ok(None) }
+    let control_points = grid_rows(ctx, control_points, v_count, "catia_a5_surface_pole_rows")?;
+    let weights = weights.map(|values| grid_rows(ctx, values, v_count,
+        "catia_a5_surface_weight_rows")).transpose()?;
+    Ok(crate::nurbs::note_refusal(
+        cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::from_checked_lanes(control_points, weights)
             .and_then(|poles| {
                 NurbsSurface::new(
                     cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
@@ -1610,10 +1617,9 @@ fn a5_surface(
                     false,
                 )
             }),
-            refusal,
-            format_args!("a5 NURBS surface record at byte {pos}"),
-        )?,
-    })
+        refusal,
+        format_args!("a5 NURBS surface record at byte {pos}"),
+    ).map(|geometry| FreeformSurface { pos, identity: None, geometry }))
 }
 
 struct ParsedA8SurfaceHeader {
@@ -1901,72 +1907,100 @@ fn a5_array_marker(bytes: &[u8], at: usize) -> Option<usize> {
     }
 }
 
-fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
-    let multiplicities = match degree {
-        1 | 3 if distinct.len() >= 2 => {
-            let mut values = vec![degree + 1];
-            values.extend(std::iter::repeat_n(1, distinct.len() - 2));
-            values.push(degree + 1);
-            values
-        }
-        5 if distinct.len() >= 2 => {
-            let mut values = vec![6u32];
-            values.extend(std::iter::repeat_n(3, distinct.len() - 2));
-            values.push(6);
-            values
-        }
-        _ => return None,
+fn a5_distinct_values(
+    ctx: &DecodeContext<'_>, bytes: &[u8], at: &mut usize, count: usize, end: usize,
+) -> Result<Option<Vec<f64>>, CodecError> {
+    if count.checked_mul(8).and_then(|width| at.checked_add(width))
+        .is_none_or(|last| last > end) { return Ok(None) }
+    let mut values = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut values, count, "catia_a5_distinct_knots")?;
+    for _ in 0..count {
+        let Some(value) = f64_le(bytes, *at) else { return Ok(None) };
+        values.push(value.get());
+        *at += 8;
+    }
+    Ok(Some(values))
+}
+
+fn a5_knots(
+    ctx: &DecodeContext<'_>, distinct: &[f64], degree: u32,
+) -> Result<Option<(Vec<f64>, u32)>, CodecError> {
+    let (endpoint, interior) = match degree {
+        1 | 3 if distinct.len() >= 2 => (degree + 1, 1u32),
+        5 if distinct.len() >= 2 => (6u32, 3u32),
+        _ => return Ok(None),
     };
-    let count = pole_count(&multiplicities, degree)?;
-    Some((expand_knots(distinct, &multiplicities)?, count))
+    let mut multiplicities = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut multiplicities, distinct.len(),
+        "catia_a5_knot_multiplicities")?;
+    multiplicities.push(endpoint);
+    multiplicities.extend(std::iter::repeat_n(interior, distinct.len() - 2));
+    multiplicities.push(endpoint);
+    let Some(count) = pole_count(&multiplicities, degree) else { return Ok(None) };
+    let Some(expanded_count) = multiplicities.iter().try_fold(0usize, |sum, &value| {
+        sum.checked_add(usize::try_from(value).ok()?)
+    }) else { return Ok(None) };
+    let mut knots = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut knots, expanded_count, "catia_a5_expanded_knots")?;
+    for (&knot, &multiplicity) in distinct.iter().zip(&multiplicities) {
+        let Some(repeats) = usize::try_from(multiplicity).ok() else { return Ok(None) };
+        knots.extend(std::iter::repeat_n(knot, repeats));
+    }
+    Ok(Some((knots, count)))
 }
 
 fn a5_weights(
-    bytes: &[u8],
-    at: &mut usize,
-    rows: usize,
-    cols: usize,
-    end: usize,
-) -> Option<Vec<NonZeroReal>> {
-    let count = rows.checked_mul(cols)?;
+    ctx: &DecodeContext<'_>, bytes: &[u8], at: &mut usize,
+    rows: usize, cols: usize, end: usize,
+) -> Result<Option<Vec<NonZeroReal>>, CodecError> {
+    let Some(count) = rows.checked_mul(cols) else { return Ok(None) };
     if bytes.get(*at) == Some(&0x00) {
         *at += 1;
-        return f64_values(bytes, at, count, end)?
-            .into_iter()
-            .map(|weight| NonZeroReal::new(weight.get()))
-            .collect();
+        if count.checked_mul(8).and_then(|width| at.checked_add(width))
+            .is_none_or(|last| last > end) { return Ok(None) }
+        let mut weights = Vec::new();
+        crate::resource::reserve_vec(ctx, &mut weights, count, "catia_a5_explicit_weights")?;
+        for _ in 0..count {
+            let Some(weight) = f64_le(bytes, *at).and_then(|value| NonZeroReal::new(value.get()))
+                else { return Ok(None) };
+            weights.push(weight);
+            *at += 8;
+        }
+        return Ok(Some(weights));
     }
-    if bytes.get(*at) != Some(&0x01) {
-        return None;
-    }
-
+    if bytes.get(*at) != Some(&0x01) { return Ok(None) }
     let seed_count = cols.div_ceil(2);
-    let mut weights = Vec::with_capacity(count);
-    let mut previous = None::<Vec<NonZeroReal>>;
+    let mut weights = Vec::new();
+    crate::resource::reserve_vec(ctx, &mut weights, count, "catia_a5_mirrored_weights")?;
     for _ in 0..rows {
-        let row = if bytes.get(*at) == Some(&0x02) {
+        if bytes.get(*at) == Some(&0x02) {
             *at += 1;
-            previous.clone()?
-        } else {
-            if !matches!(bytes.get(*at..*at + 3), Some([0x01, 0x03 | 0x07, 0x00])) {
-                return None;
+            let Some(previous_start) = weights.len().checked_sub(cols) else { return Ok(None) };
+            for index in 0..cols {
+                let value = weights[previous_start + index];
+                weights.push(value);
             }
-            *at += 3;
-            let seed = f64_values(bytes, at, seed_count, end)?
-                .into_iter()
-                .map(|weight| NonZeroReal::new(weight.get()))
-                .collect::<Option<Vec<_>>>()?;
-            let mut row = seed.clone();
-            row.extend(seed[..cols / 2].iter().rev().copied());
-            if row.len() != cols {
-                return None;
-            }
-            previous = Some(row.clone());
-            row
-        };
-        weights.extend(row);
+            continue;
+        }
+        if !matches!(bytes.get(*at..*at + 3), Some([0x01, 0x03 | 0x07, 0x00])) {
+            return Ok(None);
+        }
+        *at += 3;
+        if seed_count.checked_mul(8).and_then(|width| at.checked_add(width))
+            .is_none_or(|last| last > end) { return Ok(None) }
+        let row_start = weights.len();
+        for _ in 0..seed_count {
+            let Some(weight) = f64_le(bytes, *at).and_then(|value| NonZeroReal::new(value.get()))
+                else { return Ok(None) };
+            weights.push(weight);
+            *at += 8;
+        }
+        for offset in (0..cols / 2).rev() {
+            weights.push(weights[row_start + offset]);
+        }
+        if weights.len() != row_start + cols { return Ok(None) }
     }
-    Some(weights)
+    Ok(Some(weights))
 }
 
 #[cfg(test)]

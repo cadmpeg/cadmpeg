@@ -1142,7 +1142,7 @@ fn freeform_surface_carriers(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<FreeformSurfaceCarrier>, cadmpeg_core::CodecError> {
     let resolved = crate::families::a5a8::records::resolved_a8_surfaces(ctx, data, refusal)?;
-    let a5 = crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal);
+    let a5 = crate::families::a5a8::records::a5_surfaces_from_records(ctx, data, records, refusal)?;
     let mut surfaces = resolved
         .into_iter()
         .chain(a5)
@@ -1353,8 +1353,8 @@ pub(super) fn append_freeform_surface_pools(
 ) -> Result<ConsolidatedCurveBindingCounts, cadmpeg_core::CodecError> {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(admission.context(), data, refusal)?;
     surfaces.extend(crate::families::a5a8::records::a5_surfaces_from_records(
-        data, records, refusal,
-    ));
+        admission.context(), data, records, refusal,
+    )?);
     let mut carrier_ids = Vec::with_capacity(surfaces.len());
     for surface in &surfaces {
         let (source_object, source_tag) = freeform_surface_source(surface);
@@ -1921,8 +1921,8 @@ fn append_resolved_consolidated_surface_curves(
 
     let mut pending = VecDeque::from(
         crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
-            data, records, refusal,
-        ),
+            admission.context(), data, records, refusal,
+        )?,
     );
     while let Some(mut resolved) = pending.pop_front() {
         let Some(run) = complete_runs.get(&resolved.block.pcurves[0].pos) else {
