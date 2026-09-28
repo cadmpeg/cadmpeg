@@ -346,15 +346,15 @@ pub(super) struct CreoFeatureRowRecord<'a> {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureChoiceFieldRecord {
+pub(super) struct CreoFeatureChoiceFieldRecord<'a> {
     pub(super) id: String,
     owner_feature_id: u32,
-    choice_label: String,
-    name: String,
+    choice_label: &'a str,
+    name: &'a str,
     type_byte: u8,
-    value: CreoFeatureFieldValue,
+    value: CreoFeatureFieldValue<'a>,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
@@ -1436,17 +1436,22 @@ mod feature_projection_limit_tests {
     }
 }
 
-pub(super) fn feature_choice_field_records(
-    scan: &ContainerScan,
-) -> Vec<CreoFeatureChoiceFieldRecord> {
-    scan.features
-        .choice_fields
-        .iter()
-        .map(|field| CreoFeatureChoiceFieldRecord {
-            id: format!("creo:feature:choice_field#{}", field.offset),
+pub(super) fn feature_choice_field_records<'a>(
+    ctx: &DecodeContext<'_>,
+    scan: &'a ContainerScan,
+) -> Result<Vec<CreoFeatureChoiceFieldRecord<'a>>, CodecError> {
+    let mut records = Vec::new();
+    for field in &scan.features.choice_fields {
+        let id = ctx.format_retained(
+            format_args!("creo:feature:choice_field#{}", field.offset),
+            "creo native feature choice field record id",
+        )?;
+        ctx.try_reserve_items(&mut records, 1, "creo native feature choice field records")?;
+        records.push(CreoFeatureChoiceFieldRecord {
+            id,
             owner_feature_id: field.feature_id,
-            choice_label: field.choice_label.clone(),
-            name: field.name.clone(),
+            choice_label: &field.choice_label,
+            name: &field.name,
             type_byte: field.type_byte,
             value: match &field.value {
                 crate::feature::rows::FeatureFieldValue::Empty => CreoFeatureFieldValue::Empty,
@@ -1455,7 +1460,7 @@ pub(super) fn feature_choice_field_records(
                 }
                 crate::feature::rows::FeatureFieldValue::CompactIntArray(values) => {
                     CreoFeatureFieldValue::CompactIntArray {
-                        values: values.clone(),
+                        values,
                     }
                 }
                 crate::feature::rows::FeatureFieldValue::EntityReference {
@@ -1473,17 +1478,105 @@ pub(super) fn feature_choice_field_records(
                 } => CreoFeatureFieldValue::ScalarArray {
                     dimensions: *dimensions,
                     count: *count,
-                    body: body.clone(),
-                    decoded_values: decoded_values.clone(),
+                    body,
+                    decoded_values: decoded_values.as_deref(),
                 },
                 crate::feature::rows::FeatureFieldValue::Raw(bytes) => CreoFeatureFieldValue::Raw {
-                    bytes: bytes.clone(),
+                    bytes,
                 },
             },
             offset: field.offset,
-            source_section: source_section(scan, field.offset),
-        })
-        .collect()
+            source_section: source_section_ref(scan, field.offset),
+        });
+    }
+    Ok(records)
+}
+
+#[cfg(test)]
+mod feature_choice_field_record_tests {
+    use super::feature_choice_field_records;
+    use crate::feature::rows::{FeatureChoiceField, FeatureFieldValue};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn scan() -> crate::container::ContainerScan<'static> {
+        let mut scan = crate::container::scan_bytes_ok(Vec::new());
+        let values = [
+            FeatureFieldValue::Empty,
+            FeatureFieldValue::CompactInt(7),
+            FeatureFieldValue::CompactIntArray(vec![7, 8]),
+            FeatureFieldValue::EntityReference { entity_id: 9, terminated: true },
+            FeatureFieldValue::ScalarArray {
+                dimensions: 1, count: 2, body: vec![0xf9, 2], decoded_values: Some(vec![1.0, 2.0]),
+            },
+            FeatureFieldValue::Raw(vec![0xe3]),
+        ];
+        for (offset, value) in values.into_iter().enumerate() {
+            scan.features.choice_fields.push(FeatureChoiceField {
+                feature_id: 4,
+                choice_label: "depth_choice".into(),
+                name: "value".into(),
+                type_byte: 1,
+                value,
+                offset,
+            });
+        }
+        scan
+    }
+
+    #[test]
+    fn feature_choice_field_record_refuses_collection_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = match feature_choice_field_records(&ctx, &scan) {
+            Err(error) => error,
+            Ok(_) => panic!("one choice-field record exceeds the collection limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo native feature choice field records"), "{error:?}");
+    }
+
+    #[test]
+    fn feature_choice_field_record_id_refuses_retained_limit() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = "creo:feature:choice_field#0".len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = match feature_choice_field_records(&ctx, &scan) {
+            Err(error) => error,
+            Ok(_) => panic!("one choice-field ID exceeds the retained limit"),
+        };
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo native feature choice field record id"), "{error:?}");
+    }
+
+    #[test]
+    fn borrowed_feature_choice_field_values_preserve_json() {
+        let scan = scan();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let records = feature_choice_field_records(&ctx, &scan).expect("records are admitted");
+        let values = records.iter()
+            .map(|record| serde_json::to_value(&record.value).expect("value serializes"))
+            .collect::<Vec<_>>();
+        assert_eq!(serde_json::Value::Array(values), serde_json::json!([
+            {"kind":"empty"},
+            {"kind":"compact_int","value":7},
+            {"kind":"compact_int_array","values":[7,8]},
+            {"kind":"entity_reference","entity_id":9,"terminated":true},
+            {"kind":"scalar_array","dimensions":1,"count":2,"body":[249,2],"decoded_values":[1.0,2.0]},
+            {"kind":"raw","bytes":[227]}
+        ]));
+    }
 }
 
 pub(super) fn half_edge_records<'a>(
