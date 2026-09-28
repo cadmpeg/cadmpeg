@@ -151,7 +151,7 @@ pub(crate) fn decode<'a>(
     push_note(ctx, &mut report.notes, format_args!(
         "merged {merged} external occurrence(s) from the f3z archive"
     ))?;
-    merge::make_sibling_ordinals_unique(&mut ir.model.occurrences)?;
+    merge::make_sibling_ordinals_unique(ctx, &mut ir.model.occurrences)?;
     append_losses(ctx, &mut report.losses, outer.losses)?;
     finalize_result(ctx, ir, source, report, fidelity)
 }
