@@ -3726,6 +3726,41 @@ fn insert_mesh_texture_table(
     Ok(())
 }
 
+fn insert_mesh_scope_tessellations<'a>(
+    ctx: &DecodeContext<'_>,
+    index: &mut std::collections::HashMap<(String, u32), Vec<String>>,
+    stream: &str,
+    record_index: u32,
+    ids: impl IntoIterator<Item = &'a str>,
+) -> Result<(), CodecError> {
+    let mut tessellations = Vec::new();
+    for id in ids {
+        let copy = copy_decode_string(ctx, id, "retain F3D mesh scope tessellation ID")?;
+        push_decode_item(
+            ctx,
+            &mut tessellations,
+            copy,
+            "collect F3D mesh scope tessellations",
+        )?;
+    }
+    if tessellations.is_empty() {
+        return Ok(());
+    }
+    let stream = copy_decode_string(ctx, stream, "retain F3D mesh scope stream")?;
+    let key = (stream, record_index);
+    if index.contains_key(&key) {
+        return Err(CodecError::Malformed(
+            "F3D Design mesh feature scope is not unique".into(),
+        ));
+    }
+    ctx.charge_collection_items(1, "index F3D mesh feature scopes")?;
+    index
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("index F3D mesh feature scopes", 0, 1))?;
+    index.insert(key, tessellations);
+    Ok(())
+}
+
 /// Project each mesh body's container geometry into the tessellation arena.
 ///
 /// A mesh body carries no B-rep topology: its geometry is a triangle list, and
@@ -3828,8 +3863,7 @@ fn project_mesh_bodies(
         tessellations_by_scope: std::collections::HashMap::new(),
     };
     for mut body in bodies {
-        let id = body.id.clone();
-        let texture_table = texture_tables.remove(&id).ok_or_else(|| {
+        let texture_table = texture_tables.remove(&body.id).ok_or_else(|| {
             CodecError::Malformed("F3D joined mesh body has no owning texture table".into())
         })?;
         let texture_assignments = mesh_texture_assignments(
@@ -3838,15 +3872,18 @@ fn project_mesh_bodies(
             &texture_table,
             body.triangles.len(),
         )?;
-        let triangle_groups = std::mem::take(&mut body.triangle_groups)
-            .into_iter()
-            .map(
-                |group| cadmpeg_ir::tessellation::TessellationTriangleGroup {
+        let mut triangle_groups = Vec::new();
+        for group in std::mem::take(&mut body.triangle_groups) {
+            push_decode_item(
+                ctx,
+                &mut triangle_groups,
+                cadmpeg_ir::tessellation::TessellationTriangleGroup {
                     source_id: Some(group.source_id),
                     triangles: group.triangles,
                 },
-            )
-            .collect();
+                "collect F3D mesh triangle groups",
+            )?;
+        }
         let channels = mesh_attribute_channels(
             ctx,
             &body.attributes,
@@ -3856,22 +3893,32 @@ fn project_mesh_bodies(
         )?;
         // The paramesh registry states an unshaded mesh by carrying no
         // corner-normal channel, so the lane arrives absent, never empty.
-        let record = id.clone();
-        let tessellation = cadmpeg_ir::tessellation::Tessellation::from_parts(
-            id,
-            cadmpeg_ir::tessellation::TessellationMesh::from_corner_lanes(
+        let corner_normals = match body.corner_normals.take() {
+            Some(normals) => {
+                let mut converted = Vec::new();
+                for normal in normals {
+                    push_decode_item(
+                        ctx,
+                        &mut converted,
+                        cadmpeg_ir::features::FiniteVector3::from(normal),
+                        "collect F3D mesh corner normals",
+                    )?;
+                }
+                Some(converted)
+            }
+            None => None,
+        };
+        let mesh = cadmpeg_ir::tessellation::TessellationMesh::from_corner_lanes(
                 body.vertices,
                 body.triangles,
-                body.corner_normals.map(|normals| {
-                    normals
-                        .into_iter()
-                        .map(cadmpeg_ir::features::FiniteVector3::from)
-                        .collect()
-                }),
+                corner_normals,
             )
             .map_err(|error| {
-                CodecError::malformed(format_args!("paramesh body record {record}: {error}"))
-            })?,
+                CodecError::malformed(format_args!("paramesh body record {}: {error}", body.id))
+            })?;
+        let tessellation = cadmpeg_ir::tessellation::Tessellation::from_parts(
+            body.id,
+            mesh,
             channels,
         )
         .map_err(|err| CodecError::Malformed(err.to_string()))?
@@ -3879,7 +3926,7 @@ fn project_mesh_bodies(
         .and_then(|mesh| mesh.with_triangle_groups(triangle_groups))
         .and_then(|mesh| mesh.with_texture_assignments(texture_assignments))
         .map_err(|err| CodecError::Malformed(err.to_string()))?;
-        ir.model.tessellations.push(tessellation);
+        push_decode_item(ctx, &mut ir.model.tessellations, tessellation, "collect F3D mesh tessellations")?;
     }
     if !texture_tables.is_empty() {
         return Err(CodecError::Malformed(
@@ -3887,29 +3934,18 @@ fn project_mesh_bodies(
         ));
     }
     for feature in &native.design_mesh_features {
-        let tessellations = feature
-            .bodies()
-            .iter()
-            .filter_map(|body| body.tessellation_id.clone())
-            .collect::<Vec<_>>();
-        if tessellations.is_empty() {
-            continue;
-        }
         let stream = crate::ids::native_stream(&feature.id)
-            .unwrap_or(crate::ids::DEFAULT_STREAM)
-            .to_owned();
-        if projection
-            .tessellations_by_scope
-            .insert(
-                (stream, feature.scope().record().record_index()),
-                tessellations,
-            )
-            .is_some()
-        {
-            return Err(CodecError::Malformed(
-                "F3D Design mesh feature scope is not unique".into(),
-            ));
-        }
+            .unwrap_or(crate::ids::DEFAULT_STREAM);
+        insert_mesh_scope_tessellations(
+            ctx,
+            &mut projection.tessellations_by_scope,
+            stream,
+            feature.scope().record().record_index(),
+            feature
+                .bodies()
+                .iter()
+                .filter_map(|body| body.tessellation_id.as_deref()),
+        )?;
     }
     report_unresolved_mesh_attributes(report, &unresolved);
     Ok(projection)
