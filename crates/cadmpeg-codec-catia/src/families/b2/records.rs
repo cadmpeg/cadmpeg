@@ -1510,13 +1510,13 @@ pub(crate) fn b2_class5b5c_records_from_records(
 #[cfg(test)]
 fn b2_face_nodes_5f(data: &[u8]) -> Vec<B2FaceNode5f> {
     let records = consolidated_records(data);
-    b2_face_nodes_5f_from_records(data, &records)
+    b2_face_nodes_5f_from_records(data, &records).collect()
 }
 
-pub(in crate::families) fn b2_face_nodes_5f_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<B2FaceNode5f> {
+pub(in crate::families) fn b2_face_nodes_5f_from_records<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2FaceNode5f> + 'a {
     family_frames_from_records(records, ConsolidatedFamily::B, 0x5f)
         .into_iter()
         .filter_map(|frame| {
@@ -1545,7 +1545,6 @@ pub(in crate::families) fn b2_face_nodes_5f_from_records(
                 terminal,
             })
         })
-        .collect()
 }
 
 /// Bind immediately adjacent `5f,62` records when the terminal admits the
@@ -1984,17 +1983,16 @@ pub(in crate::families) struct B2SpatialCircle {
 #[cfg(test)]
 fn b2_spatial_circles(data: &[u8]) -> Vec<B2SpatialCircle> {
     let records = consolidated_records(data);
-    b2_spatial_circles_from_records(data, &records)
+    b2_spatial_circles_from_records(data, &records).collect()
 }
 
-pub(in crate::families) fn b2_spatial_circles_from_records(
-    data: &[u8],
-    records: &[ConsolidatedRecord],
-) -> Vec<B2SpatialCircle> {
+pub(in crate::families) fn b2_spatial_circles_from_records<'a>(
+    data: &'a [u8],
+    records: &'a [ConsolidatedRecord],
+) -> impl Iterator<Item = B2SpatialCircle> + 'a {
     family_frames_from_records(records, ConsolidatedFamily::B, 0x0f)
         .into_iter()
         .filter_map(|frame| parse_b2_spatial_circle(data, frame))
-        .collect()
 }
 
 fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2SpatialCircle> {
