@@ -840,10 +840,11 @@ impl NativeModel {
         let parasolid_topology_attribute_list_references =
             parasolid_topology_attribute_list_references(ctx, parsed, &parasolid_entity_51_records)?;
         let parasolid_topology_attribute_class_uses = parasolid_topology_attribute_class_uses(
+            ctx,
             &parasolid_topology_attribute_list_references,
             &parasolid_entity_51_records,
             &parasolid_attribute_class_uses,
-        );
+        )?;
         let om_record_areas = om_record_areas(ctx, container)?;
         let audit_trail_rows = audit_trail_rows(ctx, container)?;
         let operation_state_journal_groups = operation_state_journal_groups(ctx, container)?;

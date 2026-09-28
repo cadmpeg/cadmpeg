@@ -3973,42 +3973,60 @@ pub(super) fn parasolid_entity_51_structured_uses(
 
 /// Resolve topology-owned attribute instances through their type-80 definition.
 pub(super) fn parasolid_topology_attribute_class_uses(
+    ctx: &DecodeContext<'_>,
     topology_references: &[ParasolidTopologyAttributeListReference],
     entity_records: &[ParasolidEntity51Record],
     class_uses: &[ParasolidAttributeClassUse],
-) -> Vec<ParasolidTopologyAttributeClassUse> {
-    let mut records_by_identity = BTreeMap::<(u32, u32), Vec<&ParasolidEntity51Record>>::new();
+) -> Result<Vec<ParasolidTopologyAttributeClassUse>, CodecError> {
+    let mut records_by_identity = BTreeMap::<(u32, u32), Option<&ParasolidEntity51Record>>::new();
+    let mut identity_guard = ctx.reserve_scoped(0, "NX topology attribute entity index")?;
     for record in entity_records {
-        records_by_identity
-            .entry((record.stream_ordinal, u32::from(record.xmt)))
-            .or_default()
-            .push(record);
+        insert_unique_value(ctx, &mut records_by_identity, &mut identity_guard,
+            (record.stream_ordinal, u32::from(record.xmt)), record)?;
     }
     let mut records_by_owner = BTreeMap::<(u32, u32), Vec<&ParasolidEntity51Record>>::new();
+    let mut owner_guard = ctx.reserve_scoped(0, "NX topology attribute owner index")?;
     for record in entity_records {
         let owner_xmt = record.leading_references[0];
         if owner_xmt > 1 {
-            records_by_owner
-                .entry((record.stream_ordinal, owner_xmt))
-                .or_default()
-                .push(record);
+            let members = match records_by_owner.entry((record.stream_ordinal, owner_xmt)) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "NX topology attribute owner index")?;
+                    owner_guard.grow(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<((u32, u32), Vec<&ParasolidEntity51Record>)>() * 4,
+                    ))?;
+                    entry.insert(Vec::new())
+                }
+            };
+            ctx.charge_collection_items(1, "NX topology attribute owner members")?;
+            owner_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&ParasolidEntity51Record>()))?;
+            members.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX topology attribute owner members", 0, 1))?;
+            members.push(record);
         }
     }
-    let mut class_uses_by_entity = BTreeMap::<&str, Vec<&ParasolidAttributeClassUse>>::new();
+    let mut class_uses_by_entity = BTreeMap::<&str, Option<&ParasolidAttributeClassUse>>::new();
+    let mut class_guard = ctx.reserve_scoped(0, "NX topology attribute class index")?;
     for class_use in class_uses {
-        class_uses_by_entity
-            .entry(class_use.entity_51_record.as_str())
-            .or_default()
-            .push(class_use);
+        match class_uses_by_entity.entry(class_use.entity_51_record.as_str()) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => *entry.get_mut() = None,
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX topology attribute class index")?;
+                class_guard.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(&str, Option<&ParasolidAttributeClassUse>)>() * 4,
+                ))?;
+                entry.insert(Some(class_use));
+            }
+        }
     }
     let mut uses = Vec::new();
     for reference in topology_references {
         let Some(entity_id) = reference.attribute_list_record.as_deref() else {
             continue;
         };
-        let Some([head]) = records_by_identity
+        let Some(Some(head)) = records_by_identity
             .get(&(reference.stream_ordinal, reference.attribute_list_xmt))
-            .map(Vec::as_slice)
         else {
             continue;
         };
@@ -4022,48 +4040,78 @@ pub(super) fn parasolid_topology_attribute_class_uses(
             continue;
         };
 
-        let base_id = format!(
-            "nx:s{}:topology-attribute-class-use#{}-{}",
-            reference.stream_ordinal,
-            reference.topology_type.code(),
-            reference.topology_xmt
-        );
         let mut member_xmt_counts = BTreeMap::<u32, usize>::new();
+        let mut count_guard = ctx.reserve_scoped(0, "NX topology attribute member XMT counts")?;
         for member in members {
-            *member_xmt_counts.entry(u32::from(member.xmt)).or_default() += 1;
+            let count = match member_xmt_counts.entry(u32::from(member.xmt)) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "NX topology attribute member XMT counts")?;
+                    count_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, usize)>() * 4))?;
+                    entry.insert(0)
+                }
+            };
+            *count = count.checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit("count NX topology attribute member XMT", 0, 1))?;
         }
         for member in members {
-            let Some([class_use]) = class_uses_by_entity
+            let Some(Some(class_use)) = class_uses_by_entity
                 .get(member.id.as_str())
-                .map(Vec::as_slice)
             else {
                 continue;
             };
-            let id = if member.id == head.id {
-                base_id.clone()
-            } else if member_xmt_counts.get(&u32::from(member.xmt)) == Some(&1) {
-                format!("{base_id}-{}", u32::from(member.xmt))
-            } else {
-                format!(
-                    "{base_id}-{}-{}",
-                    u32::from(member.xmt),
-                    member.inflated_offset
-                )
-            };
+            let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+            let mut length = "nx:s".len()
+                .checked_add(digits(u64::from(reference.stream_ordinal)))
+                .and_then(|length| length.checked_add(":topology-attribute-class-use#".len()))
+                .and_then(|length| length.checked_add(digits(u64::from(reference.topology_type.code()))))
+                .and_then(|length| length.checked_add(1 + digits(u64::from(reference.topology_xmt))))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute class identity", 0, 1))?;
+            let suffix = member.id != head.id;
+            let offset_suffix = suffix && member_xmt_counts.get(&u32::from(member.xmt)) != Some(&1);
+            if suffix {
+                length = length.checked_add(1 + digits(u64::from(u32::from(member.xmt))))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute class identity", 0, 1))?;
+            }
+            if offset_suffix {
+                length = length.checked_add(1 + digits(member.inflated_offset))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute class identity", 0, 1))?;
+            }
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX topology attribute class identity")?;
+            let mut id = String::new();
+            id.try_reserve_exact(length)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX topology attribute class identity", 0, 1))?;
+            write!(&mut id, "nx:s{}:topology-attribute-class-use#{}-{}", reference.stream_ordinal, reference.topology_type.code(), reference.topology_xmt)
+                .map_err(|_| ctx.refuse_codec_limit("write NX topology attribute class identity", 0, 1))?;
+            if suffix {
+                write!(&mut id, "-{}", u32::from(member.xmt))
+                    .map_err(|_| ctx.refuse_codec_limit("write NX topology attribute class identity", 0, 1))?;
+            }
+            if offset_suffix {
+                write!(&mut id, "-{}", member.inflated_offset)
+                    .map_err(|_| ctx.refuse_codec_limit("write NX topology attribute class identity", 0, 1))?;
+            }
+            ctx.charge_collection_items(1, "NX topology attribute class uses")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<ParasolidTopologyAttributeClassUse>()), "NX topology attribute class use")?;
+            uses.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX topology attribute class uses", 0, 1))?;
             uses.push(ParasolidTopologyAttributeClassUse {
                 stream_ordinal: reference.stream_ordinal,
                 inflated_offset: member.inflated_offset,
                 id,
-                topology_attribute_reference: reference.id.clone(),
-                entity_51_record: class_use.entity_51_record.clone(),
-                attribute_class_use: class_use.id.clone(),
+                topology_attribute_reference: entity_51_use_text(ctx, &reference.id)?,
+                entity_51_record: entity_51_use_text(ctx, &class_use.entity_51_record)?,
+                attribute_class_use: entity_51_use_text(ctx, &class_use.id)?,
                 definition_xmt: class_use.definition_xmt,
-                attribute_definition: class_use.attribute_definition.clone(),
+                attribute_definition: entity_51_use_text(ctx, &class_use.attribute_definition)?,
             });
         }
     }
+    let work = uses.len().checked_mul(uses.len().checked_ilog2().map_or(1, |digits| digits as usize + 1))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX topology attribute class sort work", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX topology attribute class sort work")?;
     uses.sort_by(|first, second| first.id.cmp(&second.id));
-    uses
+    Ok(uses)
 }
 
 /// Resolve every type-81 attribute instance through its type-80 definition reference.
@@ -6141,6 +6189,69 @@ mod tests {
             .err().expect("attribute class use limit refusal")
     }
 
+    fn topology_class_use_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> CodecError {
+        let entity = ParasolidEntity51Record {
+            id: "head".into(), stream_ordinal: 0,
+            xmt: NonNullXmt::try_from(30).unwrap(),
+            sequence: NonZeroU32::new(1).unwrap(),
+            definition_xmt: 20,
+            leading_references: [40, 1, 1, 1, 1],
+            trailing_references: EntityReferences::new(vec![50]).unwrap(),
+            byte_len: 32, inflated_offset: 30,
+        };
+        let class_use = ParasolidAttributeClassUse {
+            id: "class".into(), stream_ordinal: 0,
+            entity_51_record: entity.id.clone(),
+            definition_xmt: NonNullXmt::try_from(20).unwrap(),
+            attribute_definition: "definition".into(),
+            inflated_offset: 30,
+        };
+        let reference = ParasolidTopologyAttributeListReference {
+            id: "reference".into(), stream_ordinal: 0,
+            topology_type: TopologyAttributeKind::Face,
+            topology_xmt: 40,
+            attribute_list_xmt: 30,
+            attribute_list_record: Some(entity.id.clone()),
+            inflated_offset: 80,
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::parasolid_topology_attribute_class_uses(&ctx, &[reference], &[entity], &[class_use])
+            .err().expect("topology attribute class use limit refusal")
+    }
+
+    #[test]
+    fn topology_class_use_refuses_collection_limit() {
+        let error = topology_class_use_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn topology_class_use_refuses_retained_limit() {
+        let error = topology_class_use_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn topology_class_use_refuses_scoped_limit() {
+        let error = topology_class_use_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn topology_class_use_refuses_work_limit() {
+        let error = topology_class_use_limit_error(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+    }
+
     #[test]
     fn attribute_class_use_refuses_collection_limit() {
         let error = attribute_class_use_limit_error(|policy| policy.limits.max_collection_items = 0);
@@ -6658,21 +6769,21 @@ mod tests {
         assert_eq!(u32::from(instance_uses[0].definition_xmt), 34);
         assert_eq!(instance_uses[0].attribute_definition, definition.id);
 
-        let uses = super::parasolid_topology_attribute_class_uses(
-            std::slice::from_ref(&reference),
-            std::slice::from_ref(&entity),
-            &instance_uses,
-        );
+        let uses = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_topology_attribute_class_uses(ctx,
+                std::slice::from_ref(&reference), std::slice::from_ref(&entity), &instance_uses)
+                .unwrap()
+        });
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].attribute_class_use, instance_uses[0].id);
         assert_eq!(u32::from(uses[0].definition_xmt), 34);
         assert_eq!(uses[0].attribute_definition, definition.id);
-        assert!(super::parasolid_topology_attribute_class_uses(
-            std::slice::from_ref(&reference),
-            std::slice::from_ref(&entity),
-            &[instance_uses[0].clone(), instance_uses[0].clone()],
-        )
-        .is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_topology_attribute_class_uses(ctx,
+                std::slice::from_ref(&reference), std::slice::from_ref(&entity),
+                &[instance_uses[0].clone(), instance_uses[0].clone()])
+                .unwrap()
+        }).is_empty());
 
         let mut invalid = entity;
         invalid.definition_xmt = 33;
@@ -6683,12 +6794,11 @@ mod tests {
         let invalid_uses = crate::test_support::with_decode_context(|ctx| {
             super::parasolid_attribute_class_uses(ctx, &[invalid.clone()], &[definition]).unwrap()
         });
-        assert!(super::parasolid_topology_attribute_class_uses(
-            &[reference],
-            std::slice::from_ref(&invalid),
-            &invalid_uses,
-        )
-        .is_empty());
+        assert!(crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_topology_attribute_class_uses(ctx,
+                &[reference], std::slice::from_ref(&invalid), &invalid_uses)
+                .unwrap()
+        }).is_empty());
     }
 
     #[test]
@@ -6742,11 +6852,11 @@ mod tests {
                 &[head.clone(), child.clone()], std::slice::from_ref(&definition)).unwrap()
         });
 
-        let uses = super::parasolid_topology_attribute_class_uses(
-            std::slice::from_ref(&reference),
-            &[head, child],
-            &class_uses,
-        );
+        let uses = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_topology_attribute_class_uses(ctx,
+                std::slice::from_ref(&reference), &[head, child], &class_uses)
+                .unwrap()
+        });
 
         assert_eq!(uses.len(), 2);
         assert!(uses.iter().any(|use_| use_.entity_51_record == "head"));
