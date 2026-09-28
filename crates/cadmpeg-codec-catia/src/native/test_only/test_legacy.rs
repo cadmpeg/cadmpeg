@@ -16,7 +16,6 @@ pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
             && record.definition_schema_selections.is_empty()
             && record.definition_suffix().is_empty()
             && record.value_payload().is_empty()
-            && record.value_fields().is_empty()
             && record.value_schema_selections.is_empty()
             && record.reference_signature.is_none()
             && record.record_suffix().is_empty()

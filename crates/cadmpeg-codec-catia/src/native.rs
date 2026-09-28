@@ -4331,34 +4331,39 @@ fn resolved_storage_link(
 }
 
 fn definition_schema_selections(
+    ctx: &DecodeContext<'_>,
     selectors: &[entity_table::DefinitionSchemaSelector],
     catalog: Option<&CatiaCatalog>,
-) -> Vec<CatiaDefinitionSchemaSelection> {
-    selectors
-        .iter()
-        .map(|selector| {
+) -> Result<Vec<CatiaDefinitionSchemaSelection>, CodecError> {
+    let mut selections = Vec::new();
+    for selector in selectors {
             let catalog_entry = usize::try_from(selector.value)
                 .ok()
                 .and_then(|ordinal| catalog?.entries.get(ordinal));
-            CatiaDefinitionSchemaSelection {
+            let selection = CatiaDefinitionSchemaSelection {
                 offset: selector.offset as u64,
                 ordinal: selector.value,
-                entry: catalog_entry.map(|entry| entry.id.clone()),
-                name: catalog_entry.map(|entry| entry.value.clone()),
-            }
-        })
-        .collect()
+                entry: catalog_entry.map(|entry| crate::resource::copy_retained_str(ctx, &entry.id,
+                    "catia_definition_selection_entry")).transpose()?,
+                name: catalog_entry.map(|entry| crate::resource::copy_retained_str(ctx, &entry.value,
+                    "catia_definition_selection_name")).transpose()?,
+            };
+            crate::resource::push(ctx, &mut selections, selection,
+                "catia_definition_schema_selections")?;
+    }
+    Ok(selections)
 }
 
 fn entity_value_schema_selections(
+    ctx: &DecodeContext<'_>,
     fields: &[value_block::ValueField],
     catalog: Option<&CatiaCatalog>,
     packets: &[entity_table::EntityValuePacket],
-) -> Vec<CatiaEntityValueSchemaSelection> {
+) -> Result<Vec<CatiaEntityValueSchemaSelection>, CodecError> {
     let Some(catalog) = catalog else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let selector_indices = fields
+    let selector_indices = crate::resource::collect_vec(ctx, fields
         .iter()
         .enumerate()
         .filter_map(|(index, field)| {
@@ -4369,43 +4374,45 @@ fn entity_value_schema_selections(
                 .ok()
                 .filter(|ordinal| *ordinal < catalog.entries.len())
                 .map(|_| index)
-        })
-        .collect::<Vec<_>>();
-    selector_indices
-        .iter()
-        .enumerate()
-        .filter_map(|(rank, index)| {
+        }), "catia_native_value_selector_indices")?;
+    let mut selections = Vec::new();
+    for (rank, index) in selector_indices.iter().enumerate() {
             let value_block::ValueField::SchemaSelector { ordinal, offset } = &fields[*index]
             else {
-                return None;
+                continue;
             };
-            let catalog_entry = usize::try_from(*ordinal)
+            let Some(catalog_entry) = usize::try_from(*ordinal)
                 .ok()
-                .and_then(|ordinal| catalog.entries.get(ordinal))?;
+                .and_then(|ordinal| catalog.entries.get(ordinal)) else { continue };
             let value_end = selector_indices
                 .get(rank + 1)
                 .copied()
                 .unwrap_or(fields.len());
             let value_start_offset = fields.get(index + 1).map_or(usize::MAX, value_field_offset);
             let value_end_offset = fields.get(value_end).map_or(usize::MAX, value_field_offset);
-            Some(CatiaEntityValueSchemaSelection {
+            let mut selected_packets = Vec::new();
+            for packet in packets.iter().filter(|packet| {
+                packet.byte_range().is_some_and(|range| {
+                    range.start >= value_start_offset && range.end <= value_end_offset
+                })
+            }) {
+                crate::resource::push(ctx, &mut selected_packets, packet.copy_charged(ctx)?,
+                    "catia_native_selected_packets")?;
+            }
+            let selection = CatiaEntityValueSchemaSelection {
                 offset: *offset as u64,
                 ordinal: *ordinal,
-                entry: catalog_entry.id.clone(),
-                name: catalog_entry.value.clone(),
-                encoded_value: fields[index + 1..value_end].to_vec(),
-                packets: packets
-                    .iter()
-                    .filter(|packet| {
-                        packet.byte_range().is_some_and(|range| {
-                            range.start >= value_start_offset && range.end <= value_end_offset
-                        })
-                    })
-                    .cloned()
-                    .collect(),
-            })
-        })
-        .collect()
+                entry: crate::resource::copy_retained_str(ctx, &catalog_entry.id,
+                    "catia_native_value_selection_entry")?,
+                name: crate::resource::copy_retained_str(ctx, &catalog_entry.value,
+                    "catia_native_value_selection_name")?,
+                encoded_value: value_block::copy_fields_charged(ctx, &fields[index + 1..value_end])?,
+                packets: selected_packets,
+            };
+            crate::resource::push(ctx, &mut selections, selection,
+                "catia_native_value_schema_selections")?;
+    }
+    Ok(selections)
 }
 
 fn entity_suffix_schema_selection(
@@ -5970,10 +5977,14 @@ fn value_field_offset(field: &value_block::ValueField) -> usize {
 }
 
 fn repeated_reference_schema_selection(
-    suffix: Option<&object_graph::RepeatedReferenceSuffix>,
+    ctx: &DecodeContext<'_>,
+    preamble: Option<&object_graph::ReferenceSchemaPreamble>,
     catalog: Option<&CatiaCatalog>,
-) -> Option<CatiaRepeatedReferenceSchemaSelection> {
-    let (order, ordinal, offset) = match suffix?.schema_preamble.as_ref()? {
+) -> Result<Option<CatiaRepeatedReferenceSchemaSelection>, CodecError> {
+    let Some(preamble) = preamble else {
+        return Ok(None);
+    };
+    let (order, ordinal, offset) = match preamble {
         object_graph::ReferenceSchemaPreamble::BlobThenSchema { schema_ref, offset } => (
             CatiaRepeatedReferenceSchemaOrder::BlobThenSchema,
             *schema_ref,
@@ -5988,13 +5999,15 @@ fn repeated_reference_schema_selection(
     let catalog_entry = usize::try_from(ordinal)
         .ok()
         .and_then(|ordinal| catalog?.entries.get(ordinal));
-    Some(CatiaRepeatedReferenceSchemaSelection {
+    Ok(Some(CatiaRepeatedReferenceSchemaSelection {
         order,
         offset: offset as u64,
         ordinal,
-        entry: catalog_entry.map(|entry| entry.id.clone()),
-        name: catalog_entry.map(|entry| entry.value.clone()),
-    })
+        entry: catalog_entry.map(|entry| crate::resource::copy_retained_str(ctx, &entry.id,
+            "catia_repeated_reference_entry")).transpose()?,
+        name: catalog_entry.map(|entry| crate::resource::copy_retained_str(ctx, &entry.value,
+            "catia_repeated_reference_name")).transpose()?,
+    }))
 }
 
 /// One stored entity identity in a pre-`7C05` design stream.
@@ -9396,21 +9409,24 @@ impl CatiaNative {
                         .map(|entry| entry.value.clone());
                 }
                 record.repeated_reference_schema_selection = repeated_reference_schema_selection(
-                    record.repeated_reference_suffix().as_ref(),
+                    ctx,
+                    object_graph::repeated_reference_schema_preamble(&record.payload).as_ref(),
                     catalog,
-                );
+                )?;
             }
             for entity in entity_records
                 .iter_mut()
                 .filter(|entity| entity.object_graph == graph.id)
             {
                 entity.definition_schema_selections = definition_schema_selections(
-                    &entity_table::parse_definition_schema_selectors(entity.definition_prefix()),
+                    ctx,
+                    &entity_table::parse_definition_schema_selectors(ctx, entity.definition_prefix())?,
                     catalog,
-                );
-                let value_fields = entity.value_fields();
+                )?;
+                let value_fields = entity.value_fields_charged(ctx)?;
+                let value_packets = entity.value_packets(ctx, &value_fields)?;
                 entity.value_schema_selections =
-                    entity_value_schema_selections(&value_fields, catalog, &entity.value_packets());
+                    entity_value_schema_selections(ctx, &value_fields, catalog, &value_packets)?;
                 let record_suffix = entity.record_suffix().to_vec();
                 entity.set_suffix_from_bytes(&record_suffix);
                 entity.suffix_schema_selection =

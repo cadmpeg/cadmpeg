@@ -26,7 +26,6 @@ use crate::entity_table;
 use crate::families;
 use crate::formula;
 use crate::loss::CatiaLossCode;
-use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::schema_configuration_chain::CatiaSchemaConfigurationRowChain;
 use crate::native::{CatiaNative, CatiaObjectGraph};
 use crate::pmi;
@@ -373,7 +372,7 @@ fn finish_decode(
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .filter(|record| record.repeated_reference_suffix().is_some())
+        .filter(|record| crate::object_graph::has_repeated_reference_suffix(&record.payload))
         .count();
     let repeated_reference_schema_selection_count = native
         .object_graphs
@@ -717,11 +716,6 @@ fn finish_decode(
         .map(|record| record.definition_schema_selections.len())
         .sum();
     let mut entity_value_field_count = 0usize;
-    for record in &native.entity_records {
-        entity_value_field_count = entity_value_field_count
-            .checked_add(record.value_fields_charged(ctx)?.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("catia_entity_value_field_count", u64::MAX, u64::MAX))?;
-    }
     let entity_value_schema_selection_count = native
         .entity_records
         .iter()
@@ -731,11 +725,12 @@ fn finish_decode(
     let mut numeric_entity_value_packet_count = 0;
     let mut layout_entity_value_packet_count = 0;
     let mut e9_scalar_entity_value_packet_count = 0;
-    for packet in native
-        .entity_records
-        .iter()
-        .flat_map(CatiaEntityRecord::value_packets)
-    {
+    for record in &native.entity_records {
+        let fields = record.value_fields_charged(ctx)?;
+        entity_value_field_count = entity_value_field_count
+            .checked_add(fields.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("catia_entity_value_field_count", u64::MAX, u64::MAX))?;
+        for packet in record.value_packets(ctx, &fields)? {
         match packet {
             entity_table::EntityValuePacket::Compact { .. } => {
                 compact_entity_value_packet_count += 1;
@@ -747,6 +742,7 @@ fn finish_decode(
             entity_table::EntityValuePacket::E9Scalar { .. } => {
                 e9_scalar_entity_value_packet_count += 1;
             }
+        }
         }
     }
     let numeric_entity_value_pair_count = native

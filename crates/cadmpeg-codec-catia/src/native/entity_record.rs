@@ -10,6 +10,8 @@ use super::{
     CatiaSchemaConfigurationRowLink,
 };
 use crate::{entity_table, value_block};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 /// Complete production selected by the entity value and suffix frames.
@@ -127,8 +129,9 @@ impl CatiaEntityRecord {
         }
     }
 
-    pub(crate) fn value_packets(&self) -> Vec<entity_table::EntityValuePacket> {
-        entity_table::value_packets(self.value_payload(), &self.value_fields())
+    pub(crate) fn value_packets(&self, ctx: &DecodeContext<'_>, fields: &[value_block::ValueField])
+        -> Result<Vec<entity_table::EntityValuePacket>, CodecError> {
+        entity_table::value_packets_charged(ctx, self.value_payload(), fields)
     }
 
     pub(crate) fn numeric_pair(&self) -> Option<entity_table::NumericPair> {
@@ -308,10 +311,6 @@ impl CatiaEntityRecord {
             CatiaEntityRecordBody::Inline(_) => &[],
             CatiaEntityRecordBody::Nested { value_payload, .. } => value_payload,
         }
-    }
-
-    pub(crate) fn value_fields(&self) -> Vec<value_block::ValueField> {
-        value_block::tokenize(self.value_payload())
     }
 
     pub(crate) fn value_fields_charged(
