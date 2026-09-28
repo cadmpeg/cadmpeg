@@ -346,19 +346,24 @@ pub(super) fn emit_model_features(
             .iter()
             .find(|section| section.contains(operation.offset))
             .map_or("MdlStatus", |section| section.name());
-        let name = current_operation.and_then(|operation| {
-            operation.display_name_stored().then_some(())?;
-            let stored_name = operation.stored_name()?;
-            Some(
-                operation
+        let name = current_operation
+            .filter(|operation| operation.display_name_stored())
+            .and_then(|operation| operation.name.stored_name_bytes().map(|bytes| (operation, bytes)))
+            .map(|(operation, bytes)| {
+                let mut prefix_bytes = [0u8; 4];
+                let stripped = operation
                     .stored_name_prefix()
-                    .and_then(|prefix| stored_name.strip_prefix(char::from(prefix)))
-                    .unwrap_or(&stored_name)
-                    .to_string(),
-            )
-        });
+                    .and_then(|prefix| {
+                        let prefix = char::from(prefix).encode_utf8(&mut prefix_bytes);
+                        bytes.strip_prefix(prefix.as_bytes())
+                    })
+                    .unwrap_or(bytes);
+                ctx.copy_retained_lossy_utf8(stripped, "creo stored Feature name")
+            })
+            .transpose()?;
         let source_tag = current_feature_recipe(&scan.features.operations, operation.feature_id)
-            .map(|recipe| recipe.name().to_string());
+            .map(|recipe| ctx.copy_retained_text(recipe.name(), "creo Feature source tag"))
+            .transpose()?;
         let native_ref = owning_feature_definition_ref(scan, operation.feature_id);
         if let Some(existing) = ir
             .model
