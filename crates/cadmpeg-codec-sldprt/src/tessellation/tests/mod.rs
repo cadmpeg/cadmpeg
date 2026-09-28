@@ -4,7 +4,6 @@ use cadmpeg_test_support::EditableDecodeResult;
 use super::analytic_surface_normal;
 use super::analytic_surface_residual;
 use super::assign_persistent_owners;
-use super::assign_unique_surface_owners;
 use super::chordal_hole_constraint;
 use super::circle_overlaps_polygon;
 use super::circular_interval;
@@ -67,6 +66,16 @@ use cadmpeg_ir::topology::{
 
 mod display_references;
 mod display_tables;
+
+macro_rules! assign_unique_surface_owners {
+    ($model:expr) => {{
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
+        super::assign_unique_surface_owners(&ctx, $model)
+    }};
+}
 
 fn decoded_references(payload: &[u8], range: ByteRange) -> Vec<PersistentSurfaceReference> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -327,7 +336,7 @@ fn face_tolerance_below_display_resolution_is_refused() {
             .expect("the test tolerance is positive and finite"),
     );
 
-    let error = assign_unique_surface_owners(&mut model)
+    let error = assign_unique_surface_owners!(&mut model)
         .expect_err("a display lane cannot evaluate a finer stated tolerance");
     let text = error.to_string();
     assert!(text.contains(face_id.as_str()), "{text}");
@@ -793,6 +802,45 @@ fn persistent_tessellation_assignment_refuses_work_limit() {
         if limit.operation == "index SLDPRT persistent face identities"));
 }
 
+fn geometric_assignment_limit_error(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let mut model = model_with_body();
+    let face = add_square_face(&mut model, "limited-geometric", 0.0);
+    set_shell_faces(&mut model, vec![face]);
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    super::assign_unique_surface_owners(&ctx, &mut model)
+        .expect_err("selected limit refuses the geometric assignment")
+}
+
+#[test]
+fn geometric_tessellation_assignment_refuses_collection_limit() {
+    let error = geometric_assignment_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index SLDPRT tessellation surfaces"));
+}
+
+#[test]
+fn geometric_tessellation_assignment_refuses_retained_limit() {
+    let error = geometric_assignment_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain SLDPRT tessellation face ID"));
+}
+
+#[test]
+fn geometric_tessellation_assignment_refuses_work_limit() {
+    let error = geometric_assignment_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index SLDPRT tessellation surfaces"));
+}
+
 #[test]
 fn bounded_planar_trim_selects_between_coincident_supports() {
     let mut model = model_with_body();
@@ -816,7 +864,7 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut model).unwrap(),
         vec!["synthetic:test:tessellation#mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![second]);
@@ -833,7 +881,7 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
         .loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     model.tessellations[0].body = None;
     model.tessellations[0].faces.clear();
-    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
+    assert!(assign_unique_surface_owners!(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
 }
 
@@ -860,7 +908,7 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut model).unwrap(),
         vec!["synthetic:test:tessellation#lower-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![lower]);
@@ -899,7 +947,7 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut model).unwrap(),
         vec!["synthetic:test:tessellation#chordal-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
@@ -937,7 +985,7 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut model).unwrap(),
         vec!["synthetic:test:tessellation#inconsistent-normals-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
@@ -973,7 +1021,7 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
+    assert!(assign_unique_surface_owners!(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].body.is_none());
     assert!(model.tessellations[0].faces.is_empty());
 }
@@ -1068,7 +1116,7 @@ fn cone_support_binds_display_list_face() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut model).unwrap(),
         vec!["synthetic:test:tessellation#cone-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
@@ -1135,7 +1183,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut model).unwrap(),
         vec!["synthetic:test:tessellation#cone-cache-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
@@ -1228,7 +1276,7 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
     ));
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut model).unwrap(),
         vec!["synthetic:test:tessellation#nurbs-exact-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
@@ -1270,7 +1318,7 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
+    assert!(assign_unique_surface_owners!(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
     assert!(model.tessellations[0].body.is_none());
     assert!(model.tessellations[0].chordal_deflection().is_none());
@@ -1316,7 +1364,7 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
+    assert!(assign_unique_surface_owners!(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
     assert!(model.tessellations[0].body.is_none());
 }
@@ -1370,7 +1418,7 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners(&mut model).unwrap().is_empty());
+    assert!(assign_unique_surface_owners!(&mut model).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
     assert!(model.tessellations[0].body.is_none());
 }
@@ -1895,7 +1943,7 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut model).unwrap(),
         vec!["synthetic:test:tessellation#arc-trim-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![target]);

@@ -98,6 +98,20 @@ fn collect_index<K: Eq + Hash, V>(
     Ok(index)
 }
 
+fn charge_fit_work(
+    ctx: &DecodeContext<'_>,
+    candidates: usize,
+    vertices: usize,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let units = vertices
+        .checked_add(1)
+        .and_then(|per_candidate| candidates.checked_mul(per_candidate))
+        .and_then(|total| u64::try_from(total).ok())
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(units, operation)
+}
+
 fn copy_retained_string(
     ctx: &DecodeContext<'_>,
     value: &str,
@@ -886,6 +900,7 @@ struct SurfaceCandidate<'a> {
 /// display quantization tolerance; an unconstrained nearest-support fit is
 /// not an ownership witness.
 pub(crate) fn assign_unique_surface_owners(
+    ctx: &DecodeContext<'_>,
     model: &mut cadmpeg_ir::document::Model,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
     for face in &model.faces {
@@ -900,60 +915,20 @@ pub(crate) fn assign_unique_surface_owners(
             }
         }
     }
-    let surfaces = model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<HashMap<_, _>>();
-    let regions = model
-        .regions
-        .iter()
-        .map(|region| (&region.id, &region.body))
-        .collect::<HashMap<_, _>>();
-    let shell_bodies = model
-        .shells
-        .iter()
-        .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
-        .collect::<HashMap<_, _>>();
-    let body_transforms = model
-        .bodies
-        .iter()
-        .map(|body| (&body.id, body.transform))
-        .collect::<HashMap<_, _>>();
-    let loops = model
-        .loops
-        .iter()
-        .map(|loop_| (&loop_.id, loop_))
-        .collect::<HashMap<_, _>>();
-    let coedges = model
-        .coedges
-        .iter()
-        .map(|coedge| (&coedge.id, coedge))
-        .collect::<HashMap<_, _>>();
-    let edges = model
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge))
-        .collect::<HashMap<_, _>>();
-    let vertices = model
-        .vertices
-        .iter()
-        .map(|vertex| (&vertex.id, vertex))
-        .collect::<HashMap<_, _>>();
-    let points = model
-        .points
-        .iter()
-        .map(|point| (&point.id, point.position().get()))
-        .collect::<HashMap<_, _>>();
-    let curves = model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<HashMap<_, _>>();
-    let candidates = model
-        .faces
-        .iter()
-        .filter_map(|face| {
+    let surfaces = collect_index(ctx, model.surfaces.iter().map(|surface| (&surface.id, &surface.geometry)), "index SLDPRT tessellation surfaces")?;
+    let regions = collect_index(ctx, model.regions.iter().map(|region| (&region.id, &region.body)), "index SLDPRT tessellation regions")?;
+    let shell_bodies = collect_index(ctx, model.shells.iter().filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?))), "index SLDPRT tessellation shells")?;
+    let body_transforms = collect_index(ctx, model.bodies.iter().map(|body| (&body.id, body.transform)), "index SLDPRT tessellation body transforms")?;
+    let loops = collect_index(ctx, model.loops.iter().map(|loop_| (&loop_.id, loop_)), "index SLDPRT tessellation loops")?;
+    let coedges = collect_index(ctx, model.coedges.iter().map(|coedge| (&coedge.id, coedge)), "index SLDPRT tessellation coedges")?;
+    let edges = collect_index(ctx, model.edges.iter().map(|edge| (&edge.id, edge)), "index SLDPRT tessellation edges")?;
+    let vertices = collect_index(ctx, model.vertices.iter().map(|vertex| (&vertex.id, vertex)), "index SLDPRT tessellation vertices")?;
+    let points = collect_index(ctx, model.points.iter().map(|point| (&point.id, point.position().get())), "index SLDPRT tessellation points")?;
+    let curves = collect_index(ctx, model.curves.iter().map(|curve| (&curve.id, &curve.geometry)), "index SLDPRT tessellation curves")?;
+    let mut candidates = Vec::new();
+    for face in &model.faces {
+        ctx.charge_work(1, "select SLDPRT tessellation face candidates")?;
+        let candidate = (|| {
             let body = *shell_bodies.get(&face.shell)?;
             let inverse = match body_transforms.get(body).copied().flatten() {
                 Some(transform) if transform.is_proper_rigid() => {
@@ -981,8 +956,12 @@ pub(crate) fn assign_unique_surface_owners(
                     &curves,
                 ),
             })
-        })
-        .collect::<Vec<_>>();
+        })();
+        if let Some(candidate) = candidate {
+            ctx.reserve_collection_vec(&mut candidates, 1, "collect SLDPRT tessellation face candidates")?;
+            candidates.push(candidate);
+        }
+    }
 
     let mut assigned = Vec::new();
     for mesh in &mut model.tessellations {
@@ -999,10 +978,12 @@ pub(crate) fn assign_unique_surface_owners(
                 + EPS_DISPLAY_QUANTIZATION;
         let mut owners = Vec::new();
         for candidate in &candidates {
+            ctx.charge_work(1, "test SLDPRT tessellation face candidate")?;
             let tolerance = candidate.tolerance.max(quantization_tolerance);
             let Some(surface) = candidate.surface.solved() else { continue; };
             let mut fits = true;
             for point in mesh.vertices() {
+                ctx.charge_work(1, "test SLDPRT tessellation vertex")?;
                 let Some(local) = candidate.inverse.apply_point(point.get()) else { fits = false; break; };
                 let Some(measure) = surface_measure(surface, local.get(), Some(tolerance))? else { fits = false; break; };
                 if measure.residual > tolerance {
@@ -1011,6 +992,7 @@ pub(crate) fn assign_unique_surface_owners(
                 }
             }
             if fits {
+                ctx.reserve_collection_vec(&mut owners, 1, "collect SLDPRT tessellation owners")?;
                 owners.push(candidate);
             }
         }
@@ -1037,7 +1019,7 @@ pub(crate) fn assign_unique_surface_owners(
                     continue;
                 }
                 let Some((index, deflection)) =
-                    approximate_surface_owner(mesh, &candidates, quantization_tolerance)?
+                    approximate_surface_owner(ctx, mesh, &candidates, quantization_tolerance)?
                 else {
                     continue;
                 };
@@ -1045,8 +1027,15 @@ pub(crate) fn assign_unique_surface_owners(
                 (owner.face, owner.body, Some(deflection))
             }
         };
-        mesh.faces.push((*face).clone());
-        mesh.body = Some((*body).clone());
+        ctx.reserve_collection_vec(&mut mesh.faces, 1, "assign SLDPRT geometric tessellation face")?;
+        let face = copy_retained_string(ctx, face.as_str(), "retain SLDPRT tessellation face ID")?;
+        let face = FaceId::mint(face).map_err(cadmpeg_core::CodecError::malformed)?;
+        let body = copy_retained_string(ctx, body.as_str(), "retain SLDPRT tessellation body ID")?;
+        let body = cadmpeg_ir::ids::BodyId::mint(body).map_err(cadmpeg_core::CodecError::malformed)?;
+        let assigned_id = copy_retained_string(ctx, mesh.id.as_str(), "retain SLDPRT assigned tessellation ID")?;
+        ctx.reserve_collection_vec(&mut assigned, 1, "collect SLDPRT assigned tessellations")?;
+        mesh.faces.push(face);
+        mesh.body = Some(body);
         if let Some(deflection) = chordal_deflection {
             mesh.set_chordal_deflection(Some(deflection))
                 .map_err(|error| {
@@ -1055,20 +1044,23 @@ pub(crate) fn assign_unique_surface_owners(
                     ))
                 })?;
         }
-        assigned.push(mesh.id.to_string());
+        assigned.push(assigned_id);
     }
     Ok(assigned)
 }
 
 fn approximate_surface_owner(
+    ctx: &DecodeContext<'_>,
     mesh: &cadmpeg_ir::tessellation::Tessellation,
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
-) -> Result<Option<(usize, f64)>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<(usize, f64)>, cadmpeg_core::CodecError> {
     if mesh.vertex_normals().len() != mesh.vertex_count() || mesh.vertex_normals().is_empty() {
         return Ok(None);
     }
-    let mut fits = candidates
+    charge_fit_work(ctx, candidates.len(), mesh.vertex_count(), "test SLDPRT tessellation surface fits")?;
+    let mut fits = Vec::new();
+    for outcome in candidates
         .iter()
         .enumerate()
         .filter_map(|(index, candidate)| {
@@ -1095,9 +1087,13 @@ fn approximate_surface_owner(
             }
             Some(Ok((index, max_residual)))
         })
-        .collect::<Result<Vec<_>, _>>()?;
+    {
+        let fit = outcome?;
+        ctx.reserve_collection_vec(&mut fits, 1, "collect SLDPRT tessellation surface fits")?;
+        fits.push(fit);
+    }
     if fits.is_empty() {
-        return approximate_trimmed_surface_owner(mesh, candidates, quantization_tolerance);
+        return approximate_trimmed_surface_owner(ctx, mesh, candidates, quantization_tolerance);
     }
     fits.sort_by(|left, right| left.1.total_cmp(&right.1));
     let best_deflection = fits[0].1;
@@ -1124,11 +1120,14 @@ fn approximate_surface_owner(
 /// geometric coincidence on an unbounded analytic carrier cannot fabricate an
 /// owner without the normal agreement required above.
 fn approximate_trimmed_surface_owner(
+    ctx: &DecodeContext<'_>,
     mesh: &cadmpeg_ir::tessellation::Tessellation,
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
-) -> Result<Option<(usize, f64)>, cadmpeg_core::decode::ResourceLimit> {
-    let mut fits = candidates
+) -> Result<Option<(usize, f64)>, cadmpeg_core::CodecError> {
+    charge_fit_work(ctx, candidates.len(), mesh.vertex_count(), "test SLDPRT tessellation trimmed fits")?;
+    let mut fits = Vec::new();
+    for outcome in candidates
         .iter()
         .enumerate()
         .filter_map(|(index, candidate)| {
@@ -1154,7 +1153,11 @@ fn approximate_trimmed_surface_owner(
             trim.contains_mesh(mesh, candidate.inverse, quantization_tolerance)
                 .then_some(Ok((index, max_residual)))
         })
-        .collect::<Result<Vec<_>, _>>()?;
+    {
+        let fit = outcome?;
+        ctx.reserve_collection_vec(&mut fits, 1, "collect SLDPRT tessellation trimmed fits")?;
+        fits.push(fit);
+    }
     fits.sort_by(|left, right| left.1.total_cmp(&right.1));
     let Some(first) = fits.first() else { return Ok(None); };
     let best_deflection = first.1;

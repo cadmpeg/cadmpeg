@@ -233,7 +233,11 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     decoded.ir_mut().model.shells[0].add_face(coincident.id.clone());
     decoded.ir_mut().model.faces.push(coincident);
 
-    let _ = crate::tessellation::assign_unique_surface_owners(&mut decoded.ir_mut().model).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    let _ = crate::tessellation::assign_unique_surface_owners(&ctx, &mut decoded.ir_mut().model).unwrap();
 
     assert!(decoded.ir().model.tessellations[0].body.is_none());
     assert!(decoded.ir().model.tessellations[0].faces.is_empty());
