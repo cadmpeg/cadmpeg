@@ -262,24 +262,24 @@ pub(crate) fn transfer(
             object.type_name.as_str(),
             "PartDesign::Thickness" | "Part::Thickness"
         ) {
-            thickness_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            thickness_definition(ctx, &object.type_name, &owned)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if matches!(object.type_name.as_str(), "Part::Offset" | "Part::Offset2D") {
-            offset_shape_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            offset_shape_definition(ctx, &object.type_name, &owned)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if matches!(
             object.type_name.as_str(),
             "Part::Compound" | "Part::Compound2" | "Part::Refine" | "Part::Reverse"
         ) {
-            derived_shape_definition(&object.type_name, &owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            derived_shape_definition(ctx, &object.type_name, &owned)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "Part::RuledSurface" {
-            ruled_surface_definition(&owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            ruled_surface_definition(ctx, &owned)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "Part::Section" {
-            section_shape_definition(&owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            section_shape_definition(ctx, &owned)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "Part::Mirroring" {
-            mirror_shape_definition(&owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            mirror_shape_definition(ctx, &owned)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "Part::ProjectOnSurface" {
-            project_on_surface_definition(&owned).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            project_on_surface_definition(ctx, &owned)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if object.type_name == "PartDesign::Draft" {
-            draft_definition(&owned, objects, &properties_by_owner).map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
+            draft_definition(ctx, &owned, objects, &properties_by_owner)?.map_or_else(|| native_definition(ctx, &object.type_name, &owned), Ok)?
         } else if is_fillet(&object.type_name) {
             fillet_definition(ctx, &object.type_name, &owned, entries)?
                 .or_else(|| cached_shape_definition(&owned))
@@ -4802,96 +4802,100 @@ fn shell_join(kind: &str, properties: &[&PropertyRecord]) -> Option<ShellJoin> {
     }
 }
 
-fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
-    let thickness = scalar_named(properties, "Value")?;
+fn thickness_definition(ctx: &DecodeContext<'_>, kind: &str, properties: &[&PropertyRecord]) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(thickness) = scalar_named(properties, "Value") else { return Ok(None); };
     if thickness.get() == 0.0 {
-        return None;
+        return Ok(None);
     }
     let source_name = if kind == "Part::Thickness" {
         "Faces"
     } else {
         "Base"
     };
-    let selection = property(properties, source_name)?;
+    let Some(selection) = property(properties, source_name) else { return Ok(None); };
     if selection.links().is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(FeatureDefinition::Operation(FeatureOperation::Shell {
+    let outward = thickness.get() > 0.0;
+    let Some(thickness) = cadmpeg_ir::scalar::PositiveLength::from_assigned_real(thickness.abs()) else { return Ok(None); };
+    let Some(mode) = shell_mode(kind, properties) else { return Ok(None); };
+    let Some(join) = shell_join(kind, properties) else { return Ok(None); };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Shell {
         bodies: None,
-        removed_faces: cadmpeg_ir::features::FaceSelection::Native(selection.id.clone()),
-        thickness: Some(cadmpeg_ir::scalar::PositiveLength::from_assigned_real(
-            thickness.abs(),
-        )?),
+        removed_faces: cadmpeg_ir::features::FaceSelection::Native(retained_string(ctx, &selection.id, "fcstd thickness faces identity")?),
+        thickness: Some(thickness),
         outward: Some(if kind == "Part::Thickness" {
-            thickness.get() > 0.0
+            outward
         } else {
             !bool_property(properties, "Reversed").unwrap_or(false)
         }),
-        mode: Some(shell_mode(kind, properties)?),
-        join: Some(shell_join(kind, properties)?),
+        mode: Some(mode),
+        join: Some(join),
         resolve_intersections: Some(bool_property(properties, "Intersection").unwrap_or(false)),
         allow_self_intersections: Some(
             bool_property(properties, "SelfIntersection").unwrap_or(false),
         ),
-    }))
+    })))
 }
 
 fn offset_shape_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
-) -> Option<FeatureDefinition> {
-    let source = singular_operand(properties, "Source")?;
-    let distance =
-        cadmpeg_ir::scalar::NonZeroLength::from_assigned_real(scalar_named(properties, "Value")?)?;
-    let mode = shell_mode(kind, properties)?;
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(source) = singular_operand(properties, "Source") else { return Ok(None); };
+    let Some(distance) = scalar_named(properties, "Value").and_then(cadmpeg_ir::scalar::NonZeroLength::from_assigned_real) else { return Ok(None); };
+    let Some(mode) = shell_mode(kind, properties) else { return Ok(None); };
     if kind == "Part::Offset2D" && mode == ShellMode::BothSides {
-        return None;
+        return Ok(None);
     }
-    Some(FeatureDefinition::Operation(
+    let Some(join) = shell_join(kind, properties) else { return Ok(None); };
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::OffsetShape {
-            source: BodySelection::Native(source.id.clone()),
+            source: BodySelection::Native(retained_string(ctx, &source.id, "fcstd offset source identity")?),
             distance,
             mode,
-            join: shell_join(kind, properties)?,
+            join,
             resolve_intersections: bool_property(properties, "Intersection").unwrap_or(false),
             allow_self_intersections: bool_property(properties, "SelfIntersection")
                 .unwrap_or(false),
             fill: bool_property(properties, "Fill").unwrap_or(false),
             planar: kind == "Part::Offset2D",
         },
-    ))
+    )))
 }
 
 fn derived_shape_definition(
+    ctx: &DecodeContext<'_>,
     kind: &str,
     properties: &[&PropertyRecord],
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
     match kind {
         "Part::Compound" | "Part::Compound2" => {
             let Some(links) = property(properties, "Links") else {
-                return property(properties, "Shape")
-                    .map(|_| FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}));
+                return Ok(property(properties, "Shape")
+                    .map(|_| FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})));
             };
             if links.links().is_empty() {
-                return None;
+                return Ok(None);
             }
-            Some(FeatureDefinition::Operation(FeatureOperation::Compound {
-                members: BodySelection::Native(links.id.clone()),
-            }))
+            Ok(Some(FeatureDefinition::Operation(FeatureOperation::Compound {
+                members: BodySelection::Native(retained_string(ctx, &links.id, "fcstd compound members identity")?),
+            })))
         }
         "Part::Refine" | "Part::Reverse" => {
-            let source = property(properties, "Source")?;
+            let Some(source) = property(properties, "Source") else { return Ok(None); };
             if source.links().len() != 1 {
-                return None;
+                return Ok(None);
             }
-            let source = BodySelection::Native(source.id.clone());
-            Some(if kind == "Part::Refine" {
+            let source = BodySelection::Native(retained_string(ctx, &source.id, "fcstd derived source identity")?);
+            Ok(Some(if kind == "Part::Refine" {
                 FeatureDefinition::Operation(FeatureOperation::RefineShape { source })
             } else {
                 FeatureDefinition::Operation(FeatureOperation::ReverseShape { source })
-            })
+            }))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
@@ -4901,118 +4905,116 @@ fn cached_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefi
         .map(|_| FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}))
 }
 
-fn ruled_surface_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
-    let curve = |name| {
-        let property = property(properties, name)?;
-        (property.links().len() == 1).then(|| PathRef::Native(property.id.clone()))
-    };
+fn ruled_surface_definition(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(first) = property(properties, "Curve1").filter(|property| property.links().len() == 1) else { return Ok(None); };
+    let Some(second) = property(properties, "Curve2").filter(|property| property.links().len() == 1) else { return Ok(None); };
     let orientation = match integer_property(properties, "Orientation").unwrap_or(0) {
         0 => RuledCurveOrientation::Automatic,
         1 => RuledCurveOrientation::Forward,
         2 => RuledCurveOrientation::Reversed,
-        _ => return None,
+        _ => return Ok(None),
     };
-    Some(FeatureDefinition::Operation(
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::RuledBetweenCurves {
-            first: curve("Curve1")?,
-            second: curve("Curve2")?,
+            first: PathRef::Native(retained_string(ctx, &first.id, "fcstd ruled first curve identity")?),
+            second: PathRef::Native(retained_string(ctx, &second.id, "fcstd ruled second curve identity")?),
             orientation,
         },
-    ))
+    )))
 }
 
-fn section_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
-    let operand = |name| {
-        let property = property(properties, name)?;
-        (property.links().len() == 1).then(|| BodySelection::Native(property.id.clone()))
-    };
-    Some(FeatureDefinition::Operation(
+fn section_shape_definition(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(base) = property(properties, "Base").filter(|property| property.links().len() == 1) else { return Ok(None); };
+    let Some(tool) = property(properties, "Tool").filter(|property| property.links().len() == 1) else { return Ok(None); };
+    let base = BodySelection::Native(retained_string(ctx, &base.id, "fcstd section base identity")?);
+    let tool = BodySelection::Native(retained_string(ctx, &tool.id, "fcstd section tool identity")?);
+    Ok(cadmpeg_ir::features::SectionOperands::new(base, tool).ok().map(|operands| FeatureDefinition::Operation(
         FeatureOperation::SectionShape {
-            operands: cadmpeg_ir::features::SectionOperands::new(
-                operand("Base")?,
-                operand("Tool")?,
-            )
-            .ok()?,
-
+            operands,
             approximate: Some(bool_property(properties, "Approximation").unwrap_or(false)),
         },
-    ))
+    )))
 }
 
-fn mirror_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
-    let source = property(properties, "Source")?;
+fn mirror_shape_definition(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(source) = property(properties, "Source") else { return Ok(None); };
     if source.links().len() != 1 {
-        return None;
+        return Ok(None);
     }
-    let origin = vector_property(properties, "Base")?;
+    let Some(origin) = vector_property(properties, "Base") else { return Ok(None); };
     let plane_reference = property(properties, "MirrorPlane")
         .filter(|property| {
             property
                 .links()
                 .iter()
                 .any(|link| nonempty_link(link.as_ref()))
-        })
-        .map(|property| cadmpeg_ir::features::FaceSelection::Native(property.id.clone()));
-    Some(FeatureDefinition::Operation(
+        });
+    let Some(plane_normal) = vector_property(properties, "Normal")
+        .and_then(|normal| cadmpeg_ir::units::UnitVector3::normalized(normal.get())) else { return Ok(None); };
+    let plane_reference = plane_reference
+        .map(|property| retained_string(ctx, &property.id, "fcstd mirror plane identity")
+            .map(cadmpeg_ir::features::FaceSelection::Native))
+        .transpose()?;
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::MirrorShape {
-            source: BodySelection::Native(source.id.clone()),
+            source: BodySelection::Native(retained_string(ctx, &source.id, "fcstd mirror source identity")?),
             plane_origin: origin.as_point(),
-            plane_normal: cadmpeg_ir::units::UnitVector3::normalized(
-                vector_property(properties, "Normal")?.get(),
-            )?,
+            plane_normal,
             plane_reference,
         },
-    ))
+    )))
 }
 
-fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
-    let sources = property(properties, "Projection")?;
+fn project_on_surface_definition(ctx: &DecodeContext<'_>, properties: &[&PropertyRecord]) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(sources) = property(properties, "Projection") else { return Ok(None); };
     if sources.links().is_empty() {
-        return None;
+        return Ok(None);
     }
-    let support = property(properties, "SupportFace")?;
+    let Some(support) = property(properties, "SupportFace") else { return Ok(None); };
     if support.links().len() != 1 {
-        return None;
+        return Ok(None);
     }
-    let mode = match enumeration_selector(properties, "Mode", 0)? {
+    let Some(mode_selector) = enumeration_selector(properties, "Mode", 0) else { return Ok(None); };
+    let mode = match mode_selector {
         0 => SurfaceProjectionMode::All,
         1 => SurfaceProjectionMode::Faces,
         2 => SurfaceProjectionMode::Edges,
-        _ => return None,
+        _ => return Ok(None),
     };
     let height = if property(properties, "Height").is_some() {
-        cadmpeg_ir::scalar::NonNegativeLength::from_finite_assigned_real(scalar_named(
-            properties, "Height",
-        )?)?
+        let Some(value) = scalar_named(properties, "Height").and_then(cadmpeg_ir::scalar::NonNegativeLength::from_finite_assigned_real) else { return Ok(None); };
+        value
     } else {
         cadmpeg_ir::scalar::NonNegativeLength::ZERO
     };
     let offset = if property(properties, "Offset").is_some() {
-        Length::from_assigned_real(scalar_named(properties, "Offset")?)
+        let Some(value) = scalar_named(properties, "Offset") else { return Ok(None); };
+        Length::from_assigned_real(value)
     } else {
         Length::ZERO
     };
-    Some(FeatureDefinition::Operation(
+    let Some(direction) = vector_property(properties, "Direction")
+        .and_then(|value| cadmpeg_ir::units::UnitVector3::normalized(value.get())) else { return Ok(None); };
+    Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::ProjectOnSurface {
-            sources: PathRef::Native(sources.id.clone()),
-            support_face: cadmpeg_ir::features::FaceSelection::Native(support.id.clone()),
-            direction: cadmpeg_ir::units::UnitVector3::normalized(
-                vector_property(properties, "Direction")?.get(),
-            )?,
+            sources: PathRef::Native(retained_string(ctx, &sources.id, "fcstd projection sources identity")?),
+            support_face: cadmpeg_ir::features::FaceSelection::Native(retained_string(ctx, &support.id, "fcstd projection support identity")?),
+            direction,
             mode,
             height,
             offset,
         },
-    ))
+    )))
 }
 
 fn draft_definition(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
-) -> Option<FeatureDefinition> {
-    let faces = property(properties, "Base")?;
-    let neutral_plane = property(properties, "NeutralPlane")?;
+) -> Result<Option<FeatureDefinition>, CodecError> {
+    let Some(faces) = property(properties, "Base") else { return Ok(None); };
+    let Some(neutral_plane) = property(properties, "NeutralPlane") else { return Ok(None); };
     let plane_normal = plane_reference(properties, "NeutralPlane", objects, properties_by_owner)
         .map(|(_, normal)| normal);
     let pull_direction = if property(properties, "PullDirection").is_some_and(|property| {
@@ -5027,21 +5029,22 @@ fn draft_definition(
         plane_normal
     };
     let reversed = bool_property(properties, "Reversed").unwrap_or(false);
-    let angle = scalar_named(properties, "Angle")?;
-    Some(FeatureDefinition::Operation(FeatureOperation::Draft {
-        faces: cadmpeg_ir::features::FaceSelection::Native(faces.id.clone()),
+    let Some(angle) = scalar_named(properties, "Angle") else { return Ok(None); };
+    let Some(angle) = cadmpeg_ir::scalar::SlopeAngle::new(
+        if reversed { -angle.get() } else { angle.get() }.to_radians(),
+    ) else { return Ok(None); };
+    Ok(Some(FeatureDefinition::Operation(FeatureOperation::Draft {
+        faces: cadmpeg_ir::features::FaceSelection::Native(retained_string(ctx, &faces.id, "fcstd draft faces identity")?),
         anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-            plane: cadmpeg_ir::features::FaceSelection::Native(neutral_plane.id.clone()),
+            plane: cadmpeg_ir::features::FaceSelection::Native(retained_string(ctx, &neutral_plane.id, "fcstd draft neutral plane identity")?),
             pull: pull_direction.map(|direction| cadmpeg_ir::features::DraftPull {
                 direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
                 plane: None,
             }),
         },
-        angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(
-            if reversed { -angle.get() } else { angle.get() }.to_radians(),
-        )?),
+        angle: Some(angle),
         outward: Some(reversed),
-    }))
+    })))
 }
 
 fn chamfer_spec(properties: &[&PropertyRecord]) -> Option<ChamferSpec> {
