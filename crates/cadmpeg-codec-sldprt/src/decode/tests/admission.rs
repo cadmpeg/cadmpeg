@@ -67,7 +67,7 @@ fn collection_refusal_with_options(
     use cadmpeg_core::decode::ResourceDimension;
 
     options.policy.limits.max_collection_items = 0;
-    for _ in 0..256 {
+    for _ in 0..1024 {
         let error = SldprtCodec
             .decode(&mut Cursor::new(source), &options)
             .expect_err("collection limit must refuse the decode");
