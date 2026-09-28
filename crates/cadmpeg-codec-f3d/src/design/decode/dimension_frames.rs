@@ -9,7 +9,7 @@ use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
 use crate::design::decode::meta::{decode_types, stream_types_by_entity};
 use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
-use crate::ids::{self, native_stream};
+use crate::ids::native_stream;
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
 use crate::records::{
     decal::DesignRecordHeader,
@@ -1823,33 +1823,20 @@ pub(crate) fn decode_dimension_presentation_frames(
         curves,
         ..
     } = inputs;
-    let parameter_kinds = parameters
-        .iter()
-        .filter_map(|parameter| {
-            Some((
-                (native_stream(&parameter.id)?, parameter.record_index),
-                parameter.kind(),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let dimension_owners = owners
-        .iter()
-        .filter(|owner| {
-            native_stream(owner.id()).is_some_and(|stream| {
-                parameter_kinds.get(&(stream, owner.parameter_record_index()))
-                    == Some(&DesignParameterKind::Dimension)
-            })
-        })
-        .collect::<Vec<_>>();
-    let sketch_scope_by_entity = placements
-        .iter()
-        .filter_map(|placement| {
-            Some((
-                (native_stream(&placement.id)?, placement.entity_id.suffix()),
-                placement.scope_record_index?,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let parameter_kinds = dimension_parameter_index(
+        ctx, parameters, "f3d dimension presentation parameter index",
+        "f3d dimension presentation parameter index allocation",
+    )?;
+    let mut sketch_scope_by_entity = HashMap::new();
+    for placement in placements {
+        let Some(stream) = native_stream(&placement.id) else { continue };
+        let Some(scope_record_index) = placement.scope_record_index else { continue };
+        ctx.charge_collection_items(1, "f3d dimension presentation sketch scopes")?;
+        sketch_scope_by_entity.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("f3d dimension presentation sketch scope allocation", 0, 1)
+        })?;
+        sketch_scope_by_entity.insert((stream, placement.entity_id.suffix()), scope_record_index);
+    }
     let types = decode_types(ctx, scan)?;
     let mut out = Vec::new();
     for entry in scan
@@ -1857,46 +1844,47 @@ pub(crate) fn decode_dimension_presentation_frames(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let stream = ids::native_scope(&entry.name);
+        let (_stream_reservation, stream) =
+            crate::design::decode::sketch::native_scope_scoped(ctx, &entry.name)?;
         let stream_types = stream_types_by_entity(ctx, &types, &entry.name)?;
-        let presentation_classes = stream_types
-            .iter()
-            .filter_map(|(class_tag, (type_guid, _version))| {
-                is_dimension_presentation_type(type_guid).then_some((*class_tag, *type_guid))
-            })
-            .collect::<HashMap<_, _>>();
+        let mut presentation_classes = HashMap::new();
+        for (class_tag, (type_guid, _version)) in &stream_types {
+            if is_dimension_presentation_type(type_guid) {
+                ctx.charge_collection_items(1, "f3d dimension presentation classes")?;
+                presentation_classes.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d dimension presentation class allocation", 0, 1)
+                })?;
+                presentation_classes.insert(*class_tag, *type_guid);
+            }
+        }
         if presentation_classes.is_empty() {
             continue;
         }
-        let paired_classes = stream_types
-            .iter()
-            .filter_map(|(class_tag, (type_guid, _version))| {
-                type_guid
-                    .eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID)
-                    .then_some(class_tag.to_string())
-            })
-            .collect::<HashSet<_>>();
+        let mut paired_classes = HashSet::new();
+        for (class_tag, (type_guid, _version)) in &stream_types {
+            if type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID) {
+                ctx.charge_collection_items(1, "f3d dimension presentation paired classes")?;
+                paired_classes.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d dimension presentation paired class allocation", 0, 1)
+                })?;
+                paired_classes.insert(*class_tag);
+            }
+        }
         if paired_classes.is_empty() {
             continue;
         }
-        let geometry_indices = points
-            .iter()
-            .filter(|point| native_stream(&point.id) == Some(stream.as_str()))
-            .map(|point| point.record_index)
-            .chain(
-                curves
-                    .iter()
-                    .filter(|curve| native_stream(&curve.id) == Some(stream.as_str()))
-                    .map(|curve| curve.record_index),
-            )
-            .collect::<HashSet<_>>();
-        let sketch_entities = entities
-            .iter()
-            .filter(|entity| {
-                native_stream(&entity.id) == Some(stream.as_str()) && entity.in_sketch_module()
-            })
-            .filter_map(|entity| u32::try_from(entity.entity_id.suffix()).ok())
-            .collect::<HashSet<_>>();
+        let geometry_indices = dimension_geometry_indices(ctx, &stream, points, curves)?;
+        let mut sketch_entities = HashSet::new();
+        for entity in entities.iter().filter(|entity| {
+            native_stream(&entity.id) == Some(stream.as_str()) && entity.in_sketch_module()
+        }) {
+            let Ok(index) = u32::try_from(entity.entity_id.suffix()) else { continue };
+            ctx.charge_collection_items(1, "f3d dimension presentation sketch entities")?;
+            sketch_entities.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d dimension presentation sketch entity allocation", 0, 1)
+            })?;
+            sketch_entities.insert(index);
+        }
         let bytes = scan.entry_bytes(&entry.name)?;
         for header in indexed_record_offsets(bytes) {
             let start = header.offset;
@@ -1905,8 +1893,8 @@ pub(crate) fn decode_dimension_presentation_frames(
             else {
                 continue;
             };
-            let Some(mut frame) = parse_dimension_presentation_frame(
-                bytes,
+            let Some(parsed) = parse_dimension_presentation_frame(
+                ctx, bytes,
                 start,
                 primary_type_guid,
                 &geometry_indices,
@@ -1915,10 +1903,14 @@ pub(crate) fn decode_dimension_presentation_frames(
             ) else {
                 continue;
             };
-            let Some(owner) = dimension_owners
+            let mut frame = parsed?;
+            let Some(owner) = owners
                 .iter()
                 .filter(|owner| {
                     native_stream(owner.id()) == Some(stream.as_str())
+                        && parameter_kinds
+                            .get(&(stream.as_str(), owner.parameter_record_index()))
+                            .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
                         && owner.byte_offset() > frame.paired_byte_offset
                         && sketch_scope_by_entity
                             .get(&(stream.as_str(), u64::from(frame.owner_reference)))
@@ -1930,11 +1922,17 @@ pub(crate) fn decode_dimension_presentation_frames(
             else {
                 continue;
             };
-            frame.id =
-                ids::native_design_dimension_presentation_frame_id(&entry.name, frame.byte_offset);
+            frame.id = design_record_id_charged(
+                ctx, &entry.name, ":design-dimension-presentation-frame#", frame.byte_offset,
+                "f3d dimension presentation frame ID", "f3d dimension presentation frame ID allocation",
+            )?;
             frame.governing_owner_record_index = owner.record_index();
             frame.governing_parameter_record_index = owner.parameter_record_index();
             frame.governing_companion_record_index = owner.companion_record_index();
+            ctx.charge_collection_items(1, "f3d dimension presentation frames")?;
+            out.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d dimension presentation frame allocation", 0, 1)
+            })?;
             out.push(frame);
         }
     }
@@ -1943,13 +1941,14 @@ pub(crate) fn decode_dimension_presentation_frames(
 }
 
 fn parse_dimension_presentation_frame(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     primary_type_guid: &str,
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
-    paired_classes: &HashSet<String>,
-) -> Option<DesignDimensionPresentationFrame> {
+    paired_classes: &HashSet<u64>,
+) -> Option<Result<DesignDimensionPresentationFrame, CodecError>> {
     if !is_dimension_presentation_type(primary_type_guid) {
         return None;
     }
@@ -1966,7 +1965,14 @@ fn parse_dimension_presentation_frame(
         return None;
     }
     let mut position = start.checked_add(24)?;
-    let mut operands = Vec::with_capacity(count);
+    let count_charge = u64::try_from(count).ok()?;
+    if let Err(error) = ctx.charge_collection_items(count_charge, "f3d dimension presentation operands") {
+        return Some(Err(error));
+    }
+    let mut operands = Vec::new();
+    if operands.try_reserve(count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d dimension presentation operand allocation", 0, count_charge)));
+    }
     for _ in 0..count {
         if bytes.get(position) != Some(&1)
             || bytes.get(position + 5..position + 11) != Some(&[0; 6])
@@ -1992,7 +1998,8 @@ fn parse_dimension_presentation_frame(
         let at = next_indexed_record_offset(bytes, paired_search)?;
         let (tag, after) = lp_ascii_filtered_view(bytes, at, 3..=3, u8::is_ascii_digit)?;
         if View::u32_le_at(bytes, after) == Some(record_index)
-            && paired_classes.contains(tag)
+            && !tag.starts_with('0')
+            && tag.parse::<u64>().ok().is_some_and(|class_tag| paired_classes.contains(&class_tag))
         {
             if bytes.get(at + 11..at + 19) != Some(&[0; 8]) || bytes.get(at + 19) != Some(&1) {
                 return None;
@@ -2005,16 +2012,21 @@ fn parse_dimension_presentation_frame(
     if !sketch_entities.contains(&owner_reference) {
         return None;
     }
-    Some(DesignDimensionPresentationFrame {
+    let presentation_bytes = match ctx.copy_retained(
+        bytes.get(presentation_byte_offset..paired_byte_offset)?,
+        "f3d dimension presentation bytes",
+    ) {
+        Ok(bytes) => bytes,
+        Err(error) => return Some(Err(error)),
+    };
+    Some(Ok(DesignDimensionPresentationFrame {
         id: String::new(),
         byte_offset: u64::try_from(start).ok()?,
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         operands,
-        presentation_bytes: bytes
-            .get(presentation_byte_offset..paired_byte_offset)?
-            .to_vec(),
+        presentation_bytes,
         presentation_byte_offset: u64::try_from(presentation_byte_offset).ok()?,
         paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag).ok()?,
         paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
@@ -2023,7 +2035,7 @@ fn parse_dimension_presentation_frame(
         governing_owner_record_index: 0,
         governing_parameter_record_index: 0,
         governing_companion_record_index: 0,
-    })
+    }))
 }
 
 /// Decode counted typed sketch loci nested immediately after dimensional

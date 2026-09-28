@@ -829,11 +829,6 @@ native_record_id!(
     "design-decal-image"
 );
 native_record_id!(
-    /// The native design-dimension-presentation-frame record key.
-    native_design_dimension_presentation_frame_id,
-    "design-dimension-presentation-frame"
-);
-native_record_id!(
     /// The native persistent-reference record key.
     native_persistent_reference_id,
     "persistent-reference"

@@ -1280,14 +1280,16 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     bytes.extend_from_slice(&[0; 35]);
 
     let frame = parse_dimension_presentation_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
         &HashSet::from([306, 331]),
         &HashSet::from([270]),
-        &HashSet::from([String::from("281")]),
+        &HashSet::from([281]),
     )
-    .expect("direct dimension presentation frame");
+    .expect("direct dimension presentation frame")
+    .expect("admitted presentation frame");
     assert_eq!(frame.class_tag.as_str(), "314");
     assert_eq!(frame.record_index, 332);
     assert_eq!(frame.frame_length, paired_offset as u64);
@@ -1298,14 +1300,37 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     assert_eq!(frame.owner_reference, 270);
 
     assert!(parse_dimension_presentation_frame(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         0,
         "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
         &HashSet::from([306]),
         &HashSet::from([270]),
-        &HashSet::from([String::from("281")]),
+        &HashSet::from([281]),
     )
     .is_none());
+
+    for (items, retained, operation) in [
+        (1, u64::MAX, "f3d dimension presentation operands"),
+        (u64::MAX, 2, "f3d dimension presentation bytes"),
+    ] {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = items;
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &policy,
+        ).unwrap();
+        assert!(matches!(
+            parse_dimension_presentation_frame(
+                &ctx, &bytes, 0, super::DIMENSION_PRESENTATION_TYPE_GUID,
+                &HashSet::from([306, 331]), &HashSet::from([270]),
+                &HashSet::from([281]),
+            ),
+            Some(Err(cadmpeg_core::CodecError::ResourceLimit(failure)))
+                if failure.operation == operation
+        ));
+    }
 }
 
 #[test]
@@ -1679,6 +1704,52 @@ fn typed_dimension_companions_refuse_collection_limit() {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == "f3d typed dimension companions"
+        ));
+    });
+}
+
+#[test]
+fn dimension_presentation_sketch_scopes_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use std::io::{Cursor, Write};
+    use zip::CompressionMethod;
+
+    let placement = crate::records::sketch_placement::DesignSketchPlacement {
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
+            0,
+            crate::records::sketch_placement::DesignSketchFrameForm::MemberCompact {
+                paired_byte_offset: 34,
+            },
+        ).unwrap(),
+        id: "f3d:design:design-sketch-placement#1".into(),
+        scope_record_index: Some(1),
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_201".to_owned()).unwrap(),
+        visibility: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: 1,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned()).unwrap(),
+    };
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored).unwrap();
+    zip.write_all(&[]).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        let inputs = super::DimensionDecodeInputs {
+            scan, placements: std::slice::from_ref(&placement), parameters: &[], owners: &[],
+            companions: &[], scopes: &[], headers: &[], points: &[], curves: &[],
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            super::decode_dimension_presentation_frames(&ctx, &inputs, &[]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == "f3d dimension presentation sketch scopes"
         ));
     });
 }
