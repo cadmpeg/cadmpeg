@@ -12,7 +12,8 @@ use crate::decode::feature_history::outputs::{
 use crate::decode::sketch::geometry::section_circle_geometry;
 use crate::decode::sketch::radii::resolved_section_radii;
 use crate::decode::sketch_transfer::constraints::{
-    section_segment_radius_constraints, section_segment_radius_constraints_for_emitted,
+    section_segment_radius_constraints as checked_section_segment_radius_constraints,
+    section_segment_radius_constraints_for_emitted as checked_section_segment_radius_constraints_for_emitted,
     section_segment_verhor_definition,
 };
 use crate::decode::sketch_transfer::loci::section_skamp_active;
@@ -33,6 +34,34 @@ use cadmpeg_ir::{
     scalar::Length,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+fn section_segment_radius_constraints(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        checked_section_segment_radius_constraints(ctx, definition, sketch)
+    })
+    .expect("service profile admits segment radius constraints")
+}
+
+fn section_segment_radius_constraints_for_emitted(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    sketch: &SketchId,
+    emitted: &BTreeSet<SketchEntityId>,
+    available_parameters: &BTreeSet<ParameterId>,
+) -> Vec<(cadmpeg_ir::sketches::SketchConstraint, usize)> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        checked_section_segment_radius_constraints_for_emitted(
+            ctx,
+            definition,
+            sketch,
+            emitted,
+            available_parameters,
+        )
+    })
+    .expect("service profile admits emitted segment radius constraints")
+}
 
 #[test]
 fn sketch_curve_references_require_a_materialized_curve() {

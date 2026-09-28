@@ -551,13 +551,14 @@ struct SectionSegmentRadiusBinding {
 }
 
 fn section_segment_radius_bindings(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<SectionSegmentRadiusBinding> {
-    let unique_segment_ids = unique_section_segment_external_ids(definition);
+) -> Result<Vec<SectionSegmentRadiusBinding>, cadmpeg_core::CodecError> {
+    let unique_segment_ids = unique_section_segment_external_ids(ctx, definition)?;
     let mut bindings = Vec::new();
     let Some(segments) = definition.segments.as_ref() else {
-        return bindings;
+        return Ok(bindings);
     };
     for segment in segments.rows.ordinary() {
         let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
@@ -568,6 +569,7 @@ fn section_segment_radius_bindings(
             let Some(ordinal) = ordinal else {
                 continue;
             };
+            ctx.try_reserve_items(&mut bindings, 1, "creo segment radius bindings")?;
             bindings.push(SectionSegmentRadiusBinding {
                 suffix: suffix.clone(),
                 external_id: segment.external_id,
@@ -598,6 +600,7 @@ fn section_segment_radius_bindings(
         } else {
             None
         };
+        ctx.try_reserve_items(&mut bindings, 1, "creo segment radius bindings")?;
         bindings.push(SectionSegmentRadiusBinding {
             suffix,
             external_id: segment.external_id,
@@ -616,6 +619,7 @@ fn section_segment_radius_bindings(
             let Some(ordinal) = ordinal else {
                 continue;
             };
+            ctx.try_reserve_items(&mut bindings, 1, "creo segment radius bindings")?;
             bindings.push(SectionSegmentRadiusBinding {
                 suffix: suffix.clone(),
                 external_id: segment.external_id,
@@ -626,7 +630,7 @@ fn section_segment_radius_bindings(
             });
         }
     }
-    bindings
+    Ok(bindings)
 }
 
 fn section_segment_radius_constraint(
@@ -680,23 +684,25 @@ fn section_segment_radius_constraint(
 }
 
 pub(in super::super) fn section_segment_radius_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
-) -> Vec<(SketchConstraint, usize)> {
-    section_segment_radius_bindings(definition, sketch)
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    crate::decode::collect_items(ctx, section_segment_radius_bindings(ctx, definition, sketch)?
         .into_iter()
         .filter_map(|binding| section_segment_radius_constraint(binding, sketch))
-        .collect()
+    , "creo segment radius constraints")
 }
 
 pub(in super::super) fn section_segment_radius_constraints_for_emitted(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     emitted: &BTreeSet<SketchEntityId>,
     available_parameters: &BTreeSet<ParameterId>,
-) -> Vec<(SketchConstraint, usize)> {
-    let bindings = section_segment_radius_bindings(definition, sketch);
-    section_segment_radius_constraints(definition, sketch)
+) -> Result<Vec<(SketchConstraint, usize)>, cadmpeg_core::CodecError> {
+    let bindings = section_segment_radius_bindings(ctx, definition, sketch)?;
+    crate::decode::collect_items(ctx, section_segment_radius_constraints(ctx, definition, sketch)?
         .into_iter()
         .zip(bindings)
         .filter_map(|((mut constraint, offset), binding)| {
@@ -714,7 +720,7 @@ pub(in super::super) fn section_segment_radius_constraints_for_emitted(
                 .unwrap_or(false)
                 .then_some((constraint, offset))
         })
-        .collect()
+    , "creo emitted segment radius constraints")
 }
 
 fn reconcile_section_segment_radius_constraint(
@@ -758,7 +764,7 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
     let Some(dimensions) = definition.dimensions.as_ref() else {
         return Ok(Vec::new());
     };
-    let unique_segment_ids = unique_section_segment_external_ids(definition);
+    let unique_segment_ids = unique_section_segment_external_ids(ctx, definition)?;
     let mut entities_by_radius = BTreeMap::<u32, Vec<u32>>::new();
     for segment in segments.rows.ordinary().filter(|segment| {
         matches!(
@@ -1510,7 +1516,7 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
         .map(|variables| variables.reconciled_points(ctx).map(|points| points.1))
         .transpose()?
         .unwrap_or_default();
-    let unique_segment_ids = unique_section_segment_external_ids(definition);
+    let unique_segment_ids = unique_section_segment_external_ids(ctx, definition)?;
     let segments = section_segment_rows(ctx, definition)?;
     crate::decode::collect_items(ctx, section_equation_point_on_line_constraint_rows(ctx, definition, &ambiguous_point_ids)?
         .into_iter()
@@ -1899,7 +1905,7 @@ pub(in super::super) fn section_dimension_constraints(
     };
     let segments = section_segment_rows(ctx, definition)?;
 
-    let known_entities = section_entity_external_ids(definition);
+    let known_entities = section_entity_external_ids(ctx, definition)?;
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
@@ -2230,6 +2236,89 @@ mod tests {
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntityId, SketchId};
     use std::collections::BTreeSet;
+
+    #[test]
+    fn segment_radius_bindings_and_constraints_refuse_before_vector_growth() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let definition = crate::feature::definitions::FeatureDefinition {
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(1),
+                owner_feature_id: None,
+            },
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::definitions::FeatureSegmentTable {
+                declared_count: 1,
+                has_elided_prototype: false,
+                entity_ref: None,
+                rows: [crate::feature::segment_rows::SegmentRow::Ordinary(
+                    crate::feature::definitions::FeatureSegment {
+                        kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
+                        directions: [None; 3],
+                        center_id: None,
+                        arc_orientation: None,
+                        vertical_horizontal: None,
+                        radius_ref: Some(0),
+                        radius2_ref: None,
+                        external_id: 7,
+                        body: Vec::new(),
+                        offset: 0,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                offset: 0,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        };
+        let sketch = SketchId::mint("creo:model:sketch#1").expect("valid sketch identity");
+        let arena = DecodeArena::new();
+        for (limit, operation) in [
+            (1, "creo segment radius bindings"),
+            (2, "creo segment radius constraints"),
+        ] {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root is admitted");
+            let error = super::section_segment_radius_constraints(&ctx, &definition, &sketch)
+                .expect_err("segment radius vector exceeds collection limit");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.operation == operation), "{error:?}");
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 5;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root is admitted");
+        let error = super::section_segment_radius_constraints_for_emitted(
+            &ctx,
+            &definition,
+            &sketch,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        )
+        .expect_err("emitted radius vector exceeds collection limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "creo emitted segment radius constraints"), "{error:?}");
+        crate::decode::with_test_decode_ctx(|ctx| {
+            assert_eq!(super::section_segment_radius_constraints(ctx, &definition, &sketch)
+                .expect("service radius constraint").len(), 1);
+            assert_eq!(super::section_segment_radius_constraints_for_emitted(
+                ctx, &definition, &sketch, &BTreeSet::new(), &BTreeSet::new(),
+            )
+            .expect("service emitted radius constraint").len(), 1);
+        });
+    }
 
     #[test]
     fn direct_angle_difference_transfers_solver_scalar_operands() {

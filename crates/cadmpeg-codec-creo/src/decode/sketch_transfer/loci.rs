@@ -11,7 +11,6 @@ use super::super::sketch::skamp::{
 use super::super::sketch_ids::sketch_entity_id;
 use crate::decode::sketch_transfer::identity::{
     saved_section_entity_fallback_allowed, semantic_saved_section_entities,
-    unique_section_segment_external_ids,
 };
 use crate::decode::sketch_transfer::profiles::{
     solver_only_section_entities, solver_only_section_entity_family,
@@ -37,12 +36,12 @@ pub(super) fn section_point_locus(
     sketch: &SketchId,
     point_id: u32,
 ) -> Option<SketchLocus> {
-    let unique_entities = unique_section_segment_external_ids(definition);
     let segments = definition.segments.as_ref()?;
+    let unique_entities = |external_id| segments.rows.get(external_id).is_some();
     let mut candidates = segments
         .rows
         .ordinary()
-        .filter(|segment| unique_entities.contains(&segment.external_id))
+        .filter(|segment| unique_entities(segment.external_id))
         .filter_map(|segment| {
             let entity = sketch_entity_id(sketch, segment.external_id)?;
             let locus = match segment.kind {
@@ -79,7 +78,7 @@ pub(super) fn section_point_locus(
             .rows
             .ordinary()
             .filter(|segment| {
-                unique_entities.contains(&segment.external_id)
+                unique_entities(segment.external_id)
                     && matches!(
                         segment.kind,
                         crate::feature::definitions::FeatureSegmentKind::Arc(_)
@@ -100,7 +99,7 @@ pub(super) fn section_point_locus(
             .rows
             .circles()
             .filter(|segment| {
-                unique_entities.contains(&segment.external_id) && segment.center_id == point_id
+                unique_entities(segment.external_id) && segment.center_id == point_id
             })
             .filter_map(|segment| {
                 Some({
@@ -131,7 +130,7 @@ pub(super) fn section_point_locus(
         segments
             .rows
             .centered_lines()
-            .filter(|segment| unique_entities.contains(&segment.external_id))
+            .filter(|segment| unique_entities(segment.external_id))
             .filter_map(|segment| {
                 Some({
                     let entity = sketch_entity_id(sketch, segment.external_id)?;
@@ -151,7 +150,7 @@ pub(super) fn section_point_locus(
         segments
             .rows
             .reference_lines()
-            .filter(|segment| unique_entities.contains(&segment.external_id))
+            .filter(|segment| unique_entities(segment.external_id))
             .filter_map(|segment| {
                 Some({
                     let entity = sketch_entity_id(sketch, segment.external_id)?;
@@ -171,7 +170,7 @@ pub(super) fn section_point_locus(
         segments
             .rows
             .bounded_curves()
-            .filter(|segment| unique_entities.contains(&segment.external_id))
+            .filter(|segment| unique_entities(segment.external_id))
             .filter_map(|segment| {
                 Some({
                     let entity = sketch_entity_id(sketch, segment.external_id)?;
