@@ -225,6 +225,86 @@ fn face_appearance_binding_id_preserves_identity_text() {
     assert_eq!(charged, original);
 }
 
+#[test]
+fn annotation_provenance_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("f3d:native"));
+    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    let error = annotations.note_charged(&ctx, "f3d:test:entity#one", &stream, 0, "entity").unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect source provenance"));
+}
+
+#[test]
+fn annotation_provenance_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("f3d:native"));
+    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    let error = annotations.note_charged(&ctx, "f3d:test:entity#one", &stream, 0, "entity").unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain source provenance identity"));
+}
+
+#[test]
+fn annotation_exactness_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    let error = annotations.derived_charged(&ctx, "f3d:test:entity#one", "definition").unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect source exactness entities"));
+}
+
+#[test]
+fn annotation_stream_refuses_collection_limit() {
+    let arena = DecodeArena::new();
+    let ctx = context(&arena, 0);
+    let error = super::super::annotation_stream(&ctx, "Design/BulkStream.dat").unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D annotation streams"));
+}
+
+#[test]
+fn annotation_stream_name_refuses_retained_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::annotation_stream(&ctx, "Design/BulkStream.dat").unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3D native scope"));
+}
+
+#[test]
+fn native_annotation_route_refuses_collection_limit() {
+    let bytes = crate::test_support::zip_test::synthetic_f3d(true);
+    let arena = DecodeArena::new();
+    let (scan_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let scan = crate::container::scan(&scan_ctx, root).unwrap();
+    let mut native = crate::native::F3dNative::default();
+    native.design_record_headers.push(crate::records::decal::DesignRecordHeader {
+        id: "f3d:Design:design-record-header#1".into(),
+        record_index: 1,
+        class_tag: crate::records::references::DesignClassTag::try_from("310".to_owned()).unwrap(),
+        byte_offset: 1,
+    });
+    let limited = context(&arena, 1);
+    let error = super::super::populate_annotations(
+        &limited,
+        &cadmpeg_ir::document::CadIr::empty(),
+        &scan,
+        &native,
+        None,
+        &[],
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect source provenance"));
+}
+
 macro_rules! append_refuses_collection_limit {
     ($name:ident, $operation:literal) => {
         #[test]
