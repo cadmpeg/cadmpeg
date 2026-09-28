@@ -6,6 +6,15 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+#[test]
+fn camera_tokens_refuse_at_matching_collection_limit() {
+    crate::test_support::assert_collection_refusal_at(
+        &[], "FCStd GUI camera tokens", |ctx| {
+            super::super::parse_camera_settings(ctx, "OrthographicCamera { position 1 2 3 }")
+        },
+    );
+}
+
 fn populated_appearance_plan() -> super::super::AppearancePlan {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId};
