@@ -1111,23 +1111,9 @@ pub(crate) fn decode_face_source_groups(
         let Ok(scope_start) = usize::try_from(scope.byte_offset()) else {
             continue;
         };
-        let mut reference_headers = Vec::with_capacity(scope.reference_members().len());
-        for record_index in scope.reference_members().values() {
-            let Some(byte_offset) = records.first_at_or_after(
-                scope_start.saturating_add(indexed_header::LEN),
-                *record_index,
-            ) else {
-                reference_headers.push(None);
-                continue;
-            };
-            let Some((class_tag, _)) =
-                lp_ascii_filtered_view(bytes, byte_offset, 3..=3, u8::is_ascii_digit)
-            else {
-                reference_headers.push(None);
-                continue;
-            };
-            reference_headers.push(Some((*record_index, byte_offset, class_tag)));
-        }
+        let reference_headers = face_source_reference_headers(
+            ctx, bytes, scope_start, scope.reference_members().values(), records,
+        )?;
         for (carrier_ordinal, carrier) in reference_headers.iter().enumerate() {
             let Some((carrier_record_index, carrier_byte_offset, carrier_class_tag)) = carrier
             else {
@@ -1210,8 +1196,11 @@ pub(crate) fn decode_face_source_groups(
             ) else {
                 continue;
             };
-            out.push(DesignFaceSourceGroup {
-                id: ids::native_design_face_source_group_id(&entry.name, *carrier_byte_offset),
+            push_face_source_group(ctx, &mut out, DesignFaceSourceGroup {
+                id: design_record_id_charged(
+                    ctx, &entry.name, ":design-face-source-group#", carrier_start,
+                    "f3d face source group ID", "f3d face source group ID allocation",
+                )?,
                 scope_record_index: scope.record_index,
                 carrier_reference_ordinal,
                 carrier_record_index: *carrier_record_index,
@@ -1220,11 +1209,51 @@ pub(crate) fn decode_face_source_groups(
                 paired_record_index: *paired_record_index,
                 paired_class_tag,
                 source_members,
-            });
+            })?;
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+fn push_face_source_group(
+    ctx: &DecodeContext<'_>,
+    out: &mut Vec<DesignFaceSourceGroup>,
+    group: DesignFaceSourceGroup,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "f3d face source group output")?;
+    out.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d face source group output allocation", 0, 1)
+    })?;
+    out.push(group);
+    Ok(())
+}
+
+fn face_source_reference_headers<'a, 'r>(
+    ctx: &DecodeContext<'_>,
+    bytes: &'a [u8],
+    scope_start: usize,
+    references: impl ExactSizeIterator<Item = &'r u32>,
+    records: &IndexedRecordOffsets,
+) -> Result<Vec<Option<(u32, usize, &'a str)>>, CodecError> {
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(references.len()),
+        "f3d face source reference headers",
+    )?;
+    let mut headers = Vec::new();
+    headers.try_reserve_exact(references.len()).map_err(|_| {
+        ctx.refuse_codec_limit("f3d face source reference headers allocation", 0, 1)
+    })?;
+    for record_index in references {
+        let header = records.first_at_or_after(
+            scope_start.saturating_add(indexed_header::LEN), *record_index,
+        ).and_then(|byte_offset| {
+            lp_ascii_filtered_view(bytes, byte_offset, 3..=3, u8::is_ascii_digit)
+                .map(|(class_tag, _)| (*record_index, byte_offset, class_tag))
+        });
+        headers.push(header);
+    }
+    Ok(headers)
 }
 
 /// Fixed source-reference and scalar layout for one face carrier class.
