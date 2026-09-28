@@ -3,8 +3,87 @@ use super::exact_component_insert_construction;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::lp_utf16;
 
+fn tested_component_insert_construction(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<crate::records::feature::assembly_features::DesignComponentInsertConstruction> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_component_insert_construction(ctx, bytes, records, scope).unwrap()
+    })
+}
+
+#[test]
+fn component_carrier_role_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let role = "b2231f72-46dc-40fa-b8e8-10cd208d7df8_urn:adsk.test:asset";
+    let mut bytes = Vec::new();
+    bytes.extend(role.encode_utf16().flat_map(u16::to_le_bytes));
+    bytes.extend_from_slice(&[0, 0x21, 0, 0, 0, 0, 1, 0, 0, 0]);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = u64::try_from(role.len() - 1).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::direct_utf16_role_until_tail(&ctx, &bytes, 0, bytes.len()).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::RetainedBytes
+            && failure.operation == "f3d component carrier role text"));
+}
+
 #[test]
 fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
+    run_component_insert_scope_fixture(None);
+}
+
+#[test]
+fn component_insert_placement_collections_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let probe = |bytes: &[u8], scope: &DesignParameterScope, stage: &'static str| {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        let cases = match stage {
+            "legacy" => &[(0, "f3d legacy component insert placements"), (1, "f3d component insert merged placements")][..],
+            _ => &[(0, "f3d component insert placements")][..],
+        };
+        for (limit, operation) in cases {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = *limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let error = exact_component_insert_construction(&ctx, bytes, &records, scope).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == *operation));
+        }
+    };
+    run_component_insert_scope_fixture(Some(probe));
+}
+
+#[test]
+fn legacy_component_identity_text_refuses_materialized_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let probe = |bytes: &[u8], scope: &DesignParameterScope, stage: &'static str| {
+        if stage != "legacy" {
+            return;
+        }
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        for limit in [0, 46] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_materialized_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            let error = exact_component_insert_construction(&ctx, bytes, &records, scope).unwrap_err();
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+                if failure.dimension == ResourceDimension::MaterializedBytes
+                    && failure.operation == "f3d Design temporary UTF-16 text"));
+        }
+    };
+    run_component_insert_scope_fixture(Some(probe));
+}
+
+fn run_component_insert_scope_fixture(probe: Option<fn(&[u8], &DesignParameterScope, &'static str)>) {
     let header = |bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32| {
         bytes.extend_from_slice(&3_u32.to_le_bytes());
         bytes.extend_from_slice(class_tag);
@@ -87,8 +166,12 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     )
     .unwrap();
 
+    if let Some(probe) = probe {
+        probe(&bytes, &scope, "simple");
+    }
+
     let construction =
-        exact_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
+        tested_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("component insert construction");
 
     assert_eq!(construction.relation_record_index, 20);
@@ -151,7 +234,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
             .with_fixture_layout(),
         )
         .unwrap();
-        let construction = exact_component_insert_construction(
+        let construction = tested_component_insert_construction(
             &legacy,
             &crate::design::test_support::indexed_record_offsets_for_test(&legacy),
             &legacy_scope,
@@ -225,7 +308,10 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         .with_fixture_layout(),
     )
     .unwrap();
-    let construction = exact_component_insert_construction(
+    if let Some(probe) = probe {
+        probe(&expanded, &expanded_scope, "expanded");
+    }
+    let construction = tested_component_insert_construction(
         &expanded,
         &crate::design::test_support::indexed_record_offsets_for_test(&expanded),
         &expanded_scope,
@@ -303,7 +389,10 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         .with_fixture_layout(),
     )
     .unwrap();
-    let construction = exact_component_insert_construction(
+    if let Some(probe) = probe {
+        probe(&legacy, &legacy_scope, "legacy");
+    }
+    let construction = tested_component_insert_construction(
         &legacy,
         &crate::design::test_support::indexed_record_offsets_for_test(&legacy),
         &legacy_scope,
@@ -440,7 +529,7 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
         .unwrap();
 
     let construction =
-        exact_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
+        tested_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("compact identity component insert construction");
     assert_eq!(construction.relation_record_index, 20);
     assert_eq!(construction.carrier_record_index, 10);
@@ -569,7 +658,7 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
         .unwrap();
 
     let construction =
-        exact_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
+        tested_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("class-410 component insert construction");
     assert_eq!(construction.relation_record_index, 167);
     assert_eq!(construction.carrier_record_index, 166);
@@ -584,7 +673,7 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
     assert_eq!(construction.carrier_transform_offset(), None);
 
     bytes[4..7].copy_from_slice(b"382");
-    assert!(exact_component_insert_construction(
+    assert!(tested_component_insert_construction(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope
@@ -707,7 +796,7 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
         .unwrap();
 
     let construction =
-        exact_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
+        tested_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("class-434 component insert construction");
     assert_eq!(construction.relation_record_index, 167);
     assert_eq!(construction.carrier_record_index, 166);
@@ -851,7 +940,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
         .unwrap();
 
     let construction =
-        exact_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
+        tested_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("class-426 component insert construction");
     assert_eq!(construction.relation_record_index, 20);
     assert_eq!(construction.carrier_record_index, 10);
@@ -895,7 +984,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let external_construction = exact_component_insert_construction(
+    let external_construction = tested_component_insert_construction(
         &external_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&external_bytes),
         &external_scope,
@@ -905,7 +994,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     assert_eq!(external_construction.neutron_role_offset, 159);
 
     bytes[4..7].copy_from_slice(b"380");
-    assert!(exact_component_insert_construction(
+    assert!(tested_component_insert_construction(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope
@@ -1040,7 +1129,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
     let identity = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
     let (bytes, scope, _) = make_fixture(257, identity);
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let construction = exact_component_insert_construction(&bytes, &records, &scope)
+    let construction = tested_component_insert_construction(&bytes, &records, &scope)
         .expect("class-283 compact component insert construction");
     assert_eq!(construction.carrier_record_index, 10);
     assert_eq!(construction.occurrence_identity, Some(17));
@@ -1061,7 +1150,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
     ];
     let (bytes, scope, scope_at) = make_fixture(385, transformed);
     let construction =
-        exact_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
+        tested_component_insert_construction(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope)
             .expect("class-283 transformed component insert construction");
     assert_eq!(construction.occurrence_identity, Some(17));
     assert_eq!(construction.neutron_role, role);

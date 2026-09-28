@@ -4,6 +4,7 @@
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::design::decode::text::lp_utf16_bounded_scoped;
 use crate::design::decode::text::{fixed_guid_end, fixed_utf16_ascii_eq};
 use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::sketch::next_indexed_record_offset;
@@ -137,10 +138,12 @@ pub(super) fn exact_derived_instance_construction(
 }
 
 pub(super) fn exact_component_insert_construction(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
-) -> Option<DesignComponentInsertConstruction> {
+) -> Result<Option<DesignComponentInsertConstruction>, CodecError> {
+    let parsed = (|| {
     let start = usize::try_from(scope.byte_offset()).ok()?;
     let relation_record_index = *scope.reference_members().values().next()?;
     if scope.kind() != scope::DesignFeatureKind::ComponentInsert
@@ -287,6 +290,12 @@ pub(super) fn exact_component_insert_construction(
                 }
                 for transform_at in carrier_at + 11..at {
                     if rigid_transform_at(bytes, transform_at) == Some(transform) {
+                        if let Err(error) = ctx.charge_collection_items(1, "f3d component insert placements") {
+                            return Some(Err(error));
+                        }
+                        if placements.try_reserve(1).is_err() {
+                            return Some(Err(ctx.refuse_codec_limit("f3d component insert placements allocation", 0, 1)));
+                        }
                         placements.push((role.clone(), at + 4, Some(transform_at)));
                     }
                 }
@@ -319,12 +328,13 @@ pub(super) fn exact_component_insert_construction(
         let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
         let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
         if scope.class_tag.as_str() == "283" && scope.paired_class_tag.as_str() == "262" {
-            let (role, role_offset) = exact_component_insert_carrier_334(
-                bytes,
-                carrier_at,
-                relation_at,
-                carrier_record_index,
-            )?;
+            let (role, role_offset) = match exact_component_insert_carrier_334(
+                ctx, bytes, carrier_at, relation_at, carrier_record_index,
+            ) {
+                Ok(Some(value)) => value,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             (carrier_record_index, vec![(role, role_offset, None)])
         } else if scope.class_tag.as_str() == "296" && scope.paired_class_tag.as_str() == "263" {
             let (role, role_offset) = crate::xref::grouped_component_insert_identity(
@@ -366,7 +376,7 @@ pub(super) fn exact_component_insert_construction(
         } else {
             let mut placements = Vec::new();
             for at in carrier_at + 11..relation_at {
-                let Some((role, after_role)) = lp_utf16_bounded(bytes, at, 1..=256) else {
+                let Some((role, after_role)) = lp_utf16_bounded(bytes, at, 36..=38) else {
                     continue;
                 };
                 if !crate::bytes::is_guid_relaxed(&role)
@@ -376,32 +386,44 @@ pub(super) fn exact_component_insert_construction(
                 }
                 let transform_at = after_role.checked_add(2)?;
                 if rigid_transform_at(bytes, transform_at) == Some(transform) {
+                    if let Err(error) = ctx.charge_collection_items(1, "f3d component insert placements") {
+                        return Some(Err(error));
+                    }
+                    if placements.try_reserve(1).is_err() {
+                        return Some(Err(ctx.refuse_codec_limit("f3d component insert placements allocation", 0, 1)));
+                    }
                     placements.push((role, at + 4, Some(transform_at)));
                 }
             }
             if scope.frame_length() == 381 {
-                placements.extend(legacy_component_insert_placements(
-                    bytes,
-                    carrier_at,
-                    relation_at,
-                    carrier_record_index,
-                    transform,
-                ));
+                let legacy = match legacy_component_insert_placements(
+                    ctx, bytes, carrier_at, relation_at, carrier_record_index, transform,
+                ) {
+                    Ok(value) => value,
+                    Err(error) => return Some(Err(error)),
+                };
+                if let Err(error) = ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(legacy.len()), "f3d component insert merged placements") {
+                    return Some(Err(error));
+                }
+                if placements.try_reserve(legacy.len()).is_err() {
+                    return Some(Err(ctx.refuse_codec_limit("f3d component insert merged placements allocation", 0, 1)));
+                }
+                placements.extend(legacy);
             }
             (carrier_record_index, placements)
         }
     };
-    let [(neutron_role, neutron_role_offset, carrier_transform_offset)] = placements.as_slice()
-    else {
+    if placements.len() != 1 {
         return None;
-    };
-    Some(DesignComponentInsertConstruction {
+    }
+    let (neutron_role, neutron_role_offset, carrier_transform_offset) = placements.into_iter().next()?;
+    Some(Ok(DesignComponentInsertConstruction {
         relation_record_index,
         carrier_record_index,
         occurrence_identity: Some(occurrence_identity),
-        neutron_role: neutron_role.clone(),
-        neutron_role_offset: u64::try_from(*neutron_role_offset).ok()?,
-        placement: match (transform_at, *carrier_transform_offset) {
+        neutron_role,
+        neutron_role_offset: u64::try_from(neutron_role_offset).ok()?,
+        placement: match (transform_at, carrier_transform_offset) {
             (Some(offset), carrier_offset) => {
                 Some(assembly_features::DesignComponentInsertMatrix {
                     scope: crate::records::identity::Located {
@@ -414,7 +436,9 @@ pub(super) fn exact_component_insert_construction(
             (None, None) => None,
             (None, Some(_)) => return None,
         },
-    })
+    }))
+    })();
+    parsed.transpose()
 }
 
 type ComponentInsertClass426Relation = (u32, Vec<(String, usize, Option<usize>)>);
@@ -527,11 +551,13 @@ fn exact_component_insert_class_426_relation(
 }
 
 fn exact_component_insert_carrier_334(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(String, usize)> {
+) -> Result<Option<(String, usize)>, CodecError> {
+    let parsed = (|| {
     let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)?;
     if class_tag != "334"
         || after_tag != carrier_at + 7
@@ -542,7 +568,15 @@ fn exact_component_insert_carrier_334(
     fixed_guid_end(bytes, carrier_at + component_carrier_334::COMPONENT_IDENTITY)?;
 
     let role_start = carrier_at + component_carrier_334::NEUTRON_ROLE;
-    let (role, role_end) = direct_utf16_role_until_tail(bytes, role_start, relation_at)?;
+    Some(role_start)
+    })();
+    let Some(role_start) = parsed else {
+        return Ok(None);
+    };
+    let Some((role, role_end)) = direct_utf16_role_until_tail(ctx, bytes, role_start, relation_at)? else {
+        return Ok(None);
+    };
+    Ok((|| {
     if !crate::bytes::is_guid_prefix(&role)
         || role.as_bytes().get(36) != Some(&b'_')
         || !role.get(37..)?.starts_with("urn:")
@@ -555,33 +589,52 @@ fn exact_component_insert_carrier_334(
     }
     fixed_guid_end(bytes, role_end + COMPONENT_CARRIER_ROLE_TAIL_BYTES)?;
     Some((role, role_start))
+    })())
 }
 
 const COMPONENT_CARRIER_ROLE_TAIL_BYTES: usize = 10;
 
 fn direct_utf16_role_until_tail(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     limit: usize,
-) -> Option<(String, usize)> {
-    let mut role = String::new();
+) -> Result<Option<(String, usize)>, CodecError> {
+    let end = (|| {
     let mut at = start;
     while at.checked_add(COMPONENT_CARRIER_ROLE_TAIL_BYTES)? <= limit {
         if bytes.get(at)? == &0
             && bytes.get(at + 2..at + 6)? == [0; 4]
             && View::u32_le_at(bytes, at + 6).is_some_and(|value| value != 0)
         {
-            return Some((role, at));
+            return Some(at);
         }
         let code_unit = View::u16_le_at(bytes, at)?;
         let byte = u8::try_from(code_unit).ok()?;
         if !byte.is_ascii_graphic() {
             return None;
         }
-        role.push(char::from(byte));
         at = at.checked_add(2)?;
     }
     None
+    })();
+    let Some(end) = end else {
+        return Ok(None);
+    };
+    let count = (end - start) / 2;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(count), "f3d component carrier role text")?;
+    let mut role = String::new();
+    role.try_reserve(count).map_err(|_| ctx.refuse_codec_limit("f3d component carrier role allocation", 0, 1))?;
+    for at in (start..end).step_by(2) {
+        let Some(unit) = View::u16_le_at(bytes, at) else {
+            return Ok(None);
+        };
+        let Some(byte) = u8::try_from(unit).ok() else {
+            return Ok(None);
+        };
+        role.push(char::from(byte));
+    }
+    Ok(Some((role, end)))
 }
 
 fn exact_component_insert_scope_283_262_257(
@@ -807,22 +860,23 @@ fn exact_component_insert_scope_414_264_389(
 }
 
 fn legacy_component_insert_placements(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
     transform: crate::records::sketch_placement::SketchPlacementMatrix,
-) -> Vec<(String, usize, Option<usize>)> {
+) -> Result<Vec<(String, usize, Option<usize>)>, CodecError> {
     let Some((class_tag, after_tag)) =
         lp_ascii_filtered_view(bytes, carrier_at, 3..=3, u8::is_ascii_digit)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if class_tag != "288"
         || after_tag != carrier_at + 7
         || View::u32_le_at(bytes, after_tag) != Some(carrier_record_index)
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut placements = Vec::new();
     for first_at in carrier_at + 11..relation_at {
@@ -844,8 +898,8 @@ fn legacy_component_insert_placements(
         else {
             continue;
         };
-        let Some((asset_identity, after_asset_identity)) =
-            lp_utf16_bounded(bytes, after_asset_guid + 1, 37..=256)
+        let Some((asset_identity, after_asset_identity, _asset_reservation)) =
+            lp_utf16_bounded_scoped(ctx, bytes, after_asset_guid + 1, 37..=256)?
         else {
             continue;
         };
@@ -862,8 +916,8 @@ fn legacy_component_insert_placements(
         }
         let carrier_transform_at = after_asset_identity + 1;
         let after_transform = carrier_transform_at + 16 * 8;
-        let Some((repeated_identity, after_repeated_identity)) =
-            lp_utf16_bounded(bytes, after_transform + 4, 37..=256)
+        let Some((repeated_identity, after_repeated_identity, _repeated_reservation)) =
+            lp_utf16_bounded_scoped(ctx, bytes, after_transform + 4, 37..=256)?
         else {
             continue;
         };
@@ -873,10 +927,12 @@ fn legacy_component_insert_placements(
             && bytes.get(after_repeated_identity..relation_at)
                 == Some(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         {
+            ctx.charge_collection_items(1, "f3d legacy component insert placements")?;
+            placements.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("f3d legacy component insert placements allocation", 0, 1))?;
             placements.push((role, role_at + 4, Some(carrier_transform_at)));
         }
     }
-    placements
+    Ok(placements)
 }
 
 pub(super) fn exact_copy_paste_component_operation(
