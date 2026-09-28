@@ -3359,10 +3359,24 @@ pub(super) fn parasolid_entity_51_records(
 }
 
 /// Decode value records from their retained deltas or attribute owners.
+fn reserve_native_value_record<T>(
+    ctx: &DecodeContext<'_>,
+    records: &mut Vec<T>,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "NX Parasolid value records")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()),
+        "retain NX Parasolid value records",
+    )?;
+    records.try_reserve_exact(1)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid value records", 0, 1))
+}
+
 pub(super) fn parasolid_entity_value_records(
+    ctx: &DecodeContext<'_>,
     streams: &[Stream],
     deltas_records: &[ParasolidDeltasRecord],
-) -> ParasolidEntityValueRecords {
+) -> Result<ParasolidEntityValueRecords, CodecError> {
     let mut records = ParasolidEntityValueRecords {
         integers: Vec::new(),
         doubles: Vec::new(),
@@ -3374,12 +3388,15 @@ pub(super) fn parasolid_entity_value_records(
         unmaterialized: Vec::new(),
     };
     for (stream_ordinal, stream) in streams.iter().enumerate() {
+        let ordinal = u32::try_from(stream_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX value record stream ordinal", 0, 1))?;
+        let mut offsets_guard = ctx.reserve_scoped(0, "NX value record owner offsets")?;
         let owned_offsets = match stream.kind() {
-            StreamKind::Deltas => deltas_records
-                .iter()
-                .filter_map(|record| {
-                    (record.stream_ordinal == stream_ordinal as u32
-                        && matches!(
+            StreamKind::Deltas => {
+                let mut offsets = Vec::new();
+                for record in deltas_records {
+                    if record.stream_ordinal != ordinal
+                        || !matches!(
                             record.family,
                             RecordFamily::Entity52
                                 | RecordFamily::Entity53
@@ -3390,13 +3407,32 @@ pub(super) fn parasolid_entity_value_records(
                                 | RecordFamily::Entity58
                                 | RecordFamily::Entity59
                                 | RecordFamily::Entity62
-                        ))
-                    .then(|| usize::try_from(record.inflated_offset).ok())
-                    .flatten()
-                })
-                .collect::<Vec<_>>(),
+                        )
+                    {
+                        continue;
+                    }
+                    let Ok(offset) = usize::try_from(record.inflated_offset) else {
+                        continue;
+                    };
+                    ctx.charge_collection_items(1, "NX value record owner offsets")?;
+                    offsets_guard.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()))?;
+                    offsets.try_reserve_exact(1).map_err(|_| {
+                        ctx.refuse_codec_limit("allocate NX value record owner offsets", 0, 1)
+                    })?;
+                    offsets.push(offset);
+                }
+                offsets
+            }
             StreamKind::Partition | StreamKind::Plain => {
-                crate::parasolid::referenced_value_record_offsets(&stream.inflated)
+                let offsets = crate::parasolid::referenced_value_record_offsets(&stream.inflated);
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(offsets.len()),
+                    "NX value record owner offsets",
+                )?;
+                let bytes = offsets.len().checked_mul(std::mem::size_of::<usize>())
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX value record owner offsets", 0, 1))?;
+                offsets_guard.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+                offsets
             }
             StreamKind::Preview => continue,
         };
@@ -3404,136 +3440,186 @@ pub(super) fn parasolid_entity_value_records(
             &stream.inflated,
             owned_offsets,
         );
+        drop(offsets_guard);
         for record in values.integers {
+            reserve_native_value_record(ctx, &mut records.integers)?;
+            let id = parasolid_offset_record_id(
+                ctx, stream_ordinal, "entity-52-integers", u32::from(record.xmt), record.offset,
+            )?;
             records.integers.push(ParasolidEntity52IntegerRecord {
-                id: format!(
-                    "nx:s{stream_ordinal}:entity-52-integers#{}-{}",
-                    u32::from(record.xmt),
-                    record.offset
-                ),
-                stream_ordinal: stream_ordinal as u32,
+                id,
+                stream_ordinal: ordinal,
                 xmt: record.xmt,
                 values: record.value,
-                byte_len: record.byte_len as u64,
-                inflated_offset: record.offset as u64,
+                byte_len: cadmpeg_core::decode::u64_from_index(record.byte_len),
+                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
         for record in values.doubles {
+            reserve_native_value_record(ctx, &mut records.doubles)?;
+            let id = parasolid_offset_record_id(
+                ctx, stream_ordinal, "entity-53-doubles", u32::from(record.xmt), record.offset,
+            )?;
             records.doubles.push(ParasolidEntity53DoubleRecord {
-                id: format!(
-                    "nx:s{stream_ordinal}:entity-53-doubles#{}-{}",
-                    u32::from(record.xmt),
-                    record.offset
-                ),
-                stream_ordinal: stream_ordinal as u32,
+                id,
+                stream_ordinal: ordinal,
                 xmt: record.xmt,
                 values: record.value,
-                byte_len: record.byte_len as u64,
-                inflated_offset: record.offset as u64,
+                byte_len: cadmpeg_core::decode::u64_from_index(record.byte_len),
+                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
         for record in values.strings {
+            reserve_native_value_record(ctx, &mut records.strings)?;
+            let id = parasolid_offset_record_id(
+                ctx, stream_ordinal, "entity-54-string", u32::from(record.xmt), record.offset,
+            )?;
+            let value_len = record.value.as_str().len();
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(value_len),
+                "retain NX Parasolid string value",
+            )?;
+            let mut text = String::new();
+            text.try_reserve_exact(value_len).map_err(|_| {
+                ctx.refuse_codec_limit("allocate NX Parasolid string value", 0, 1)
+            })?;
+            text.push_str(record.value.as_str());
+            let value = crate::printable_string::PrintableString::new(text)
+                .map_err(|message| CodecError::Malformed(message.into()))?;
             records.strings.push(ParasolidEntity54StringRecord {
-                id: format!(
-                    "nx:s{stream_ordinal}:entity-54-string#{}-{}",
-                    u32::from(record.xmt),
-                    record.offset
-                ),
-                stream_ordinal: stream_ordinal as u32,
+                id,
+                stream_ordinal: ordinal,
                 xmt: record.xmt,
-                value: record.value.into_owned(),
-                byte_len: record.byte_len as u64,
-                inflated_offset: record.offset as u64,
+                value,
+                byte_len: cadmpeg_core::decode::u64_from_index(record.byte_len),
+                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
-        let mut retain_vector = |kind, family: &str, xmt, offset, byte_len, values| {
+        let mut retain_vector = |kind, family: &'static str, xmt, offset, byte_len, values| -> Result<(), CodecError> {
+            reserve_native_value_record(ctx, &mut records.vectors)?;
+            let id = parasolid_offset_record_id(
+                ctx, stream_ordinal, family, u32::from(xmt), offset,
+            )?;
             records.vectors.push(ParasolidEntityVectorRecord {
-                id: format!(
-                    "nx:s{stream_ordinal}:entity-{family}#{}-{offset}",
-                    u32::from(xmt)
-                ),
-                stream_ordinal: stream_ordinal as u32,
+                id,
+                stream_ordinal: ordinal,
                 kind,
                 xmt,
                 values,
-                byte_len: byte_len as u64,
-                inflated_offset: offset as u64,
+                byte_len: cadmpeg_core::decode::u64_from_index(byte_len),
+                inflated_offset: cadmpeg_core::decode::u64_from_index(offset),
             });
+            Ok(())
         };
         for record in values.points {
             retain_vector(
                 ParasolidVectorValueKind::Points,
-                "55-points",
+                "entity-55-points",
                 record.xmt,
                 record.offset,
                 record.byte_len,
                 record.value,
-            );
+            )?;
         }
         for record in values.vectors {
             retain_vector(
                 ParasolidVectorValueKind::Vectors,
-                "56-vectors",
+                "entity-56-vectors",
                 record.xmt,
                 record.offset,
                 record.byte_len,
                 record.value,
-            );
+            )?;
         }
         for record in values.directions {
             retain_vector(
                 ParasolidVectorValueKind::Directions,
-                "59-directions",
+                "entity-59-directions",
                 record.xmt,
                 record.offset,
                 record.byte_len,
                 record.value,
-            );
+            )?;
         }
         for record in values.axes {
+            reserve_native_value_record(ctx, &mut records.axes)?;
+            let id = parasolid_offset_record_id(
+                ctx, stream_ordinal, "entity-57-axes", u32::from(record.xmt), record.offset,
+            )?;
             records.axes.push(ParasolidEntity57AxisRecord {
-                id: format!(
-                    "nx:s{stream_ordinal}:entity-57-axes#{}-{}",
-                    u32::from(record.xmt),
-                    record.offset
-                ),
-                stream_ordinal: stream_ordinal as u32,
+                id,
+                stream_ordinal: ordinal,
                 xmt: record.xmt,
                 values: record.value,
-                byte_len: record.byte_len as u64,
-                inflated_offset: record.offset as u64,
+                byte_len: cadmpeg_core::decode::u64_from_index(record.byte_len),
+                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
         for record in values.tags {
+            reserve_native_value_record(ctx, &mut records.tags)?;
+            let id = parasolid_offset_record_id(
+                ctx, stream_ordinal, "entity-58-tags", u32::from(record.xmt), record.offset,
+            )?;
             records.tags.push(ParasolidEntity58TagRecord {
-                id: format!(
-                    "nx:s{stream_ordinal}:entity-58-tags#{}-{}",
-                    u32::from(record.xmt),
-                    record.offset
-                ),
-                stream_ordinal: stream_ordinal as u32,
+                id,
+                stream_ordinal: ordinal,
                 xmt: record.xmt,
                 values: record.value,
-                byte_len: record.byte_len as u64,
-                inflated_offset: record.offset as u64,
+                byte_len: cadmpeg_core::decode::u64_from_index(record.byte_len),
+                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
         for record in values.unicode {
+            reserve_native_value_record(ctx, &mut records.unicode)?;
+            let id = parasolid_offset_record_id(
+                ctx, stream_ordinal, "entity-62-unicode", u32::from(record.xmt), record.offset,
+            )?;
             records.unicode.push(ParasolidEntity62UnicodeRecord {
-                id: format!(
-                    "nx:s{stream_ordinal}:entity-62-unicode#{}-{}",
-                    u32::from(record.xmt),
-                    record.offset
-                ),
-                stream_ordinal: stream_ordinal as u32,
+                id,
+                stream_ordinal: ordinal,
                 xmt: record.xmt,
                 value: record.value,
-                byte_len: record.byte_len as u64,
-                inflated_offset: record.offset as u64,
+                byte_len: cadmpeg_core::decode::u64_from_index(record.byte_len),
+                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
             });
         }
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(values.unmaterialized.len()),
+            "NX Parasolid unmaterialized value records",
+        )?;
+        let unmaterialized_bytes = std::mem::size_of_val(values.unmaterialized.as_slice());
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(unmaterialized_bytes),
+            "retain NX Parasolid unmaterialized records",
+        )?;
+        records.unmaterialized.try_reserve_exact(values.unmaterialized.len()).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX Parasolid unmaterialized records", 0, 1)
+        })?;
         records.unmaterialized.extend(values.unmaterialized);
     }
+    let sort_units = [
+        records.integers.len(),
+        records.doubles.len(),
+        records.strings.len(),
+        records.vectors.len(),
+        records.axes.len(),
+        records.tags.len(),
+        records.unicode.len(),
+    ]
+    .into_iter()
+    .try_fold(0usize, |total, count| {
+        let factor = if count < 2 {
+            1
+        } else {
+            usize::try_from(count.ilog2()).ok()?.checked_add(1)?
+        };
+        total.checked_add(count.checked_mul(factor)?)
+    })
+    .ok_or_else(|| ctx.refuse_codec_limit("sort NX Parasolid value records", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(sort_units),
+        "sort NX Parasolid value records",
+    )?;
     records
         .integers
         .sort_by(|first, second| first.id.cmp(&second.id));
@@ -3555,7 +3641,7 @@ pub(super) fn parasolid_entity_value_records(
     records
         .unicode
         .sort_by(|first, second| first.id.cmp(&second.id));
-    records
+    Ok(records)
 }
 
 /// Join type-81 reference slots to unique same-stream numeric value records.
@@ -4371,11 +4457,43 @@ mod tests {
             outer,
         )];
         let events = super::parasolid_deltas_events(&streams);
-        let records = super::parasolid_entity_value_records(&streams, &events.records);
+        let records = crate::test_support::with_decode_context(|ctx| {
+            super::parasolid_entity_value_records(ctx, &streams, &events.records)
+        })
+        .unwrap();
 
         assert_eq!(records.integers.len(), 1);
         assert_eq!(records.integers[0].values.as_slice().len(), 4);
         assert!(records.doubles.is_empty());
+    }
+
+    #[test]
+    fn native_value_records_refuse_collection_at_caller_limit() {
+        let inflated = crate::test_support::test_streams::parasolid_entity_records_stream();
+        let offset_count = crate::parasolid::referenced_value_record_offsets(&inflated).len();
+        let streams = [stream(
+            crate::parasolid::ParasolidSubtype::Partition,
+            "SCH_TEST",
+            inflated,
+        )];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(offset_count);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &streams[0].inflated,
+            &arena,
+            &policy,
+        )
+        .unwrap();
+        let error = super::parasolid_entity_value_records(&ctx, &streams, &[])
+            .err()
+            .expect("value records need an item after owner offsets");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    && limit.operation == "NX Parasolid value records"
+        ));
     }
 
     fn record(
