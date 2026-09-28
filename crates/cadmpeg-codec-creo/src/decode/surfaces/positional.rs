@@ -556,7 +556,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
                 replay.surface_id, replay.offset
             ),
             &mut refusal,
-        );
+        )?;
         let refused = refusal.take_records_checked()?;
         let Some(surface) = surface.filter(|_| refused.is_empty()) else {
             note_tabulated_cylinder_refusals(

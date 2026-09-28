@@ -48,6 +48,47 @@ fn admitted_nurbs_curve_mapping_refuses_knot_and_pole_limits() {
 }
 
 #[test]
+fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+    let point = |x, y| FinitePoint3::new(Point3::new(x, y, 0.0)).expect("finite point");
+    let rows = vec![
+        vec![point(0.0, 0.0), point(0.0, 1.0)],
+        vec![point(1.0, 0.0), point(1.0, 1.0)],
+    ];
+    let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
+    let old = NurbsSurface::new(
+        axis(), axis(), NurbsPoleGrid::Polynomial { rows: rows.clone() }, false,
+    ).expect("old surface");
+    let admitted = NurbsSurface::new_admitted_grid(
+        axis(), axis(), NurbsPoleGrid::Polynomial { rows }, false,
+    ).expect("admitted surface");
+    assert_eq!(admitted, old);
+    assert_eq!(serde_json::to_vec(&admitted).expect("wire"),
+        serde_json::to_vec(&old).expect("wire"));
+    let short = NurbsSurface::new_admitted_grid(
+        NurbsSurfaceAxis::new(1, vec![0.0, 1.0], false),
+        axis(),
+        NurbsPoleGrid::Polynomial { rows: vec![
+            vec![point(0.0, 0.0), point(0.0, 1.0)],
+            vec![point(1.0, 0.0), point(1.0, 1.0)],
+        ] },
+        false,
+    ).expect_err("short knot axis");
+    assert_eq!(short.to_string(), "u_knots must contain 4 values, found 2");
+    let ragged = NurbsSurface::new_admitted_grid(
+        axis(), axis(),
+        NurbsPoleGrid::Polynomial { rows: vec![
+            vec![point(0.0, 0.0), point(0.0, 1.0)],
+            vec![point(1.0, 0.0)],
+        ] },
+        false,
+    ).expect_err("ragged pole grid");
+    assert_eq!(ragged.to_string(),
+        "control_points row must contain 2 values, found 1");
+}
+
+#[test]
 fn admitted_nurbs_parts_preserve_the_existing_curve_and_surface_wire() {
     use crate::geometry::nurbs::{KnotVector, NurbsCurve, NurbsError, NurbsSurfaceAxis};
     use crate::scalar::FiniteReal;

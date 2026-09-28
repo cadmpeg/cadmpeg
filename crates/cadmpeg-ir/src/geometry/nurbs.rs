@@ -856,7 +856,11 @@ fn checked_knot_count(field: &str, pole_count: usize, degree: u32) -> Result<usi
 fn require_rectangular_grid<T>(field: &str, rows: &[Vec<T>]) -> Result<(), NurbsError> {
     let width = rows.first().map_or(0, Vec::len);
     for row in rows {
-        require_length(&format!("{field} row"), row.len(), width)?;
+        if row.len() != width {
+            return Err(NurbsError::Structure(format!(
+                "{field} row must contain {width} values, found {}", row.len(),
+            )));
+        }
     }
     Ok(())
 }
@@ -1061,6 +1065,7 @@ impl NurbsSurface {
         poles: NurbsPoleGrid<P>,
         normal_reversed: bool,
     ) -> Result<Self, NurbsError> {
+        validate_surface_structure(&u, &v, &poles)?;
         let NurbsSurfaceAxis {
             degree: u_degree,
             knots: u_knots,
@@ -1071,33 +1076,44 @@ impl NurbsSurface {
             knots: v_knots,
             periodic: v_periodic,
         } = v;
-        let u_count = poles.u_count();
-        let v_count = poles.v_count();
-        if u_count <= u_degree as usize {
-            return Err(NurbsError::Structure(format!(
-                "u_count must exceed u_degree {u_degree}, found {u_count}"
-            )));
-        }
-        if v_count <= v_degree as usize {
-            return Err(NurbsError::Structure(format!(
-                "v_count must exceed v_degree {v_degree}, found {v_count}"
-            )));
-        }
-        require_length(
-            "u_knots",
-            u_knots.knot_count(),
-            checked_knot_count("u", u_count, u_degree)?,
-        )?;
-        require_length(
-            "v_knots",
-            v_knots.knot_count(),
-            checked_knot_count("v", v_count, v_degree)?,
-        )?;
-        match &poles {
-            NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows)?,
-            NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
-        }
         let poles = poles.admit()?;
+        let u_knots = u_knots
+            .admit()
+            .map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
+        let v_knots = v_knots
+            .admit()
+            .map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
+        Ok(Self {
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            poles,
+            normal_reversed,
+            u_periodic,
+            v_periodic,
+        })
+    }
+
+    /// Build from finite pole rows that the caller already charged and
+    /// reserved. The grid is moved into the surface without another copy.
+    pub fn new_admitted_grid<U: KnotValue, V: KnotValue>(
+        u: NurbsSurfaceAxis<U>,
+        v: NurbsSurfaceAxis<V>,
+        poles: NurbsPoleGrid<FinitePoint3>,
+        normal_reversed: bool,
+    ) -> Result<Self, NurbsError> {
+        validate_surface_structure(&u, &v, &poles)?;
+        let NurbsSurfaceAxis {
+            degree: u_degree,
+            knots: u_knots,
+            periodic: u_periodic,
+        } = u;
+        let NurbsSurfaceAxis {
+            degree: v_degree,
+            knots: v_knots,
+            periodic: v_periodic,
+        } = v;
         let u_knots = u_knots
             .admit()
             .map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
@@ -1319,6 +1335,32 @@ impl NurbsSurface {
         std::mem::swap(&mut self.u_knots, &mut self.v_knots);
         std::mem::swap(&mut self.u_periodic, &mut self.v_periodic);
     }
+}
+
+fn validate_surface_structure<P, U: KnotValue, V: KnotValue>(
+    u: &NurbsSurfaceAxis<U>,
+    v: &NurbsSurfaceAxis<V>,
+    poles: &NurbsPoleGrid<P>,
+) -> Result<(), NurbsError> {
+    let u_count = poles.u_count();
+    let v_count = poles.v_count();
+    if u_count <= u.degree as usize {
+        return Err(NurbsError::Structure(format!(
+            "u_count must exceed u_degree {}, found {u_count}", u.degree
+        )));
+    }
+    if v_count <= v.degree as usize {
+        return Err(NurbsError::Structure(format!(
+            "v_count must exceed v_degree {}, found {v_count}", v.degree
+        )));
+    }
+    require_length("u_knots", u.knots.knot_count(), checked_knot_count("u", u_count, u.degree)?)?;
+    require_length("v_knots", v.knots.knot_count(), checked_knot_count("v", v_count, v.degree)?)?;
+    match poles {
+        NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows)?,
+        NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
+    }
+    Ok(())
 }
 
 impl<'de> Deserialize<'de> for NurbsSurface {

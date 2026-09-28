@@ -1567,6 +1567,7 @@ fn spline_extrusion_preserves_directrix_basis_and_weights() {
         &"extrusion directrix fixture",
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
+    .expect("extrusion resources")
     .expect("valid extrusion surface");
 
     assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
