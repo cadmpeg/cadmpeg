@@ -1073,9 +1073,10 @@ fn append_design_losses(
                 "{native_features} feature(s) retain their native kind without a complete neutral operation definition."
             )))?;
     }
-    let unbound_feature_input_objects = native
-        .as_ref()
-        .map_or(0, unbound_feature_input_operation_objects);
+    let unbound_feature_input_objects = match native.as_ref() {
+        Some(native) => unbound_feature_input_operation_objects(ctx, native)?,
+        None => 0,
+    };
     if unbound_feature_input_objects > 0 {
         push_report_loss(ctx, report, SldprtLossCode::FeatureInputObjectUnbound.note(format!(
                 "{unbound_feature_input_objects} native feature-input operation object(s) do not bind uniquely to a history feature."
@@ -1812,44 +1813,38 @@ fn configuration_source_needs_update(
         .is_some_and(|value| value.eq_ignore_ascii_case("yes"))
 }
 
-fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative) -> usize {
+fn unbound_feature_input_operation_objects(
+    ctx: &DecodeContext<'_>,
+    native: &crate::native::SldprtNative,
+) -> Result<usize, CodecError> {
     use crate::classification::{classify, native_object_class};
     use crate::records::FeatureInputClassRole;
 
-    let mut source_counts = BTreeMap::<u32, usize>::new();
-    let mut binding_counts = BTreeMap::<(u32, &str), usize>::new();
-    for feature in native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.features)
-    {
-        let Some(source) = feature.source_value() else {
-            continue;
-        };
-        *source_counts.entry(source).or_default() += 1;
-        if let Some(class) = feature.input_class.as_deref() {
-            *binding_counts.entry((source, class)).or_default() += 1;
-        }
-    }
-    let mut named_binding_counts = BTreeMap::<(&str, &str, &str), usize>::new();
-    for lane in &native.feature_input_lanes {
-        for feature in native
-            .feature_histories
-            .iter()
-            .flat_map(|history| &history.features)
-        {
-            let (Some(class), Some(name)) = (
-                feature.input_class.as_deref(),
-                crate::resolved_features::scalars::feature_object_name(feature, lane),
-            ) else {
-                continue;
-            };
-            *named_binding_counts
-                .entry((lane.id.as_str(), name.id.as_str(), class))
-                .or_default() += 1;
-        }
-    }
-    native
+    let features = native.feature_histories.iter().flat_map(|history| &history.features);
+    let source_counts = count_keys(
+        ctx,
+        features.clone().filter_map(|feature| feature.source_value()),
+        "count SLDPRT feature-input sources",
+    )?;
+    let binding_counts = count_keys(
+        ctx,
+        features.clone().filter_map(|feature| {
+            feature.source_value().zip(feature.input_class.as_deref())
+        }),
+        "count SLDPRT feature-input bindings",
+    )?;
+    let named_binding_counts = count_keys(
+        ctx,
+        native.feature_input_lanes.iter().flat_map(|lane| {
+            features.clone().filter_map(move |feature| {
+                feature.input_class.as_deref().zip(
+                    crate::resolved_features::scalars::feature_object_name(feature, lane),
+                ).map(|(class, name)| (lane.id.as_str(), name.id.as_str(), class))
+            })
+        }),
+        "count SLDPRT named feature-input bindings",
+    )?;
+    Ok(native
         .feature_input_lanes
         .iter()
         .flat_map(|lane| {
@@ -1888,7 +1883,7 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
                 == Some(1);
             !(source_bound || name_bound)
         })
-        .count()
+        .count())
 }
 
 fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::SldprtNative) -> usize {

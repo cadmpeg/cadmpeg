@@ -323,7 +323,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         feature_input_lanes: vec![lane.clone()],
         ..SldprtNative::default()
     };
-    assert_eq!(unbound_feature_input_operation_objects(&native), 1);
+    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 1);
 
     native.feature_histories.push(FeatureHistory {
         id: "history".into(),
@@ -349,9 +349,9 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
             content: Vec::new(),
         }],
     });
-    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 0);
     native.feature_histories[0].features[0].input_class = None;
-    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 0);
     native.feature_histories[0].features[0].xml_tag = "Sketch".into();
     native.feature_histories[0].features[0].kind = "Sketch".into();
     native.feature_histories[0].features[0].name = "Profile".into();
@@ -359,7 +359,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
     lane.names[0].offset = 10 + 6 + "moProfileFeature_c".len() as u64;
     lane.names[0].value = "Profile".into();
     native.feature_input_lanes = vec![lane.clone()];
-    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 0);
     native.feature_histories[0].features[0].xml_tag = "Extrusion".into();
     native.feature_histories[0].features[0].kind = "Extrusion".into();
     native.feature_histories[0].features[0].name = "Boss".into();
@@ -369,18 +369,18 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
     lane.names[0].value = "Boss".into();
     native.feature_input_lanes = vec![lane.clone()];
     native.feature_histories[0].features[0].input_class = Some("moSweep_c".into());
-    assert_eq!(unbound_feature_input_operation_objects(&native), 1);
+    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 1);
     native.feature_histories[0].features[0].input_class = Some(class_name.into());
     native.feature_histories[0].features[0].source_id = None;
-    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 0);
     let mut duplicate = native.feature_histories[0].features[0].clone();
     duplicate.id = "duplicate-feature".into();
     native.feature_histories[0].features.push(duplicate);
-    assert_eq!(unbound_feature_input_operation_objects(&native), 1);
+    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 1);
 
     lane.names[0].offset += 1;
     native.feature_input_lanes = vec![lane];
-    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 0);
 }
 
 #[test]
