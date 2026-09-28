@@ -275,6 +275,87 @@ pub(super) fn edge_node_wires(
         .collect()
 }
 
+fn identity_index_charged<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    identities: &'a [CatiaConsolidatedVertexIdentity],
+) -> Result<HashMap<IdentityKey, &'a str>, cadmpeg_core::CodecError> {
+    let mut index = HashMap::new();
+    for identity in identities {
+        let key = if let Some(record) = identity.endpoint_record {
+            IdentityKey::EndpointRecord(record)
+        } else {
+            IdentityKey::Unresolved(
+                identity.source_index,
+                identity.allocation_owner.as_deref().map(|owner| {
+                    crate::resource::copy_retained_str(ctx, owner, "catia_native_edge_wire_index_owner")
+                }).transpose()?,
+                identity.identity,
+            )
+        };
+        crate::resource::insert_map(
+            ctx,
+            &mut index,
+            key,
+            identity.id.as_str(),
+            "catia_native_edge_wire_index",
+        )?;
+    }
+    Ok(index)
+}
+
+fn joined_vertex_charged<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    node: &CatiaConsolidatedEdgeNode,
+    endpoint: usize,
+    index: &HashMap<IdentityKey, &'a str>,
+) -> Result<&'a str, cadmpeg_core::CodecError> {
+    if node.endpoint_records.is_none() && node.uses.is_none() {
+        return Ok("");
+    }
+    let key = if let Some(records) = node.endpoint_records {
+        IdentityKey::EndpointRecord(records[endpoint])
+    } else {
+        IdentityKey::Unresolved(
+            node.source_index,
+            node.allocation.as_ref().map(|(owner, _)| {
+                crate::resource::copy_retained_str(ctx, owner, "catia_native_edge_wire_lookup_owner")
+            }).transpose()?,
+            node.vertex_refs[endpoint],
+        )
+    };
+    Ok(index.get(&key).copied().unwrap_or(""))
+}
+
+pub(super) fn edge_node_wires_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    nodes: Vec<CatiaConsolidatedEdgeNode>,
+    identities: &[CatiaConsolidatedVertexIdentity],
+) -> Result<Vec<CatiaConsolidatedEdgeNodeWire>, cadmpeg_core::CodecError> {
+    let index = identity_index_charged(ctx, identities)?;
+    let mut wires = Vec::new();
+    for node in nodes {
+        let vertices = [
+            crate::resource::copy_retained_str(
+                ctx,
+                joined_vertex_charged(ctx, &node, 0, &index)?,
+                "catia_native_edge_wire_vertex_id",
+            )?,
+            crate::resource::copy_retained_str(
+                ctx,
+                joined_vertex_charged(ctx, &node, 1, &index)?,
+                "catia_native_edge_wire_vertex_id",
+            )?,
+        ];
+        crate::resource::push(
+            ctx,
+            &mut wires,
+            CatiaConsolidatedEdgeNodeWire::from_node(node, vertices),
+            "catia_native_edge_wires",
+        )?;
+    }
+    Ok(wires)
+}
+
 pub(super) fn load_edge_nodes(
     wires: Vec<CatiaConsolidatedEdgeNodeWire>,
     identities: &[CatiaConsolidatedVertexIdentity],
@@ -400,6 +481,35 @@ mod tests {
     use crate::native::CatiaNative;
     use crate::test_support::test_a5_bound::a5_native_edge_run_stream;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
+
+    #[test]
+    fn native_edge_wire_projection_refuses_before_identity_index_growth() {
+        let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
+        let service = crate::test_support::with_service_context(|ctx| {
+            super::edge_node_wires_charged(
+                ctx,
+                native.consolidated_edge_nodes.clone(),
+                &native.consolidated_vertex_identities,
+            )
+        }).expect("service edge-wire budget");
+        let original = super::edge_node_wires(
+            native.consolidated_edge_nodes.clone(),
+            &native.consolidated_vertex_identities,
+        );
+        assert_eq!(
+            serde_json::to_value(service).expect("serialize charged edge wires"),
+            serde_json::to_value(original).expect("serialize original edge wires"),
+        );
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            super::edge_node_wires_charged(
+                ctx,
+                native.consolidated_edge_nodes.clone(),
+                &native.consolidated_vertex_identities,
+            )
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_native_edge_wire_index"));
+    }
 
     #[test]
     fn native_vertex_identities_refuse_before_nested_growth() {

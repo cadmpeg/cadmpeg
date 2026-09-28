@@ -24,6 +24,46 @@ use crate::test_support::test_object_graph::{
 use crate::CatiaCodec;
 
 #[test]
+fn native_projection_refuses_catalog_header_and_flattened_entry_growth() {
+    let mut native = super::super::CatiaNative::default();
+    native.catalogs.push(super::super::CatiaCatalog {
+        id: "catia:catalog#0".to_string(),
+        byte_offset: 0,
+        byte_len: 1,
+        entries: vec![super::super::CatiaCatalogEntry {
+            id: "catia:catalog-entry#0".to_string(),
+            parent: "catia:catalog#0".to_string(),
+            ordinal: 0,
+            byte_offset: 0,
+            value: "schema".to_string(),
+        }],
+    });
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::CatiaArenaProjection::from_owned(ctx, native.clone())
+    }).expect("service native projection budget");
+    assert_eq!(service.catalogs.len(), 1);
+    assert_eq!(service.catalog_entries.len(), 1);
+    let header = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::CatiaArenaProjection::from_owned(ctx, native.clone())
+    });
+    assert!(matches!(header,
+        Err(cadmpeg_ir::NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)))
+            if limit.operation == "catia_native_catalog_headers"));
+    let flattened = crate::test_support::with_collection_limit(1, |ctx| {
+        super::super::CatiaArenaProjection::from_owned(ctx, native.clone())
+    });
+    assert!(matches!(flattened,
+        Err(cadmpeg_ir::NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)))
+            if limit.operation == "catia_native_flattened_arena"));
+    let retained = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::CatiaArenaProjection::from_owned(ctx, native)
+    });
+    assert!(matches!(retained,
+        Err(cadmpeg_ir::NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)))
+            if limit.operation == "catia_native_catalog_header_id"));
+}
+
+#[test]
 fn legacy_native_projection_refuses_collection_and_retained_limits() {
     let mut bytes = vec![0xea];
     bytes.extend_from_slice(&1u32.to_le_bytes());
