@@ -805,14 +805,30 @@ pub(crate) fn decode_face_operands(
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignFaceOperand>, CodecError> {
-    let headers = headers
-        .iter()
-        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
-        .collect::<HashMap<_, _>>();
-    let scopes = scopes
-        .iter()
-        .filter_map(|scope| Some(((native_stream(&scope.id)?, scope.record_index), scope)))
-        .collect::<HashMap<_, _>>();
+    let mut header_index = HashMap::new();
+    for header in headers {
+        let Some(stream) = native_stream(&header.id) else { continue; };
+        let key = (stream, header.record_index);
+        if !header_index.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d face operand header index")?;
+            header_index.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d face operand header index allocation", 0, 1)
+            })?;
+        }
+        header_index.insert(key, header);
+    }
+    let mut scope_index = HashMap::new();
+    for scope in scopes {
+        let Some(stream) = native_stream(&scope.id) else { continue; };
+        let key = (stream, scope.record_index);
+        if !scope_index.contains_key(&key) {
+            ctx.charge_collection_items(1, "f3d face operand scope index")?;
+            scope_index.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d face operand scope index allocation", 0, 1)
+            })?;
+        }
+        scope_index.insert(key, scope);
+    }
     let mut out = Vec::new();
     let mut seen = HashSet::new();
     let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
@@ -820,7 +836,7 @@ pub(crate) fn decode_face_operands(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(scope) = scopes.get(&(stream, group.scope_record_index)) else {
+        let Some(scope) = scope_index.get(&(stream, group.scope_record_index)) else {
             continue;
         };
         let is_extrude_operand = matches!(
@@ -915,19 +931,19 @@ pub(crate) fn decode_face_operands(
             .map(|member| &member.value)
             .enumerate()
         {
-            if !seen.insert((stream, scope.record_index, *record_index)) {
+            if !insert_face_seen(ctx, &mut seen, (stream, scope.record_index, *record_index))? {
                 continue;
             }
             let Ok(group_member_ordinal) = u32::try_from(group_member_index) else {
                 continue;
             };
-            let Some(header) = headers.get(&(stream, *record_index)) else {
+            let Some(header) = header_index.get(&(stream, *record_index)) else {
                 continue;
             };
             let next_byte_offset = group
                 .members()
                 .get(group_member_index + 1)
-                .and_then(|record| headers.get(&(stream, record.value)))
+                .and_then(|record| header_index.get(&(stream, record.value)))
                 .copied()
                 .map(|header| header.byte_offset)
                 .or_else(|| {
@@ -939,7 +955,7 @@ pub(crate) fn decode_face_operands(
                         .values()
                         .position(|candidate| candidate == record_index)
                         .and_then(|ordinal| scope.reference_members().values().nth(ordinal + 1))
-                        .and_then(|record_index| headers.get(&(stream, *record_index)))
+                        .and_then(|record_index| header_index.get(&(stream, *record_index)))
                         .map(|header| header.byte_offset)
                 });
             if let Some(operand) = parse_face_operand(
@@ -952,11 +968,15 @@ pub(crate) fn decode_face_operands(
                 header,
                 recipes,
             ) {
+                ctx.charge_collection_items(1, "f3d face operand output")?;
+                out.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d face operand output allocation", 0, 1)
+                })?;
                 out.push(operand);
             }
         }
     }
-    for scope in scopes.values().filter(|scope| {
+    for scope in scope_index.values().filter(|scope| {
         let is_legacy_as_built_421 = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
@@ -989,28 +1009,24 @@ pub(crate) fn decode_face_operands(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let records = cached_borrowed_record_offsets(ctx, &mut record_offset_index, stream, bytes)?;
-        let ordinals = if scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
+        let legacy_as_built = scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
                 scope.frame_length(),
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
             )
-            .is_some()
-        {
-            [1_usize, 3].into_iter().collect::<Vec<_>>()
-        } else {
-            (0..scope.reference_members().len()).collect::<Vec<_>>()
-        };
-        for ordinal in ordinals {
+            .is_some();
+        for ordinal in (0..scope.reference_members().len())
+            .filter(|ordinal| !legacy_as_built || matches!(*ordinal, 1 | 3)) {
             let Some(record_index) = scope.reference_members().values().nth(ordinal).copied()
             else {
                 continue;
             };
-            if !seen.insert((stream, scope.record_index, record_index)) {
+            if !insert_face_seen(ctx, &mut seen, (stream, scope.record_index, record_index))? {
                 continue;
             }
             let (Ok(scope_reference_ordinal), Some(header)) =
-                (u32::try_from(ordinal), headers.get(&(stream, record_index)))
+                (u32::try_from(ordinal), header_index.get(&(stream, record_index)))
             else {
                 continue;
             };
@@ -1027,7 +1043,7 @@ pub(crate) fn decode_face_operands(
                     .reference_members()
                     .values()
                     .nth(ordinal + 1)
-                    .and_then(|record_index| headers.get(&(stream, *record_index)))
+                    .and_then(|record_index| header_index.get(&(stream, *record_index)))
                     .map(|header| header.byte_offset)
             } else {
                 None
@@ -1042,12 +1058,31 @@ pub(crate) fn decode_face_operands(
                 header,
                 recipes,
             ) {
+                ctx.charge_collection_items(1, "f3d face operand output")?;
+                out.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("f3d face operand output allocation", 0, 1)
+                })?;
                 out.push(operand);
             }
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+fn insert_face_seen<'a>(
+    ctx: &DecodeContext<'_>,
+    seen: &mut HashSet<(&'a str, u32, u32)>,
+    key: (&'a str, u32, u32),
+) -> Result<bool, CodecError> {
+    if seen.contains(&key) {
+        return Ok(false);
+    }
+    ctx.charge_collection_items(1, "f3d face operand seen key")?;
+    seen.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d face operand seen key allocation", 0, 1)
+    })?;
+    Ok(seen.insert(key))
 }
 
 /// Decode the ordered persistent source identities carried by admitted `Face`
