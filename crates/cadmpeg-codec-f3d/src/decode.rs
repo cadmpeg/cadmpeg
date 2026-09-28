@@ -183,6 +183,27 @@ fn push_decode_item<T>(
     Ok(())
 }
 
+fn insert_source_attribute_owned(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut std::collections::BTreeMap<String, String>,
+    key: &'static str,
+    value: String,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "collect F3D source attributes")?;
+    attributes.insert(key.to_owned(), value);
+    Ok(())
+}
+
+fn insert_source_attribute_copy(
+    ctx: &DecodeContext<'_>,
+    attributes: &mut std::collections::BTreeMap<String, String>,
+    key: &'static str,
+    value: &str,
+) -> Result<(), CodecError> {
+    let copy = copy_decode_string(ctx, value, "retain F3D source attribute value")?;
+    insert_source_attribute_owned(ctx, attributes, key, copy)
+}
+
 fn format_decode_string(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
@@ -2603,7 +2624,7 @@ impl<'a> F3dDecodeSession<'a> {
             ir,
             source_attributes,
             unknowns,
-        } = build_metadata_ir(scan)?;
+        } = build_metadata_ir(ctx, scan)?;
         Ok((
             Self {
                 ctx,
@@ -3427,7 +3448,7 @@ fn decode_scanned_document<'a>(
             ir,
             mut source_attributes,
             unknowns,
-        } = build_metadata_ir(scan)?;
+        } = build_metadata_ir(ctx, scan)?;
         annotate_docstruct(ctx, &mut source_attributes, scan)?;
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns)?;
         let source_image = preserve_source_image(ctx, scan)?;
@@ -5557,7 +5578,7 @@ fn build_geometry_ir(
 > {
     let mut ir = CadIr::empty();
     let (source_attributes, tolerances) =
-        source_attributes_and_tolerances(scan, primary_model_brep)?;
+        source_attributes_and_tolerances(ctx, scan, primary_model_brep)?;
     ir.tolerances = tolerances;
     let Brep {
         asm,
@@ -5595,31 +5616,26 @@ fn admit_kernel_tolerances(resabs: f64, resnor: f64) -> Result<Tolerances, Codec
 
 /// Source metadata attributes and kernel tolerances from the primary model BREP header.
 fn source_attributes_and_tolerances(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     primary_model_brep: &BrepFacts,
 ) -> Result<(std::collections::BTreeMap<String, String>, Tolerances), CodecError> {
     let mut attributes = std::collections::BTreeMap::new();
     if let Some(folder) = scan.design_asset_folder() {
-        attributes.insert("asset_folder".to_string(), folder.to_owned());
+        insert_source_attribute_copy(ctx, &mut attributes, "asset_folder", folder)?;
     }
-    attributes.insert(
-        "zip_entry_count".to_string(),
-        scan.entries.len().to_string(),
-    );
-    attributes.insert("active_brep".to_string(), primary_model_brep.name.clone());
-    attributes.insert(
-        "active_brep_sha256".to_string(),
-        primary_model_brep.sha256.as_str().to_owned(),
-    );
+    insert_source_attribute_owned(ctx, &mut attributes, "zip_entry_count", scan.entries.len().to_string())?;
+    insert_source_attribute_copy(ctx, &mut attributes, "active_brep", &primary_model_brep.name)?;
+    insert_source_attribute_copy(ctx, &mut attributes, "active_brep_sha256", primary_model_brep.sha256.as_str())?;
     if let Some(off) = primary_model_brep
         .kernel
         .as_ref()
         .and_then(crate::container::KernelFraming::solved_record_limit)
     {
-        attributes.insert("solved_record_len".to_string(), off.to_string());
+        insert_source_attribute_owned(ctx, &mut attributes, "solved_record_len", off.to_string())?;
     }
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
-        attributes.insert("modeling_length_unit".to_string(), unit);
+        insert_source_attribute_owned(ctx, &mut attributes, "modeling_length_unit", unit)?;
     }
 
     let mut tolerances = Tolerances::default();
@@ -5629,13 +5645,13 @@ fn source_attributes_and_tolerances(
         .and_then(crate::container::KernelFraming::model_metadata)
     {
         if let Some(pf) = &h.product_family {
-            attributes.insert("product_family".to_string(), pf.clone());
+            insert_source_attribute_copy(ctx, &mut attributes, "product_family", pf)?;
         }
         if let Some(pv) = &h.product_version {
-            attributes.insert("product_version".to_string(), pv.clone());
+            insert_source_attribute_copy(ctx, &mut attributes, "product_version", pv)?;
         }
         if let Some(sd) = &h.save_date {
-            attributes.insert("save_date".to_string(), sd.clone());
+            insert_source_attribute_copy(ctx, &mut attributes, "save_date", sd)?;
         }
         if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
             tolerances = admit_kernel_tolerances(resabs, resnor)?;
@@ -5745,34 +5761,28 @@ struct MetadataIr {
     unknowns: Vec<UnknownRecord>,
 }
 
-fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
+fn build_metadata_ir(ctx: &DecodeContext<'_>, scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
     let mut ir = CadIr::empty();
     let mut unknowns = Vec::new();
 
     let mut attributes = std::collections::BTreeMap::new();
     if let Some(folder) = scan.design_asset_folder() {
-        attributes.insert("asset_folder".to_string(), folder.to_owned());
+        insert_source_attribute_copy(ctx, &mut attributes, "asset_folder", folder)?;
     }
-    attributes.insert(
-        "zip_entry_count".to_string(),
-        scan.entries.len().to_string(),
-    );
+    insert_source_attribute_owned(ctx, &mut attributes, "zip_entry_count", scan.entries.len().to_string())?;
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
-        attributes.insert("modeling_length_unit".to_string(), unit);
+        insert_source_attribute_owned(ctx, &mut attributes, "modeling_length_unit", unit)?;
     }
 
     if let Some(brep) = container::select_fallback_brep(scan) {
-        attributes.insert("active_brep".to_string(), brep.name.clone());
-        attributes.insert(
-            "active_brep_sha256".to_string(),
-            brep.sha256.as_str().to_owned(),
-        );
+        insert_source_attribute_copy(ctx, &mut attributes, "active_brep", &brep.name)?;
+        insert_source_attribute_copy(ctx, &mut attributes, "active_brep_sha256", brep.sha256.as_str())?;
         if let Some(off) = brep
             .kernel
             .as_ref()
             .and_then(crate::container::KernelFraming::solved_record_limit)
         {
-            attributes.insert("solved_record_len".to_string(), off.to_string());
+            insert_source_attribute_owned(ctx, &mut attributes, "solved_record_len", off.to_string())?;
         }
         if let Some(h) = brep
             .kernel
@@ -5780,13 +5790,13 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
             .and_then(crate::container::KernelFraming::model_metadata)
         {
             if let Some(pf) = &h.product_family {
-                attributes.insert("product_family".to_string(), pf.clone());
+                insert_source_attribute_copy(ctx, &mut attributes, "product_family", pf)?;
             }
             if let Some(pv) = &h.product_version {
-                attributes.insert("product_version".to_string(), pv.clone());
+                insert_source_attribute_copy(ctx, &mut attributes, "product_version", pv)?;
             }
             if let Some(sd) = &h.save_date {
-                attributes.insert("save_date".to_string(), sd.clone());
+                insert_source_attribute_copy(ctx, &mut attributes, "save_date", sd)?;
             }
             if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
                 ir.tolerances = admit_kernel_tolerances(resabs, resnor)?;
