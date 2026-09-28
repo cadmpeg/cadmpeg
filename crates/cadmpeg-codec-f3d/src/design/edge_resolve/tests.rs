@@ -21,6 +21,7 @@ mod surface_patch_allocation;
 mod edge_flange_allocation;
 mod treatment_allocation;
 mod partition_allocation;
+mod fixed_fillet_allocation;
 use crate::records::{
     dimensions::DesignRecipeReference,
     feature::scope::DesignParameterScope,
