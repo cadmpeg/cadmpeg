@@ -4,8 +4,7 @@
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::rigid_transform_at;
-use crate::design::decode::text::lp_ascii_filtered_view;
-use crate::bytes::lp_utf16_bounded;
+use crate::design::decode::text::{fixed_relaxed_guid_text, lp_ascii_filtered_view};
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::assembly_operand_path_locator as path_locator;
@@ -285,17 +284,14 @@ fn exact_assembly_operand_path(
             }
             let mut position = after_tag + 18;
             let (occurrence, after_occurrence) =
-                lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-            let occurrence =
-                crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence).ok()?;
+                fixed_relaxed_guid_text(bytes.get(..end)?, position)?;
             occurrence_guids.push(crate::records::identity::Located {
                 value: occurrence,
                 offset: u64::try_from(position + 4).ok()?,
             });
             position = after_occurrence;
             for _ in 0..2 {
-                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-                let guid = crate::records::mesh::DesignRelaxedGuidText::try_from(guid).ok()?;
+                let (guid, after_guid) = fixed_relaxed_guid_text(bytes.get(..end)?, position)?;
                 identity_guids.push(crate::records::identity::Located {
                     value: guid,
                     offset: u64::try_from(position + 4).ok()?,
@@ -307,8 +303,7 @@ fn exact_assembly_operand_path(
             }
             position += 8;
             for _ in 0..2 {
-                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
-                let guid = crate::records::mesh::DesignRelaxedGuidText::try_from(guid).ok()?;
+                let (guid, after_guid) = fixed_relaxed_guid_text(bytes.get(..end)?, position)?;
                 identity_guids.push(crate::records::identity::Located {
                     value: guid,
                     offset: u64::try_from(position + 4).ok()?,
@@ -331,8 +326,7 @@ fn exact_assembly_operand_path(
             }
             let mut position = after_tag + 18;
             for _ in 0..count {
-                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
-                let guid = crate::records::mesh::DesignRelaxedGuidText::try_from(guid).ok()?;
+                let (guid, after_guid) = fixed_relaxed_guid_text(bytes.get(..limit)?, position)?;
                 occurrence_guids.push(crate::records::identity::Located {
                     value: guid,
                     offset: u64::try_from(position + 4).ok()?,
@@ -345,9 +339,7 @@ fn exact_assembly_operand_path(
                 }
             } else {
                 for _ in 0..2 {
-                    let (guid, after_guid) =
-                        lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
-                    let guid = crate::records::mesh::DesignRelaxedGuidText::try_from(guid).ok()?;
+                    let (guid, after_guid) = fixed_relaxed_guid_text(bytes.get(..limit)?, position)?;
                     identity_guids.push(crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
@@ -359,9 +351,7 @@ fn exact_assembly_operand_path(
                 }
                 position += 8;
                 for _ in 0..2 {
-                    let (guid, after_guid) =
-                        lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
-                    let guid = crate::records::mesh::DesignRelaxedGuidText::try_from(guid).ok()?;
+                    let (guid, after_guid) = fixed_relaxed_guid_text(bytes.get(..limit)?, position)?;
                     identity_guids.push(crate::records::identity::Located {
                         value: guid,
                         offset: u64::try_from(position + 4).ok()?,
