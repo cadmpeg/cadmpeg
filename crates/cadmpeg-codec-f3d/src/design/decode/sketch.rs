@@ -10,7 +10,7 @@ use cadmpeg_core::container::ContainerRole;
 use crate::bytes::{
     f64s_at, take_reference, utf16le_at, Reference,
 };
-use crate::design::decode::text::lp_ascii_filtered_view;
+use crate::design::decode::text::{design_record_id_charged, lp_ascii_filtered_view};
 use crate::container::ContainerScan;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
@@ -1778,13 +1778,14 @@ fn decode_sketch_texts_from_stream(
         let class_tag = frame.class_tag;
         let payload = &bytes[frame.start..frame.end];
         if let Some(text) = decode_sketch_text_record(
+            Some(ctx),
             payload,
             stream,
             class_tag,
             frame.design_type.version,
             record_index,
             frame.start,
-        ) {
+        )? {
             ctx.charge_collection_items(1, "f3d sketch text records")?;
             out.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("f3d sketch text records allocation", 0, 1)
@@ -2314,6 +2315,7 @@ fn decode_indexed_sketch_text_record_tail(
 
 #[allow(clippy::too_many_arguments)]
 fn assemble_sketch_text(
+    ctx: Option<&DecodeContext<'_>>,
     payload: &[u8],
     stream: &str,
     class_tag: crate::records::references::DesignClassTag,
@@ -2322,9 +2324,26 @@ fn assemble_sketch_text(
     byte_offset: usize,
     head: SketchTextHead,
     tail: SketchTextTail,
-) -> SketchText {
-    SketchText {
-        id: ids::native_sketch_text_id(stream, byte_offset),
+) -> Result<SketchText, CodecError> {
+    let id = match ctx {
+        Some(ctx) => design_record_id_charged(
+            ctx,
+            stream,
+            ":sketch-text#",
+            u64::try_from(byte_offset).map_err(|_| {
+                ctx.refuse_codec_limit("f3d sketch text offset", 0, 1)
+            })?,
+            "f3d sketch text identifier",
+            "f3d sketch text identifier allocation",
+        )?,
+        None => ids::native_sketch_text_id(stream, byte_offset),
+    };
+    let raw_bytes = match ctx {
+        Some(ctx) => ctx.copy_retained(payload, "f3d sketch text raw bytes")?,
+        None => payload.to_vec(),
+    };
+    Ok(SketchText {
+        id,
         record_index,
         owner_reference: tail.owner_reference,
         class_tag,
@@ -2339,18 +2358,20 @@ fn assemble_sketch_text(
         height: head.height,
         color: head.color,
         layout: tail.layout,
-        raw_bytes: payload.to_vec(),
-    }
+        raw_bytes,
+    })
 }
 
 pub(crate) fn decode_sketch_text_record(
+    ctx: Option<&DecodeContext<'_>>,
     payload: &[u8],
     stream: &str,
     class_tag: crate::records::references::DesignClassTag,
     class_version: u32,
     record_index: u32,
     byte_offset: usize,
-) -> Option<SketchText> {
+) -> Result<Option<SketchText>, CodecError> {
+    (|| {
     if let Some((head, identity)) = decode_sketch_text_head(payload, class_version) {
         let tail = match identity {
             SketchTextIdentity::TextexTag { width_factor } => {
@@ -2387,6 +2408,7 @@ pub(crate) fn decode_sketch_text_record(
         };
         if let Some(tail) = tail {
             return Some(assemble_sketch_text(
+                ctx,
                 payload,
                 stream,
                 class_tag,
@@ -2401,6 +2423,7 @@ pub(crate) fn decode_sketch_text_record(
     let (head, width_factor) = decode_indexed_sketch_text_head(payload)?;
     let tail = decode_indexed_sketch_text_record_tail(payload, head.cursor, width_factor)?;
     Some(assemble_sketch_text(
+        ctx,
         payload,
         stream,
         class_tag,
@@ -2410,6 +2433,7 @@ pub(crate) fn decode_sketch_text_record(
         head,
         tail,
     ))
+    })().transpose()
 }
 
 #[derive(Debug)]
