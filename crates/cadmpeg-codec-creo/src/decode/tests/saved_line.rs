@@ -5,7 +5,7 @@ use super::{
     declared_solver_rows, extruded_segment_surface, placed_section_curve_geometry,
     section_segment_intersection_carrier, section_skamp_constraints,
 };
-use crate::decode::sketch::coordinates::{resolved_section_coordinates, resolved_section_points};
+use crate::decode::sketch::coordinates::{resolved_section_coordinates, resolved_section_points, saved_section_coordinate_witnesses};
 use crate::decode::sketch::geometry::{
     is_full_circle_geometry, resolved_section_segment_geometry, saved_profile_chains,
     saved_section_arc, saved_section_arc_carrier, saved_section_circle_values,
@@ -1554,9 +1554,30 @@ fn saved_arc_joins_through_order_table() {
         })
     );
     assert_eq!(
-        saved_section_segment_point_coordinates(&definition, &segment),
+        saved_section_segment_point_coordinates(&definition, &segment)
+            .map(|points| points.into_iter().flatten().collect::<Vec<_>>()),
         Some(vec![(7, [0.0, -2.0]), (9, [-2.0, 0.0]), (8, [0.0, 0.0]),])
     );
+    let mut witness_definition = definition.clone();
+    witness_definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
+        declared_count: 1,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: vec![crate::feature::segment_rows::SegmentRow::Ordinary(segment.clone())]
+            .into_iter().collect(),
+        offset: 0,
+    });
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("test input admitted");
+    assert!(matches!(saved_section_coordinate_witnesses(&limited_ctx, &witness_definition, &BTreeSet::new()),
+        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "creo saved section coordinate witnesses"));
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| saved_section_coordinate_witnesses(ctx, &witness_definition, &BTreeSet::new()))
+        .expect("saved witnesses admitted"),
+        vec![(7, [0.0, -2.0]), (9, [-2.0, 0.0]), (8, [0.0, 0.0])]);
     let mut coordinate_definition = definition.clone();
     coordinate_definition.variables = Some(crate::feature::definitions::test_support::with_points(
         crate::feature::definitions::FeatureVariableTable {

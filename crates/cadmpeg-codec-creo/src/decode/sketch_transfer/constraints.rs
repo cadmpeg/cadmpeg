@@ -1909,7 +1909,7 @@ pub(in super::super) fn section_dimension_constraints(
         .unwrap_or_default();
     let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
     let saved_coordinate_witnesses =
-        saved_section_coordinate_witnesses(definition, &ambiguous_point_ids);
+        saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids)?;
     let constraints = relations
         .rows
         .iter()
