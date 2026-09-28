@@ -661,9 +661,21 @@ impl<'a, 'd> Ctx<'a, 'd> {
         Ok(())
     }
 
+    fn copy_entity(&self, text: &str) -> Result<String, CodecError> {
+        match self.decode {
+            Some(decode) => crate::container::format_retained(
+                decode,
+                "retain F3D validation entity",
+                format_args!("{text}"),
+            ),
+            None => Ok(text.to_owned()),
+        }
+    }
+
     fn push_constant_finding(
         &self,
         findings: &mut Vec<Finding>,
+        check: Check,
         message: &'static str,
         entity: Option<String>,
     ) -> Result<(), CodecError> {
@@ -675,7 +687,7 @@ impl<'a, 'd> Ctx<'a, 'd> {
             )
         })?;
         findings.push(Finding {
-            check: Check::NativeLinks,
+            check,
             severity: Severity::Error,
             message: message.into(),
             entity,
@@ -971,8 +983,8 @@ fn validate_loaded(
         &locus_group_companions,
     );
     validate_parameters(&ctx, &mut findings)?;
-    validate_entity_headers(&ctx, &mut findings);
-    validate_sketch_relations(&ctx, &mut findings);
+    validate_entity_headers(&ctx, &mut findings)?;
+    validate_sketch_relations(&ctx, &mut findings)?;
     validate_sketch_geometry_identities(&ctx, &mut findings);
     validate_sketch_relation_owners(decode, &ctx, &mut findings)?;
     validate_body_links(&ctx, &mut findings);
@@ -1156,6 +1168,7 @@ fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Re
             };
             ctx.push_constant_finding(
                 findings,
+                Check::NativeLinks,
                 "Fusion Design configuration entry name is duplicated",
                 Some(id),
             )?;
@@ -1174,6 +1187,7 @@ fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Re
         }).transpose()?;
         ctx.push_constant_finding(
             findings,
+            Check::NativeLinks,
             "Fusion Design configurations have no single authored table order",
             id,
         )?;
@@ -7728,6 +7742,7 @@ fn validate_parameters(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result
             };
             ctx.push_constant_finding(
                 findings,
+                Check::NativeLinks,
                 "Fusion Design parameter has an invalid frame, family discriminator, or owner",
                 Some(id),
             )?;
@@ -7737,7 +7752,7 @@ fn validate_parameters(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result
 }
 
 /// Validate design entity reference runs and suffix uniqueness.
-fn validate_entity_headers(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_entity_headers(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let mut entity_suffixes = HashSet::new();
@@ -7747,26 +7762,37 @@ fn validate_entity_headers(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .reference_values()
             .all(|index| records_by_index.contains_key(&(native_stream, *index)));
         if !references_resolve {
-            findings.push(Finding {
-                check: Check::ReferentialIntegrity,
-                severity: Severity::Error,
-                message: "Fusion design entity has an invalid reference run".into(),
-                entity: Some(header.entity_id.as_str().to_owned()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                "Fusion design entity has an invalid reference run",
+                Some(ctx.copy_entity(header.entity_id.as_str())?),
+            )?;
         }
-        if !entity_suffixes.insert((native_stream, header.entity_id.suffix())) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design entity suffix is duplicated within its stream".into(),
-                entity: Some(header.entity_id.as_str().to_owned()),
-            });
+        let key = (native_stream, header.entity_id.suffix());
+        if !entity_suffixes.contains(&key) {
+            ctx.charge_item("index F3D design entity suffixes")?;
+            entity_suffixes.try_reserve(1).map_err(|_| {
+                ctx.decode.map_or_else(
+                    || CodecError::malformed("F3D entity suffix index allocation failed"),
+                    |decode| decode.refuse_codec_limit("index F3D design entity suffixes", 0, 1),
+                )
+            })?;
+        }
+        if !entity_suffixes.insert(key) {
+            ctx.push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design entity suffix is duplicated within its stream",
+                Some(ctx.copy_entity(header.entity_id.as_str())?),
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Validate sketch relation owners and byte frames.
-fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
+fn validate_sketch_relations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), CodecError> {
     let native = ctx.native;
     let sketch_owner_ids = &ctx.sketch_owner_ids;
     for relation in &native.sketch_relations {
@@ -7779,14 +7805,15 @@ fn validate_sketch_relations(ctx: &Ctx, findings: &mut Vec<Finding>) {
             (Some(expected), Some(actual)) if *expected == actual
         );
         if !owner_matches {
-            findings.push(Finding {
-                check: Check::ReferentialIntegrity,
-                severity: Severity::Error,
-                message: "Fusion sketch relation has an invalid owner or byte frame".into(),
-                entity: Some(relation.id.clone()),
-            });
+            ctx.push_constant_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                "Fusion sketch relation has an invalid owner or byte frame",
+                Some(ctx.copy_entity(&relation.id)?),
+            )?;
         }
     }
+    Ok(())
 }
 
 /// Validate sketch point, curve, and surface persistent identities.
