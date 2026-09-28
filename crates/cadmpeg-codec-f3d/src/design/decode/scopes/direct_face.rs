@@ -286,11 +286,13 @@ fn move_transform_layout(class_tag: &str, frame_length: usize) -> Option<(usize,
 }
 
 pub(super) fn exact_scale_operation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
-) -> Option<DesignScaleOperation> {
+) -> Result<Option<DesignScaleOperation>, cadmpeg_core::CodecError> {
+    (|| {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Scale) {
         return None;
     }
@@ -313,13 +315,16 @@ pub(super) fn exact_scale_operation(
             {
                 return None;
             }
-            let center = exact_point_data_construction(
+            let center = match exact_point_data_construction(
+                ctx,
                 bytes,
                 records,
                 std::slice::from_ref(center_record_index),
                 stream_types,
-            )
-            .map(|point| (point.position, point.position_offset));
+            ) {
+                Ok(point) => point.map(|point| (point.position, point.position_offset)),
+                Err(error) => return Some(Err(error)),
+            };
             (
                 *body_group_record_index,
                 *center_record_index,
@@ -346,12 +351,17 @@ pub(super) fn exact_scale_operation(
             {
                 return None;
             }
-            let point = exact_point_data_construction(
+            let point = match exact_point_data_construction(
+                ctx,
                 bytes,
                 records,
                 std::slice::from_ref(center_record_index),
                 stream_types,
-            )?;
+            ) {
+                Ok(Some(point)) => point,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             (
                 *body_group_record_index,
                 *center_record_index,
@@ -363,12 +373,13 @@ pub(super) fn exact_scale_operation(
         };
     let uniform_factor =
         cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, uniform_factor_offset)?)?;
-    Some(DesignScaleOperation {
+    Some(Ok(DesignScaleOperation {
         body_group_record_index,
         center_record_index,
         center_position: center
             .map(|(value, offset)| crate::records::identity::Located { value, offset }),
         uniform_factor,
         uniform_factor_offset: uniform_factor_offset as u64,
-    })
+    }))
+    })().transpose()
 }

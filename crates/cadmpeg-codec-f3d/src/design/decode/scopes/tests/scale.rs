@@ -11,7 +11,7 @@ fn legacy_scale_resolves_explicit_point_data_center() {
     for extra_reference in [false, true] {
         let (bytes, scope, position_at) = legacy_scale_fixture(extra_reference);
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-        let operation = exact_scale_operation(&bytes, &records, &scope, &HashMap::new())
+        let operation = exact_scale_operation(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &scope, &HashMap::new()).unwrap()
             .expect("legacy Scale operation");
 
         assert_eq!(operation.body_group_record_index, 102);
@@ -34,7 +34,7 @@ fn legacy_scale_resolves_explicit_point_data_center() {
 fn modern_localized_scale_resolves_explicit_point_data_center() {
     let (bytes, scope, position_at) = modern_scale_fixture();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let operation = exact_scale_operation(&bytes, &records, &scope, &HashMap::new())
+    let operation = exact_scale_operation(&cadmpeg_test_support::service_decode_context(), &bytes, &records, &scope, &HashMap::new()).unwrap()
         .expect("modern localized Scale operation");
 
     assert_eq!(operation.body_group_record_index, 102);

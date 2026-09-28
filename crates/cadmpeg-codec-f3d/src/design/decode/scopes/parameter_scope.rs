@@ -191,7 +191,7 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction =
-                    exact_work_point_construction(bytes, &records, &scope, &stream_types);
+                    exact_work_point_construction(ctx, bytes, &records, &scope, &stream_types)?;
                 if let scope::DesignScopePayloadMut::WorkPoint(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -245,7 +245,7 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_scale_operation(bytes, &records, &scope, &stream_types);
+                let construction = exact_scale_operation(ctx, bytes, &records, &scope, &stream_types)?;
                 if let scope::DesignScopePayloadMut::Scale(slot)
                 | scope::DesignScopePayloadMut::Massstab(slot) = scope.payload_mut()
                 {
@@ -373,21 +373,26 @@ pub(crate) fn decode_parameter_scopes(
                 else {
                     return None;
                 };
-                let carriers = exact_legacy_as_built_421_operands(
+                let carriers = match exact_legacy_as_built_421_operands(
+                    ctx,
                     bytes,
                     &records,
                     &scope,
                     &stream_types,
                     recipes,
                     solved_frame,
-                )?;
-                Some(assembly::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+                ) {
+                    Ok(Some(carriers)) => carriers,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
+                Some(Ok(assembly::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
                     carriers,
                     solved_frame: solved_frame.clone(),
                     limits: limits.clone(),
                     frames_field_present: true,
-                })
-            });
+                }))
+            }).transpose()?;
             if let (Some(alignment), Some(form)) = (scope.assembly_alignment_mut(), legacy_form) {
                 alignment.form = Some(form);
             }
