@@ -9181,7 +9181,7 @@ fn consolidated_edge_nodes(
     )? {
         let Some(uses) = native_consolidated_edge_uses(&run.uses) else { continue };
         crate::resource::insert_map(ctx, &mut use_runs, run.node.pos,
-            (uses, run.definition.map(native_consolidated_edge_definition)),
+            (uses, run.definition.map(|definition| native_consolidated_edge_definition(ctx, definition)).transpose()?),
             "catia_native_edge_use_runs")?;
     }
     let mut analytic_circles = HashMap::new();
@@ -9253,12 +9253,17 @@ fn consolidated_edge_nodes(
 }
 
 fn native_consolidated_edge_definition(
+    ctx: &DecodeContext<'_>,
     definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition,
-) -> CatiaConsolidatedEdgeDefinition {
-    CatiaConsolidatedEdgeDefinition {
+) -> Result<CatiaConsolidatedEdgeDefinition, CodecError> {
+    let data = crate::families::consolidated::records::consolidated_edge_definition_data_charged(
+        ctx, definition.class.into(), &definition.frame.payload,
+    )?;
+    Ok(CatiaConsolidatedEdgeDefinition {
         frame: definition.frame.into(),
         class: definition.class,
-    }
+        data,
+    })
 }
 
 fn native_allocation_reference_encoding(

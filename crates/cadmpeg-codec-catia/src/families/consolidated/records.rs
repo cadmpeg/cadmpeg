@@ -343,11 +343,37 @@ pub(crate) fn consolidated_edge_definition_data(
     class: u8,
     payload: &[u8],
 ) -> Option<ConsolidatedEdgeDefinitionData> {
+    match edge_definition_data_with(class, payload, |bytes| {
+        Ok::<_, std::convert::Infallible>(finite_f64_lane(bytes))
+    }) {
+        Ok(data) => data,
+        Err(never) => match never {},
+    }
+}
+
+pub(crate) fn consolidated_edge_definition_data_charged(
+    ctx: &DecodeContext<'_>,
+    class: u8,
+    payload: &[u8],
+) -> Result<Option<ConsolidatedEdgeDefinitionData>, CodecError> {
+    edge_definition_data_with(class, payload, |bytes| {
+        crate::wire::bytes::finite_f64_lane_charged(
+            ctx, bytes, "catia_native_edge_definition_scalars",
+        )
+    })
+}
+
+fn edge_definition_data_with<E>(
+    class: u8,
+    payload: &[u8],
+    mut lane: impl FnMut(&[u8]) -> Result<Option<Vec<FiniteReal>>, E>,
+) -> Result<Option<ConsolidatedEdgeDefinitionData>, E> {
+    (|| {
     if class == 0x24 && payload.first() == Some(&0x81) {
         let mut at = 1;
         let operand = compact_int(payload, &mut at)?;
         return (payload.get(at..) == Some(&[0x0f, 0x87][..]))
-            .then_some(ConsolidatedEdgeDefinitionData::Compact24 { operand });
+            .then_some(Ok(ConsolidatedEdgeDefinitionData::Compact24 { operand }));
     }
     if class == 0x25 && payload.first() == Some(&0x82) {
         let mut at = 1;
@@ -357,27 +383,44 @@ pub(crate) fn consolidated_edge_definition_data(
         let operands = [first, second, third];
         let scalar_bytes = payload.get(at..)?;
         if matches!(scalar_bytes.len(), 56 | 64 | 72 | 80) {
-            let values = finite_f64_lane(scalar_bytes)?;
-            return Some(ConsolidatedEdgeDefinitionData::Scalar25 {
+            let values = match lane(scalar_bytes) {
+                Ok(Some(values)) => values,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+            return Some(Ok(ConsolidatedEdgeDefinitionData::Scalar25 {
                 operands,
                 persistent_lead,
                 values,
-            });
+            }));
         }
         let leading = read_f64_array::<5>(scalar_bytes, 0)?;
         let marker = *scalar_bytes.get(40)?;
-        let trailing = finite_f64_lane(scalar_bytes.get(41..)?)?;
+        let tail = scalar_bytes.get(41..)?;
+        let marker = Class25ScalarMarker::try_from(marker).ok()?;
+        if !matches!((marker, tail.len()),
+            (Class25ScalarMarker::M82, 40 | 48 | 56)
+                | (Class25ScalarMarker::M83, 64 | 72)
+                | (Class25ScalarMarker::M89, 160)
+                | (Class25ScalarMarker::M8b, 192)) {
+            return None;
+        }
+        let trailing = match lane(tail) {
+            Ok(Some(values)) => values,
+            Ok(None) => return None,
+            Err(error) => return Some(Err(error)),
+        };
         let segment = Class25ScalarSegment::try_from(Class25ScalarSegmentWire {
-            marker: Class25ScalarMarker::try_from(marker).ok()?,
+            marker,
             trailing,
         })
         .ok()?;
-        return Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
+        return Some(Ok(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
             operands,
             persistent_lead,
             leading,
             segment,
-        });
+        }));
     }
     if !matches!(class, 0x23 | 0x24) || payload.first() != Some(&0x82) {
         return None;
@@ -392,7 +435,11 @@ pub(crate) fn consolidated_edge_definition_data(
     if !matches!((class, scalar_bytes.len()), (0x23, 64 | 72) | (0x24, 64)) {
         return None;
     }
-    let values = finite_f64_lane(scalar_bytes)?;
+    let values = match lane(scalar_bytes) {
+        Ok(Some(values)) => values,
+        Ok(None) => return None,
+        Err(error) => return Some(Err(error)),
+    };
     if values[2] != *values.last()? {
         return None;
     }
@@ -406,7 +453,8 @@ pub(crate) fn consolidated_edge_definition_data(
     {
         return None;
     }
-    Some(ConsolidatedEdgeDefinitionData::Scalar { operands, values })
+    Some(Ok(ConsolidatedEdgeDefinitionData::Scalar { operands, values }))
+    })().transpose()
 }
 
 fn edge_definition_is_scalar_eight(definition: &ConsolidatedEdgeDefinition) -> bool {
