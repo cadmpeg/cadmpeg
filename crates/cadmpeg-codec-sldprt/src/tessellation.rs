@@ -2073,7 +2073,7 @@ fn cylindrical_trim(
         }
     }
     let (min_axial, max_axial) = axial_bounds?;
-    let angles = loop_
+    let mut angles = loop_
         .coedges()
         .iter()
         .map(|coedge_id| {
@@ -2091,7 +2091,7 @@ fn cylindrical_trim(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    let (angular_start, angular_span) = circular_interval(&angles)?;
+    let (angular_start, angular_span) = circular_interval(&mut angles)?;
     (max_axial - min_axial > tolerance).then_some(CylindricalTrim {
         origin,
         frame,
@@ -2236,7 +2236,7 @@ fn conical_trim(
         }
     }
     let (min_axial, max_axial) = axial_bounds?;
-    let (angular_start, angular_span) = circular_interval(&angles)?;
+    let (angular_start, angular_span) = circular_interval(&mut angles)?;
     (max_axial - min_axial > tolerance).then_some(ConicalTrim {
         origin,
         frame,
@@ -2292,12 +2292,8 @@ fn cone_angle(
         .then_some(angle.rem_euclid(std::f64::consts::TAU))
 }
 
-fn circular_interval(angles: &[f64]) -> Option<(f64, f64)> {
-    let mut angles = angles
-        .iter()
-        .copied()
-        .filter(|angle| angle.is_finite())
-        .collect::<Vec<_>>();
+fn circular_interval(angles: &mut Vec<f64>) -> Option<(f64, f64)> {
+    angles.retain(|angle| angle.is_finite());
     if angles.is_empty() {
         return None;
     }
