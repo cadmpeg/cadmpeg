@@ -2076,11 +2076,17 @@ pub(crate) fn decode_dimension_locus_groups(
             continue;
         };
         let geometry_indices = dimension_geometry_indices(ctx, scope, points, curves)?;
-        let sketch_entities = entities
-            .iter()
-            .filter(|entity| native_stream(&entity.id) == Some(scope) && entity.in_sketch_module())
-            .filter_map(|entity| u32::try_from(entity.entity_id.suffix()).ok())
-            .collect::<HashSet<_>>();
+        let mut sketch_entities = HashSet::new();
+        for entity in entities.iter().filter(|entity| {
+            native_stream(&entity.id) == Some(scope) && entity.in_sketch_module()
+        }) {
+            let Ok(index) = u32::try_from(entity.entity_id.suffix()) else { continue };
+            ctx.charge_collection_items(1, "f3d dimension locus sketch entities")?;
+            sketch_entities.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("f3d dimension locus sketch entity allocation", 0, 1)
+            })?;
+            sketch_entities.insert(index);
+        }
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some((start, end)) = companion_owned_interval(
             ctx,
@@ -2128,17 +2134,21 @@ fn find_dimension_locus_groups(
     sketch_entities: &HashSet<u32>,
 ) -> Result<Vec<DesignDimensionLocusGroup>, CodecError> {
     let parse = |at| {
-        parse_dimension_locus_group(
-            bytes,
+        match parse_dimension_locus_group(
+            ctx, bytes,
             at,
             companion_record_index,
             geometry_indices,
             sketch_entities,
-        )
-        .filter(|group| group.next_byte_offset <= u64_from_index(end))
+        ) {
+            Some(Ok(group)) if group.next_byte_offset <= u64_from_index(end) => Some(Ok(group)),
+            Some(Err(error)) => Some(Err(error)),
+            _ => None,
+        }
     };
     let mut candidates = Vec::new();
-    if let Some(group) = parse(start) {
+    if let Some(parsed) = parse(start) {
+        let group = parsed?;
         ctx.charge_collection_items(1, "f3d dimension locus group candidates")?;
         candidates.try_reserve(1).map_err(|_| {
             ctx.refuse_codec_limit("f3d dimension locus group candidate allocation", 0, 1)
@@ -2150,7 +2160,8 @@ fn find_dimension_locus_groups(
         if at >= end {
             break;
         }
-        if let Some(group) = parse(at) {
+        if let Some(parsed) = parse(at) {
+            let group = parsed?;
             ctx.charge_collection_items(1, "f3d dimension locus group candidates")?;
             candidates.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("f3d dimension locus group candidate allocation", 0, 1)
@@ -2243,12 +2254,13 @@ pub(super) fn companion_owned_interval<'a>(
 }
 
 fn parse_dimension_locus_group(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
-) -> Option<DesignDimensionLocusGroup> {
+) -> Option<Result<DesignDimensionLocusGroup, CodecError>> {
     let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != start.checked_add(7)?
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
@@ -2262,7 +2274,14 @@ fn parse_dimension_locus_group(
         return None;
     }
     let mut position = start.checked_add(24)?;
-    let mut geometry = Vec::with_capacity(count);
+    let count_charge = u64::try_from(count).ok()?;
+    if let Err(error) = ctx.charge_collection_items(count_charge, "f3d dimension locus geometry") {
+        return Some(Err(error));
+    }
+    let mut geometry = Vec::new();
+    if geometry.try_reserve(count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d dimension locus geometry allocation", 0, count_charge)));
+    }
     for _ in 0..count {
         if bytes.get(position) != Some(&1)
             || bytes.get(position + 5..position + 11) != Some(&[0; 6])
@@ -2302,7 +2321,14 @@ fn parse_dimension_locus_group(
         return None;
     }
     position = position.checked_add(8)?;
-    let mut loci = Vec::with_capacity(return_count);
+    let return_count_charge = u64::try_from(return_count).ok()?;
+    if let Err(error) = ctx.charge_collection_items(return_count_charge, "f3d dimension locus return members") {
+        return Some(Err(error));
+    }
+    let mut loci = Vec::new();
+    if loci.try_reserve(return_count).is_err() {
+        return Some(Err(ctx.refuse_codec_limit("f3d dimension locus return allocation", 0, return_count_charge)));
+    }
     for (geometry_record_index, geometry_reference_offset, role, role_offset) in geometry {
         if bytes.get(position) != Some(&1)
             || bytes.get(position + 5..position + 11) != Some(&[0; 6])
@@ -2334,7 +2360,7 @@ fn parse_dimension_locus_group(
     if next_after_tag != next_byte_offset.checked_add(7)? {
         return None;
     }
-    Some(DesignDimensionLocusGroup {
+    Some(Ok(DesignDimensionLocusGroup {
         id: String::new(),
         companion_record_index,
         byte_offset: start as u64,
@@ -2351,7 +2377,7 @@ fn parse_dimension_locus_group(
         next_class_tag: crate::design::decode::text::class_tag_from_view(next_class_tag).ok()?,
         next_record_index: View::u32_le_at(bytes, next_after_tag)?,
         next_byte_offset: next_byte_offset as u64,
-    })
+    }))
 }
 
 #[cfg(test)]
