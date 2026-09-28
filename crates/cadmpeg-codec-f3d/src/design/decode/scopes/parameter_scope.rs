@@ -311,7 +311,7 @@ pub(crate) fn decode_parameter_scopes(
                     .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
             }
             {
-                let construction = exact_combine_operation(bytes, &records, &scope);
+                let construction = exact_combine_operation(ctx, bytes, &records, &scope)?;
                 if let scope::DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
