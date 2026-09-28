@@ -530,7 +530,7 @@ fn build_plan(
                     None => None,
                 };
                 let geometry = PcurveGeometry::Nurbs {
-                    nurbs: crate::nurbs::note_refusal(
+                    nurbs: admitted!(crate::nurbs::note_refusal(ctx,
                         PcurveNurbs::from_lanes(
                             pcurve.degree,
                             knots,
@@ -540,7 +540,7 @@ fn build_plan(
                         ),
                         refusal,
                         format_args!("b5 object-stream pcurve record #{}", pcurve.object_id),
-                    )?,
+                    ))?,
                 };
                 admitted!(crate::resource::admit_btree_entry(ctx, &pcurve_plan,
                     &pcurve_id, "catia_b5_transfer_pcurve_plan"));
@@ -970,7 +970,7 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
     let Some((knots, control_points)) = pcurve.bspline(ctx)? else {
         return Ok(None);
     };
-    let Some(nurbs) = crate::nurbs::note_refusal(
+    let Some(nurbs) = crate::nurbs::note_refusal(ctx,
         PcurveNurbs::from_lanes(
             crate::families::a5a8::records::A8Pcurve::DEGREE,
             knots,
@@ -983,7 +983,7 @@ pub(in crate::families) fn resolved_object_stream_pcurve(
         ),
         refusal,
         format_args!("a8 object-stream pcurve record #{}", pcurve.support_id),
-    ) else {
+    )? else {
         return Ok(None);
     };
     Ok(Some(ResolvedObjectStreamPcurve {
@@ -1184,8 +1184,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                         Ok(weights) => weights,
                         Err(error) => return Some(Err(error)),
                     };
-                    let pcurve_geometry = PcurveGeometry::Nurbs {
-                        nurbs: crate::nurbs::note_refusal(
+                    let nurbs = match crate::nurbs::note_refusal(ctx,
                             PcurveNurbs::from_lanes(
                                 pcurve.degree,
                                 knots,
@@ -1195,8 +1194,12 @@ pub(in crate::families) fn resolved_extrusion_surface(
                             ),
                             refusal,
                             format_args!("b5 extrusion pcurve record #{pcurve_object_id}"),
-                        )?,
-                    };
+                        ) {
+                            Ok(Some(nurbs)) => nurbs,
+                            Ok(None) => return None,
+                            Err(error) => return Some(Err(error)),
+                        };
+                    let pcurve_geometry = PcurveGeometry::Nurbs { nurbs };
                     let curve = match lifted_curve_geometry(ctx, pcurve, source_surface) {
                         Ok(curve) => curve,
                         Err(error) => return Some(Err(error)),
@@ -1396,7 +1399,7 @@ fn curve_on_parameter_range(
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
             if source_per_target != 1.0 {
-                return Ok(crate::nurbs::note_refusal(
+                return crate::nurbs::note_refusal(ctx,
                     NurbsCurve::from_lanes(
                         1,
                         crate::resource::collect_vec(ctx,
@@ -1418,8 +1421,9 @@ fn curve_on_parameter_range(
                         "b5 line curve reparameterized onto its occurrence range: {record}"
                     ),
                 )
-                .map(SolvedCurveGeometry::Nurbs)
-                .map(CurveGeometry::Solved));
+                .map(|curve| curve
+                    .map(SolvedCurveGeometry::Nurbs)
+                    .map(CurveGeometry::Solved));
             }
             Ok(Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::new(

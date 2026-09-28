@@ -762,7 +762,7 @@ fn e5_nurbs_surface(
     } else {
         cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Polynomial { rows: point_rows }
     };
-    Ok(crate::nurbs::note_refusal(
+    crate::nurbs::note_refusal(ctx,
         NurbsSurface::from_admitted(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
@@ -771,9 +771,9 @@ fn e5_nurbs_surface(
         ),
         refusal,
         format_args!("e5 NURBS surface record at byte {}", record.pos),
-    )
-    .map(SolvedSurfaceGeometry::Nurbs)
-    .map(SurfaceGeometry::Solved))
+    ).map(|surface| surface
+        .map(SolvedSurfaceGeometry::Nurbs)
+        .map(SurfaceGeometry::Solved))
 }
 
 fn read_nurbs_axis(

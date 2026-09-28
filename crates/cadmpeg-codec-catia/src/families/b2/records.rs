@@ -2218,7 +2218,7 @@ fn parse_b2_nurbs_curve(
     crate::resource::reserve_vec(ctx, &mut knots, 2 * control_count, "catia_b2_nurbs_knots")?;
     knots.extend(std::iter::repeat_n(knot_start, control_count));
     knots.extend(std::iter::repeat_n(knot_end, control_count));
-    Ok(crate::nurbs::note_refusal(
+    crate::nurbs::note_refusal(ctx,
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::from_checked_lanes(
             control_points,
             Some(weights),
@@ -2226,7 +2226,7 @@ fn parse_b2_nurbs_curve(
         .and_then(|poles| NurbsCurve::new(degree, knots, poles, false)),
         refusal,
         format_args!("b2 NURBS curve record at byte {}", frame.pos),
-    ).map(|geometry| B2NurbsCurve {
+    ).map(|geometry| geometry.map(|geometry| B2NurbsCurve {
         pos: frame.pos,
         header_token: frame.header_token,
         geometry,

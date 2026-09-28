@@ -1337,6 +1337,7 @@ fn plan_e5_boundary<'a>(
                     geometry.clone()
                 };
                 let lifted_curve = if let Some((mut curve, mut curve_range)) = e5_boundary_curve(
+                    ctx,
                     &decoded_surface.geometry,
                     pcurve,
                     &geometry,
@@ -1344,7 +1345,7 @@ fn plan_e5_boundary<'a>(
                     endpoints,
                     decoded_surface.uv_scale,
                     refusal,
-                ) {
+                )? {
                     if reversed {
                         let Some(reversed_curve) = crate::nurbs::reverse_curve_geometry(
                             ctx,
@@ -1461,6 +1462,7 @@ fn plan_e5_boundary<'a>(
                 continue;
             }
             let Some((mut curve, mut curve_range)) = e5_boundary_curve(
+                ctx,
                 &decoded_surface.geometry,
                 pcurve,
                 &geometry,
@@ -1468,7 +1470,7 @@ fn plan_e5_boundary<'a>(
                 endpoints,
                 decoded_surface.uv_scale,
                 refusal,
-            ) else {
+            )? else {
                 continue;
             };
             if reversed {
@@ -2398,25 +2400,26 @@ fn e5_pcurve_on_surface(
             let mut scaled_points = Vec::new();
             crate::resource::reserve_vec(ctx, &mut scaled_points, control_points.len(), "catia E5 NURBS pcurve points")?;
             scaled_points.extend(control_points.iter().map(|[u, v]| Point2::new(u.get() * scale[0], v.get() * scale[1])));
-            Ok((|| {
             if !scale.into_iter().all(|value| value != 0.0)
                 || !scaled_points
                     .iter()
                     .copied()
                     .all(|point| point.is_finite())
             {
-                return None;
+                return Ok(None);
             }
+            let Some(nurbs) = crate::nurbs::note_refusal(ctx,
+                PcurveNurbs::from_lanes(*degree, knot_values, scaled_points, None, false),
+                refusal,
+                format_args!(
+                    "e5 NURBS pcurve on surface record {} at byte {}",
+                    decoded_surface.record_id, decoded_surface.pos
+                ),
+            )? else { return Ok(None) };
             let geometry = PcurveGeometry::Nurbs {
-                nurbs: crate::nurbs::note_refusal(
-                    PcurveNurbs::from_lanes(*degree, knot_values, scaled_points, None, false),
-                    refusal,
-                    format_args!(
-                        "e5 NURBS pcurve on surface record {} at byte {}",
-                        decoded_surface.record_id, decoded_surface.pos
-                    ),
-                )?,
+                nurbs,
             };
+            Ok((|| {
             let range = range.map(FiniteReal::get);
             let uv = range.map(|parameter| cadmpeg_ir::eval::pcurve_uv(&geometry, parameter).ok());
             let uv = uv[0].zip(uv[1])?;
@@ -2432,6 +2435,7 @@ fn e5_pcurve_on_surface(
 }
 
 fn e5_boundary_curve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     native_pcurve: &crate::families::e5::graph::E5Pcurve,
     pcurve: &PcurveGeometry,
@@ -2439,7 +2443,8 @@ fn e5_boundary_curve(
     endpoints: [Point3; 2],
     uv_scale: [FiniteReal; 2],
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Option<(CurveGeometry, [f64; 2])> {
+) -> Result<Option<(CurveGeometry, [f64; 2])>, cadmpeg_core::CodecError> {
+    (|| -> Option<Result<(CurveGeometry, [f64; 2]), cadmpeg_core::CodecError>> {
     let uv_scale = uv_scale.map(FiniteReal::get);
     if !uv_scale.into_iter().all(|value| value != 0.0)
         || !range.into_iter().all(f64::is_finite)
@@ -2462,7 +2467,7 @@ fn e5_boundary_curve(
         if !center.is_finite() || !v_axis.is_finite() {
             return None;
         }
-        return Some((
+        return Some(Ok((
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     center,
@@ -2473,7 +2478,7 @@ fn e5_boundary_curve(
                 .ok()?,
             )),
             crate::nurbs::canonical_periodic_range(range)?,
-        ));
+        )));
     }
     if let (
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
@@ -2499,8 +2504,7 @@ fn e5_boundary_curve(
         if !v_axis.is_finite() {
             return None;
         }
-        return Some((
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(crate::nurbs::note_refusal(
+        let nurbs = match crate::nurbs::note_refusal(ctx,
                 NurbsCurve::from_checked_lanes(
                     nurbs.degree(),
                     nurbs.knots().clone(),
@@ -2513,9 +2517,14 @@ fn e5_boundary_curve(
                     "e5 boundary curve lifted from the pcurve on surface record {}",
                     native_pcurve.surface_record_id()
                 ),
-            )?)),
-            range,
-        ));
+            ) {
+                Ok(Some(nurbs)) => nurbs,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        return Some(Ok((
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)), range,
+        )));
     }
     if let (
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)),
@@ -2541,8 +2550,7 @@ fn e5_boundary_curve(
         if !v_axis.is_finite() {
             return None;
         }
-        return Some((
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(crate::nurbs::note_refusal(
+        let nurbs = match crate::nurbs::note_refusal(ctx,
                 NurbsCurve::from_checked_lanes(
                     nurbs.degree(),
                     nurbs.knots().clone(),
@@ -2555,9 +2563,14 @@ fn e5_boundary_curve(
                     "e5 boundary curve lifted from the pcurve on surface record {}",
                     native_pcurve.surface_record_id()
                 ),
-            )?)),
-            range,
-        ));
+            ) {
+                Ok(Some(nurbs)) => nurbs,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
+        return Some(Ok((
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)), range,
+        )));
     }
     let PcurveGeometry::Line(line_pcurve) = pcurve else {
         return None;
@@ -2608,7 +2621,7 @@ fn e5_boundary_curve(
         let [(axis, ref_direction, curve_range)] = candidates.as_slice() else {
             return None;
         };
-        return Some((
+        return Some(Ok((
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                     center,
@@ -2619,7 +2632,7 @@ fn e5_boundary_curve(
                 .ok()?,
             )),
             *curve_range,
-        ));
+        )));
     }
 
     if !(matches!(
@@ -2641,12 +2654,13 @@ fn e5_boundary_curve(
         return None;
     }
     let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
-    Some((
+    Some(Ok((
         CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(endpoints[0], direction).ok()?,
         )),
         [0.0, length],
-    ))
+    )))
+    })().transpose()
 }
 
 #[cfg(test)]
@@ -3544,7 +3558,7 @@ mod route_tests {
         };
         let direction = line_pcurve.direction().as_raw();
         assert_eq!(*direction, Point2::new(-1.0, 0.0));
-        let (curve, _) = e5_boundary_curve(
+        let (curve, _) = crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface.geometry,
             &E5Pcurve::Line {
                 surface: 100,
@@ -3563,7 +3577,7 @@ mod route_tests {
             endpoints,
             uv_scale,
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .expect("reflected plane boundary");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
@@ -4250,7 +4264,7 @@ mod route_tests {
             direction: finite_pair([1.0, 0.0]),
             range: finite_pair([0.0, std::f64::consts::FRAC_PI_2]),
         };
-        let (curve, range) = e5_boundary_curve(
+        let (curve, range) = crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface,
             &native,
             &pcurve,
@@ -4258,7 +4272,7 @@ mod route_tests {
             [Point3::new(2.0, 0.0, 3.0), Point3::new(0.0, 2.0, 3.0)],
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .expect("cylinder boundary circle");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))
@@ -4299,7 +4313,7 @@ mod route_tests {
             direction: finite_pair([1.0, transverse_noise]),
             range: finite_pair([0.0, std::f64::consts::FRAC_PI_2]),
         };
-        let (curve, _) = e5_boundary_curve(
+        let (curve, _) = crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface,
             &native,
             &pcurve,
@@ -4307,7 +4321,7 @@ mod route_tests {
             [Point3::new(2.0, 0.0, 3.0), Point3::new(0.0, 2.0, 3.0)],
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .expect("near-isoparametric cylinder boundary circle");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius().get() == 2.0 })
@@ -4344,7 +4358,7 @@ mod route_tests {
             direction: finite_pair([direction, 0.0]),
             range: finite_pair([0.0, parameter_end]),
         };
-        let (curve, _) = e5_boundary_curve(
+        let (curve, _) = crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface,
             &native,
             &pcurve,
@@ -4355,7 +4369,7 @@ mod route_tests {
             ],
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .expect("cylinder boundary circle");
         assert!(
             matches!(curve, CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) if { circle_curve.radius().get() == 2.0 })
@@ -4383,7 +4397,7 @@ mod route_tests {
             range: finite_pair([0.0, 1.0]),
         };
         let tiny_endpoint = Point3::new(direction, 0.0, 0.0);
-        let (curve, range) = e5_boundary_curve(
+        let (curve, range) = crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &plane,
             &plane_native,
             &plane_pcurve,
@@ -4391,7 +4405,7 @@ mod route_tests {
             [Point3::new(0.0, 0.0, 0.0), tiny_endpoint],
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .expect("finite nonzero plane line");
         assert!(matches!(
             curve,
@@ -4423,7 +4437,7 @@ mod route_tests {
             )
             .expect("valid LinePcurve fixture"),
         );
-        assert!(e5_boundary_curve(
+        assert!(crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface,
             &native,
             &pcurve,
@@ -4431,7 +4445,7 @@ mod route_tests {
             [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .is_none());
     }
 
@@ -4458,7 +4472,7 @@ mod route_tests {
             )
             .expect("finite line pcurve"),
         );
-        assert!(e5_boundary_curve(
+        assert!(crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface,
             &native,
             &pcurve,
@@ -4466,7 +4480,7 @@ mod route_tests {
             [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .is_none());
     }
 
@@ -4496,7 +4510,7 @@ mod route_tests {
             .expect("finite line pcurve"),
         );
         let bound = f64::MAX * direction;
-        let (curve, curve_range) = e5_boundary_curve(
+        let (curve, curve_range) = crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface,
             &native,
             &pcurve,
@@ -4504,7 +4518,7 @@ mod route_tests {
             [Point3::new(-bound, 0.0, 0.0), Point3::new(bound, 0.0, 0.0)],
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .expect("finite line carrier across a wide parameter range");
         assert!(matches!(
             curve,
@@ -4537,7 +4551,7 @@ mod route_tests {
             )
             .expect("valid LinePcurve fixture"),
         );
-        let (curve, range) = e5_boundary_curve(
+        let (curve, range) = crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface,
             &native,
             &pcurve,
@@ -4545,7 +4559,7 @@ mod route_tests {
             [Point3::new(0.0, 0.0, 0.0), Point3::new(tiny, 0.0, 0.0)],
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .expect("subnormal line chord");
         assert_eq!(range, [0.0, tiny]);
         assert!(
@@ -4583,7 +4597,7 @@ mod route_tests {
             "test record",
         )
         .expect("plane pcurve");
-        let (curve, range) = e5_boundary_curve(
+        let (curve, range) = crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface,
             &native,
             &pcurve,
@@ -4591,7 +4605,7 @@ mod route_tests {
             [Point3::new(7.0, 7.0, 3.0), Point3::new(5.0, 9.0, 3.0)],
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .expect("plane boundary circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
         assert!(
@@ -4608,7 +4622,7 @@ mod route_tests {
                     })
         );
 
-        let (curve, range) = e5_boundary_curve(
+        let (curve, range) = crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface,
             &native,
             &pcurve,
@@ -4616,7 +4630,7 @@ mod route_tests {
             [Point3::new(-5.0, -3.0, 3.0), Point3::new(-3.0, -5.0, 3.0)],
             finite_pair([-1.0, -1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .expect("reflected plane boundary circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
         assert!(
@@ -4672,7 +4686,7 @@ mod route_tests {
         )
         .expect("service resource budget")
         .expect("quintic pcurve");
-        let (curve, range) = e5_boundary_curve(
+        let (curve, range) = crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface,
             &native,
             &pcurve,
@@ -4680,7 +4694,7 @@ mod route_tests {
             [Point3::new(1.0, 2.0, 3.0), Point3::new(2.0, 4.0, 3.0)],
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .expect("plane jet curve");
         assert_eq!(range, [0.0, 1.0]);
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = curve else {
@@ -4722,7 +4736,7 @@ mod route_tests {
             )
             .expect("valid finite pcurve carrier"),
         };
-        assert!(e5_boundary_curve(
+        assert!(crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface,
             &native,
             &pcurve,
@@ -4733,7 +4747,7 @@ mod route_tests {
             ],
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .is_none());
     }
 
@@ -5116,7 +5130,7 @@ mod route_tests {
             "test record",
         )
         .expect("finite native circle");
-        assert!(e5_boundary_curve(
+        assert!(crate::test_support::with_service_context(|ctx| e5_boundary_curve(ctx,
             &surface,
             &native,
             &pcurve,
@@ -5127,7 +5141,7 @@ mod route_tests {
             ],
             finite_pair([1.0, 1.0]),
             &mut crate::nurbs::LaneRefusals::new(),
-        )
+        )).expect("service profile admits E5 boundary curve")
         .is_none());
     }
 

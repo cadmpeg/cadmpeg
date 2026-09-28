@@ -269,7 +269,10 @@ fn container_only_stops_before_geometry() {
 /// silent.
 #[test]
 fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
-    fn refusing_route(refusal: &mut crate::nurbs::LaneRefusals) -> Option<()> {
+    fn refusing_route(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        refusal: &mut crate::nurbs::LaneRefusals,
+    ) -> Result<Option<()>, cadmpeg_core::CodecError> {
         let short_weight_lane = || {
             cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                 1,
@@ -283,23 +286,26 @@ fn a_route_that_exits_after_a_refusal_still_delivers_both_notes() {
             )
         };
         crate::nurbs::note_refusal(
+            ctx,
             short_weight_lane(),
             refusal,
             "e5 NURBS surface record at byte 16",
-        );
-        // The second refusal leaves through the `?`, which is the exit that
-        // used to drop the cell.
-        crate::nurbs::note_refusal(
+        )?;
+        // The second refusal ends the route after both notes have been retained.
+        let second = crate::nurbs::note_refusal(
+            ctx,
             short_weight_lane(),
             refusal,
             "e5 NURBS pcurve record at byte 96",
         )?;
-        Some(())
+        Ok(second.map(|_| ()))
     }
 
     let mut refusal = crate::nurbs::LaneRefusals::new();
     assert!(
-        refusing_route(&mut refusal).is_none(),
+        crate::test_support::with_service_context(|ctx| refusing_route(ctx, &mut refusal))
+            .expect("service profile admits refusal notes")
+            .is_none(),
         "the route states no model for the refused stream"
     );
     let notes = refusal.take_notes();
@@ -328,7 +334,8 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
     ) -> Result<Option<crate::families::FamilyOutput>, cadmpeg_core::CodecError> {
         ctx.charge_collection_items(7, "build test NURBS lanes")?;
         let output = (|| {
-            crate::nurbs::note_refusal(
+            match crate::nurbs::note_refusal(
+                ctx,
                 cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     1,
                     vec![0.0, 0.0, 1.0, 1.0],
@@ -341,8 +348,12 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
                 ),
                 refusal,
                 "e5 NURBS pcurve record at byte 96",
-            )?;
-            Some(crate::families::FamilyOutput {
+            ) {
+                Ok(Some(_)) => {}
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            }
+            Some(Ok(crate::families::FamilyOutput {
                 ir: cadmpeg_ir::CadIr::empty(),
                 report: cadmpeg_ir::codec::DecodeBody::new(
                     cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
@@ -350,9 +361,9 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
                 annotations: cadmpeg_ir::Annotations::default(),
                 unknowns: Vec::new(),
                 admitted_model_entities: 0,
-            })
+            }))
         })();
-        Ok(output)
+        output.transpose()
     }
 
     const ROUTES: &[crate::families::Route] = &[crate::families::Route {
