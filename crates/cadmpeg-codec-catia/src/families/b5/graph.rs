@@ -1029,13 +1029,13 @@ fn parse_from_records_with_class21(
                 "catia_b5_a8_surface_headers")?;
         }
     }
-    let mut surfaces: BTreeMap<u32, B5Surface> = records
-        .iter()
-        .filter_map(|record| {
-            surface_node(record, a8_headers.get(&record.object_id))
-                .map(|surface| (record.object_id, surface))
-        })
-        .collect();
+    let mut surfaces = BTreeMap::new();
+    for record in records {
+        if let Some(surface) = surface_node(ctx, record, a8_headers.get(&record.object_id))? {
+            crate::resource::insert_btree_map(ctx, &mut surfaces,
+                record.object_id, surface, "catia_b5_graph_surfaces")?;
+        }
+    }
     let mut conflicting_surfaces = HashSet::new();
     for surface_id in topology_surface_references(ctx, records)? {
         if surfaces.contains_key(&surface_id) {
@@ -1047,14 +1047,16 @@ fn parse_from_records_with_class21(
         else {
             continue;
         };
-        surfaces.insert(
+        let payload = crate::resource::copy_retained_slice(ctx, &record.payload,
+            "catia_b5_opaque_surface_payload")?;
+        crate::resource::insert_btree_map(ctx, &mut surfaces,
             surface_id,
             B5Surface::Unknown {
                 family: record.family,
                 class: record.class,
-                payload: record.payload.clone(),
+                payload,
             },
-        );
+            "catia_b5_opaque_surfaces")?;
     }
     for frame in frames {
         let Some(surface) = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
@@ -1515,6 +1517,42 @@ fn unresolved_surface_candidate(surface: &B5Surface) -> bool {
     )
 }
 
+fn copy_surface(
+    ctx: &DecodeContext<'_>,
+    surface: &B5Surface,
+) -> Result<B5Surface, CodecError> {
+    Ok(match surface {
+        B5Surface::UnresolvedNurbs { header, payload } => B5Surface::UnresolvedNurbs {
+            header: header.copy_charged(ctx)?,
+            payload: crate::resource::copy_retained_slice(ctx, payload,
+                "catia_b5_copied_unresolved_surface_payload")?,
+        },
+        B5Surface::Unknown { family, class, payload } => B5Surface::Unknown {
+            family: *family,
+            class: *class,
+            payload: crate::resource::copy_retained_slice(ctx, payload,
+                "catia_b5_copied_unknown_surface_payload")?,
+        },
+        B5Surface::Nurbs(nurbs) => B5Surface::Nurbs(
+            crate::resource::copy_nurbs_surface(ctx, nurbs,
+                "catia_b5_copied_nurbs_surface")?,
+        ),
+        B5Surface::RollingBall { carrier_object_id, definition:
+            ProceduralSurfaceDefinition::RollingBallJet(jet) } => {
+            let stations = crate::resource::copy_retained_slice(ctx, jet.stations(),
+                "catia_b5_copied_rolling_ball_stations")?;
+            let jet = cadmpeg_ir::geometry::RollingBallJetStations::from_admitted(
+                jet.degree(), stations,
+            ).map_err(CodecError::malformed)?;
+            B5Surface::RollingBall {
+                carrier_object_id: *carrier_object_id,
+                definition: ProceduralSurfaceDefinition::RollingBallJet(jet),
+            }
+        }
+        other => other.clone(),
+    })
+}
+
 fn resolve_surface_aliases(
     records: &[B5Record],
     by_id: &HashMap<u32, &B5Record>,
@@ -1927,7 +1965,8 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
         let Some(object_id) = surface.object_id() else {
             continue;
         };
-        merge_targeted_surface(&mut resolved, object_id, B5Surface::Nurbs(surface.geometry));
+        merge_targeted_surface(ctx, &mut resolved, object_id,
+            B5Surface::Nurbs(surface.geometry))?;
     }
     let mut headers = HashMap::new();
     for frame in frames {
@@ -1943,14 +1982,9 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
         if !is_surface_class(frame.class) {
             continue;
         }
-        let header = if frame.family == 0xa8 { 11 } else { 8 };
-        let record = B5Record {
-            offset: frame.start,
-            family: frame.family,
-            class: frame.class,
-            object_id: frame.object_id,
-            payload: bytes[frame.start + header..frame.end].to_vec(),
-        };
+        let Some(record) = record_from_frame(ctx, bytes, frame)? else { continue };
+        crate::resource::admit_map_entry(ctx, &mut records, &frame.object_id,
+            "catia_b5_targeted_surface_records")?;
         records
             .entry(frame.object_id)
             .and_modify(|stored| {
@@ -1971,21 +2005,25 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
             continue;
         };
         merge_targeted_surface(
+            ctx,
             &mut rolling,
             jet.object_id,
             B5Surface::RollingBall {
                 carrier_object_id: jet.object_id,
                 definition,
             },
-        );
+        )?;
     }
-    Ok(object_ids
-        .iter()
-        .filter_map(|&object_id| {
-            resolve_targeted_surface(object_id, &records, &headers, &resolved, &rolling)
-                .map(|surface| (object_id, surface))
-        })
-        .collect())
+    let mut surfaces = BTreeMap::new();
+    for &object_id in object_ids {
+        if let Some(surface) = resolve_targeted_surface(
+            ctx, object_id, &records, &headers, &resolved, &rolling,
+        )? {
+            crate::resource::insert_btree_map(ctx, &mut surfaces,
+                object_id, surface, "catia_b5_targeted_surfaces")?;
+        }
+    }
+    Ok(surfaces)
 }
 
 /// Resolve the unique length-closed geometry construction frames independently
@@ -2066,10 +2104,13 @@ fn is_targeted_geometry_class(family: u8, class: u8) -> bool {
 }
 
 fn merge_targeted_surface(
+    ctx: &DecodeContext<'_>,
     candidates: &mut HashMap<u32, Option<B5Surface>>,
     object_id: u32,
     surface: B5Surface,
-) {
+) -> Result<(), CodecError> {
+    crate::resource::admit_map_entry(ctx, candidates, &object_id,
+        "catia_b5_targeted_surface_candidates")?;
     candidates
         .entry(object_id)
         .and_modify(|stored| {
@@ -2078,16 +2119,19 @@ fn merge_targeted_surface(
             }
         })
         .or_insert(Some(surface));
+    Ok(())
 }
 
 fn resolve_targeted_surface(
+    ctx: &DecodeContext<'_>,
     object_id: u32,
     records: &HashMap<u32, Option<B5Record>>,
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
-) -> Option<B5Surface> {
+) -> Result<Option<B5Surface>, CodecError> {
     resolve_targeted_surface_inner(
+        ctx,
         object_id,
         records,
         headers,
@@ -2098,26 +2142,33 @@ fn resolve_targeted_surface(
 }
 
 fn resolve_targeted_surface_inner(
+    ctx: &DecodeContext<'_>,
     mut object_id: u32,
     records: &HashMap<u32, Option<B5Record>>,
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
     mut visited: HashSet<u32>,
-) -> Option<B5Surface> {
+) -> Result<Option<B5Surface>, CodecError> {
+    let _depth = ctx.enter_nested("catia_b5_targeted_surface_resolution")?;
     loop {
-        if !visited.insert(object_id) || records.get(&object_id).is_some_and(Option::is_none) {
-            return None;
+        if !crate::resource::insert_set(ctx, &mut visited, object_id,
+            "catia_b5_targeted_surface_visited")?
+            || records.get(&object_id).is_some_and(Option::is_none) {
+            return Ok(None);
         }
-        match (
-            rolling.get(&object_id).cloned().flatten(),
-            resolved.get(&object_id).cloned().flatten(),
-        ) {
-            (Some(left), Some(right)) if left != right => return None,
-            (Some(surface), _) | (_, Some(surface)) => return Some(surface),
+        let rolling_surface = rolling.get(&object_id).and_then(Option::as_ref)
+            .map(|surface| copy_surface(ctx, surface)).transpose()?;
+        let resolved_surface = resolved.get(&object_id).and_then(Option::as_ref)
+            .map(|surface| copy_surface(ctx, surface)).transpose()?;
+        match (rolling_surface, resolved_surface) {
+            (Some(left), Some(right)) if left != right => return Ok(None),
+            (Some(surface), _) | (_, Some(surface)) => return Ok(Some(surface)),
             (None, None) => {}
         }
-        let record = records.get(&object_id)?.as_ref()?;
+        let Some(record) = records.get(&object_id).and_then(Option::as_ref) else {
+            return Ok(None);
+        };
         if let Some(target) = surface_alias_target(record) {
             object_id = target;
             continue;
@@ -2128,47 +2179,61 @@ fn resolve_targeted_surface_inner(
         }
         if record.family == 0xb5 && record.class == 0x30 {
             return resolve_targeted_analytic_offset(
-                record, records, headers, resolved, rolling, &visited,
+                ctx, record, records, headers, resolved, rolling, &visited,
             );
         }
-        return surface_node(record, headers.get(&object_id));
+        return surface_node(ctx, record, headers.get(&object_id));
     }
 }
 
 fn resolve_targeted_analytic_offset(
+    ctx: &DecodeContext<'_>,
     record: &B5Record,
     records: &HashMap<u32, Option<B5Record>>,
     headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
     resolved: &HashMap<u32, Option<B5Surface>>,
     rolling: &HashMap<u32, Option<B5Surface>>,
     visited: &HashSet<u32>,
-) -> Option<B5Surface> {
-    (record.payload.first() == Some(&0x82)).then_some(())?;
+) -> Result<Option<B5Surface>, CodecError> {
+    if record.payload.first() != Some(&0x82) { return Ok(None); }
     let mut position = 1;
-    let carrier_id = wire::tokens::object_ref(&record.payload, &mut position, true)?;
-    let source_id = wire::tokens::object_ref(&record.payload, &mut position, true)?;
-    let carrier = resolve_targeted_surface_inner(
+    let Some(carrier_id) = wire::tokens::object_ref(&record.payload, &mut position, true) else {
+        return Ok(None);
+    };
+    let Some(source_id) = wire::tokens::object_ref(&record.payload, &mut position, true) else {
+        return Ok(None);
+    };
+    let Some(carrier) = resolve_targeted_surface_inner(
+        ctx,
         carrier_id,
         records,
         headers,
         resolved,
         rolling,
-        visited.clone(),
-    )?;
-    let mut surfaces = BTreeMap::from([(carrier_id, carrier.clone())]);
+        crate::resource::copy_retained_set(ctx, visited,
+            "catia_b5_targeted_visited_copy")?,
+    )? else { return Ok(None) };
+    let mut surfaces = BTreeMap::new();
+    crate::resource::insert_btree_map(ctx, &mut surfaces, carrier_id,
+        copy_surface(ctx, &carrier)?, "catia_b5_targeted_offset_carrier")?;
     if !matches!(carrier, B5Surface::RollingBall { .. }) {
-        let source = resolve_targeted_surface_inner(
+        let Some(source) = resolve_targeted_surface_inner(
+            ctx,
             source_id,
             records,
             headers,
             resolved,
             rolling,
-            visited.clone(),
-        )?;
-        surfaces.insert(source_id, source);
+            crate::resource::copy_retained_set(ctx, visited,
+                "catia_b5_targeted_visited_copy")?,
+        )? else { return Ok(None) };
+        crate::resource::insert_btree_map(ctx, &mut surfaces, source_id, source,
+            "catia_b5_targeted_offset_source")?;
     }
-    parse_offset_surface(record, &surfaces, &BTreeMap::new(), &HashMap::new())?;
-    Some(carrier)
+    if parse_offset_surface(record, &surfaces, &BTreeMap::new(), &HashMap::new()).is_none() {
+        return Ok(None);
+    }
+    Ok(Some(carrier))
 }
 
 fn parse_edge(record: &B5Record) -> Option<B5Edge> {
@@ -3310,24 +3375,29 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
 }
 
 fn surface_node(
+    ctx: &DecodeContext<'_>,
     record: &B5Record,
     header: Option<&crate::families::a5a8::records::A8SurfaceHeader>,
-) -> Option<B5Surface> {
-    parse_surface(record).or_else(|| {
-        (record.family == 0xa8 && record.class == 0x34).then(|| {
-            header.map_or_else(
-                || B5Surface::Unknown {
-                    family: record.family,
-                    class: record.class,
-                    payload: record.payload.clone(),
-                },
-                |header| B5Surface::UnresolvedNurbs {
-                    header: header.clone(),
-                    payload: record.payload.clone(),
-                },
-            )
-        })
-    })
+) -> Result<Option<B5Surface>, CodecError> {
+    if let Some(surface) = parse_surface(record) {
+        return Ok(Some(surface));
+    }
+    if record.family != 0xa8 || record.class != 0x34 {
+        return Ok(None);
+    }
+    let payload = crate::resource::copy_retained_slice(ctx, &record.payload,
+        "catia_b5_surface_node_payload")?;
+    Ok(Some(match header {
+        Some(header) => B5Surface::UnresolvedNurbs {
+            header: header.copy_charged(ctx)?,
+            payload,
+        },
+        None => B5Surface::Unknown {
+            family: record.family,
+            class: record.class,
+            payload,
+        },
+    }))
 }
 
 fn surface_alias_target(record: &B5Record) -> Option<u32> {

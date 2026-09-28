@@ -383,6 +383,29 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
 }
 
 #[test]
+fn copied_a8_surface_header_refuses_each_knot_lane_limit() {
+    let bytes = a8_surface_stream();
+    let [header] = crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a8_surface_headers(ctx, &bytes)
+            .collect::<Result<Vec<_>, _>>()
+    }).expect("service budget").try_into().expect("one header");
+    for (limit, operation) in [
+        (1, "catia_a8_copied_distinct_knots"),
+        (2, "catia_a8_copied_multiplicities"),
+        (5, "catia_a8_copied_distinct_knots"),
+        (6, "catia_a8_copied_multiplicities"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            header.copy_charged(ctx)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation));
+    }
+    assert_eq!(crate::test_support::with_service_context(|ctx| header.copy_charged(ctx))
+        .expect("service budget"), header);
+}
+
+#[test]
 fn a8_surface_header_identifies_an_elided_pole_grid() {
     let bytes = a8_elided_surface_stream();
     assert!(crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
