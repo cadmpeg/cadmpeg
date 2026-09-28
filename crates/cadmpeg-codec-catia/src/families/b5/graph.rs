@@ -931,7 +931,7 @@ pub(in crate::families) fn parse_from_records_budgeted(
         return Ok(None);
     }
     let class21_candidates = a8_class21_pcurves_from_frames(ctx, bytes, frames)?;
-    let object_stream_pcurve_jets = crate::families::a5a8::records::object_stream_pcurves(bytes);
+    let object_stream_pcurve_jets = crate::families::a5a8::records::object_stream_pcurves(ctx, bytes)?;
     let mut object_stream_pcurve_candidates = Vec::new();
     for jet in &object_stream_pcurve_jets {
         if let Some(candidate) = object_stream_pcurve_candidate(ctx, jet)? {

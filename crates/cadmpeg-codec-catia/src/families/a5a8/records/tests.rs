@@ -43,6 +43,19 @@ fn parsed_a8_freeform_curves(data: &[u8]) -> Vec<crate::families::a5a8::records:
     })
 }
 
+fn parsed_a8_pcurves(data: &[u8]) -> Vec<crate::families::a5a8::records::A8Pcurve> {
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::a8_pcurves(ctx, data).expect("service decode")
+    })
+}
+
+fn parsed_object_stream_pcurves(data: &[u8]) -> Vec<crate::families::a5a8::records::A8Pcurve> {
+    crate::test_support::with_service_context(|ctx| {
+        crate::families::a5a8::records::object_stream_pcurves(ctx, data)
+            .expect("service decode")
+    })
+}
+
 #[test]
 fn a8_surface_parser_reads_common_form_nurbs() {
     let surfaces = crate::test_support::with_service_context(|ctx| crate::families::a5a8::records::a8_surfaces(ctx,
@@ -663,7 +676,7 @@ fn a8_elided_surface_requires_a_length_closed_successor_frame() {
 
 #[test]
 fn a8_pcurve_parser_reads_degree5_uv_jet() {
-    let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream());
+    let pcurves = parsed_a8_pcurves(&a8_pcurve_stream());
     assert_eq!(pcurves.len(), 1);
     assert_eq!(
         (pcurves[0].object_id, pcurves[0].support_id),
@@ -677,49 +690,88 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
     assert_eq!(pcurves[0].mode, 0x01);
     let mut wrong_degree = a8_pcurve_stream();
     wrong_degree[15] = 17;
-    assert!(crate::families::a5a8::records::a8_pcurves(&wrong_degree).is_empty());
+    assert!(parsed_a8_pcurves(&wrong_degree).is_empty());
 
     let mut repeated_knot = a8_pcurve_stream();
     repeated_knot[28..36].copy_from_slice(&le_f64(0.0));
-    assert!(crate::families::a5a8::records::a8_pcurves(&repeated_knot).is_empty());
+    assert!(parsed_a8_pcurves(&repeated_knot).is_empty());
 
     let mut wrong_endpoint_multiplicity = a8_pcurve_stream();
     wrong_endpoint_multiplicity[36] = 21;
-    assert!(crate::families::a5a8::records::a8_pcurves(&wrong_endpoint_multiplicity).is_empty());
+    assert!(parsed_a8_pcurves(&wrong_endpoint_multiplicity).is_empty());
 
     let mut trailing_byte = a8_pcurve_stream();
     trailing_byte.push(0);
     let payload_len = u32::try_from(trailing_byte.len() - 11).unwrap();
     trailing_byte[3..7].copy_from_slice(&payload_len.to_le_bytes());
-    assert!(crate::families::a5a8::records::a8_pcurves(&trailing_byte).is_empty());
+    assert!(parsed_a8_pcurves(&trailing_byte).is_empty());
 }
 
 #[test]
 fn a8_pcurve_parser_accepts_frame_bounded_site_count() {
-    let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream_with_count(8193));
+    let pcurves = parsed_a8_pcurves(&a8_pcurve_stream_with_count(8193));
     assert_eq!(pcurves.len(), 1);
     assert_eq!(crate::test_support::with_service_context(|ctx| pcurves[0].knots(ctx)).expect("service resource budget").len(), 8193);
     assert_eq!(pcurves[0].points().len(), 8193);
 }
 
 #[test]
+fn object_stream_pcurve_sites_refuse_collection_limit_before_materialization() {
+    let bytes = a8_pcurve_stream();
+    let result = crate::test_support::with_collection_limit(1, |ctx| {
+        crate::families::a5a8::records::object_stream_pcurves(ctx, &bytes)
+    });
+    assert!(matches!(result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_object_stream_pcurve_sites"
+    ));
+    assert_eq!(parsed_object_stream_pcurves(&bytes).len(), 1);
+}
+
+#[test]
+fn a8_pcurve_collection_refuses_before_retention() {
+    let bytes = a8_pcurve_stream();
+    let result = crate::test_support::with_collection_limit(2, |ctx| {
+        crate::families::a5a8::records::a8_pcurves(ctx, &bytes)
+    });
+    assert!(matches!(result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_a8_pcurves"
+    ));
+    assert_eq!(parsed_a8_pcurves(&bytes).len(), 1);
+}
+
+#[test]
+fn object_stream_pcurve_collection_refuses_before_retention() {
+    let bytes = a8_pcurve_stream();
+    let result = crate::test_support::with_collection_limit(2, |ctx| {
+        crate::families::a5a8::records::object_stream_pcurves(ctx, &bytes)
+    });
+    assert!(matches!(result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_object_stream_pcurves"
+    ));
+    assert_eq!(parsed_object_stream_pcurves(&bytes).len(), 1);
+}
+
+#[test]
 fn a8_pcurve_parser_accepts_finite_large_jet_values() {
     let mut bytes = a8_pcurve_stream();
     bytes[40..48].copy_from_slice(&le_f64(2e12));
-    let [pcurve] = crate::families::a5a8::records::a8_pcurves(&bytes)
+    let [pcurve] = parsed_a8_pcurves(&bytes)
         .try_into()
         .expect("one pcurve");
     assert_eq!(pcurve.points()[0][0], 2e12);
 
     bytes[40..48].copy_from_slice(&le_f64(f64::NAN));
-    assert!(crate::families::a5a8::records::a8_pcurves(&bytes).is_empty());
+    assert!(parsed_a8_pcurves(&bytes).is_empty());
 }
 
 #[test]
 fn a8_pcurve_parser_retains_mode_five_uv_jet() {
     let mut bytes = a8_pcurve_stream();
     bytes[39] = 0x05;
-    let pcurves = crate::families::a5a8::records::a8_pcurves(&bytes);
+    let pcurves = parsed_a8_pcurves(&bytes);
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].mode, 0x05);
     assert_eq!(pcurves[0].points(), vec![[0.0, 0.0], [1.0, 1.0]]);
@@ -733,7 +785,7 @@ fn b5_pcurve_parser_reads_degree5_uv_jet() {
     b5.extend_from_slice(&0x5678u32.to_le_bytes());
     b5.extend_from_slice(payload);
 
-    let pcurves = crate::families::a5a8::records::object_stream_pcurves(&b5);
+    let pcurves = parsed_object_stream_pcurves(&b5);
 
     assert_eq!(pcurves.len(), 1);
     assert_eq!(
@@ -759,7 +811,7 @@ fn object_stream_pcurve_parser_accepts_each_object_frame_flag() {
         ];
         stream.extend_from_slice(&0x5678u32.to_le_bytes());
         stream.extend_from_slice(payload);
-        let [pcurve] = crate::families::a5a8::records::object_stream_pcurves(&stream)
+        let [pcurve] = parsed_object_stream_pcurves(&stream)
             .try_into()
             .expect("one pcurve");
         assert_eq!(pcurve.object_id, 0x5678);
@@ -767,7 +819,7 @@ fn object_stream_pcurve_parser_accepts_each_object_frame_flag() {
 
     let mut malformed = a8;
     malformed[1] = 0x23;
-    assert!(crate::families::a5a8::records::object_stream_pcurves(&malformed).is_empty());
+    assert!(parsed_object_stream_pcurves(&malformed).is_empty());
 }
 
 #[test]
@@ -783,7 +835,7 @@ fn object_stream_pcurve_parser_walks_nested_b5_records_inside_a8() {
     let payload_len = u32::try_from(wrapper.len() - 11).unwrap();
     wrapper[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
-    let [pcurve] = crate::families::a5a8::records::object_stream_pcurves(&wrapper)
+    let [pcurve] = parsed_object_stream_pcurves(&wrapper)
         .try_into()
         .expect("one nested pcurve");
     assert_eq!(pcurve.object_id, 0x9abc);
@@ -798,7 +850,7 @@ fn b5_pcurve_parser_accepts_split_24_bit_support_reference() {
     b5.extend_from_slice(&0x5678u32.to_le_bytes());
     b5.extend_from_slice(&payload);
 
-    let pcurves = crate::families::a5a8::records::object_stream_pcurves(&b5);
+    let pcurves = parsed_object_stream_pcurves(&b5);
 
     assert_eq!(pcurves.len(), 1);
     assert_eq!(pcurves[0].support_id, 0x0012_0034);
@@ -1458,7 +1510,7 @@ fn a5_rolling_ball_limit_refuses_jet_and_pole_allocations() {
 
 #[test]
 fn a8_pcurve_bspline_refuses_nested_jet_allocations() {
-    let [jet] = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream())
+    let [jet] = parsed_a8_pcurves(&a8_pcurve_stream())
         .try_into()
         .expect("one A8 pcurve jet");
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| jet.bspline(ctx);
