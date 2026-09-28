@@ -1,11 +1,272 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    cap_coedge_ids_admitted, copy_extrusion_identity, copy_ring_coedges, generated_extrusion_identity,
-    sketch_profiles_cover_generated_extrusion_sides,
+    cap_coedge_ids_admitted, copy_extrusion_identity, copy_ring_coedges,
+    generated_extrusion_identity, push_rejected_extrusion,
+    sketch_profiles_cover_generated_extrusion_sides, JoinedLaneRecords,
 };
 use crate::decode::tests::surface_row;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchEntityUse, SketchId, SketchPlacement};
+use cadmpeg_ir::AnnotationBuilder;
+
+fn admitted_extrusion_fixture() -> (crate::container::ContainerScan<'static>, CadIr) {
+    use cadmpeg_ir::sketches::{
+        SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchProfiles,
+    };
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.features.rows.push(crate::feature::rows::FeatureRow {
+        feature_id: 7,
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
+        stream_offset: 0,
+        body: vec![0; 2].try_into().expect("feature row body"),
+        body_offset: 1,
+        offset: 0,
+    });
+    scan.features.definitions.push(definition());
+    scan.features.section_transforms.push(
+        crate::placement::FeatureSectionTransform::new(
+            7, Some(7), [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0,
+        ).expect("section frame"),
+    );
+    scan.features.operations.push(crate::feature::operations::FeatureOperation {
+        feature_id: 7,
+        kind: crate::feature::operations::OperationKind::Extrude,
+        name: crate::feature::operations::OperationName::Derived,
+        recipe: crate::feature::operations::RecipeResolution::Resolved(
+            crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
+        ),
+        display_state_conflict: false,
+        depdb: None,
+        offset: 0,
+        state_offset: 0,
+    });
+    scan.features.entity_tables.push(crate::feature::entity::FeatureEntityTable::new(
+        7, 29,
+        vec![
+            crate::feature::entity::FeatureEntityTableEntry {
+                entity_id: 31,
+                payload: crate::feature::entity::entry_payload(204, None, None, None),
+                prefixed: false, offset: 0, end_offset: 0,
+            },
+            crate::feature::entity::FeatureEntityTableEntry {
+                entity_id: 32,
+                payload: crate::feature::entity::entry_payload(203, None, None, None),
+                prefixed: false, offset: 0, end_offset: 0,
+            },
+            crate::feature::entity::FeatureEntityTableEntry {
+                entity_id: 33,
+                payload: crate::feature::entity::entry_payload(200, Some(11), None, None),
+                prefixed: false, offset: 0, end_offset: 0,
+            },
+            crate::feature::entity::FeatureEntityTableEntry {
+                entity_id: 34,
+                payload: crate::feature::entity::entry_payload(200, Some(12), None, None),
+                prefixed: false, offset: 0, end_offset: 0,
+            },
+            crate::feature::entity::FeatureEntityTableEntry {
+                entity_id: 35,
+                payload: crate::feature::entity::entry_payload(200, Some(13), None, None),
+                prefixed: false, offset: 0, end_offset: 0,
+            },
+            crate::feature::entity::FeatureEntityTableEntry {
+                entity_id: 36,
+                payload: crate::feature::entity::entry_payload(200, Some(14), None, None),
+                prefixed: false, offset: 0, end_offset: 0,
+            },
+        ],
+        &std::collections::BTreeSet::new(), 0,
+    ).with_surface_ids([31, 32, 33, 34, 35, 36]));
+    let row = |id| crate::surface::SurfaceRow {
+        id,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 7,
+        reversed: id == 31,
+        boundary_type: crate::surface::BoundaryType::Code00,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    scan.surfaces.rows.extend((31..=36).map(row));
+    let plane = |id, z| Surface {
+        id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}"))
+            .expect("surface identity"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, z),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ).expect("plane"),
+        )),
+        source_object: None,
+    };
+    let mut ir = CadIr::empty();
+    ir.model.surfaces.extend([plane(31, 0.0), plane(32, 2.0)]);
+    let sketch_id = SketchId::mint("creo:model:sketch#7").expect("sketch identity");
+    let mut uses = Vec::new();
+    for (index, (start, end)) in [
+        ([0.0, 0.0], [1.0, 0.0]),
+        ([1.0, 0.0], [1.0, 1.0]),
+        ([1.0, 1.0], [0.0, 1.0]),
+        ([0.0, 1.0], [0.0, 0.0]),
+    ].into_iter().enumerate() {
+        let id = SketchEntityId::mint(format!("creo:featdefs:sketch_entity#7:{}", index + 11))
+            .expect("sketch entity identity");
+        ir.model.sketch_entities.push(SketchEntity::new(
+            id.clone(), sketch_id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                start: Point2::new(start[0], start[1]),
+                end: Point2::new(end[0], end[1]),
+            }).expect("line"),
+        ));
+        uses.push(SketchEntityUse { entity: id, reversed: false });
+    }
+    ir.model.sketches.push(Sketch {
+        id: sketch_id,
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::Unresolved {},
+        profiles: SketchProfiles::try_from(vec![uses]).expect("profile"),
+        native_ref: None,
+    });
+    (scan, ir)
+}
+
+#[test]
+fn closed_extrusion_reaches_brep_admission() {
+    let (scan, mut ir) = admitted_extrusion_fixture();
+    assert!(super::feature_allows_additive_linear_extrusion(&scan, 7));
+    assert!(super::feature_is_first_material_operation(&scan, 7));
+    let definition = &scan.features.definitions[0];
+    let transform = &scan.features.section_transforms[0];
+    let sketch_id = super::model_sketch_id(&scan, definition).expect("sketch ID");
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(super::resolved_feature_extrusion_span(
+            ctx, &scan, &ir,
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            definition, transform,
+        ).expect("span resources").is_some());
+        assert!(super::sketch_profiles_cover_generated_extrusion_sides(
+            ctx, &scan, definition, 7, &ir.model.sketches[0],
+        ).expect("side resources"));
+        let profiles = super::resolved_sketch_profiles(
+            ctx, &ir, &crate::decode::source_carriers::SourceUnitCarriers::default(),
+            &sketch_id, 1,
+        ).expect("profile resources").expect("profile geometry");
+        assert!(super::ordered_extrusion_profiles(profiles).is_some());
+    });
+    let mut diagnostics = crate::decode::surfaces::brep::BrepTransferDiagnostics::default();
+    let count = crate::decode::with_test_decode_ctx(|ctx| {
+        super::transfer_resolved_extrusion_breps(
+            ctx, &scan, &mut ir, &mut AnnotationBuilder::new(), &mut diagnostics,
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+    }).expect("admitted transfer");
+    assert_eq!(count, 1);
+    assert_eq!(ir.model.bodies.len(), 1);
+    assert!(diagnostics.rejected_extrusion_bodies.is_empty());
+}
+
+fn extrusion_refuses_at_collection_boundary(operation: &'static str) {
+    let mut last_refusal = None;
+    for limit in 0..4096 {
+        let (scan, mut ir) = admitted_extrusion_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let mut diagnostics = crate::decode::surfaces::brep::BrepTransferDiagnostics::default();
+        let result = super::transfer_resolved_extrusion_breps(
+            &ctx, &scan, &mut ir, &mut AnnotationBuilder::new(), &mut diagnostics,
+            &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+        );
+        match result {
+            Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+                if resource.dimension == ResourceDimension::CollectionItems
+                    && resource.operation == operation => return,
+            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) => {
+                last_refusal = Some((limit, resource.dimension, resource.operation));
+            }
+            Err(error) => panic!("unexpected extrusion error at limit {limit}: {error:?}"),
+            Ok(_) => panic!("extrusion succeeded before the named {operation} refusal"),
+        }
+    }
+    panic!("the named {operation} boundary was not reached; last refusal: {last_refusal:?}");
+}
+
+macro_rules! extrusion_collection_limit_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            extrusion_refuses_at_collection_boundary($operation);
+        }
+    };
+}
+
+extrusion_collection_limit_test!(extrusion_shell_face_ids_refuse_collection_limit, "creo extrusion shell face IDs");
+extrusion_collection_limit_test!(extrusion_profile_vertex_ids_refuse_collection_limit, "creo extrusion profile vertex IDs");
+extrusion_collection_limit_test!(extrusion_profile_edge_ids_refuse_collection_limit, "creo extrusion profile edge IDs");
+extrusion_collection_limit_test!(extrusion_vertical_edge_ids_refuse_collection_limit, "creo extrusion vertical edge IDs");
+extrusion_collection_limit_test!(extrusion_bottom_loop_ids_refuse_collection_limit, "creo extrusion bottom loop IDs");
+extrusion_collection_limit_test!(extrusion_top_loop_ids_refuse_collection_limit, "creo extrusion top loop IDs");
+extrusion_collection_limit_test!(extrusion_model_loops_refuse_collection_limit, "creo extrusion model loops");
+extrusion_collection_limit_test!(extrusion_bottom_coedge_pcurve_uses_refuse_collection_limit, "creo extrusion bottom coedge pcurve uses");
+extrusion_collection_limit_test!(extrusion_top_coedge_pcurve_uses_refuse_collection_limit, "creo extrusion top coedge pcurve uses");
+extrusion_collection_limit_test!(extrusion_side_coedge_pcurve_uses_refuse_collection_limit, "creo extrusion side coedge pcurve uses");
+extrusion_collection_limit_test!(extrusion_side_face_loop_ids_refuse_collection_limit, "creo extrusion side face loop IDs");
+extrusion_collection_limit_test!(extrusion_model_shells_refuse_collection_limit, "creo extrusion model shells");
+extrusion_collection_limit_test!(extrusion_model_regions_refuse_collection_limit, "creo extrusion model regions");
+extrusion_collection_limit_test!(extrusion_region_shell_ids_refuse_collection_limit, "creo extrusion region shell IDs");
+extrusion_collection_limit_test!(extrusion_body_region_ids_refuse_collection_limit, "creo extrusion body region IDs");
+
+fn rejected_extrusion_at_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<crate::decode::surfaces::brep::BrepTransferDiagnostics, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let mut diagnostics = crate::decode::surfaces::brep::BrepTransferDiagnostics::default();
+    let records = ["first refused lane".to_string(), "second refused lane".to_string()];
+    push_rejected_extrusion(
+        &ctx,
+        &mut diagnostics,
+        cadmpeg_ir::ids::BodyId::mint("creo:feature:extrusion#7:body")
+            .expect("valid body identity"),
+        format_args!("refused extrusion side lanes: {}", JoinedLaneRecords(&records)),
+    )?;
+    Ok(diagnostics)
+}
+
+#[test]
+fn extrusion_rejection_reason_refuses_retained_limit() {
+    assert!(matches!(rejected_extrusion_at_limits(1, 0),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion rejection reason"));
+}
+
+#[test]
+fn extrusion_rejection_diagnostics_refuse_collection_limit() {
+    assert!(matches!(rejected_extrusion_at_limits(0, u64::MAX),
+        Err(cadmpeg_core::CodecError::ResourceLimit(ref refusal))
+        if refusal.operation == "creo extrusion rejection diagnostics"));
+}
+
+#[test]
+fn extrusion_rejection_preserves_joined_reason_order() {
+    let diagnostics = rejected_extrusion_at_limits(1, u64::MAX)
+        .expect("admitted rejection");
+    assert_eq!(diagnostics.rejected_extrusion_bodies[0].1,
+        "refused extrusion side lanes: first refused lane; second refused lane");
+}
 
 fn cap_ids_at_limits(
     collection_limit: u64,
@@ -191,7 +452,15 @@ fn definition() -> crate::feature::definitions::FeatureDefinition {
         trim_entities: None,
         trim_vertices: None,
         order_table: None,
-        section_3d: None,
+        section_3d: Some(crate::feature::definitions::FeatureSection3d {
+            sketch_plane_entity_id: None,
+            sketch_plane_flip: None,
+            reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
+            reference_plane_datum_geometry_id: None,
+            orientation: crate::feature::definitions::FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: 0,
+        }),
         dimensions: None,
         relations: None,
         saved_section: None,
