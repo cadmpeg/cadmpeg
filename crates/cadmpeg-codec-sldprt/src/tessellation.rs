@@ -112,6 +112,15 @@ fn charge_fit_work(
     ctx.charge_work(units, operation)
 }
 
+macro_rules! require_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 fn copy_retained_string(
     ctx: &DecodeContext<'_>,
     value: &str,
@@ -945,19 +954,21 @@ pub(crate) fn assign_unique_surface_owners(
                     .tolerance
                     .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
                 inverse,
-                trim: analytic_trim(
-                    face,
-                    *surfaces.get(&face.surface)?,
-                    &loops,
-                    &coedges,
-                    &edges,
-                    &vertices,
-                    &points,
-                    &curves,
-                ),
+                trim: None,
             })
         })();
-        if let Some(candidate) = candidate {
+        if let Some(mut candidate) = candidate {
+            candidate.trim = analytic_trim(
+                ctx,
+                face,
+                candidate.surface,
+                &loops,
+                &coedges,
+                &edges,
+                &vertices,
+                &points,
+                &curves,
+            )?;
             ctx.reserve_collection_vec(&mut candidates, 1, "collect SLDPRT tessellation face candidates")?;
             candidates.push(candidate);
         }
@@ -2003,6 +2014,7 @@ fn planar_hole_trim(
 
 #[allow(clippy::too_many_arguments)]
 fn cylindrical_trim(
+    ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
     loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
@@ -2011,39 +2023,40 @@ fn cylindrical_trim(
     vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
-) -> Option<CylindricalTrim> {
+) -> Result<Option<CylindricalTrim>, cadmpeg_core::CodecError> {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface else {
-        return None;
+        return Ok(None);
     };
     let origin = cylinder_surface.origin().get();
     let frame = *cylinder_surface.frame();
     let axis = *frame.axis().as_raw();
     let radius = cylinder_surface.radius().get();
     if radius <= EPS_DISPLAY_QUANTIZATION {
-        return None;
+        return Ok(None);
     }
     if face.loops.len() != 1 {
-        return None;
+        return Ok(None);
     }
-    let loop_id = face.loops.iter().next()?;
-    let loop_ = *loops.get(loop_id)?;
+    let loop_id = require_some!(face.loops.iter().next());
+    let loop_ = *require_some!(loops.get(loop_id));
     if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
-        return None;
+        return Ok(None);
     }
-    let tolerance = FaceEvaluationTolerance::of(face)?.get();
+    let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
     let mut axial_bounds = None::<(f64, f64)>;
     for coedge_id in loop_.coedges() {
-        let coedge = *coedges.get(coedge_id)?;
+        ctx.charge_work(1, "scan SLDPRT cylindrical trim coedges")?;
+        let coedge = *require_some!(coedges.get(coedge_id));
         if coedge.owner_loop != loop_.id {
-            return None;
+            return Ok(None);
         }
-        let edge = *edges.get(&coedge.edge)?;
-        let curve = curves.get(edge.curve()?)?;
+        let edge = *require_some!(edges.get(&coedge.edge));
+        let curve = require_some!(curves.get(require_some!(edge.curve())));
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let direction = *line_curve.direction().as_raw();
                 if direction.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
-                    return None;
+                    return Ok(None);
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
@@ -2052,19 +2065,21 @@ fn cylindrical_trim(
                 if curve_axis.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                     || (curve_radius - radius).abs() > tolerance
                 {
-                    return None;
+                    return Ok(None);
                 }
             }
-            _ => return None,
+            _ => return Ok(None),
         }
         for vertex_id in [&edge.start, &edge.end] {
-            let point = *points.get(&vertices.get(vertex_id)?.point)?;
-            if analytic_surface_residual(surface.solved()?, point)? > tolerance {
-                return None;
+            ctx.charge_work(1, "scan SLDPRT cylindrical trim endpoints")?;
+            let vertex = require_some!(vertices.get(vertex_id));
+            let point = *require_some!(points.get(&vertex.point));
+            if require_some!(analytic_surface_residual(require_some!(surface.solved()), point)) > tolerance {
+                return Ok(None);
             }
             let axial = point.vector_from(origin).dot(axis);
             if !axial.is_finite() {
-                return None;
+                return Ok(None);
             }
             axial_bounds = Some(match axial_bounds {
                 Some((min_axial, max_axial)) => (min_axial.min(axial), max_axial.max(axial)),
@@ -2072,27 +2087,22 @@ fn cylindrical_trim(
             });
         }
     }
-    let (min_axial, max_axial) = axial_bounds?;
-    let mut angles = loop_
-        .coedges()
-        .iter()
-        .map(|coedge_id| {
-            let coedge = coedges.get(coedge_id)?;
-            let edge = edges.get(&coedge.edge)?;
-            [&edge.start, &edge.end]
-                .into_iter()
-                .map(|vertex_id| {
-                    let point = *points.get(&vertices.get(vertex_id)?.point)?;
-                    cylinder_angle(point, origin, &frame)
-                })
-                .collect::<Option<Vec<_>>>()
-        })
-        .collect::<Option<Vec<Vec<_>>>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let (angular_start, angular_span) = circular_interval(&mut angles)?;
-    (max_axial - min_axial > tolerance).then_some(CylindricalTrim {
+    let (min_axial, max_axial) = require_some!(axial_bounds);
+    let mut angles = Vec::new();
+    for coedge_id in loop_.coedges() {
+        ctx.charge_work(1, "scan SLDPRT cylindrical trim angles")?;
+        let coedge = require_some!(coedges.get(coedge_id));
+        let edge = require_some!(edges.get(&coedge.edge));
+        for vertex_id in [&edge.start, &edge.end] {
+            let vertex = require_some!(vertices.get(vertex_id));
+            let point = *require_some!(points.get(&vertex.point));
+            let angle = require_some!(cylinder_angle(point, origin, &frame));
+            ctx.reserve_collection_vec(&mut angles, 1, "collect SLDPRT cylindrical trim angles")?;
+            angles.push(angle);
+        }
+    }
+    let (angular_start, angular_span) = require_some!(circular_interval(&mut angles));
+    Ok((max_axial - min_axial > tolerance).then_some(CylindricalTrim {
         origin,
         frame,
         radius,
@@ -2100,11 +2110,12 @@ fn cylindrical_trim(
         max_axial,
         angular_start,
         angular_span,
-    })
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]
 fn conical_trim(
+    ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
     loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
@@ -2113,9 +2124,9 @@ fn conical_trim(
     vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
-) -> Option<ConicalTrim> {
+) -> Result<Option<ConicalTrim>, cadmpeg_core::CodecError> {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) = surface else {
-        return None;
+        return Ok(None);
     };
     let origin = cone_surface.origin().get();
     let frame = *cone_surface.frame();
@@ -2125,31 +2136,32 @@ fn conical_trim(
     let half_angle = cone_surface.half_angle().get();
     let slope = half_angle.tan();
     if radius <= EPS_DISPLAY_QUANTIZATION || !slope.is_finite() {
-        return None;
+        return Ok(None);
     }
     if face.loops.len() != 1 {
-        return None;
+        return Ok(None);
     }
-    let loop_id = face.loops.iter().next()?;
-    let loop_ = *loops.get(loop_id)?;
+    let loop_id = require_some!(face.loops.iter().next());
+    let loop_ = *require_some!(loops.get(loop_id));
     if loop_.face != face.id || loop_.coedges().is_empty() || loop_.vertices().next().is_some() {
-        return None;
+        return Ok(None);
     }
-    let tolerance = FaceEvaluationTolerance::of(face)?.get();
+    let tolerance = require_some!(FaceEvaluationTolerance::of(face)).get();
     let mut axial_bounds = None::<(f64, f64)>;
     let mut angles = Vec::new();
     for coedge_id in loop_.coedges() {
-        let coedge = *coedges.get(coedge_id)?;
+        ctx.charge_work(1, "scan SLDPRT conical trim coedges")?;
+        let coedge = *require_some!(coedges.get(coedge_id));
         if coedge.owner_loop != loop_.id {
-            return None;
+            return Ok(None);
         }
-        let edge = *edges.get(&coedge.edge)?;
-        let curve = curves.get(edge.curve()?)?;
+        let edge = *require_some!(edges.get(&coedge.edge));
+        let curve = require_some!(curves.get(require_some!(edge.curve())));
         match curve {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
                 let direction = *line_curve.direction().as_raw();
                 if direction.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
-                    return None;
+                    return Ok(None);
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
@@ -2163,7 +2175,7 @@ fn conical_trim(
                         })
                     })
                 {
-                    return None;
+                    return Ok(None);
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
@@ -2194,7 +2206,7 @@ fn conical_trim(
                     || center_radial.norm() > tolerance
                     || !aligned_radii
                 {
-                    return None;
+                    return Ok(None);
                 }
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
@@ -2204,7 +2216,7 @@ fn conical_trim(
                 if (ratio.get() - 1.0).abs() > EPS_AXIS_ALIGNMENT
                     || curve_axis.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                 {
-                    return None;
+                    return Ok(None);
                 }
                 let center_delta = center.vector_from(origin);
                 let center_axial = center_delta.dot(axis);
@@ -2213,31 +2225,34 @@ fn conical_trim(
                 if center_radial.norm() > tolerance
                     || (curve_radius - expected_radius).abs() > tolerance
                 {
-                    return None;
+                    return Ok(None);
                 }
             }
-            _ => return None,
+            _ => return Ok(None),
         }
         for vertex_id in [&edge.start, &edge.end] {
-            let point = *points.get(&vertices.get(vertex_id)?.point)?;
-            if analytic_surface_residual(surface.solved()?, point)? > tolerance {
-                return None;
+            ctx.charge_work(1, "scan SLDPRT conical trim endpoints")?;
+            let vertex = require_some!(vertices.get(vertex_id));
+            let point = *require_some!(points.get(&vertex.point));
+            if require_some!(analytic_surface_residual(require_some!(surface.solved()), point)) > tolerance {
+                return Ok(None);
             }
             let axial = point.vector_from(origin).dot(axis);
-            let angle = cone_angle(point, origin, &frame, ratio)?;
+            let angle = require_some!(cone_angle(point, origin, &frame, ratio));
             if !axial.is_finite() || !angle.is_finite() {
-                return None;
+                return Ok(None);
             }
             axial_bounds = Some(match axial_bounds {
                 Some((min_axial, max_axial)) => (min_axial.min(axial), max_axial.max(axial)),
                 None => (axial, axial),
             });
+            ctx.reserve_collection_vec(&mut angles, 1, "collect SLDPRT conical trim angles")?;
             angles.push(angle);
         }
     }
-    let (min_axial, max_axial) = axial_bounds?;
-    let (angular_start, angular_span) = circular_interval(&mut angles)?;
-    (max_axial - min_axial > tolerance).then_some(ConicalTrim {
+    let (min_axial, max_axial) = require_some!(axial_bounds);
+    let (angular_start, angular_span) = require_some!(circular_interval(&mut angles));
+    Ok((max_axial - min_axial > tolerance).then_some(ConicalTrim {
         origin,
         frame,
         radius,
@@ -2247,7 +2262,7 @@ fn conical_trim(
         max_axial,
         angular_start,
         angular_span,
-    })
+    }))
 }
 
 /// The reference of `frame` minus its component along the axis, and the axis
@@ -2327,6 +2342,7 @@ fn circular_interval_contains(start: f64, span: f64, angle: f64, tolerance: f64)
 // The trim grammars share the same indexed topology maps.
 #[allow(clippy::too_many_arguments)]
 fn analytic_trim(
+    ctx: &DecodeContext<'_>,
     face: &cadmpeg_ir::topology::Face,
     surface: &SurfaceGeometry,
     loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
@@ -2335,9 +2351,9 @@ fn analytic_trim(
     vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
     points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
-) -> Option<AnalyticTrim> {
+) -> Result<Option<AnalyticTrim>, cadmpeg_core::CodecError> {
     match surface {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => planar_trim(
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => Ok(planar_trim(
             face, surface, loops, coedges, edges, vertices, points, curves,
         )
         .or_else(|| {
@@ -2345,16 +2361,16 @@ fn analytic_trim(
                 face, surface, loops, coedges, edges, vertices, points, curves,
             )
         })
-        .map(AnalyticTrim::Planar),
+        .map(AnalyticTrim::Planar)),
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => cylindrical_trim(
-            face, surface, loops, coedges, edges, vertices, points, curves,
+            ctx, face, surface, loops, coedges, edges, vertices, points, curves,
         )
-        .map(AnalyticTrim::Cylindrical),
+        .map(|trim| trim.map(AnalyticTrim::Cylindrical)),
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => conical_trim(
-            face, surface, loops, coedges, edges, vertices, points, curves,
+            ctx, face, surface, loops, coedges, edges, vertices, points, curves,
         )
-        .map(AnalyticTrim::Conical),
-        _ => None,
+        .map(|trim| trim.map(AnalyticTrim::Conical)),
+        _ => Ok(None),
     }
 }
 
