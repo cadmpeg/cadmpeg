@@ -6,6 +6,7 @@ use super::scalars::named_scalars;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::container::ContainerScan;
 use crate::records::{FeatureInputClassRole, FeatureInputLane};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::Exactness;
 
@@ -14,60 +15,67 @@ pub(crate) fn is_supplemental_config_lane(lane: &FeatureInputLane) -> bool {
 }
 
 pub(crate) fn lanes(
-    scan: &ContainerScan,
-    annotations: &mut Annotations,
-) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
-    let sections = scan.sections().collect::<Vec<_>>();
-    let has_explicit_lanes = sections.iter().any(|source| {
-        source
-            .name()
-            .is_some_and(|name| name.to_ascii_lowercase().contains("resolvedfeatures"))
-    });
-    let mut result = Vec::new();
-    for source in sections {
-        let Some(section) = source.name() else {
-            continue;
-        };
-        if if has_explicit_lanes {
-            !section.to_ascii_lowercase().contains("resolvedfeatures")
-        } else {
-            !legacy_feature_input_section(section)
-        } {
-            continue;
-        }
-        result.push(feature_input_lane(
-            source,
-            section,
-            "resolved-features",
-            annotations,
-        )?);
-    }
-    Ok(result)
-}
-
-pub(crate) fn supplemental_config_lanes(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut Annotations,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
     let has_explicit_lanes = scan.sections().any(|source| {
         source
             .name()
-            .is_some_and(|name| name.to_ascii_lowercase().contains("resolvedfeatures"))
+            .is_some_and(|name| contains_ascii_case_insensitive(name, "resolvedfeatures"))
+    });
+    let mut result = Vec::new();
+    for source in scan.sections() {
+        let Some(section) = source.name() else {
+            continue;
+        };
+        if if has_explicit_lanes {
+            !contains_ascii_case_insensitive(section, "resolvedfeatures")
+        } else {
+            !legacy_feature_input_section(section)
+        } {
+            continue;
+        }
+        let lane = feature_input_lane(
+            ctx,
+            source,
+            section,
+            "resolved-features",
+            annotations,
+        )?;
+        ctx.reserve_collection_vec(&mut result, 1, "collect SLDPRT feature input lanes")?;
+        result.push(lane);
+    }
+    Ok(result)
+}
+
+pub(crate) fn supplemental_config_lanes(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    annotations: &mut Annotations,
+) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
+    let has_explicit_lanes = scan.sections().any(|source| {
+        source
+            .name()
+            .is_some_and(|name| contains_ascii_case_insensitive(name, "resolvedfeatures"))
     });
     if !has_explicit_lanes {
         return Ok(Vec::new());
     }
-    scan.sections()
-        .filter_map(|source| {
-            let section = source.name()?;
-            (legacy_feature_input_section(section) && legacy_sketch_object_stream(source.payload()))
-                .then_some((source, section))
-        })
-        .map(|(source, section)| feature_input_lane(source, section, "config-objects", annotations))
-        .collect()
+    let mut lanes = Vec::new();
+    for source in scan.sections() {
+        let Some(section) = source.name() else { continue; };
+        if legacy_feature_input_section(section) && legacy_sketch_object_stream(source.payload()) {
+            let lane = feature_input_lane(ctx, source, section, "config-objects", annotations)?;
+            ctx.reserve_collection_vec(&mut lanes, 1, "collect SLDPRT supplemental feature lanes")?;
+            lanes.push(lane);
+        }
+    }
+    Ok(lanes)
 }
 
 fn feature_input_lane(
+    ctx: &DecodeContext<'_>,
     source: crate::container::Section<'_>,
     section: &str,
     family: &str,
@@ -118,7 +126,7 @@ fn feature_input_lane(
     Ok(FeatureInputLane {
         id: parent,
         configuration: configuration(section),
-        native_payload: payload.to_vec(),
+        native_payload: ctx.copy_retained(payload, "retain SLDPRT feature input payload")?,
         classes,
         names,
         scalars,
@@ -134,14 +142,22 @@ fn feature_input_lane(
 }
 
 fn legacy_feature_input_section(section: &str) -> bool {
-    let normalized = section.replace('\\', "/");
-    let Some(configuration) = normalized
-        .strip_prefix("Contents/Config-")
-        .or_else(|| normalized.strip_prefix("contents/config-"))
-    else {
+    let bytes = section.as_bytes();
+    if bytes.len() < "Contents/Config-".len()
+        || !matches!(bytes[8], b'/' | b'\\')
+        || !((bytes[..8] == *b"Contents" && bytes[9..16] == *b"Config-")
+            || (bytes[..8] == *b"contents" && bytes[9..16] == *b"config-"))
+    {
         return false;
-    };
+    }
+    let configuration = &section[16..];
     !configuration.is_empty() && configuration.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn contains_ascii_case_insensitive(text: &str, needle: &str) -> bool {
+    text.as_bytes()
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle.as_bytes()))
 }
 
 fn legacy_sketch_object_stream(payload: &[u8]) -> bool {
