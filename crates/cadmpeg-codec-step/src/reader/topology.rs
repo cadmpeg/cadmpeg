@@ -3228,6 +3228,7 @@ fn build_one(
                                 vdefs,
                                 point_positions,
                                 &associated,
+                                ctx,
                             ) {
                                 Ok(selected) => {
                                     push_topology_vec(&mut admissions, PcurveAdmission {
@@ -3239,6 +3240,9 @@ fn build_one(
                                 }
                                 Err(PcurveSelectionFailure::ResourceLimit(limit)) => {
                                     return Err(CodecError::ResourceLimit(limit).into());
+                                }
+                                Err(PcurveSelectionFailure::Resource(error)) => {
+                                    return Err(error.into());
                                 }
                                 Err(failure) => {
                                     let note = match failure {
@@ -3260,6 +3264,9 @@ fn build_one(
                                             )),
                                         PcurveSelectionFailure::ResourceLimit(limit) => {
                                             return Err(CodecError::ResourceLimit(limit).into());
+                                        }
+                                        PcurveSelectionFailure::Resource(error) => {
+                                            return Err(error.into());
                                         }
                                     };
                                     push_topology_vec(losses, note, ctx, "step_topology_losses")?;
@@ -4134,17 +4141,25 @@ struct SelectedPcurve {
     parameter_range: Option<[f64; 2]>,
 }
 
+#[derive(Debug)]
 enum PcurveSelectionFailure {
     NotUnique { count: usize },
     Carrier,
     Endpoint,
     Locus,
     ResourceLimit(ResourceLimit),
+    Resource(CodecError),
 }
 
 impl From<ResourceLimit> for PcurveSelectionFailure {
     fn from(limit: ResourceLimit) -> Self {
         Self::ResourceLimit(limit)
+    }
+}
+
+impl From<CodecError> for PcurveSelectionFailure {
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
     }
 }
 
@@ -4169,20 +4184,21 @@ fn select_associated_pcurve(
     vdefs: &BTreeMap<u64, VertexDef>,
     point_positions: &CarrierIndex,
     candidates: &[PcurveId],
+    ctx: &DecodeContext<'_>,
 ) -> Result<SelectedPcurve, PcurveSelectionFailure> {
     let [candidate] = candidates else {
         return Err(PcurveSelectionFailure::NotUnique {
             count: candidates.len(),
         });
     };
-    let candidate = candidate.clone();
+    let candidate = copy_topology_id(candidate.as_str(), ctx, "step_selected_pcurve_id")?;
     let surface_identity = ids::data(kind!("surface"), surface_step);
     let surface = ir
         .model
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == surface_identity.as_str())
-        .map(|surface| surface.geometry.clone())
+        .map(|surface| &surface.geometry)
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let surface_id = SurfaceId::from(surface_identity);
     let index = ModelIndex::new(ir);
@@ -4213,9 +4229,10 @@ fn select_associated_pcurve(
         &index,
         &surface_id,
         geometry,
-        &surface,
+        surface,
         curve_start,
         curve_end,
+        ctx,
     )?
     .ok_or(PcurveSelectionFailure::Endpoint)?;
     if !endpoint.max_residual.is_finite() || !bound.is_finite() || endpoint.max_residual > bound {
@@ -4231,6 +4248,7 @@ fn select_associated_pcurve(
         curve_start,
         curve_end,
         bound,
+        ctx,
     )? {
         return Err(PcurveSelectionFailure::Locus);
     }
@@ -4271,7 +4289,8 @@ fn pcurve_locus_witness(
     curve_start: Point3,
     curve_end: Point3,
     bound: f64,
-) -> Result<bool, ResourceLimit> {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, PcurveSelectionFailure> {
     let Some(curve_step) = edge
         .curve()
         .and_then(|curve| curve_carrier_record(curve, exchange))
@@ -4309,16 +4328,20 @@ fn pcurve_locus_witness(
     else {
         return Ok(false);
     };
-    let mut fractions = (0..PCURVE_LOCUS_SAMPLE_COUNT)
-        .map(|step| step as f64 / (PCURVE_LOCUS_SAMPLE_COUNT - 1) as f64)
-        .collect::<Vec<_>>();
+    let mut fractions = Vec::new();
+    for step in 0..PCURVE_LOCUS_SAMPLE_COUNT {
+        push_topology_vec(&mut fractions,
+            step as f64 / (PCURVE_LOCUS_SAMPLE_COUNT - 1) as f64,
+            ctx, "step_pcurve_locus_fractions")?;
+    }
     let mut break_fractions = Vec::new();
     pcurve_parameter_break_fractions(
         geometry,
         [endpoint.start_parameter, endpoint.end_parameter],
         &mut break_fractions,
-    );
-    fractions.extend(break_fractions);
+        ctx,
+    )?;
+    append_topology_vec(&mut fractions, &mut break_fractions, ctx, "step_pcurve_locus_fractions")?;
     fractions.sort_by(f64::total_cmp);
     fractions.dedup_by(|left, right| *left == *right);
     for fraction in fractions {
@@ -4333,8 +4356,8 @@ fn pcurve_locus_witness(
         };
         let curve_seed =
             curve_start_parameter.mul_add(1.0 - fraction, curve_end_parameter * fraction);
-        let mut seeds = curve_seeds.to_vec();
-        seeds.push(curve_seed);
+        let seeds = [curve_seeds[0], curve_seeds[1], curve_seeds[2],
+            curve_seeds[3], curve_seeds[4], curve_seeds[5], curve_seed];
         let Some(curve_parameter) =
             curve_parameter_near_point(index, &curve_id, mapped, &seeds, bound)?
         else {
@@ -4342,7 +4365,7 @@ fn pcurve_locus_witness(
         };
         let curve_point = match model_curve_point_by_id(index, &curve_id, curve_parameter) {
             Ok(point) => point,
-            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit),
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()),
             Err(_) => return Ok(false),
         };
         if !curve_point.distance(mapped).is_finite()
@@ -4385,7 +4408,8 @@ fn pcurve_endpoint_fit(
     surface: &SurfaceGeometry,
     start: Point3,
     end: Point3,
-) -> Result<Option<PcurveEndpointFit>, ResourceLimit> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<PcurveEndpointFit>, PcurveSelectionFailure> {
     if let Some(parameter_range) = pcurve_declared_parameter_range(geometry) {
         let Some(declared_score) = pcurve_declared_endpoint_fit_directed(
             index,
@@ -4408,7 +4432,7 @@ fn pcurve_endpoint_fit(
         // A few producers retain a stale trim around an edge-local pcurve.
         // Search for an alternative interval, then use the evaluated residual
         // as the witness. The search does not establish a global minimum.
-        let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface);
+        let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface, ctx)?;
         let Some(start) = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)?
         else {
             return Ok(None);
@@ -4422,7 +4446,7 @@ fn pcurve_endpoint_fit(
             max_residual: start.0.max(end.0),
         }));
     }
-    let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface);
+    let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface, ctx)?;
     let Some(start) = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)? else {
         return Ok(None);
     };
@@ -4688,38 +4712,53 @@ fn mapped_pcurve_closest(
     Ok(best.is_finite().then_some((best, best_parameter)))
 }
 
+fn add_pcurve_break_fraction(
+    parameter: f64,
+    parameters: [f64; 2],
+    fractions: &mut Vec<f64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if let Some(fraction) =
+        cadmpeg_ir::math::parameter_fraction(parameter, parameters[0], parameters[1])
+    {
+        if fraction.get() > 0.0 && fraction.get() < 1.0 {
+            push_topology_vec(fractions, fraction.get(), ctx, "step_pcurve_break_fractions")?;
+        }
+    }
+    Ok(())
+}
+
 fn pcurve_parameter_break_fractions(
     geometry: &PcurveGeometry,
     parameters: [f64; 2],
     fractions: &mut Vec<f64>,
-) {
-    let mut add = |parameter: f64| {
-        if let Some(fraction) =
-            cadmpeg_ir::math::parameter_fraction(parameter, parameters[0], parameters[1])
-        {
-            if fraction.get() > 0.0 && fraction.get() < 1.0 {
-                fractions.push(fraction.get());
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("step_pcurve_break_recursion")?;
+    match geometry {
+        PcurveGeometry::Nurbs { nurbs } => {
+            for parameter in nurbs.knots().iter().copied() {
+                add_pcurve_break_fraction(parameter, parameters, fractions, ctx)?;
             }
         }
-    };
-    match geometry {
-        PcurveGeometry::Nurbs { nurbs } => nurbs.knots().iter().copied().for_each(&mut add),
         PcurveGeometry::PolarNurbs { nurbs } => {
-            nurbs.knots().iter().copied().for_each(&mut add);
+            for parameter in nurbs.knots().iter().copied() {
+                add_pcurve_break_fraction(parameter, parameters, fractions, ctx)?;
+            }
         }
         PcurveGeometry::Trimmed(trimmed_pcurve) => {
             let parameter_range = trimmed_pcurve.parameter_range();
             let basis = trimmed_pcurve.basis();
-            add(parameter_range.endpoints()[0]);
-            add(parameter_range.endpoints()[1]);
-            pcurve_parameter_break_fractions(basis, parameters, fractions);
+            add_pcurve_break_fraction(parameter_range.endpoints()[0], parameters, fractions, ctx)?;
+            add_pcurve_break_fraction(parameter_range.endpoints()[1], parameters, fractions, ctx)?;
+            pcurve_parameter_break_fractions(basis, parameters, fractions, ctx)?;
         }
         PcurveGeometry::Offset(offset_pcurve) => {
             let basis = offset_pcurve.basis();
-            pcurve_parameter_break_fractions(basis, parameters, fractions);
+            pcurve_parameter_break_fractions(basis, parameters, fractions, ctx)?;
         }
         PcurveGeometry::Transformed(placed) => {
-            pcurve_parameter_break_fractions(placed.basis(), parameters, fractions);
+            pcurve_parameter_break_fractions(placed.basis(), parameters, fractions, ctx)?;
         }
         PcurveGeometry::Line(_)
         | PcurveGeometry::Circle(_)
@@ -4731,6 +4770,7 @@ fn pcurve_parameter_break_fractions(
         | PcurveGeometry::PolarHarmonic(_)
         | PcurveGeometry::SphericalGreatCircle(_) => {}
     }
+    Ok(())
 }
 
 fn pcurve_selection_seeds(
@@ -4738,8 +4778,9 @@ fn pcurve_selection_seeds(
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     surface: &SurfaceGeometry,
-) -> Vec<f64> {
-    let mut seeds = vec![0.0];
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<f64>, CodecError> {
+    let mut seeds = one_topology_vec(0.0, ctx, "step_pcurve_selection_seeds")?;
     if let Some([start, end]) = pcurve_selection_parameter_domain(geometry) {
         let at_fraction = |fraction: f64| {
             let ordinary = start + (end - start) * fraction;
@@ -4750,34 +4791,43 @@ fn pcurve_selection_seeds(
                     .map(cadmpeg_ir::scalar::FiniteReal::get)
             }
         };
-        seeds.push(start);
-        seeds.extend(at_fraction(0.5));
-        seeds.push(end);
+        push_topology_vec(&mut seeds, start, ctx, "step_pcurve_selection_seeds")?;
+        if let Some(seed) = at_fraction(0.5) {
+            push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
+        }
+        push_topology_vec(&mut seeds, end, ctx, "step_pcurve_selection_seeds")?;
         for step in 0..=PCURVE_ENDPOINT_GRID_DIVISIONS {
             let fraction = step as f64 / PCURVE_ENDPOINT_GRID_DIVISIONS as f64;
-            seeds.extend(at_fraction(fraction));
+            if let Some(seed) = at_fraction(fraction) {
+                push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
+            }
         }
-        let mut fractions = vec![0.0, 1.0];
-        pcurve_parameter_break_fractions(geometry, [start, end], &mut fractions);
+        let mut fractions = Vec::new();
+        for fraction in [0.0, 1.0] {
+            push_topology_vec(&mut fractions, fraction, ctx, "step_pcurve_selection_fractions")?;
+        }
+        pcurve_parameter_break_fractions(geometry, [start, end], &mut fractions, ctx)?;
         fractions.sort_by(f64::total_cmp);
         fractions.dedup_by(|left, right| *left == *right);
-        seeds.extend(
-            fractions
-                .iter()
-                .filter_map(|fraction| at_fraction(*fraction)),
-        );
-        seeds.extend(fractions.windows(2).filter_map(|window| {
+        for seed in fractions.iter().filter_map(|fraction| at_fraction(*fraction)) {
+            push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
+        }
+        for seed in fractions.windows(2).filter_map(|window| {
             let lower = window[0];
             let upper = window[1];
             at_fraction(lower + (upper - lower) * 0.5)
-        }));
+        }) {
+            push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
+        }
     }
     if pcurve_has_angular_parameterization(geometry) {
-        seeds.extend([
+        for seed in [
             std::f64::consts::FRAC_PI_2,
             std::f64::consts::PI,
             std::f64::consts::PI * 1.5,
-        ]);
+        ] {
+            push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
+        }
     }
     if let Some((origin, direction)) = geometry.line_parameters() {
         if let Some(domain) = surface
@@ -4787,7 +4837,7 @@ fn pcurve_selection_seeds(
             if direction.u != 0.0 {
                 for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
                     if let Some(coordinate) = periodic_seed_coordinate(domain, fraction) {
-                        seeds.push((coordinate - origin.u) / direction.u);
+                        push_topology_vec(&mut seeds, (coordinate - origin.u) / direction.u, ctx, "step_pcurve_selection_seeds")?;
                     }
                 }
             }
@@ -4799,7 +4849,7 @@ fn pcurve_selection_seeds(
             if direction.v != 0.0 {
                 for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
                     if let Some(coordinate) = periodic_seed_coordinate(domain, fraction) {
-                        seeds.push((coordinate - origin.v) / direction.v);
+                        push_topology_vec(&mut seeds, (coordinate - origin.v) / direction.v, ctx, "step_pcurve_selection_seeds")?;
                     }
                 }
             }
@@ -4808,27 +4858,25 @@ fn pcurve_selection_seeds(
         if let Some([u_lower, u_upper]) = u_domain {
             for boundary in [u_lower, u_lower.midpoint(u_upper), u_upper] {
                 if direction.u != 0.0 {
-                    seeds.push((boundary - origin.u) / direction.u);
+                    push_topology_vec(&mut seeds, (boundary - origin.u) / direction.u, ctx, "step_pcurve_selection_seeds")?;
                 }
             }
         }
         if let Some([v_lower, v_upper]) = v_domain {
             for boundary in [v_lower, v_lower.midpoint(v_upper), v_upper] {
                 if direction.v != 0.0 {
-                    seeds.push((boundary - origin.v) / direction.v);
+                    push_topology_vec(&mut seeds, (boundary - origin.v) / direction.v, ctx, "step_pcurve_selection_seeds")?;
                 }
             }
         }
     }
-    seeds
-        .into_iter()
-        .filter(|seed| seed.is_finite())
-        .fold(Vec::new(), |mut unique, seed| {
-            if !unique.contains(&seed) {
-                unique.push(seed);
-            }
-            unique
-        })
+    let mut unique = Vec::new();
+    for seed in seeds.into_iter().filter(|seed| seed.is_finite()) {
+        if !unique.contains(&seed) {
+            push_topology_vec(&mut unique, seed, ctx, "step_pcurve_unique_seeds")?;
+        }
+    }
+    Ok(unique)
 }
 
 fn periodic_seed_coordinate([lower, upper]: [f64; 2], fraction: f64) -> Option<f64> {
