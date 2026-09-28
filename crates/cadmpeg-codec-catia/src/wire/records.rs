@@ -753,10 +753,10 @@ pub(crate) fn family_frames_from_records(
     records: &[ConsolidatedRecord],
     family: ConsolidatedFamily,
     class: u8,
-) -> Vec<ConsolidatedFrame> {
+) -> impl Iterator<Item = ConsolidatedFrame> + '_ {
     records
         .iter()
-        .filter(|record| record.family == family && record.class == class)
+        .filter(move |record| record.family == family && record.class == class)
         .filter_map(|record| {
             Some(ConsolidatedFrame {
                 pos: record.byte_offset(),
@@ -765,13 +765,12 @@ pub(crate) fn family_frames_from_records(
                 header_token: record.header_token,
             })
         })
-        .collect()
 }
 
 #[cfg(test)]
 pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
     let records = consolidated_records(data);
-    family_frames_from_records(&records, ConsolidatedFamily::B, class)
+    family_frames_from_records(&records, ConsolidatedFamily::B, class).collect()
 }
 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded
@@ -906,7 +905,7 @@ mod tests {
         assert_eq!(records[1].class, 0x34);
         assert_eq!(records[1].source_range, spanning_start..bytes.len());
         assert!(records[1].range().is_none());
-        assert!(family_frames_from_records(&records, ConsolidatedFamily::A, 0x34).is_empty());
+        assert!(family_frames_from_records(&records, ConsolidatedFamily::A, 0x34).next().is_none());
     }
 
     #[test]
