@@ -2993,12 +2993,13 @@ pub(super) fn closed_sketch_profiles(
                     branched_line_profiles(ctx, &component, &edges, &edge_nodes, linear_tolerance)?;
                 if branched_profiles.is_empty() {
                     if let Some(profile) = tangent_nested_line_profile(
+                        ctx,
                         &component,
                         &edges,
                         &edge_nodes,
                         &adjacency,
                         linear_tolerance,
-                    ) {
+                    )? {
                         push_geometry_item(ctx, &mut profiles, profile,
                             "f3d closed sketch tangent profile")?;
                     }
@@ -3164,37 +3165,38 @@ fn branched_line_profiles(
 /// boundary with a tangent notch. Other tangent branch shapes remain
 /// unresolved rather than choosing a profile by geometry alone.
 fn tangent_nested_line_profile(
+    ctx: Option<&DecodeContext<'_>>,
     component: &[usize],
     edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
     edge_nodes: &[[usize; 2]],
     adjacency: &HashMap<usize, Vec<usize>>,
     tolerance: f64,
-) -> Option<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
+) -> Result<Option<Vec<cadmpeg_ir::sketches::SketchEntityUse>>, CodecError> {
     use cadmpeg_ir::sketches::SketchEntityUse;
 
-    let nodes = component
-        .iter()
-        .flat_map(|edge| edge_nodes[*edge])
-        .collect::<HashSet<_>>();
-    let junctions = nodes
-        .iter()
-        .copied()
-        .filter(|node| adjacency[node].len() > 2)
-        .collect::<Vec<_>>();
-    if junctions.len() != 1
-        || nodes
-            .iter()
-            .any(|node| !matches!(adjacency[node].len(), 2 | 4))
-    {
-        return None;
+    let mut junction = None;
+    for edge in component {
+        for node in edge_nodes[*edge] {
+            let degree = adjacency[&node].len();
+            if !matches!(degree, 2 | 4) {
+                return Ok(None);
+            }
+            if degree > 2 {
+                if junction.is_some_and(|existing| existing != node) {
+                    return Ok(None);
+                }
+                junction = Some(node);
+            }
+        }
     }
-    let junction = junctions[0];
+    let Some(junction) = junction else {
+        return Ok(None);
+    };
     if adjacency[&junction].len() != 4 {
-        return None;
+        return Ok(None);
     }
-    let directions = adjacency[&junction]
-        .iter()
-        .map(|edge| {
+    let mut directions = [(0.0, 0.0); 4];
+    for (index, edge) in adjacency[&junction].iter().enumerate() {
             let [start, end] = edges[*edge].1;
             let (from, to) = if edge_nodes[*edge][0] == junction {
                 (start, end)
@@ -3203,9 +3205,11 @@ fn tangent_nested_line_profile(
             };
             let (du, dv) = (to.u - from.u, to.v - from.v);
             let length = du.hypot(dv);
-            (length.is_finite() && length > tolerance).then_some((du / length, dv / length))
-        })
-        .collect::<Option<Vec<_>>>()?;
+            if !length.is_finite() || length <= tolerance {
+                return Ok(None);
+            }
+            directions[index] = (du / length, dv / length);
+    }
     let same_ray = |left: (f64, f64), right: (f64, f64)| {
         let dot = left.0 * right.0 + left.1 * right.1;
         let cross = left.0 * right.1 - left.1 * right.0;
@@ -3221,7 +3225,7 @@ fn tangent_nested_line_profile(
             .count()
             != 1
     }) {
-        return None;
+        return Ok(None);
     }
 
     let mut cycles = Vec::new();
@@ -3240,22 +3244,26 @@ fn tangent_nested_line_profile(
                 .filter(|edge| !used.contains(edge) && edge_nodes[*edge][0] == current);
             let edge = if cycle.is_empty() {
                 if edge_nodes[first_edge][0] != current {
-                    return None;
+                    return Ok(None);
                 }
                 first_edge
             } else {
-                let edge = candidates.next()?;
+                let Some(edge) = candidates.next() else {
+                    return Ok(None);
+                };
                 if candidates.next().is_some() {
                     cycle.clear();
                     break;
                 }
                 edge
             };
-            if !used.insert(edge) {
+            if !insert_geometry_set(ctx, &mut used, edge,
+                "f3d tangent profile used edge")? {
                 cycle.clear();
                 break;
             }
-            cycle.push(edge);
+            push_geometry_item(ctx, &mut cycle, edge,
+                "f3d tangent profile cycle edge")?;
             current = edge_nodes[edge][1];
             if current == junction {
                 break;
@@ -3268,36 +3276,33 @@ fn tangent_nested_line_profile(
                 .iter()
                 .any(|candidate: &Vec<usize>| candidate == &cycle)
         {
-            cycles.push(cycle);
+            push_geometry_item(ctx, &mut cycles, cycle,
+                "f3d tangent profile cycle")?;
         }
     }
     if cycles.len() != 2
         || cycles[0].iter().any(|edge| cycles[1].contains(edge))
         || cycles.iter().flatten().count() != component.len()
     {
-        return None;
+        return Ok(None);
     }
 
-    let cycle_points = |cycle: &[usize]| {
-        cycle
-            .iter()
-            .map(|edge| edges[*edge].1[0])
-            .collect::<Vec<_>>()
+    let cycle_points = |cycle: &[usize]| -> Result<Vec<Point2>, CodecError> {
+        let mut points = Vec::new();
+        for edge in cycle {
+            push_geometry_item(ctx, &mut points, edges[*edge].1[0],
+                "f3d tangent profile cycle point")?;
+        }
+        Ok(points)
     };
-    let points = cycles
-        .iter()
-        .map(|cycle| cycle_points(cycle))
-        .collect::<Vec<_>>();
-    let areas = points
-        .iter()
-        .map(|points| signed_polygon_area(points))
-        .collect::<Vec<_>>();
+    let points = [cycle_points(&cycles[0])?, cycle_points(&cycles[1])?];
+    let areas = [signed_polygon_area(&points[0]), signed_polygon_area(&points[1])];
     if areas
         .iter()
         .any(|area| !area.is_finite() || area.abs() <= tolerance * tolerance)
         || areas[0].signum() == areas[1].signum()
     {
-        return None;
+        return Ok(None);
     }
 
     let probe = |cycle: &[usize]| {
@@ -3320,55 +3325,42 @@ fn tangent_nested_line_profile(
     } else if areas[1].abs() > areas[0].abs() && contains(1, 0) {
         1
     } else {
-        return None;
+        return Ok(None);
     };
     let inner = 1 - outer;
 
-    let oriented_cycle = |index: usize, positive: bool| {
+    let mut profile = Vec::new();
+    for (index, positive) in [(outer, true), (inner, false)] {
         let reverse = (areas[index] > 0.0) != positive;
-        if reverse {
-            cycles[index]
-                .iter()
-                .rev()
-                .map(|edge| SketchEntityUse {
-                    entity: edges[*edge].0.id().clone(),
-                    reversed: true,
-                })
-                .collect::<Vec<_>>()
-        } else {
-            cycles[index]
-                .iter()
-                .map(|edge| SketchEntityUse {
-                    entity: edges[*edge].0.id().clone(),
-                    reversed: false,
-                })
-                .collect::<Vec<_>>()
+        for position in 0..cycles[index].len() {
+            let offset = if reverse { cycles[index].len() - 1 - position } else { position };
+            let edge = cycles[index][offset];
+            let entity = copy_geometry_id(ctx, edges[edge].0.id().as_str(),
+                "f3d tangent profile entity id")?;
+            push_geometry_item(ctx, &mut profile, SketchEntityUse { entity, reversed: reverse },
+                "f3d tangent profile member")?;
         }
-    };
-    let mut profile = oriented_cycle(outer, true);
-    profile.extend(oriented_cycle(inner, false));
-    let profile_points = profile
-        .iter()
-        .filter_map(|use_| {
-            let entity = edges
-                .iter()
-                .find(|(entity, _)| entity.id() == &use_.entity)?
-                .0;
-            match *entity.geometry.definition() {
-                cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end } => {
-                    Some(if use_.reversed {
-                        end.get()
-                    } else {
-                        start.get()
-                    })
-                }
-                _ => None,
-            }
-        })
-        .collect::<Vec<_>>();
-    (profile_points.len() == profile.len()
+    }
+    let mut profile_points = Vec::new();
+    for use_ in &profile {
+        let Some(entity) = edges
+            .iter()
+            .find(|(entity, _)| entity.id() == &use_.entity)
+            .map(|(entity, _)| entity)
+        else {
+            continue;
+        };
+        if let cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end } =
+            *entity.geometry.definition()
+        {
+            let point = if use_.reversed { end.get() } else { start.get() };
+            push_geometry_item(ctx, &mut profile_points, point,
+                "f3d tangent profile output point")?;
+        }
+    }
+    Ok((profile_points.len() == profile.len()
         && signed_polygon_area(&profile_points) > 2.0 * tolerance * tolerance)
-        .then_some(profile)
+        .then_some(profile))
 }
 
 pub(super) fn sketch_entity_endpoints(

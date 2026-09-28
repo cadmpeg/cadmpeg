@@ -1681,7 +1681,7 @@ fn closed_sketch_profile_id_copies_refuse_retained_limit() {
 
 mod predicates;
 
-macro_rules! branched_collection_refusal_test {
+macro_rules! geometry_collection_refusal_test {
     ($name:ident, $operation:literal) => {
         #[test]
         fn $name() {
@@ -1703,11 +1703,11 @@ macro_rules! branched_collection_refusal_test {
     };
 }
 
-branched_collection_refusal_test!(branched_profile_start_refuses_limit,
+geometry_collection_refusal_test!(branched_profile_start_refuses_limit,
     "f3d branched profile start half-edge");
-branched_collection_refusal_test!(branched_profile_member_refuses_limit,
+geometry_collection_refusal_test!(branched_profile_member_refuses_limit,
     "f3d branched profile member");
-branched_collection_refusal_test!(branched_profile_output_refuses_limit,
+geometry_collection_refusal_test!(branched_profile_output_refuses_limit,
     "f3d branched profile output");
 
 #[test]
@@ -1796,5 +1796,45 @@ fn branched_profile_entity_id_refuses_limit() {
             "synthetic:test:id#edge", "f3d branched profile entity id"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d branched profile entity id"
+    ));
+}
+
+geometry_collection_refusal_test!(tangent_profile_cycle_edge_refuses_limit,
+    "f3d tangent profile cycle edge");
+geometry_collection_refusal_test!(tangent_profile_cycle_refuses_limit,
+    "f3d tangent profile cycle");
+geometry_collection_refusal_test!(tangent_profile_cycle_point_refuses_limit,
+    "f3d tangent profile cycle point");
+geometry_collection_refusal_test!(tangent_profile_member_refuses_limit,
+    "f3d tangent profile member");
+geometry_collection_refusal_test!(tangent_profile_output_point_refuses_limit,
+    "f3d tangent profile output point");
+
+#[test]
+fn tangent_profile_used_edge_refuses_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut items = std::collections::HashSet::new();
+    assert!(matches!(
+        super::insert_geometry_set(Some(&ctx), &mut items, 1,
+            "f3d tangent profile used edge"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d tangent profile used edge"
+    ));
+}
+
+#[test]
+fn tangent_profile_entity_id_refuses_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        super::copy_geometry_id::<SketchEntityId>(Some(&ctx),
+            "synthetic:test:id#edge", "f3d tangent profile entity id"),
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d tangent profile entity id"
     ));
 }
