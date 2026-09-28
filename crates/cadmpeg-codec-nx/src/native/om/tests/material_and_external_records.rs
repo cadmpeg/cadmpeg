@@ -386,18 +386,34 @@ fn native_retains_rmfastload_table_and_member_words() {
     assert_eq!(object_ids[49].value, 50);
     assert_eq!(object_ids[49].raw(), 50u32.to_le_bytes());
     assert_eq!(table.members.as_slice()[49], object_ids[49].id);
-    assert_eq!(
-        super::super::rmfastload_target_object_id(&object_ids, 0),
-        Some(object_ids[0].id.clone())
-    );
-    assert_eq!(
-        super::super::rmfastload_target_object_id(&object_ids, 49),
-        Some(object_ids[49].id.clone())
-    );
-    assert_eq!(
-        super::super::rmfastload_target_object_id(&object_ids, 50),
-        None
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        assert_eq!(
+            super::super::rmfastload_target_object_id(ctx, &object_ids, 0).unwrap(),
+            Some(object_ids[0].id.clone())
+        );
+        assert_eq!(
+            super::super::rmfastload_target_object_id(ctx, &object_ids, 49).unwrap(),
+            Some(object_ids[49].id.clone())
+        );
+        assert_eq!(
+            super::super::rmfastload_target_object_id(ctx, &object_ids, 50).unwrap(),
+            None
+        );
+    });
+}
+
+#[test]
+fn rmfastload_target_identity_refuses_retained_limit() {
+    let (_, object_ids) = native_fastload_result(DecodePolicy::service())
+        .expect("RMFastLoad input is valid")
+        .expect("RMFastLoad table is present");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::rmfastload_target_object_id(&ctx, &object_ids, 0).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes));
 }
 
 #[test]

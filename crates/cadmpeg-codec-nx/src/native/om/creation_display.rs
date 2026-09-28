@@ -98,7 +98,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
                 continue;
             }
             let target_object_id =
-                rmfastload_target_object_id(object_ids, row.target_index().atom.value());
+                rmfastload_target_object_id(ctx, object_ids, row.target_index().atom.value())?;
             let Some(row) = row.into_absolute(source_base) else {
                 continue;
             };
@@ -116,7 +116,7 @@ pub(in crate::native) fn rm_creation_display_data_relations(
                 continue;
             }
             let target_object_id =
-                rmfastload_target_object_id(object_ids, row.target_index().atom.value());
+                rmfastload_target_object_id(ctx, object_ids, row.target_index().atom.value())?;
             let Some(row) = row.into_absolute(source_base) else {
                 continue;
             };

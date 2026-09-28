@@ -4358,9 +4358,23 @@ pub(super) fn part_color_tables(
     Ok((tables, definitions))
 }
 
-fn rmfastload_target_object_id(object_ids: &[RmFastLoadObjectId], target: u32) -> Option<String> {
-    let target = usize::try_from(target).ok()?;
-    object_ids.get(target).map(|object_id| object_id.id.clone())
+fn rmfastload_target_object_id(
+    ctx: &DecodeContext<'_>,
+    object_ids: &[RmFastLoadObjectId],
+    target: u32,
+) -> Result<Option<String>, CodecError> {
+    let Ok(target) = usize::try_from(target) else {
+        return Ok(None);
+    };
+    let Some(object_id) = object_ids.get(target) else {
+        return Ok(None);
+    };
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(object_id.id.len()), "retain NX RMFastLoad target identity")?;
+    let mut id = String::new();
+    id.try_reserve_exact(object_id.id.len())
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX RMFastLoad target identity", 0, 1))?;
+    id.push_str(&object_id.id);
+    Ok(Some(id))
 }
 
 /// Resolve complete composite column-index tables atomically by section.
