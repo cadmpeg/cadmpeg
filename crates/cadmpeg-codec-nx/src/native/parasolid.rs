@@ -1105,6 +1105,59 @@ fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEvents {
     .expect("bounded test deltas")
 }
 
+/// Format one retained deltas event identity after charging its exact length.
+fn deltas_event_id(
+    ctx: &DecodeContext<'_>,
+    stream_ordinal: usize,
+    kind: &'static str,
+    first: usize,
+    second: Option<u32>,
+) -> Result<String, CodecError> {
+    let digits = |value: u64| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+    let length = "nx:s".len()
+        .checked_add(digits(cadmpeg_core::decode::u64_from_index(stream_ordinal)))
+        .and_then(|length| length.checked_add(1 + kind.len() + 1))
+        .and_then(|length| length.checked_add(digits(cadmpeg_core::decode::u64_from_index(first))))
+        .and_then(|length| second.map_or(Some(length), |value| length.checked_add(1 + digits(u64::from(value)))))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event identity", 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX deltas event identity")?;
+    let mut id = String::new();
+    id.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX deltas event identity", 0, 1))?;
+    write!(&mut id, "nx:s{stream_ordinal}:{kind}#{first}")
+        .map_err(|_| ctx.refuse_codec_limit("write NX deltas event identity", 0, 1))?;
+    if let Some(value) = second {
+        write!(&mut id, "-{value}")
+            .map_err(|_| ctx.refuse_codec_limit("write NX deltas event identity", 0, 1))?;
+    }
+    Ok(id)
+}
+
+fn push_deltas_event<T>(ctx: &DecodeContext<'_>, output: &mut Vec<T>, event: T) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "NX deltas events")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), "NX deltas event")?;
+    output.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX deltas events", 0, 1))?;
+    output.push(event);
+    Ok(())
+}
+
+fn sort_deltas_events<T>(
+    ctx: &DecodeContext<'_>,
+    events: &mut Vec<T>,
+    id: impl Fn(&T) -> &str,
+) -> Result<(), CodecError> {
+    let count = events.len();
+    let scratch = count.checked_mul(std::mem::size_of::<T>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event sort scratch", 0, 1))?;
+    let _sorting = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(scratch), "NX deltas event sort scratch")?;
+    let work = count.checked_mul(count.checked_ilog2().map_or(1, |digits| digits as usize + 1))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX deltas event sort work", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "NX deltas event sort work")?;
+    events.sort_by(|left, right| id(left).cmp(id(right)));
+    Ok(())
+}
+
 /// Retain deltas events from censuses produced by the shared decode substrate.
 ///
 /// The function consumes the census vector after semantic construction has
@@ -1136,6 +1189,8 @@ pub(super) fn parasolid_deltas_events_with_censuses(
         if stream.kind() != crate::parasolid::StreamKind::Deltas {
             continue;
         }
+        let stream_ordinal_u32 = u32::try_from(stream_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX deltas stream ordinal", 0, 1))?;
         let census = match delta_censuses
             .get_mut(stream_ordinal)
             .and_then(Option::take)
@@ -1147,81 +1202,69 @@ pub(super) fn parasolid_deltas_events_with_censuses(
         for (covered_start, covered_end) in census.covered_spans(ctx)? {
             if residual_start < covered_start {
                 push_deltas_residual_span(
+                    ctx,
                     &mut events.residual_spans,
                     stream_ordinal,
                     &stream.inflated,
                     residual_start,
                     covered_start,
-                );
+                )?;
             }
             residual_start = residual_start.max(covered_end);
         }
         if residual_start < stream.inflated.len() {
             push_deltas_residual_span(
+                ctx,
                 &mut events.residual_spans,
                 stream_ordinal,
                 &stream.inflated,
                 residual_start,
                 stream.inflated.len(),
-            );
+            )?;
         }
         let census = census.into_events();
         if let Some(header) = census.transmit_header {
             let bytes = &stream.inflated[..header.end];
-            events.transmit_headers.push(ParasolidDeltasTransmitHeader {
-                id: format!("nx:s{stream_ordinal}:deltas-transmit-header#0"),
-                stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.transmit_headers, ParasolidDeltasTransmitHeader {
+                id: deltas_event_id(ctx, stream_ordinal, "deltas-transmit-header", 0, None)?,
+                stream_ordinal: stream_ordinal_u32,
                 state: header.state,
-                byte_len: bytes.len() as u64,
+                byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                 sha256: crate::native::hex::Sha256Hex::digest(bytes),
-            });
+            })?;
         }
         if let Some(trailer) = census.terminal_null_references {
-            events
-                .terminal_null_references
-                .push(ParasolidDeltasTerminalNullReferences {
-                    id: format!(
-                        "nx:s{stream_ordinal}:deltas-terminal-null-references#{}",
-                        trailer.offset()
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.terminal_null_references, ParasolidDeltasTerminalNullReferences {
+                    id: deltas_event_id(ctx, stream_ordinal, "deltas-terminal-null-references", trailer.offset(), None)?,
+                    stream_ordinal: stream_ordinal_u32,
                     form: trailer.form(),
-                    inflated_offset: trailer.offset() as u64,
-                });
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(trailer.offset()),
+                })?;
         }
         for record in census.records {
-            events.records.push(ParasolidDeltasRecord {
-                id: format!(
-                    "nx:s{stream_ordinal}:deltas-record#{}-{}",
-                    record.offset, record.xmt
-                ),
-                stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.records, ParasolidDeltasRecord {
+                id: deltas_event_id(ctx, stream_ordinal, "deltas-record", record.offset, Some(record.xmt))?,
+                stream_ordinal: stream_ordinal_u32,
                 family: record.family,
                 xmt: record.xmt,
-                byte_len: (record.end - record.offset) as u64,
-                inflated_offset: record.offset as u64,
-            });
+                byte_len: cadmpeg_core::decode::u64_from_index(record.end - record.offset),
+                inflated_offset: cadmpeg_core::decode::u64_from_index(record.offset),
+            })?;
         }
         for tombstone in census.tombstones {
-            events.tombstones.push(ParasolidDeltasTombstone {
-                id: format!(
-                    "nx:s{stream_ordinal}:deltas-tombstone#{}-{}",
-                    tombstone.offset, tombstone.xmt
-                ),
-                stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.tombstones, ParasolidDeltasTombstone {
+                id: deltas_event_id(ctx, stream_ordinal, "deltas-tombstone", tombstone.offset, Some(tombstone.xmt))?,
+                stream_ordinal: stream_ordinal_u32,
                 kind: tombstone.kind,
                 xmt: tombstone.xmt,
-                inflated_offset: tombstone.offset as u64,
-            });
+                inflated_offset: cadmpeg_core::decode::u64_from_index(tombstone.offset),
+            })?;
         }
         for revision in census.body_revisions {
             let state_tail = &stream.inflated[revision.prefix_end..revision.end];
-            events.body_revisions.push(ParasolidDeltasBodyRevision {
-                id: format!(
-                    "nx:s{stream_ordinal}:deltas-body-revision#{}-{}",
-                    revision.offset, revision.node_id
-                ),
-                stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.body_revisions, ParasolidDeltasBodyRevision {
+                id: deltas_event_id(ctx, stream_ordinal, "deltas-body-revision", revision.offset, Some(revision.node_id))?,
+                stream_ordinal: stream_ordinal_u32,
                 xmt: revision.xmt,
                 node_id: revision.node_id,
                 references: revision.references,
@@ -1230,217 +1273,145 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     state_tail,
                 ),
                 state_tail_sha256: crate::native::hex::Sha256Hex::digest(state_tail),
-                inflated_offset: revision.offset as u64,
-            });
+                inflated_offset: cadmpeg_core::decode::u64_from_index(revision.offset),
+            })?;
         }
         for tail in census.term_use_numeric_tails {
-            events
-                .term_use_numeric_tails
-                .push(ParasolidDeltasTermUseNumericTail {
-                    id: format!(
-                        "nx:s{stream_ordinal}:deltas-term-use-tail#{}-{}",
-                        tail.offset(),
-                        tail.term_use_xmt
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.term_use_numeric_tails, ParasolidDeltasTermUseNumericTail {
+                    id: deltas_event_id(ctx, stream_ordinal, "deltas-term-use-tail", tail.offset(), Some(tail.term_use_xmt))?,
+                    stream_ordinal: stream_ordinal_u32,
                     term_use_xmt: tail.term_use_xmt,
-                    inflated_offset: tail.offset() as u64,
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(tail.offset()),
                     values: tail.into_values(),
-                });
+                })?;
         }
         for lane in census.tagged_reference_lanes {
             let bytes = &stream.inflated[lane.offset..lane.end];
-            events
-                .tagged_reference_lanes
-                .push(ParasolidDeltasTaggedReferenceLane {
-                    id: format!(
-                        "nx:s{stream_ordinal}:deltas-tagged-reference-lane#{}",
-                        lane.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.tagged_reference_lanes, ParasolidDeltasTaggedReferenceLane {
+                    id: deltas_event_id(ctx, stream_ordinal, "deltas-tagged-reference-lane", lane.offset, None)?,
+                    stream_ordinal: stream_ordinal_u32,
                     references: lane.references,
-                    byte_len: bytes.len() as u64,
+                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
-                    inflated_offset: lane.offset as u64,
-                });
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(lane.offset),
+                })?;
         }
         for map in census.reference_type_maps {
             let bytes = &stream.inflated[map.offset..map.end];
-            events
-                .reference_type_maps
-                .push(ParasolidDeltasReferenceTypeMap {
-                    id: format!(
-                        "nx:s{stream_ordinal}:deltas-reference-type-map#{}",
-                        map.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.reference_type_maps, ParasolidDeltasReferenceTypeMap {
+                    id: deltas_event_id(ctx, stream_ordinal, "deltas-reference-type-map", map.offset, None)?,
+                    stream_ordinal: stream_ordinal_u32,
                     entries: map.entries,
                     target_kind: map.target_kind,
-                    byte_len: bytes.len() as u64,
+                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
-                    inflated_offset: map.offset as u64,
-                });
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(map.offset),
+                })?;
         }
         for packet in census.reference_state_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
-            events
-                .reference_state_packets
-                .push(ParasolidDeltasReferenceStatePacket {
-                    id: format!(
-                        "nx:s{stream_ordinal}:deltas-reference-state#{}",
-                        packet.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.reference_state_packets, ParasolidDeltasReferenceStatePacket {
+                    id: deltas_event_id(ctx, stream_ordinal, "deltas-reference-state", packet.offset, None)?,
+                    stream_ordinal: stream_ordinal_u32,
                     frames: packet.frames,
                     terminal: packet.terminal,
-                    byte_len: bytes.len() as u64,
+                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
-                    inflated_offset: packet.offset as u64,
-                });
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
+                })?;
         }
         for preamble in census.schema_reference_preambles {
             let bytes = &stream.inflated[preamble.offset..preamble.end];
-            events
-                .schema_reference_preambles
-                .push(ParasolidDeltasSchemaReferencePreamble {
-                    id: format!(
-                        "nx:s{stream_ordinal}:deltas-schema-reference-preamble#{}",
-                        preamble.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.schema_reference_preambles, ParasolidDeltasSchemaReferencePreamble {
+                    id: deltas_event_id(ctx, stream_ordinal, "deltas-schema-reference-preamble", preamble.offset, None)?,
+                    stream_ordinal: stream_ordinal_u32,
                     state: preamble.state,
-                    byte_len: bytes.len() as u64,
+                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
-                    inflated_offset: preamble.offset as u64,
-                });
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(preamble.offset),
+                })?;
         }
         for packet in census.reference_marker_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
-            events
-                .reference_marker_packets
-                .push(ParasolidDeltasReferenceMarkerPacket {
-                    id: format!(
-                        "nx:s{stream_ordinal}:deltas-reference-marker#{}",
-                        packet.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.reference_marker_packets, ParasolidDeltasReferenceMarkerPacket {
+                    id: deltas_event_id(ctx, stream_ordinal, "deltas-reference-marker", packet.offset, None)?,
+                    stream_ordinal: stream_ordinal_u32,
                     reference: packet.reference,
                     marker: packet.marker,
-                    byte_len: bytes.len() as u64,
+                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
-                    inflated_offset: packet.offset as u64,
-                });
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
+                })?;
         }
         for packet in census.type_150_state_packets {
             let bytes = &stream.inflated[packet.offset..packet.end];
-            events
-                .type_150_state_packets
-                .push(ParasolidDeltasType150StatePacket {
-                    id: format!(
-                        "nx:s{stream_ordinal}:deltas-type-150-state#{}",
-                        packet.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.type_150_state_packets, ParasolidDeltasType150StatePacket {
+                    id: deltas_event_id(ctx, stream_ordinal, "deltas-type-150-state", packet.offset, None)?,
+                    stream_ordinal: stream_ordinal_u32,
                     state: packet.state,
-                    byte_len: bytes.len() as u64,
+                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
-                    inflated_offset: packet.offset as u64,
-                });
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
+                })?;
         }
         for declaration in census.inline_schema_declarations {
             let bytes = &stream.inflated[declaration.offset..declaration.end];
-            events
-                .inline_schema_declarations
-                .push(ParasolidDeltasInlineSchemaDeclaration {
-                    id: format!(
-                        "nx:s{stream_ordinal}:deltas-inline-schema#{}",
-                        declaration.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.inline_schema_declarations, ParasolidDeltasInlineSchemaDeclaration {
+                    id: deltas_event_id(ctx, stream_ordinal, "deltas-inline-schema", declaration.offset, None)?,
+                    stream_ordinal: stream_ordinal_u32,
                     fields: declaration.fields,
-                    byte_len: bytes.len() as u64,
+                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
-                    inflated_offset: declaration.offset as u64,
-                });
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(declaration.offset),
+                })?;
         }
         for state in census.inline_body_states {
             let bytes = &stream.inflated[state.offset..state.end];
-            events
-                .inline_body_states
-                .push(ParasolidDeltasInlineBodyState {
-                    id: format!(
-                        "nx:s{stream_ordinal}:deltas-inline-body-state#{}",
-                        state.offset
-                    ),
-                    stream_ordinal: stream_ordinal as u32,
+            push_deltas_event(ctx, &mut events.inline_body_states, ParasolidDeltasInlineBodyState {
+                    id: deltas_event_id(ctx, stream_ordinal, "deltas-inline-body-state", state.offset, None)?,
+                    stream_ordinal: stream_ordinal_u32,
                     fields: state.fields,
-                    byte_len: bytes.len() as u64,
+                    byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
                     sha256: crate::native::hex::Sha256Hex::digest(bytes),
-                    inflated_offset: state.offset as u64,
-                });
+                    inflated_offset: cadmpeg_core::decode::u64_from_index(state.offset),
+                })?;
         }
     }
-    events
-        .transmit_headers
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .terminal_null_references
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events.records.sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .tombstones
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .body_revisions
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .term_use_numeric_tails
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .tagged_reference_lanes
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .reference_type_maps
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .reference_state_packets
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .schema_reference_preambles
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .reference_marker_packets
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .type_150_state_packets
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .inline_schema_declarations
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .inline_body_states
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    events
-        .residual_spans
-        .sort_by(|left, right| left.id.cmp(&right.id));
+    sort_deltas_events(ctx, &mut events.transmit_headers, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.terminal_null_references, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.records, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.tombstones, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.body_revisions, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.term_use_numeric_tails, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.tagged_reference_lanes, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.reference_type_maps, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.reference_state_packets, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.schema_reference_preambles, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.reference_marker_packets, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.type_150_state_packets, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.inline_schema_declarations, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.inline_body_states, |value| value.id.as_str())?;
+    sort_deltas_events(ctx, &mut events.residual_spans, |value| value.id.as_str())?;
     Ok(events)
 }
 
 fn push_deltas_residual_span(
+    ctx: &DecodeContext<'_>,
     residual_spans: &mut Vec<ParasolidDeltasResidualSpan>,
     stream_ordinal: usize,
     bytes: &[u8],
     start: usize,
     end: usize,
-) {
+) -> Result<(), CodecError> {
     let residual = &bytes[start..end];
-    residual_spans.push(ParasolidDeltasResidualSpan {
-        id: format!("nx:s{stream_ordinal}:deltas-residual#{start}"),
-        stream_ordinal: stream_ordinal as u32,
-        byte_len: residual.len() as u64,
+    push_deltas_event(ctx, residual_spans, ParasolidDeltasResidualSpan {
+        id: deltas_event_id(ctx, stream_ordinal, "deltas-residual", start, None)?,
+        stream_ordinal: u32::try_from(stream_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("NX deltas residual stream ordinal", 0, 1))?,
+        byte_len: cadmpeg_core::decode::u64_from_index(residual.len()),
         sha256: crate::native::hex::Sha256Hex::digest(residual),
-        inflated_offset: start as u64,
-    });
+        inflated_offset: cadmpeg_core::decode::u64_from_index(start),
+    })
 }
 
 /// Shared skeleton for Parasolid record families read from the cached per-stream
@@ -4155,6 +4126,7 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::CodecError;
     use crate::test_support::test_bytes::put_ref;
     use crate::test_support::test_prt::prt_with_partition;
     use crate::test_support::test_streams::topology_partition_stream;
@@ -4693,6 +4665,60 @@ mod tests {
         bytes.extend_from_slice(&1.25f64.to_be_bytes());
         bytes.extend_from_slice(&2.5f64.to_be_bytes());
         bytes
+    }
+
+    fn deltas_event_limit_error(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> CodecError {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let streams = [Stream {
+            file_offset: 0,
+            consumed: 0,
+            inflated: deltas_type_45(10),
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
+        }];
+        let scan_arena = DecodeArena::new();
+        let scan_policy = DecodePolicy::service();
+        let (scan_ctx, _) = DecodeContext::from_root_bytes(&streams[0].inflated, &scan_arena, &scan_policy).unwrap();
+        let census = crate::deltas::census::walk(&scan_ctx, &streams[0].inflated).unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        super::parasolid_deltas_events_with_censuses(&ctx, &streams, vec![Some(census)])
+            .err()
+            .expect("deltas event limit refusal")
+    }
+
+    #[test]
+    fn deltas_event_route_refuses_collection_limit() {
+        let error = deltas_event_limit_error(|policy| policy.limits.max_collection_items = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn deltas_event_route_refuses_retained_limit() {
+        let error = deltas_event_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn deltas_event_route_refuses_scoped_limit() {
+        let error = deltas_event_limit_error(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+    }
+
+    #[test]
+    fn deltas_event_route_refuses_work_limit() {
+        let error = deltas_event_limit_error(|policy| policy.limits.max_work_units = 0);
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
 
     #[test]
