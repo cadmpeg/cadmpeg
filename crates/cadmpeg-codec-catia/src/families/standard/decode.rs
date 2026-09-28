@@ -3908,7 +3908,7 @@ pub(super) fn standard_object_evidence_from_streams(
     for stream in populations {
         let frames = crate::families::b5::graph::collect_object_stream_frames(ctx, &stream)?;
         let face_surfaces =
-            crate::families::b5::graph::face_surface_references_from_frames(&stream, &frames);
+            crate::families::b5::graph::face_surface_references_from_frames(ctx, &stream, &frames)?;
         let mut surface_bindings = Vec::new();
         for binding in tags
             .iter()
@@ -3993,8 +3993,8 @@ pub(super) fn standard_object_evidence_from_streams(
             }
         }
         let edge_pcurves = crate::families::b5::graph::edge_support_pcurve_references_from_frames(
-            &stream, edge_tags, &frames,
-        );
+            ctx, &stream, edge_tags, &frames,
+        )?;
         let mut requested_pcurves = HashSet::new();
         for &pcurve_id in edge_pcurves.values().flatten() {
             crate::resource::insert_set(ctx, &mut requested_pcurves, pcurve_id,
@@ -5141,10 +5141,16 @@ fn attach_standard_topology(
         .map_err(StandardTopologyError::Resource)?;
     let topology_graph = crate::families::b5::graph::parse(ctx, source, refusal)
         .map_err(StandardTopologyError::Resource)?;
-    let mut native_edges = topology_graph
-        .as_ref()
-        .and_then(crate::families::b5::graph::B5Graph::referenced_edge_vertex_references)
-        .unwrap_or_else(|| crate::families::b5::graph::edge_vertex_references(source));
+    let native_edges = match topology_graph.as_ref() {
+        Some(graph) => graph.referenced_edge_vertex_references(ctx)
+            .map_err(StandardTopologyError::Resource)?,
+        None => None,
+    };
+    let mut native_edges = match native_edges {
+        Some(edges) => edges,
+        None => crate::families::b5::graph::edge_vertex_references(ctx, source)
+            .map_err(StandardTopologyError::Resource)?,
+    };
     let e5_topology = match crate::container::e5_record_stream(source) {
         Some(range) => crate::families::e5::graph::parse_topology(ctx, &source[range])
             .map_err(StandardTopologyError::Resource)?,

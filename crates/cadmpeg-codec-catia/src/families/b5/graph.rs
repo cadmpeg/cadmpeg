@@ -125,25 +125,21 @@ impl B5Graph {
     #[must_use]
     pub(in crate::families) fn referenced_edge_vertex_references(
         &self,
-    ) -> Option<BTreeMap<u32, [u32; 2]>> {
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<BTreeMap<u32, [u32; 2]>>, CodecError> {
         if !self.complete {
-            return None;
+            return Ok(None);
         }
-        let referenced_edges = self
-            .loops
-            .values()
-            .flat_map(|loop_| loop_.members.iter().map(|member| member.edge))
-            .collect::<HashSet<_>>();
-        Some(
-            referenced_edges
-                .into_iter()
-                .filter_map(|object_id| {
-                    self.edges
-                        .get(&object_id)
-                        .map(|edge| (object_id, edge.vertices))
-                })
-                .collect(),
-        )
+        let mut referenced = BTreeMap::new();
+        for loop_ in self.loops.values() {
+            for member in &loop_.members {
+                if let Some(edge) = self.edges.get(&member.edge) {
+                    crate::resource::insert_btree_map(ctx, &mut referenced,
+                        member.edge, edge.vertices, "catia_b5_referenced_edge_vertices")?;
+                }
+            }
+        }
+        Ok(Some(referenced))
     }
 }
 
@@ -760,14 +756,22 @@ pub(in crate::families) struct B5Face {
 }
 
 /// Count the face incidences for each object-stream loop.
-pub(super) fn face_loop_owner_counts(faces: &[B5Face]) -> HashMap<u32, usize> {
+pub(super) fn face_loop_owner_counts(
+    ctx: &DecodeContext<'_>,
+    faces: &[B5Face],
+) -> Result<HashMap<u32, usize>, CodecError> {
     let mut owners = HashMap::new();
     for face in faces {
         for &loop_id in &face.loops {
-            *owners.entry(loop_id).or_insert(0) += 1;
+            if let Some(count) = owners.get_mut(&loop_id) {
+                *count += 1;
+            } else {
+                crate::resource::insert_map(ctx, &mut owners, loop_id, 1,
+                    "catia_b5_face_loop_owners")?;
+            }
         }
     }
-    owners
+    Ok(owners)
 }
 
 /// One structurally complete class-`5f` face reference production.
@@ -1406,7 +1410,7 @@ fn parse_from_records_with_class21(
         .collect();
     loops.retain(|loop_id, _| referenced_loops.contains(loop_id));
     let complete = faces.len() == source_face_count
-        && face_loop_owner_counts(&faces)
+        && face_loop_owner_counts(ctx, &faces)?
             .values()
             .all(|count| *count == 1)
         && referenced_loops.iter().all(|loop_id| {
@@ -1779,8 +1783,10 @@ fn parse_a8_class21_pcurve(
 
 /// Return native start/end vertex identities for every framed `b5 03 5e`
 /// edge, keyed by the edge object id.
-#[must_use]
-pub(in crate::families) fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32, [u32; 2]> {
+pub(in crate::families) fn edge_vertex_references(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<BTreeMap<u32, [u32; 2]>, CodecError> {
     let mut edges = BTreeMap::new();
     let mut ambiguous = HashSet::new();
     for frame in object_stream_frames(bytes) {
@@ -1792,21 +1798,23 @@ pub(in crate::families) fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32,
             family: 0xb5,
             class: 0x5e,
             object_id: frame.object_id,
-            payload: bytes[frame.start + 8..frame.end].to_vec(),
+            payload: crate::resource::copy_retained_slice(ctx,
+                &bytes[frame.start + 8..frame.end], "catia_b5_edge_vertex_record_payload")?,
         };
         let Some(edge) = parse_edge(&record) else {
             continue;
         };
         let vertices = edge.vertices;
-        if edges
-            .insert(frame.object_id, vertices)
+        if crate::resource::insert_btree_map(ctx, &mut edges, frame.object_id, vertices,
+            "catia_b5_edge_vertex_references")?
             .is_some_and(|existing| existing != vertices)
         {
-            ambiguous.insert(frame.object_id);
+            crate::resource::insert_set(ctx, &mut ambiguous, frame.object_id,
+                "catia_b5_ambiguous_edge_vertices")?;
         }
     }
     edges.retain(|object_id, _| !ambiguous.contains(object_id));
-    edges
+    Ok(edges)
 }
 
 /// Return the ordered pcurve pair owned by each requested native edge's
@@ -1818,29 +1826,41 @@ fn edge_support_pcurve_references(
     edge_ids: &HashSet<u32>,
 ) -> BTreeMap<u32, [u32; 2]> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    edge_support_pcurve_references_from_frames(bytes, edge_ids, &frames)
+    crate::test_support::with_service_context(|ctx| {
+        edge_support_pcurve_references_from_frames(ctx, bytes, edge_ids, &frames)
+    }).expect("service budget")
 }
 
 pub(in crate::families) fn edge_support_pcurve_references_from_frames(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_ids: &HashSet<u32>,
     frames: &[ObjectFrame],
-) -> BTreeMap<u32, [u32; 2]> {
+) -> Result<BTreeMap<u32, [u32; 2]>, CodecError> {
     let mut edge_wrappers = HashMap::<u32, Option<u32>>::new();
     let mut wrappers = HashMap::<u32, Option<[u32; 2]>>::new();
     for frame in frames {
+        if !((frame.class == 0x5e && edge_ids.contains(&frame.object_id))
+            || (frame.family == 0xb5 && frame.class == 0x23))
+        {
+            continue;
+        }
         let header = if frame.family == 0xa8 { 11 } else { 8 };
         let record = B5Record {
             offset: frame.start,
             family: frame.family,
             class: frame.class,
             object_id: frame.object_id,
-            payload: bytes[frame.start + header..frame.end].to_vec(),
+            payload: crate::resource::copy_retained_slice(ctx,
+                &bytes[frame.start + header..frame.end],
+                "catia_b5_edge_support_record_payload")?,
         };
         if frame.class == 0x5e && edge_ids.contains(&frame.object_id) {
             let Some(wrapper) = parse_edge(&record).map(|edge| edge.support) else {
                 continue;
             };
+            crate::resource::admit_map_entry(ctx, &mut edge_wrappers, &frame.object_id,
+                "catia_b5_edge_support_wrappers")?;
             edge_wrappers
                 .entry(frame.object_id)
                 .and_modify(|stored| {
@@ -1857,6 +1877,8 @@ pub(in crate::families) fn edge_support_pcurve_references_from_frames(
                 continue;
             };
             let references = [first, second];
+            crate::resource::admit_map_entry(ctx, &mut wrappers, &frame.object_id,
+                "catia_b5_pcurve_support_wrappers")?;
             wrappers
                 .entry(frame.object_id)
                 .and_modify(|stored| {
@@ -1867,10 +1889,17 @@ pub(in crate::families) fn edge_support_pcurve_references_from_frames(
                 .or_insert(Some(references));
         }
     }
-    edge_wrappers
-        .into_iter()
-        .filter_map(|(edge, wrapper)| Some((edge, *wrappers.get(&wrapper?)?.as_ref()?)))
-        .collect()
+    let mut resolved = BTreeMap::new();
+    for (edge, wrapper) in edge_wrappers {
+        if let Some(references) = wrapper
+            .and_then(|wrapper| wrappers.get(&wrapper))
+            .and_then(Option::as_ref)
+        {
+            crate::resource::insert_btree_map(ctx, &mut resolved, edge, *references,
+                "catia_b5_edge_support_pcurves")?;
+        }
+    }
+    Ok(resolved)
 }
 
 pub(in crate::families) fn targeted_surfaces_from_frames(
@@ -6134,13 +6163,16 @@ pub(in crate::families) fn typed_vertex_incidence_rosters_from_records(
 #[cfg(test)]
 fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     let frames = object_stream_frames(bytes).collect::<Vec<_>>();
-    face_surface_references_from_frames(bytes, &frames)
+    crate::test_support::with_service_context(|ctx| {
+        face_surface_references_from_frames(ctx, bytes, &frames)
+    }).expect("service budget")
 }
 
 pub(in crate::families) fn face_surface_references_from_frames(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     frames: &[ObjectFrame],
-) -> Vec<(u32, u32)> {
+) -> Result<Vec<(u32, u32)>, CodecError> {
     let mut references = Vec::new();
     for frame in frames {
         if frame.family != 0xb5 || frame.class != 0x5f {
@@ -6157,9 +6189,10 @@ pub(in crate::families) fn face_surface_references_from_frames(
         let Some(surface) = wire::tokens::object_ref(payload, &mut position, true) else {
             continue;
         };
-        references.push((frame.object_id, surface));
+        crate::resource::push(ctx, &mut references, (frame.object_id, surface),
+            "catia_b5_face_surface_references")?;
     }
-    references
+    Ok(references)
 }
 
 /// Return positive face-to-edge ownership from structurally complete face and
