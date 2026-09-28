@@ -351,16 +351,15 @@ pub(crate) fn decode_sketch_placements(
             })
             .map(|candidate| candidate.byte_offset)
             .min();
-        let matching_scopes = scopes
+        let mut matching_scopes = scopes
             .iter()
             .filter(|scope| {
                 design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
                     && native_stream(&scope.id) == Some(stream)
                     && scope.byte_offset() > entity.byte_offset
                     && next_entity_offset.is_none_or(|end| scope.byte_offset() < end)
-            })
-            .collect::<Vec<_>>();
-        if let [scope] = matching_scopes.as_slice() {
+            });
+        if let (Some(scope), None) = (matching_scopes.next(), matching_scopes.next()) {
             placement.scope_record_index = Some(scope.record_index);
         }
         placement.id = ids::native_design_sketch_placement_id(entry_name, placement.byte_offset());
