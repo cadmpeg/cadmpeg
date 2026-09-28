@@ -8708,6 +8708,36 @@ fn unique_offset_data_block(
     ))
 }
 
+fn charged_unique_offset_data_block(
+    ctx: &DecodeContext<'_>,
+    indexed: &[(
+        crate::container::entry_ref::EntryRef<'_>,
+        crate::om::IndexedSection<'_>,
+    )],
+    object_index: u32,
+) -> Result<Option<String>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(indexed.len()), "resolve NX source block")?;
+    let Some(section_ordinal) = unique_offset_data_store(indexed, &[object_index]) else {
+        return Ok(None);
+    };
+    let digits = |value: usize| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+    let section_digits = digits(section_ordinal);
+    let object_digits = digits(usize::try_from(object_index)
+        .map_err(|_| ctx.refuse_codec_limit("NX source block index", 0, u64::from(object_index)))?);
+    let length = "nx:om-data-blocks-".len()
+        .checked_add(section_digits)
+        .and_then(|length| length.checked_add(":block#".len()))
+        .and_then(|length| length.checked_add(object_digits))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX source block identity", 0, 1))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX source block identity")?;
+    let mut id = String::new();
+    id.try_reserve_exact(length)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX source block identity", 0, 1))?;
+    write!(&mut id, "nx:om-data-blocks-{section_ordinal}:block#{object_index}")
+        .map_err(|_| ctx.refuse_codec_limit("write NX source block identity", 0, 1))?;
+    Ok(Some(id))
+}
+
 fn unique_offset_data_store(
     indexed: &[(
         crate::container::entry_ref::EntryRef<'_>,

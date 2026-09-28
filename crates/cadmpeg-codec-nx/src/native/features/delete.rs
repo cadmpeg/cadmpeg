@@ -3,8 +3,8 @@
 
 use super::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 use super::{
-    copy_operation_text, format_feature_history_id, offset_data_block_bytes, unique_offset_data_store,
-    visit_feature_history_operation_records,
+    charged_unique_offset_data_block, copy_operation_text, format_feature_history_id,
+    offset_data_block_bytes, visit_feature_history_operation_records,
 };
 use crate::container::Container;
 use crate::om::delete_references::DeleteReferences;
@@ -182,27 +182,7 @@ pub(in crate::native) fn feature_delete_reference_fields(
                     return Ok(None);
                 };
                 let Some(references) = field.resolve(entry_offset, |token| {
-                    let object_index = token.value();
-                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(indexed.len()), "resolve NX DELETE source block")?;
-                    let Some(section_ordinal) = unique_offset_data_store(&indexed, &[object_index]) else {
-                        return Ok(None);
-                    };
-                    let digits = |value: usize| value.checked_ilog10().map_or(1, |count| count as usize + 1);
-                    let section_digits = digits(section_ordinal);
-                    let object_digits = digits(usize::try_from(object_index)
-                        .map_err(|_| ctx.refuse_codec_limit("NX DELETE block index", 0, u64::from(object_index)))?);
-                    let length = "nx:om-data-blocks-".len()
-                        .checked_add(section_digits)
-                        .and_then(|length| length.checked_add(":block#".len()))
-                        .and_then(|length| length.checked_add(object_digits))
-                        .ok_or_else(|| ctx.refuse_codec_limit("NX DELETE source block identity", 0, 1))?;
-                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX DELETE source block identity")?;
-                    let mut id = String::new();
-                    id.try_reserve_exact(length)
-                        .map_err(|_| ctx.refuse_codec_limit("allocate NX DELETE source block identity", 0, 1))?;
-                    write!(&mut id, "nx:om-data-blocks-{section_ordinal}:block#{object_index}")
-                        .map_err(|_| ctx.refuse_codec_limit("write NX DELETE source block identity", 0, 1))?;
-                    Ok(Some(id))
+                    charged_unique_offset_data_block(ctx, &indexed, token.value())
                 })? else {
                     return Ok(None);
                 };
