@@ -3590,6 +3590,7 @@ fn oriented_curve_entity(
                 *ref_direction,
                 radius,
                 span.range.get(),
+                None,
             )
             .map_err(|error| CodecError::malformed(format_args!("circular: {error}")))?
             .ok_or_else(|| {
@@ -3621,6 +3622,7 @@ fn oriented_curve_entity(
                 major_radius,
                 minor_radius,
                 span.range.get(),
+                None,
             )
             .map_err(|error| CodecError::malformed(format_args!("elliptical: {error}")))?
             .ok_or_else(|| {
@@ -3650,6 +3652,7 @@ fn oriented_curve_entity(
                 *major_direction,
                 focal_distance,
                 span.range.get(),
+                None,
             )
             .map_err(|error| CodecError::malformed(format_args!("parabolic: {error}")))?
             .ok_or_else(|| {

@@ -48,6 +48,7 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
         Vector3::new(0.0, 0.999_999_999_999_995_7, 9.334_897_886_982_299e-8),
         PositiveLength::new(10.185_400_000_000_001).expect("positive radius"),
         [0.0, 3.141_592_560_240_814_3],
+        None,
     )
     .expect("carrier lanes pair")
     .unwrap();
@@ -57,6 +58,7 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
         Vector3::new(0.0, -1.0, 0.0),
         PositiveLength::new(10.185_400_000_000_001).expect("positive radius"),
         [0.0, 3.141_592_746_938_772],
+        None,
     )
     .expect("carrier lanes pair")
     .unwrap();

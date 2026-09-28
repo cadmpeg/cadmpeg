@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered composite-curve projection.
 
-use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
+use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs, CurveConversionError};
 use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
 use crate::decode_resource::{copy_optional_identity, reserve_admitted_vec, reserve_optional_vec, reserve_optional_vec_growth, reserve_vec};
 use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
@@ -982,6 +982,9 @@ pub(super) enum CompositeCurveError {
     /// A carrier the IR refuses.
     #[error(transparent)]
     Carrier(#[from] cadmpeg_ir::geometry::nurbs::NurbsError),
+    /// A bounded analytic carrier could not be built.
+    #[error(transparent)]
+    Conversion(#[from] CurveConversionError),
     /// A child that does not raise to the composite degree.
     #[error("{0}")]
     Elevation(#[from] DegreeElevationError),
@@ -1104,7 +1107,8 @@ impl CompositeCurveError {
     /// Return a decode resource refusal before a caller considers geometric fallback.
     pub(super) fn non_resource(self) -> Result<Self, CodecError> {
         match self {
-            Self::Budget(error) | Self::ChildWeightAllocation(error) => Err(error),
+            Self::Budget(error) | Self::ChildWeightAllocation(error)
+            | Self::Conversion(CurveConversionError::Resource(error)) => Err(error),
             Self::Elevation(DegreeElevationError::Allocation(error)) => Err(error),
             error => Ok(error),
         }
@@ -1650,7 +1654,7 @@ fn bounded_nurbs_for_id(
             let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius();
             let Some(mut nurbs) =
-                circular_arc_nurbs(center, *axis, *ref_direction, radius, interval)?
+                circular_arc_nurbs(center, *axis, *ref_direction, radius, interval, ctx)?
             else {
                 return Ok(None);
             };
@@ -1681,6 +1685,7 @@ fn bounded_nurbs_for_id(
                 major_radius,
                 minor_radius,
                 interval,
+                ctx,
             )?
             else {
                 return Ok(None);
@@ -1705,7 +1710,7 @@ fn bounded_nurbs_for_id(
             let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance();
             let Some(mut nurbs) =
-                parabolic_arc_nurbs(vertex, *axis, *major_direction, focal_distance, interval)?
+                parabolic_arc_nurbs(vertex, *axis, *major_direction, focal_distance, interval, ctx)?
             else {
                 return Ok(None);
             };
