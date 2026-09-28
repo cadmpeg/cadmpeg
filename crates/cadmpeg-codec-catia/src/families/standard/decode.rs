@@ -3007,7 +3007,7 @@ fn try_decode_standard_population(
     for (id, stream, offset, tag, exactness) in surface_annotations {
         admitted!(annotate(ctx, &mut annotations, &id, stream, offset as u64, tag, exactness));
     }
-    let mut topology_ir = ir.clone();
+    let mut topology_ir = std::mem::replace(&mut ir, CadIr::empty());
     let mut topology_annotations = admitted!(annotations.copy_charged(ctx, "catia_standard_topology_annotations"));
     match attach_standard_faces(
         ctx,
@@ -3062,6 +3062,24 @@ fn try_decode_standard_population(
         ir = topology_ir;
         annotations = topology_annotations;
     } else {
+        // The candidate adds only topology and native edge-support carriers.
+        // Restore the source carriers for the analytic fallback by discarding
+        // those candidate-owned rows before moving the model back.
+        topology_ir.model.bodies.clear();
+        topology_ir.model.regions.clear();
+        topology_ir.model.shells.clear();
+        topology_ir.model.faces.clear();
+        topology_ir.model.loops.clear();
+        topology_ir.model.coedges.clear();
+        topology_ir.model.edges.clear();
+        topology_ir.model.pcurves.clear();
+        topology_ir.model.surfaces.retain(|surface| {
+            !surface.id.as_str().starts_with("catia:standard:edge-support-surface#")
+        });
+        topology_ir.model.procedural_surfaces.retain(|surface| {
+            !surface.id.as_str().starts_with("catia:standard:edge-support-definition#")
+        });
+        ir = topology_ir;
         let fallback_result = (|| -> Result<(), cadmpeg_core::CodecError> {
             attach_standard_circles(
                 &mut ir, &mut annotations, &face_bindings, &curve_supports, &mut admission,
