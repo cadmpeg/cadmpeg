@@ -177,14 +177,19 @@ pub(in super::super) fn feature_outline_planes(
 }
 
 pub(in super::super) fn generated_arc_cylinder_extent(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     definition: &crate::feature::definitions::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
-) -> Option<(ExtrudeExtent, [f64; 3])> {
-    let feature_id = definition.identity.owner_feature_id()?;
-    definition.segments.as_ref()?.is_complete().then_some(())?;
+) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
+    let Some(feature_id) = definition.identity.owner_feature_id() else {
+        return Ok(None);
+    };
+    let Some(segments) = definition.segments.as_ref().filter(|segments| segments.is_complete()) else {
+        return Ok(None);
+    };
     let mut surface_ids = BTreeSet::new();
     for (_, entry) in scan
         .features
@@ -197,7 +202,7 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         let Some(source_id) = entry.source_entity_id() else {
             continue;
         };
-        let Some(segment) = definition.segments.as_ref()?.segment(source_id) else {
+        let Some(segment) = segments.segment(source_id) else {
             continue;
         };
         if !matches!(
@@ -213,20 +218,27 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         else {
             continue;
         };
-        surface_ids.insert(row.id).then_some(())?;
+        if surface_ids.contains(&row.id) {
+            return Ok(None);
+        }
+        ctx.charge_collection_items(1, "creo generated arc cylinder ID nodes")?;
+        surface_ids.insert(row.id);
     }
-    let frame_records = unique_available_positional_cylinder_frame_records(
+    let Some(frame_records) = unique_available_positional_cylinder_frame_records(
         &surface_ids,
         &scan.surfaces.parameters,
-    )?;
-    (!frame_records.is_empty()).then_some(())?;
-    frame_records
+    ) else {
+        return Ok(None);
+    };
+    if frame_records.is_empty() || !frame_records
         .iter()
         .all(|(surface_id, frame)| {
             cylinder_frame_agrees_with_model(ir, *surface_id, frame, source_carriers)
         })
-        .then_some(())?;
-    agreed_generated_cylinder_extent(transform, frame_records.iter().map(|(_, frame)| frame))
+    {
+        return Ok(None);
+    }
+    Ok(agreed_generated_cylinder_extent(transform, frame_records.iter().map(|(_, frame)| frame)))
 }
 
 fn cylinder_frame_agrees_with_model(
