@@ -68,6 +68,54 @@ fn push_geometry_index<K: Eq + Hash, V>(
     Ok(())
 }
 
+fn push_geometry_item<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut Vec<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    items.push(item);
+    Ok(())
+}
+
+fn insert_geometry_set<T: Eq + Hash>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut HashSet<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    if items.contains(&item) {
+        return Ok(false);
+    }
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    Ok(items.insert(item))
+}
+
+fn copy_geometry_id<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &str,
+    operation: &'static str,
+) -> Result<T, CodecError>
+where
+    T: TryFrom<String>,
+    T::Error: std::fmt::Display,
+{
+    let value = if let Some(ctx) = ctx {
+        String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
+            .map_err(|_| CodecError::malformed("validated sketch ID is not UTF-8"))?
+    } else {
+        value.to_owned()
+    };
+    T::try_from(value).map_err(CodecError::malformed)
+}
+
 fn push_arrangement_outgoing(
     outgoing: &mut Vec<(usize, bool, f64)>,
     use_: (usize, bool, f64),
@@ -2808,38 +2856,41 @@ pub(super) fn closed_sketch_profiles(
     if !linear_tolerance.is_finite() || linear_tolerance <= 0.0 {
         return Ok(Vec::new());
     }
-    let mut profiles = entities
-        .iter()
-        .filter(|entity| &entity.sketch == sketch && !entity.construction)
-        .filter(|entity| {
-            matches!(
-                *entity.geometry.definition(),
-                SketchGeometryDefinition::Circle { .. }
-                    | SketchGeometryDefinition::Ellipse { bounds: None, .. }
-            )
-        })
-        .map(|entity| {
-            vec![SketchEntityUse {
-                entity: entity.id().clone(),
-                reversed: false,
-            }]
-        })
-        .collect::<Vec<_>>();
-    let edges = entities
-        .iter()
-        .filter(|entity| &entity.sketch == sketch && !entity.construction)
-        .filter_map(|entity| sketch_entity_endpoints(entity).map(|ends| (entity, ends)))
-        .collect::<Vec<_>>();
+    let mut profiles = Vec::new();
+    let mut edges = Vec::new();
+    for entity in entities.iter().filter(|entity| &entity.sketch == sketch && !entity.construction) {
+        if matches!(
+            *entity.geometry.definition(),
+            SketchGeometryDefinition::Circle { .. }
+                | SketchGeometryDefinition::Ellipse { bounds: None, .. }
+        ) {
+            let id = copy_geometry_id(ctx, entity.id().as_str(),
+                "f3d closed sketch profile entity id")?;
+            let mut profile = Vec::new();
+            push_geometry_item(ctx, &mut profile, SketchEntityUse { entity: id, reversed: false },
+                "f3d closed sketch profile member")?;
+            push_geometry_item(ctx, &mut profiles, profile,
+                "f3d closed sketch circle profile")?;
+        }
+        if let Some(ends) = sketch_entity_endpoints(entity) {
+            push_geometry_item(ctx, &mut edges, (entity, ends),
+                "f3d closed sketch edge")?;
+        }
+    }
     if edges.is_empty() {
         profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
         return Ok(profiles);
     }
 
-    let endpoints = edges
-        .iter()
-        .flat_map(|(_, [start, end])| [*start, *end])
-        .collect::<Vec<_>>();
-    let mut parents = (0..endpoints.len()).collect::<Vec<_>>();
+    let mut endpoints = Vec::new();
+    for (_, [start, end]) in &edges {
+        push_geometry_item(ctx, &mut endpoints, *start, "f3d closed sketch endpoint")?;
+        push_geometry_item(ctx, &mut endpoints, *end, "f3d closed sketch endpoint")?;
+    }
+    let mut parents = Vec::new();
+    for index in 0..endpoints.len() {
+        push_geometry_item(ctx, &mut parents, index, "f3d closed sketch union parent")?;
+    }
     let mut endpoint_cells = HashMap::<(i64, i64), Vec<usize>>::new();
     for (endpoint, point) in endpoints.iter().copied().enumerate() {
         let cell = (
@@ -2862,14 +2913,14 @@ pub(super) fn closed_sketch_profiles(
         push_geometry_index(ctx, &mut endpoint_cells, cell, endpoint,
             "f3d sketch endpoint cell", "f3d sketch endpoint cell member")?;
     }
-    let edge_nodes = (0..edges.len())
-        .map(|edge| {
-            [
-                endpoint_root(&mut parents, edge * 2),
-                endpoint_root(&mut parents, edge * 2 + 1),
-            ]
-        })
-        .collect::<Vec<_>>();
+    let mut edge_nodes = Vec::new();
+    for edge in 0..edges.len() {
+        let nodes = [
+            endpoint_root(&mut parents, edge * 2),
+            endpoint_root(&mut parents, edge * 2 + 1),
+        ];
+        push_geometry_item(ctx, &mut edge_nodes, nodes, "f3d closed sketch edge nodes")?;
+    }
     let mut adjacency = HashMap::<usize, Vec<usize>>::new();
     for (edge, [start, end]) in edge_nodes.iter().copied().enumerate() {
         push_geometry_index(ctx, &mut adjacency, start, edge,
@@ -2885,32 +2936,35 @@ pub(super) fn closed_sketch_profiles(
         Some(ctx) => ctx.alloc_filled(edges.len(), false, "f3d edge component marks")?,
         None => alloc_filled(edges.len(), false, "f3d edge component marks")?,
     };
-    let mut order = (0..edges.len()).collect::<Vec<_>>();
+    let mut order = Vec::new();
+    for edge in 0..edges.len() {
+        push_geometry_item(ctx, &mut order, edge, "f3d closed sketch edge order")?;
+    }
     order.sort_by(|a, b| edges[*a].0.id().cmp(edges[*b].0.id()));
     for first_edge in order {
         if visited[first_edge] {
             continue;
         }
         let mut component = Vec::new();
-        let mut pending = vec![first_edge];
+        let mut pending = Vec::new();
+        push_geometry_item(ctx, &mut pending, first_edge, "f3d closed sketch pending edge")?;
         let mut component_seen = HashSet::new();
         while let Some(edge) = pending.pop() {
-            if !component_seen.insert(edge) {
+            if !insert_geometry_set(ctx, &mut component_seen, edge,
+                "f3d closed sketch component seen")? {
                 continue;
             }
-            component.push(edge);
+            push_geometry_item(ctx, &mut component, edge,
+                "f3d closed sketch component edge")?;
             for node in edge_nodes[edge] {
-                pending.extend(adjacency[&node].iter().copied());
+                for next in adjacency[&node].iter().copied() {
+                    push_geometry_item(ctx, &mut pending, next,
+                        "f3d closed sketch pending edge")?;
+                }
             }
         }
-        let component_nodes = component
-            .iter()
-            .flat_map(|edge| edge_nodes[*edge])
-            .collect::<HashSet<_>>();
-        if component_nodes
-            .iter()
-            .any(|node| adjacency[node].len() != 2)
-        {
+        if component.iter().flat_map(|edge| edge_nodes[*edge])
+            .any(|node| adjacency[&node].len() != 2) {
             if component.iter().all(|edge| {
                 matches!(
                     (edges[*edge].0.geometry).definition(),
@@ -2927,10 +2981,14 @@ pub(super) fn closed_sketch_profiles(
                         &adjacency,
                         linear_tolerance,
                     ) {
-                        profiles.push(profile);
+                        push_geometry_item(ctx, &mut profiles, profile,
+                            "f3d closed sketch tangent profile")?;
                     }
                 } else {
-                    profiles.extend(branched_profiles);
+                    for profile in branched_profiles {
+                        push_geometry_item(ctx, &mut profiles, profile,
+                            "f3d closed sketch branched profile")?;
+                    }
                 }
             }
             for edge in component {
@@ -2943,10 +3001,12 @@ pub(super) fn closed_sketch_profiles(
         let first_edge = component[0];
         let start_node = edge_nodes[first_edge][0];
         let mut current_node = edge_nodes[first_edge][1];
-        let mut profile = vec![SketchEntityUse {
-            entity: edges[first_edge].0.id().clone(),
-            reversed: false,
-        }];
+        let mut profile = Vec::new();
+        let first_id = copy_geometry_id(ctx, edges[first_edge].0.id().as_str(),
+            "f3d closed sketch component profile id")?;
+        push_geometry_item(ctx, &mut profile,
+            SketchEntityUse { entity: first_id, reversed: false },
+            "f3d closed sketch component profile member")?;
         visited[first_edge] = true;
         while current_node != start_node {
             let Some(next_edge) = adjacency[&current_node]
@@ -2961,13 +3021,14 @@ pub(super) fn closed_sketch_profiles(
             let reversed = stored_end == current_node;
             current_node = if reversed { stored_start } else { stored_end };
             visited[next_edge] = true;
-            profile.push(SketchEntityUse {
-                entity: edges[next_edge].0.id().clone(),
-                reversed,
-            });
+            let id = copy_geometry_id(ctx, edges[next_edge].0.id().as_str(),
+                "f3d closed sketch component profile id")?;
+            push_geometry_item(ctx, &mut profile, SketchEntityUse { entity: id, reversed },
+                "f3d closed sketch component profile member")?;
         }
         if !profile.is_empty() && component.iter().all(|edge| visited[*edge]) {
-            profiles.push(profile);
+            push_geometry_item(ctx, &mut profiles, profile,
+                "f3d closed sketch component profile")?;
         }
     }
     profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
