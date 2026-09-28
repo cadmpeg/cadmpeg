@@ -1035,7 +1035,7 @@ fn resolved_edge_group_with_transition_chain(
             slots = deleted_boundary_edge_group_candidates(&matched_operands);
         }
         if slots.is_none() {
-            slots = scope_partition_edge_group_candidates(group, groups, operands, members);
+            slots = scope_partition_edge_group_candidates(group, groups, operands, members, ctx)?;
         }
         Ok(slots)
     };
@@ -1787,19 +1787,20 @@ fn bipartite_assignment(
 /// Members of one construction operand group: `(identity, resolved edge slot,
 /// deleted boundary edge slots)`.
 #[derive(Clone)]
-struct EdgeGroupMember {
+struct EdgeGroupMember<'a> {
     identity: u32,
     resolved_edge: Option<i64>,
-    deleted_boundary_edges: Vec<i64>,
+    deleted_boundary_edges: &'a [i64],
 }
 
-fn scope_partition_edge_group_candidates(
+fn scope_partition_edge_group_candidates<'a>(
     target: &DesignConstructionOperandGroup,
-    groups: &[DesignConstructionOperandGroup],
-    operands: &[DesignEdgeOperand],
+    groups: &'a [DesignConstructionOperandGroup],
+    operands: &'a [DesignEdgeOperand],
     target_members: &[crate::records::identity::Located<u32>],
-) -> Option<Vec<i64>> {
-    let stream = native_stream(&target.id)?;
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<i64>>, CodecError> {
+    let Some(stream) = native_stream(&target.id) else { return Ok(None); };
     let mut scope_groups = Vec::new();
     let mut target_ordinal = None;
     for group in groups.iter().filter(|group| {
@@ -1809,26 +1810,23 @@ fn scope_partition_edge_group_candidates(
             && !(if group.id == target.id { target_members } else { group.members() }).is_empty()
     }) {
         let group_members = if group.id == target.id { target_members } else { group.members() };
-        let mut members = Vec::with_capacity(group_members.len());
+        let mut members = Vec::new();
         let mut complete = true;
         for member in group_members.iter().map(|member| &member.value) {
-            let matches = operands
-                .iter()
-                .filter(|operand| {
+            let mut matches = operands.iter().filter(|operand| {
                     native_stream(&operand.id) == Some(stream)
                         && operand.scope_record_index == group.scope_record_index
                         && operand.record_index() == *member
-                })
-                .collect::<Vec<_>>();
-            let [operand] = matches.as_slice() else {
+                });
+            let Some(operand) = matches.next().filter(|_| matches.next().is_none()) else {
                 complete = false;
                 break;
             };
-            members.push(EdgeGroupMember {
+            push_edge_item(ctx, &mut members, EdgeGroupMember {
                 identity: operand.record_index(),
                 resolved_edge: resolved_edge_operand(operand),
-                deleted_boundary_edges: operand.deleted_boundary_edge_slots.clone(),
-            });
+                deleted_boundary_edges: &operand.deleted_boundary_edge_slots,
+            }, "f3d edge partition member")?;
         }
         if !complete {
             continue;
@@ -1836,25 +1834,30 @@ fn scope_partition_edge_group_candidates(
         if group.id == target.id {
             target_ordinal = Some(scope_groups.len());
         }
-        scope_groups.push(members);
+        push_edge_item(ctx, &mut scope_groups, members, "f3d edge partition group")?;
     }
-    partition_unique_incomplete_edge_group(target_ordinal?, &scope_groups)
+    let Some(target_ordinal) = target_ordinal else { return Ok(None); };
+    partition_unique_incomplete_edge_group(target_ordinal, &scope_groups, ctx)
 }
 
 fn partition_unique_incomplete_edge_group(
     target_ordinal: usize,
-    groups: &[Vec<EdgeGroupMember>],
-) -> Option<Vec<i64>> {
+    groups: &[Vec<EdgeGroupMember<'_>>],
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<Option<Vec<i64>>, CodecError> {
     if groups.len() < 2 || target_ordinal >= groups.len() {
-        return None;
+        return Ok(None);
     }
     let mut identities = HashSet::new();
     let mut universe = None::<Vec<i64>>;
     for member in groups.iter().flatten() {
-        if !identities.insert(member.identity) {
-            return None;
+        if !insert_edge_set(ctx, &mut identities, member.identity, "f3d edge partition identity")? {
+            return Ok(None);
         }
-        let mut deleted = member.deleted_boundary_edges.clone();
+        let mut deleted = Vec::new();
+        for edge in member.deleted_boundary_edges {
+            push_edge_item(ctx, &mut deleted, *edge, "f3d edge partition deleted edge")?;
+        }
         deleted.sort_unstable();
         deleted.dedup();
         if deleted.is_empty()
@@ -1862,22 +1865,19 @@ fn partition_unique_incomplete_edge_group(
                 .as_ref()
                 .is_some_and(|universe| *universe != deleted)
         {
-            return None;
+            return Ok(None);
         }
         universe.get_or_insert(deleted);
     }
-    let universe = universe?;
+    let Some(universe) = universe else { return Ok(None); };
     if identities.len() != universe.len() {
-        return None;
+        return Ok(None);
     }
-    let incomplete = groups
-        .iter()
-        .enumerate()
+    let mut incomplete = groups.iter().enumerate()
         .filter(|(_, group)| group.iter().any(|member| member.resolved_edge.is_none()))
-        .map(|(ordinal, _)| ordinal)
-        .collect::<Vec<_>>();
-    if incomplete.as_slice() != [target_ordinal] {
-        return None;
+        .map(|(ordinal, _)| ordinal);
+    if incomplete.next() != Some(target_ordinal) || incomplete.next().is_some() {
+        return Ok(None);
     }
     let mut reserved = Vec::new();
     for (ordinal, group) in groups.iter().enumerate() {
@@ -1885,26 +1885,26 @@ fn partition_unique_incomplete_edge_group(
             continue;
         }
         for member in group {
-            let resolved = member.resolved_edge.as_ref()?;
+            let Some(resolved) = member.resolved_edge.as_ref() else { return Ok(None); };
             if !universe.contains(resolved) || reserved.contains(resolved) {
-                return None;
+                return Ok(None);
             }
-            reserved.push(*resolved);
+            push_edge_item(ctx, &mut reserved, *resolved, "f3d edge partition reserved edge")?;
         }
     }
-    let target = universe
-        .into_iter()
-        .filter(|candidate| !reserved.contains(candidate))
-        .collect::<Vec<_>>();
+    let mut target = Vec::new();
+    for candidate in universe.into_iter().filter(|candidate| !reserved.contains(candidate)) {
+        push_edge_item(ctx, &mut target, candidate, "f3d edge partition target edge")?;
+    }
     if target.len() != groups[target_ordinal].len()
         || groups[target_ordinal]
             .iter()
             .filter_map(|member| member.resolved_edge)
             .any(|resolved| !target.contains(&resolved))
     {
-        return None;
+        return Ok(None);
     }
-    Some(target)
+    Ok(Some(target))
 }
 
 fn common_deleted_edge_group_candidates<'a>(
