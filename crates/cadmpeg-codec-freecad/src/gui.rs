@@ -685,6 +685,21 @@ fn append_graph_losses(
     Ok(())
 }
 
+fn push_gui_appearance_loss(
+    ctx: &DecodeContext<'_>,
+    losses: &mut Vec<LossNote>,
+    code: FreecadLossCode,
+    message: std::fmt::Arguments<'_>,
+    provenance: SourceProvenance,
+    collection_operation: &'static str,
+    text_operation: &'static str,
+) -> Result<(), CodecError> {
+    reserve_vec_items(ctx, losses, 1, collection_operation)?;
+    let text = crate::resource::retained_format(ctx, message, text_operation)?;
+    losses.push(code.note(text).with_provenance(provenance));
+    Ok(())
+}
+
 fn presentation_property_type(name: &str) -> Option<&'static str> {
     match name {
         "Visibility" => Some("App::PropertyBool"),
@@ -1131,13 +1146,10 @@ fn transfer_primitive_appearance(
     if matches!(size, PrimitiveSize::NonFinite | PrimitiveSize::Admitted(_))
         && admitted_size.is_none()
     {
-        losses.push(
-            FreecadLossCode::AppearancePrimitiveSizeNotTransferred
-                .note(format!(
-                    "FCStd provider {provider_name} {label} size cannot enter the neutral appearance"
-                ))
-                .with_provenance(provenance),
-        );
+        push_gui_appearance_loss(ctx, losses,
+            FreecadLossCode::AppearancePrimitiveSizeNotTransferred,
+            format_args!("FCStd provider {provider_name} {label} size cannot enter the neutral appearance"),
+            provenance, "FCStd GUI primitive size losses", "FCStd GUI primitive size loss text")?;
     }
     reserve_vec_items(ctx, &mut plan.appearances, 1, "FCStd GUI planned appearances")?;
     plan.appearances.push(Appearance {
@@ -3837,23 +3849,19 @@ fn transfer_shape_appearances(
                 continue;
             }
             if materials.len() != mapped_count {
-                losses.push(
-                    crate::loss::FreecadLossCode::AppearanceTopologyColorCountMismatch
-                        .note(format!(
-                            "FCStd provider {} ShapeAppearance material count {} does not match {} mapped Face subelements; native material list retained and neutral face override withheld",
-                            provider.name,
-                            materials.len(),
-                            mapped_count
-                        ))
-                .with_provenance(
+                push_gui_appearance_loss(ctx, losses,
+                    FreecadLossCode::AppearanceTopologyColorCountMismatch,
+                    format_args!(
+                        "FCStd provider {} ShapeAppearance material count {} does not match {} mapped Face subelements; native material list retained and neutral face override withheld",
+                        provider.name, materials.len(), mapped_count
+                    ),
                     SourceProvenance::in_stream(
                         "fcstd",
                         cadmpeg_ir::stream_name!("GuiDocument.xml"),
                         property.xml.start(),
                     )
                     .with_tag(retained_string(ctx, &property.id, "FCStd GUI material loss tag")?),
-                ),
-                );
+                    "FCStd GUI material count losses", "FCStd GUI material count loss text")?;
                 continue;
             }
         }
@@ -4171,14 +4179,12 @@ fn transfer_topology_colors(
         return Ok(());
     }
     if count != 1 && mapped_count != count {
-        losses.push(
-            crate::loss::FreecadLossCode::AppearanceTopologyColorCountMismatch
-                .note(format!(
-                    "FCStd provider {provider_name} {} color count {count} does not match {mapped_count} mapped subelements; native color list retained and neutral override withheld",
-                    kind.name()
-                ))
-                .with_provenance(provenance),
-        );
+        push_gui_appearance_loss(ctx, losses,
+            FreecadLossCode::AppearanceTopologyColorCountMismatch,
+            format_args!(
+                "FCStd provider {provider_name} {} color count {count} does not match {mapped_count} mapped subelements; native color list retained and neutral override withheld",
+                kind.name()
+            ), provenance, "FCStd GUI topology color losses", "FCStd GUI topology color loss text")?;
         return Ok(());
     }
     for (index, packed) in colors.into_iter().enumerate() {
