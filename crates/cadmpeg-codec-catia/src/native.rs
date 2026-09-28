@@ -7092,7 +7092,7 @@ fn legacy_entity_runs(
     bytes: &[u8],
 ) -> Result<Vec<CatiaLegacyEntityRun>, CodecError> {
     let mut converted = Vec::new();
-    for (index, run) in legacy_entity::parse_runs(bytes).into_iter().enumerate() {
+    for (index, run) in legacy_entity::parse_runs(ctx, bytes)?.into_iter().enumerate() {
             let id = crate::resource::format_retained(ctx,
                 format_args!("catia:legacy:entity-run#{index:08}"), "catia_native_legacy_run_id")?;
             let byte_offset = run.first_identity.offset;
