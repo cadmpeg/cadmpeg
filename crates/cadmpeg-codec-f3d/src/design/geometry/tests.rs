@@ -702,17 +702,29 @@ fn arrangement_refusal_with_collection_limit(maximum: u64) -> cadmpeg_core::Code
         .expect("arrangement exceeds the selected collection limit")
 }
 
+fn arrangement_refusal_at_operation(
+    operation: &'static str,
+    mut maximum: u64,
+) -> (cadmpeg_core::decode::ResourceLimit, u64) {
+    for _ in 0..10_000 {
+        let error = arrangement_refusal_with_collection_limit(maximum);
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("arrangement refused for a reason other than resource use");
+        };
+        if limit.operation == operation {
+            return (limit, maximum);
+        }
+        maximum = limit.used.checked_add(limit.additional).unwrap();
+    }
+    panic!("arrangement did not reach the requested resource operation");
+}
+
 #[test]
 fn arrangement_outgoing_refuses_collection_limit() {
-    let error = arrangement_refusal_with_collection_limit(1826);
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "f3d_arrangement_outgoing"
-                && limit.used == 1825
-                && limit.additional == 2
-    ));
+    let (limit, maximum) = arrangement_refusal_at_operation("f3d_arrangement_outgoing", 1826);
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(limit.used, maximum);
+    assert_eq!(limit.additional, 2);
 }
 
 #[test]
@@ -736,15 +748,10 @@ fn arrangement_outgoing_entries_refuse_materialized_limit() {
 
 #[test]
 fn arrangement_edge_visits_refuse_collection_limit() {
-    let error = arrangement_refusal_with_collection_limit(1829);
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "f3d arrangement edge visits"
-                && limit.used == 1827
-                && limit.additional == 3
-    ));
+    let (limit, maximum) = arrangement_refusal_at_operation("f3d arrangement edge visits", 1829);
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(limit.used, maximum);
+    assert_eq!(limit.additional, 3);
 }
 
 #[test]
@@ -1680,6 +1687,7 @@ fn closed_sketch_profile_id_copies_refuse_retained_limit() {
 }
 
 mod predicates;
+mod arrangement_allocation;
 
 macro_rules! geometry_collection_refusal_test {
     ($name:ident, $operation:literal) => {
