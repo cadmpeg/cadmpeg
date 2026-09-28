@@ -3446,16 +3446,35 @@ fn build_geometry_ir(
             Vec::new(),
         ));
     }
-    let mut opaque_links = BTreeMap::<String, Vec<String>>::new();
+    fn add_opaque_link<'a>(
+        ctx: &DecodeContext<'_>,
+        opaque_links: &mut BTreeMap<&'a str, Vec<String>>,
+        record: &'a str,
+        entity: &str,
+    ) -> Result<(), CodecError> {
+        ctx.charge_work(1, "index SLDPRT opaque geometry link")?;
+        let links = match opaque_links.entry(record) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "index SLDPRT opaque geometry record")?;
+                entry.insert(Vec::new())
+            }
+        };
+        ctx.reserve_collection_vec(links, 1, "index SLDPRT opaque geometry link")?;
+        links.push(copy_retained_string(
+            ctx,
+            entity,
+            "retain SLDPRT opaque geometry link",
+        )?);
+        Ok(())
+    }
+    let mut opaque_links = BTreeMap::<&str, Vec<String>>::new();
     for surface in &ir.model.surfaces {
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
             record: Some(record),
         }) = &surface.geometry
         {
-            opaque_links
-                .entry(record.as_str().to_owned())
-                .or_default()
-                .push(surface.id.as_str().to_owned());
+            add_opaque_link(ctx, &mut opaque_links, record.as_str(), surface.id.as_str())?;
         }
     }
     for curve in &ir.model.curves {
@@ -3463,10 +3482,7 @@ fn build_geometry_ir(
             record: Some(record),
         }) = &curve.geometry
         {
-            opaque_links
-                .entry(record.as_str().to_owned())
-                .or_default()
-                .push(curve.id.as_str().to_owned());
+            add_opaque_link(ctx, &mut opaque_links, record.as_str(), curve.id.as_str())?;
         }
     }
     for (record_id, links) in opaque_links {
@@ -3478,6 +3494,11 @@ fn build_geometry_ir(
                 "opaque geometry record {record_id} was not retained"
             )));
         };
+        ctx.reserve_precharged_vec(
+            source.links_mut(),
+            links.len(),
+            "append SLDPRT opaque geometry links",
+        )?;
         source.links_mut().extend(links);
     }
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
