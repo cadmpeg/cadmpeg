@@ -9251,7 +9251,7 @@ impl CatiaNative {
         consolidated_records: &[ConsolidatedRecord],
         refusal: &mut crate::nurbs::LaneRefusals,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let outer_directory = container::parse_outer_stream_directory(bytes);
+        let outer_directory = container::parse_outer_stream_directory(ctx, bytes)?;
         let outer_container_declarations =
             outer_directory.as_ref().map_or_else(Vec::new, |outer| {
                 container::outer_container_declarations(bytes, outer)

@@ -47,6 +47,27 @@ fn last_save_version_service(data: &[u8]) -> Option<super::LastSaveVersion> {
         .expect("service budget admits version")
 }
 
+fn parse_extents_service(
+    dirbuf: &[u8], o: usize, k: usize, physical_base: usize, file_len: usize,
+) -> Option<(Vec<super::Extent>, usize)> {
+    crate::test_support::with_service_context(|ctx| {
+        parse_extents(ctx, dirbuf, o, k, physical_base, file_len)
+    }).expect("service budget admits extents")
+}
+
+fn parse_directory_region_service(
+    data: &[u8], physical_base: usize, dir_offset: usize, dir_length: usize,
+) -> Option<super::InnerDir> {
+    crate::test_support::with_service_context(|ctx| {
+        parse_directory_region(ctx, data, physical_base, dir_offset, dir_length)
+    }).expect("service budget admits directory")
+}
+
+fn descriptor_name_service(dirbuf: &[u8], ds: usize) -> String {
+    crate::test_support::with_service_context(|ctx| super::descriptor_name(ctx, dirbuf, ds))
+        .expect("service budget admits descriptor name")
+}
+
 #[test]
 fn finjpl_markers_refuse_collection_limit() {
     let bytes = summary_preview_segment();
@@ -511,10 +532,39 @@ fn extent_parser_retains_the_raw_flags_word() {
         directory[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
     }
     let (extents, logical_length) =
-        parse_extents(&directory, 0, 1, 0, 64).expect("complete extent");
+        parse_extents_service(&directory, 0, 1, 0, 64).expect("complete extent");
     assert_eq!(logical_length, 8);
     assert_eq!(extents[0].flags, 0xa501_0080);
-    assert!(parse_extents(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
+    assert!(parse_extents_service(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
+}
+
+#[test]
+fn extent_roster_refuses_collection_limit() {
+    let mut directory = vec![0; 24];
+    for (offset, value) in [(4, 40u32), (8, 8), (12, 8), (16, 0), (20, 0)] {
+        directory[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
+    }
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        parse_extents(ctx, &directory, 0, 1, 0, 64)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_directory_extents"));
+    assert_eq!(parse_extents_service(&directory, 0, 1, 0, 64)
+        .expect("valid extent").0.len(), 1);
+}
+
+#[test]
+fn directory_descriptor_refuses_collection_limit() {
+    let bytes = outer_directory_catpart();
+    let limited = crate::test_support::with_collection_limit(1, |ctx| {
+        super::parse_outer_stream_directory(ctx, &bytes)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_directory_descriptors"));
+    let parsed = crate::test_support::with_service_context(|ctx| {
+        super::parse_outer_stream_directory(ctx, &bytes)
+    }).expect("service budget admits directory").expect("valid directory");
+    assert_eq!(parsed.descriptors.len(), 1);
 }
 
 #[test]
@@ -528,7 +578,25 @@ fn descriptor_name_is_anchored_to_the_descriptor_tail() {
     }
     directory[ds - 3..ds].copy_from_slice(&[0, 0, 0]);
 
-    assert_eq!(super::descriptor_name(&directory, ds), "MainDataStream");
+    assert_eq!(descriptor_name_service(&directory, ds), "MainDataStream");
+}
+
+#[test]
+fn descriptor_name_refuses_retained_limit() {
+    let mut directory = vec![0u8; 0x80];
+    let ds = 0x40;
+    let name = b"MainDataStream";
+    let name_start = ds - 3 - name.len() * 2;
+    for (index, byte) in name.iter().enumerate() {
+        directory[name_start + index * 2] = *byte;
+    }
+    directory[ds - 3..ds].copy_from_slice(&[0, 0, 0]);
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::descriptor_name(ctx, &directory, ds)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_descriptor_name"));
+    assert_eq!(descriptor_name_service(&directory, ds), "MainDataStream");
 }
 
 #[test]
@@ -544,10 +612,10 @@ fn descriptor_name_ignores_unrelated_utf16_runs_and_requires_the_tail() {
         directory[name_start + index * 2] = *byte;
     }
     directory[ds - 3..ds].copy_from_slice(&[0, 0, 1]);
-    assert!(super::descriptor_name(&directory, ds).is_empty());
+    assert!(descriptor_name_service(&directory, ds).is_empty());
 
     directory[ds - 3..ds].copy_from_slice(&[0, 0, 0]);
-    assert_eq!(super::descriptor_name(&directory, ds), "Data");
+    assert_eq!(descriptor_name_service(&directory, ds), "Data");
 }
 
 #[test]
@@ -562,7 +630,7 @@ fn descriptor_name_accepts_the_legacy_fixed_header_form() {
     directory[name_start + name.len() * 2..name_start + name.len() * 2 + 2]
         .copy_from_slice(&[0, 0]);
 
-    assert_eq!(super::descriptor_name(&directory, ds), "RootStorage");
+    assert_eq!(descriptor_name_service(&directory, ds), "RootStorage");
 }
 
 #[test]
@@ -586,7 +654,7 @@ fn directory_parser_accepts_a_structurally_bounded_extent_roster_above_64() {
     }
 
     let parsed =
-        parse_directory_region(&directory, 0, 0, directory.len()).expect("bounded extent roster");
+        parse_directory_region_service(&directory, 0, 0, directory.len()).expect("bounded extent roster");
     let descriptor = parsed
         .descriptors
         .iter()
