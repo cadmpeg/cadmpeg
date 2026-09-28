@@ -138,6 +138,16 @@ pub(super) fn admit(
         validation_source_bytes,
         "validate SLDPRT derived lanes",
     )?;
+    if let Some(ctx) = admission.context() {
+        for lane in &native.feature_input_lanes {
+            if lane.scalars.iter().enumerate().any(|(index, scalar)| {
+                u32::try_from(index).ok() != Some(scalar.ordinal)
+            }) {
+                ctx.preflight_retained(1, "format SLDPRT native validation error")?;
+                break;
+            }
+        }
+    }
     let expected = match admission {
         NativeAdmission::Decode(ctx) => expected_lanes_charged(ctx, native)?,
         NativeAdmission::Cadir => expected_lanes(native),
@@ -274,19 +284,53 @@ fn expected_lanes_charged<'a>(
         native.feature_input_lanes.len(),
         "validate SLDPRT expected lane pairs",
     )?;
-    expected.extend(expected_lane_pairs(
+    expected.extend(expected_lane_pairs_impl(
         native,
         expected_primary_lanes,
         expected_supplemental_lanes,
-    ));
+        |feature| copy_feature_ref(ctx, feature),
+    )?);
     Ok(expected)
+}
+
+fn copy_feature_ref(
+    ctx: &DecodeContext<'_>,
+    feature: &Option<String>,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    feature
+        .as_deref()
+        .map(|feature| {
+            let mut copy = String::new();
+            ctx.reserve_retained_string(&mut copy, feature.len(), "retain SLDPRT native lane owner")?;
+            copy.push_str(feature);
+            Ok(copy)
+        })
+        .transpose()
 }
 
 fn expected_lane_pairs<'a>(
     native: &'a SldprtNative,
+    expected_primary_lanes: Vec<FeatureInputLane>,
+    expected_supplemental_lanes: Vec<FeatureInputLane>,
+) -> impl Iterator<Item = (&'a FeatureInputLane, FeatureInputLane)> + 'a {
+    let pairs = expected_lane_pairs_impl(
+        native,
+        expected_primary_lanes,
+        expected_supplemental_lanes,
+        |feature| Ok::<_, std::convert::Infallible>(feature.clone()),
+    );
+    match pairs {
+        Ok(pairs) => pairs,
+        Err(never) => match never {},
+    }
+}
+
+fn expected_lane_pairs_impl<'a, E>(
+    native: &'a SldprtNative,
     mut expected_primary_lanes: Vec<FeatureInputLane>,
     mut expected_supplemental_lanes: Vec<FeatureInputLane>,
-) -> impl Iterator<Item = (&'a FeatureInputLane, FeatureInputLane)> + 'a {
+    mut copy_owner: impl FnMut(&Option<String>) -> Result<Option<String>, E>,
+) -> Result<impl Iterator<Item = (&'a FeatureInputLane, FeatureInputLane)> + 'a, E> {
     crate::resolved_features::bindings::bind_scalar_operands(
         &native.feature_histories,
         &mut expected_primary_lanes,
@@ -310,7 +354,7 @@ fn expected_lane_pairs<'a>(
             .iter_mut()
             .zip(&actual_lane.sketch_entities)
         {
-            expected.feature_ref.clone_from(&actual.feature_ref);
+            expected.feature_ref = copy_owner(&actual.feature_ref)?;
             expected.links = None;
         }
         for (expected, actual) in expected_lane
@@ -318,14 +362,14 @@ fn expected_lane_pairs<'a>(
             .iter_mut()
             .zip(&actual_lane.references)
         {
-            expected.feature_ref.clone_from(&actual.feature_ref);
+            expected.feature_ref = copy_owner(&actual.feature_ref)?;
         }
         for (expected, actual) in expected_lane.scalars.iter_mut().zip(&actual_lane.scalars) {
-            expected.feature_ref.clone_from(&actual.feature_ref);
+            expected.feature_ref = copy_owner(&actual.feature_ref)?;
         }
         finalize_lane_bindings(&native.feature_histories, expected_lane);
     }
-    native
+    Ok(native
         .feature_input_lanes
         .iter()
         .filter(|lane| !is_supplemental_config_lane(lane))
@@ -336,7 +380,7 @@ fn expected_lane_pairs<'a>(
                 .iter()
                 .filter(|lane| is_supplemental_config_lane(lane))
                 .zip(expected_supplemental_lanes),
-        )
+        ))
 }
 
 fn rebuild_scalar_relations(
