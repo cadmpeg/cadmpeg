@@ -3074,13 +3074,20 @@ fn build_geometry_ir(
         )));
     }
     let mut assigned_tessellations = crate::tessellation::assign_persistent_owners(
+        ctx,
         &mut ir.model,
         &face_identities,
         &persistent_face_bindings,
-    );
-    assigned_tessellations.extend(crate::tessellation::assign_unique_surface_owners(
+    )?;
+    let remaining_assignments = crate::tessellation::assign_unique_surface_owners(
         &mut ir.model,
-    )?);
+    )?;
+    ctx.reserve_collection_vec(
+        &mut assigned_tessellations,
+        remaining_assignments.len(),
+        "merge SLDPRT assigned tessellations",
+    )?;
+    assigned_tessellations.extend(remaining_assignments);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
         annotation_builder

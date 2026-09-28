@@ -19,6 +19,7 @@ use cadmpeg_ir::tessellation::{TessellationChannel, TessellationMesh};
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::units::OrthonormalFrame3;
 use std::collections::HashMap;
+use std::hash::Hash;
 
 use crate::layout::display_lists_compact_face_header as compact_face;
 use crate::layout::display_lists_extended_face_header as extended_face;
@@ -77,6 +78,36 @@ impl FaceEvaluationTolerance {
 }
 
 const FACE_TESSELLATION_CLASS: &[u8] = b"uoTempFaceTessData_c";
+
+fn collect_index<K: Eq + Hash, V>(
+    ctx: &DecodeContext<'_>,
+    items: impl IntoIterator<Item = (K, V)>,
+    operation: &'static str,
+) -> Result<HashMap<K, V>, cadmpeg_core::CodecError> {
+    let mut index = HashMap::new();
+    for (key, value) in items {
+        ctx.charge_work(1, operation)?;
+        if !index.contains_key(&key) {
+            ctx.charge_collection_items(1, operation)?;
+            index.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        index.insert(key, value);
+    }
+    Ok(index)
+}
+
+fn copy_retained_string(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let mut copy = String::new();
+    ctx.reserve_retained_string(&mut copy, value.len(), operation)?;
+    copy.push_str(value);
+    Ok(copy)
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct Summary {
@@ -1156,45 +1187,48 @@ fn contains_nurbs_surface(surface: &SolvedSurfaceGeometry) -> bool {
 /// geometric coincidence test. A repeated key with different B-rep targets or
 /// repeated table IDs with different identities is rejected as ambiguous.
 pub(crate) fn assign_persistent_owners(
+    ctx: &DecodeContext<'_>,
     model: &mut cadmpeg_ir::document::Model,
     face_identities: &[(FaceId, PersistentFaceIdentity)],
     bindings: &[PersistentFaceBinding],
-) -> Vec<String> {
-    let mut faces_by_identity = HashMap::<PersistentFaceIdentity, Option<FaceId>>::new();
+) -> Result<Vec<String>, cadmpeg_core::CodecError> {
+    let mut faces_by_identity = HashMap::<&PersistentFaceIdentity, Option<&FaceId>>::new();
     for (target, identity) in face_identities {
-        let candidate = target.clone();
-        match faces_by_identity.entry(identity.clone()) {
+        ctx.charge_work(1, "index SLDPRT persistent face identities")?;
+        if !faces_by_identity.contains_key(identity) {
+            ctx.charge_collection_items(1, "index SLDPRT persistent face identities")?;
+            faces_by_identity.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT persistent face identities", u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        match faces_by_identity.entry(identity) {
             std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Some(candidate));
+                entry.insert(Some(target));
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry.get().as_ref().is_some_and(|face| face != &candidate) {
+                if entry.get().as_ref().is_some_and(|face| face != &target) {
                     *entry.get_mut() = None;
                 }
             }
         }
     }
 
-    let regions = model
-        .regions
-        .iter()
-        .map(|region| (&region.id, &region.body))
-        .collect::<HashMap<_, _>>();
-    let shell_bodies = model
-        .shells
-        .iter()
-        .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
-        .collect::<HashMap<_, _>>();
-    let face_bodies = model
-        .faces
-        .iter()
-        .filter_map(|face| Some((face.id.clone(), (*shell_bodies.get(&face.shell)?).clone())))
-        .collect::<HashMap<_, _>>();
+    let regions = collect_index(ctx, model.regions.iter().map(|region| (&region.id, &region.body)), "index SLDPRT tessellation regions")?;
+    let shell_bodies = collect_index(ctx, model.shells.iter().filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?))), "index SLDPRT tessellation shells")?;
+    let face_bodies = collect_index(ctx, model.faces.iter().filter_map(|face| Some((&face.id, *shell_bodies.get(&face.shell)?))), "index SLDPRT tessellation faces")?;
 
-    let mut bindings_by_mesh = HashMap::<String, Option<PersistentFaceIdentity>>::new();
+    let mut bindings_by_mesh = HashMap::<&str, Option<&PersistentFaceIdentity>>::new();
     for binding in bindings {
-        let identity = binding.identity.clone();
-        match bindings_by_mesh.entry(binding.tessellation.clone()) {
+        ctx.charge_work(1, "index SLDPRT persistent tessellation bindings")?;
+        let key = binding.tessellation.as_str();
+        let identity = &binding.identity;
+        if !bindings_by_mesh.contains_key(key) {
+            ctx.charge_collection_items(1, "index SLDPRT persistent tessellation bindings")?;
+            bindings_by_mesh.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT persistent tessellation bindings", u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        match bindings_by_mesh.entry(key) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(identity));
             }
@@ -1220,11 +1254,18 @@ pub(crate) fn assign_persistent_owners(
         let Some(body) = face_bodies.get(face) else {
             continue;
         };
-        mesh.faces.push(face.clone());
-        mesh.body = Some(body.clone());
-        assigned.push(mesh.id.to_string());
+        ctx.reserve_collection_vec(&mut mesh.faces, 1, "assign SLDPRT persistent tessellation face")?;
+        let face = copy_retained_string(ctx, face.as_str(), "retain SLDPRT tessellation face ID")?;
+        let face = FaceId::mint(face).map_err(cadmpeg_core::CodecError::malformed)?;
+        let body = copy_retained_string(ctx, body.as_str(), "retain SLDPRT tessellation body ID")?;
+        let body = cadmpeg_ir::ids::BodyId::mint(body).map_err(cadmpeg_core::CodecError::malformed)?;
+        let assigned_id = copy_retained_string(ctx, mesh.id.as_str(), "retain SLDPRT assigned tessellation ID")?;
+        ctx.reserve_collection_vec(&mut assigned, 1, "collect SLDPRT assigned tessellations")?;
+        mesh.faces.push(face);
+        mesh.body = Some(body);
+        assigned.push(assigned_id);
     }
-    assigned
+    Ok(assigned)
 }
 
 #[derive(Debug, Clone, Copy)]

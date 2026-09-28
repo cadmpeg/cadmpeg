@@ -643,6 +643,10 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
 
 #[test]
 fn persistent_surface_identity_binds_one_face_and_body() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let mut model = model_with_body();
     let face = add_square_face(&mut model, "persistent", 0.0);
     set_shell_faces(&mut model, vec![face.clone()]);
@@ -657,7 +661,7 @@ fn persistent_surface_identity_binds_one_face_and_body() {
     }];
 
     assert_eq!(
-        assign_persistent_owners(&mut model, &face_identities, &bindings),
+        assign_persistent_owners(&ctx, &mut model, &face_identities, &bindings).unwrap(),
         vec!["synthetic:test:tessellation#mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
@@ -669,6 +673,10 @@ fn persistent_surface_identity_binds_one_face_and_body() {
 
 #[test]
 fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let mut model = model_with_body();
     let first = add_square_face(&mut model, "first-persistent", 0.0);
     let second = add_square_face(&mut model, "second-persistent", 3.0);
@@ -684,7 +692,7 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
         tessellation: "synthetic:test:tessellation#mesh".into(),
         identity: persistent_identity(7, 3, &[]),
     };
-    assert!(assign_persistent_owners(&mut model, &face_identities, &[binding]).is_empty());
+    assert!(assign_persistent_owners(&ctx, &mut model, &face_identities, &[binding]).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
 
     let mut model = model_with_body();
@@ -708,12 +716,16 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
             identity: persistent_identity(8, 4, &[]),
         },
     ];
-    assert!(assign_persistent_owners(&mut model, &face_identities, &bindings).is_empty());
+    assert!(assign_persistent_owners(&ctx, &mut model, &face_identities, &bindings).unwrap().is_empty());
     assert!(model.tessellations[0].faces.is_empty());
 }
 
 #[test]
 fn persistent_surface_identity_distinguishes_trailing_path_fields() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
     let mut model = model_with_body();
     let first = add_square_face(&mut model, "first-tail", 0.0);
     let second = add_square_face(&mut model, "second-tail", 3.0);
@@ -731,10 +743,54 @@ fn persistent_surface_identity_distinguishes_trailing_path_fields() {
     };
 
     assert_eq!(
-        assign_persistent_owners(&mut model, &face_identities, &[binding]),
+        assign_persistent_owners(&ctx, &mut model, &face_identities, &[binding]).unwrap(),
         vec!["synthetic:test:tessellation#mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![second]);
+}
+
+fn persistent_assignment_limit_error(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let mut model = model_with_body();
+    let face = add_square_face(&mut model, "limited-persistent", 0.0);
+    set_shell_faces(&mut model, vec![face.clone()]);
+    model
+        .tessellations
+        .push(persistent_mesh("synthetic:test:tessellation#mesh"));
+    let face_identities = vec![(face, persistent_identity(7, 3, &[]))];
+    let bindings = vec![PersistentFaceBinding {
+        tessellation: "synthetic:test:tessellation#mesh".into(),
+        identity: persistent_identity(7, 3, &[]),
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test context");
+    assign_persistent_owners(&ctx, &mut model, &face_identities, &bindings)
+        .expect_err("selected limit refuses the persistent assignment")
+}
+
+#[test]
+fn persistent_tessellation_assignment_refuses_collection_limit() {
+    let error = persistent_assignment_limit_error(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index SLDPRT persistent face identities"));
+}
+
+#[test]
+fn persistent_tessellation_assignment_refuses_retained_limit() {
+    let error = persistent_assignment_limit_error(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain SLDPRT tessellation face ID"));
+}
+
+#[test]
+fn persistent_tessellation_assignment_refuses_work_limit() {
+    let error = persistent_assignment_limit_error(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index SLDPRT persistent face identities"));
 }
 
 #[test]
