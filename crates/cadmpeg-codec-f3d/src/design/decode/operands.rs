@@ -1747,14 +1747,12 @@ pub(crate) fn decode_construction_operand_groups(
                 ordinal,
                 &RecordFrame::from(*header),
             ) {
-                ConstructionOperandGroupParse::Complete(mut group) => {
-                    group.id = ids::native_design_construction_operand_group_id(
-                        &entry.name,
-                        header.byte_offset,
-                    );
-                    out.push(*group);
+                ConstructionOperandGroupParse::Complete(group) => {
+                    push_construction_operand_group(ctx, &mut out, group, &entry.name, header.byte_offset)?;
                 }
-                ConstructionOperandGroupParse::Unclosed => unclosed.push(record_index),
+                ConstructionOperandGroupParse::Unclosed => {
+                    push_unclosed_construction_operand(ctx, &mut unclosed, record_index)?;
+                }
                 ConstructionOperandGroupParse::NotAGroup => {}
             }
         }
@@ -1765,6 +1763,38 @@ pub(crate) fn decode_construction_operand_groups(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+fn push_construction_operand_group(
+    ctx: &DecodeContext<'_>,
+    out: &mut Vec<DesignConstructionOperandGroup>,
+    mut group: Box<DesignConstructionOperandGroup>,
+    stream: &str,
+    offset: u64,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "f3d construction operand group output")?;
+    out.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d construction operand group allocation", 0, 1)
+    })?;
+    group.id = design_record_id_charged(
+        ctx, stream, ":design-construction-operand-group#", offset,
+        "f3d construction operand group ID", "f3d construction operand group ID allocation",
+    )?;
+    out.push(*group);
+    Ok(())
+}
+
+fn push_unclosed_construction_operand(
+    ctx: &DecodeContext<'_>,
+    unclosed: &mut Vec<u32>,
+    record_index: u32,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "f3d unclosed construction operand group")?;
+    unclosed.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit("f3d unclosed construction operand group allocation", 0, 1)
+    })?;
+    unclosed.push(record_index);
+    Ok(())
 }
 
 /// Decode the fixed role-less body carrier used by the legacy Boolean-Loft
