@@ -43,22 +43,32 @@ const EPS_SURFACES_SIMILARITY_ORIENTATION_E10: f64 = 1.0e-10;
 const MAX_SURFACE_POLES: usize = 1_000_000;
 
 trait SurfaceGridWeight {
-    fn admit(self, index: usize) -> Result<NonZeroReal, NurbsError>;
+    fn admit(self, index: usize, ctx: Option<&DecodeContext<'_>>) -> Result<Result<NonZeroReal, NurbsError>, CodecError>;
+}
+
+fn surface_grid_error_field(ctx: Option<&DecodeContext<'_>>, field: &'static str) -> Result<String, CodecError> {
+    match ctx {
+        Some(ctx) => crate::decode_resource::format_retained(ctx, format_args!("{field}"), "iges surface grid error field"),
+        None => Ok(field.to_owned()),
+    }
 }
 
 impl SurfaceGridWeight for NonZeroReal {
-    fn admit(self, _index: usize) -> Result<NonZeroReal, NurbsError> {
-        Ok(self)
+    fn admit(self, _index: usize, _ctx: Option<&DecodeContext<'_>>) -> Result<Result<NonZeroReal, NurbsError>, CodecError> {
+        Ok(Ok(self))
     }
 }
 
 impl SurfaceGridWeight for f64 {
-    fn admit(self, index: usize) -> Result<NonZeroReal, NurbsError> {
-        NonZeroReal::new(self).ok_or_else(|| NurbsError::UnusableWeight {
-            field: "pole grid row".to_owned(),
-            index,
-            weight: self,
-        })
+    fn admit(self, index: usize, ctx: Option<&DecodeContext<'_>>) -> Result<Result<NonZeroReal, NurbsError>, CodecError> {
+        match NonZeroReal::new(self) {
+            Some(value) => Ok(Ok(value)),
+            None => Ok(Err(NurbsError::UnusableWeight {
+                field: surface_grid_error_field(ctx, "pole grid row")?,
+                index,
+                weight: self,
+            })),
+        }
     }
 }
 
@@ -74,7 +84,7 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
     };
     if rows.len() != weights.len() {
         return Ok(Err(NurbsError::WeightLaneLength {
-            field: "pole grid".to_owned(),
+            field: surface_grid_error_field(ctx, "pole grid")?,
             poles: rows.len(),
             weights: weights.len(),
         }));
@@ -83,14 +93,14 @@ fn pair_admitted_surface_poles<W: SurfaceGridWeight>(
     for (row, weight_row) in rows.into_iter().zip(weights) {
         if row.len() != weight_row.len() {
             return Ok(Err(NurbsError::WeightLaneLength {
-                field: "pole grid row".to_owned(),
+                field: surface_grid_error_field(ctx, "pole grid row")?,
                 poles: row.len(),
                 weights: weight_row.len(),
             }));
         }
         let mut paired_row = reserve_optional_vec(ctx, row.len(), inner_operation)?;
         for (index, (point, weight)) in row.into_iter().zip(weight_row).enumerate() {
-            let weight = match weight.admit(index) {
+            let weight = match weight.admit(index, ctx)? {
                 Ok(weight) => weight,
                 Err(error) => return Ok(Err(error)),
             };

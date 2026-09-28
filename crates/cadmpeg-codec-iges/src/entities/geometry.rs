@@ -2388,10 +2388,13 @@ pub(crate) fn project_geometry(
         });
         reserve_vec_growth(ctx, &mut ir.model.shells, 1, "iges free wire shell slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_wire_topology")?;
-        ir.model.shells.push(
-            Shell::new(shell, region, Vec::new(), wire_edges, free_vertices)
-                .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-        );
+        let shell = match Shell::new(shell, region, Vec::new(), wire_edges, free_vertices) {
+            Ok(shell) => shell,
+            Err(message) => return Err(CodecError::Malformed(
+                crate::decode_resource::format_retained(ctx, format_args!("{message}"), "iges free-wire shell error")?
+            )),
+        };
+        ir.model.shells.push(shell);
     }
 
     let (trimming_projection, trimming_vertex_derivations) =

@@ -2542,7 +2542,7 @@ pub(super) fn project(
             {
                 Ok(record_bounds) => record_bounds,
                 Err(error) => {
-                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", error.to_string()))?;
+                    super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{error}"))?;
                     continue;
                 }
             };
@@ -2600,9 +2600,15 @@ pub(super) fn project(
         let mut shell_faces = reserve_vec(ctx, 1, "iges trimming shell face IDs")?;
         shell_faces.push(face_id);
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;
-        candidate.model_mut().shells.push(Shell::new(
+        let shell = match Shell::new(
             crate::decode_resource::clone_optional_identity(Some(ctx), &shell_id, "iges trimming identity copy")?, crate::decode_resource::clone_optional_identity(Some(ctx), &region_id, "iges trimming identity copy")?, shell_faces, Vec::new(), Vec::new(),
-        ).map_err(|error| CodecError::Malformed(error.to_string()))?);
+        ) {
+            Ok(shell) => shell,
+            Err(error) => return Err(CodecError::Malformed(
+                crate::decode_resource::format_retained(ctx, format_args!("{error}"), "iges trimming shell error")?
+            )),
+        };
+        candidate.model_mut().shells.push(shell);
         let mut region_shells = reserve_vec(ctx, 1, "iges trimming region shell IDs")?;
         region_shells.push(shell_id);
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_trimming")?;

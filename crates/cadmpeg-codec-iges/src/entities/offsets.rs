@@ -844,7 +844,7 @@ pub(super) fn project(
         let admitted_payload = match payload {
             Ok(admitted_payload) => admitted_payload,
             Err(error) => {
-                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{}", error.to_string()))?;
+                super::push_optional_entity_loss(ctx, &mut losses, entry, format_args!("{error}"))?;
                 continue;
             }
         };
