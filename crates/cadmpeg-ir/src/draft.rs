@@ -3,6 +3,9 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
+
 use crate::annotations::{AnnotationBuilder, Annotations};
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
@@ -122,6 +125,56 @@ struct IdentitySlot {
 }
 
 type IdentityIndex = HashMap<u64, Vec<IdentitySlot>>;
+
+fn insert_admitted_identity<T>(
+    index: &mut HashMap<u64, Vec<T>>,
+    hash: u64,
+    value: T,
+    ctx: &DecodeContext<'_>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !index.contains_key(&hash) {
+        ctx.charge_collection_items(1, operation)?;
+        index
+            .try_reserve(1)
+            .map_err(|_| refuse_local_limit(operation, 1, 1))?;
+    }
+    ctx.charge_collection_items(1, operation)?;
+    let slots = index.entry(hash).or_default();
+    slots
+        .try_reserve(1)
+        .map_err(|_| refuse_local_limit(operation, 1, 1))?;
+    slots.push(value);
+    Ok(())
+}
+
+fn index_model_identities_admitted(
+    model: &Model,
+    ctx: &DecodeContext<'_>,
+) -> Result<Result<IdentityIndex, DraftError>, CodecError> {
+    let mut identity_index = IdentityIndex::new();
+    macro_rules! index_arenas {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            $(for (slot_index, entity) in model.$field.iter().enumerate() {
+                if identity_index_contains(model, &identity_index, entity.identity()) {
+                    let copy = ctx.copy_retained(entity.identity().as_bytes(), "draft identity collision")?;
+                    let identity = String::from_utf8(copy)
+                        .map_err(|_| CodecError::Malformed("draft identity is not UTF-8".into()))?;
+                    return Ok(Err(DraftError::IdentityCollision(identity)));
+                }
+                insert_admitted_identity(
+                    &mut identity_index,
+                    identity_hash(entity.identity()),
+                    IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: slot_index },
+                    ctx,
+                    "draft identity slots",
+                )?;
+            })*
+        };
+    }
+    crate::document::arena_registry!(index_arenas);
+    Ok(Ok(identity_index))
+}
 
 fn identity_index_contains(model: &Model, index: &IdentityIndex, identity: &str) -> bool {
     index
@@ -495,6 +548,48 @@ fn index_committed_identities(base: &CadIr) -> CommittedIdentityIndex {
     identities
 }
 
+fn index_committed_identities_admitted(
+    base: &CadIr,
+    ctx: &DecodeContext<'_>,
+) -> Result<CommittedIdentityIndex, CodecError> {
+    let mut identities = CommittedIdentityIndex::new();
+    macro_rules! collect_model_identities {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            $(for (index, entity) in base.model.$field.iter().enumerate() {
+                insert_admitted_identity(
+                    &mut identities,
+                    identity_hash(entity.identity()),
+                    CommittedIdentity::Neutral(IdentitySlot {
+                        kind: <$ty as EntitySchema>::KIND,
+                        index,
+                    }),
+                    ctx,
+                    "committed identity slots",
+                )?;
+            })*
+        };
+    }
+    crate::document::arena_registry!(collect_model_identities);
+    for record in base
+        .native
+        .0
+        .values()
+        .flat_map(|namespace| namespace.arenas().values().flatten())
+    {
+        let copy = ctx.copy_retained(record.id().as_bytes(), "committed native identity")?;
+        let identity = String::from_utf8(copy)
+            .map_err(|_| CodecError::Malformed("native identity is not UTF-8".into()))?;
+        insert_admitted_identity(
+            &mut identities,
+            identity_hash(record.id()),
+            CommittedIdentity::Native(identity),
+            ctx,
+            "committed identity slots",
+        )?;
+    }
+    Ok(identities)
+}
+
 fn committed_identity_contains(
     base: &CadIr,
     identities: &CommittedIdentityIndex,
@@ -564,6 +659,65 @@ impl<'a> CommitSession<'a> {
         self.base.model.append(draft.model);
         Ok(())
     }
+
+    /// Validates and commits a model draft with allocation admission.
+    ///
+    /// The outer result reports a resource refusal. The inner result reports
+    /// a rejected candidate without changing the committed model.
+    pub fn commit_model_admitted(
+        &mut self,
+        mut draft: ModelDraft,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Result<(), DraftError>, CodecError> {
+        if self.identities.is_none() {
+            self.identities = Some(index_committed_identities_admitted(self.base, ctx)?);
+        }
+        if draft.identity_index.is_none() {
+            draft.identity_index = match index_model_identities_admitted(&draft.model, ctx)? {
+                Ok(index) => Some(index),
+                Err(error) => return Ok(Err(error)),
+            };
+        }
+        let identities = self.identities.as_mut().ok_or_else(|| {
+            CodecError::Malformed("committed identity index is absent".into())
+        })?;
+        if let Err(error) = draft.validate_with_contains(&self.base.model, |identity| {
+            committed_identity_contains(self.base, identities, identity)
+        }) {
+            return Ok(Err(error));
+        }
+        macro_rules! reserve_arenas {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+                $(if !draft.model.$field.is_empty() {
+                    let count = draft.model.$field.len();
+                    ctx.charge_collection_items(u64_from_index(count), "committed model arena slots")?;
+                    self.base.model.$field.try_reserve(count).map_err(|_| {
+                        refuse_local_limit("committed model arena slots", u64_from_index(count), u64_from_index(count))
+                    })?;
+                })*
+            };
+        }
+        crate::document::arena_registry!(reserve_arenas);
+        macro_rules! register_draft {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+                $(for (offset, entity) in draft.model.$field.iter().enumerate() {
+                    insert_admitted_identity(
+                        identities,
+                        identity_hash(entity.identity()),
+                        CommittedIdentity::Neutral(IdentitySlot {
+                            kind: <$ty as EntitySchema>::KIND,
+                            index: self.base.model.$field.len() + offset,
+                        }),
+                        ctx,
+                        "committed identity slots",
+                    )?;
+                })*
+            };
+        }
+        crate::document::arena_registry!(register_draft);
+        self.base.model.append(draft.model);
+        Ok(Ok(()))
+    }
 }
 
 #[cfg(test)]
@@ -578,6 +732,8 @@ mod tests {
     use crate::math::Point3;
     use crate::native::NativeRecord;
     use crate::topology::{Point, Vertex};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
 
     fn point(id: &str) -> Point {
         Point::new(
@@ -604,6 +760,38 @@ mod tests {
             })
             .expect("insert vertex into draft");
         draft
+    }
+
+    #[test]
+    fn admitted_draft_commit_refuses_identity_index_storage_before_mutating_model() {
+        fn directly_staged_point() -> ModelDraft {
+            let mut draft = ModelDraft::new();
+            draft.model_mut().points.push(point("test:model:point#new"));
+            draft
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ir = CadIr::empty();
+        let result = CommitSession::new(&mut ir)
+            .commit_model_admitted(directly_staged_point(), &ctx);
+        assert!(matches!(result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "draft identity slots"
+                    && limit.used == 0
+                    && limit.additional == 1
+        ));
+        assert!(ir.model.points.is_empty());
+
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        CommitSession::new(&mut ir)
+            .commit_model_admitted(directly_staged_point(), &ctx)
+            .unwrap()
+            .unwrap();
+        assert_eq!(ir.model.points.len(), 1);
     }
 
     #[test]

@@ -2621,7 +2621,7 @@ pub(super) fn project(
     drop(carrier_index);
     let mut commit_session = CommitSession::new(ir);
     for (entry, candidate, derivations) in staged {
-        if commit_session.commit_model(candidate).is_err() {
+        if commit_session.commit_model_admitted(candidate, ctx)?.is_err() {
             super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "trimmed sheet candidate failed neutral validation"))?;
             continue;
         }
