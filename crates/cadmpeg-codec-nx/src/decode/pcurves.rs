@@ -32,10 +32,11 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, curve_point_with_budget, curve_second_derivative_with_budget,
     curve_tangent_with_budget, finite_or_refusal, model_curve_point_by_id_with_budget,
+    model_surface_point_by_id_with_budget, EvaluationFailure,
     model_surface_partials_by_id_with_budget, nurbs_curve_speed_bound, nurbs_surface_isocurve,
     nurbs_surface_parameter_within_nonnegative_tolerance_with_budget,
     nurbs_surface_parameter_within_tolerance_with_budget, nurbs_surface_point_with_budget,
-    pcurve_tangent, pcurve_uv, surface_second_partials,
+    pcurve_tangent, pcurve_uv, surface_point_with_budget_solved, surface_second_partials,
 };
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::geometry::{
@@ -1906,7 +1907,7 @@ fn exact_boundary_pcurve_with_index(
     let Some(solved_curve) = curve_carrier.geometry.solved() else {
         return Ok(None);
     };
-    let Some(curve_breaks) = exact_boundary_curve_breaks(solved_curve, range) else {
+    let Some(curve_breaks) = exact_boundary_curve_breaks(solved_curve, range, geometry_budget)? else {
         return Ok(None);
     };
     if matches!(
@@ -2205,11 +2206,14 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let Some(surface_breaks) =
-        boundary_curve_affine_breaks_with_index(index, surface, pcurve, range)?
+        boundary_curve_affine_breaks_with_index(index, surface, pcurve, range, geometry_budget)?
     else {
         return Ok(false);
     };
-    let mut breaks = curve_breaks.to_vec();
+    let mut breaks = Vec::new();
+    let _curve_reservation = geometry_budget.reserve_vec(&mut breaks, curve_breaks.len(), "nx boundary curve breaks")?;
+    breaks.extend_from_slice(curve_breaks);
+    let _surface_reservation = geometry_budget.reserve_vec(&mut breaks, surface_breaks.len(), "nx boundary surface breaks")?;
     breaks.extend(surface_breaks);
     breaks.sort_by(f64::total_cmp);
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
@@ -2251,9 +2255,10 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
 fn exact_boundary_curve_breaks(
     geometry: &SolvedCurveGeometry,
     range: [f64; 2],
-) -> Option<Vec<f64>> {
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
     let mut breaks = match geometry {
-        SolvedCurveGeometry::Line(_) => range.to_vec(),
+        SolvedCurveGeometry::Line(_) => copy_breaks(geometry_budget, &range)?,
         SolvedCurveGeometry::Nurbs(nurbs)
             if nurbs.degree() == 1
                 && !nurbs.periodic()
@@ -2263,22 +2268,34 @@ fn exact_boundary_curve_breaks(
                         .any(|pair| pair[0].get().to_bits() != pair[1].get().to_bits())
                 }) =>
         {
-            let degree = usize::try_from(nurbs.degree()).ok()?;
+            let Some(degree) = usize::try_from(nurbs.degree()).ok() else { return Ok(None); };
             let count = nurbs.control_points().len();
             if degree > count {
-                return None;
+                return Ok(None);
             }
-            nurbs.knots().get(degree..=count)?.to_vec()
+            let Some(knots) = nurbs.knots().get(degree..=count) else { return Ok(None); };
+            copy_breaks(geometry_budget, knots)?
         }
-        _ => return None,
+        _ => return Ok(None),
     };
     breaks.retain(|parameter| {
         parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
     });
+    let _range_reservation = geometry_budget.reserve_vec(&mut breaks, 2, "nx boundary range breaks")?;
     breaks.extend(range);
     breaks.sort_by(f64::total_cmp);
     breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
-    Some(breaks)
+    Ok(Some(breaks))
+}
+
+fn copy_breaks(
+    geometry_budget: &GeometryWorkBudget<'_>,
+    values: &[f64],
+) -> Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let mut breaks = Vec::new();
+    let _reservation = geometry_budget.reserve_vec(&mut breaks, values.len(), "nx boundary breaks")?;
+    breaks.extend_from_slice(values);
+    Ok(breaks)
 }
 
 #[cfg(test)]
@@ -2532,11 +2549,12 @@ fn coincident_pcurve_pair_with_index(
         Ok(distance.is_finite().then_some(distance))
     };
     let affine_breaks = [
-        boundary_curve_affine_breaks_with_index(index, surfaces[0], pcurves[0], range)?,
-        boundary_curve_affine_breaks_with_index(index, surfaces[1], pcurves[1], range)?,
+        boundary_curve_affine_breaks_with_index(index, surfaces[0], pcurves[0], range, geometry_budget)?,
+        boundary_curve_affine_breaks_with_index(index, surfaces[1], pcurves[1], range, geometry_budget)?,
     ];
     if let [Some(first), Some(second)] = affine_breaks {
         let mut breaks = first;
+        let _reservation = geometry_budget.reserve_vec(&mut breaks, second.len(), "nx coincident pcurve breaks")?;
         breaks.extend(second);
         breaks.sort_by(f64::total_cmp);
         breaks.dedup();
@@ -2560,7 +2578,9 @@ fn coincident_pcurve_pair_with_index(
             return Ok(false);
         }
     }
-    let mut intervals = vec![range];
+    let mut intervals = Vec::new();
+    let _initial_reservation = geometry_budget.reserve_vec(&mut intervals, 1, "nx coincident pcurve intervals")?;
+    intervals.push(range);
     while let Some([start, end]) = intervals.pop() {
         if !geometry_budget.charge() {
             return Ok(false);
@@ -2585,6 +2605,7 @@ fn coincident_pcurve_pair_with_index(
         if middle == start || middle == end {
             return Ok(false);
         }
+        let _child_reservation = geometry_budget.reserve_vec(&mut intervals, 2, "nx coincident pcurve intervals")?;
         intervals.push([middle, end]);
         intervals.push([start, middle]);
     }
@@ -2596,6 +2617,7 @@ fn boundary_curve_affine_breaks_with_index(
     surface: &SurfaceId,
     pcurve: &PcurveGeometry,
     range: [f64; 2],
+    geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Vec<f64>>, cadmpeg_core::decode::ResourceLimit> {
     (|| -> Option<Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit>> {
         let carrier = index.surfaces(surface.as_str())?;
@@ -2603,7 +2625,7 @@ fn boundary_curve_affine_breaks_with_index(
             carrier.geometry.solved(),
             Some(SolvedSurfaceGeometry::Plane(_))
         ) {
-            return Some(Ok(range.to_vec()));
+            return Some(copy_breaks(geometry_budget, &range));
         }
         if matches!(
             carrier.geometry.solved(),
@@ -2620,7 +2642,7 @@ fn boundary_curve_affine_breaks_with_index(
                     && points[0].u == points[1].u
                     && nurbs.knots().as_slice() == [range[0], range[0], range[1], range[1]]
                 {
-                    return Some(Ok(range.to_vec()));
+                    return Some(copy_breaks(geometry_budget, &range));
                 }
             }
         }
@@ -2658,18 +2680,14 @@ fn boundary_curve_affine_breaks_with_index(
                 };
                 let degree = usize::try_from(isocurve.degree()).ok()?;
                 let count = isocurve.control_points().len();
-                let mut breaks = isocurve
-                    .knots()
-                    .get(degree..=count)?
-                    .iter()
-                    .filter_map(|parameter| {
-                        let fraction = cadmpeg_ir::math::parameter_fraction(
-                            *parameter, varying[0], varying[1],
-                        )?;
-                        cadmpeg_ir::math::interpolate(range[0], range[1], fraction.get())
-                            .map(cadmpeg_ir::scalar::FiniteReal::get)
-                    })
-                    .collect::<Vec<_>>();
+                let mut breaks = Vec::new();
+                for parameter in isocurve.knots().get(degree..=count)? {
+                    let Some(fraction) = cadmpeg_ir::math::parameter_fraction(*parameter, varying[0], varying[1]) else { continue; };
+                    let Some(mapped) = cadmpeg_ir::math::interpolate(range[0], range[1], fraction.get()).map(cadmpeg_ir::scalar::FiniteReal::get) else { continue; };
+                    if let Err(limit) = geometry_budget.reserve_vec(&mut breaks, 1, "nx affine pcurve breaks") { return Some(Err(limit)); }
+                    breaks.push(mapped);
+                }
+                if let Err(limit) = geometry_budget.reserve_vec(&mut breaks, 2, "nx affine pcurve range") { return Some(Err(limit)); }
                 breaks.extend(range);
                 return Some(Ok(breaks));
             }
@@ -2683,12 +2701,12 @@ fn boundary_curve_affine_breaks_with_index(
             Some(SolvedSurfaceGeometry::Cylinder(_))
                 if { direction.u == 0.0 && direction.v != 0.0 } =>
             {
-                Some(range.to_vec())
+                return Some(copy_breaks(geometry_budget, &range));
             }
             Some(SolvedSurfaceGeometry::Cone(_))
                 if { direction.u == 0.0 && direction.v != 0.0 } =>
             {
-                Some(range.to_vec())
+                return Some(copy_breaks(geometry_budget, &range));
             }
             Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 let (fixed_axis, fixed_parameter, varying_origin, varying_scale) =
@@ -2710,13 +2728,14 @@ fn boundary_curve_affine_breaks_with_index(
                 };
                 let degree = usize::try_from(isocurve.degree()).ok()?;
                 let count = isocurve.control_points().len();
-                let mut breaks = isocurve.knots().get(degree..=count)?.to_vec();
+                let mut breaks = match copy_breaks(geometry_budget, isocurve.knots().get(degree..=count)?) { Ok(breaks) => breaks, Err(limit) => return Some(Err(limit)) };
                 for parameter in &mut breaks {
                     *parameter = (*parameter - varying_origin) / varying_scale;
                 }
                 breaks.retain(|parameter| {
                     parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
                 });
+                if let Err(limit) = geometry_budget.reserve_vec(&mut breaks, 2, "nx affine pcurve range") { return Some(Err(limit)); }
                 breaks.extend(range);
                 Some(breaks)
             }
@@ -2911,22 +2930,22 @@ fn blend_transfer_contact<'a>(
     blend: &SurfaceId,
 ) -> Option<BlendTransferContact<'a>> {
     let (supports, spine, radius, _) = blend_surface_definition_with_index(index, blend)?;
-    let matches = supports
+    let mut matches = supports
         .iter()
         .enumerate()
         .filter(|(_, candidate)| {
             parameterization_equivalent_surfaces_with_index(index, candidate, support)
         })
-        .map(|(boundary, _)| boundary)
-        .collect::<Vec<_>>();
-    let [boundary] = matches.as_slice() else {
+        .map(|(boundary, _)| boundary);
+    let boundary = matches.next()?;
+    if matches.next().is_some() {
         return None;
-    };
+    }
     Some(BlendTransferContact {
         support,
         support_geometry: &index.surfaces(support.as_str())?.geometry,
         pcurve: spine_contact_pcurve_with_index(index, support, &spine, radius, 0)?,
-        boundary: *boundary,
+        boundary,
     })
 }
 
@@ -3158,6 +3177,34 @@ fn transfer_intersection_pcurve_with_budget(
 
 type TransferredPcurveSample = (f64, Point2, Point3);
 
+fn decoded_solved_surface_point_with_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    geometry: &SolvedSurfaceGeometry,
+    u: f64,
+    v: f64,
+    depth: usize,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Result<Option<Point3>, cadmpeg_core::decode::ResourceLimit> {
+    if depth >= 32 {
+        return Ok(None);
+    }
+    let evaluated = match surface_point_with_budget_solved(geometry, u, v, geometry_budget) {
+        Err(EvaluationFailure::NoValue) => {
+            model_surface_point_by_id_with_budget(index, surface, u, v, geometry_budget)
+        }
+        direct => direct,
+    };
+    match evaluated {
+        Ok(point) => Ok(Some(point.get())),
+        Err(EvaluationFailure::NonFinite(point)) => Ok(Some(point)),
+        Err(EvaluationFailure::ResourceLimit(limit)) => Err(limit),
+        Err(EvaluationFailure::NoValue) => blend_surface_point_inner_with_index_and_budget(
+            index, surface, u, v, depth + 1, geometry_budget,
+        ),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn transferred_pcurve_sample_with_budget(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
@@ -3183,10 +3230,10 @@ fn transferred_pcurve_sample_with_budget(
         return Ok(None);
     };
     let mut point = if let Some(geometry) = source_geometry {
-        decoded_surface_point_with_geometry_and_budget(
+        decoded_solved_surface_point_with_budget(
             index,
             source_surface,
-            &SurfaceGeometry::Solved(geometry.clone()),
+            geometry,
             source_uv.u,
             source_uv.v,
             0,
@@ -3298,10 +3345,10 @@ fn transferred_pcurve_sample_with_budget(
         true
     } else {
         let mut candidate = if let Some(geometry) = target_geometry {
-            decoded_surface_point_with_geometry_and_budget(
+            decoded_solved_surface_point_with_budget(
                 index,
                 target_surface,
-                &SurfaceGeometry::Solved(geometry.clone()),
+                geometry,
                 target_uv.u,
                 target_uv.v,
                 0,
@@ -3568,10 +3615,10 @@ fn append_transferred_pcurve_segment_with_budget(
                     return Ok(false);
                 };
                 let mut source_point = if let Some(geometry) = source_geometry {
-                    decoded_surface_point_with_geometry_and_budget(
+                    decoded_solved_surface_point_with_budget(
                         index,
                         source_surface,
-                        &SurfaceGeometry::Solved(geometry.clone()),
+                        geometry,
                         source_uv.u,
                         source_uv.v,
                         0,
@@ -3625,10 +3672,10 @@ fn append_transferred_pcurve_segment_with_budget(
                 continue;
             }
             let mut target_point = if let Some(geometry) = target_geometry {
-                decoded_surface_point_with_geometry_and_budget(
+                decoded_solved_surface_point_with_budget(
                     index,
                     target_surface,
-                    &SurfaceGeometry::Solved(geometry.clone()),
+                    geometry,
                     uv.u,
                     uv.v,
                     0,
