@@ -397,6 +397,10 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
 
 #[test]
 fn occurrence_key_separates_fallback_and_authored_roles() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
     let reference = |role: &str, ordinal: u32| XrefReference {
         id: "f3d:xref:reference#1".into(),
         ordinal,
@@ -408,22 +412,26 @@ fn occurrence_key_separates_fallback_and_authored_roles() {
         transform: None,
     };
 
-    assert_eq!(occurrence_key(&reference("", 7)), "ordinal-7/occurrence-0");
+    assert_eq!(occurrence_key(&ctx, &reference("", 7)).unwrap(), "ordinal-7/occurrence-0");
     assert_eq!(
-        occurrence_key(&reference("ordinal-7", 7)),
+        occurrence_key(&ctx, &reference("ordinal-7", 7)).unwrap(),
         "role-ordinal-7/reference-7/occurrence-0"
     );
     assert_eq!(
-        occurrence_key(&reference("role /#: value", 7)),
+        occurrence_key(&ctx, &reference("role /#: value", 7)).unwrap(),
         "role-role%20%2F%23%3A%20value/reference-7/occurrence-0"
     );
-    let key = occurrence_key(&reference("role /#: value", 7));
+    let key = occurrence_key(&ctx, &reference("role /#: value", 7)).unwrap();
     cadmpeg_ir::ids::Identity::new(format!("f3d:xref/{key}/native:record#1"))
         .expect("encoded occurrence key remains an admitted identity scope");
 }
 
 #[test]
 fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
     let reference = |ordinal| XrefReference {
         id: format!("f3d:xref:reference#{ordinal}"),
         ordinal,
@@ -436,8 +444,30 @@ fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
     };
 
     assert_ne!(
-        occurrence_key(&reference(0)),
-        occurrence_key(&reference(1)),
+        occurrence_key(&ctx, &reference(0)).unwrap(),
+        occurrence_key(&ctx, &reference(1)).unwrap(),
         "reference ordinal is part of the occurrence owner when role ordinals reset"
     );
+}
+
+#[test]
+fn occurrence_key_refuses_retained_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let reference = XrefReference {
+        id: "f3d:xref:reference#1".into(),
+        ordinal: 1,
+        occurrence_ordinal: 0,
+        from: "root.f3d".into(),
+        relative_path: "part.f3d".into(),
+        neutron_role: "role /#: value".into(),
+        neutron_data: String::new(),
+        transform: None,
+    };
+    let error = occurrence_key(&ctx, &reference).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "retain F3Z occurrence key"));
 }

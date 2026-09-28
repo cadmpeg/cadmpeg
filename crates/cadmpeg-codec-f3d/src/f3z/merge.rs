@@ -148,39 +148,43 @@ impl MergeSession<'_, '_> {
     ) -> Result<usize, CodecError> {
         let mut merged = 0usize;
         for reference in &table.references {
-            let occurrence = occurrence_key(reference);
-            let label = xref::design_for(table, reference).map_or_else(
-                || reference.relative_path.clone(),
-                |design| design.display_name.clone(),
-            );
+            let occurrence = occurrence_key(self.ctx, reference)?;
+            let label = xref::design_for(table, reference)
+                .map_or(reference.relative_path.as_str(), |design| design.display_name.as_str());
             if self.stack.contains(&reference.relative_path) {
-                parent_report
-                    .losses
-                    .push(F3dLossCode::XrefCycle.note(format!(
+                super::push_loss(
+                    self.ctx,
+                    &mut parent_report.losses,
+                    F3dLossCode::XrefCycle,
+                    format_args!(
                         "xref {label}: reference cycle through {}; the occurrence was not resolved",
                         reference.relative_path
-                    )));
+                    ),
+                )?;
                 continue;
             }
             let Some(member) = self.archive.members.get(&reference.relative_path) else {
-                let (code, message) = if self.scan.entry_view(&reference.relative_path).is_some() {
-                    (
+                if self.scan.entry_view(&reference.relative_path).is_some() {
+                    super::push_loss(
+                        self.ctx,
+                        &mut parent_report.losses,
                         F3dLossCode::XrefMemberUndecoded,
-                        format!(
+                        format_args!(
                             "xref {label}: member {} is not an F3D document member; the occurrence was not resolved",
                             reference.relative_path
                         ),
-                    )
+                    )?;
                 } else {
-                    (
+                    super::push_loss(
+                        self.ctx,
+                        &mut parent_report.losses,
                         F3dLossCode::XrefMemberMissing,
-                        format!(
+                        format_args!(
                             "xref {label}: member {} is not present in the archive; the occurrence was not resolved",
                             reference.relative_path
                         ),
-                    )
-                };
-                parent_report.losses.push(code.note(message));
+                    )?;
+                }
                 continue;
             };
             let member_scan = match member {
@@ -197,12 +201,15 @@ impl MergeSession<'_, '_> {
                 Ok(component) => component.into_decoded(),
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    parent_report
-                        .losses
-                        .push(F3dLossCode::XrefMemberUndecoded.note(format!(
+                    super::push_loss(
+                        self.ctx,
+                        &mut parent_report.losses,
+                        F3dLossCode::XrefMemberUndecoded,
+                        format_args!(
                             "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
                             reference.relative_path
-                        )));
+                        ),
+                    )?;
                     continue;
                 }
             };
@@ -212,7 +219,15 @@ impl MergeSession<'_, '_> {
                 body: mut component_report,
                 source_fidelity: mut component_fidelity,
             } = component;
-            self.stack.push(reference.relative_path.clone());
+            self.ctx.charge_collection_items(1, "grow F3Z merge stack")?;
+            self.stack
+                .try_reserve(1)
+                .map_err(|_| self.ctx.refuse_codec_limit("grow F3Z merge stack", 0, 1))?;
+            self.stack.push(crate::container::format_retained(
+                self.ctx,
+                "retain F3Z merge stack path",
+                format_args!("{}", reference.relative_path),
+            )?);
             let descendants = self.merge(
                 &mut component_ir,
                 &mut component_report,
@@ -244,21 +259,27 @@ impl MergeSession<'_, '_> {
             if component_report.transfer.geometry_transferred() {
                 parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
             }
-            parent_report
-                .losses
-                .extend(component_report.losses.into_iter().map(|mut loss| {
-                    loss.message = format!("xref {label}: {}", loss.message);
-                    loss
-                }));
+            for loss in &mut component_report.losses {
+                loss.message = crate::container::format_retained(
+                    self.ctx,
+                    "prefix F3Z component loss",
+                    format_args!("xref {label}: {}", loss.message),
+                )?;
+            }
+            super::append_losses(self.ctx, &mut parent_report.losses, component_report.losses)?;
             let placement = if reference.transform.is_some() {
                 "Design occurrence transform"
             } else {
                 "identity placement"
             };
-            parent_report.notes.push(format!(
-                "xref {label}: merged {} as occurrence {occurrence} ({placement}; {descendants} nested occurrence(s))",
-                reference.relative_path
-            ));
+            super::push_note(
+                self.ctx,
+                &mut parent_report.notes,
+                format_args!(
+                    "xref {label}: merged {} as occurrence {occurrence} ({placement}; {descendants} nested occurrence(s))",
+                    reference.relative_path
+                ),
+            )?;
         }
         Ok(merged)
     }
@@ -352,21 +373,50 @@ fn rescope_fidelity(
     Ok(rescoped)
 }
 
-fn occurrence_key(reference: &XrefReference) -> String {
+fn occurrence_key(
+    ctx: &DecodeContext<'_>,
+    reference: &XrefReference,
+) -> Result<String, CodecError> {
     if reference.neutron_role.is_empty() {
-        return format!(
-            "ordinal-{}/occurrence-{}",
-            reference.ordinal, reference.occurrence_ordinal
+        return crate::container::format_retained(
+            ctx,
+            "retain F3Z occurrence key",
+            format_args!(
+                "ordinal-{}/occurrence-{}",
+                reference.ordinal, reference.occurrence_ordinal
+            ),
         );
     }
-    let role = crate::ids::identity_key_component(&reference.neutron_role).replace('/', "%2F");
+    let role = EscapedOccurrenceComponent(&reference.neutron_role);
     // `occurrence_ordinal` restarts for each Redirections reference. Keep the
     // source reference ordinal in the scope so two admitted rows carrying the
     // same role cannot merge their model or fidelity identities.
-    format!(
-        "role-{role}/reference-{}/occurrence-{}",
-        reference.ordinal, reference.occurrence_ordinal
+    crate::container::format_retained(
+        ctx,
+        "retain F3Z occurrence key",
+        format_args!(
+            "role-{role}/reference-{}/occurrence-{}",
+            reference.ordinal, reference.occurrence_ordinal
+        ),
     )
+}
+
+struct EscapedOccurrenceComponent<'a>(&'a str);
+
+impl std::fmt::Display for EscapedOccurrenceComponent<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for character in self.0.chars() {
+            if matches!(character, ':' | '#' | '%' | '/') || character.is_whitespace() {
+                let mut bytes = [0; 4];
+                for byte in character.encode_utf8(&mut bytes).as_bytes() {
+                    write!(formatter, "%{byte:02X}")?;
+                }
+            } else {
+                write!(formatter, "{character}")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 fn apply_occurrence_transform(
