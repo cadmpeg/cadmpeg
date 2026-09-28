@@ -693,7 +693,7 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
         offset: 30,
     });
     scan.planes.outlines =
-        crate::surface::placed_outline_planes(&scan.planes.envelopes, &scan.planes.local_systems);
+        crate::decode::with_test_decode_ctx(|ctx| crate::surface::placed_outline_planes(ctx, &scan.planes.envelopes, &scan.planes.local_systems)).expect("service outline planes");
 
     let candidates = plane_candidates(&scan);
     let candidates = candidates.get(&42).expect("plane candidates");
@@ -755,7 +755,7 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
         offset: 30,
     });
     scan.planes.outlines =
-        crate::surface::placed_outline_planes(&scan.planes.envelopes, &scan.planes.local_systems);
+        crate::decode::with_test_decode_ctx(|ctx| crate::surface::placed_outline_planes(ctx, &scan.planes.envelopes, &scan.planes.local_systems)).expect("service outline planes");
 
     let candidates = plane_candidates(&scan);
     let candidates = candidates.get(&42).expect("plane candidates");

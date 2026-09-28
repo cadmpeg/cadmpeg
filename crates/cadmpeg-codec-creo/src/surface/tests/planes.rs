@@ -17,7 +17,6 @@ use crate::surface::decode_row_scalar;
 use crate::surface::first_compound_close;
 use crate::surface::frame_bound_outline_planes;
 use crate::surface::opaque_spans;
-use crate::surface::outline_planes;
 use crate::surface::plane_direct_frame;
 use crate::surface::plane_envelope_scalar_slots_with_tokens_and_end;
 use crate::surface::plane_envelopes;
@@ -44,6 +43,10 @@ use crate::surface::SurfaceParameterScalar;
 use crate::surface::SurfaceParameterScalarFrame;
 use crate::surface::SurfacePrototypeFamily;
 use crate::surface::SurfaceRow;
+
+fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
+    super::with_decode_ctx(&[], |ctx| crate::surface::outline_planes(ctx, envelopes))
+}
 
 fn positional_frame_planes(
     parameters: &[SurfaceParameterRecord],
@@ -92,6 +95,116 @@ fn derives_one_held_coordinate_outline_plane() {
             offset: 20,
         }]
     );
+}
+
+#[test]
+fn held_coordinate_outline_refuses_output_vector() {
+    let records = [PlaneEnvelopeRecord {
+        surface_id: 42,
+        body: Vec::new(),
+        envelope: PlaneEnvelope::Standard {
+            bounds_2d: [[Some(0.0), Some(1.0)], [Some(0.0), Some(1.0)]],
+            corners_3d: [
+                [Some(3.0), Some(-2.0), Some(4.0)],
+                [Some(3.0), Some(5.0), Some(9.0)],
+            ],
+        },
+        corner_coordinate_equal: [Some(true), Some(false), Some(false)],
+        scalar_tokens: Vec::new(),
+        row_offset: 10,
+        offset: 20,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &policy,
+    )
+    .expect("empty root");
+    let error = crate::surface::outline_planes(&ctx, &records)
+        .expect_err("outline vector exceeds limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo held-coordinate outline planes"));
+}
+
+fn placed_frame_bound_limit_error(limit: u64) -> cadmpeg_core::CodecError {
+    let records = [PlaneEnvelopeRecord {
+        surface_id: 42,
+        body: Vec::new(),
+        envelope: PlaneEnvelope::Standard {
+            bounds_2d: [[None; 2]; 2],
+            corners_3d: [
+                [Some(-3.0), Some(-4.0), Some(7.0)],
+                [Some(5.0), Some(-4.0), None],
+            ],
+        },
+        corner_coordinate_equal: [Some(false), Some(true), None],
+        scalar_tokens: Vec::new(),
+        row_offset: 10,
+        offset: 20,
+    }];
+    let frames = [PlaneLocalSystem {
+        surface_id: 42,
+        body: Vec::new(),
+        slots: [
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 100.0, 200.0, 300.0,
+        ]
+        .map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 10,
+        offset: 30,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &policy,
+    )
+    .expect("empty root");
+    crate::surface::placed_outline_planes(&ctx, &records, &frames)
+        .expect_err("placed outline collection exceeds limit")
+}
+
+#[test]
+fn placed_outline_refuses_frame_bound_id_node() {
+    let error = placed_frame_bound_limit_error(0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo frame-bound outline ID nodes"));
+}
+
+#[test]
+fn placed_outline_refuses_output_vector() {
+    let error = placed_frame_bound_limit_error(1);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo placed outline planes"));
+}
+
+#[test]
+fn placed_outline_refuses_matrix_frame_id_node() {
+    let frames = [PlaneLocalSystem {
+        surface_id: 42,
+        body: Vec::new(),
+        slots: [
+            Some(1.0), Some(0.0), Some(1.0), Some(0.0), Some(0.0), Some(0.0),
+            Some(-1.0), Some(0.0), Some(1.0), Some(0.0), Some(0.0), Some(0.0),
+        ],
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::MatrixColumns),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 10,
+        offset: 30,
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &policy,
+    )
+    .expect("empty root");
+    let error = crate::surface::placed_outline_planes(&ctx, &[], &frames)
+        .expect_err("matrix frame ID exceeds limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.operation == "creo matrix frame ID nodes"));
 }
 
 fn unique_positional_frame_fixture() -> (SurfaceParameterRecord, SurfaceRow) {

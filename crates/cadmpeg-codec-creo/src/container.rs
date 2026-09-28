@@ -2830,15 +2830,16 @@ pub(crate) fn scan_bytes<'a>(
     let cross_section_plane_local_systems = cross_section_plane_local_systems(ctx, &sections)?;
     let plane_envelopes = plane_envelopes(ctx, &model_geometry_sections)?;
     let cross_section_plane_envelopes = cross_section_plane_envelopes(ctx, &sections)?;
-    let outline_planes = surface::placed_outline_planes(&plane_envelopes, &plane_local_systems);
+    let outline_planes = surface::placed_outline_planes(ctx, &plane_envelopes, &plane_local_systems)?;
     let positional_frame_planes =
         surface::positional_frame_planes(ctx, &surface_parameters, &surface_rows)?;
     let placement_outline_planes =
         placement_outline_planes(ctx, &outline_planes, &positional_frame_planes)?;
     let cross_section_outline_planes = surface::placed_outline_planes(
+        ctx,
         &cross_section_plane_envelopes,
         &cross_section_plane_local_systems,
-    );
+    )?;
     let surface_prototype_count = surface_prototype_count(&model_geometry_sections);
     let mut nonvisible_prototype_refusals = crate::lane_refusal::LaneRefusals::new();
     let nonvisible_surface_prototype_records = surface_prototype_records(
