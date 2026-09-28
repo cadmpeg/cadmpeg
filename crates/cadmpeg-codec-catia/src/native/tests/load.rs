@@ -593,11 +593,17 @@ fn schema_configuration_row_chain_retains_complete_source_order() {
 fn configuration_chain_derivation_refuses_collection_limit() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
-    let classes = super::super::entity_class_index(
-        native.object_graphs.iter().flat_map(|graph| &graph.records),
-    );
-    let (_, _, entities, terminal_nulls, _) =
-        super::super::semantic_entity_indices(&native.entity_records, &classes);
+    let classes = crate::test_support::with_service_context(|ctx| {
+        super::super::entity_class_index(
+            ctx,
+            native.object_graphs.iter().flat_map(|graph| &graph.records),
+        )
+    })
+    .expect("native class index fits service limits");
+    let (_, _, entities, terminal_nulls, _) = crate::test_support::with_service_context(|ctx| {
+        super::super::semantic_entity_indices(ctx, &native.entity_records, &classes)
+    })
+    .expect("native semantic indices fit service limits");
     let derive = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         super::super::derive_schema_configuration_row_chains(
             ctx,
@@ -615,6 +621,49 @@ fn configuration_chain_derivation_refuses_collection_limit() {
     let chains = crate::test_support::with_service_context(derive)
         .expect("service profile admits configuration chains");
     assert_eq!(chains, native.schema_configuration_row_chains);
+}
+
+#[test]
+fn native_semantic_indices_refuse_collection_and_retained_limits() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
+    let records = native.object_graphs.iter().flat_map(|graph| &graph.records).collect::<Vec<_>>();
+    let class_collection = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::entity_class_index(ctx, records.iter().copied())
+    });
+    assert!(matches!(class_collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_class_index"));
+    let class_retained = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::entity_class_index(ctx, records.iter().copied())
+    });
+    assert!(matches!(class_retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_class_graph"));
+    let classes = crate::test_support::with_service_context(|ctx| {
+        super::super::entity_class_index(ctx, records.iter().copied())
+    }).expect("service profile admits class index");
+    assert!(!classes.is_empty());
+    let indices = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::semantic_entity_indices(ctx, &native.entity_records, &classes)
+    });
+    assert!(matches!(indices, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_entity_index"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::semantic_entity_indices(ctx, &native.entity_records, &classes)
+    }).expect("service profile admits semantic indices");
+    assert!(!admitted.2.is_empty());
+}
+
+#[test]
+fn native_relation_signature_refuses_nested_input_limit() {
+    let source = "(#1_ : #In Length) : Real\n";
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::relation_type_signature_charged(ctx, None, source)
+    });
+    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_native_signature_inputs"));
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::relation_type_signature_charged(ctx, None, source)
+    }).expect("service profile admits relation signature").expect("valid signature");
+    assert_eq!(service.inputs[0].parameter, "#1_");
 }
 
 #[test]

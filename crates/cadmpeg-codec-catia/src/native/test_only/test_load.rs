@@ -175,14 +175,20 @@ impl CatiaNative {
                 entity.id
             )));
         }
-        let entity_classes_by_graph_identity = entity_class_index(&records);
+        let entity_classes_by_graph_identity = crate::test_support::with_service_context(|ctx| {
+            entity_class_index(ctx, &records)
+        })
+        .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         let (
             relation_expressions,
             relation_expression_entities,
             entities_by_graph_identity,
             terminal_nulls_by_graph,
             parameter_bindings,
-        ) = semantic_entity_indices(&entity_records, &entity_classes_by_graph_identity);
+        ) = crate::test_support::with_service_context(|ctx| {
+            semantic_entity_indices(ctx, &entity_records, &entity_classes_by_graph_identity)
+        })
+        .map_err(|error| cadmpeg_ir::NativeConvertError::InvalidOwner(error.to_string()))?;
         let expected_reference_signature_cohorts =
             derive_reference_signature_cohorts(&entity_records);
         if reference_signature_cohorts != expected_reference_signature_cohorts {

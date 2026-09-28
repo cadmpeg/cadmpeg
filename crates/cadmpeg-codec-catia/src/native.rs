@@ -2024,6 +2024,21 @@ impl CatiaRelationExpression {
         };
         relation_type_signature(placeholder, &self.type_signature.value)
     }
+
+    fn signature_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Option<CatiaRelationTypeSignature>, CodecError> {
+        let placeholder = match &self.framing {
+            CatiaRelationExpressionFraming::PlaceholderState { placeholder, .. } => {
+                Some(placeholder.value.as_str())
+            }
+            CatiaRelationExpressionFraming::ParserVersion { .. }
+            | CatiaRelationExpressionFraming::BooleanParserVersion { .. }
+            | CatiaRelationExpressionFraming::OpenedBooleanParserVersion { .. } => None,
+        };
+        relation_type_signature_charged(ctx, placeholder, &self.type_signature.value)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -4713,6 +4728,63 @@ fn relation_type_signature(
     })
 }
 
+fn relation_type_signature_charged(
+    ctx: &DecodeContext<'_>,
+    placeholder: Option<&str>,
+    source: &str,
+) -> Result<Option<CatiaRelationTypeSignature>, CodecError> {
+    ctx.charge_work(u64::try_from(source.len()).map_err(|_|
+        ctx.refuse_codec_limit("catia_native_signature_scan", u64::MAX, u64::MAX))?,
+        "catia_native_signature_scan")?;
+    let source = source.strip_suffix('\n').unwrap_or(source);
+    let Some((input_clause, result_type)) = source.rsplit_once(") : ") else {
+        return Ok(None);
+    };
+    let Some(input_clause) = input_clause.strip_prefix('(') else {
+        return Ok(None);
+    };
+    if result_type.is_empty() || result_type.trim() != result_type {
+        return Ok(None);
+    }
+    let mut inputs = Vec::new();
+    if !input_clause.is_empty() {
+        for clause in input_clause.split(',') {
+            let Some((parameter, input_type)) = clause.split_once(':') else {
+                return Ok(None);
+            };
+            let parameter = parameter.trim();
+            let Some(input_type) = input_type.trim().strip_prefix("#In") else {
+                return Ok(None);
+            };
+            let input_type = input_type.trim();
+            if !relation_parameter_symbol(parameter) || input_type.is_empty() {
+                return Ok(None);
+            }
+            let input = CatiaRelationTypeInput {
+                parameter: crate::resource::copy_retained_str(ctx, parameter,
+                    "catia_native_signature_parameter")?,
+                input_type: crate::resource::copy_retained_str(ctx, input_type,
+                    "catia_native_signature_input_type")?,
+            };
+            crate::resource::push(ctx, &mut inputs, input,
+                "catia_native_signature_inputs")?;
+        }
+    }
+    if placeholder.is_some_and(|placeholder| {
+        inputs.is_empty() && !placeholder.trim().is_empty()
+            || inputs.first().is_some_and(|input| input.parameter != placeholder.trim())
+    }) || inputs.iter().enumerate().any(|(index, input)| {
+        inputs[..index].iter().any(|prior| prior.parameter == input.parameter)
+    }) {
+        return Ok(None);
+    }
+    Ok(Some(CatiaRelationTypeSignature {
+        inputs,
+        result_type: crate::resource::copy_retained_str(ctx, result_type,
+            "catia_native_signature_result_type")?,
+    }))
+}
+
 fn relation_parameter_symbol(parameter: &str) -> bool {
     parameter
         .strip_prefix('#')
@@ -5779,101 +5851,124 @@ struct CatiaEntityReferenceIndex<'a> {
 }
 
 fn entity_class_index<'a>(
+    ctx: &DecodeContext<'_>,
     records: impl IntoIterator<Item = &'a CatiaObjectRecord>,
-) -> CatiaEntityClassByGraphIdentityIndex {
-    records
-        .into_iter()
-        .filter_map(|record| {
-            Some((
-                (record.parent.clone(), record.entity_id()?),
-                record.class_name()?.to_owned(),
-            ))
-        })
-        .collect()
+) -> Result<CatiaEntityClassByGraphIdentityIndex, CodecError> {
+    let mut classes = HashMap::new();
+    for record in records {
+        let (Some(entity_id), Some(class_name)) = (record.entity_id(), record.class_name()) else {
+            continue;
+        };
+        let graph = crate::resource::copy_retained_str(ctx, &record.parent,
+            "catia_native_class_graph")?;
+        let class_name = crate::resource::copy_retained_str(ctx, class_name,
+            "catia_native_class_name")?;
+        crate::resource::insert_map(ctx, &mut classes, (graph, entity_id), class_name,
+            "catia_native_class_index")?;
+    }
+    Ok(classes)
 }
 
 fn semantic_entity_indices(
+    ctx: &DecodeContext<'_>,
     entities: &[CatiaEntityRecord],
     entity_classes: &CatiaEntityClassByGraphIdentityIndex,
-) -> (
+) -> Result<(
     CatiaRelationExpressionIndex,
     CatiaRelationExpressionEntityIndex,
     CatiaEntityByGraphIdentityIndex,
     CatiaTerminalNullByGraphIndex,
     CatiaParameterBindingIndex,
-) {
-    let relation_expressions = entities
-        .iter()
-        .filter_map(|entity| {
-            let expression = entity.relation_expression()?;
-            Some((
-                entity.object_record.clone(),
-                expression.expression.value.clone(),
-            ))
-        })
-        .collect();
-    let relation_expression_entities = entities
-        .iter()
-        .filter_map(|entity| {
-            let expression = entity.relation_expression()?;
-            Some((
-                (entity.object_graph.clone(), entity.entity_id),
-                CatiaRelationExpressionEntity {
-                    entity: entity.id.clone(),
-                    source: expression.expression.value.clone(),
-                    signature: expression.signature(),
-                },
-            ))
-        })
-        .collect();
-    let entities_by_graph_identity = entities
-        .iter()
-        .map(|entity| {
-            (
-                (entity.object_graph.clone(), entity.entity_id),
-                entity.id.clone(),
-            )
-        })
-        .collect();
-    let terminal_nulls = entities.iter().fold(
-        CatiaTerminalNullByGraphIndex::new(),
-        |mut terminal_nulls, entity| {
-            terminal_nulls
-                .entry(entity.object_graph.clone())
-                .and_modify(|maximum| *maximum = (*maximum).max(entity.entity_id))
-                .or_insert(entity.entity_id);
-            terminal_nulls
-        },
-    );
-    let terminal_nulls = terminal_nulls
-        .into_iter()
-        .filter_map(|(graph, maximum)| maximum.checked_add(1).map(|identity| (graph, identity)))
-        .collect();
+), CodecError> {
+    let mut relation_expressions = HashMap::new();
+    let mut relation_expression_entities = HashMap::new();
+    let mut entities_by_graph_identity = HashMap::new();
+    let mut maxima = HashMap::<String, u32>::new();
     let mut parameter_bindings = CatiaParameterBindingIndex::new();
     for entity in entities {
+        if let Some(expression) = entity.relation_expression() {
+            let object_record = crate::resource::copy_retained_str(ctx, &entity.object_record,
+                "catia_native_expression_object")?;
+            let source = crate::resource::copy_retained_str(ctx, &expression.expression.value,
+                "catia_native_expression_source")?;
+            crate::resource::insert_map(ctx, &mut relation_expressions, object_record, source,
+                "catia_native_expression_index")?;
+            let graph = crate::resource::copy_retained_str(ctx, &entity.object_graph,
+                "catia_native_expression_graph")?;
+            let row = CatiaRelationExpressionEntity {
+                entity: crate::resource::copy_retained_str(ctx, &entity.id,
+                    "catia_native_expression_entity")?,
+                source: crate::resource::copy_retained_str(ctx, &expression.expression.value,
+                    "catia_native_expression_entity_source")?,
+                signature: expression.signature_charged(ctx)?,
+            };
+            crate::resource::insert_map(ctx, &mut relation_expression_entities,
+                (graph, entity.entity_id), row, "catia_native_expression_entity_index")?;
+        }
+        let graph = crate::resource::copy_retained_str(ctx, &entity.object_graph,
+            "catia_native_entity_graph")?;
+        let id = crate::resource::copy_retained_str(ctx, &entity.id,
+            "catia_native_entity_id")?;
+        crate::resource::insert_map(ctx, &mut entities_by_graph_identity,
+            (graph, entity.entity_id), id, "catia_native_entity_index")?;
+        if let Some(maximum) = maxima.get_mut(entity.object_graph.as_str()) {
+            *maximum = (*maximum).max(entity.entity_id);
+        } else {
+            let graph = crate::resource::copy_retained_str(ctx, &entity.object_graph,
+                "catia_native_terminal_graph")?;
+            crate::resource::insert_map(ctx, &mut maxima, graph, entity.entity_id,
+                "catia_native_terminal_maxima")?;
+        }
         let Some(parameter) = entity.parameter_value() else {
             continue;
         };
-        parameter_bindings
-            .entry(entity.object_graph.clone())
-            .or_default()
-            .entry(parameter.binding.value.clone())
-            .or_default()
-            .push(CatiaEntityReference::resolved_or_unresolved(
-                entity.entity_id,
-                Some(entity.id.clone()),
-                entity_classes
-                    .get(&(entity.object_graph.clone(), entity.entity_id))
-                    .cloned(),
-            ));
+        if !parameter_bindings.contains_key(entity.object_graph.as_str()) {
+            let graph = crate::resource::copy_retained_str(ctx, &entity.object_graph,
+                "catia_native_binding_graph")?;
+            crate::resource::insert_map(ctx, &mut parameter_bindings, graph, HashMap::new(),
+                "catia_native_binding_graphs")?;
+        }
+        let Some(bindings) = parameter_bindings.get_mut(entity.object_graph.as_str()) else {
+            return Err(CodecError::malformed("CATIA parameter-binding graph disappeared"));
+        };
+        if !bindings.contains_key(parameter.binding.value.as_str()) {
+            let symbol = crate::resource::copy_retained_str(ctx, &parameter.binding.value,
+                "catia_native_binding_symbol")?;
+            crate::resource::insert_map(ctx, bindings, symbol, Vec::new(),
+                "catia_native_binding_symbols")?;
+        }
+        let Some(references) = bindings.get_mut(parameter.binding.value.as_str()) else {
+            return Err(CodecError::malformed("CATIA parameter binding disappeared"));
+        };
+        ctx.charge_work(u64::try_from(entity_classes.len()).map_err(|_|
+            ctx.refuse_codec_limit("catia_native_binding_class_lookup", u64::MAX, u64::MAX))?,
+            "catia_native_binding_class_lookup")?;
+        let class_name = entity_classes.iter().find_map(|((graph, id), class_name)|
+            (graph == &entity.object_graph && *id == entity.entity_id).then_some(class_name));
+        let reference = CatiaEntityReference::Resolved {
+            entity_id: entity.entity_id,
+            entity: crate::resource::copy_retained_str(ctx, &entity.id,
+                "catia_native_binding_entity")?,
+            class_name: class_name.map(|class_name| crate::resource::copy_retained_str(ctx,
+                class_name, "catia_native_binding_class")).transpose()?,
+        };
+        crate::resource::push(ctx, references, reference,
+            "catia_native_binding_references")?;
     }
-    (
+    let mut terminal_nulls = HashMap::new();
+    for (graph, maximum) in maxima {
+        if let Some(identity) = maximum.checked_add(1) {
+            crate::resource::insert_map(ctx, &mut terminal_nulls, graph, identity,
+                "catia_native_terminal_nulls")?;
+        }
+    }
+    Ok((
         relation_expressions,
         relation_expression_entities,
         entities_by_graph_identity,
         terminal_nulls,
         parameter_bindings,
-    )
+    ))
 }
 
 fn relation_parameter_dependencies(
@@ -9471,14 +9566,14 @@ impl CatiaNative {
             }
         }
         let entity_classes_by_graph_identity =
-            entity_class_index(object_graphs.iter().flat_map(|graph| &graph.records));
+            entity_class_index(ctx, object_graphs.iter().flat_map(|graph| &graph.records))?;
         let (
             relation_expressions,
             relation_expression_entities,
             entities_by_graph_identity,
             terminal_nulls_by_graph,
             parameter_bindings,
-        ) = semantic_entity_indices(&entity_records, &entity_classes_by_graph_identity);
+        ) = semantic_entity_indices(ctx, &entity_records, &entity_classes_by_graph_identity)?;
         let entity_references = CatiaEntityReferenceIndex {
             entities: &entities_by_graph_identity,
             classes: &entity_classes_by_graph_identity,
