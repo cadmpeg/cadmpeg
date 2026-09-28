@@ -9,6 +9,10 @@ use crate::om::indexed_sections;
 use crate::om::offset_store_control_class_ordinals;
 use crate::om::offset_store_control_form;
 use crate::om::offset_store_control_values;
+fn surface_feature_payload_branches_for_test(record: crate::om::operation_record::OperationPayload<'_>) -> Option<crate::om::surface_branches::SurfaceFeaturePayloadBranches> {
+    crate::test_support::with_decode_context(|ctx| crate::om::surface_branches::surface_feature_payload_branches(ctx, record)).unwrap()
+}
+
 fn boolean_operations_with_labels_for_test(bytes: &[u8], base_offset: usize, labels: &[crate::om::OperationLabel<'_>]) -> Vec<crate::om::BooleanOperation> {
     crate::test_support::with_decode_context(|ctx| crate::om::boolean_operations_with_labels(ctx, bytes, base_offset, labels)).unwrap()
 }
@@ -761,7 +765,7 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
     let label = "SKIN";
     let payload = b"\xa0\x5a\x14\x13\x01\x02\x40\x01\x04\xf1\x1b\xf4\xf1\x1b\xf5\xf1\x1b\xf6\x01\x04\x00\x00\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x1b\xf7\x00\x81\x58\x01\x02\x40\x01\x05\xf1\x1b\xf8\xf1\x1b\xf9\xf1\x1b\xfa\xf1\x1b\xfb\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x1b\xfc\x00\x81\x1c\x00\x00\x00\x01\x03\x00\x00\x00\xff\xff\x01";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let group = crate::om::surface_branches::surface_feature_payload_branches(record)
+    let group = surface_feature_payload_branches_for_test(record)
         .expect("complete group");
     assert_eq!(u8::from(group.family), 0x14);
     assert_eq!(group.header_code, 0x13);
@@ -796,12 +800,12 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
         "Studio Surface",
     )
     .unwrap();
-    assert!(crate::om::surface_branches::surface_feature_payload_branches(studio).is_some());
+    assert!(surface_feature_payload_branches_for_test(studio).is_some());
 
     let mut malformed = payload.to_vec();
     malformed[19] = 0x03;
     assert!(
-        crate::om::surface_branches::surface_feature_payload_branches(
+        surface_feature_payload_branches_for_test(
             crate::om::operation_record::OperationPayload::new(
                 &malformed,
                 record.payload_offset(),
@@ -814,7 +818,7 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
     assert!(
-        crate::om::surface_branches::surface_feature_payload_branches(
+        surface_feature_payload_branches_for_test(
             crate::om::operation_record::OperationPayload::new(
                 &ambiguous,
                 record.payload_offset(),
@@ -1763,3 +1767,5 @@ fn body_members_refuse_work_limit() {
 mod operation_body_limits;
 
 mod boolean_limits;
+
+mod surface_branch_limits;
