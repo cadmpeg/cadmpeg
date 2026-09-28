@@ -437,11 +437,12 @@ pub(super) fn emit_geometry_arenas(
         &face_admission_rejections,
     )?;
     let surface_parameters = surface_parameter_records(
+        ctx,
         scan,
         &scan.surfaces.rows,
         &scan.surfaces.parameters,
         "visibgeom",
-    );
+    )?;
     emit_uniform(
         ctx,
         ir,
@@ -455,11 +456,12 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let nonvisible_surface_parameters = surface_parameter_records(
+        ctx,
         scan,
         &scan.surfaces.nonvisible_rows,
         &scan.surfaces.nonvisible_parameters,
         "novisgeom",
-    );
+    )?;
     emit_uniform(
         ctx,
         ir,
@@ -473,11 +475,12 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     let cross_section_surface_parameters = surface_parameter_records(
+        ctx,
         scan,
         &scan.surfaces.cross_section_rows,
         &scan.surfaces.cross_section_parameters,
         "cross_section_geometry",
-    );
+    )?;
     emit_uniform(
         ctx,
         ir,
