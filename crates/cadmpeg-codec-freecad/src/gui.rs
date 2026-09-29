@@ -23,7 +23,7 @@ use crate::brep::ShapePayloadRecord;
 use crate::loss::FreecadLossCode;
 use crate::native::element_map::{ElementMapGroup, ElementMapRecord};
 use crate::native::{
-    copy_xml_text, parse_bool, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord,
+    parse_bool, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord,
     GuiViewProviderRecord, ObjectRecord, PropertyRecord, ValueRecord,
 };
 use crate::resource::{
@@ -365,19 +365,15 @@ fn transfer_schema_one(
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
         schema_version: schema_declaration
-            .map(|value| copy_xml_text(Some(ctx), value, "FCStd GUI schema declaration"))
+            .map(|value| ctx.copy_retained_text(value, "FCStd GUI schema declaration"))
             .transpose()?,
         attributes: root
             .attributes()
             .map(|attribute| {
                 ctx.charge_collection_items(1, "FCStd GUI document attributes")?;
                 Ok((
-                    copy_xml_text(
-                        Some(ctx),
-                        attribute.name(),
-                        "FCStd GUI document attribute name",
-                    )?,
-                    copy_xml_text(Some(ctx), attribute.value(), "FCStd GUI document attribute")?,
+                    ctx.copy_retained_text(attribute.name(), "FCStd GUI document attribute name")?,
+                    ctx.copy_retained_text(attribute.value(), "FCStd GUI document attribute")?,
                 ))
             })
             .collect::<Result<_, CodecError>>()?,
@@ -1463,23 +1459,23 @@ fn gui_state(
         .enumerate()
     {
         values.push(ValueRecord {
-            tag: copy_xml_text(Some(ctx), value.tag_name().name(), "FCStd GUI value tag")?,
+            tag: ctx.copy_retained_text(value.tag_name().name(), "FCStd GUI value tag")?,
             order: value_order,
             attributes: value
                 .attributes()
                 .map(|attribute| {
                     ctx.charge_collection_items(1, "FCStd GUI value attributes")?;
                     Ok((
-                        copy_xml_text(Some(ctx), attribute.name(), "FCStd GUI attribute name")?,
-                        copy_xml_text(Some(ctx), attribute.value(), "FCStd GUI attribute")?,
+                        ctx.copy_retained_text(attribute.name(), "FCStd GUI attribute name")?,
+                        ctx.copy_retained_text(attribute.value(), "FCStd GUI attribute")?,
                     ))
                 })
                 .collect::<Result<_, CodecError>>()?,
             text: value
                 .text()
-                .map(|text| copy_xml_text(Some(ctx), text, "FCStd GUI value text"))
+                .map(|text| ctx.copy_retained_text(text, "FCStd GUI value text"))
                 .transpose()?,
-            raw_xml: copy_xml_text(Some(ctx), &text[value.range()], "FCStd GUI value XML")?,
+            raw_xml: ctx.copy_retained_text(&text[value.range()], "FCStd GUI value XML")?,
         });
     }
     let mut side_entries = Vec::new();
@@ -1492,24 +1488,16 @@ fn gui_state(
         .filter(|value| !value.is_empty())
     {
         reserve_vec_items(ctx, &mut side_entries, 1, "FCStd GUI side entry references")?;
-        side_entries.push(copy_xml_text(
-            Some(ctx),
-            value,
-            "FCStd GUI side entry name",
-        )?);
+        side_entries.push(ctx.copy_retained_text(value, "FCStd GUI side entry name")?);
     }
-    let kind = copy_xml_text(Some(ctx), node.tag_name().name(), "FCStd GUI state kind")?;
+    let kind = ctx.copy_retained_text(node.tag_name().name(), "FCStd GUI state kind")?;
     let attributes = node
         .attributes()
         .map(|attribute| {
             ctx.charge_collection_items(1, "FCStd GUI state attributes")?;
             Ok((
-                copy_xml_text(
-                    Some(ctx),
-                    attribute.name(),
-                    "FCStd GUI state attribute name",
-                )?,
-                copy_xml_text(Some(ctx), attribute.value(), "FCStd GUI state attribute")?,
+                ctx.copy_retained_text(attribute.name(), "FCStd GUI state attribute name")?,
+                ctx.copy_retained_text(attribute.value(), "FCStd GUI state attribute")?,
             ))
         })
         .collect::<Result<_, CodecError>>()?;
@@ -1578,10 +1566,10 @@ fn append_native_provider(
                 })
             })
             .transpose()?,
-        name: copy_xml_text(Some(ctx), name, "FCStd GUI provider name")?,
+        name: ctx.copy_retained_text(name, "FCStd GUI provider name")?,
         expanded: provider.attribute("expanded").and_then(parse_bool),
         order,
-        raw_xml: copy_xml_text(Some(ctx), &text[provider.range()], "FCStd GUI provider XML")?,
+        raw_xml: ctx.copy_retained_text(&text[provider.range()], "FCStd GUI provider XML")?,
     });
     let Some(container) = unique_child(provider, "Properties")? else {
         return Err(gui_malformed(
@@ -1654,23 +1642,23 @@ fn append_native_provider(
             .enumerate()
         {
             values.push(ValueRecord {
-                tag: copy_xml_text(Some(ctx), value.tag_name().name(), "FCStd GUI value tag")?,
+                tag: ctx.copy_retained_text(value.tag_name().name(), "FCStd GUI value tag")?,
                 order: value_order,
                 attributes: value
                     .attributes()
                     .map(|attribute| {
                         ctx.charge_collection_items(1, "FCStd GUI value attributes")?;
                         Ok((
-                            copy_xml_text(Some(ctx), attribute.name(), "FCStd GUI attribute name")?,
-                            copy_xml_text(Some(ctx), attribute.value(), "FCStd GUI attribute")?,
+                            ctx.copy_retained_text(attribute.name(), "FCStd GUI attribute name")?,
+                            ctx.copy_retained_text(attribute.value(), "FCStd GUI attribute")?,
                         ))
                     })
                     .collect::<Result<_, CodecError>>()?,
                 text: value
                     .text()
-                    .map(|text| copy_xml_text(Some(ctx), text, "FCStd GUI value text"))
+                    .map(|text| ctx.copy_retained_text(text, "FCStd GUI value text"))
                     .transpose()?,
-                raw_xml: copy_xml_text(Some(ctx), &text[value.range()], "FCStd GUI value XML")?,
+                raw_xml: ctx.copy_retained_text(&text[value.range()], "FCStd GUI value XML")?,
             });
         }
         let mut side_entries = Vec::new();
@@ -1685,18 +1673,14 @@ fn append_native_provider(
             .filter(|value| !value.is_empty())
         {
             reserve_vec_items(ctx, &mut side_entries, 1, "FCStd GUI side entry references")?;
-            side_entries.push(copy_xml_text(
-                Some(ctx),
-                value,
-                "FCStd GUI side entry name",
-            )?);
+            side_entries.push(ctx.copy_retained_text(value, "FCStd GUI side entry name")?);
         }
         reserve_vec_items(ctx, properties, 1, "FCStd GUI property records")?;
         properties.push(GuiPropertyRecord {
             id: crate::native::native_child_id_charged(ctx, "gui-property", &id, property_name)?,
-            owner: copy_xml_text(Some(ctx), &id, "FCStd GUI property owner")?,
-            name: copy_xml_text(Some(ctx), property_name, "FCStd GUI property name")?,
-            type_name: copy_xml_text(Some(ctx), type_name, "FCStd GUI property type")?,
+            owner: ctx.copy_retained_text(&id, "FCStd GUI property owner")?,
+            name: ctx.copy_retained_text(property_name, "FCStd GUI property name")?,
+            type_name: ctx.copy_retained_text(type_name, "FCStd GUI property type")?,
             status: property
                 .attribute("status")
                 .and_then(|value| value.parse().ok()),

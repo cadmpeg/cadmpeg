@@ -1299,7 +1299,7 @@ impl RetainedXml {
         start: u64,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let copy = copy_xml_text(ctx, text, operation)?;
+        let copy = match ctx { Some(ctx) => ctx.copy_retained_text(text, operation), None => Ok((text).to_owned()) }?;
         Self::from_text(copy, start).map_err(CodecError::Malformed)
     }
     pub(crate) fn text(&self) -> &str {
@@ -1310,19 +1310,6 @@ impl RetainedXml {
     }
     pub(crate) fn end(&self) -> u64 {
         self.span.end()
-    }
-}
-
-/// Charge the bytes of each separate retained XML string before copying them.
-pub(crate) fn copy_xml_text(
-    ctx: Option<&DecodeContext<'_>>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.copy_retained_text(text, operation)
-    } else {
-        Ok(text.to_owned())
     }
 }
 
