@@ -365,7 +365,7 @@ fn push_validation_note(
     arguments: std::fmt::Arguments<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let note = crate::decode_alloc::charged_format(ctx, "step_validation_note_text", arguments)?;
+    let note = ctx.format_retained(arguments, "step_validation_note_text")?;
     ctx.charge_collection_items(1, "step_validation_notes")?;
     notes.try_reserve(1).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(

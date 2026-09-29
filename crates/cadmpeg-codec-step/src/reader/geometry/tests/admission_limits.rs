@@ -223,7 +223,7 @@ fn uncertainty_values_text_refuses_retained_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
-        crate::decode_alloc::charged_join(&ctx, "step_uncertainty_values_text", ["0.1", "0.2"], ", "),
+        &ctx.join_display_retained(["0.1", "0.2"], ", ", "step_uncertainty_values_text"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_uncertainty_values_text"
@@ -238,11 +238,7 @@ fn uncertainty_note_text_refuses_retained_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
-        crate::decode_alloc::charged_format(
-            &ctx,
-            "step_uncertainty_note_text",
-            format_args!("ambiguous uncertainty values ({})", "0.1, 0.2"),
-        ),
+        &ctx.format_retained(format_args!("ambiguous uncertainty values ({})", "0.1, 0.2"), "step_uncertainty_note_text"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_uncertainty_note_text"
@@ -878,7 +874,7 @@ fn curve_strip_source_name_refuses_retained_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
-        crate::decode_alloc::charged_format(&ctx, "step_curve_strip_source_name", format_args!("{}", "curve")),
+        &ctx.format_retained(format_args!("{}", "curve"), "step_curve_strip_source_name"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_curve_strip_source_name"

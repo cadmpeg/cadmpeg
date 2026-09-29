@@ -171,7 +171,7 @@ fn format_product_text(
     arguments: fmt::Arguments<'_>,
 ) -> Result<String, CodecError> {
     match ctx {
-        Some(ctx) => crate::decode_alloc::charged_format(ctx, operation, arguments),
+        Some(ctx) => ctx.format_retained(arguments, operation),
         None => Ok(arguments.to_string()),
     }
 }
@@ -425,10 +425,7 @@ pub(super) fn decode(
                     Some(ctx) => {
                         ctx.copy_retained_text(text, "step_product_definition_description_copy")
                     }
-                    None => crate::parse::copy_unmetered_text(
-                        text,
-                        "step_product_definition_description_copy",
-                    ),
+                    None => Ok::<String, CodecError>(text.to_owned()),
                 })
                 .transpose()?;
             let description = if definition_count <= 1 {
@@ -437,7 +434,7 @@ pub(super) fn decode(
                     .map(|text| match ctx {
                         Some(ctx) => ctx.copy_retained_text(text, "step_product_description_copy"),
                         None => {
-                            crate::parse::copy_unmetered_text(text, "step_product_description_copy")
+                            Ok::<String, CodecError>(text.to_owned())
                         }
                     })
                     .transpose()?
@@ -451,10 +448,7 @@ pub(super) fn decode(
                             Some(ctx) => {
                                 ctx.copy_retained_text(text, "step_product_description_copy")
                             }
-                            None => crate::parse::copy_unmetered_text(
-                                text,
-                                "step_product_description_copy",
-                            ),
+                            None => Ok::<String, CodecError>(text.to_owned()),
                         })
                         .transpose()?,
                 }
@@ -517,7 +511,7 @@ pub(super) fn decode(
                     .map(|text| match ctx {
                         Some(ctx) => ctx.copy_retained_text(text, "step_product_source_name_copy"),
                         None => {
-                            crate::parse::copy_unmetered_text(text, "step_product_source_name_copy")
+                            Ok::<String, CodecError>(text.to_owned())
                         }
                     })
                     .transpose()?,
@@ -525,7 +519,7 @@ pub(super) fn decode(
                     .as_deref()
                     .map(|text| match ctx {
                         Some(ctx) => ctx.copy_retained_text(text, "step_product_label_copy"),
-                        None => crate::parse::copy_unmetered_text(text, "step_product_label_copy"),
+                        None => Ok::<String, CodecError>(text.to_owned()),
                     })
                     .transpose()?,
                 description,
@@ -533,10 +527,7 @@ pub(super) fn decode(
                     Some(ctx) => {
                         ctx.copy_retained_text(&product_id, "step_product_part_number_copy")
                     }
-                    None => crate::parse::copy_unmetered_text(
-                        &product_id,
-                        "step_product_part_number_copy",
-                    ),
+                    None => Ok::<String, CodecError>(product_id.to_owned()),
                 }?),
                 bom_properties: BTreeMap::new(),
                 bodies,
@@ -866,10 +857,7 @@ pub(super) fn decode(
                         Some(ctx) => {
                             ctx.copy_retained_text(text, "step_product_occurrence_name_copy")
                         }
-                        None => crate::parse::copy_unmetered_text(
-                            text,
-                            "step_product_occurrence_name_copy",
-                        ),
+                        None => Ok::<String, CodecError>(text.to_owned()),
                     })
                     .transpose()?,
                 visible: None,

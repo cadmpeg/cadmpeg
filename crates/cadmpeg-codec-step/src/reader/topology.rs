@@ -262,17 +262,11 @@ fn topology_commit_error(
     ctx: &DecodeContext<'_>,
 ) -> Result<String, CodecError> {
     match error {
-        DraftError::IdentityCollision(identity) => crate::decode_alloc::charged_format(
-            ctx, "step_topology_commit_error_text",
-            format_args!("{context} conflicts with decoded topology: identity collision at '{identity}': {error}"),
-        ),
+        DraftError::IdentityCollision(identity) => ctx.format_retained(format_args!("{context} conflicts with decoded topology: identity collision at '{identity}': {error}"), "step_topology_commit_error_text"),
         DraftError::UnresolvedReference { .. }
         | DraftError::ReferenceWalk { .. }
         | DraftError::FeatureParents { .. } => {
-            crate::decode_alloc::charged_format(
-                ctx, "step_topology_commit_error_text",
-                format_args!("{context} conflicts with decoded topology: {error}"),
-            )
+            ctx.format_retained(format_args!("{context} conflicts with decoded topology: {error}"), "step_topology_commit_error_text")
         }
     }
 }
@@ -1074,11 +1068,7 @@ pub(super) fn decode(
             if let Some(message) = failure_message {
                 push_topology_vec(
                     &mut result.losses,
-                    StepLossCode::TopologyRootRejected.note(crate::decode_alloc::charged_format(
-                        ctx,
-                        "step_topology_root_rejected_text",
-                        format_args!("STEP topology root #{id} rejected: {message}"),
-                    )?),
+                    StepLossCode::TopologyRootRejected.note(ctx.format_retained(format_args!("STEP topology root #{id} rejected: {message}"), "step_topology_root_rejected_text")?),
                     ctx,
                     "step_topology_losses",
                 )?;
@@ -1110,11 +1100,7 @@ pub(super) fn decode(
                 let detail = failure_message
                     .as_deref()
                     .map(|message| {
-                        crate::decode_alloc::charged_format(
-                            ctx,
-                            "step_topology_root_failure_detail",
-                            format_args!(": {message}"),
-                        )
+                        ctx.format_retained(format_args!(": {message}"), "step_topology_root_failure_detail")
                     })
                     .transpose()?
                     .unwrap_or_default();
@@ -1358,14 +1344,10 @@ fn geometric_set_omission_message(
     omitted: &[u64],
     ctx: &DecodeContext<'_>,
 ) -> Result<String, CodecError> {
-    crate::decode_alloc::charged_format(
-        ctx,
-        "step_geometric_set_omission_text",
-        format_args!(
+    ctx.format_retained(format_args!(
             "{representation_type} #{id} omitted unsupported or unresolved member(s): {}",
             OmittedMembers(omitted)
-        ),
-    )
+        ), "step_geometric_set_omission_text")
 }
 
 enum BuildOutcome {

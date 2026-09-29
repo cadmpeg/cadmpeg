@@ -168,11 +168,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     ),
                 )
             })?;
-            body.notes.push(crate::decode_alloc::charged_format(
-                ctx,
-                "step_decode_reference_note_text",
-                format_args!("external reference {} -> {}", entry.name, entry.uri),
-            )?);
+            body.notes.push(ctx.format_retained(format_args!("external reference {} -> {}", entry.name, entry.uri), "step_decode_reference_note_text")?);
         }
         if let Some(loss) = dialect_loss {
             push_decode_loss(&mut body.losses, loss, ctx)?;
@@ -194,11 +190,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                     "implementation_level",
                 ),
             };
-            let message = crate::decode_alloc::charged_format(
-                ctx,
-                "step_decode_diagnostic_message",
-                format_args!("{}", diagnostic.message),
-            )?;
+            let message = ctx.format_retained(format_args!("{}", diagnostic.message), "step_decode_diagnostic_message")?;
             let loss = code.note(message).with_provenance(
                 cadmpeg_ir::SourceProvenance::root(
                     crate::dialect::FORMAT,
@@ -788,11 +780,7 @@ fn decode_exchange_mode(
     })?;
     session.body.notes.push(accounting_note);
     for (name, count) in counts {
-        let message = crate::decode_alloc::charged_format(
-            session.ctx,
-            "step_opaque_preservation_loss_text",
-            format_args!("preserved {count} {name} instance(s) as named opaque STEP records"),
-        )?;
+        let message = session.ctx.format_retained(format_args!("preserved {count} {name} instance(s) as named opaque STEP records"), "step_opaque_preservation_loss_text")?;
         push_decode_loss(
             &mut session.body.losses,
             StepLossCode::OpaqueRecordPreserved.note(message),
@@ -906,11 +894,7 @@ fn insert_retained_identity(
 ) -> Result<(), CodecError> {
     if !identities.contains(identity) {
         ctx.charge_collection_items(1, "step_owned_pcurve_ids")?;
-        let copy = crate::decode_alloc::charged_format(
-            ctx,
-            "step_owned_pcurve_identity",
-            format_args!("{identity}"),
-        )?;
+        let copy = ctx.format_retained(format_args!("{identity}"), "step_owned_pcurve_identity")?;
         identities.insert(copy);
     }
     Ok(())
@@ -1269,12 +1253,7 @@ fn count_unknown_kind(
     record: &parse::RawRecord,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let kind = crate::decode_alloc::charged_join(
-        ctx,
-        "step_opaque_kind_text",
-        record.partials.iter().map(|partial| partial.name.as_str()),
-        "+",
-    )?;
+    let kind = ctx.join_display_retained(record.partials.iter().map(|partial| partial.name.as_str()), "+", "step_opaque_kind_text")?;
     if !counts.contains_key(&kind) {
         ctx.charge_collection_items(1, "step_opaque_kind_counts")?;
     }
@@ -1287,11 +1266,7 @@ fn push_opaque_link(
     identity: &str,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let copy = crate::decode_alloc::charged_format(
-        ctx,
-        "step_opaque_link_text",
-        format_args!("{identity}"),
-    )?;
+    let copy = ctx.format_retained(format_args!("{identity}"), "step_opaque_link_text")?;
     ctx.charge_collection_items(1, "step_opaque_links")?;
     links.try_reserve(1).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
@@ -1347,11 +1322,7 @@ fn opaque_record_id(
     let kind = derived
         .as_ref()
         .map_or("record", crate::ids::IdentityKind::as_str);
-    let text = crate::decode_alloc::charged_format(
-        ctx,
-        "step_opaque_identity_text",
-        format_args!("step:data:{kind}#{id}"),
-    )?;
+    let text = ctx.format_retained(format_args!("step:data:{kind}#{id}"), "step_opaque_identity_text")?;
     let identity = Identity::new(text)
         .map_err(|_| CodecError::WrongFormat("invalid STEP opaque identity".into()))?;
     Ok(UnknownId::from(identity))
@@ -1379,11 +1350,7 @@ fn record_targets(
             .ok_or_else(|| ctx.refuse_codec_limit("step_opaque_target_records", 0, 1))?;
         if !values.contains(identity) {
             ctx.charge_collection_items(1, "step_opaque_target_ids")?;
-            values.insert(crate::decode_alloc::charged_format(
-                ctx,
-                "step_opaque_target_identity",
-                format_args!("{identity}"),
-            )?);
+            values.insert(ctx.format_retained(format_args!("{identity}"), "step_opaque_target_identity")?);
         }
     }
     Ok(targets)
@@ -1587,11 +1554,7 @@ fn decode_text_charged(
         Ok(text) => Ok(Some(text)),
         Err(crate::strings::StringDecodeFailure::Invalid(error)) => {
             let message = if let Some(ctx) = ctx {
-                crate::decode_alloc::charged_format(
-                    ctx,
-                    "step_invalid_string_loss_text",
-                    format_args!("STEP record #{record_id} has an invalid {field} string: {error}"),
-                )?
+                ctx.format_retained(format_args!("STEP record #{record_id} has an invalid {field} string: {error}"), "step_invalid_string_loss_text")?
             } else {
                 format!("STEP record #{record_id} has an invalid {field} string: {error}")
             };
@@ -1668,7 +1631,7 @@ impl RecordExt for RawRecord {
         let names = self.partials.iter().map(|partial| partial.name.as_str());
         match ctx {
             Some(ctx) => {
-                crate::decode_alloc::charged_join(ctx, "step_record_display_name", names, "+")
+                ctx.join_display_retained(names, "+", "step_record_display_name")
             }
             None => Ok(names.collect::<Vec<_>>().join("+")),
         }
