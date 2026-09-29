@@ -1343,6 +1343,9 @@ pub(crate) fn project_compact_surface_selections(
                     if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
                         definition
                     {
+                        const OPERATION: &str = "project SLDPRT pattern face seeds";
+                        ctx.charge_work(u64::try_from(seeds.len())
+                            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                         if seeds
                             .iter()
                             .any(|seed| matches!(seed, PatternSeed::Feature(_)))
@@ -1350,6 +1353,10 @@ pub(crate) fn project_compact_surface_selections(
                             break 'feature_edit;
                         }
                         for selection in feature_selections {
+                            let history_work = u64::try_from(history_features.len())
+                                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                            ctx.charge_work(history_work.checked_add(1)
+                                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                             let native = compact_surface_selection_value_charged(ctx, &selection.components)?;
                             let generated = component_path_feature(
                                 &selection.components,
@@ -1364,18 +1371,25 @@ pub(crate) fn project_compact_surface_selections(
                             });
                             let seed = match generated {
                                 Some((producer, local_id)) => {
+                                    let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
+                                    let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
                                     let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(
-                                        producer.clone(),
-                                        local_id.to_string(),
+                                        producer_id,
+                                        local_id_text,
                                     ) else {
                                         let seed = PatternSeed::Faces(
                                             cadmpeg_ir::features::FaceSelection::Native(native),
                                         );
+                                        ctx.charge_work(u64::try_from(seeds.len())
+                                            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                                         if !seeds.contains(&seed) {
+                                            ctx.reserve_collection_vec(seeds, 1, OPERATION)?;
                                             seeds.push(seed);
                                         }
                                         continue;
                                     };
+                                    ctx.charge_work(u64::try_from(seeds.len())
+                                        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                                     if seeds.iter().any(|seed| {
                                         matches!(
                                             seed,
@@ -1387,12 +1401,17 @@ pub(crate) fn project_compact_surface_selections(
                                         continue;
                                     }
                                     if !dependencies.contains(producer) {
-                                        dependencies.insert(producer.clone());
+                                        let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
+                                        dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
                                     }
+                                    let mut faces = Vec::new();
+                                    ctx.reserve_collection_vec(&mut faces, 1, OPERATION)?;
+                                    faces.push(face);
+                                    let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
                                     PatternSeed::Faces(
                                         cadmpeg_ir::features::FaceSelection::generated(
-                                            vec![face],
-                                            native.clone(),
+                                            faces,
+                                            native_copy,
                                         )
                                         .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native)),
                                     )
@@ -1401,7 +1420,10 @@ pub(crate) fn project_compact_surface_selections(
                                     PatternSeed::Faces(cadmpeg_ir::features::FaceSelection::Native(native))
                                 }
                             };
+                            ctx.charge_work(u64::try_from(seeds.len())
+                                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                             if !seeds.contains(&seed) {
+                                ctx.reserve_collection_vec(seeds, 1, OPERATION)?;
                                 seeds.push(seed);
                             }
                         }
