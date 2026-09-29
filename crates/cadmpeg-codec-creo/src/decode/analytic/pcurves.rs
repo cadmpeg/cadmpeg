@@ -1614,8 +1614,8 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             ctx,
             ir,
             Curve {
-                id: id.clone(),
-                geometry: geometry.clone(),
+                id: id.copy_admitted(ctx, "creo analytic pcurve curve identity copy")?,
+                geometry: geometry.copy_admitted(ctx, "creo analytic pcurve geometry copy")?,
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
                     object_id: crate::identity::source_object_id_checked(
@@ -2575,6 +2575,30 @@ mod tests {
             analytic_pcurve_transfer_limit_error(14),
             "creo transferred analytic pcurve nodes",
         );
+    }
+
+    #[test]
+    fn analytic_pcurve_transfer_refuses_retained_model_identity_copy() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let mut found = false;
+        for cap in 0..2048 {
+            let (scan, mut ir) = one_plane_pcurve_fixture();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            if let Err(cadmpeg_core::CodecError::ResourceLimit(resource)) = transfer_analytic_pcurve_carriers(
+                &ctx, &scan, &mut ir, &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &mut crate::decode::source_carriers::SourceUnitCarriers::default(),
+            ) {
+                if resource.operation == "creo analytic pcurve curve identity copy" {
+                    assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
+                    found = true;
+                    break;
+                }
+            }
+        }
+        assert!(found, "retained identity boundary must be reached");
     }
 
     #[test]

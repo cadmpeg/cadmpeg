@@ -695,7 +695,10 @@ pub(in super::super) fn schema_feature_definition(
             extent.as_ref(),
         )?;
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
-        let profile = profile.and_then(|profile| profile.planar().cloned());
+        let profile = profile.and_then(|profile| match profile {
+            cadmpeg_ir::features::ProfileRef::Planar(profile) => Some(profile),
+            _ => None,
+        });
         let solid = sweep_solid(output_kind);
         return Ok(IrFeatureDefinition::Operation(
             IrFeatureOperation::Revolve {

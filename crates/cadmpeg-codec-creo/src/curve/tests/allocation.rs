@@ -1059,3 +1059,41 @@ fn curve_prototype_vec_refuses_before_growth() {
                 && limit.operation == "creo curve prototypes"
     ));
 }
+
+#[test]
+fn solve_synchronization_refuses_each_retained_value() {
+    use super::super::{CurveExpressionActivation, CurveExpressionAssignment,
+        CurveExpressionSolveBlock, CurveExpressionTarget, CurveExpressionValue, SolveUnknown};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let assignment = CurveExpressionAssignment {
+        target: CurveExpressionTarget::Parameter { name: "a".into(), declared_unit: None },
+        expression: "\"ab\"".into(), dependencies: Vec::new(),
+        value: Some(CurveExpressionValue::String("ab".into())),
+        activation: CurveExpressionActivation::Active, offset: 1,
+    };
+    for (assignment_value, solution, operation) in [
+        (Some(CurveExpressionValue::String("ab".into())), None, "creo synchronized assignment values"),
+        (None, Some(CurveExpressionValue::String("ab".into())), "creo synchronized solve values"),
+    ] {
+        let mut evaluated = assignment.clone();
+        evaluated.value = assignment_value;
+        let solutions = solution.into_iter().map(|value| (0, vec![value])).collect();
+        let mut blocks = vec![CurveExpressionSolveBlock {
+            equations: Vec::new(), assignments: vec![assignment.clone()],
+            unknowns: vec![SolveUnknown { name: "x".into(), solution: None }],
+            offset: 0, for_offset: 2,
+        }];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(matches!(super::super::synchronize_solve_blocks(&ctx, &mut blocks, &[evaluated.clone()], &solutions),
+            Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+            if resource.dimension == ResourceDimension::RetainedBytes && resource.operation == operation));
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::super::synchronize_solve_blocks(ctx, &mut blocks, &[evaluated.clone()], &solutions)
+        }).expect("service synchronization");
+        assert_eq!(blocks[0].assignments[0], evaluated);
+        assert_eq!(blocks[0].unknowns[0].solution.as_ref(), solutions.get(&0).and_then(|values| values.first()));
+    }
+}

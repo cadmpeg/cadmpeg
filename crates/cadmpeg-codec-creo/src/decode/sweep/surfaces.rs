@@ -788,6 +788,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 }
                 continue;
             };
+            let directrix_range = directrix.knots().first().zip(directrix.knots().last())
+                .map(|(lower, upper)| (*lower, *upper));
             let curve_id = crate::identity::compose_checked::<CurveId>(
                 ctx, &crate::identity::FEATURE_EXTRUSION_DIRECTRIX,
                 format_args!("{feature_id}:{internal_id}"),
@@ -807,9 +809,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     ctx,
                     ir,
                     Curve {
-                        id: curve_id.clone(),
+                        id: curve_id.copy_admitted(ctx, "creo construction curve identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                            directrix.clone(),
+                            directrix,
                         )),
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Creo,
@@ -863,7 +865,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 ctx,
                 ir,
                 Surface {
-                    id: surface_id.clone(),
+                    id: surface_id.copy_admitted(ctx, "creo construction surface identity copy")?,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
@@ -882,8 +884,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     }),
                 },
             )?;
-            let Some((&lower_knot, &upper_knot)) =
-                directrix.knots().first().zip(directrix.knots().last())
+            let Some((lower_knot, upper_knot)) = directrix_range
             else {
                 push_saved_spline_loss(ctx, losses, format_args!(
                     "Extrusion directrix for feature {feature_id} at offset {} has no knot range",

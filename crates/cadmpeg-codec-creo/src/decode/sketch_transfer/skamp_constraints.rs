@@ -476,7 +476,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         if item.sense == 0 && section_skamp_is_arc(definition, item) =>
                     {
                         let entity = admitted_entity(ctx, sketch, item.entity_id, &resource_error)?;
-                        let first = SketchLocus::Start(entity.clone());
+                        let first = SketchLocus::Start(defer_resource(
+                            entity.copy_admitted(ctx, "creo skamp arc endpoint identity copy"),
+                            &resource_error,
+                        )?);
                         let second = SketchLocus::End(entity);
                         let axis = if kind == 12 {
                             SketchCoordinateAxis::V
