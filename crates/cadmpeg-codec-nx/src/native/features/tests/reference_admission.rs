@@ -4,6 +4,7 @@ use crate::native::features::feature_projected_curve_references;
 use crate::native::features::feature_projected_curve_construction_payloads;
 use crate::native::features::feature_projected_curve_construction_strings;
 use crate::native::features::feature_operation_labels;
+use crate::native::features::feature_point_construction_headers;
 use crate::native::features::feature_surface_construction_references;
 use crate::native::features::feature_surface_construction_payloads;
 use crate::native::features::feature_thru_curve_construction_envelopes;
@@ -32,6 +33,56 @@ fn reference_container(label: &'static str, payload: Vec<u8>) -> crate::containe
 fn projected_curve_container() -> crate::container::Container<'static> {
     let payload = b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0".to_vec();
     reference_container("CPROJ", payload)
+}
+
+fn point_header_container() -> crate::container::Container<'static> {
+    reference_container("POINT",
+        b"\x72\x00\x00\x01\x00\x00\x00\xf1\x1c\x8f\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0d\x01\x02\x01\x00\x00\x00\x89\x02\x01\x01\x01\x00\xa5\x57\x95\x01\x00\x00\xff\x02\xc0\x1f\xff\xfd\x01\x00\x00\x01\x01\x01\x03\x02\x01\x01\x01\x00\x00\x00\x00\x00\xaa".to_vec())
+}
+
+fn point_header_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = point_header_container();
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_point_construction_headers(ctx, &container)
+    };
+    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("admitted point headers").len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    decode(&ctx).expect_err("point header resource limit")
+}
+
+#[test]
+fn point_header_refuses_collection_limit() {
+    let error = point_header_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn point_header_refuses_retained_limit() {
+    let error = point_header_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn point_header_refuses_scoped_limit() {
+    let error = point_header_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn point_header_refuses_work_limit() {
+    let error = point_header_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 fn projected_curve_payload_container() -> crate::container::Container<'static> {
