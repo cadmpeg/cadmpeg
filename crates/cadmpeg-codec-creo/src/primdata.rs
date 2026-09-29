@@ -345,7 +345,7 @@ pub(crate) fn scalar_arrays(
             }
         }
     }
-    arrays.sort_by_key(|array| array.offset);
+    crate::sort::stable_sort_by_key(ctx, &mut arrays, |array| array.offset, "creo primitive scalar array ordering")?;
     Ok(arrays)
 }
 
