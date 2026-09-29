@@ -23,7 +23,7 @@ pub(super) fn parse_pattern(text: &str) -> Result<Pattern, String> {
             chars.len()
         ));
     }
-    let mut pattern = Vec::with_capacity(chars.len() / 2);
+    let mut pattern = Vec::new();
     for pair in chars.chunks(2) {
         let (high, low) = (pair[0], pair[1]);
         match (high, low) {
