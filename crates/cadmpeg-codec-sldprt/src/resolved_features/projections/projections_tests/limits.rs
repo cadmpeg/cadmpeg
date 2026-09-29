@@ -1,11 +1,11 @@
 //! Compact selection projection and resource-limit tests.
 
 use super::super::{
-    cut_with_surface_selection_pair, full_round_fillet_selection_triple,
+    compact_surface_selection_set_value, cut_with_surface_selection_pair, full_round_fillet_selection_triple,
     project_compact_body_selections, project_compact_edge_selections,
     project_compact_surface_selections,
 };
-use crate::records::{FeatureInputBodySelection, FeatureInputLane, FeatureInputSurfaceSelection, FeatureInputSurfaceSelectionKind};
+use crate::records::{FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputLane, FeatureInputSurfaceSelection, FeatureInputSurfaceSelectionKind};
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, FeatureDefinition, FeatureId, FeatureOperation,
     UnresolvedFamily,
@@ -357,4 +357,50 @@ fn surface_cut_grouping_refuses_work_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "group SLDPRT surface cut selections"));
+}
+
+#[test]
+fn surface_selection_set_preserves_order_and_deduplicates_native_paths() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let mut first = full_round_selection();
+    first.components = vec![FeatureInputComponentPathEntry {
+        instance: None,
+        type_signature: [0; 12],
+        local_id: Some(7),
+    }];
+    let duplicate = first.clone();
+    let mut second = first.clone();
+    second.components[0].local_id = Some(9);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("test context");
+    let value = compact_surface_selection_set_value(&ctx, &[&first, &duplicate, &second])
+        .expect("charged native selection set");
+    assert_eq!(value, "sldprt:feature-input:surface-selection-vectors:sldprt:feature-input:surface-component-ids:7;sldprt:feature-input:surface-component-ids:9");
+    assert_eq!(
+        compact_surface_selection_set_value(&ctx, &[&first, &duplicate])
+            .expect("one unique native path"),
+        "sldprt:feature-input:surface-component-ids:7"
+    );
+    assert_eq!(
+        compact_surface_selection_set_value(&ctx, &[]).expect("empty native path set"),
+        "sldprt:feature-input:surface-selection-vectors:"
+    );
+}
+
+#[test]
+fn surface_selection_set_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let selection = full_round_selection();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = compact_surface_selection_set_value(&ctx, &[&selection])
+        .expect_err("native surface text exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "format SLDPRT surface selection set"));
 }
