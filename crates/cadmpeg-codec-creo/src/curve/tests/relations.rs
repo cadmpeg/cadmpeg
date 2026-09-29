@@ -48,6 +48,20 @@ fn relation_parse_limit_error<V: ExpressionValue + std::fmt::Debug>(
     values: &BTreeMap<String, V>,
     configure: impl FnOnce(&mut DecodePolicy),
 ) -> CodecError {
+    relation_parse_limit_error_with_context(
+        expression,
+        values,
+        RelationEvaluationContext::default(),
+        configure,
+    )
+}
+
+fn relation_parse_limit_error_with_context<V: ExpressionValue + std::fmt::Debug>(
+    expression: &str,
+    values: &BTreeMap<String, V>,
+    context: RelationEvaluationContext<'_>,
+    configure: impl FnOnce(&mut DecodePolicy),
+) -> CodecError {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     configure(&mut policy);
@@ -56,9 +70,150 @@ fn relation_parse_limit_error<V: ExpressionValue + std::fmt::Debug>(
         &ctx,
         expression,
         values,
-        RelationEvaluationContext::default(),
+        context,
     )
     .expect_err("relation parser allocation must refuse")
+}
+
+#[test]
+fn relation_integer_format_refuses_retained_text() {
+    let error = relation_parse_limit_error(
+        "itos(2)",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| policy.limits.max_retained_bytes = 0,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo relation integer text"));
+}
+
+#[test]
+fn relation_real_format_refuses_retained_text() {
+    let error = relation_parse_limit_error(
+        "rtos(1.234,2)",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| policy.limits.max_retained_bytes = 0,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo relation real text"));
+}
+
+#[test]
+fn relation_scientific_format_refuses_scratch_text() {
+    let error = relation_parse_limit_error(
+        "rtos(0.01234,2,TRUE)",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| policy.limits.max_materialized_bytes = 0,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::MaterializedBytes
+            && resource.operation == "creo relation scientific scratch"));
+}
+
+#[test]
+fn relation_scientific_format_refuses_retained_text() {
+    let error = relation_parse_limit_error(
+        "rtos(0.01234,2,TRUE)",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| policy.limits.max_retained_bytes = 0,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo relation real text"));
+}
+
+#[test]
+fn relation_model_name_refuses_retained_copy() {
+    let error = relation_parse_limit_error_with_context(
+        "rel_model_name()",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        RelationEvaluationContext {
+            model_name: Some("widget"),
+            ..RelationEvaluationContext::default()
+        },
+        |policy| policy.limits.max_retained_bytes = 0,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo relation model name value"));
+}
+
+#[test]
+fn relation_model_type_refuses_retained_copy() {
+    let error = relation_parse_limit_error(
+        "rel_model_type()",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| policy.limits.max_retained_bytes = 0,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo relation model type value"));
+}
+
+#[test]
+fn relation_extract_refuses_scanning_work() {
+    let error = relation_parse_limit_error(
+        "extract('abc',2,1)",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| policy.limits.max_work_units = 1,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::WorkUnits
+            && resource.operation == "creo relation extract scan"));
+}
+
+#[test]
+fn relation_extract_refuses_retained_substring() {
+    let error = relation_parse_limit_error(
+        "extract('abc',2,1)",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| policy.limits.max_retained_bytes = 3,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo relation extracted text"));
+}
+
+#[test]
+fn relation_extract_preserves_utf8_character_boundaries() {
+    assert_eq!(
+        parse_relation_expression::<CurveExpressionValue>(
+            "extract('é漢x',2,1)",
+            &BTreeMap::new(),
+            RelationEvaluationContext::default(),
+        ),
+        Some(CurveExpressionValue::String("漢".to_owned()))
+    );
+}
+
+#[test]
+fn relation_conditional_string_refuses_retained_clone() {
+    let error = relation_parse_limit_error(
+        "if(1,'abc','def')",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        |policy| policy.limits.max_retained_bytes = 6,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo relation conditional string"));
+}
+
+#[test]
+fn relation_exists_refuses_scoped_lookup_key() {
+    let symbols = std::collections::BTreeSet::from(["driver".to_owned()]);
+    let error = relation_parse_limit_error_with_context(
+        "exists('driver')",
+        &BTreeMap::<String, CurveExpressionValue>::new(),
+        RelationEvaluationContext {
+            existing_symbols: Some(&symbols),
+            ..RelationEvaluationContext::default()
+        },
+        |policy| policy.limits.max_materialized_bytes = 0,
+    );
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::MaterializedBytes
+            && resource.operation == "creo relation exists lookup key"));
 }
 
 #[test]
