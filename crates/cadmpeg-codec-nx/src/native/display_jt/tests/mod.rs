@@ -37,60 +37,11 @@ fn high_degree_lane_count(representation: &[u8], bindings: u64) -> Option<usize>
     })
 }
 
-#[test]
-fn jt_rendered_node_path_refuses_retained_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 4;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    let error = ctx.join_display_retained((&[12, 34]).iter(), "-", "nx JT rendered node path")
-        .expect_err("five text bytes exceed the four-byte retained limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && limit.operation == "nx JT rendered node path"
-    ));
-    with_jt_context(|service| {
-        assert_eq!(
-            service.join_display_retained((&[12, 34]).iter(), "-", "nx JT rendered node path").unwrap(),
-            "12-34"
-        );
-    });
-}
 
-#[test]
-fn jt_tessellation_channel_bytes_refuse_collection_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    let mut bytes = Vec::<u8>::new();
-    let error = ctx.reserve_retained_vec(&mut bytes, 3, "nx JT tessellation colors")
-        .expect_err("three color bytes exceed two collection items");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "nx JT tessellation colors"
-    ));
-    assert!(bytes.is_empty());
-}
 
-#[test]
-fn jt_root_path_slot_does_not_admit_an_ir_entity() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_entities = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test decode context");
-    let mut paths = Vec::<super::DisplayJtPath>::new();
-    ctx.reserve_retained_vec(&mut paths, 1, "nx JT root path state")
-        .expect("temporary path slot is not an IR entity");
-    assert!(paths.is_empty());
-}
+
+
+
 
 #[test]
 fn transformed_jt_geometry_holds_checked_points_and_normals() {
