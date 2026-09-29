@@ -1459,7 +1459,7 @@ fn inline_body_state(
         ]
         .iter()
         .any(|header| {
-            stream.get(*candidate..candidate.saturating_add(header.len())) == Some(*header)
+            candidate.checked_add(header.len()).and_then(|end| stream.get(*candidate..end)) == Some(*header)
         })
     });
     let expected_end = next_header.unwrap_or(gap_end);
@@ -2161,11 +2161,9 @@ fn merge_records(
     let merged_complete = merged_graph.has_complete_body_topology(ctx)?;
     let deletes_owner = deletions.keys().any(|(kind, _)| matches!(kind, 12 | 13));
     let deleted_faces = deletions.keys().filter(|(kind, _)| *kind == 14).count();
-    let unaccounted_face_loss = !deletes_owner
-        && merged_graph
-            .body_shape_face_count()
-            .saturating_add(deleted_faces)
-            < graph.body_shape_face_count();
+    let accounted_faces = merged_graph.body_shape_face_count().checked_add(deleted_faces)
+        .ok_or_else(|| CodecError::Malformed("NX accounted face count overflow".into()))?;
+    let unaccounted_face_loss = !deletes_owner && accounted_faces < graph.body_shape_face_count();
     if base_complete && (!merged_complete || unaccounted_face_loss) {
         let (selected, reservation) = build(false)?;
         reservation.commit()?;
