@@ -11,6 +11,18 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
+fn service_generated_cap_plane_extent(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        generated_cap_plane_extent(ctx, scan, ir, source_carriers, feature_id)
+    })
+    .expect("service cap planes admitted")
+}
+
 #[test]
 fn terminal_plane_orients_oppositely_parameterized_extrusion_carriers() {
     let carriers = [
@@ -158,7 +170,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
     ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
 
     assert_eq!(
-        generated_cap_plane_extent(
+        service_generated_cap_plane_extent(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -180,7 +192,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
 
     scan.features.entity_tables[0].entries[2].payload =
         crate::feature::entity::EntryPayload::Source { entity: None };
-    assert!(generated_cap_plane_extent(
+    assert!(service_generated_cap_plane_extent(
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -189,7 +201,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
     .is_none());
     scan.features.entity_tables[0] = table.clone();
     scan.features.entity_tables.push(table);
-    assert!(generated_cap_plane_extent(
+    assert!(service_generated_cap_plane_extent(
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),

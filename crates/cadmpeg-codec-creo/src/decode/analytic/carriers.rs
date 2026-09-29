@@ -368,7 +368,7 @@ pub(in crate::decode) fn placed_carriers(
     source_carriers: &SourceUnitCarriers,
 ) -> Result<BTreeMap<u32, CarrierEquation>, cadmpeg_core::CodecError> {
     let mut carriers = BTreeMap::new();
-    for (id, plane) in placed_planes(scan) {
+    for (id, plane) in placed_planes(ctx, scan)? {
         insert_placed_carrier(ctx, &mut carriers, id, CarrierEquation::Plane(plane))?;
     }
     let rows = scan

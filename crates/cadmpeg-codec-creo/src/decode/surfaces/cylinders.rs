@@ -204,7 +204,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         if support_ids.len() < 4 {
             continue;
         }
-        let local_planes = placed_planes(scan);
+        let local_planes = placed_planes(ctx, scan)?;
         let Some(planes) = affected
             .iter()
             .map(|id| reconciled_model_plane(&local_planes, ir, source_carriers, *id))
@@ -451,7 +451,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         ctx.charge_collection_items(1, "creo split cylinder row nodes")?;
         rows.insert(row.id, row);
     }
-    let local_planes = placed_planes(scan);
+    let local_planes = placed_planes(ctx, scan)?;
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
     for edge in crate::identity::uniquely_identified_rows_checked(
         ctx,
@@ -970,7 +970,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             constant_round_radii.insert(feature_id, radius);
         }
     }
-    let local_planes = placed_planes(scan);
+    let local_planes = placed_planes(ctx, scan)?;
     let mut unique_rows = BTreeMap::new();
     for row in crate::identity::uniquely_identified_rows_checked(
         ctx,
@@ -1057,12 +1057,16 @@ pub(in super::super) fn transfer_positional_cylinders(
         if round_edge_envelope.is_some() {
             summary.round_edge_complete_envelopes += 1;
         }
-        let round_support_frame = (feature_class == Some(SchemaClass::Round))
-            .then(|| record.type24_scalar_frame_round_envelope())
-            .flatten()
-            .and_then(|envelope| {
-                round_support_envelope_cylinder(scan, ir, source_carriers, row.feature_id, envelope)
-            });
+        let round_support_frame = if feature_class == Some(SchemaClass::Round) {
+            match record.type24_scalar_frame_round_envelope() {
+                Some(envelope) => round_support_envelope_cylinder(
+                    ctx, scan, ir, source_carriers, row.feature_id, envelope,
+                )?,
+                None => None,
+            }
+        } else {
+            None
+        };
         let support_planes = round_edge_support_planes.get(&row.id);
         let support_tangent_frame = if !selector_corner_interval {
             match (record.positional_cylinder_frame(), support_planes) {

@@ -8,6 +8,18 @@ use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
+fn service_generated_cap_plane_extent(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        generated_cap_plane_extent(ctx, scan, ir, source_carriers, feature_id)
+    })
+    .expect("service cap planes admitted")
+}
+
 fn service_feature_plane_equations(
     scan: &crate::container::ContainerScan<'_>,
     ir: &CadIr,
@@ -335,7 +347,7 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
     ]);
 
     assert_eq!(
-        generated_cap_plane_extent(
+        service_generated_cap_plane_extent(
             &scan,
             &CadIr::empty(),
             &crate::decode::source_carriers::SourceUnitCarriers::default(),

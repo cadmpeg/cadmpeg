@@ -285,13 +285,13 @@ pub(super) fn emit_model_features(
                         })
                     })
                     .or_else(|| {
-                        unbounded_feature_plane_definition(
-                            scan,
-                            ir,
-                            source_carriers,
-                            operation.feature_id,
-                        )
-                        .map(Ok)
+                        match unbounded_feature_plane_definition(
+                            ctx, scan, ir, source_carriers, operation.feature_id,
+                        ) {
+                            Ok(Some(definition)) => Some(Ok(definition)),
+                            Ok(None) => None,
+                            Err(error) => Some(Err(error)),
+                        }
                     })
                     .unwrap_or_else(|| {
                         Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
@@ -501,10 +501,12 @@ pub(super) fn emit_model_features(
         let mut parameters = feature_parameters(ctx, scan, feature_id)?;
         let mut source_properties = feature_source_properties(ctx, scan, feature_id)?;
         let definition = schema_class.map_or_else(
-            || match named_feature_definition(ctx, scan, ir, source_carriers, feature_id, kind)?
-                .or_else(|| {
-                    unbounded_feature_plane_definition(scan, ir, source_carriers, feature_id)
-                }) {
+            || match match named_feature_definition(ctx, scan, ir, source_carriers, feature_id, kind)? {
+                Some(definition) => Some(definition),
+                None => unbounded_feature_plane_definition(
+                    ctx, scan, ir, source_carriers, feature_id,
+                )?,
+            } {
                 Some(definition) => Ok(definition),
                 None => Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Native {
                     kind: ctx.copy_retained_text(kind, "creo native row Feature kind")?.into(),

@@ -653,7 +653,7 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let planes = super::planes::placed_planes(scan);
+    let planes = super::planes::placed_planes(ctx, scan)?;
     if planes.is_empty() {
         return Ok(0);
     }

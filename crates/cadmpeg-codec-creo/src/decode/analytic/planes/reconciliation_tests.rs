@@ -34,6 +34,200 @@ fn analytic_curve_plane_service(geometry: &CurveGeometry) -> Option<PlaneEquatio
         .expect("service analytic curve plane")
 }
 
+fn one_positional_plane_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.planes.positional_frames.push(OutlinePlane {
+        surface_id: 7,
+        origin: [0.0, 0.0, 1.0],
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        offset: 7,
+    });
+    scan
+}
+
+fn positional_plane_limit_error(limit: u64, surface: bool) -> CodecError {
+    let scan = one_positional_plane_scan();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    if surface {
+        crate::decode::analytic::planes::placed_plane_surfaces(&ctx, &scan)
+            .err()
+            .expect("plane surface exceeds collection limit")
+    } else {
+        crate::decode::analytic::planes::placed_planes(&ctx, &scan)
+            .err()
+            .expect("plane exceeds collection limit")
+    }
+}
+
+fn candidate_limit_error(scan: &crate::container::ContainerScan<'_>, limit: u64) -> CodecError {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    plane_candidates(&ctx, scan)
+        .err()
+        .expect("plane candidates exceed collection limit")
+}
+
+fn one_held_plane_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.planes.envelopes.push(PlaneEnvelopeRecord {
+        surface_id: 7,
+        body: Vec::new(),
+        envelope: PlaneEnvelope::Standard {
+            bounds_2d: [[None; 2]; 2],
+            corners_3d: [
+                [Some(-1.0), Some(0.0), Some(1.0)],
+                [Some(1.0), Some(0.0), Some(-1.0)],
+            ],
+        },
+        corner_coordinate_equal: [Some(false), Some(true), Some(false)],
+        scalar_tokens: Vec::new(),
+        row_offset: 1,
+        offset: 2,
+    });
+    scan
+}
+
+#[test]
+fn held_plane_group_node_refuses_collection_limit() {
+    let error = candidate_limit_error(&one_held_plane_scan(), 0);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo held plane group nodes"));
+}
+
+#[test]
+fn held_plane_equation_refuses_collection_limit() {
+    let error = candidate_limit_error(&one_held_plane_scan(), 1);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo held plane equations"));
+}
+
+#[test]
+fn agreed_held_plane_node_refuses_collection_limit() {
+    let error = candidate_limit_error(&one_held_plane_scan(), 2);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo agreed held plane nodes"));
+}
+
+#[test]
+fn local_plane_chart_id_node_refuses_collection_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 7,
+        body: Vec::new(),
+        slots: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0].map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
+        classification: LocalSystemClassification::Simple,
+        row_offset: 1,
+        offset: 2,
+    });
+    let error = candidate_limit_error(&scan, 2);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo local plane chart ID nodes"));
+}
+
+#[test]
+fn matrix_plane_frame_id_node_refuses_collection_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 7,
+        body: Vec::new(),
+        slots: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0].map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::MatrixColumns),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 1,
+        offset: 2,
+    });
+    let error = candidate_limit_error(&scan, 0);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo matrix plane frame ID nodes"));
+}
+
+fn held_plane_with_frame_scan() -> crate::container::ContainerScan<'static> {
+    let mut scan = one_held_plane_scan();
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 7,
+        body: Vec::new(),
+        slots: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0].map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
+        classification: LocalSystemClassification::Simple,
+        row_offset: 1,
+        offset: 3,
+    });
+    scan
+}
+
+#[test]
+fn frame_bound_outline_node_refuses_collection_limit() {
+    let error = candidate_limit_error(&held_plane_with_frame_scan(), 3);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo frame-bound outline nodes"));
+}
+
+#[test]
+fn frame_bound_outline_vector_refuses_collection_limit() {
+    let error = candidate_limit_error(&held_plane_with_frame_scan(), 4);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo frame-bound outlines"));
+}
+
+#[test]
+fn positional_plane_candidate_vector_refuses_collection_limit() {
+    let error = positional_plane_limit_error(0, false);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo plane candidates"));
+}
+
+#[test]
+fn positional_plane_candidate_node_refuses_collection_limit() {
+    let error = positional_plane_limit_error(1, false);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo plane candidate nodes"));
+}
+
+#[test]
+fn placed_plane_node_refuses_collection_limit() {
+    let error = positional_plane_limit_error(2, false);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo placed plane nodes"));
+}
+
+#[test]
+fn placed_plane_surface_node_refuses_collection_limit() {
+    let error = positional_plane_limit_error(2, true);
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo placed plane surface nodes"));
+}
+
+#[test]
+fn positional_plane_admission_preserves_service_geometry() {
+    let scan = one_positional_plane_scan();
+    let plane = crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::analytic::planes::placed_planes(ctx, &scan)
+    })
+    .expect("service plane admitted");
+    assert_eq!(plane.get(&7).map(|plane| plane.origin), Some([0.0, 0.0, 1.0]));
+    assert_eq!(plane.get(&7).map(|plane| plane.normal), Some([0.0, 0.0, 1.0]));
+}
+
 #[test]
 fn reconciled_plane_uses_source_carrier_after_millimeter_admission() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -695,7 +889,8 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
     scan.planes.outlines =
         crate::decode::with_test_decode_ctx(|ctx| crate::surface::placed_outline_planes(ctx, &scan.planes.envelopes, &scan.planes.local_systems)).expect("service outline planes");
 
-    let candidates = plane_candidates(&scan);
+    let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
+        .expect("service plane candidates admitted");
     let candidates = candidates.get(&42).expect("plane candidates");
     let (plane, u_axis, _) =
         agreed_plane_surface(candidates).expect("frame-selected outline plane");
@@ -757,7 +952,8 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
     scan.planes.outlines =
         crate::decode::with_test_decode_ctx(|ctx| crate::surface::placed_outline_planes(ctx, &scan.planes.envelopes, &scan.planes.local_systems)).expect("service outline planes");
 
-    let candidates = plane_candidates(&scan);
+    let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
+        .expect("service plane candidates admitted");
     let candidates = candidates.get(&42).expect("plane candidates");
     let (plane, u_axis, _) = agreed_plane_surface(candidates).expect("matrix frame plane");
     assert_eq!(plane.normal, [component, 0.0, component]);
@@ -859,7 +1055,8 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
         offset: 60,
     });
 
-    let candidates = plane_candidates(&scan);
+    let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
+        .expect("service plane candidates admitted");
     let [candidate] = candidates.get(&5).expect("plane candidates").as_slice() else {
         panic!("one tangent branch must be selected");
     };
@@ -1119,7 +1316,8 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
         offset: 60,
     });
 
-    let candidates = plane_candidates(&scan);
+    let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
+        .expect("service plane candidates admitted");
     let [candidate] = candidates.get(&5).expect("plane candidates").as_slice() else {
         panic!("the reference-tangent branch must be selected");
     };
@@ -1349,7 +1547,8 @@ fn plane_pcurve_discriminates_a_feature_frame_against_an_analytic_carrier() {
 #[test]
 fn stored_parameter_normal_branch_uses_unique_pcurve_endpoint_witness() {
     let scan = stored_frame_branch_scan(true);
-    let candidates = plane_candidates(&scan);
+    let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
+        .expect("service plane candidates admitted");
     let candidates = candidates.get(&1).expect("selected plane");
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
@@ -1365,7 +1564,8 @@ fn stored_parameter_normal_branch_considers_every_bounded_frame_candidate() {
     later.slots[10] = Some(5.0);
     scan.planes.local_systems.push(later);
 
-    let candidates = plane_candidates(&scan);
+    let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
+        .expect("service plane candidates admitted");
     let candidates = candidates.get(&1).expect("selected plane");
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].equation.origin, [0.0, 0.0, 0.0]);
@@ -1383,7 +1583,8 @@ fn stored_parameter_normal_branch_uses_unique_two_chart_endpoint_witness() {
             samples: vec![[[1.0, 1.0], [0.6, 0.8]], [[2.0, 1.0], [1.2, 1.6]]],
             offset: 30,
         });
-    let candidates = plane_candidates(&scan);
+    let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
+        .expect("service plane candidates admitted");
     let candidates = candidates.get(&1).expect("selected plane");
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
@@ -1393,7 +1594,8 @@ fn stored_parameter_normal_branch_uses_unique_two_chart_endpoint_witness() {
 #[test]
 fn stored_parameter_normal_branch_keeps_existing_frame_without_witness() {
     let scan = stored_frame_branch_scan(false);
-    let candidates = plane_candidates(&scan);
+    let candidates = crate::decode::with_test_decode_ctx(|ctx| plane_candidates(ctx, &scan))
+        .expect("service plane candidates admitted");
     let candidates = candidates.get(&1).expect("existing plane");
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].equation.normal, [0.8, 0.0, -0.6]);

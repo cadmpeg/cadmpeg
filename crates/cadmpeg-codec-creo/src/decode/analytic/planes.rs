@@ -1457,46 +1457,65 @@ fn select_round_edge_origin_branches(
     }
 }
 
-fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> {
-    let matrix_frame_ids = scan
+fn plane_candidates(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<BTreeMap<u32, Vec<PlaneCandidate>>, cadmpeg_core::CodecError> {
+    let mut matrix_frame_ids = BTreeSet::new();
+    for id in scan
         .planes
         .local_systems
         .iter()
         .filter(|frame| crate::surface::uses_matrix_column_frame(frame))
         .map(|frame| frame.surface_id)
-        .collect::<BTreeSet<_>>();
-    let held_planes = scan
+    {
+        if !matrix_frame_ids.contains(&id) {
+            ctx.charge_collection_items(1, "creo matrix plane frame ID nodes")?;
+            matrix_frame_ids.insert(id);
+        }
+    }
+    let mut held_plane_groups = BTreeMap::<u32, Vec<PlaneEquation>>::new();
+    for (surface_id, plane) in scan
         .planes
         .envelopes
         .iter()
         .filter_map(|envelope| Some((envelope.surface_id, held_coordinate_plane(envelope)?)))
-        .fold(
-            BTreeMap::<u32, Vec<PlaneEquation>>::new(),
-            |mut planes, (surface_id, plane)| {
-                planes.entry(surface_id).or_default().push(plane);
-                planes
-            },
-        )
-        .into_iter()
-        .filter_map(|(surface_id, planes)| agreed_plane(&planes).map(|plane| (surface_id, plane)))
-        .collect::<BTreeMap<_, _>>();
-    let frame_bound_outlines = scan
+    {
+        let planes = match held_plane_groups.entry(surface_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo held plane group nodes")?;
+                entry.insert(Vec::new())
+            }
+        };
+        ctx.try_reserve_items(planes, 1, "creo held plane equations")?;
+        planes.push(plane);
+    }
+    let mut held_planes = BTreeMap::new();
+    for (surface_id, planes) in held_plane_groups {
+        if let Some(plane) = agreed_plane(&planes) {
+            ctx.charge_collection_items(1, "creo agreed held plane nodes")?;
+            held_planes.insert(surface_id, plane);
+        }
+    }
+    let mut frame_bound_outlines = BTreeMap::<u32, Vec<crate::surface::OutlinePlane>>::new();
+    for outline in scan
     .planes
     .envelopes
     .iter()
     .filter_map(|record| {
         crate::surface::frame_bound_outline_plane(record, &scan.planes.local_systems)
-    })
-    .fold(
-        BTreeMap::<u32, Vec<crate::surface::OutlinePlane>>::new(),
-        |mut outlines, outline| {
-            outlines
-                .entry(outline.surface_id)
-                .or_default()
-                .push(outline);
-            outlines
-        },
-    );
+    }) {
+        let outlines = match frame_bound_outlines.entry(outline.surface_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo frame-bound outline nodes")?;
+                entry.insert(Vec::new())
+            }
+        };
+        ctx.try_reserve_items(outlines, 1, "creo frame-bound outlines")?;
+        outlines.push(outline);
+    }
     let mut candidates = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     for frame in &scan.planes.local_systems {
         let decoded_frame = frame.frame();
@@ -1530,12 +1549,18 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                     .and_then(|held| envelope_reconciled_plane_candidate(frame, *held))
             })
             .unwrap_or(frame_candidate);
-        candidates
-            .entry(frame.surface_id)
-            .or_default()
-            .push(candidate);
+        let options = match candidates.entry(frame.surface_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo plane candidate nodes")?;
+                entry.insert(Vec::new())
+            }
+        };
+        ctx.try_reserve_items(options, 1, "creo plane candidates")?;
+        options.push(candidate);
     }
-    let local_chart_ids = scan
+    let mut local_chart_ids = BTreeSet::new();
+    for id in scan
         .planes
         .local_systems
         .iter()
@@ -1546,15 +1571,17 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                 && decoded_frame.u_axis.is_some()
         })
         .map(|frame| frame.surface_id)
-        .collect::<BTreeSet<_>>();
+    {
+        if !local_chart_ids.contains(&id) {
+            ctx.charge_collection_items(1, "creo local plane chart ID nodes")?;
+            local_chart_ids.insert(id);
+        }
+    }
     for outline in &scan.planes.outlines {
         if matrix_frame_ids.contains(&outline.surface_id) {
             continue;
         }
-        candidates
-            .entry(outline.surface_id)
-            .or_default()
-            .push(PlaneCandidate {
+        let candidate = PlaneCandidate {
                 equation: PlaneEquation {
                     origin: outline.origin,
                     normal: outline.normal(),
@@ -1565,7 +1592,16 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                     u_axis: outline.u_axis(),
                 }),
                 offset: outline.offset,
-            });
+            };
+        let options = match candidates.entry(outline.surface_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo plane candidate nodes")?;
+                entry.insert(Vec::new())
+            }
+        };
+        ctx.try_reserve_items(options, 1, "creo plane candidates")?;
+        options.push(candidate);
     }
     for envelope in &scan.planes.envelopes {
         if matrix_frame_ids.contains(&envelope.surface_id) {
@@ -1574,22 +1610,28 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
         let Some(equation) = held_coordinate_plane(envelope) else {
             continue;
         };
-        candidates
-            .entry(envelope.surface_id)
-            .or_default()
-            .push(PlaneCandidate {
+        let candidate = PlaneCandidate {
                 equation,
                 chart: None,
                 offset: envelope.offset,
-            });
+            };
+        let options = match candidates.entry(envelope.surface_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo plane candidate nodes")?;
+                entry.insert(Vec::new())
+            }
+        };
+        ctx.try_reserve_items(options, 1, "creo plane candidates")?;
+        options.push(candidate);
     }
     for plane in &scan.planes.positional_frames {
         if candidates.contains_key(&plane.surface_id) {
             continue;
         }
-        candidates.insert(
-            plane.surface_id,
-            vec![PlaneCandidate {
+        let mut options = Vec::new();
+        ctx.try_reserve_items(&mut options, 1, "creo plane candidates")?;
+        options.push(PlaneCandidate {
                 equation: PlaneEquation {
                     origin: plane.origin,
                     normal: plane.normal(),
@@ -1600,14 +1642,13 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                     u_axis: plane.u_axis(),
                 }),
                 offset: plane.offset,
-            }],
-        );
+            });
+        ctx.charge_collection_items(1, "creo plane candidate nodes")?;
+        candidates.insert(plane.surface_id, options);
     }
     select_stored_frame_branches(scan, &mut candidates);
     select_round_edge_origin_branches(scan, &mut candidates);
-    candidates
-        .into_iter()
-        .filter(|(id, _)| {
+    candidates.retain(|id, _| {
             scan.surfaces
                 .rows
                 .iter()
@@ -1615,8 +1656,8 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                 .take(2)
                 .count()
                 < 2
-        })
-        .collect()
+        });
+    Ok(candidates)
 }
 
 fn frame_bound_outline_plane_candidate(
@@ -1736,25 +1777,32 @@ fn held_coordinate_plane(envelope: &crate::surface::PlaneEnvelopeRecord) -> Opti
     })
 }
 
-pub(in crate::decode) fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
-    plane_candidates(scan)
-        .into_iter()
-        .filter_map(|(id, candidates)| {
-            agreed_plane_iter(candidates.iter().map(|candidate| candidate.equation))
-            .map(|plane| (id, plane))
-        })
-        .collect()
+pub(in crate::decode) fn placed_planes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<BTreeMap<u32, PlaneEquation>, cadmpeg_core::CodecError> {
+    let mut placed = BTreeMap::new();
+    for (id, candidates) in plane_candidates(ctx, scan)? {
+        if let Some(plane) = agreed_plane_iter(candidates.iter().map(|candidate| candidate.equation)) {
+            ctx.charge_collection_items(1, "creo placed plane nodes")?;
+            placed.insert(id, plane);
+        }
+    }
+    Ok(placed)
 }
 
 pub(in crate::decode) fn placed_plane_surfaces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-) -> BTreeMap<u32, (PlaneEquation, [f64; 3], usize)> {
-    plane_candidates(scan)
-        .into_iter()
-        .filter_map(|(id, candidates)| {
-            agreed_plane_surface(&candidates).map(|surface| (id, surface))
-        })
-        .collect()
+) -> Result<BTreeMap<u32, (PlaneEquation, [f64; 3], usize)>, cadmpeg_core::CodecError> {
+    let mut placed = BTreeMap::new();
+    for (id, candidates) in plane_candidates(ctx, scan)? {
+        if let Some(surface) = agreed_plane_surface(&candidates) {
+            ctx.charge_collection_items(1, "creo placed plane surface nodes")?;
+            placed.insert(id, surface);
+        }
+    }
+    Ok(placed)
 }
 
 pub(super) fn topology_bound_plane(

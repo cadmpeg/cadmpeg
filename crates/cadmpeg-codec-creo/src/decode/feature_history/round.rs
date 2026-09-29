@@ -456,7 +456,7 @@ pub(in super::super) fn round_constant_radius(
         generated_rows.push(row);
     }
     if generated_rows.is_empty() {
-        return Ok(round_support_radius(scan, ir, source_carriers, feature_id));
+        return round_support_radius(ctx, scan, ir, source_carriers, feature_id);
     }
     if let Some(radius) = round_replay_radius(ctx, scan, ir, source_carriers, feature_id)? {
         return Ok(Some(radius));
@@ -515,7 +515,7 @@ pub(in super::super) fn round_constant_radius(
     if cylinder_radii.len() == cylinder_count && non_radius_rows_are_planes {
         return Ok(unique_positive_length(&cylinder_radii).map(PositiveLength::get));
     }
-    Ok(round_support_radius(scan, ir, source_carriers, feature_id))
+    round_support_radius(ctx, scan, ir, source_carriers, feature_id)
 }
 
 fn round_replay_radius(
@@ -692,23 +692,27 @@ fn round_cylinder_radius(
 }
 
 pub(in super::super) fn round_support_radius(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Option<f64> {
-    let affected_ids = agreed_feature_geometry_ids(
+) -> Result<Option<f64>, cadmpeg_core::CodecError> {
+    let Some(affected_ids) = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
         feature_id,
-    )?;
+    ) else {
+        return Ok(None);
+    };
     let [first_cap_id, second_cap_id, support_ids @ ..] = affected_ids else {
-        return None;
+        return Ok(None);
     };
     if first_cap_id == second_cap_id {
-        return None;
+        return Ok(None);
     }
-    let local_planes = placed_planes(scan);
+    let local_planes = placed_planes(ctx, scan)?;
+    Ok((|| {
     let first_cap = reconciled_model_plane(&local_planes, ir, source_carriers, *first_cap_id)?;
     let second_cap = reconciled_model_plane(&local_planes, ir, source_carriers, *second_cap_id)?;
     let first_cap_normal = normalize(first_cap.normal)?;
@@ -740,17 +744,22 @@ pub(in super::super) fn round_support_radius(
             .iter()
             .map(|id| reconciled_model_plane(&local_planes, ir, source_carriers, *id)),
     )
+    })())
 }
 
 pub(in super::super) fn round_support_envelope_cylinder(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     envelope: Type24RoundEnvelope,
-) -> Option<crate::surface::PositionalCylinderFrame> {
-    let ([first_cap, second_cap], support_ids, local_planes) =
-        resolved_round_support_planes(scan, ir, source_carriers, feature_id)?;
+) -> Result<Option<crate::surface::PositionalCylinderFrame>, cadmpeg_core::CodecError> {
+    let Some(([first_cap, second_cap], support_ids, local_planes)) =
+        resolved_round_support_planes(ctx, scan, ir, source_carriers, feature_id)? else {
+        return Ok(None);
+    };
+    Ok((|| {
     let axis = normalize(first_cap.normal)?;
     let second_cap_normal = normalize(second_cap.normal)?;
     if (dot(axis, second_cap_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
@@ -864,26 +873,31 @@ pub(in super::super) fn round_support_envelope_cylinder(
         radius,
         Some(cap_gap),
     )
+    })())
 }
 
 fn resolved_round_support_planes<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &'a ContainerScan<'_>,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Option<([PlaneEquation; 2], &'a [u32], std::collections::BTreeMap<u32, PlaneEquation>)> {
-    let affected_ids = agreed_feature_geometry_ids(
+) -> Result<Option<([PlaneEquation; 2], &'a [u32], std::collections::BTreeMap<u32, PlaneEquation>)>, cadmpeg_core::CodecError> {
+    let Some(affected_ids) = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
         feature_id,
-    )?;
+    ) else {
+        return Ok(None);
+    };
     let [first_cap_id, second_cap_id, support_ids @ ..] = affected_ids else {
-        return None;
+        return Ok(None);
     };
     if first_cap_id == second_cap_id {
-        return None;
+        return Ok(None);
     }
-    let local_planes = placed_planes(scan);
+    let local_planes = placed_planes(ctx, scan)?;
+    Ok((|| {
     let caps = [
         reconciled_model_plane(&local_planes, ir, source_carriers, *first_cap_id)?,
         reconciled_model_plane(&local_planes, ir, source_carriers, *second_cap_id)?,
@@ -913,6 +927,7 @@ fn resolved_round_support_planes<'a>(
         })
         .then_some(())?;
     (resolved_count >= 2).then_some((caps, support_ids, local_planes))
+    })())
 }
 
 pub(in super::super) fn round_placed_cylinder_radii(
@@ -1177,7 +1192,7 @@ pub(in super::super) fn chamfer_constant_distance(
         &scan.features.replay_affected_ids,
         feature_id,
     ) else { return Ok(None) };
-    let local_planes = placed_planes(scan);
+    let local_planes = placed_planes(ctx, scan)?;
     let mut support_planes = Vec::new();
     let mut support_plane_ids = BTreeSet::new();
     for id in affected_ids {
