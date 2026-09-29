@@ -856,42 +856,44 @@ fn project_all_dimension_constraints(
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .collect::<HashSet<_>>();
-    let mut projected_dimension_companions = pairs
-        .iter()
-        .filter_map(|pair| {
-            Some((
-                native_stream(&pair.id)?.to_owned(),
-                pair.governing_companion_record_index,
-            ))
-        })
-        .chain(annotation_frames.iter().filter_map(|frame| {
-            Some((
-                native_stream(&frame.id)?.to_owned(),
-                frame.governing_companion_record_index,
-            ))
-        }))
-        .chain(null_pairs.iter().filter_map(|pair| {
-            Some((
-                native_stream(&pair.id)?.to_owned(),
-                pair.governing_companion_record_index,
-            ))
-        }))
-        .collect::<HashSet<_>>();
-    projected_dimension_companions.extend(groups.iter().filter_map(|group| {
-        let scope = native_stream(&group.id)?;
-        if radial_extension_annotation_groups.contains(&(scope.to_owned(), group.record_index)) {
-            return None;
+    let mut projected_dimension_companions = HashSet::new();
+    for pair in pairs {
+        if let Some(scope) = native_stream(&pair.id) {
+            insert_dimension_set(ctx, &mut projected_dimension_companions,
+                (scope, pair.governing_companion_record_index),
+                "f3d projected pair companion")?;
         }
-        let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
-        let definition = match exact_group_definition(scope, group, parameter, parameter_id.clone()).transpose() {
-            Ok(definition) => definition,
-            Err(error) => return Some(Err(error)),
-        };
-        (definition
-            .as_ref()
-            .is_none_or(|definition| constraint_parameters(definition).contains(&&parameter_id)))
-        .then(|| Ok((scope.to_owned(), group.companion_record_index)))
-    }).collect::<Result<Vec<_>, _>>()?);
+    }
+    for frame in annotation_frames {
+        if let Some(scope) = native_stream(&frame.id) {
+            insert_dimension_set(ctx, &mut projected_dimension_companions,
+                (scope, frame.governing_companion_record_index),
+                "f3d projected annotation companion")?;
+        }
+    }
+    for pair in null_pairs {
+        if let Some(scope) = native_stream(&pair.id) {
+            insert_dimension_set(ctx, &mut projected_dimension_companions,
+                (scope, pair.governing_companion_record_index),
+                "f3d projected null-pair companion")?;
+        }
+    }
+    for group in groups {
+        let Some(scope) = native_stream(&group.id) else { continue; };
+        if radial_extension_annotation_groups.contains(&(scope.to_owned(), group.record_index)) {
+            continue;
+        }
+        let Some((parameter, parameter_id)) =
+            parameter_for(scope, group.companion_record_index) else { continue; };
+        let definition = exact_group_definition(scope, group, parameter, parameter_id.clone())
+            .transpose().map_err(CodecError::ResourceLimit)?;
+        if definition.as_ref()
+            .is_none_or(|definition| constraint_parameters(definition).contains(&&parameter_id)) {
+            insert_dimension_set(ctx, &mut projected_dimension_companions,
+                (scope, group.companion_record_index),
+                "f3d projected group companion")?;
+        }
+    }
 
     let group_constraints = groups.iter().filter_map(|group| {
             let scope = native_stream(&group.id)?;
@@ -1279,8 +1281,8 @@ fn project_all_dimension_constraints(
         let Some(scope) = native_stream(&record.id) else {
             continue;
         };
-        let key = (scope.to_owned(), record.companion_record_index);
-        if !projected_dimension_companions.contains(&key) {
+        if !projected_dimension_companions.contains(&(scope, record.companion_record_index)) {
+            let key = (scope.to_owned(), record.companion_record_index);
             recipes_by_companion.entry(key).or_default().push(record);
         }
     }
