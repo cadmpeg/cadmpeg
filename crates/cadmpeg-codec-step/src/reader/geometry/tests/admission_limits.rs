@@ -374,19 +374,7 @@ fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecErro
     policy.limits.max_recursion_depth = depth_limit;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    super::super::decode_pcurve_geometry(
-        1,
-        &exchange,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        1.0,
-        &mut Vec::new(),
-        &mut BTreeSet::new(),
-        0,
-        &ctx,
-    )
+    super::super::decode_pcurve_geometry(1, &exchange, super::super::PcurveSources { points: &BTreeMap::new(), vectors: &BTreeMap::new(), placements: &BTreeMap::new(), transformations: &BTreeMap::new(), angle_scale: 1.0 }, &mut Vec::new(), &mut BTreeSet::new(), 0, &ctx)
     .expect_err("pcurve geometry exceeds the limit")
 }
 

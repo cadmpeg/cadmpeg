@@ -29,16 +29,15 @@ pub(crate) mod schema_identifier;
 
 /// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::enum_variant_names)] // STEP names mirror the EXPRESS value kinds.
 pub(crate) enum Value {
     /// Reference to a DATA entity instance.
     Reference(u64),
     /// Reference to an externally defined value instance.
-    ValueReference(u64),
+    ExternalReference(u64),
     /// Reference to an EXPRESS entity constant.
     ConstantEntity(String),
     /// Reference to an EXPRESS value constant.
-    ConstantValue(String),
+    ExpressValueConstant(String),
     /// Signed integer value.
     Integer(i64),
     /// Real value.
@@ -111,12 +110,12 @@ fn try_clone_value(
         .transpose()?;
     Ok(match value {
         Value::Reference(id) => Value::Reference(*id),
-        Value::ValueReference(id) => Value::ValueReference(*id),
+        Value::ExternalReference(id) => Value::ExternalReference(*id),
         Value::ConstantEntity(text) => {
             Value::ConstantEntity(copy_parser_text(text, budget, operation)?)
         }
-        Value::ConstantValue(text) => {
-            Value::ConstantValue(copy_parser_text(text, budget, operation)?)
+        Value::ExpressValueConstant(text) => {
+            Value::ExpressValueConstant(copy_parser_text(text, budget, operation)?)
         }
         Value::Integer(value) => Value::Integer(*value),
         Value::Real(value) => Value::Real(*value),
@@ -1476,14 +1475,14 @@ impl Parser<'_, '_, '_> {
         } else {
             match self.next_kind()? {
                 TokenKind::Instance(v) => Value::Reference(v),
-                TokenKind::ValueInstance(v) => Value::ValueReference(v),
+                TokenKind::ValueInstance(v) => Value::ExternalReference(v),
                 TokenKind::ConstantEntity(mut name) => {
                     name.shrink_to_fit();
                     Value::ConstantEntity(name)
                 }
                 TokenKind::ConstantValue(mut name) => {
                     name.shrink_to_fit();
-                    Value::ConstantValue(name)
+                    Value::ExpressValueConstant(name)
                 }
                 TokenKind::Integer(v) => Value::Integer(v),
                 TokenKind::Real(v) => Value::Real(v),
@@ -1668,7 +1667,7 @@ fn btree_node_storage<K, V>() -> u64 {
 fn value_node_storage_bytes(value: &Value) -> u64 {
     let dynamic = match value {
         Value::ConstantEntity(value)
-        | Value::ConstantValue(value)
+        | Value::ExpressValueConstant(value)
         | Value::Enumeration(value)
         | Value::Resource(value) => value.capacity(),
         Value::String(value) => value.capacity(),
@@ -1676,7 +1675,7 @@ fn value_node_storage_bytes(value: &Value) -> u64 {
         Value::List(values) => values.capacity().saturating_mul(size_of::<Value>()),
         Value::Typed(name, _) => name.capacity().saturating_add(size_of::<Value>()),
         Value::Reference(_)
-        | Value::ValueReference(_)
+        | Value::ExternalReference(_)
         | Value::Integer(_)
         | Value::Real(_)
         | Value::Omitted
@@ -2546,9 +2545,9 @@ fn valid_anchor_name(name: &str) -> bool {
 fn is_anchor_item(value: &Value) -> bool {
     match value {
         Value::Reference(_)
-        | Value::ValueReference(_)
+        | Value::ExternalReference(_)
         | Value::ConstantEntity(_)
-        | Value::ConstantValue(_)
+        | Value::ExpressValueConstant(_)
         | Value::Integer(_)
         | Value::Real(_)
         | Value::Enumeration(_)
@@ -2902,7 +2901,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
             Value::Reference(id) => {
                 self.resolve_occurrence(ReferenceName::Entity(*id), value, depth)
             }
-            Value::ValueReference(id) => {
+            Value::ExternalReference(id) => {
                 self.resolve_occurrence(ReferenceName::Value(*id), value, depth)
             }
             Value::List(values) => {
@@ -3146,7 +3145,7 @@ fn references(
             Value::Reference(id) => {
                 push_charged(budget, entity_out, *id, "step_parse_reference_ids")?;
             }
-            Value::ValueReference(id) => {
+            Value::ExternalReference(id) => {
                 push_charged(budget, value_out, *id, "step_parse_value_reference_ids")?;
             }
             Value::List(values) => {
@@ -3165,7 +3164,7 @@ fn references(
 
 fn contains_class3_occurrence(value: &Value) -> bool {
     match value {
-        Value::ValueReference(_) | Value::ConstantEntity(_) | Value::ConstantValue(_) => true,
+        Value::ExternalReference(_) | Value::ConstantEntity(_) | Value::ExpressValueConstant(_) => true,
         Value::List(values) => values.iter().any(contains_class3_occurrence),
         Value::Typed(_, value) => contains_class3_occurrence(value),
         _ => false,

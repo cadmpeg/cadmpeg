@@ -795,7 +795,13 @@ pub(super) fn decode(
             StepLossCode::DecodeWarning.note("assembly occurrence graph has no resolvable root"),
         );
     }
-    apply_body_placements(exchange, geometry, topology, &usages, ir, &mut losses, ctx)?;
+    apply_body_placements(
+        exchange,
+        BodyPlacementSources { geometry, topology, usages: &usages },
+        ir,
+        &mut losses,
+        ctx,
+    )?;
     for (id, record) in exchange.entities_any(&[
         "APPLICATION_CONTEXT",
         "PRODUCT_CONTEXT",
@@ -889,16 +895,20 @@ fn assembly_depth_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
         .map_or(MAX_ASSEMBLY_DEPTH, |policy| policy.min(MAX_ASSEMBLY_DEPTH))
 }
 
-#[allow(clippy::too_many_arguments)] // session ctx is the eighth decode-policy argument
+struct BodyPlacementSources<'a> {
+    geometry: &'a GeometryData,
+    topology: &'a TopologyData,
+    usages: &'a BTreeMap<u64, Usage>,
+}
+
 fn apply_body_placements(
     exchange: &Exchange,
-    geometry: &GeometryData,
-    topology: &TopologyData,
-    usages: &BTreeMap<u64, Usage>,
+    sources: BodyPlacementSources<'_>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(), CodecError> {
+    let BodyPlacementSources { geometry, topology, usages } = sources;
     let mut pds = BTreeMap::new();
     for (id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
         if let Some(definition) =

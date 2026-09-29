@@ -859,8 +859,8 @@ impl CodecBackend for FcstdCodec {
         let namespace = ir.native.namespace_mut("fcstd");
         namespace.set_arena(ctx, "document", std::slice::from_ref(&scan.document))?;
         namespace.set_arena(ctx, "physical_ledger", &scan.ledger)?;
-        #[allow(clippy::if_not_else)]
-        if !ctx.container_only() {
+        let decode_document = !ctx.container_only();
+        if decode_document {
             let document_bytes = scan
                 .data
                 .get("Document.xml")
@@ -998,12 +998,16 @@ impl CodecBackend for FcstdCodec {
                     ctx,
                     &mut ir,
                     gui_view.window(),
-                    &scan.data,
-                    &graph.objects,
-                    &graph.properties,
-                    &shape_payloads,
-                    &element_maps,
-                    gui::requires_alpha_conversion(scan.document.program_version.as_deref()),
+                    &gui::GuiSources {
+                        entries: &scan.data,
+                        objects: &graph.objects,
+                        properties: &graph.properties,
+                        payloads: &shape_payloads,
+                        element_maps: &element_maps,
+                        requires_alpha_conversion: gui::requires_alpha_conversion(
+                            scan.document.program_version.as_deref(),
+                        ),
+                    },
                 )?
             } else {
                 gui::Graph::default()

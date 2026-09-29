@@ -267,6 +267,12 @@ struct BodyRoot {
     root_ordinal: Option<usize>,
 }
 
+struct RegionTraversal {
+    shape_index: usize,
+    transform: Transform,
+    reversed: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct OccurrenceKey(String);
 
@@ -688,9 +694,11 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
             ctx,
             ir,
             &body_id,
-            root.shape,
-            Transform::identity(),
-            root.reversed,
+            RegionTraversal {
+                shape_index: root.shape,
+                transform: Transform::identity(),
+                reversed: root.reversed,
+            },
             &mut regions,
         )?;
         if regions.is_empty() {
@@ -721,17 +729,19 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn append_shape_regions(
         &mut self,
         ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         body: &BodyId,
-        shape_index: usize,
-        transform: Transform,
-        reversed: bool,
+        traversal: RegionTraversal,
         output: &mut Vec<RegionId>,
     ) -> Result<(), CodecError> {
+        let RegionTraversal {
+            shape_index,
+            transform,
+            reversed,
+        } = traversal;
         let _depth = ctx.enter_nested("transfer FCStd topology nesting")?;
         let shape =
             copy_shape_for_transfer(ctx, self.shape(shape_index)?, "FreeCAD region shape copy")?;
@@ -744,11 +754,13 @@ impl<'a, 'c, 'r> Builder<'a, 'c, 'r> {
                     ctx,
                     ir,
                     body,
-                    child.shape,
-                    transform
-                        .compose(self.tables.location(child.location)?)
-                        .map_err(location_transform_error)?,
-                    reversed ^ is_reversed(child.orientation),
+                    RegionTraversal {
+                        shape_index: child.shape,
+                        transform: transform
+                            .compose(self.tables.location(child.location)?)
+                            .map_err(location_transform_error)?,
+                        reversed: reversed ^ is_reversed(child.orientation),
+                    },
                     output,
                 )?;
             }

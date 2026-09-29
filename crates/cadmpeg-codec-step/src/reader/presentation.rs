@@ -387,10 +387,12 @@ pub(super) fn decode(
                 reference,
                 exchange,
                 domain,
-                &mut active,
-                &mut color_cache,
-                &mut losses,
-                &mut invalid_surface_sides,
+                ColorSearchState {
+                    active: &mut active,
+                    cache: &mut color_cache,
+                    losses: &mut losses,
+                    invalid_surface_sides: &mut invalid_surface_sides,
+                },
                 0,
                 ctx,
             )
@@ -402,10 +404,12 @@ pub(super) fn decode(
                     reference,
                     exchange,
                     StyleDomain::Surface,
-                    &mut active,
-                    &mut color_cache,
-                    &mut losses,
-                    &mut invalid_surface_sides,
+                    ColorSearchState {
+                        active: &mut active,
+                        cache: &mut color_cache,
+                        losses: &mut losses,
+                        invalid_surface_sides: &mut invalid_surface_sides,
+                    },
                     0,
                     ctx,
                 )
@@ -1665,18 +1669,22 @@ fn combine_color_resolutions(
     }
 }
 
-#[allow(clippy::too_many_arguments)] // Recursive search keeps cache, loss, and invalid-source tracking separate.
+struct ColorSearchState<'a> {
+    active: &'a mut BTreeSet<u64>,
+    cache: &'a mut BTreeMap<(u64, StyleDomain), CachedColor>,
+    losses: &'a mut Vec<LossNote>,
+    invalid_surface_sides: &'a mut BTreeSet<u64>,
+}
+
 fn find_color(
     id: u64,
     exchange: &Exchange,
     domain: StyleDomain,
-    active: &mut BTreeSet<u64>,
-    cache: &mut BTreeMap<(u64, StyleDomain), CachedColor>,
-    losses: &mut Vec<LossNote>,
-    invalid_surface_sides: &mut BTreeSet<u64>,
+    state: ColorSearchState<'_>,
     depth: usize,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<CachedColor, CodecError> {
+    let ColorSearchState { active, cache, losses, invalid_surface_sides } = state;
     if depth >= 256 {
         return Ok(None);
     }
@@ -1745,10 +1753,12 @@ fn find_color(
                     reference,
                     exchange,
                     domain,
-                    active,
-                    cache,
-                    losses,
-                    invalid_surface_sides,
+                    ColorSearchState {
+                        active: &mut *active,
+                        cache: &mut *cache,
+                        losses: &mut *losses,
+                        invalid_surface_sides: &mut *invalid_surface_sides,
+                    },
                     depth + 1,
                     ctx,
                 )?;
@@ -1852,10 +1862,12 @@ fn find_color(
                             reference,
                             exchange,
                             domain,
-                            active,
-                            cache,
-                            losses,
-                            invalid_surface_sides,
+                            ColorSearchState {
+                                active: &mut *active,
+                                cache: &mut *cache,
+                                losses: &mut *losses,
+                                invalid_surface_sides: &mut *invalid_surface_sides,
+                            },
                             depth + 1,
                             ctx,
                         )

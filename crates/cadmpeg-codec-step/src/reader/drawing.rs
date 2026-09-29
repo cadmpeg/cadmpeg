@@ -1261,9 +1261,9 @@ fn value_text(
         .transpose()?;
     let text = match value {
         Value::Reference(id) => format_value_text(ctx, format_args!("#{id}"))?,
-        Value::ValueReference(id) => format_value_text(ctx, format_args!("@{id}"))?,
+        Value::ExternalReference(id) => format_value_text(ctx, format_args!("@{id}"))?,
         Value::ConstantEntity(name) => format_value_text(ctx, format_args!("#{name}"))?,
-        Value::ConstantValue(name) => format_value_text(ctx, format_args!("@{name}"))?,
+        Value::ExpressValueConstant(name) => format_value_text(ctx, format_args!("@{name}"))?,
         Value::Integer(value) => format_value_text(ctx, format_args!("{value}"))?,
         Value::Real(value) => format_value_text(ctx, format_args!("{value}"))?,
         Value::Enumeration(value) => format_value_text(ctx, format_args!(".{value}."))?,

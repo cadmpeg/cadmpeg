@@ -119,7 +119,7 @@ pub(crate) fn transfer(
             .map(|property| retained_string(ctx, &property.id, "fcstd product placement property"))
             .transpose()?;
         let node = match kind {
-            ProductKind::Occurrence => ProductNode::Occurrence(LinkOccurrence {
+            ProductKind::Occurrence => ProductNode::Occurrence(Box::new(LinkOccurrence {
                 members,
                 prototype: prototype_link
                     .and_then(|link| link.object())
@@ -153,7 +153,7 @@ pub(crate) fn transfer(
                 )
                 .map_err(malformed)?,
                 scale,
-            }),
+            })),
             ProductKind::Group => ProductNode::Group(ContainerNode {
                 members,
                 local_transform,

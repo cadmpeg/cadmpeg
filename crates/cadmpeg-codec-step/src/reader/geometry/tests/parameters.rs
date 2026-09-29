@@ -1011,35 +1011,11 @@ ENDSEC;END-ISO-10303-21;",
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let mut losses = Vec::new();
-    assert!(decode_pcurve_geometry(
-        3,
-        &exchange,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        1.0,
-        &mut losses,
-        &mut active,
-        0,
-        &ctx,
-    )
+    assert!(decode_pcurve_geometry(3, &exchange, super::super::PcurveSources { points: &BTreeMap::new(), vectors: &BTreeMap::new(), placements: &BTreeMap::new(), transformations: &BTreeMap::new(), angle_scale: 1.0 }, &mut losses, &mut active, 0, &ctx)
     .expect("no resource refusal")
     .is_none());
     assert!(active.is_empty());
-    assert!(decode_pcurve_geometry(
-        6,
-        &exchange,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        1.0,
-        &mut losses,
-        &mut active,
-        0,
-        &ctx,
-    )
+    assert!(decode_pcurve_geometry(6, &exchange, super::super::PcurveSources { points: &BTreeMap::new(), vectors: &BTreeMap::new(), placements: &BTreeMap::new(), transformations: &BTreeMap::new(), angle_scale: 1.0 }, &mut losses, &mut active, 0, &ctx)
     .expect("no resource refusal")
     .is_none());
     assert!(active.is_empty());

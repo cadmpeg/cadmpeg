@@ -703,21 +703,11 @@ fn shared_surface_carrier_is_staged_once() {
     };
     let body_id = BodyId::mint("step:data:body#shared-surface").expect("identity grammar");
     let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
-    let built = super::super::staged_topology(
-        HashSet::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        vec![surface.clone(), surface],
-        Vec::new(),
-        Region {
+    let built = super::super::staged_topology(super::super::StagedTopologyParts { typed: HashSet::new(), vertices: Vec::new(), edges: Vec::new(), coedges: Vec::new(), loops: Vec::new(), faces: Vec::new(), surfaces: vec![surface.clone(), surface], shells: Vec::new(), region: Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: Vec::new(),
-        },
-        Body {
+        }, body: Body {
             id: body_id,
             kind: BodyKind::Sheet,
             regions: vec![region_id],
@@ -725,9 +715,7 @@ fn shared_surface_carrier_is_staged_once() {
             name: None,
             color: None,
             visible: None,
-        },
-        &ctx,
-    )
+        } }, &ctx)
     .expect("duplicate references to one source surface must stage");
 
     assert_eq!(built.draft.model().surfaces.len(), 1);
