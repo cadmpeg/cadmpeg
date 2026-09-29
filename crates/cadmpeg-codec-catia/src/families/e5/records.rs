@@ -4,6 +4,8 @@
 //! class-`0xc8` planes, `0xff` edge-use records, and cylinder/cone/torus
 //! analytic surface carriers.
 
+use cadmpeg_core::decode::u64_from_index;
+
 type NurbsAxisOutput = Result<Option<(u32, Vec<f64>, Vec<u32>)>, CodecError>;
 
 use crate::families::a5a8::records::rolling_ball_jet_derivative;
@@ -258,15 +260,16 @@ pub(super) fn e5_planes(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Vec<E5Pl
         let scalar_count = (record.size - 58) / 8;
         let scalars_finite =
             (0..scalar_count).all(|index| f64_le(data, pos + 39 + 8 * index).is_some());
+        if read_f64_array::<4>(data, record.end() - 32).is_none() {
+            continue;
+        }
+        #[cfg(test)]
         let Some(bounds) = read_f64_array::<4>(data, record.end() - 32) else {
             continue;
         };
         if !scalars_finite {
             continue;
         }
-        #[cfg(not(test))]
-        // discarded-value: reading the natural bounds admits them finite; only tests read them
-        let _ = bounds;
         ctx.push_vec(
             &mut out,
             E5Plane {
@@ -432,7 +435,7 @@ fn parse_e5_rolling_ball_jet(
     };
     // Knots, multiplicities, three channel lanes, sites, and stations each
     // contain one item per declared station.
-    let station_count_u64 = cadmpeg_core::decode::u64_from_index(station_count);
+    let station_count_u64 = u64_from_index(station_count);
     ctx.charge_collection_items(
         station_count_u64.checked_mul(7).ok_or_else(|| {
             ctx.refuse_codec_limit("decode CATIA E5 rolling-ball stations", u64::MAX, u64::MAX)
@@ -760,7 +763,7 @@ fn e5_nurbs_surface(
     let Some(control_count) = u_count.checked_mul(v_count) else {
         return Ok(None);
     };
-    let control_count_u64 = cadmpeg_core::decode::u64_from_index(control_count);
+    let control_count_u64 = u64_from_index(control_count);
     let point_bytes = if mode == 1 { 32 } else { 24 };
     if view.counted(control_count_u64, point_bytes).is_none() {
         return Ok(None);
@@ -826,7 +829,7 @@ fn e5_nurbs_surface(
             .checked_mul(size_of::<
                 cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>,
             >())
-            .map(cadmpeg_core::decode::u64_from_index)
+            .map(u64_from_index)
         else {
             return Err(ctx.refuse_codec_limit(
                 "catia_e5_nurbs_weighted_poles",
@@ -891,7 +894,7 @@ fn read_nurbs_axis(ctx: &DecodeContext<'_>, view: &mut View<'_>) -> NurbsAxisOut
     if degree == 0 || [zero0, zero1, zero2] != [0; 3] || knot_count == 0 {
         return Ok(None);
     }
-    let knot_count_u64 = cadmpeg_core::decode::u64_from_index(knot_count);
+    let knot_count_u64 = u64_from_index(knot_count);
     if view.counted(knot_count_u64, 12).is_none() {
         return Ok(None);
     }
@@ -960,10 +963,7 @@ fn expand_nurbs_axis(
     if control_count <= degree || knots.first() >= knots.last() {
         return Ok(None);
     }
-    let Some(bytes) = total
-        .checked_mul(size_of::<f64>())
-        .map(cadmpeg_core::decode::u64_from_index)
-    else {
+    let Some(bytes) = total.checked_mul(size_of::<f64>()).map(u64_from_index) else {
         return Err(ctx.refuse_codec_limit("catia_e5_nurbs_expanded_axis", u64::MAX, u64::MAX));
     };
     ctx.charge_retained(bytes, "catia_e5_nurbs_expanded_axis")?;
@@ -1000,10 +1000,10 @@ fn e5_torus(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, PositiveLength,
 fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     match *bytes.get(at)? {
         0x38 => Some((u32_le_24(bytes, at + 1)?, at + 4)),
-        0x18 => Some((View::u16_le_at(bytes, at + 1)? as u32, at + 3)),
+        0x18 => Some((u32::from(View::u16_le_at(bytes, at + 1)?), at + 3)),
         0x10 => Some((u32::from(*bytes.get(at + 1)?) << 8, at + 2)),
-        0x08 => Some((*bytes.get(at + 1)? as u32, at + 2)),
-        byte if byte >= 0x80 => Some(((byte - 0x80) as u32, at + 1)),
+        0x08 => Some((u32::from(*bytes.get(at + 1)?), at + 2)),
+        byte if byte >= 0x80 => Some((u32::from(byte - 0x80), at + 1)),
         _ => None,
     }
 }
@@ -1320,9 +1320,13 @@ mod tests {
         for reference in [0x0102_0304, 0x0506, 0x0708, 0x090a, 0x0b0c] {
             if reference > 0xff {
                 payload.push(0x18);
-                payload.extend_from_slice(&(reference as u16).to_le_bytes());
+                payload.extend_from_slice(
+                    &(u16::try_from(reference & 0xffff)
+                        .expect("fixture stores the low 16 reference bits"))
+                    .to_le_bytes(),
+                );
             } else {
-                payload.push(0x80 + reference as u8);
+                payload.push(0x80 + u8::try_from(reference).expect("fixture value fits u8"));
             }
         }
         payload.extend_from_slice(&[0; 28]);

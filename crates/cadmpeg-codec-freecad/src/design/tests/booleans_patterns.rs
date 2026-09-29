@@ -283,7 +283,9 @@ fn float_list_property(name: &str, file: &str) -> PropertyRecord {
 }
 
 fn float_list_entry(name: &str, values: &[f64]) -> crate::native::EntryRecord {
-    let mut data = (values.len() as u32).to_le_bytes().to_vec();
+    let mut data = (u32::try_from(values.len()).expect("fixture value fits u32"))
+        .to_le_bytes()
+        .to_vec();
     for value in values {
         data.extend(value.to_le_bytes());
     }
@@ -597,7 +599,9 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
 </ObjectData></Document>"#;
     let float_list = |values: &[f64]| {
         let mut bytes = Vec::with_capacity(4 + values.len() * 8);
-        bytes.extend_from_slice(&(values.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(values.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for value in values {
             bytes.extend_from_slice(&value.to_le_bytes());
         }

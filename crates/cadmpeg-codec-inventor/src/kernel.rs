@@ -416,7 +416,8 @@ mod tests {
         let bytes = carrier_fixture(&empty_asm_fixture(), 23);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = "Inventor".len() as u64 - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("Inventor".len()) - 1;
         let (limited, view) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
@@ -514,7 +515,8 @@ mod tests {
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "scan Inventor kernel carrier segments"
         ));
-        policy.limits.max_work_units = inventory.segments.len() as u64;
+        policy.limits.max_work_units =
+            cadmpeg_core::decode::u64_from_index(inventory.segments.len());
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
@@ -551,8 +553,9 @@ mod tests {
         .flatten()
         .map(String::len)
         .sum::<usize>();
-        policy.limits.max_retained_bytes =
-            (header_strings + carrier.segment_token.as_str().len() - 1) as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            header_strings + carrier.segment_token.as_str().len() - 1,
+        );
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
@@ -906,7 +909,7 @@ mod tests {
         bytes.extend_from_slice(&0_u32.to_le_bytes());
         for value in ["Inventor", "ASM test", "2000-01-01"] {
             bytes.push(0x07);
-            bytes.push(value.len() as u8);
+            bytes.push(u8::try_from(value.len()).expect("fixture value fits u8"));
             bytes.extend_from_slice(value.as_bytes());
         }
         for value in [1.0_f64, 1.0e-6, 1.0e-10] {
@@ -929,7 +932,7 @@ mod tests {
         }
         for value in ["Inventor", "ASM 218 test", "2000-01-01"] {
             bytes.push(0x07);
-            bytes.push(value.len() as u8);
+            bytes.push(u8::try_from(value.len()).expect("fixture value fits u8"));
             bytes.extend_from_slice(value.as_bytes());
         }
         for value in [1.0_f64, 1.0e-6, 1.0e-10] {

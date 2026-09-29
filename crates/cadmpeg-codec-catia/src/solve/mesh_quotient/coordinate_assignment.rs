@@ -12,17 +12,20 @@ use super::{
 use cadmpeg_core::decode::work_units;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+#[derive(Clone, Copy)]
+struct PartialCompactAssignmentViableInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5> {
+    domain: &'input0 MeshFaceBoundaryDomain,
+    local_edge_by_id: &'input1 HashMap<usize, usize>,
+    edges: &'input2 [[usize; 2]],
+    global_edge_count: usize,
+    assigned: &'input3 [Option<usize>],
+    candidate: (usize, usize),
+    budget: Option<&'input5 WorkBudget<'input4>>,
+}
 
-#[allow(clippy::too_many_arguments)]
 fn partial_compact_assignment_viable(
     ctx: &DecodeContext<'_>,
-    domain: &MeshFaceBoundaryDomain,
-    local_edge_by_id: &HashMap<usize, usize>,
-    edges: &[[usize; 2]],
-    global_edge_count: usize,
-    assigned: &[Option<usize>],
-    candidate: (usize, usize),
-    budget: Option<&WorkBudget<'_>>,
+    inputs: PartialCompactAssignmentViableInputs<'_, '_, '_, '_, '_, '_>,
 ) -> Result<bool, CodecError> {
     fn augment(
         ctx: &DecodeContext<'_>,
@@ -49,6 +52,16 @@ fn partial_compact_assignment_viable(
         }
         Ok(false)
     }
+
+    let PartialCompactAssignmentViableInputs {
+        domain,
+        local_edge_by_id,
+        edges,
+        global_edge_count,
+        assigned,
+        candidate,
+        budget,
+    } = inputs;
 
     let relevant = match domain {
         MeshFaceBoundaryDomain::Ordered(_) => return Ok(true),
@@ -208,27 +221,37 @@ fn partial_compact_assignment_viable(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(super) struct CloseCoordinateRootsWithIncidenceInputs<
+    'input0,
+    'input1,
+    'input2,
+    'input3,
+    'input4,
+    'input5,
+    'input6,
+    'input7,
+> {
+    pub(super) quotient: &'input0 mut MeshQuotient,
+    pub(super) point_count: usize,
+    pub(super) edge_candidates: &'input1 [Vec<[usize; 2]>],
+    pub(super) incidence: Option<(&'input2 [[usize; 2]], &'input3 [MeshFaceBoundaryDomain])>,
+    pub(super) budget: Option<&'input5 WorkBudget<'input4>>,
+    pub(super) component_search_budget: Option<usize>,
+    pub(super) ambiguous: &'input6 Cell<bool>,
+    pub(super) exhausted: &'input7 Cell<bool>,
+}
+
 pub(super) fn close_coordinate_roots_with_incidence(
     ctx: &DecodeContext<'_>,
-    quotient: &mut MeshQuotient,
-    point_count: usize,
-    edge_candidates: &[Vec<[usize; 2]>],
-    incidence: Option<(&[[usize; 2]], &[MeshFaceBoundaryDomain])>,
-    budget: Option<&WorkBudget<'_>>,
-    component_search_budget: Option<usize>,
-    ambiguous: &Cell<bool>,
-    exhausted: &Cell<bool>,
+    inputs: CloseCoordinateRootsWithIncidenceInputs<'_, '_, '_, '_, '_, '_, '_, '_>,
 ) -> Result<Option<HashMap<usize, usize>>, CodecError> {
     const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
-
     struct LocalIncidence<'a> {
         edge_faces: Vec<[usize; 2]>,
         face_edges: Vec<Vec<usize>>,
         closed_faces: Vec<bool>,
         boundary_domains: &'a [MeshFaceBoundaryDomain],
     }
-
     fn pair_supported(candidates: &[[usize; 2]], left: usize, right: usize) -> bool {
         candidates.is_empty()
             || candidates
@@ -236,7 +259,6 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 .any(|pair| same_unordered_pair(*pair, [left, right]))
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn partial_ordered_assignment_viable(
         assignment: &MeshFaceBoundaryAssignment,
         local_edge_by_id: &HashMap<usize, usize>,
@@ -326,7 +348,6 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 })
         })
     }
-
     fn complete_ordered_assignment_viable(
         assignment: &MeshFaceBoundaryAssignment,
         edge_points: &[Option<[usize; 2]>],
@@ -380,36 +401,71 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 })
         })
     }
-
-    #[allow(clippy::too_many_arguments)]
+    struct CoordinateClosureSearch<
+        'input0,
+        'input1,
+        'input2,
+        'input3,
+        'input4,
+        'input5,
+        'input6,
+        'input7,
+        'input8,
+        'input9,
+        'input10,
+        'input11,
+        'input12,
+        'input13,
+        'input14,
+        'input15,
+        'input16,
+    > {
+        domains: &'input0 [Vec<usize>],
+        edges: &'input1 [[usize; 2]],
+        edge_ids: &'input2 [usize],
+        local_edge_by_id: &'input3 HashMap<usize, usize>,
+        root_edges: &'input4 [Vec<usize>],
+        edge_candidates: &'input5 [Vec<[usize; 2]>],
+        incidence: Option<&'input7 LocalIncidence<'input6>>,
+        component_points: &'input8 HashSet<usize>,
+        assigned: &'input9 mut [Option<usize>],
+        point_uses: &'input10 mut [usize],
+        solutions: &'input11 mut Vec<Vec<usize>>,
+        states: &'input12 mut usize,
+        state_limit: usize,
+        exhausted: &'input13 mut bool,
+        base_degrees: &'input14 mut HashMap<(usize, usize), usize>,
+        budget: Option<&'input16 WorkBudget<'input15>>,
+    }
     fn walk(
         ctx: &DecodeContext<'_>,
-        domains: &[Vec<usize>],
-        edges: &[[usize; 2]],
-        edge_ids: &[usize],
-        local_edge_by_id: &HashMap<usize, usize>,
-        root_edges: &[Vec<usize>],
-        edge_candidates: &[Vec<[usize; 2]>],
-        incidence: Option<&LocalIncidence<'_>>,
-        component_points: &HashSet<usize>,
-        assigned: &mut [Option<usize>],
-        point_uses: &mut [usize],
-        solutions: &mut Vec<Vec<usize>>,
-        states: &mut usize,
-        state_limit: usize,
-        exhausted: &mut bool,
-        base_degrees: &mut HashMap<(usize, usize), usize>,
-        budget: Option<&WorkBudget<'_>>,
+        inputs: CoordinateClosureSearch<
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+            '_,
+        >,
     ) -> Result<(), CodecError> {
         enum CoordinateBranch {
             Search { root: usize, values: Vec<usize> },
             Complete(Vec<usize>),
         }
-
         struct DegreeUndo {
             entries: Vec<((usize, usize), Option<usize>)>,
         }
-
         fn adjust_assignment_degrees(
             ctx: &DecodeContext<'_>,
             root: usize,
@@ -458,7 +514,6 @@ pub(super) fn close_coordinate_roots_with_incidence(
             }
             Ok(undo)
         }
-
         fn restore_assignment_degrees(
             degrees: &mut HashMap<(usize, usize), usize>,
             undo: DegreeUndo,
@@ -474,19 +529,40 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 }
             }
         }
-
-        #[allow(clippy::too_many_arguments)]
-        fn assign(
-            ctx: &DecodeContext<'_>,
+        struct CoordinateAssignment<
+            'input0,
+            'input1,
+            'input2,
+            'input3,
+            'input4,
+            'input5,
+            'input6,
+            'input7,
+        > {
             root: usize,
             point: usize,
-            assigned: &mut [Option<usize>],
-            edges: &[[usize; 2]],
-            root_edges: &[Vec<usize>],
-            incidence: Option<&LocalIncidence<'_>>,
-            degrees: &mut HashMap<(usize, usize), usize>,
-            budget: Option<&WorkBudget<'_>>,
+            assigned: &'input0 mut [Option<usize>],
+            edges: &'input1 [[usize; 2]],
+            root_edges: &'input2 [Vec<usize>],
+            incidence: Option<&'input4 LocalIncidence<'input3>>,
+            degrees: &'input5 mut HashMap<(usize, usize), usize>,
+            budget: Option<&'input7 WorkBudget<'input6>>,
+        }
+        fn assign(
+            ctx: &DecodeContext<'_>,
+            inputs: CoordinateAssignment<'_, '_, '_, '_, '_, '_, '_, '_>,
         ) -> Result<Option<DegreeUndo>, CodecError> {
+            let CoordinateAssignment {
+                root,
+                point,
+                assigned,
+                edges,
+                root_edges,
+                incidence,
+                degrees,
+                budget,
+            } = inputs;
+
             if budget.is_some_and(|budget| !budget.charge_by(root_edges[root].len())) {
                 return Ok(None);
             }
@@ -495,7 +571,6 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 ctx, root, assigned, edges, root_edges, incidence, degrees,
             )?))
         }
-
         fn unassign(
             root: usize,
             assigned: &mut [Option<usize>],
@@ -505,8 +580,6 @@ pub(super) fn close_coordinate_roots_with_incidence(
             restore_assignment_degrees(degrees, undo);
             assigned[root] = None;
         }
-
-        #[allow(clippy::too_many_arguments)]
         fn rollback(
             assigned: &mut [Option<usize>],
             point_uses: &mut [usize],
@@ -518,7 +591,6 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 unassign(root, assigned, degrees, undo);
             }
         }
-
         fn affected_roots(
             ctx: &DecodeContext<'_>,
             root: usize,
@@ -557,6 +629,25 @@ pub(super) fn close_coordinate_roots_with_incidence(
             affected.remove(&root);
             Ok(affected)
         }
+
+        let CoordinateClosureSearch {
+            domains,
+            edges,
+            edge_ids,
+            local_edge_by_id,
+            root_edges,
+            edge_candidates,
+            incidence,
+            component_points,
+            assigned,
+            point_uses,
+            solutions,
+            states,
+            state_limit,
+            exhausted,
+            base_degrees,
+            budget,
+        } = inputs;
 
         let _depth = ctx.enter_nested("catia_coordinate_closure_walk")?;
         if solutions.len() > 1 || *exhausted {
@@ -688,27 +779,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
                                 match domain {
                                     MeshFaceBoundaryDomain::Ordered(assignments) => {
                                         Ok(assignments.iter().any(|assignment| {
-                                            partial_ordered_assignment_viable(
-                                                assignment,
-                                                local_edge_by_id,
-                                                edges,
-                                                domains,
-                                                assigned,
-                                                Some((root, *point)),
-                                                work_budget,
-                                            )
+                                            partial_ordered_assignment_viable(assignment, local_edge_by_id, edges, domains, assigned, Some((root, *point)), work_budget)
                                         }))
                                     }
-                                    _ => partial_compact_assignment_viable(
-                                        ctx,
-                                        domain,
-                                        local_edge_by_id,
-                                        edges,
-                                        edge_candidates.len(),
-                                        assigned,
-                                        (root, *point),
-                                        work_budget,
-                                    ),
+                                    _ => partial_compact_assignment_viable(ctx, crate::solve::mesh_quotient::coordinate_assignment::PartialCompactAssignmentViableInputs { domain, local_edge_by_id, edges, global_edge_count: edge_candidates.len(), assigned, candidate: (root, *point), budget: work_budget }),
                                 }
                             })?;
                         if !boundaries_viable {
@@ -826,14 +900,16 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 if let [point] = values.as_slice() {
                     let Some(undo) = assign(
                         ctx,
-                        root,
-                        *point,
-                        assigned,
-                        edges,
-                        root_edges,
-                        incidence,
-                        base_degrees,
-                        budget,
+                        CoordinateAssignment {
+                            root,
+                            point: *point,
+                            assigned,
+                            edges,
+                            root_edges,
+                            incidence,
+                            degrees: base_degrees,
+                            budget,
+                        },
                     )?
                     else {
                         *exhausted = true;
@@ -927,14 +1003,16 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 }
                 let Some(undo) = assign(
                     ctx,
-                    root,
-                    point,
-                    assigned,
-                    edges,
-                    root_edges,
-                    incidence,
-                    base_degrees,
-                    budget,
+                    CoordinateAssignment {
+                        root,
+                        point,
+                        assigned,
+                        edges,
+                        root_edges,
+                        incidence,
+                        degrees: base_degrees,
+                        budget,
+                    },
                 )?
                 else {
                     *exhausted = true;
@@ -1030,14 +1108,16 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 if let Some((point, root)) = matching_forced {
                     let Some(undo) = assign(
                         ctx,
-                        root,
-                        point,
-                        assigned,
-                        edges,
-                        root_edges,
-                        incidence,
-                        base_degrees,
-                        budget,
+                        CoordinateAssignment {
+                            root,
+                            point,
+                            assigned,
+                            edges,
+                            root_edges,
+                            incidence,
+                            degrees: base_degrees,
+                            budget,
+                        },
                     )?
                     else {
                         *exhausted = true;
@@ -1067,14 +1147,16 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     let point = values[0];
                     let Some(undo) = assign(
                         ctx,
-                        root,
-                        point,
-                        assigned,
-                        edges,
-                        root_edges,
-                        incidence,
-                        base_degrees,
-                        budget,
+                        CoordinateAssignment {
+                            root,
+                            point,
+                            assigned,
+                            edges,
+                            root_edges,
+                            incidence,
+                            degrees: base_degrees,
+                            budget,
+                        },
                     )?
                     else {
                         *exhausted = true;
@@ -1221,14 +1303,16 @@ pub(super) fn close_coordinate_roots_with_incidence(
         for point in values {
             let Some(undo) = assign(
                 ctx,
-                root,
-                point,
-                assigned,
-                edges,
-                root_edges,
-                incidence,
-                base_degrees,
-                budget,
+                CoordinateAssignment {
+                    root,
+                    point,
+                    assigned,
+                    edges,
+                    root_edges,
+                    incidence,
+                    degrees: base_degrees,
+                    budget,
+                },
             )?
             else {
                 *exhausted = true;
@@ -1237,22 +1321,24 @@ pub(super) fn close_coordinate_roots_with_incidence(
             point_uses[point] += 1;
             walk(
                 ctx,
-                domains,
-                edges,
-                edge_ids,
-                local_edge_by_id,
-                root_edges,
-                edge_candidates,
-                incidence,
-                component_points,
-                assigned,
-                point_uses,
-                solutions,
-                states,
-                state_limit,
-                exhausted,
-                base_degrees,
-                budget,
+                CoordinateClosureSearch {
+                    domains,
+                    edges,
+                    edge_ids,
+                    local_edge_by_id,
+                    root_edges,
+                    edge_candidates,
+                    incidence,
+                    component_points,
+                    assigned,
+                    point_uses,
+                    solutions,
+                    states,
+                    state_limit,
+                    exhausted,
+                    base_degrees,
+                    budget,
+                },
             )?;
             point_uses[point] -= 1;
             unassign(root, assigned, base_degrees, undo);
@@ -1263,6 +1349,17 @@ pub(super) fn close_coordinate_roots_with_incidence(
         rollback(assigned, point_uses, propagated, base_degrees);
         Ok(())
     }
+
+    let CloseCoordinateRootsWithIncidenceInputs {
+        quotient,
+        point_count,
+        edge_candidates,
+        incidence,
+        budget,
+        component_search_budget,
+        ambiguous,
+        exhausted,
+    } = inputs;
 
     let mut roots = Vec::new();
     for node in 0..quotient.union.len() {
@@ -1651,22 +1748,24 @@ pub(super) fn close_coordinate_roots_with_incidence(
             ctx.alloc_filled(point_count, 0, "catia coordinate point degrees")?;
         walk(
             ctx,
-            &local_domains,
-            &local_edges,
-            &edge_ids,
-            &local_edge_by_id,
-            &root_edges,
-            edge_candidates,
-            local_incidence.as_ref(),
-            &component_points,
-            &mut local_assignment,
-            &mut point_degrees,
-            &mut solutions,
-            &mut states,
-            state_limit,
-            &mut exhausted,
-            &mut base_degrees,
-            budget,
+            CoordinateClosureSearch {
+                domains: &local_domains,
+                edges: &local_edges,
+                edge_ids: &edge_ids,
+                local_edge_by_id: &local_edge_by_id,
+                root_edges: &root_edges,
+                edge_candidates,
+                incidence: local_incidence.as_ref(),
+                component_points: &component_points,
+                assigned: &mut local_assignment,
+                point_uses: &mut point_degrees,
+                solutions: &mut solutions,
+                states: &mut states,
+                state_limit,
+                exhausted: &mut exhausted,
+                base_degrees: &mut base_degrees,
+                budget,
+            },
         )?;
         if exhausted {
             if component_budget.as_ref().is_some_and(WorkBudget::exhausted) {
@@ -1762,32 +1861,14 @@ mod tests {
         let service = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &service)
             .expect("fixture fits the service profile");
-        assert!(partial_compact_assignment_viable(
-            &ctx,
-            &domain,
-            &edge_by_id,
-            &edges,
-            2,
-            &assigned,
-            (0, 0),
-            None,
-        )
+        assert!(partial_compact_assignment_viable(&ctx, crate::solve::mesh_quotient::coordinate_assignment::PartialCompactAssignmentViableInputs { domain: &domain, local_edge_by_id: &edge_by_id, edges: &edges, global_edge_count: 2, assigned: &assigned, candidate: (0, 0), budget: None })
         .expect("service budget"));
 
         let mut limited = DecodePolicy::service();
         limited.limits.max_collection_items = 29;
         let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &limited)
             .expect("fixture fits the input limit");
-        let error = partial_compact_assignment_viable(
-            &ctx,
-            &domain,
-            &edge_by_id,
-            &edges,
-            2,
-            &assigned,
-            (0, 0),
-            None,
-        )
+        let error = partial_compact_assignment_viable(&ctx, crate::solve::mesh_quotient::coordinate_assignment::PartialCompactAssignmentViableInputs { domain: &domain, local_edge_by_id: &edge_by_id, edges: &edges, global_edge_count: 2, assigned: &assigned, candidate: (0, 0), budget: None })
         .expect_err("edge point collection exceeds the limit");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -1816,16 +1897,7 @@ mod tests {
             policy.limits.max_collection_items = limit;
             let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
                 .expect("fixture fits the input limit");
-            match partial_compact_assignment_viable(
-                &ctx,
-                &domain,
-                &edge_by_id,
-                &edges,
-                3,
-                &assigned,
-                (0, 0),
-                None,
-            ) {
+            match partial_compact_assignment_viable(&ctx, crate::solve::mesh_quotient::coordinate_assignment::PartialCompactAssignmentViableInputs { domain: &domain, local_edge_by_id: &edge_by_id, edges: &edges, global_edge_count: 3, assigned: &assigned, candidate: (0, 0), budget: None }) {
                 Err(CodecError::ResourceLimit(error)) => {
                     assert_eq!(error.dimension, ResourceDimension::CollectionItems);
                     operations.insert(error.operation);

@@ -1012,10 +1012,10 @@ fn embedded_cage_payload() -> Vec<u8> {
     }
     for axis in 0..3 {
         body.extend(0.0_f64.to_le_bytes());
-        body.extend((axis as f64 + 1.0).to_le_bytes());
+        body.extend((f64::from(axis) + 1.0).to_le_bytes());
     }
     for index in 0..8 {
-        for coordinate in [index as f64, 0.0, 0.0] {
+        for coordinate in [f64::from(index), 0.0, 0.0] {
             body.extend(coordinate.to_le_bytes());
         }
     }

@@ -611,7 +611,12 @@ fn coordinate_domain_preparation_scales_with_constraint_graph_work() {
     catia_test_context!(ctx);
     let candidates = vec![Vec::new(); 100];
     let ports = (0..100)
-        .map(|edge| [(edge * 2) as u32, (edge * 2 + 1) as u32])
+        .map(|edge| {
+            [
+                u32::try_from(edge * 2).expect("fixture value fits u32"),
+                u32::try_from(edge * 2 + 1).expect("fixture value fits u32"),
+            ]
+        })
         .collect::<Vec<_>>();
     let mut quotient =
         crate::solve::mesh_quotient::initial_mesh_quotient(&ctx, &candidates, 200, &ports)

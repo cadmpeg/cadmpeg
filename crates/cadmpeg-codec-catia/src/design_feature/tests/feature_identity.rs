@@ -91,13 +91,13 @@ fn parameter_owner_follows_one_exact_child_design_object() {
         .find(|record| record.id == owner_record_id)
         .expect("mutable synthetic owner declaration record");
     if let Some(class) = &mut owner_record_mut.class {
-        class.class_name = Some("Sketch".to_string());
-        class.class_entry = Some(owner_class_entry.clone());
+        class.name = Some("Sketch".to_string());
+        class.entry = Some(owner_class_entry.clone());
     } else {
         owner_record_mut.class = Some(crate::native::CatiaObjectClass {
-            class_ref: 0,
-            class_name: Some("Sketch".to_string()),
-            class_entry: Some(owner_class_entry.clone()),
+            ordinal: 0,
+            name: Some("Sketch".to_string()),
+            entry: Some(owner_class_entry.clone()),
         });
     }
 
@@ -129,7 +129,7 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     child_entity.id.clone_from(&child_entity_id);
     child_entity.object_record = child_record_id.clone();
     child_entity.entity_id = 2;
-    child_entity.ordinal = native.entity_records.len() as u64;
+    child_entity.ordinal = cadmpeg_core::decode::u64_from_index(native.entity_records.len());
     native.entity_records.push(child_entity);
 
     let mut child_object = native.design_objects[0].clone();

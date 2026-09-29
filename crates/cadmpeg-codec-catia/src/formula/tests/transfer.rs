@@ -62,7 +62,8 @@ fn decode_transfers_a_complete_typed_input_when_the_formula_output_is_unresolved
         1
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -301,7 +302,8 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
         cadmpeg_ir::Exactness::Derived
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -574,7 +576,8 @@ fn decode_transfers_typed_integer_to_angle_formula() {
         std::slice::from_ref(&input.id)
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -687,7 +690,11 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
         ),
         5
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -757,7 +764,11 @@ fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output
         assert!(input.dependencies.is_empty());
         assert_eq!(input.properties["value_type"], parameter_type);
         assert_eq!(input.properties["catia_binding"], "#1_ /2");
-        assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+        assert!(
+            cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+                .expect("resource allocation did not fail")
+                .is_ok()
+        );
     }
 }
 
@@ -792,7 +803,11 @@ fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
         std::slice::from_ref(&input.id)
     );
     assert_eq!(output.properties["value_type"], "String");
-    assert!(cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -906,7 +921,8 @@ fn decode_transfers_ordered_multi_input_formula_dependencies() {
         ))
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -1231,9 +1247,12 @@ fn typed_parameter_name_and_native_ref_refuse_retained_limits() {
     .expect("typed candidate");
     let before_name = entity.id.len() + admitted.parameter.id.as_str().len();
     for (cap, operation) in [
-        (before_name as u64, "catia_formula_typed_parameter_name"),
         (
-            (before_name + value.name.value.len()) as u64,
+            cadmpeg_core::decode::u64_from_index(before_name),
+            "catia_formula_typed_parameter_name",
+        ),
+        (
+            cadmpeg_core::decode::u64_from_index(before_name + value.name.value.len()),
             "catia_formula_typed_parameter_native_ref",
         ),
     ] {
@@ -1396,7 +1415,8 @@ fn decode_transfers_a_chained_formula_definition_once() {
         std::slice::from_ref(&intermediate.id)
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -1450,7 +1470,8 @@ fn decode_retains_a_typed_input_with_ambiguous_formula_definitions() {
         std::slice::from_ref(&intermediate.id)
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -1478,7 +1499,8 @@ fn decode_rejects_an_incompatible_downstream_formula_without_erasing_its_input()
         std::slice::from_ref(&input.id)
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );
@@ -1501,7 +1523,8 @@ fn decode_does_not_infer_a_fallback_from_conflicting_formula_input_types() {
     assert_eq!(input.name, "Input");
     assert!(input.dependencies.is_empty());
     assert!(
-        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail")
+        cadmpeg_ir::validate::validate_neutral(decoded.ir(), Vec::new())
+            .expect("resource allocation did not fail")
             .findings
             .is_empty()
     );

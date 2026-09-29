@@ -2,6 +2,8 @@
 //!
 //! Recovers unmatched edge-row placements against serialized face coverage.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 type MissingEdgeDomainsOutput =
     Result<Option<(Vec<MeshFaceAssignmentDomain>, Vec<MeshEdgeRun>)>, CodecError>;
 
@@ -25,7 +27,7 @@ fn charge_collection_items(
     count: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let count = cadmpeg_core::decode::u64_from_index(count);
+    let count = u64_from_index(count);
     ctx.charge_collection_items(count, operation)
 }
 
@@ -1049,10 +1051,10 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     let Some(trims) = parse_trim_chain(ctx, bytes, face_start, face_count, handle_width)? else {
         return Ok(None);
     };
-    let trim_count = cadmpeg_core::decode::u64_from_index(trims.len());
+    let trim_count = u64_from_index(trims.len());
     ctx.charge_collection_items(trim_count, "catia repeated edge face handles")?;
     for trim in &trims {
-        let handle_count = cadmpeg_core::decode::u64_from_index(trim.packet.handles().len());
+        let handle_count = u64_from_index(trim.packet.handles().len());
         ctx.charge_collection_items(handle_count, "catia repeated edge face handle set")?;
     }
     let mut face_handles = Vec::new();
@@ -2146,7 +2148,7 @@ pub(crate) fn bounded_oriented_trail_orders(
         if orders.len() > limit {
             return Ok(false);
         }
-        if used.count_ones() as usize == trails.len() {
+        if index_from_u32(used.count_ones()) == trails.len() {
             let order = ctx.copy_retained_slice(edges, "catia_oriented_trail_order_copy")?;
             ctx.push_vec(orders, order, "catia_oriented_trail_orders")?;
             return Ok(orders.len() <= limit);
@@ -2174,7 +2176,7 @@ pub(crate) fn bounded_oriented_trail_orders(
         Ok(true)
     }
 
-    if trails.len() > u64::BITS as usize {
+    if trails.len() > index_from_u32(u64::BITS) {
         return Ok(None);
     }
     let Some(edge_count) = trails
@@ -2254,7 +2256,7 @@ pub(crate) fn bounded_endpoint_cycle_orders(
     }
 
     if missing.is_empty()
-        || missing.len() > u64::BITS as usize
+        || missing.len() > index_from_u32(u64::BITS)
         || missing
             .iter()
             .any(|&edge| edge_candidates.get(edge).is_none_or(Vec::is_empty))
@@ -2366,18 +2368,21 @@ fn standard_mesh_missing_edge_assignment_domains(
     type PointTransitions = HashMap<usize, Arc<HashSet<usize>>>;
     type DeadState = (usize, usize, u64, Option<u32>, Vec<usize>, bool);
 
-    #[allow(clippy::too_many_arguments)]
+    struct EnumerateFaceInputs<'input0, 'input1, 'input2, 'input3, 'input4, 'input5> {
+        face: usize,
+        gaps: &'input0 [MeshBoundaryGap],
+        cycle_lengths: &'input1 [usize],
+        missing: &'input2 [usize],
+        rows: &'input3 [EdgeRow],
+        fixed_complete_row_spans: bool,
+        constraints: PlacementConstraints<'input4>,
+        canonicalize_spans: bool,
+        remaining_states: &'input5 mut usize,
+    }
+
     fn enumerate_face(
         ctx: &DecodeContext<'_>,
-        face: usize,
-        gaps: &[MeshBoundaryGap],
-        cycle_lengths: &[usize],
-        missing: &[usize],
-        rows: &[EdgeRow],
-        fixed_complete_row_spans: bool,
-        constraints: PlacementConstraints<'_>,
-        canonicalize_spans: bool,
-        remaining_states: &mut usize,
+        inputs: EnumerateFaceInputs<'_, '_, '_, '_, '_, '_>,
     ) -> Result<Option<Vec<Vec<MeshEdgePlacementCandidate>>>, CodecError> {
         struct Search<'a, 'ctx> {
             ctx: &'a DecodeContext<'ctx>,
@@ -2400,18 +2405,36 @@ fn standard_mesh_missing_edge_assignment_domains(
             assignments: usize,
             complete: Vec<Vec<MeshEdgePlacementCandidate>>,
         }
+        struct GapSearchState<'input0> {
+            gap: usize,
+            offset: usize,
+            used: u64,
+            current_port: Option<u32>,
+            current_points: Option<Arc<HashSet<usize>>>,
+            gap_placed_start: usize,
+            placed: &'input0 mut Vec<MeshEdgePlacementCandidate>,
+        }
+        struct GapWalkState<'input0> {
+            gap: usize,
+            offset: usize,
+            used: u64,
+            current_port: Option<u32>,
+            current_points: Option<Arc<HashSet<usize>>>,
+            gap_placed_start: usize,
+            placed: &'input0 mut Vec<MeshEdgePlacementCandidate>,
+        }
         impl Search<'_, '_> {
-            #[allow(clippy::too_many_arguments)]
-            fn walk(
-                &mut self,
-                gap: usize,
-                offset: usize,
-                used: u64,
-                current_port: Option<u32>,
-                current_points: Option<Arc<HashSet<usize>>>,
-                gap_placed_start: usize,
-                placed: &mut Vec<MeshEdgePlacementCandidate>,
-            ) -> Result<Option<()>, CodecError> {
+            fn walk(&mut self, inputs: GapSearchState<'_>) -> Result<Option<()>, CodecError> {
+                let GapSearchState {
+                    gap,
+                    offset,
+                    used,
+                    current_port,
+                    current_points,
+                    gap_placed_start,
+                    placed,
+                } = inputs;
+
                 let mut points = Vec::new();
                 if let Some(current) = current_points.as_ref() {
                     self.ctx
@@ -2425,7 +2448,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     return Ok(Some(()));
                 }
                 let before = self.assignments;
-                let Some(()) = self.walk_state(
+                let Some(()) = self.walk_state(GapWalkState {
                     gap,
                     offset,
                     used,
@@ -2433,7 +2456,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     current_points,
                     gap_placed_start,
                     placed,
-                )?
+                })?
                 else {
                     return Ok(None);
                 };
@@ -2442,7 +2465,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                         .4
                         .len()
                         .checked_mul(std::mem::size_of::<usize>())
-                        .map(cadmpeg_core::decode::u64_from_index)
+                        .map(u64_from_index)
                         .ok_or_else(|| {
                             self.ctx.refuse_codec_limit(
                                 "catia_gap_dead_state_points",
@@ -2461,17 +2484,17 @@ fn standard_mesh_missing_edge_assignment_domains(
                 Ok(Some(()))
             }
 
-            #[allow(clippy::too_many_arguments)]
-            fn walk_state(
-                &mut self,
-                gap: usize,
-                offset: usize,
-                used: u64,
-                current_port: Option<u32>,
-                current_points: Option<Arc<HashSet<usize>>>,
-                gap_placed_start: usize,
-                placed: &mut Vec<MeshEdgePlacementCandidate>,
-            ) -> Result<Option<()>, CodecError> {
+            fn walk_state(&mut self, inputs: GapWalkState<'_>) -> Result<Option<()>, CodecError> {
+                let GapWalkState {
+                    gap,
+                    offset,
+                    used,
+                    current_port,
+                    current_points,
+                    gap_placed_start,
+                    placed,
+                } = inputs;
+
                 let _depth = self.ctx.enter_nested("catia_gap_assignment_depth")?;
                 self.ctx.charge_work(1, "catia_gap_assignment_work")?;
                 let Some(remaining) = self.remaining_states.checked_sub(1) else {
@@ -2489,7 +2512,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     return Ok(None);
                 }
                 if gap == self.gaps.len() {
-                    if used.count_ones() as usize == self.missing.len() {
+                    if index_from_u32(used.count_ones()) == self.missing.len() {
                         self.assignments += 1;
                         let copy = self
                             .ctx
@@ -2560,15 +2583,15 @@ fn standard_mesh_missing_edge_assignment_domains(
                                 at = next;
                             }
                         }
-                        let Some(()) = self.walk(
-                            gap + 1,
-                            0,
+                        let Some(()) = self.walk(GapSearchState {
+                            gap: gap + 1,
+                            offset: 0,
                             used,
-                            next_port,
-                            next_points,
-                            placed.len(),
+                            current_port: next_port,
+                            current_points: next_points,
+                            gap_placed_start: placed.len(),
                             placed,
-                        )?
+                        })?
                         else {
                             return Ok(None);
                         };
@@ -2658,8 +2681,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                                                 if let Some(points) = transitions[edge].get(point) {
                                                     for &point in points.iter() {
                                                         if !next.contains(&point) {
-                                                            let bytes =
-                                                            cadmpeg_core::decode::u64_from_index(
+                                                            let bytes = u64_from_index(
                                                                 std::mem::size_of::<usize>(),
                                                             );
                                                             self.ctx.charge_retained(
@@ -2676,9 +2698,8 @@ fn standard_mesh_missing_edge_assignment_domains(
                                                 }
                                             }
                                         }
-                                        let bytes = cadmpeg_core::decode::u64_from_index(
-                                            std::mem::size_of::<HashSet<usize>>(),
-                                        );
+                                        let bytes =
+                                            u64_from_index(std::mem::size_of::<HashSet<usize>>());
                                         self.ctx
                                             .charge_retained(bytes, "catia_gap_transition_set")?;
                                         Some(Arc::new(next))
@@ -2700,15 +2721,15 @@ fn standard_mesh_missing_edge_assignment_domains(
                         };
                         self.ctx.push_vec(placed, value, "catia_gap_placed_edges")?;
                         for next_port in next_ports {
-                            let Some(()) = self.walk(
+                            let Some(()) = self.walk(GapSearchState {
                                 gap,
-                                offset + segment_count,
-                                used | (1 << rank),
-                                next_port,
-                                next_points.clone(),
+                                offset: offset + segment_count,
+                                used: used | (1 << rank),
+                                current_port: next_port,
+                                current_points: next_points.clone(),
                                 gap_placed_start,
                                 placed,
-                            )?
+                            })?
                             else {
                                 return Ok(None);
                             };
@@ -2721,8 +2742,20 @@ fn standard_mesh_missing_edge_assignment_domains(
             }
         }
 
+        let EnumerateFaceInputs {
+            face,
+            gaps,
+            cycle_lengths,
+            missing,
+            rows,
+            fixed_complete_row_spans,
+            constraints,
+            canonicalize_spans,
+            remaining_states,
+        } = inputs;
+
         let (edge_ports, corner_ports, endpoint_constraints, corner_points) = constraints;
-        if missing.len() > u64::BITS as usize {
+        if missing.len() > index_from_u32(u64::BITS) {
             return Ok(None);
         }
         let (edge_points, point_transitions) = endpoint_constraints.unzip();
@@ -2766,7 +2799,15 @@ fn standard_mesh_missing_edge_assignment_domains(
             None
         };
         if search
-            .walk(0, 0, 0, first_port, first_points, 0, &mut Vec::new())?
+            .walk(GapSearchState {
+                gap: 0,
+                offset: 0,
+                used: 0,
+                current_port: first_port,
+                current_points: first_points,
+                gap_placed_start: 0,
+                placed: &mut Vec::new(),
+            })?
             .is_none()
         {
             return Ok(None);
@@ -2979,7 +3020,7 @@ fn standard_mesh_missing_edge_assignment_domains(
             {
                 return None;
             }
-            if trails.len() > u64::BITS as usize {
+            if trails.len() > index_from_u32(u64::BITS) {
                 return None;
             }
             let mut trail_edges = Vec::new();
@@ -3111,7 +3152,7 @@ fn standard_mesh_missing_edge_assignment_domains(
             .len()
             .checked_mul(std::mem::size_of::<usize>())
             .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<usize>>()))
-            .map(cadmpeg_core::decode::u64_from_index)
+            .map(u64_from_index)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         ctx.charge_retained(bytes, operation)
     };
@@ -3310,48 +3351,54 @@ fn standard_mesh_missing_edge_assignment_domains(
         if assignments.is_none() {
             assignments = enumerate_face(
                 ctx,
-                face.face,
-                &face.gaps,
-                cycle_lengths,
-                &face.missing_edges,
-                edge_rows,
-                context.analysis.fixed_complete_row_spans,
-                (
-                    placement_ports,
-                    &corner_ports,
-                    endpoint_constraints,
-                    &corner_points,
-                ),
-                canonicalize_spans,
-                &mut remaining_states,
+                EnumerateFaceInputs {
+                    face: face.face,
+                    gaps: &face.gaps,
+                    cycle_lengths,
+                    missing: &face.missing_edges,
+                    rows: edge_rows,
+                    fixed_complete_row_spans: context.analysis.fixed_complete_row_spans,
+                    constraints: (
+                        placement_ports,
+                        &corner_ports,
+                        endpoint_constraints,
+                        &corner_points,
+                    ),
+                    canonicalize_spans,
+                    remaining_states: &mut remaining_states,
+                },
             )?;
         }
         if assignments.is_none() {
             assignments = enumerate_face(
                 ctx,
-                face.face,
-                &face.gaps,
-                cycle_lengths,
-                &face.missing_edges,
-                edge_rows,
-                context.analysis.fixed_complete_row_spans,
-                (None, &HashMap::new(), endpoint_constraints, &corner_points),
-                canonicalize_spans,
-                &mut remaining_states,
+                EnumerateFaceInputs {
+                    face: face.face,
+                    gaps: &face.gaps,
+                    cycle_lengths,
+                    missing: &face.missing_edges,
+                    rows: edge_rows,
+                    fixed_complete_row_spans: context.analysis.fixed_complete_row_spans,
+                    constraints: (None, &HashMap::new(), endpoint_constraints, &corner_points),
+                    canonicalize_spans,
+                    remaining_states: &mut remaining_states,
+                },
             )?;
         }
         if assignments.is_none() {
             assignments = enumerate_face(
                 ctx,
-                face.face,
-                &face.gaps,
-                cycle_lengths,
-                &face.missing_edges,
-                edge_rows,
-                context.analysis.fixed_complete_row_spans,
-                (None, &HashMap::new(), None, &MeshCornerPoints::new()),
-                canonicalize_spans,
-                &mut remaining_states,
+                EnumerateFaceInputs {
+                    face: face.face,
+                    gaps: &face.gaps,
+                    cycle_lengths,
+                    missing: &face.missing_edges,
+                    rows: edge_rows,
+                    fixed_complete_row_spans: context.analysis.fixed_complete_row_spans,
+                    constraints: (None, &HashMap::new(), None, &MeshCornerPoints::new()),
+                    canonicalize_spans,
+                    remaining_states: &mut remaining_states,
+                },
             )?;
         }
         let domain = if let Some(assignments) = assignments {
@@ -4029,21 +4076,18 @@ pub(crate) fn standard_mesh_prune_endpoint_candidates(
 type MeshCorner = (usize, usize, usize);
 type MeshCornerPoints = HashMap<MeshCorner, HashSet<usize>>;
 
-// The tuple carries one coupled result; a separate alias would add no invariant.
-#[allow(clippy::type_complexity)]
+struct MeshAssignmentCorners {
+    assignments: Vec<Vec<Vec<MeshEdgePlacementCandidate>>>,
+    corner_points: MeshCornerPoints,
+    cycle_lengths: Vec<Vec<usize>>,
+}
+
 fn standard_mesh_assignment_corner_points(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
-) -> Result<
-    Option<(
-        Vec<Vec<Vec<MeshEdgePlacementCandidate>>>,
-        MeshCornerPoints,
-        Vec<Vec<usize>>,
-    )>,
-    CodecError,
-> {
+) -> Result<Option<MeshAssignmentCorners>, CodecError> {
     (|| -> Option<Result<_, CodecError>> {
         let analysis = match standard_mesh_analysis(ctx, bytes) {
             Ok(Some(analysis)) => analysis,
@@ -4164,7 +4208,11 @@ fn standard_mesh_assignment_corner_points(
                 break;
             }
         }
-        Some(Ok((assignments, corner_points, cycle_lengths)))
+        Some(Ok(MeshAssignmentCorners {
+            assignments,
+            corner_points,
+            cycle_lengths,
+        }))
     })()
     .transpose()
 }
@@ -4178,8 +4226,11 @@ fn standard_mesh_missing_edge_endpoint_assignments(
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Result<Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>>, CodecError> {
-    let Some((assignments, corner_points, cycle_lengths)) =
-        standard_mesh_assignment_corner_points(ctx, bytes, edge_faces, edge_points)?
+    let Some(MeshAssignmentCorners {
+        assignments,
+        corner_points,
+        cycle_lengths,
+    }) = standard_mesh_assignment_corner_points(ctx, bytes, edge_faces, edge_points)?
     else {
         return Ok(None);
     };

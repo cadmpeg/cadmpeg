@@ -662,7 +662,11 @@ fn parses_settings_attributes_prefix_nested_records_and_future_minor_suffix() {
     body.extend(anonymous_chunk(archive, 3, &[4, 0, 0, 0, 2, 0, 0, 0, 1, 0]));
 
     for value in 0..6 {
-        body.extend((value as u8 + 1..=value as u8 + 16).collect::<Vec<_>>());
+        body.extend(
+            (u8::try_from(value).expect("fixture value fits u8") + 1
+                ..=u8::try_from(value).expect("fixture value fits u8") + 16)
+                .collect::<Vec<_>>(),
+        );
     }
     body.extend([0xde, 0xad]);
 
@@ -1820,7 +1824,7 @@ fn object_rendering_with_minors(
         let mut channel_body = 7_i32.to_le_bytes().to_vec();
         channel_body.extend(uuid_bytes());
         if channel_minor >= 1 {
-            channel_body.extend((0..16).flat_map(|value| (value as f64).to_le_bytes()));
+            channel_body.extend((0..16).flat_map(|value| (f64::from(value)).to_le_bytes()));
         }
         body.extend(anonymous_chunk(
             ArchiveVersion::V8,

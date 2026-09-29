@@ -2,6 +2,9 @@
 //! Surface-layer transfer: neutral surface lowering and the surface/procedural
 //! emit pass.
 
+use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
+use cadmpeg_core::decode::u64_from_index;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -155,7 +158,7 @@ pub(super) fn neutral_surface(
             // The resolved extrusion is retained by the surface plan.
             procedure: {
                 ctx.charge_retained(
-                    std::mem::size_of::<super::ResolvedExtrusionSurface>() as u64,
+                    u64_from_index(std::mem::size_of::<super::ResolvedExtrusionSurface>()),
                     "catia_b5_extrusion_procedure",
                 )?;
                 Some(SurfaceProcedure::Extrusion(Box::new(extrusion)))
@@ -175,7 +178,7 @@ pub(super) fn neutral_surface(
         } => {
             procedure = Some(SurfaceProcedure::RollingBall {
                 carrier_object_id,
-                definition: copy_rolling_ball_definition(ctx, definition)?,
+                definition: Box::new(copy_rolling_ball_definition(ctx, definition)?),
             });
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                 record: Some(
@@ -375,13 +378,14 @@ pub(super) fn rational_arc(
 ) -> Result<Option<NurbsCurve>, CodecError> {
     let angles = [interval[0] / radius, interval[1] / radius];
     let span_count = ((angles[1] - angles[0]).abs() / std::f64::consts::FRAC_PI_2).ceil();
-    if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+    if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS {
         return Ok(None);
     }
     // `ceil` answers zero only for an angular span of exactly zero: an arc that
     // sweeps no angle states no span, which this route refuses as it refuses
     // every other degeneracy.
-    let Some(span_count) = std::num::NonZeroUsize::new(span_count as usize) else {
+    let Some(span_count) = truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new)
+    else {
         return Ok(None);
     };
     let span_count = span_count.get();
@@ -409,8 +413,20 @@ pub(super) fn rational_arc(
     let mut knots = Vec::new();
     ctx.reserve_vec(&mut knots, knot_count, "catia_b5_revolution_arc_knots")?;
     for span in 0..span_count {
-        let fraction0 = span as f64 / span_count as f64;
-        let fraction1 = (span + 1) as f64 / span_count as f64;
+        let fraction0 = match f64_from_index(span) {
+            Some(value) => value,
+            None => return Ok(None),
+        } / match f64_from_index(span_count) {
+            Some(value) => value,
+            None => return Ok(None),
+        };
+        let fraction1 = match f64_from_index(span + 1) {
+            Some(value) => value,
+            None => return Ok(None),
+        } / match f64_from_index(span_count) {
+            Some(value) => value,
+            None => return Ok(None),
+        };
         let angle0 = angles[0] + (angles[1] - angles[0]) * fraction0;
         let angle1 = angles[0] + (angles[1] - angles[0]) * fraction1;
         let middle = (angle0 + angle1) * 0.5;
@@ -467,20 +483,20 @@ pub(super) fn revolve_nurbs(
 ) -> Result<Option<NurbsSurface>, CodecError> {
     let [angular_interval, native_interval] = intervals;
     let admit_items = |count: usize, operation: &'static str| -> Result<(), CodecError> {
-        let items = cadmpeg_core::decode::u64_from_index(count);
+        let items = u64_from_index(count);
         ctx.charge_collection_items(items, operation)
     };
     (|| -> Option<Result<NurbsSurface, CodecError>> {
         let span_count = ((angular_interval[1] - angular_interval[0]).abs()
             / std::f64::consts::FRAC_PI_2)
             .ceil();
-        if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+        if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS {
             return None;
         }
         // `ceil` answers zero only for an angular span of exactly zero: an arc that
         // sweeps no angle states no span, which this route refuses as it refuses
         // every other degeneracy.
-        let span_count = std::num::NonZeroUsize::new(span_count as usize)?.get();
+        let span_count = std::num::NonZeroUsize::new(truncate_f64_to_usize(span_count)?)?.get();
         let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
         let control_count =
             crate::nurbs_surface_control_count(profile.control_points().len(), angular_count)?;
@@ -518,8 +534,8 @@ pub(super) fn revolve_nurbs(
             return Some(Err(error));
         }
         for span in 0..span_count {
-            let fraction0 = span as f64 / span_count as f64;
-            let fraction1 = (span + 1) as f64 / span_count as f64;
+            let fraction0 = f64_from_index(span)? / f64_from_index(span_count)?;
+            let fraction1 = f64_from_index(span + 1)? / f64_from_index(span_count)?;
             let angle0 =
                 angular_interval[0] + (angular_interval[1] - angular_interval[0]) * fraction0;
             let angle1 =
@@ -672,7 +688,7 @@ fn append_quadratic_span_knots(
     span_count: usize,
 ) -> Option<()> {
     let at = |index: usize| {
-        let fraction = index as f64 / span_count as f64;
+        let fraction = f64_from_index(index)? / f64_from_index(span_count)?;
         let ordinary = interval[0] + (interval[1] - interval[0]) * fraction;
         if ordinary.is_finite() {
             Some(ordinary)
@@ -939,7 +955,7 @@ pub(super) fn emit_surfaces(
                 )?;
                 let _attached = ir.model.add_procedural_surface(
                     &id,
-                    ProceduralSurface::new(procedural_id, definition, None),
+                    ProceduralSurface::new(procedural_id, *definition, None),
                 );
             }
             Some(SurfaceProcedure::RollingBall { .. }) | None => {}

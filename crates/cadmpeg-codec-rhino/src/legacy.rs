@@ -4058,7 +4058,7 @@ mod tests {
 
     fn chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
         let mut bytes = typecode.to_le_bytes().to_vec();
-        bytes.extend((body.len() as i32).to_le_bytes());
+        bytes.extend((i32::try_from(body.len()).expect("fixture value fits i32")).to_le_bytes());
         bytes.extend(body);
         bytes
     }
@@ -4119,7 +4119,9 @@ mod tests {
 
     fn v1_string(value: &str) -> Vec<u8> {
         let bytes = value.as_bytes();
-        let mut result = (bytes.len() as i32).to_le_bytes().to_vec();
+        let mut result = (i32::try_from(bytes.len()).expect("fixture value fits i32"))
+            .to_le_bytes()
+            .to_vec();
         result.extend(bytes);
         result
     }
@@ -4152,7 +4154,7 @@ mod tests {
         linear.extend(10_i32.to_le_bytes());
         linear.extend(&plane);
         for index in 0..11 {
-            for value in [index as f64, 0.0, 0.0] {
+            for value in [f64::from(index), 0.0, 0.0] {
                 linear.extend(value.to_le_bytes());
             }
         }
@@ -4171,7 +4173,7 @@ mod tests {
             angular.extend(value.to_le_bytes());
         }
         for index in 0..5 {
-            for value in [index as f64, 1.0, 0.0] {
+            for value in [f64::from(index), 1.0, 0.0] {
                 angular.extend(value.to_le_bytes());
             }
         }
@@ -4185,7 +4187,7 @@ mod tests {
         radial.extend(8_i32.to_le_bytes());
         radial.extend(&plane);
         for index in 0..5 {
-            for value in [index as f64, 2.0, 0.0] {
+            for value in [f64::from(index), 2.0, 0.0] {
                 radial.extend(value.to_le_bytes());
             }
         }
@@ -4417,7 +4419,9 @@ mod tests {
 
     fn legacy_face_archive_with(corners: &[[f64; 3]], trim_flags: &[u8], glue: &[u16]) -> Vec<u8> {
         assert_eq!(corners.len(), trim_flags.len());
-        let mut boundary = (corners.len() as i32).to_le_bytes().to_vec();
+        let mut boundary = (i32::try_from(corners.len()).expect("fixture value fits i32"))
+            .to_le_bytes()
+            .to_vec();
         boundary.extend(0_i32.to_le_bytes());
         for value in [0.0_f64, 0.0, 1.0, 1.0] {
             boundary.extend(value.to_le_bytes());
@@ -4439,7 +4443,7 @@ mod tests {
         for value in [0.0_f64, 0.0, 0.0, 1.0, 1.0, 0.0] {
             face.extend(value.to_le_bytes());
         }
-        face.extend((glue.len() as i32).to_le_bytes());
+        face.extend((i32::try_from(glue.len()).expect("fixture value fits i32")).to_le_bytes());
         for value in glue {
             face.extend(value.to_le_bytes());
         }
@@ -4771,7 +4775,10 @@ mod tests {
         let retained = result.source_fidelity().retained_records();
         assert_eq!(retained.len(), 1);
         let record = retained.values().next().expect("typed source boundary");
-        assert_eq!(record.offset(), point_offset as u64);
+        assert_eq!(
+            record.offset(),
+            cadmpeg_core::decode::u64_from_index(point_offset)
+        );
         assert_eq!(record.data(), Some(point.as_slice()));
     }
 
@@ -4820,8 +4827,14 @@ mod tests {
             .iter()
             .find(|(id, _)| id.as_str().starts_with("rhino:legacy:record#00200004-"))
             .expect("the malformed direct record is retained under its typecode");
-        assert_eq!(malformed.offset(), record_offset as u64);
-        assert_eq!(malformed.byte_len(), record.len() as u64);
+        assert_eq!(
+            malformed.offset(),
+            cadmpeg_core::decode::u64_from_index(record_offset)
+        );
+        assert_eq!(
+            malformed.byte_len(),
+            cadmpeg_core::decode::u64_from_index(record.len())
+        );
         assert_eq!(malformed.data(), Some(record.as_slice()));
         assert_eq!(malformed.stream(), "rhino");
         assert!(malformed_id
@@ -4839,7 +4852,7 @@ mod tests {
         let mut bytes = archive(&[]);
         let mut direct_records = v1_annotation_records();
         direct_records[0].extend([0xde, 0xad]);
-        let body_len = (direct_records[0].len() - 8) as i32;
+        let body_len = i32::try_from(direct_records[0].len() - 8).expect("fixture value fits i32");
         direct_records[0][4..8].copy_from_slice(&body_len.to_le_bytes());
         for record in direct_records {
             bytes.extend(record);

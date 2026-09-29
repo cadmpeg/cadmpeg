@@ -1588,7 +1588,7 @@ fn presentation_loss_refuses_collection_and_note_copy_limits() {
     ));
 
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = "dropped".len() as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("dropped".len());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root admitted");
     let error = crate::presentation::push_presentation_loss(

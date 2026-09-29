@@ -84,17 +84,19 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
             ctx,
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &[(surface_id.clone(), false, 0)],
-            &HashMap::from([(surface_id, 0)]),
-            &[],
-            &support,
-            [0, 0],
-            None,
-            None,
-            &mut crate::nurbs::LaneRefusals::new(),
-            &mut admission,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &[(surface_id.clone(), false, 0)],
+                surface_indices: &HashMap::from([(surface_id, 0)]),
+                brep: &[],
+                support: &support,
+                points: [0, 0],
+                native_support: None,
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
         )
     })
     .expect("valid source object identity");
@@ -481,15 +483,17 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0)
     );
     let range = circle_parameter_range_from_surface_branch(
-        &surface,
-        Point3::new(0.0, 0.0, 0.0),
-        7.0,
-        Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(1.0, 0.0, 0.0),
-        Point3::new(7.0, 0.0, 0.0),
-        Point3::new(0.0, 7.0, 0.0),
-        *line_pcurve.origin(),
-        (*line_pcurve.direction()).into(),
+        crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+            surface: &surface,
+            center: Point3::new(0.0, 0.0, 0.0),
+            radius: 7.0,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            start: Point3::new(7.0, 0.0, 0.0),
+            end: Point3::new(0.0, 7.0, 0.0),
+            pcurve_origin: *line_pcurve.origin(),
+            pcurve_direction: (*line_pcurve.direction()).into(),
+        },
     )
     .expect("circle evaluation resources")
     .expect("torus circle range");
@@ -537,15 +541,17 @@ fn standard_torus_witness_selects_complementary_meridian_arc() {
     assert_eq!(*direction, cadmpeg_ir::math::Point2::new(0.0, long_sweep));
 
     let range = circle_parameter_range_from_surface_branch(
-        &surface,
-        Point3::new(5.0, 0.0, 0.0),
-        2.0,
-        Vector3::new(0.0, -1.0, 0.0),
-        Vector3::new(1.0, 0.0, 0.0),
-        start,
-        end,
-        *line_pcurve.origin(),
-        (*line_pcurve.direction()).into(),
+        crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+            surface: &surface,
+            center: Point3::new(5.0, 0.0, 0.0),
+            radius: 2.0,
+            axis: Vector3::new(0.0, -1.0, 0.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            start,
+            end,
+            pcurve_origin: *line_pcurve.origin(),
+            pcurve_direction: (*line_pcurve.direction()).into(),
+        },
     )
     .expect("circle evaluation resources")
     .expect("torus meridian circle range");

@@ -50,7 +50,7 @@ fn a_native_circle_range_reads_from_the_finite_support_when_its_partner_overflow
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, -1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0)
         )
         .expect("evaluator allocation succeeds"),
         Some([0.0, 1.5 * std::f64::consts::PI])

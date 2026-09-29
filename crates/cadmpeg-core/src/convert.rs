@@ -268,6 +268,9 @@ mod tests {
     fn f32_from_f64_checks_range_and_finiteness() {
         assert_eq!(f32_from_f64(f64::from(f32::MAX)), Some(f32::MAX));
         assert_eq!(f32_from_f64(f64::from(f32::MAX) * 2.0), None);
+        assert_eq!(f32_from_f64(f64::from(f32::MAX).next_up()), None);
+        assert_eq!(f32_from_f64(-f64::from(f32::MAX)), Some(-f32::MAX));
+        assert_eq!(f32_from_f64((-f64::from(f32::MAX)).next_down()), None);
         assert_eq!(f32_from_f64(-1.0), Some(-1.0));
         assert_eq!(f32_from_f64(f64::NAN), None);
         assert_eq!(f32_from_f64(f64::INFINITY), None);
@@ -282,6 +285,7 @@ mod tests {
         assert_eq!(truncate_f64_to_i32(2_147_483_648.0), None);
         assert_eq!(truncate_f64_to_i32(f64::NAN), None);
         assert_eq!(truncate_f64_to_i32(f64::INFINITY), None);
+        assert_eq!(truncate_f64_to_i32(f64::NEG_INFINITY), None);
     }
 
     #[test]
@@ -292,6 +296,11 @@ mod tests {
         );
         assert_eq!(truncate_f64_to_i64(-9_223_372_036_854_777_856.0), None);
         assert_eq!(truncate_f64_to_i64(9_223_372_036_854_775_808.0), None);
+        assert_eq!(
+            truncate_f64_to_i64(9_223_372_036_854_774_784.0),
+            Some(9_223_372_036_854_774_784)
+        );
+        assert_eq!(truncate_f64_to_i64(f64::INFINITY), None);
         assert_eq!(truncate_f64_to_i64(f64::NAN), None);
         assert_eq!(truncate_f64_to_i64(f64::NEG_INFINITY), None);
     }
@@ -307,6 +316,7 @@ mod tests {
         );
         assert_eq!(truncate_f64_to_i128(f64::NAN), None);
         assert_eq!(truncate_f64_to_i128(f64::INFINITY), None);
+        assert_eq!(truncate_f64_to_i128(f64::NEG_INFINITY), None);
     }
 
     #[test]
@@ -317,6 +327,7 @@ mod tests {
         assert_eq!(truncate_f64_to_u8(256.0), None);
         assert_eq!(truncate_f64_to_u8(f64::NAN), None);
         assert_eq!(truncate_f64_to_u8(f64::INFINITY), None);
+        assert_eq!(truncate_f64_to_u8(f64::NEG_INFINITY), None);
     }
 
     #[test]
@@ -326,6 +337,7 @@ mod tests {
         assert_eq!(truncate_f64_to_u16(65_536.0), None);
         assert_eq!(truncate_f64_to_u16(f64::NAN), None);
         assert_eq!(truncate_f64_to_u16(f64::NEG_INFINITY), None);
+        assert_eq!(truncate_f64_to_u16(f64::INFINITY), None);
     }
 
     #[test]
@@ -335,6 +347,7 @@ mod tests {
         assert_eq!(truncate_f64_to_u32(4_294_967_296.0), None);
         assert_eq!(truncate_f64_to_u32(f64::NAN), None);
         assert_eq!(truncate_f64_to_u32(f64::INFINITY), None);
+        assert_eq!(truncate_f64_to_u32(f64::NEG_INFINITY), None);
     }
 
     #[test]
@@ -345,8 +358,13 @@ mod tests {
             Some(18_446_744_073_709_547_520)
         );
         assert_eq!(truncate_f64_to_u64(18_446_744_073_709_551_616.0), None);
+        assert_eq!(
+            truncate_f64_to_u64(18_446_744_073_709_549_568.0),
+            Some(18_446_744_073_709_549_568)
+        );
         assert_eq!(truncate_f64_to_u64(f64::NAN), None);
         assert_eq!(truncate_f64_to_u64(f64::NEG_INFINITY), None);
+        assert_eq!(truncate_f64_to_u64(f64::INFINITY), None);
     }
 
     #[test]
@@ -358,6 +376,14 @@ mod tests {
         };
         assert_eq!(truncate_f64_to_usize(-1.0), None);
         assert_eq!(truncate_f64_to_usize(upper), None);
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(
+            truncate_f64_to_usize(18_446_744_073_709_549_568.0),
+            Some(18_446_744_073_709_549_568)
+        );
+        #[cfg(target_pointer_width = "32")]
+        assert_eq!(truncate_f64_to_usize(4_294_967_295.0), Some(4_294_967_295));
+        assert_eq!(truncate_f64_to_usize(f64::NEG_INFINITY), None);
         assert_eq!(truncate_f64_to_usize(f64::NAN), None);
         assert_eq!(truncate_f64_to_usize(f64::INFINITY), None);
         assert_eq!(truncate_f64_to_usize(1.9), Some(1));

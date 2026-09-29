@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native topology records in the E5 `0D 03` stream family.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
 
@@ -632,16 +634,18 @@ pub(crate) fn parse_topology(
                     }
                 }
                 let orientation_hint = plane_digon_orientation_hint(
-                    face.trailer_sign,
-                    by_id.get(&face.surface).map(|record| record.class),
-                    &raw.pcurves,
-                    &raw.edges,
-                    &reversed,
-                    raw.outer,
-                    &edges,
-                    &pcurves,
-                    &curve_supports,
-                    &bounds,
+                    crate::families::e5::graph::PlaneDigonOrientationHintInputs {
+                        face_trailer_sign: face.trailer_sign,
+                        surface_class: by_id.get(&face.surface).map(|record| record.class),
+                        pcurve_ids: &raw.pcurves,
+                        edge_ids: &raw.edges,
+                        reversed: &reversed,
+                        outer: raw.outer,
+                        edges: &edges,
+                        pcurves: &pcurves,
+                        curve_supports: &curve_supports,
+                        bounds: &bounds,
+                    },
                 );
                 let mut members = Vec::new();
                 for ((&pcurve, &edge_use), &reversed) in
@@ -1055,7 +1059,7 @@ fn parse_nurbs_pcurve(
     if degree == 0 || knot_count == 0 || [zero0, zero1, zero2] != [0; 3] {
         return Ok(None);
     }
-    let knot_count_u64 = cadmpeg_core::decode::u64_from_index(knot_count);
+    let knot_count_u64 = u64_from_index(knot_count);
     if view.counted(knot_count_u64, 12).is_none() {
         return Ok(None);
     }
@@ -1091,7 +1095,7 @@ fn parse_nurbs_pcurve(
     else {
         return Ok(None);
     };
-    let control_count_u64 = cadmpeg_core::decode::u64_from_index(control_count);
+    let control_count_u64 = u64_from_index(control_count);
     if view.counted(control_count_u64, 16).is_none() {
         return Ok(None);
     }
@@ -1171,7 +1175,7 @@ fn expand_nurbs_knots_limited(
     }
     let Some(bytes) = total
         .checked_mul(size_of::<FiniteReal>())
-        .map(cadmpeg_core::decode::u64_from_index)
+        .map(u64_from_index)
     else {
         return Err(ctx.refuse_codec_limit("catia_e5_pcurve_expanded_knots", u64::MAX, u64::MAX));
     };
@@ -1193,7 +1197,7 @@ fn read_finite_lane(
     count: usize,
     operation: &'static str,
 ) -> Result<Option<Vec<FiniteReal>>, CodecError> {
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    let count_u64 = u64_from_index(count);
     if view.counted(count_u64, 8).is_none() {
         return Ok(None);
     }
@@ -1214,7 +1218,7 @@ fn read_u32_lane(
     count: usize,
     operation: &'static str,
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    let count_u64 = u64_from_index(count);
     if view.counted(count_u64, 4).is_none() {
         return Ok(None);
     }
@@ -1330,7 +1334,7 @@ fn parse_jet_pcurve(
     }
     let Some(bytes) = site_count
         .checked_mul(size_of::<E5PcurveJetSite>())
-        .map(cadmpeg_core::decode::u64_from_index)
+        .map(u64_from_index)
     else {
         return Err(ctx.refuse_codec_limit("catia_e5_jet_sites", u64::MAX, u64::MAX));
     };
@@ -1376,20 +1380,46 @@ fn parse_jet_pcurve(
 /// This helper returns `None` for every incomplete or non-circular relation.
 /// Such a loop remains on the shared-edge parity path instead of receiving a
 /// geometric guess.
-#[allow(clippy::too_many_arguments)]
-fn plane_digon_orientation_hint(
+#[derive(Clone, Copy)]
+struct PlaneDigonOrientationHintInputs<
+    'input0,
+    'input1,
+    'input2,
+    'input3,
+    'input4,
+    'input5,
+    'input6,
+> {
     face_trailer_sign: Sign,
     surface_class: Option<u8>,
-    pcurve_ids: &[u32],
-    edge_ids: &[u32],
-    reversed: &[bool],
+    pcurve_ids: &'input0 [u32],
+    edge_ids: &'input1 [u32],
+    reversed: &'input2 [bool],
     outer: Option<bool>,
-    edges: &BTreeMap<u32, E5Edge>,
-    pcurves: &BTreeMap<u32, E5Pcurve>,
-    curve_supports: &BTreeMap<u32, E5CurveSupport>,
-    bounds: &BTreeMap<u32, E5Bounds>,
+    edges: &'input3 BTreeMap<u32, E5Edge>,
+    pcurves: &'input4 BTreeMap<u32, E5Pcurve>,
+    curve_supports: &'input5 BTreeMap<u32, E5CurveSupport>,
+    bounds: &'input6 BTreeMap<u32, E5Bounds>,
+}
+
+fn plane_digon_orientation_hint(
+    inputs: PlaneDigonOrientationHintInputs<'_, '_, '_, '_, '_, '_, '_>,
 ) -> Option<Sign> {
     const EPS_PLANE_DIGON: f64 = 1.0e-8;
+
+    let PlaneDigonOrientationHintInputs {
+        face_trailer_sign,
+        surface_class,
+        pcurve_ids,
+        edge_ids,
+        reversed,
+        outer,
+        edges,
+        pcurves,
+        curve_supports,
+        bounds,
+    } = inputs;
+
     if surface_class != Some(0xc8)
         || pcurve_ids.len() != 2
         || edge_ids.len() != 2
@@ -2560,7 +2590,10 @@ mod tests {
                 .zip(first_derivatives)
                 .enumerate()
                 .map(|(index, (point, first_derivatives))| E5PcurveJetSite {
-                    knot: finite(index as f64),
+                    knot: finite(
+                        cadmpeg_core::convert::f64_from_index(index)
+                            .expect("fixture index is exactly representable"),
+                    ),
                     multiplicity: 6,
                     point: finite_pair(point),
                     first_derivatives: finite_pair(first_derivatives),
@@ -2672,16 +2705,18 @@ mod tests {
             ),
         ]);
         let hint = plane_digon_orientation_hint(
-            Sign::Positive,
-            Some(0xc8),
-            &[10, 11],
-            &[1, 2],
-            &[false, false],
-            Some(true),
-            &edges,
-            &pcurves,
-            &supports,
-            &bounds,
+            crate::families::e5::graph::PlaneDigonOrientationHintInputs {
+                face_trailer_sign: Sign::Positive,
+                surface_class: Some(0xc8),
+                pcurve_ids: &[10, 11],
+                edge_ids: &[1, 2],
+                reversed: &[false, false],
+                outer: Some(true),
+                edges: &edges,
+                pcurves: &pcurves,
+                curve_supports: &supports,
+                bounds: &bounds,
+            },
         );
         assert_eq!(hint, Some(Sign::Negative));
 
@@ -2701,16 +2736,18 @@ mod tests {
         }
         assert_eq!(
             plane_digon_orientation_hint(
-                Sign::Positive,
-                Some(0xc8),
-                &[10, 11],
-                &[1, 2],
-                &[false, false],
-                Some(true),
-                &edges,
-                &wide_pcurves,
-                &supports,
-                &wide_bounds,
+                crate::families::e5::graph::PlaneDigonOrientationHintInputs {
+                    face_trailer_sign: Sign::Positive,
+                    surface_class: Some(0xc8),
+                    pcurve_ids: &[10, 11],
+                    edge_ids: &[1, 2],
+                    reversed: &[false, false],
+                    outer: Some(true),
+                    edges: &edges,
+                    pcurves: &wide_pcurves,
+                    curve_supports: &supports,
+                    bounds: &wide_bounds
+                }
             ),
             hint
         );

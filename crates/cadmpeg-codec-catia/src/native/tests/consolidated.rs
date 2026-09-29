@@ -2,6 +2,8 @@
 //! Native-namespace tests for consolidated family layouts.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
+use cadmpeg_core::decode::u64_from_index;
+
 use cadmpeg_test_support::wire;
 
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
@@ -368,10 +370,7 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
     let [circle] = native.consolidated_circles.as_slice() else {
         panic!("one consolidated circle")
     };
-    assert_eq!(
-        circle.layout,
-        crate::native::CatiaCircleLayout::Identity16Bit
-    );
+    assert_eq!(circle.layout, crate::native::CatiaCircleLayout::Word);
     assert_eq!(circle.record_id, 0x1234);
     assert_eq!(circle.frame_token, 0x05);
     assert_eq!(
@@ -1225,7 +1224,7 @@ fn native_namespace_retains_fixed_owner_allocation_targets() {
         panic!("one consolidated owner packet")
     };
 
-    assert_eq!(packet.byte_offset, owner_pos as u64);
+    assert_eq!(packet.byte_offset, u64_from_index(owner_pos));
     assert_eq!(packet.source_index, 0);
     assert_eq!(
         packet
@@ -1239,11 +1238,11 @@ fn native_namespace_retains_fixed_owner_allocation_targets() {
             ))
             .collect::<Vec<_>>(),
         [
-            (0, 1, target_positions[4] as u64, 0x5e),
-            (2, 4, target_positions[1] as u64, 0x5e),
-            (4, 2, target_positions[3] as u64, 0x5e),
-            (6, 3, target_positions[2] as u64, 0x5d),
-            (8, 5, target_positions[0] as u64, 0x5d),
+            (0, 1, u64_from_index(target_positions[4]), 0x5e),
+            (2, 4, u64_from_index(target_positions[1]), 0x5e),
+            (4, 2, u64_from_index(target_positions[3]), 0x5e),
+            (6, 3, u64_from_index(target_positions[2]), 0x5d),
+            (8, 5, u64_from_index(target_positions[0]), 0x5d),
         ]
     );
 }
@@ -1257,18 +1256,18 @@ fn native_namespace_retains_closed_fixed_owner_boundary_cycle() {
         panic!("one consolidated owner packet")
     };
 
-    assert_eq!(packet.byte_offset, owner_pos as u64);
+    assert_eq!(packet.byte_offset, u64_from_index(owner_pos));
     let cycle = packet
         .boundary_cycle()
         .expect("closed fixed-owner boundary cycle");
     assert!(cycle.face_node.is_none());
     assert_eq!(
         cycle.edges.map(|edge| edge.byte_offset),
-        edge_positions.map(|position| position as u64)
+        edge_positions.map(u64_from_index)
     );
     assert_eq!(
         cycle.edges.map(|edge| edge.endpoint_records),
-        endpoint_records.map(|pair| pair.map(|position| position as u64))
+        endpoint_records.map(|pair| pair.map(u64_from_index))
     );
 }
 
@@ -1289,17 +1288,20 @@ fn native_namespace_retains_boundary_face_node_for_checked_cycle_prelude() {
         .face_node
         .as_ref()
         .expect("source-scoped boundary face node");
-    assert_eq!(face_node.byte_offset, face_node_pos as u64);
-    assert_eq!(face_node.byte_len, (owner_pos - face_node_pos) as u64);
+    assert_eq!(face_node.byte_offset, u64_from_index(face_node_pos));
+    assert_eq!(
+        face_node.byte_len,
+        cadmpeg_core::decode::u64_from_index(owner_pos - face_node_pos)
+    );
     assert_eq!(face_node.target, 1014);
     assert_eq!(face_node.terminal, [0x27, 0x05]);
     assert_eq!(
         cycle.edges.map(|edge| edge.byte_offset),
-        edge_positions.map(|position| position as u64)
+        edge_positions.map(u64_from_index)
     );
     assert_eq!(
         cycle.edges.map(|edge| edge.endpoint_records),
-        endpoint_records.map(|pair| pair.map(|position| position as u64))
+        endpoint_records.map(|pair| pair.map(u64_from_index))
     );
 
     let mut wrong_terminal = bytes.clone();
@@ -1727,8 +1729,8 @@ fn compact_vertex_identity_uses_resolved_endpoint_records() {
     let second_edge = [
         0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x21, 0x09, 0x0d, 0x06, 0x32, 0x06, 0x33, 0x21,
     ];
-    let first_vertex_pos = first_edge.len() as u64;
-    let second_vertex_pos = first_vertex_pos + vertex.len() as u64;
+    let first_vertex_pos = u64_from_index(first_edge.len());
+    let second_vertex_pos = first_vertex_pos + u64_from_index(vertex.len());
     let mut bytes = first_edge.to_vec();
     bytes.extend_from_slice(&vertex);
     bytes.extend_from_slice(&vertex);
@@ -1787,9 +1789,9 @@ fn width_coded_forward_endpoints_merge_by_class18_record_identity() {
     bytes.extend_from_slice(&edge(3, 4));
     bytes.extend_from_slice(&filler);
     bytes.extend_from_slice(&filler);
-    let first_endpoint = bytes.len() as u64;
+    let first_endpoint = u64_from_index(bytes.len());
     bytes.extend_from_slice(&endpoint);
-    let second_endpoint = bytes.len() as u64;
+    let second_endpoint = u64_from_index(bytes.len());
     bytes.extend_from_slice(&endpoint);
 
     let native = crate::native::CatiaNative::decode(&bytes);

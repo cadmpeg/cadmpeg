@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native class-0x5b/0x5c frames and their byte-string wire projection.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRawFrame};
 use serde::{Deserialize, Serialize};
 
@@ -53,7 +55,7 @@ pub(crate) struct CatiaConsolidatedClass5b5cRecord {
 
 impl CatiaConsolidatedClass5b5cRecord {
     fn byte_len(&self) -> u64 {
-        4 + u64::from(u8::from(self.frame.width)) + self.frame.payload.len() as u64
+        4 + u64::from(u8::from(self.frame.width)) + u64_from_index(self.frame.payload.len())
     }
 }
 

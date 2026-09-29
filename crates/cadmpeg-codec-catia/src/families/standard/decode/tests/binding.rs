@@ -1355,10 +1355,10 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         Some(StandardSurfaceProcedure::RollingBall {
             carrier_object_id: 42,
             source: StandardRollingBallSource::E5D8,
-            definition: ProceduralSurfaceDefinition::RollingBallJet(jet),
-    }) if jet.degree() == 5 && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>() == vec![2.0, 5.0]
+            definition,
+    }) if matches!(definition.as_ref(), ProceduralSurfaceDefinition::RollingBallJet(jet) if jet.degree() == 5 && jet.stations().iter().map(|station| station.knot.get()).collect::<Vec<_>>() == vec![2.0, 5.0]
             && jet.stations().iter().map(|station| station.multiplicity).collect::<Vec<_>>() == vec![6, 6]
-            && jet.stations().len() == 2));
+            && jet.stations().len() == 2)));
 
     let mut opposite_records = records.clone();
     let StandardSurfaceRecord::Freeform { forward, .. } = &mut opposite_records[0] else {
@@ -1465,7 +1465,7 @@ fn standard_face_membership_refuses_point_collection_limit() {
     for index in 0..2 {
         ir.model.points.push(Point::new(
             PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
-            FinitePoint3::new(Point3::new(index as f64, 0.0, 0.0)).expect("finite position"),
+            FinitePoint3::new(Point3::new(f64::from(index), 0.0, 0.0)).expect("finite position"),
             None,
         ));
     }
@@ -1643,20 +1643,22 @@ fn standard_emission_reverses_face_pcurve_range_and_refuses_edge_flag_limit() {
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
             emit_standard_topology(
                 ctx,
-                &mut limited_ir,
-                &mut AnnotationBuilder::new(),
-                &bindings,
-                &[],
-                &surface_indices,
-                &supports,
-                &[[0, 1]],
-                &[0, 1],
-                &topology,
-                &[None],
-                &[None],
-                &[],
-                &mut crate::nurbs::LaneRefusals::new(),
-                &mut admission,
+                crate::families::standard::decode::EmitStandardTopologyInputs {
+                    ir: &mut limited_ir,
+                    annotations: &mut AnnotationBuilder::new(),
+                    bindings: &bindings,
+                    brep: &[],
+                    surface_indices: &surface_indices,
+                    supports: &supports,
+                    edge_vertices: &[[0, 1]],
+                    point_assignment: &[0, 1],
+                    topology: &topology,
+                    native_edge_supports: &[None],
+                    limit_curve_bindings: &[None],
+                    limit_curves: &[],
+                    refusal: &mut crate::nurbs::LaneRefusals::new(),
+                    admission: &mut admission,
+                },
             )
         });
         assert!(matches!(
@@ -1667,20 +1669,22 @@ fn standard_emission_reverses_face_pcurve_range_and_refuses_edge_flag_limit() {
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
             emit_standard_topology(
                 ctx,
-                &mut ir,
-                &mut annotations,
-                &bindings,
-                &[],
-                &surface_indices,
-                &supports,
-                &[[0, 1]],
-                &[0, 1],
-                &topology,
-                &[None],
-                &[None],
-                &[],
-                &mut crate::nurbs::LaneRefusals::new(),
-                &mut admission,
+                crate::families::standard::decode::EmitStandardTopologyInputs {
+                    ir: &mut ir,
+                    annotations: &mut annotations,
+                    bindings: &bindings,
+                    brep: &[],
+                    surface_indices: &surface_indices,
+                    supports: &supports,
+                    edge_vertices: &[[0, 1]],
+                    point_assignment: &[0, 1],
+                    topology: &topology,
+                    native_edge_supports: &[None],
+                    limit_curve_bindings: &[None],
+                    limit_curves: &[],
+                    refusal: &mut crate::nurbs::LaneRefusals::new(),
+                    admission: &mut admission,
+                },
             )
         })
         .expect("valid source object identity");

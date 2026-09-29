@@ -502,7 +502,7 @@ fn curve_payload(version: u8, rational: bool, knots: &[f64]) -> Vec<u8> {
     }
     push_i32(&mut bytes, 6);
     for index in 0..6 {
-        push_f64(&mut bytes, index as f64);
+        push_f64(&mut bytes, f64::from(index));
         push_f64(&mut bytes, 0.0);
         push_f64(&mut bytes, 0.0);
         if rational {
@@ -525,14 +525,17 @@ fn curve_2d_payload(rational: bool) -> Vec<u8> {
     push_i32(&mut bytes, 0);
     bytes.extend([0; 48]);
     let knots = [0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0];
-    push_i32(&mut bytes, knots.len() as i32);
+    push_i32(
+        &mut bytes,
+        i32::try_from(knots.len()).expect("fixture value fits i32"),
+    );
     for knot in knots {
         push_f64(&mut bytes, knot);
     }
     push_i32(&mut bytes, 6);
     for index in 0..6 {
-        push_f64(&mut bytes, index as f64);
-        push_f64(&mut bytes, 2.0 * index as f64);
+        push_f64(&mut bytes, f64::from(index));
+        push_f64(&mut bytes, 2.0 * f64::from(index));
         if rational {
             push_f64(&mut bytes, if index == 0 { 2.0 } else { 1.0 });
         }
@@ -599,12 +602,18 @@ fn surface_2d_payload(rational: bool) -> Vec<u8> {
     push_i32(&mut bytes, 0);
     bytes.extend([0; 48]);
     let u_knots = [10.0, 11.0, 12.0];
-    push_i32(&mut bytes, u_knots.len() as i32);
+    push_i32(
+        &mut bytes,
+        i32::try_from(u_knots.len()).expect("fixture value fits i32"),
+    );
     for knot in u_knots {
         push_f64(&mut bytes, knot);
     }
     let v_knots = [20.0, 21.0];
-    push_i32(&mut bytes, v_knots.len() as i32);
+    push_i32(
+        &mut bytes,
+        i32::try_from(v_knots.len()).expect("fixture value fits i32"),
+    );
     for knot in v_knots {
         push_f64(&mut bytes, knot);
     }

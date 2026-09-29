@@ -90,23 +90,35 @@ pub(crate) fn e5_catpart() -> Vec<u8> {
     }
     let surf = vec![0u8];
     let main_off = 16u32;
-    let surf_off = main_off + main.len() as u32;
-    let dir_rel = surf_off + surf.len() as u32;
+    let surf_off = main_off + u32::try_from(main.len()).expect("fixture value fits u32");
+    let dir_rel = surf_off + u32::try_from(surf.len()).expect("fixture value fits u32");
     let mut dir = Vec::new();
     dir.extend_from_slice(DIR_MAGIC);
-    dir.extend_from_slice(&descriptor("MainDataStream", main_off, main.len() as u32));
-    dir.extend_from_slice(&descriptor("SurfacicReps", surf_off, surf.len() as u32));
+    dir.extend_from_slice(&descriptor(
+        "MainDataStream",
+        main_off,
+        u32::try_from(main.len()).expect("fixture value fits u32"),
+    ));
+    dir.extend_from_slice(&descriptor(
+        "SurfacicReps",
+        surf_off,
+        u32::try_from(surf.len()).expect("fixture value fits u32"),
+    ));
     dir.extend_from_slice(b"CB__END");
     let mut inner = Vec::new();
     inner.extend_from_slice(OUTER_MAGIC);
     inner.extend_from_slice(&be32(dir_rel));
-    inner.extend_from_slice(&be32(dir.len() as u32));
+    inner.extend_from_slice(&be32(
+        u32::try_from(dir.len()).expect("fixture value fits u32"),
+    ));
     inner.extend_from_slice(&main);
     inner.extend_from_slice(&surf);
     inner.extend_from_slice(&dir);
     let mut file = Vec::new();
     file.extend_from_slice(OUTER_MAGIC);
-    file.extend_from_slice(&be32(16 + inner.len() as u32));
+    file.extend_from_slice(&be32(
+        16 + u32::try_from(inner.len()).expect("fixture value fits u32"),
+    ));
     file.extend_from_slice(&be32(0));
     file.extend_from_slice(&inner);
     file
@@ -114,7 +126,9 @@ pub(crate) fn e5_catpart() -> Vec<u8> {
 
 pub(crate) fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
     bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, class, 0]);
-    bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u16::try_from(payload.len()).expect("fixture value fits u16")).to_le_bytes(),
+    );
     bytes.extend_from_slice(&[0, 0]);
     bytes.extend_from_slice(&id.to_le_bytes());
     bytes.extend_from_slice(payload);
@@ -241,12 +255,28 @@ pub(crate) fn e5_torus_topology_stream() -> Vec<u8> {
         ] {
             payload.extend_from_slice(&le_f64(value));
         }
-        append_e5_record(&mut bytes, 0x96, 60 + index as u32, &payload);
+        append_e5_record(
+            &mut bytes,
+            0x96,
+            60 + u32::try_from(index).expect("fixture value fits u32"),
+            &payload,
+        );
 
-        let mut support = vec![0x81, 0xbc + index as u8, 0x81, 0, 0];
+        let mut support = vec![
+            0x81,
+            0xbc + u8::try_from(index).expect("fixture value fits u8"),
+            0x81,
+            0,
+            0,
+        ];
         support.extend_from_slice(&le_f64(0.0));
         support.extend_from_slice(&le_f64(1.0));
-        append_e5_record(&mut bytes, 0xc0, 70 + index as u32, &support);
+        append_e5_record(
+            &mut bytes,
+            0xc0,
+            70 + u32::try_from(index).expect("fixture value fits u32"),
+            &support,
+        );
     }
 
     let mut bound_payload = vec![0x84, 0xbc, 0xbd, 0xbe, 0xbf, 0x84];
@@ -263,10 +293,10 @@ pub(crate) fn e5_torus_topology_stream() -> Vec<u8> {
         append_e5_record(
             &mut bytes,
             0xff,
-            80 + index as u32,
+            80 + u32::try_from(index).expect("fixture value fits u32"),
             &[
                 0x85,
-                0xc6 + index as u8,
+                0xc6 + u8::try_from(index).expect("fixture value fits u8"),
                 0x80 + start,
                 0x80 + end,
                 0x80,

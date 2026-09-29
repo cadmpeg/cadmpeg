@@ -715,7 +715,9 @@ Co 1001000 +2 0 *
 +1 0 *";
     let color_list = |colors: &[u32]| {
         let mut bytes = Vec::with_capacity(4 + colors.len() * 4);
-        bytes.extend_from_slice(&(colors.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(colors.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for color in colors {
             bytes.extend_from_slice(&color.to_le_bytes());
         }
@@ -769,7 +771,10 @@ Co 1001000 +2 0 *
         } else {
             0
         };
-        let mut shape_materials = (shape_material_count as u32).to_le_bytes().to_vec();
+        let mut shape_materials = (u32::try_from(shape_material_count)
+            .expect("fixture value fits u32"))
+        .to_le_bytes()
+        .to_vec();
         for diffuse in [0xff00_00ff, 0x00ff_00ff]
             .into_iter()
             .take(shape_material_count)

@@ -1204,20 +1204,17 @@ fn malformed_per_object_mesh_userdata_keeps_object_attributes() {
 #[test]
 fn custom_mesh_userdata_diagnostics_refuse_collection_limit() {
     let bytes = [0_u8; 5];
+    let parse_obsolete: fn(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &[u8],
+        &[_],
+        ArchiveVersion,
+        &mut _,
+    ) -> _ = super::parse_obsolete_custom_mesh_userdata;
     for (class_uuid, parse) in [
         (
             crate::objects::OBSOLETE_CUSTOM_MESH_USERDATA,
-            super::parse_obsolete_custom_mesh_userdata
-                as fn(
-                    &cadmpeg_core::decode::DecodeContext<'_>,
-                    &[u8],
-                    &[crate::objects::AttributeUserdataDescriptor],
-                    ArchiveVersion,
-                    &mut Diagnostics,
-                ) -> Result<
-                    Option<crate::settings::MeshParameters>,
-                    crate::chunks::FramingError,
-                >,
+            parse_obsolete,
         ),
         (
             crate::objects::PER_OBJECT_MESH_PARAMETERS_USERDATA,
@@ -1696,7 +1693,7 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
         ],
     );
     let scan = crate::container::scan_owned(bytes).expect("required invariant");
-    let offset = scan.objects[0].range().start as u64;
+    let offset = cadmpeg_core::decode::u64_from_index(scan.objects[0].range().start);
     let class = scan.objects[0].class_uuid().unwrap().to_string();
     let result = crate::decode::decode_for_test(&scan);
 

@@ -1186,7 +1186,7 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
         .class
         .as_mut()
         .expect("decoded class role")
-        .class_name = Some("WrongClass".to_string());
+        .name = Some("WrongClass".to_string());
     assert_rejected(invalid_class);
 
     let mut invalid_class_entry = native;
@@ -1194,7 +1194,7 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
         .class
         .as_mut()
         .expect("decoded class role")
-        .class_entry = None;
+        .entry = None;
     assert_rejected(invalid_class_entry);
 }
 

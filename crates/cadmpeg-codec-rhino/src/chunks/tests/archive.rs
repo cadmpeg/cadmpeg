@@ -113,7 +113,9 @@ fn complete_point_and_bounded_line_archive_decodes_semantics_and_links() {
         .any(|link| link.as_str() == result.ir().model.curves[0].id.as_str()));
     assert!(result.report().geometry_transferred());
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -151,7 +153,8 @@ fn future_and_semantically_invalid_objects_are_atomic_and_later_point_recovers()
         assert!(cadmpeg_ir::validate::validate_neutral(
             result.ir(),
             result.report().losses.clone()
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .is_ok());
     }
 }
@@ -178,7 +181,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
             .next()
             .expect("retained record")
             .byte_len(),
-        large.len() as u64
+        cadmpeg_core::decode::u64_from_index(large.len())
     );
     assert_eq!(
         retained.values().next().expect("retained record").sha256(),
@@ -194,7 +197,7 @@ fn retention_caps_store_only_complete_records_with_exact_hashes() {
             .nth(1)
             .expect("retained record")
             .byte_len(),
-        point.len() as u64
+        cadmpeg_core::decode::u64_from_index(point.len())
     );
     assert_eq!(
         retained.values().nth(1).expect("retained record").sha256(),
@@ -301,7 +304,8 @@ fn subd_complete_object_commits_across_supported_archive_bands() {
         assert!(cadmpeg_ir::validate::validate_neutral(
             result.ir(),
             result.report().losses.clone()
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .is_ok());
     }
 }
@@ -437,7 +441,9 @@ fn complete_simple_geometry_archive_preserves_coordinates_knots_and_compound_ord
         .iter()
         .all(|record| !record.links.is_empty()));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -489,7 +495,8 @@ fn serialized_mesh_major_and_minor_matrix_reaches_object_dispatch() {
             assert!(cadmpeg_ir::validate::validate_neutral(
                 result.ir(),
                 result.report().losses.clone()
-            ).expect("resource allocation did not fail")
+            )
+            .expect("resource allocation did not fail")
             .is_ok());
         }
     }
@@ -620,7 +627,8 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
         assert!(cadmpeg_ir::validate::validate_neutral(
             result.ir(),
             result.report().losses.clone()
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .is_ok());
     }
 
@@ -631,7 +639,9 @@ fn serialized_extrusion_versions_caps_holes_and_cache_dispatch_atomically() {
     assert_eq!(result.ir().model.loops.len(), 4);
     assert_eq!(result.ir().model.pcurves.len(), 4);
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -669,7 +679,9 @@ fn invalid_extrusion_profile_is_one_unknown_surface_and_later_point_recovers() {
     );
     assert_eq!(result.ir().model.points.len(), 1);
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -752,7 +764,9 @@ fn serialized_brep_l3_commits_connected_topology_pcurves_and_scaled_tolerances()
         == crate::loss::RhinoLossCode::ObjectRecordCensus.kind()
         && loss.message.contains("decoded 1/1 Rhino object records")));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -776,7 +790,9 @@ fn serialized_singular_seam_ring_uses_directed_trim_vertices() {
         cadmpeg_ir::topology::Sense::Reversed
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(valid.ir(), valid.report().losses.clone()).expect("resource allocation did not fail").is_ok()
+        cadmpeg_ir::validate::validate_neutral(valid.ir(), valid.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 
     let malformed = decode(&archive(&[object_record(
@@ -795,7 +811,8 @@ fn serialized_singular_seam_ring_uses_directed_trim_vertices() {
     assert!(cadmpeg_ir::validate::validate_neutral(
         malformed.ir(),
         malformed.report().losses.clone()
-    ).expect("resource allocation did not fail")
+    )
+    .expect("resource allocation did not fail")
     .is_ok());
 }
 
@@ -835,7 +852,9 @@ fn semantic_invalid_brep_keeps_only_free_c3_surface_and_later_point() {
         result.report()
     );
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 
@@ -882,7 +901,10 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
             .values()
             .next()
             .expect("retained record");
-        assert_eq!(retained.byte_len(), failure.len() as u64);
+        assert_eq!(
+            retained.byte_len(),
+            cadmpeg_core::decode::u64_from_index(failure.len())
+        );
         assert_eq!(retained.sha256(), sha256_hex(&failure));
         assert_eq!(retained.data(), Some(failure.as_slice()));
         assert!(unknown.links.is_empty());
@@ -900,7 +922,8 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
         assert!(cadmpeg_ir::validate::validate_neutral(
             result.ir(),
             result.report().losses.clone()
-        ).expect("resource allocation did not fail")
+        )
+        .expect("resource allocation did not fail")
         .is_ok());
     }
 }
@@ -908,11 +931,12 @@ fn archive_failure_recovery_matrix_preserves_exact_unknown_records() {
 #[test]
 fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
     let mut payload = brep_payload(false);
-    let nested_length = i64::from_le_bytes(
+    let nested_length = usize::try_from(i64::from_le_bytes(
         payload[(1 + long_wide::DECLARED_LENGTH)..=long_wide::LEN]
             .try_into()
             .expect("required invariant"),
-    ) as usize;
+    ))
+    .expect("fixture value fits usize");
     let nested_end = 1 + long_wide::LEN + nested_length;
     payload[nested_end - 1] ^= 1;
     let brep = object_record(0x10, BREP_CLASS, &payload);
@@ -927,7 +951,9 @@ fn nested_brep_crc_warns_without_blocking_object_or_later_point() {
             && loss.provenance.is_none()
     }));
     assert!(
-        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok()
+        cadmpeg_ir::validate::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
     );
 }
 

@@ -1381,7 +1381,7 @@ mod tests {
         let mut bytes = vec![0x10];
         bytes.extend(kind.to_le_bytes());
         bytes.extend(plane());
-        bytes.extend((points.len() as i32).to_le_bytes());
+        bytes.extend((i32::try_from(points.len()).expect("fixture value fits i32")).to_le_bytes());
         for point in points {
             bytes.extend(point[0].to_le_bytes());
             bytes.extend(point[1].to_le_bytes());
@@ -1587,7 +1587,10 @@ mod tests {
                         record[position_field][0], scale,
                         "class={class} unit={unit:?}"
                     );
-                    assert_eq!(record["source_offset"], source.range.start as u64);
+                    assert_eq!(
+                        record["source_offset"],
+                        cadmpeg_core::decode::u64_from_index(source.range.start)
+                    );
                     assert_eq!(
                         record["links"],
                         serde_json::json!(["rhino:object:record#000000"])
@@ -1601,7 +1604,10 @@ mod tests {
                         .message
                         .contains(&format!("no physical millimetre binding ({binding_label})")));
                     let provenance = loss.provenance.as_ref().expect("located annotation loss");
-                    assert_eq!(provenance.offset, source.range.start as u64);
+                    assert_eq!(
+                        provenance.offset,
+                        cadmpeg_core::decode::u64_from_index(source.range.start)
+                    );
                     assert_eq!(
                         provenance.tag.as_deref(),
                         Some(
@@ -1997,7 +2003,10 @@ mod tests {
         assert!(loss.message.contains(&format!("offset {source_offset}")));
         let provenance = loss.provenance.as_ref().expect("annotation provenance");
         assert_eq!(wire::field::<String>(&provenance, "format"), "rhino");
-        assert_eq!(provenance.offset, source_offset as u64);
+        assert_eq!(
+            provenance.offset,
+            cadmpeg_core::decode::u64_from_index(source_offset)
+        );
         let expected_tag =
             format!("ANNOTATION/source={source_id}/class=5de6b210-486b-11d4-8014-0010830122f0");
         assert_eq!(provenance.tag.as_deref(), Some(expected_tag.as_str()));

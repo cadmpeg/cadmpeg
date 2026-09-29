@@ -100,7 +100,7 @@ fn object_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
 fn xml_payload(version: i32, xml: &str) -> Vec<u8> {
     let mut payload = version.to_le_bytes().to_vec();
     if version == 2 {
-        payload.extend((xml.len() as i32).to_le_bytes());
+        payload.extend((i32::try_from(xml.len()).expect("fixture value fits i32")).to_le_bytes());
         payload.extend(xml.as_bytes());
     }
     payload.extend([0xde, 0xad]);

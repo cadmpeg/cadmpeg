@@ -334,7 +334,7 @@ fn transaction_source_record_bytes_refuse_retained_limit() {
     assert_transaction_refusal(
         &scan,
         100,
-        Some((length - 1) as u64),
+        Some(cadmpeg_core::decode::u64_from_index(length - 1)),
         "Rhino source record bytes",
     );
     assert!(with_expand(&scan, |expand| DecodeContext::new(
@@ -708,8 +708,8 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
             index: i32::try_from(index).expect("index"),
             point: crate::settings::CoordinateLane::Admitted(
                 crate::test_support::point3([
-                    f64::from((index == 1) as u8),
-                    f64::from((index == 2) as u8),
+                    f64::from(u8::from(index == 1)),
+                    f64::from(u8::from(index == 2)),
                     0.0,
                 ])
                 .0,
@@ -1964,7 +1964,7 @@ fn class_report_preserves_nil_class_source_selection() {
                 .expect("framing loss");
             assert_eq!(
                 loss.provenance.as_ref().expect("source location").offset,
-                scan.objects[expected_source].range().start as u64
+                cadmpeg_core::decode::u64_from_index(scan.objects[expected_source].range().start)
             );
         });
     }

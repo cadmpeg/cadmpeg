@@ -292,7 +292,7 @@ mod tests {
             (1, "retain Inventor appearance record key"),
             (3, "retain Inventor appearance key"),
             (
-                4 + id.as_str().len() as u64 - 1,
+                4 + cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1,
                 "retain Inventor appearance id",
             ),
         ] {

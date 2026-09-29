@@ -2384,7 +2384,7 @@ mod tests {
         let span = 1e-200_f64;
         let circle = B2Circle {
             pos: 0,
-            layout: crate::native::CatiaCircleLayout::Identity6Bit,
+            layout: crate::native::CatiaCircleLayout::PackedSix,
             record_id: 1,
             frame_token: 0,
             center_pair: crate::test_support::test_b5::finite_vector([0.0; 2]),
@@ -2461,7 +2461,10 @@ mod tests {
                 .enumerate()
                 .map(
                     |(index, point)| crate::wire::records::ConsolidatedPcurveSite {
-                        knot: crate::test_support::test_b5::finite(index as f64),
+                        knot: crate::test_support::test_b5::finite(
+                            cadmpeg_core::convert::f64_from_index(index)
+                                .expect("fixture index is exactly representable"),
+                        ),
                         point: crate::test_support::test_b5::finite_vector(point),
                         first_derivatives: crate::test_support::test_b5::finite_vector([0.0, 0.0]),
                         second_derivatives: crate::test_support::test_b5::finite_vector([0.0, 0.0]),

@@ -7,6 +7,8 @@
 //! neutral records in a fixed order. Each pass owns exactly one model layer and
 //! reads only the plan fields its layer needs.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use cadmpeg_ir::annotations::StreamHandle;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -81,13 +83,12 @@ struct RevolutionPlan {
     parameter_interval: [f64; 2],
 }
 
-#[allow(clippy::large_enum_variant)]
 enum SurfaceProcedure {
     Extrusion(Box<ResolvedExtrusionSurface>),
     Revolution(RevolutionPlan),
     RollingBall {
         carrier_object_id: u32,
-        definition: ProceduralSurfaceDefinition,
+        definition: Box<ProceduralSurfaceDefinition>,
     },
 }
 
@@ -1014,7 +1015,7 @@ pub(in crate::families) fn resolved_surface_carrier(
             definition: {
                 let copy = surfaces::copy_rolling_ball_definition(ctx, definition)?;
                 ctx.charge_retained(
-                    std::mem::size_of::<ProceduralSurfaceDefinition>() as u64,
+                    u64_from_index(std::mem::size_of::<ProceduralSurfaceDefinition>()),
                     "catia_b5_resolved_rolling_ball_box",
                 )?;
                 Box::new(copy)
@@ -1114,7 +1115,7 @@ pub(in crate::families) fn resolved_surface_procedural_definition(
         Some(SurfaceProcedure::RollingBall {
             carrier_object_id,
             definition,
-        }) => Some((carrier_object_id, definition)),
+        }) => Some((carrier_object_id, *definition)),
         Some(SurfaceProcedure::Extrusion(_) | SurfaceProcedure::Revolution(_)) | None => None,
     })
 }
@@ -1235,7 +1236,7 @@ pub(in crate::families) fn copy_resolved_extrusion_surface(
             cache_fit_tolerance,
         } => {
             ctx.charge_retained(
-                std::mem::size_of::<[ResolvedExtrusionSupport; 2]>() as u64,
+                u64_from_index(std::mem::size_of::<[ResolvedExtrusionSupport; 2]>()),
                 "catia_b5_extrusion_support_pair_copy",
             )?;
             ResolvedExtrusionDirectrix::Intersection {
@@ -1421,7 +1422,7 @@ pub(in crate::families) fn resolved_extrusion_surface(
                 let supports = [left, right];
                 (supports[0].surface_object_id != supports[1].surface_object_id).then_some(())?;
                 if let Err(error) = ctx.charge_retained(
-                    std::mem::size_of::<[ResolvedExtrusionSupport; 2]>() as u64,
+                    u64_from_index(std::mem::size_of::<[ResolvedExtrusionSupport; 2]>()),
                     "catia_b5_extrusion_intersection_support_box",
                 ) {
                     return Some(Err(error));
@@ -1704,8 +1705,7 @@ fn annotate(
         ctx.format_retained(format_args!("catia:{stream}"), "catia_b5_annotation_stream")?;
     let stream_name = cadmpeg_ir::StreamName::try_from(stream_name)
         .map_err(cadmpeg_core::CodecError::malformed)?;
-    let stream_bytes =
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
+    let stream_bytes = u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
     ctx.charge_retained(stream_bytes, "catia_b5_annotation_stream_handle")?;
     let tag = ctx.copy_retained_text(tag, "catia_b5_annotation_tag")?;
     ctx.charge_collection_items(1, "catia_b5_annotation_provenance")?;

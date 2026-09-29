@@ -165,14 +165,20 @@ fn trim_record_layout_uses_the_complete_handle_span_as_its_count_bound() {
     bytes.extend_from_slice(&handle_count.to_le_bytes());
     bytes.push(0xff);
     bytes.extend_from_slice(&strip_length.to_le_bytes());
-    bytes.extend(std::iter::repeat_n(0, handle_count as usize));
+    bytes.extend(std::iter::repeat_n(
+        0,
+        cadmpeg_core::decode::index_from_u32(handle_count),
+    ));
 
     let layout = crate::test_support::with_service_context(|ctx| {
         parse_trim_record_layout(ctx, &bytes, 0, 1)
     })
     .expect("service resource budget")
     .expect("complete handle span");
-    assert_eq!(layout.handle_count, handle_count as usize);
+    assert_eq!(
+        layout.handle_count,
+        cadmpeg_core::decode::index_from_u32(handle_count)
+    );
     assert_eq!(layout.end, bytes.len());
 }
 

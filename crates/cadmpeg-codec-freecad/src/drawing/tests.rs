@@ -76,8 +76,9 @@ fn drawing_native_identity_refuses_at_retained_limit() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        crate::native::native_id("drawing", &object.name).len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        crate::native::native_id("drawing", &object.name).len(),
+    ) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::transfer(&ctx, &[object], &[]),
@@ -90,8 +91,9 @@ fn drawing_model_identity_refuses_at_retained_limit() {
     let record = resource_drawing_record();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        crate::native::model_id("drawing", &record.object, "entity").len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        crate::native::model_id("drawing", &record.object, "entity").len(),
+    ) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(
@@ -107,10 +109,10 @@ fn drawing_asset_identity_refuses_at_retained_limit() {
     record.side_entries.push("page.svg".into());
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        (crate::native::model_id("drawing", &record.object, "entity").len()
-            + crate::native::native_id("entry", "page.svg").len()) as u64
-            - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        crate::native::model_id("drawing", &record.object, "entity").len()
+            + crate::native::native_id("entry", "page.svg").len(),
+    ) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(
@@ -126,7 +128,7 @@ fn drawing_neutral_identity_copy_refuses_at_retained_limit() {
     let id_len = crate::native::model_id("drawing", &record.object, "entity").len();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = (id_len * 2) as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id_len * 2) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(
@@ -155,8 +157,9 @@ fn drawing_template_identity_copy_refuses_at_retained_limit() {
     let template_id = crate::native::model_id("drawing", &template.object, "entity");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        (page_id.len() + template_id.len() * 3 + "Template".len()) as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        page_id.len() + template_id.len() * 3 + "Template".len(),
+    ) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(
