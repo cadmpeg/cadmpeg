@@ -1818,7 +1818,7 @@ fn emit_e5_curves_and_edges(
         crate::resource::derived_annotation(ctx, annotations, &id, "curve", "catia_annotation_field")?;
         crate::resource::derived_annotation(ctx, annotations, &id, "definition", "catia_annotation_field")?;
         admission.reserve_entity(&mut ir.model.procedural_curves, "catia_e5_model_procedural_curves")?;
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.model.add_procedural_curve_charged(ctx,
             curve,
             ProceduralCurve::new(
                 id,
@@ -1828,7 +1828,7 @@ fn emit_e5_curves_and_edges(
                     cache: None,
                 },
             ),
-        );
+        )?;
     }
     for (&record_id, (surface, pcurve, range)) in surface_curve_plan {
         if intersection_plan.contains_key(&record_id) {
@@ -1850,7 +1850,7 @@ fn emit_e5_curves_and_edges(
         crate::resource::derived_annotation(ctx, annotations, &id, "curve", "catia_annotation_field")?;
         crate::resource::derived_annotation(ctx, annotations, &id, "definition", "catia_annotation_field")?;
         admission.reserve_entity(&mut ir.model.procedural_curves, "catia_e5_model_procedural_curves")?;
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.model.add_procedural_curve_charged(ctx,
             curve,
             ProceduralCurve::new(
                 id,
@@ -1875,7 +1875,7 @@ fn emit_e5_curves_and_edges(
                     },
                 },
             ),
-        );
+        )?;
     }
     for (&record_id, edge) in &topology.edges {
         let id = edge_ids[&record_id].clone();

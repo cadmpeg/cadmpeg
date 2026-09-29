@@ -24,7 +24,7 @@ use crate::features::{
 };
 use crate::geometry::{
     pcurve::Pcurve, Curve, CurveGeometry, ProceduralCurve, ProceduralCurveRow, ProceduralSurface,
-    ProceduralSurfaceRow, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    ProceduralSurfaceRow, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::hash::finite_json::CanonicalJsonError;
 use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
@@ -1022,59 +1022,90 @@ impl Model {
         owner: CurveId,
         procedural: ProceduralCurve,
     ) -> Result<(), ProceduralCarrierError> {
+        match self.attach_procedural_curve(owner, procedural, |id| {
+            Ok::<_, std::convert::Infallible>(id.clone())
+        }) {
+            Ok(result) => result,
+            Err(never) => match never {},
+        }
+    }
+
+    /// Attach a procedural curve using the caller's retained-byte budget.
+    pub fn add_procedural_curve_charged(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        owner: CurveId,
+        procedural: ProceduralCurve,
+    ) -> Result<Result<(), ProceduralCarrierError>, cadmpeg_core::CodecError> {
+        self.attach_procedural_curve(owner, procedural, |id| {
+            let bytes = ctx.copy_retained(id.as_str().as_bytes(),
+                "ir_procedural_curve_construction_id")?;
+            let value = String::from_utf8(bytes).map_err(cadmpeg_core::CodecError::malformed)?;
+            ProceduralCurveId::mint(value).map_err(cadmpeg_core::CodecError::malformed)
+        })
+    }
+
+    fn attach_procedural_curve<E>(
+        &mut self,
+        owner: CurveId,
+        procedural: ProceduralCurve,
+        copy_construction: impl FnOnce(&ProceduralCurveId) -> Result<ProceduralCurveId, E>,
+    ) -> Result<Result<(), ProceduralCarrierError>, E> {
         if self
             .procedural_curves
             .iter()
             .any(|existing| existing.id == procedural.id)
         {
-            return Err(ProceduralCarrierError::new(format!(
+            return Ok(Err(ProceduralCarrierError::new(format!(
                 "procedural curve construction {} already exists",
                 procedural.id
-            )));
+            ))));
         }
         if let Some(existing_owner) = self.curves.iter().find(|curve| {
             curve.id != owner && curve.geometry.procedural_construction() == Some(&procedural.id)
         }) {
-            return Err(ProceduralCarrierError::new(format!(
+            return Ok(Err(ProceduralCarrierError::new(format!(
                 "procedural curve construction {} already owns curve {}",
                 procedural.id, existing_owner.id
-            )));
+            ))));
         }
-        let curve = self
+        let Some(curve) = self
             .curves
             .iter_mut()
             .find(|curve| curve.id == owner)
-            .ok_or_else(|| {
-                ProceduralCarrierError::new(format!(
-                    "procedural curve {} references missing curve {owner}",
-                    procedural.id
-                ))
-            })?;
-        match &curve.geometry {
+        else {
+            return Ok(Err(ProceduralCarrierError::new(format!(
+                "procedural curve {} references missing curve {owner}", procedural.id
+            ))));
+        };
+        match &mut curve.geometry {
             CurveGeometry::Procedural {
                 construction,
                 cache: None,
             } if *construction == procedural.id => {
                 if procedural.cache_fit_tolerance().is_some() {
-                    return Err(ProceduralCarrierError::new(format!(
+                    return Ok(Err(ProceduralCarrierError::new(format!(
                         "direct procedural curve {owner} cannot carry a solved-cache tolerance"
-                    )));
+                    ))));
                 }
             }
             CurveGeometry::Procedural { construction, .. } => {
-                return Err(ProceduralCarrierError::new(format!(
+                return Ok(Err(ProceduralCarrierError::new(format!(
                     "curve {owner} is already owned by procedural construction {construction}"
-                )));
+                ))));
             }
             CurveGeometry::Solved(geometry) => {
+                let construction = copy_construction(&procedural.id)?;
+                let geometry = std::mem::replace(geometry,
+                    SolvedCurveGeometry::Unknown { record: None });
                 curve.geometry = CurveGeometry::Procedural {
-                    construction: procedural.id.clone(),
-                    cache: Some(geometry.clone()),
+                    construction,
+                    cache: Some(geometry),
                 };
             }
         }
         self.procedural_curves.push(procedural);
-        Ok(())
+        Ok(Ok(()))
     }
 }
 
