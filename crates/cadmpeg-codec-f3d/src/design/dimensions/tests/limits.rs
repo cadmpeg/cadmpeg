@@ -292,6 +292,59 @@ fn assert_native_fallback_refusal(
     panic!("no {operation} refusal");
 }
 
+fn assert_projected_companion_refusal(kind: &str, operation: &'static str) {
+    let mut fixture = fixture();
+    let curves = native_fallback_curves(&mut fixture);
+    let pair = native_fallback_pair();
+    let null_pair = native_fallback_null_pair();
+    let group = native_fallback_group();
+    let frame = native_fallback_annotation();
+    let mut inputs = fixture.inputs();
+    inputs.curves = &curves;
+    match kind {
+        "pair" => inputs.pairs = std::slice::from_ref(&pair),
+        "null-pair" => inputs.null_pairs = std::slice::from_ref(&null_pair),
+        "group" => inputs.groups = std::slice::from_ref(&group),
+        "annotation" => inputs.annotation_frames = std::slice::from_ref(&frame),
+        _ => panic!("unknown companion kind"),
+    }
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn projected_pair_companion_refuses_collection_limit() {
+    assert_projected_companion_refusal("pair", "f3d projected pair companion");
+}
+
+#[test]
+fn projected_null_pair_companion_refuses_collection_limit() {
+    assert_projected_companion_refusal("null-pair", "f3d projected null-pair companion");
+}
+
+#[test]
+fn projected_group_companion_refuses_collection_limit() {
+    assert_projected_companion_refusal("group", "f3d projected group companion");
+}
+
+#[test]
+fn projected_annotation_companion_refuses_collection_limit() {
+    assert_projected_companion_refusal("annotation", "f3d projected annotation companion");
+}
+
 #[test]
 fn native_pair_entity_id_refuses_retained_limit() {
     assert_native_fallback_refusal(false, "f3d native dimension entity id",
