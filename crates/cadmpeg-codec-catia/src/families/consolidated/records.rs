@@ -2362,12 +2362,22 @@ mod tests {
 
     #[test]
     fn class25_scalar_segment_borrowed_wire_preserves_json_bytes() {
-        let segment = scalar_segment();
-        let owned: super::Class25ScalarSegmentWire = segment.clone().into();
-        assert_eq!(
-            serde_json::to_vec(&segment).expect("borrowed segment JSON"),
-            serde_json::to_vec(&owned).expect("owned segment JSON")
-        );
+        let value = cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite scalar");
+        for segment in [
+            scalar_segment(),
+            super::Class25ScalarSegment::M82Six(Box::new([value; 6])),
+            super::Class25ScalarSegment::M82Seven(Box::new([value; 7])),
+            super::Class25ScalarSegment::M83Eight(Box::new([value; 8])),
+            super::Class25ScalarSegment::M83Nine(Box::new([value; 9])),
+            super::Class25ScalarSegment::M89(Box::new([value; 20])),
+            super::Class25ScalarSegment::M8b(Box::new([value; 24])),
+        ] {
+            let owned: super::Class25ScalarSegmentWire = segment.clone().into();
+            assert_eq!(
+                serde_json::to_vec(&segment).expect("borrowed segment JSON"),
+                serde_json::to_vec(&owned).expect("owned segment JSON")
+            );
+        }
     }
 
     #[test]

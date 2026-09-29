@@ -585,7 +585,8 @@ impl TryFrom<CatiaOwnerChartRelationWire> for CatiaOwnerChartRelation {
 #[cfg(test)]
 mod tests {
     use super::{
-        CatiaOwnerChartBridge, CatiaOwnerChartBridgeReference,
+        CatiaOwnerChartAddress, CatiaOwnerChartAliasBinding, CatiaOwnerChartBridge,
+        CatiaOwnerChartBridgeReference,
         CatiaOwnerChartBridgeReferenceWire, CatiaOwnerChartBridgeWire, CatiaOwnerChartRelation,
         CatiaOwnerChartRelationWire,
     };
@@ -607,11 +608,22 @@ mod tests {
         let CatiaOwnerChartBridge::SupportedSurface { carrier_surface, .. } = chart.bridge else {
             panic!("supported surface bridge")
         };
-        let owned: CatiaOwnerChartBridgeReferenceWire = carrier_surface.clone().into();
-        assert_eq!(
-            serde_json::to_vec(&carrier_surface).expect("borrowed reference JSON"),
-            serde_json::to_vec(&owned).expect("owned reference JSON")
+        let alias = CatiaOwnerChartAliasBinding::new(
+            cadmpeg_core::text::NonBlankString::new("catia:test:alias#0")
+                .expect("nonblank alias"),
+            Some(5),
         );
+        let bound = CatiaOwnerChartBridgeReference {
+            value: 5,
+            address: CatiaOwnerChartAddress::WidthCoded { alias: Some(alias) },
+        };
+        for reference in [carrier_surface, bound] {
+            let owned: CatiaOwnerChartBridgeReferenceWire = reference.clone().into();
+            assert_eq!(
+                serde_json::to_vec(&reference).expect("borrowed reference JSON"),
+                serde_json::to_vec(&owned).expect("owned reference JSON")
+            );
+        }
     }
 
     #[test]
@@ -645,12 +657,22 @@ mod tests {
 
     #[test]
     fn owner_chart_relation_borrowed_wire_preserves_json_bytes() {
-        let chart = owner_chart();
-        let owned: CatiaOwnerChartRelationWire = chart.clone().into();
-        assert_eq!(
-            serde_json::to_vec(&chart).expect("borrowed chart JSON"),
-            serde_json::to_vec(&owned).expect("owned chart JSON")
-        );
+        for bytes in [
+            crate::test_support::test_b2::b2_owner_chart_stream(0x28),
+            crate::test_support::test_b2::b2_owner_chart_stream(0x2b),
+            crate::test_support::test_b2::b2_owner_chart_stream(0x32),
+            crate::test_support::test_b2::b2_owner_chart_stream_with_extended_bridge(),
+        ] {
+            let native = crate::native::CatiaNative::decode(&bytes);
+            let chart = native.consolidated_owner_packets[0]
+                .owner_chart()
+                .expect("owner chart");
+            let owned: CatiaOwnerChartRelationWire = chart.clone().into();
+            assert_eq!(
+                serde_json::to_vec(chart).expect("borrowed chart JSON"),
+                serde_json::to_vec(&owned).expect("owned chart JSON")
+            );
+        }
     }
 
     #[test]

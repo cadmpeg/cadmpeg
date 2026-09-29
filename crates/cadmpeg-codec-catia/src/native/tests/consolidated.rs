@@ -537,15 +537,18 @@ fn consolidated_cylinder_retained_limit_refuses_json_record() {
 
 #[test]
 fn consolidated_owner_packet_borrowed_wire_preserves_json_bytes() {
-    let native = crate::native::CatiaNative::decode(&
+    for bytes in [
         crate::test_support::test_b2::b2_owner_packet_stream(),
-    );
-    let packet = native.consolidated_owner_packets.first().expect("owner packet");
-    let owned: crate::native::CatiaConsolidatedOwnerPacketWire = packet.clone().into();
-    assert_eq!(
-        serde_json::to_vec(packet).expect("borrowed packet JSON"),
-        serde_json::to_vec(&owned).expect("owned packet JSON")
-    );
+        b2_adjacent_face_counted_owner_stream(),
+    ] {
+        let native = crate::native::CatiaNative::decode(&bytes);
+        let packet = native.consolidated_owner_packets.first().expect("owner packet");
+        let owned: crate::native::CatiaConsolidatedOwnerPacketWire = packet.clone().into();
+        assert_eq!(
+            serde_json::to_vec(packet).expect("borrowed packet JSON"),
+            serde_json::to_vec(&owned).expect("owned packet JSON")
+        );
+    }
 }
 
 #[test]
