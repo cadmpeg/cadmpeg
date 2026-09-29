@@ -164,3 +164,29 @@ fn a_radius_map_keeps_the_parameters_and_tests_one_positive_radius() {
         Err(super::VariableRadiiMapError::Radius("overflow"))
     );
 }
+
+#[test]
+fn owned_variable_radius_scaling_refuses_each_sample_work_without_allocation() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let law = || VariableRadii::new(vec![point(0.0, 1.0), point(1.0, 2.0)]).expect("law");
+    for cap in [0, 1] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(matches!(law().try_map_radii_owned_admitted(&ctx, |radius| Ok::<_, ()>(radius)),
+            Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "IR variable radii scaling work"));
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 2;
+    policy.limits.max_collection_items = 0;
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let multiplier = crate::scalar::PositiveReal::new(2.0).expect("scale");
+    let actual = law().try_map_radii_owned_admitted(&ctx, |radius| radius.scaled(multiplier).ok_or("overflow")).expect("admitted");
+    assert_eq!(actual, law().try_map_radii(|radius| radius.scaled(multiplier).ok_or("overflow")));
+    let expected = law().try_map_radii(|_| Ok::<_, ()>(crate::scalar::NonNegativeLength::ZERO));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+    assert_eq!(law().try_map_radii_owned_admitted(&ctx, |_| Ok::<_, ()>(crate::scalar::NonNegativeLength::ZERO)).expect("admitted refusal"), expected);
+}
