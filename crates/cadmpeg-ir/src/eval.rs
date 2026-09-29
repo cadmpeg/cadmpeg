@@ -47,6 +47,8 @@ mod basis;
 mod depth;
 mod polyline;
 mod rational;
+#[cfg(test)]
+mod test_support;
 use depth::ModelEvaluationDepthGuard;
 use polyline::{polyline_point, polyline_samples, polyline_tangent};
 use rational::{finite_lanes, Homogeneous};

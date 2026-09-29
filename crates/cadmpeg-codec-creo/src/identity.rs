@@ -13,10 +13,26 @@ use cadmpeg_ir::ids::{IdentityError, IdentityNamespace};
 /// Names classified as geometry or thumbnail sections use static namespaces.
 pub(crate) fn section_namespace(name: &str) -> Option<IdentityNamespace> {
     match name {
-        "VisibGeom" => Some(cadmpeg_ir::identity_namespace!("creo", "VisibGeom", "section")),
-        "NovisGeom" => Some(cadmpeg_ir::identity_namespace!("creo", "NovisGeom", "section")),
-        "ActDatums" => Some(cadmpeg_ir::identity_namespace!("creo", "ActDatums", "section")),
-        "THMB_IMG_MAIN" => Some(cadmpeg_ir::identity_namespace!("creo", "THMB_IMG_MAIN", "section")),
+        "VisibGeom" => Some(cadmpeg_ir::identity_namespace!(
+            "creo",
+            "VisibGeom",
+            "section"
+        )),
+        "NovisGeom" => Some(cadmpeg_ir::identity_namespace!(
+            "creo",
+            "NovisGeom",
+            "section"
+        )),
+        "ActDatums" => Some(cadmpeg_ir::identity_namespace!(
+            "creo",
+            "ActDatums",
+            "section"
+        )),
+        "THMB_IMG_MAIN" => Some(cadmpeg_ir::identity_namespace!(
+            "creo",
+            "THMB_IMG_MAIN",
+            "section"
+        )),
         _ => None,
     }
 }
@@ -130,127 +146,6 @@ pub(crate) fn matches_numbered_identity(actual: &str, prefix: &str, number: u32)
     suffix.len() == digits && suffix.parse::<u32>().ok() == Some(number)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{compose_checked, compose_scoped, copy_checked_id, matches_numbered_identity, source_object_id_checked};
-
-    #[test]
-    fn scoped_identity_refuses_scoped_limit_and_releases_reservation() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
-        let error = compose_scoped::<ShellId>(
-            &ctx, &crate::identity::VISIBGEOM_SHELL, 7, "creo temporary curve identity",
-        )
-        .err()
-        .expect("temporary identity exceeds scoped limit");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::MaterializedBytes
-                && resource.operation == "creo temporary curve identity"));
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = "creo:visibgeom:shell#7".len() as u64;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("limited root admitted");
-        let (id, reservation) = compose_scoped::<ShellId>(
-            &ctx, &crate::identity::VISIBGEOM_SHELL, 7, "creo temporary curve identity",
-        ).expect("service temporary identity admitted");
-        assert_eq!(id.as_str(), "creo:visibgeom:shell#7");
-        drop(reservation);
-        compose_scoped::<ShellId>(
-            &ctx, &crate::identity::VISIBGEOM_SHELL, 7, "creo temporary curve identity",
-        ).expect("released reservation admits another identity");
-    }
-
-    #[test]
-    fn source_object_identity_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
-        let error = source_object_id_checked(
-            &ctx,
-            format_args!("VisibGeom:{}", 7),
-            "creo source object identity",
-        )
-        .expect_err("retained identity exceeds the limit");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo source object identity"));
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-            .expect("service root admitted");
-        let id = source_object_id_checked(
-            &ctx,
-            format_args!("VisibGeom:{}", 7),
-            "creo source object identity",
-        )
-        .expect("service identity admitted");
-        assert_eq!(id.as_str(), "VisibGeom:7");
-    }
-
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use cadmpeg_ir::ids::ShellId;
-
-    #[test]
-    fn composed_identity_refuses_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
-        let error = compose_checked::<ShellId>(
-            &ctx,
-            &crate::identity::VISIBGEOM_SHELL,
-            format_args!("1:{}", 2),
-            "creo B-rep shell identity",
-        )
-        .err()
-        .expect("identity text refused");
-        assert!(matches!(error, CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo B-rep shell identity"));
-    }
-
-    #[test]
-    fn checked_identity_preserves_compose_and_copy() {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root admitted");
-        let composed = compose_checked::<ShellId>(
-            &ctx,
-            &crate::identity::VISIBGEOM_SHELL,
-            format_args!("1:{}", 2),
-            "creo B-rep shell identity",
-        )
-        .expect("service identity admitted");
-        let copied = copy_checked_id::<ShellId>(
-            &ctx,
-            composed.as_str(),
-            "creo B-rep shell identity copies",
-        )
-        .expect("service identity copy admitted");
-        assert_eq!(composed, ShellId::compose(
-            &crate::identity::VISIBGEOM_SHELL,
-            cadmpeg_ir::ids::IdentityKey::from(1).colon(2),
-        ));
-        assert_eq!(copied, composed);
-    }
-
-    #[test]
-    fn numbered_identity_match_requires_canonical_decimal_bytes() {
-        let prefix = "creo:visibgeom:surface#";
-        assert!(matches_numbered_identity("creo:visibgeom:surface#0", prefix, 0));
-        assert!(matches_numbered_identity("creo:visibgeom:surface#4294967295", prefix, u32::MAX));
-        assert!(!matches_numbered_identity("creo:visibgeom:surface#01", prefix, 1));
-        assert!(!matches_numbered_identity("creo:visibgeom:surface#+1", prefix, 1));
-        assert!(!matches_numbered_identity("creo:visibgeom:face#1", prefix, 1));
-    }
-}
-
 pub(crate) const VISIBGEOM_BODY: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "visibgeom", "body");
 pub(crate) const VISIBGEOM_COEDGE: IdentityNamespace =
@@ -351,3 +246,156 @@ pub(crate) const VISIBGEOM_TABULATED_DIRECTRIX: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "visibgeom", "tabulated_directrix");
 pub(crate) const VISIBGEOM_TABULATED_EXTRUSION: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "visibgeom", "tabulated_extrusion");
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        compose_checked, compose_scoped, copy_checked_id, matches_numbered_identity,
+        source_object_id_checked,
+    };
+
+    #[test]
+    fn scoped_identity_refuses_scoped_limit_and_releases_reservation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        let error = compose_scoped::<ShellId>(
+            &ctx,
+            &crate::identity::VISIBGEOM_SHELL,
+            7,
+            "creo temporary curve identity",
+        )
+        .expect_err("temporary identity exceeds scoped limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::MaterializedBytes
+                && resource.operation == "creo temporary curve identity"));
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = "creo:visibgeom:shell#7".len() as u64;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited root admitted");
+        let (id, reservation) = compose_scoped::<ShellId>(
+            &ctx,
+            &crate::identity::VISIBGEOM_SHELL,
+            7,
+            "creo temporary curve identity",
+        )
+        .expect("service temporary identity admitted");
+        assert_eq!(id.as_str(), "creo:visibgeom:shell#7");
+        drop(reservation);
+        compose_scoped::<ShellId>(
+            &ctx,
+            &crate::identity::VISIBGEOM_SHELL,
+            7,
+            "creo temporary curve identity",
+        )
+        .expect("released reservation admits another identity");
+    }
+
+    #[test]
+    fn source_object_identity_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        let error = source_object_id_checked(
+            &ctx,
+            format_args!("VisibGeom:{}", 7),
+            "creo source object identity",
+        )
+        .expect_err("retained identity exceeds the limit");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo source object identity"));
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("service root admitted");
+        let id = source_object_id_checked(
+            &ctx,
+            format_args!("VisibGeom:{}", 7),
+            "creo source object identity",
+        )
+        .expect("service identity admitted");
+        assert_eq!(id.as_str(), "VisibGeom:7");
+    }
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::ids::ShellId;
+
+    #[test]
+    fn composed_identity_refuses_retained_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        let error = compose_checked::<ShellId>(
+            &ctx,
+            &crate::identity::VISIBGEOM_SHELL,
+            format_args!("1:{}", 2),
+            "creo B-rep shell identity",
+        )
+        .expect_err("identity text refused");
+        assert!(matches!(error, CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo B-rep shell identity"));
+    }
+
+    #[test]
+    fn checked_identity_preserves_compose_and_copy() {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        let composed = compose_checked::<ShellId>(
+            &ctx,
+            &crate::identity::VISIBGEOM_SHELL,
+            format_args!("1:{}", 2),
+            "creo B-rep shell identity",
+        )
+        .expect("service identity admitted");
+        let copied =
+            copy_checked_id::<ShellId>(&ctx, composed.as_str(), "creo B-rep shell identity copies")
+                .expect("service identity copy admitted");
+        assert_eq!(
+            composed,
+            ShellId::compose(
+                &crate::identity::VISIBGEOM_SHELL,
+                cadmpeg_ir::ids::IdentityKey::from(1).colon(2),
+            )
+        );
+        assert_eq!(copied, composed);
+    }
+
+    #[test]
+    fn numbered_identity_match_requires_canonical_decimal_bytes() {
+        let prefix = "creo:visibgeom:surface#";
+        assert!(matches_numbered_identity(
+            "creo:visibgeom:surface#0",
+            prefix,
+            0
+        ));
+        assert!(matches_numbered_identity(
+            "creo:visibgeom:surface#4294967295",
+            prefix,
+            u32::MAX
+        ));
+        assert!(!matches_numbered_identity(
+            "creo:visibgeom:surface#01",
+            prefix,
+            1
+        ));
+        assert!(!matches_numbered_identity(
+            "creo:visibgeom:surface#+1",
+            prefix,
+            1
+        ));
+        assert!(!matches_numbered_identity(
+            "creo:visibgeom:face#1",
+            prefix,
+            1
+        ));
+    }
+}

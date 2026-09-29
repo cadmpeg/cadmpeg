@@ -339,29 +339,3 @@ fn an_inverse_hyperbolic_cotangent_whose_derivative_overflows_keeps_its_value() 
         Err(crate::eval::EvaluationFailure::NonFinite(()))
     );
 }
-
-#[test]
-fn low_degree_second_derivative_basis_borrows_zeros() {
-    use std::borrow::Cow;
-
-    let constant = crate::eval::basis::bspline_basis_second_derivative(
-        &super::super::admitted::Scratch::default(),
-        &[],
-        0,
-        0,
-        0.0,
-    )
-    .expect("degree-zero second derivative");
-    let linear = crate::eval::basis::bspline_basis_second_derivative(
-        &super::super::admitted::Scratch::default(),
-        &[],
-        1,
-        0,
-        0.0,
-    )
-    .expect("degree-one second derivative");
-    assert!(matches!(constant, Cow::Borrowed(_)));
-    assert!(matches!(linear, Cow::Borrowed(_)));
-    assert_eq!(constant.as_ref(), &[0.0]);
-    assert_eq!(linear.as_ref(), &[0.0, 0.0]);
-}

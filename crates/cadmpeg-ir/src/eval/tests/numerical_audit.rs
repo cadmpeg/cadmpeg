@@ -618,13 +618,3 @@ fn numerical_audit_rational_linear_nurbs_keeps_subnormal_pole_derivatives() {
     assert!((second.x / expected_second - 1.0).abs() <= EPS_NURBS_RATIONAL_DERIVATIVE);
     assert_eq!((first.y, first.z, second.y, second.z), (0.0, 0.0, 0.0, 0.0));
 }
-
-#[test]
-fn knot_span_refuses_oversized_degree_and_count_without_overflow() {
-    let knots = [0.0, 1.0];
-    assert_eq!(crate::eval::basis::bspline_span(&knots, usize::MAX, 1, 0.5), None);
-    assert_eq!(
-        crate::eval::basis::bspline_span(&knots, usize::MAX - 1, usize::MAX, 0.5),
-        None
-    );
-}

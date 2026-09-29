@@ -1,73 +1,56 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: zero orientation.
 
-use cadmpeg_test_support::edit;
-use crate::decode::surfaces::nurbs_boundaries::{nurbs_plane_boundary_curve, shared_extrusion_generator_curve};
-use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
-use crate::decode::sketch_transfer::profiles::resolved_profile_chains as resolved_profile_chains_admitted;
-use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
-use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
-use crate::decode::sweep::pcurves::{RevolutionBoundary, revolution_face_sense, revolution_profile_boundary_pcurve, revolved_brep_surface};
+use crate::decode::sweep::pcurves::RevolutionBoundary;
+
 use crate::decode::analytic::carriers::{ordered_face_loops, ordered_planar_face_loops};
-use crate::decode::analytic::equations::{CarrierEquation, ConeEquation, PlaneEquation, SphereEquation, TorusEquation};
+use crate::decode::analytic::equations::{
+    CarrierEquation, ConeEquation, PlaneEquation, SphereEquation, TorusEquation,
+};
 use crate::decode::analytic::planes::solve_carriers;
 use crate::decode::build::report::has_transferred_geometry;
-use crate::decode::feature_history::axes::{full_turn_revolution_carrier_axis, resolved_revolution_axis, revolution_axis_for_transfer};
+use crate::decode::feature_history::axes::{
+    full_turn_revolution_carrier_axis, resolved_revolution_axis, revolution_axis_for_transfer,
+};
 use crate::decode::feature_history::draft::schema_feature_definition;
-use crate::decode::feature_history::named::{named_feature_definition, named_or_referenced_feature_definition};
+use crate::decode::feature_history::named::{
+    named_feature_definition, named_or_referenced_feature_definition,
+};
 use crate::decode::sketch::geometry::section_arc_geometry;
 use crate::decode::sketch::intersect::intersect_incident_section_carriers;
 use crate::decode::sketch::radii::trim_segment_id;
 use crate::decode::sketch_transfer::identity::materialized_saved_section_external_ids;
-use crate::decode::surfaces::intersection_candidates::{axis_containing_plane_torus_circle_candidates, coaxial_cone_torus_circle_candidates};
-use crate::decode::surfaces::intersection_resolve::{resolve_curve_candidates, select_unique_curve_candidate};
-use crate::decode::sweep::nurbs::{bspline_basis, bspline_basis_derivative, interpolation_spline_surface, placed_section_nurbs, saved_spline_nurbs, saved_spline_sketch_geometry};
+use crate::decode::sketch_transfer::profiles::resolved_profile_chains as resolved_profile_chains_admitted;
+use crate::decode::surfaces::intersection_candidates::{
+    axis_containing_plane_torus_circle_candidates, coaxial_cone_torus_circle_candidates,
+};
+use crate::decode::surfaces::intersection_resolve::{
+    resolve_curve_candidates, select_unique_curve_candidate,
+};
+
+use crate::decode::sweep::nurbs::{
+    bspline_basis, bspline_basis_derivative, interpolation_spline_surface, placed_section_nurbs,
+    saved_spline_nurbs, saved_spline_sketch_geometry,
+};
+use crate::decode::sweep::pcurves::{
+    revolution_face_sense, revolution_profile_boundary_pcurve, revolved_brep_surface,
+};
 use crate::decode::sweep::surfaces::revolved_nurbs_surface;
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
+use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
 use cadmpeg_ir::features::{AngularTermination, BooleanOp, RevolutionAxis, RevolveExtent};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::topology::{Body, BodyKind, Point};
 use std::collections::{BTreeMap, BTreeSet};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 const EPS_COAXIAL_CIRCLE: f64 = 1.0e-12;
 
@@ -1878,138 +1861,4 @@ fn axis_containing_plane_torus_components_support_edges_and_vertices() {
 
 mod nurbs_boundaries;
 
-#[test]
-fn planar_loop_containment_selects_one_outer_boundary() {
-    let make_loop = |face_id: u32, first_curve: u32| crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(face_id),
-        half_edges: (0_u32..4)
-            .map(|index| HalfEdgeId {
-                curve_id: first_curve + index,
-                side: crate::topology::Side::Zero,
-            })
-            .collect(),
-    };
-    let outer = make_loop(9, 1);
-    let inner = make_loop(9, 5);
-    let incidences = (1..=8)
-        .map(|vertex| crate::topology::HalfEdgeVertexIncidence {
-            half_edge: HalfEdgeId {
-                curve_id: vertex,
-                side: crate::topology::Side::Zero,
-            },
-            start_vertex_id: vertex,
-            end_vertex_id: Some(if vertex % 4 == 0 {
-                vertex - 3
-            } else {
-                vertex + 1
-            }),
-        })
-        .collect::<Vec<_>>();
-    let incidence = incidences
-        .iter()
-        .map(|binding| (binding.half_edge, binding))
-        .collect::<BTreeMap<_, _>>();
-    let points = BTreeMap::from([
-        (1, [-2.0, -2.0, 0.0]),
-        (2, [2.0, -2.0, 0.0]),
-        (3, [2.0, 2.0, 0.0]),
-        (4, [-2.0, 2.0, 0.0]),
-        (5, [-1.0, -1.0, 0.0]),
-        (6, [1.0, -1.0, 0.0]),
-        (7, [1.0, 1.0, 0.0]),
-        (8, [-1.0, 1.0, 0.0]),
-    ]);
-    let plane = PlaneEquation {
-        origin: [0.0; 3],
-        normal: [0.0, 0.0, 1.0],
-    };
-
-    let ordered =
-        ordered_planar_face_loops_service(vec![&inner, &outer], plane, &incidence, &points)
-            .expect("unique outer loop");
-    assert_eq!(ordered[0].half_edges[0].curve_id, 1);
-    assert_eq!(ordered[1].half_edges[0].curve_id, 5);
-
-    let disjoint_points = points
-        .into_iter()
-        .map(|(id, mut point)| {
-            if id >= 5 {
-                point[0] += 10.0;
-            }
-            (id, point)
-        })
-        .collect::<BTreeMap<_, _>>();
-    assert!(ordered_planar_face_loops_service(
-        vec![&outer, &inner],
-        plane,
-        &incidence,
-        &disjoint_points,
-    )
-    .is_none());
-    assert_eq!(
-        ordered_face_loops_service(&[&outer], None, &incidence, &disjoint_points),
-        Some(vec![&outer])
-    );
-    assert!(
-        ordered_face_loops_service(&[&outer, &inner], None, &incidence, &disjoint_points).is_none()
-    );
-}
-
-#[test]
-fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
-    let make_loop = |first_curve: u32| crate::topology::Loop {
-        face_id: std::num::NonZeroU32::new(9),
-        half_edges: (0_u32..4)
-            .map(|index| HalfEdgeId {
-                curve_id: first_curve + index,
-                side: crate::topology::Side::Zero,
-            })
-            .collect(),
-    };
-    let outer = make_loop(1);
-    let inner = make_loop(5);
-    let incidences = (1..=8)
-        .map(|vertex| crate::topology::HalfEdgeVertexIncidence {
-            half_edge: HalfEdgeId {
-                curve_id: vertex,
-                side: crate::topology::Side::Zero,
-            },
-            start_vertex_id: vertex,
-            end_vertex_id: Some(if vertex % 4 == 0 {
-                vertex - 3
-            } else {
-                vertex + 1
-            }),
-        })
-        .collect::<Vec<_>>();
-    let incidence = incidences
-        .iter()
-        .map(|binding| (binding.half_edge, binding))
-        .collect::<BTreeMap<_, _>>();
-    let points = BTreeMap::from([
-        (1, [-2.0, -2.0, 4.0]),
-        (2, [2.0, -2.0, 4.0]),
-        (3, [2.0, 2.0, 4.0]),
-        (4, [-2.0, 2.0, 4.0]),
-        (5, [-1.0, -1.0, 4.0]),
-        (6, [1.0, -1.0, 4.0]),
-        (7, [1.0, 1.0, 4.0]),
-        (8, [-1.0, 1.0, 4.0]),
-    ]);
-
-    let ordered = ordered_face_loops_service(&[&inner, &outer], None, &incidence, &points)
-        .expect("boundary vertices prove a unique plane");
-    assert_eq!(ordered[0].half_edges[0].curve_id, 1);
-    assert_eq!(ordered[1].half_edges[0].curve_id, 5);
-
-    let non_planar = points
-        .into_iter()
-        .map(|(id, mut point)| {
-            if id == 8 {
-                point[2] += 1.0;
-            }
-            (id, point)
-        })
-        .collect::<BTreeMap<_, _>>();
-    assert!(ordered_face_loops_service(&[&outer, &inner], None, &incidence, &non_planar).is_none());
-}
+mod loop_containment;
