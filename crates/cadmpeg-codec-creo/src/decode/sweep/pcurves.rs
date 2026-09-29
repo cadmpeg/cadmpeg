@@ -73,14 +73,14 @@ pub(super) fn add_extrusion_pcurve(
             .unwrap_or([0.0, 1.0]),
         _ => [0.0, 1.0],
     };
-    annotate(
+    annotate(ctx,
         annotations,
         &id,
         "FeatDefs",
         source_offset as u64,
         "extrusion_trim_pcurve",
         Exactness::Derived,
-    );
+    )?;
     ctx.charge_entities(1, "admit Creo model pcurves")?;
     let pcurve = Pcurve {
         id: id.clone(),

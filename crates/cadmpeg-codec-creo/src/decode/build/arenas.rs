@@ -571,14 +571,14 @@ pub(super) fn emit_geometry_arenas(
     // annotation needs, so the offset travels alongside each record in a tuple.
     let pcurve_endpoints = pcurve_endpoint_records(ctx, scan)?;
     for (record, offset) in &pcurve_endpoints {
-        annotate(
+        annotate(ctx,
             annotations,
             &record.id,
             "VisibGeom",
             *offset as u64,
             "pcurve_endpoint_frames",
             Exactness::Derived,
-        );
+        )?;
     }
     let mut pcurve_endpoint_payload = Vec::new();
     ctx.try_reserve_items(
@@ -814,14 +814,14 @@ pub(super) fn emit_geometry_arenas(
     let curve_expressions = curve_expression_records(ctx, scan)?;
     for (expression, source) in curve_expressions.iter().zip(&scan.curves.expressions) {
         let source_section = source_section_ref(scan, source.expression_offset);
-        annotate(
+        annotate(ctx,
             annotations,
             &expression.id,
             source_section,
             source.expression_offset as u64,
             "curve_expression_program",
             Exactness::ByteExact,
-        );
+        )?;
     }
     store_arena(ctx, ir, "curve_expressions", &curve_expressions)?;
     let feature_operation_states = feature_operation_state_records(ctx, scan)?;
@@ -838,14 +838,15 @@ pub(super) fn emit_geometry_arenas(
                 .iter()
                 .find(|section| section.contains(state.state_offset))
                 .map_or("MdlStatus", |section| section.name());
-            annotate(
+            annotate(ctx,
                 annotations,
                 &state.id,
                 section,
                 state.state_offset as u64,
                 "feature_operation_state",
                 Exactness::ByteExact,
-            );
+            )?;
+            Ok(())
         },
     )?;
     let feature_reference_names = feature_reference_name_records(ctx, scan)?;
@@ -862,14 +863,14 @@ pub(super) fn emit_geometry_arenas(
         Exactness::ByteExact,
     )?;
     if let Some(family_table) = family_table_record(scan) {
-        annotate(
+        annotate(ctx,
             annotations,
             super::super::records::CreoFamilyTableRecord::ID,
             "FamilyInf",
             family_table.offset as u64,
             "configuration_driver_table_pointer",
             Exactness::ByteExact,
-        );
+        )?;
         store_arena(ctx, ir, "configuration", &[family_table])?;
     }
     Ok(())

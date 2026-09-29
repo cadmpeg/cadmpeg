@@ -234,14 +234,14 @@ fn transfer_reference_lines(
                 )
             }
         };
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "MdlRefInfo",
             line.offset as u64,
             "reference_line",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
             ctx,
@@ -309,14 +309,14 @@ fn transfer_reference_circles(
                 })?
         };
         let id = CurveId::compose(&crate::identity::MDL_REF_INFO_ARC_Z, native_key);
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "MdlRefInfo",
             circle.offset as u64,
             "reference_circle",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
         let frame = cadmpeg_ir::units::OrthonormalFrame3::from_units(circle.axis, reference)
             .ok_or_else(|| {
@@ -390,14 +390,14 @@ fn transfer_reference_ellipses(
             })?
         };
         let id = CurveId::compose(&crate::identity::MDL_REF_INFO_CONIC, native_key);
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "MdlRefInfo",
             ellipse.offset as u64,
             "reference_ellipse",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
             ctx,
@@ -453,14 +453,14 @@ fn transfer_display_tessellations(
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     for strip in &scan.primitives.triangle_strips {
         let id = format!("creo:solid_primdata:tessellation#{}", strip.offset);
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "SolidPrimdata",
             strip.offset as u64,
             "display_triangle_strip",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model tessellations")?;
         let positions = strip
             .positions
@@ -530,14 +530,14 @@ fn transfer_datum_plane_surfaces(
     for plane in &scan.planes.datums {
         let normal = plane.plane.normal();
         let id = SurfaceId::compose(&crate::identity::ACTDATUM_SURFACE, plane.id);
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "ActDatums",
             plane.offset_in_payload as u64,
             "datum_plane_outline",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
@@ -614,14 +614,14 @@ fn transfer_placed_plane_surfaces_into_ir(
         } else {
             "plane_local_system"
         };
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "VisibGeom",
             offset as u64,
             tag,
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,

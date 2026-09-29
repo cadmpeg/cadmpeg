@@ -2185,14 +2185,14 @@ pub(in super::super) fn transfer_native_brep(
             ctx, &crate::identity::VISIBGEOM_POINT, vertex_id,
             "creo B-rep topological point identities",
         )?;
-        annotate(
+        annotate(ctx,
             annotations,
             &point_id,
             "VisibGeom",
             0,
             "topological_vertex_point",
             Exactness::Derived,
-        );
+        )?;
         let source_object = SourceObjectAssociation {
             format: cadmpeg_ir::CodecFormat::Creo,
             object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
@@ -2251,14 +2251,14 @@ pub(in super::super) fn transfer_native_brep(
             ctx, &crate::identity::VISIBGEOM_POINT, vertex_id,
             "creo B-rep vertex point identities",
         )?;
-        annotate(
+        annotate(ctx,
             annotations,
             &vertex,
             "VisibGeom",
             0,
             "topological_vertex_orbit",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model vertices")?;
         source_carriers.admit_vertex(
             ctx,
@@ -2344,14 +2344,14 @@ pub(in super::super) fn transfer_native_brep(
             ctx, &crate::identity::VISIBGEOM_EDGE, *curve_id,
             "creo B-rep edge identities",
         )?;
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "VisibGeom",
             row_offsets.get(curve_id).copied().unwrap_or(0) as u64,
             "curve_topology_edge",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model edges")?;
         source_carriers.admit_edge(
             ctx,
@@ -2375,14 +2375,14 @@ pub(in super::super) fn transfer_native_brep(
         )?;
         if !ir.model.curves.iter().any(|item| item.id == curve) {
             let offset = row_offsets.get(curve_id).copied().unwrap_or(0);
-            annotate(
+            annotate(ctx,
                 annotations,
                 &curve,
                 "VisibGeom",
                 offset as u64,
                 "opaque_native_curve_carrier",
                 Exactness::Unknown,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
                 ctx,
@@ -2429,8 +2429,8 @@ pub(in super::super) fn transfer_native_brep(
             component_index + 1,
             "creo B-rep region identity",
         )?;
-        annotate(annotations, &body_id, "VisibGeom", 0, "native_component_body", Exactness::Derived);
-        annotate(annotations, &region_id, "VisibGeom", 0, "native_component_region", Exactness::Derived);
+        annotate(ctx, annotations, &body_id, "VisibGeom", 0, "native_component_body", Exactness::Derived)?;
+        annotate(ctx, annotations, &region_id, "VisibGeom", 0, "native_component_region", Exactness::Derived)?;
         let BrepComponentTopology {
             component_face_curves,
             wire_curves,
@@ -2478,14 +2478,14 @@ pub(in super::super) fn transfer_native_brep(
                     "creo B-rep shell identity",
                 )?
             };
-            annotate(
+            annotate(ctx,
                 annotations,
                 &shell_id,
                 "VisibGeom",
                 0,
                 "native_component_shell",
                 Exactness::Derived,
-            );
+            )?;
             if shell.faces.is_empty() && shell.wire_curves.is_empty() {
                 diagnostics.empty_component_count += 1;
                 continue;
@@ -2568,14 +2568,14 @@ pub(in super::super) fn transfer_native_brep(
             };
             let surface = native_surface_id(ctx, scan, *face_id)?;
             if !ir.model.surfaces.iter().any(|item| item.id == surface) {
-                annotate(
+                annotate(ctx,
                     annotations,
                     &surface,
                     face_source_namespace,
                     face_offset as u64,
                     "opaque_native_surface_carrier",
                     Exactness::Unknown,
-                );
+                )?;
                 ctx.charge_entities(1, "admit Creo model surfaces")?;
                 source_carriers.admit_surface(
                     ctx,
@@ -2614,23 +2614,23 @@ pub(in super::super) fn transfer_native_brep(
             } else {
                 Sense::Forward
             };
-            annotate(
+            annotate(ctx,
                 annotations,
                 &face,
                 "VisibGeom",
                 face_offset as u64,
                 "native_face",
                 Exactness::Derived,
-            );
+            )?;
             for loop_id in &loop_ids {
-                annotate(
+                annotate(ctx,
                     annotations,
                     loop_id,
                     "VisibGeom",
                     face_offset as u64,
                     "native_face_loop",
                     Exactness::Derived,
-                );
+                )?;
             }
             ctx.charge_entities(1, "admit Creo model faces")?;
             source_carriers.admit_face(
@@ -2681,14 +2681,14 @@ pub(in super::super) fn transfer_native_brep(
                             "creo B-rep self radial ID copies",
                         )?
                     };
-                    annotate(
+                    annotate(ctx,
                         annotations,
                         &id,
                         "VisibGeom",
                         row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0) as u64,
                         "native_half_edge",
                         Exactness::Derived,
-                    );
+                    )?;
                     let native_candidates = native_pcurves.get(&(half_edge.curve_id, *face_id));
                     let mut refusal = crate::lane_refusal::LaneRefusals::new();
                     let refusal_cell = &mut refusal;
@@ -2836,14 +2836,14 @@ pub(in super::super) fn transfer_native_brep(
                                 "creo B-rep pcurve identities",
                             )?;
                             if !ir.model.pcurves.iter().any(|item| item.id == pcurve) {
-                                annotate(
+                                annotate(ctx,
                                     annotations,
                                     &pcurve,
                                     "VisibGeom",
                                     offset as u64,
                                     tag,
                                     Exactness::Derived,
-                                );
+                                )?;
                                 ctx.charge_entities(1, "admit Creo model pcurves")?;
                                 source_carriers.admit_pcurve(
                                     ctx,
@@ -2929,14 +2929,14 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         ) else {
             continue;
         };
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "VisibGeom",
             pair.offset as u64,
             "fc05_cap_pair_cylinder",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
@@ -2997,7 +2997,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             ) else {
                 continue;
             };
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 "VisibGeom",
@@ -3008,7 +3008,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                     .map_or(pair.offset, |circle| circle.offset) as u64,
                 "fc05_cap_circle",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
                 ctx,

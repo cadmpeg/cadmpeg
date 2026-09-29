@@ -126,14 +126,14 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             frame.frame().orthonormal_frame(),
             radius,
         );
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "ActDatums",
             datum.offset_in_payload as u64,
             "active_datum_cylinder",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
@@ -247,14 +247,14 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         ) else {
             continue;
         };
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "AllFeatur",
             row.offset as u64,
             "constrained_slot_fillet_cylinder",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
@@ -333,14 +333,14 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "AllFeatur",
             offset as u64,
             "round_rowless_sibling_cylinder",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
@@ -414,14 +414,14 @@ pub(in super::super) fn transfer_hole_cylinders(
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 "AllFeatur",
                 row.offset as u64,
                 "hole_cap_outline_cylinder",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
                 ctx,
@@ -568,14 +568,14 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 continue;
             }
             let row = rows[&cylinder_id];
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 "VisibGeom",
                 row.offset as u64,
                 "split_outline_cylinder",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
                 ctx,
@@ -1304,26 +1304,26 @@ pub(in super::super) fn transfer_positional_cylinders(
                         surface,
                         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)),
                     )?;
-                    annotate(
+                    annotate(ctx,
                         annotations,
                         &id,
                         "VisibGeom",
                         row.offset as u64,
                         "positional_cylinder_frame_reconciled",
                         Exactness::Derived,
-                    );
+                    )?;
                 }
             }
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "VisibGeom",
             row.offset as u64,
             mechanism.label(),
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
@@ -1566,14 +1566,14 @@ pub(in super::super) fn transfer_positional_cones(
             continue;
         }
         let cone_surface = super::apex_cone(frame.frame(), frame.half_angle());
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "VisibGeom",
             row.offset as u64,
             "positional_cone_frame",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
@@ -1646,14 +1646,14 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 "AllFeatur",
                 row.offset as u64,
                 "circular_sweep_cap_outline_cylinder",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
                 ctx,
@@ -1724,14 +1724,14 @@ pub(in super::super) fn transfer_cross_section_planes(
         ) else {
             continue;
         };
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "Xsections",
             frame.offset as u64,
             "cross_section_plane_local_system",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
@@ -1775,14 +1775,14 @@ pub(in super::super) fn transfer_cross_section_planes(
         ) else {
             continue;
         };
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "Xsections",
             plane.offset as u64,
             "cross_section_plane_outline_held_coordinate",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,

@@ -215,14 +215,14 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 &surface_id,
                 "FeatDefs",
                 segment.offset as u64,
                 "evaluated_analytic_revolution_surface",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
                 ctx,
@@ -285,14 +285,14 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                     continue;
                 }
-                annotate(
+                annotate(ctx,
                     annotations,
                     &surface_id,
                     "FeatDefs",
                     offset as u64,
                     "evaluated_saved_analytic_revolution_surface",
                     Exactness::Derived,
-                );
+                )?;
                 ctx.charge_entities(1, "admit Creo model surfaces")?;
                 source_carriers.admit_surface(
                     ctx,
@@ -389,22 +389,22 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 &surface_id,
                 "FeatDefs",
                 spline.offset as u64,
                 "evaluated_revolution_surface",
                 Exactness::Derived,
-            );
-            annotate(
+            )?;
+            annotate(ctx,
                 annotations,
                 &procedural_id,
                 "FeatDefs",
                 spline.offset as u64,
                 "revolution_surface_construction",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
                 ctx,
@@ -564,14 +564,14 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "FeatDefs",
             offset as u64,
             "evaluated_revolution_profile_vertex_orbit",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
             ctx,
@@ -664,14 +664,14 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "FeatDefs",
             offset as u64,
             "evaluated_extrusion_profile_vertex_orbit",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
             ctx,

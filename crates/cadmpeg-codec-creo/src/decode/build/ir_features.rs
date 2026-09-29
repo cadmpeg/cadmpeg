@@ -149,14 +149,14 @@ pub(super) fn emit_model_features(
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "ActDatums",
             datum.offset_in_payload as u64,
             "datum_plane_feature",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model features")?;
         let feature = Feature {
             id,
@@ -190,14 +190,14 @@ pub(super) fn emit_model_features(
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "VisibGeom",
             generator.offset as u64,
             "geometry_generator_feature",
             Exactness::ByteExact,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model features")?;
         let feature = Feature {
             id,
@@ -431,14 +431,14 @@ pub(super) fn emit_model_features(
         } else {
             ("feature_recipe", Exactness::ByteExact)
         };
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             operation_section,
             operation.offset as u64,
             operation_annotation_kind,
             operation_exactness,
-        );
+        )?;
         let feature = Feature {
             id,
             ordinal: (operation_ordinal_base + operation_index) as u64,
@@ -490,14 +490,14 @@ pub(super) fn emit_model_features(
                 .and_then(schema_operation_kind)
                 .unwrap_or("Native Feature")
         });
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "AllFeatur",
             offset as u64,
             "schema_feature_operation",
             Exactness::ByteExact,
-        );
+        )?;
         let mut parameters = feature_parameters(ctx, scan, feature_id)?;
         let mut source_properties = feature_source_properties(ctx, scan, feature_id)?;
         let definition = schema_class.map_or_else(

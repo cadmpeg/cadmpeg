@@ -154,14 +154,14 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "VisibGeom",
             row.offset as u64,
             tag,
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
             ctx,
@@ -395,7 +395,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "VisibGeom",
@@ -408,7 +408,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 NurbsBoundaryKind::SharedExtrusionGenerator => "shared_extrusion_nurbs_generator",
             },
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
             ctx,

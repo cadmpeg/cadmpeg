@@ -110,14 +110,14 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             ) else {
                 continue;
             };
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 section.name(),
                 row.offset as u64,
                 "paired_type26_sphere_envelope",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
                 ctx,
@@ -241,14 +241,14 @@ pub(in super::super) fn transfer_positional_tori(
                 cadmpeg_ir::geometry::analytic::SphereSurface::new(center, placement, minor_radius),
             ))
         };
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             section.name(),
             row.offset as u64,
             "positional_torus_frame",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
@@ -348,30 +348,30 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         ) else {
             continue;
         };
-        annotate(
+        annotate(ctx,
             annotations,
             &curve_id,
             "VisibGeom",
             record.body_offset as u64,
             "positional_line_extrusion_directrix",
             Exactness::Derived,
-        );
-        annotate(
+        )?;
+        annotate(ctx,
             annotations,
             &surface_id,
             "VisibGeom",
             record.body_offset as u64,
             "positional_line_extrusion_plane",
             Exactness::Derived,
-        );
-        annotate(
+        )?;
+        annotate(ctx,
             annotations,
             &procedural_id,
             "VisibGeom",
             record.body_offset as u64,
             "positional_line_extrusion_construction",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
             ctx,
@@ -585,30 +585,30 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             &crate::identity::VISIBGEOM_TABULATED_EXTRUSION,
             replay.surface_id,
         );
-        annotate(
+        annotate(ctx,
             annotations,
             &curve_id,
             "VisibGeom",
             replay.offset as u64,
             "tabulated_cylinder_directrix",
             Exactness::Derived,
-        );
-        annotate(
+        )?;
+        annotate(ctx,
             annotations,
             &surface_id,
             "VisibGeom",
             replay.surface_row_offset as u64,
             "tabulated_cylinder_surface",
             Exactness::Derived,
-        );
-        annotate(
+        )?;
+        annotate(ctx,
             annotations,
             &procedural_id,
             "VisibGeom",
             replay.surface_row_offset as u64,
             "tabulated_cylinder_extrusion",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
             ctx,

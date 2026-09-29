@@ -166,7 +166,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                     record: geometry_section_record(scan, row.offset),
                 });
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 "VisibGeom",
@@ -177,7 +177,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                     "duplicate_topology_plane_carrier"
                 },
                 Exactness::Unknown,
-            );
+            )?;
             continue;
         }
         let normal = Vector3::from(plane.normal);
@@ -188,14 +188,14 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         ) else {
             continue;
         };
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "VisibGeom",
             row.offset as u64,
             "plane_topology_boundary",
             Exactness::Derived,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model surfaces")?;
         source_carriers.admit_surface(
             ctx,
@@ -267,7 +267,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 &id,
                 if namespace.is_visible() {
@@ -282,7 +282,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                     "unresolved_nonvisible_surface_carrier"
                 },
                 Exactness::Unknown,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
                 ctx,
@@ -323,14 +323,14 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             &id,
             "VisibGeom",
             row.offset as u64,
             "unresolved_visible_curve_carrier",
             Exactness::Unknown,
-        );
+        )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
         source_carriers.admit_curve(
             ctx,

@@ -804,14 +804,14 @@ pub(super) fn transfer_curve_expression_features(
                 })?;
                 dependencies.push(copied);
             }
-            annotate(
+            annotate(ctx,
                 annotations,
                 parameter_id.as_str(),
                 &source_section,
                 assignment.offset as u64,
                 "curve_expression_assignment",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model parameters")?;
             for prior_members in 0..dependencies.len() {
                 ctx.charge_work(
@@ -904,14 +904,14 @@ pub(super) fn transfer_curve_expression_features(
             )?;
             parameter_index += 1;
         }
-        annotate(
+        annotate(ctx,
             annotations,
             feature_id.as_str(),
             &source_section,
             record.expression_offset as u64,
             "curve_expression_feature",
             Exactness::Derived,
-        );
+        )?;
         let helix = crate::curve::expression_helix(ctx, record)?;
         let placed_helix = helix
             .as_ref()
@@ -936,22 +936,22 @@ pub(super) fn transfer_curve_expression_features(
                 format_args!("{}-{}", record.entity_id, record.offset),
                 "creo curve-expression procedural identity",
             )?;
-            annotate(
+            annotate(ctx,
                 annotations,
                 curve_id.as_str(),
                 &source_section,
                 record.offset as u64,
                 "curve_expression_carrier",
                 Exactness::Unknown,
-            );
-            annotate(
+            )?;
+            annotate(ctx,
                 annotations,
                 procedural_id.as_str(),
                 &source_section,
                 record.offset as u64,
                 "curve_expression_helix",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
                 ctx,
