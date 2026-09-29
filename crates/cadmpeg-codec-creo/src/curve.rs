@@ -4473,29 +4473,23 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
 
     fn unary(&mut self) -> Option<V> {
         self.whitespace();
-        let mut operators = Vec::new();
+        let start = self.cursor;
         loop {
             match self.source.get(self.cursor) {
                 Some(b'+') => self.cursor += 1,
-                Some(b'-') => {
-                    operators.push(b'-');
-                    self.cursor += 1;
-                }
-                Some(b'!' | b'~') => {
-                    operators.push(b'!');
-                    self.cursor += 1;
-                }
+                Some(b'-' | b'!' | b'~') => self.cursor += 1,
                 _ => break,
             }
             self.whitespace();
         }
+        let end = self.cursor;
         let mut value = self.power()?;
-        for operator in operators.into_iter().rev() {
-            value = Self::finite_value(if operator == b'-' {
-                value.negate()?
-            } else {
-                value.logical_not()?
-            })?;
+        for operator in self.source[start..end].iter().rev() {
+            value = match operator {
+                b'-' => Self::finite_value(value.negate()?)?,
+                b'!' | b'~' => Self::finite_value(value.logical_not()?)?,
+                _ => value,
+            };
         }
         Some(value)
     }
