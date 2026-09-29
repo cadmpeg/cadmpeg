@@ -2591,6 +2591,13 @@ trait ExpressionValue: Clone {
     }
     fn with_unit(self, unit: RelationUnit) -> Option<Self>;
     fn add(self, right: Self) -> Option<Self>;
+    fn add_checked(
+        self,
+        right: Self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(self.add(right))
+    }
     fn subtract(self, right: Self) -> Option<Self>;
     fn multiply(self, right: Self) -> Option<Self>;
     fn divide(self, right: Self) -> Option<Self>;
@@ -4351,6 +4358,25 @@ impl ExpressionValue for CurveExpressionValue {
         }
     }
 
+    fn add_checked(
+        self,
+        right: Self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        Ok(match (self, right) {
+            (Self::String(mut left), Self::String(right)) => {
+                ctx.try_reserve_retained_text(
+                    &mut left,
+                    right.len(),
+                    "creo relation string concatenation",
+                )?;
+                left.push_str(&right);
+                Some(Self::String(left))
+            }
+            (left, right) => quantity_additive(&left, &right, |left, right| left + right),
+        })
+    }
+
     fn subtract(self, right: Self) -> Option<Self> {
         quantity_additive(&self, &right, |left, right| left - right)
     }
@@ -4619,7 +4645,9 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             match self.source.get(self.cursor) {
                 Some(b'+') => {
                     self.cursor += 1;
-                    value = Self::finite_value(value.add(self.term()?)?)?;
+                    let right = self.term()?;
+                    let result = value.add_checked(right, self.ctx);
+                    value = Self::finite_value(self.admit(result)??)?;
                 }
                 Some(b'-') => {
                     self.cursor += 1;
