@@ -495,8 +495,8 @@ pub(super) fn relation_instances(
     for (ordinal, relation) in instances.iter_mut().enumerate() {
         relation.ordinal = u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit("number SLDPRT relation instances", u64::MAX - 1, u64::MAX))?;
     }
-    bind_detached_relation_drivers(&mut instances, lane);
-    bind_circle_dimension_centers(&mut instances, lane);
+    bind_detached_relation_drivers(ctx, &mut instances, lane)?;
+    bind_circle_dimension_centers(ctx, &mut instances, lane)?;
     bind_relation_geometry_operands(&mut instances, lane);
     Ok(instances)
 }
@@ -513,6 +513,16 @@ fn reserve_relation_map<K: Eq + std::hash::Hash, V>(ctx: &DecodeContext<'_>, val
 fn reserve_relation_set<T: Eq + std::hash::Hash>(ctx: &DecodeContext<'_>, values: &mut HashSet<T>) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "index SLDPRT relation records")?;
     values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT relation records", u64::MAX - 1, u64::MAX))
+}
+
+fn collect_relation_vec<T>(ctx: &DecodeContext<'_>, items: impl Iterator<Item = T>) -> Result<Vec<T>, CodecError> {
+    let mut values = Vec::new();
+    for item in items {
+        ctx.charge_work(1, "scan SLDPRT relation candidates")?;
+        ctx.reserve_collection_vec(&mut values, 1, "collect SLDPRT relation candidates")?;
+        values.push(item);
+    }
+    Ok(values)
 }
 
 fn copy_relation_operands(ctx: &DecodeContext<'_>, operands: &[FeatureInputOperand]) -> Result<Vec<FeatureInputOperand>, CodecError> {
@@ -1241,7 +1251,7 @@ mod relation_records_tests {
         assert_eq!(relation.display_scalar_ref(), Some("scalar-20"));
         assert!(relation.parameter_scalar_ref().is_none());
         assert_eq!(
-            circle_dimension_handle_driver(relation, &lane).map(|scalar| scalar.id.as_str()),
+            circle_dimension_handle_driver(&cadmpeg_test_support::service_decode_context(), relation, &lane).unwrap().map(|scalar| scalar.id.as_str()),
             Some("scalar-50")
         );
     }
@@ -1276,7 +1286,7 @@ mod relation_records_tests {
         };
         assert_eq!(relation.scalar_refs().len(), 1);
         assert!(relation.parameter_scalar_ref().is_none());
-        assert!(circle_dimension_handle_driver(relation, &lane).is_none());
+        assert!(circle_dimension_handle_driver(&cadmpeg_test_support::service_decode_context(), relation, &lane).unwrap().is_none());
     }
 
     #[test]
@@ -1783,19 +1793,20 @@ mod relation_records_tests {
 }
 
 pub(super) fn bind_circle_dimension_centers(
+    ctx: &DecodeContext<'_>,
     relations: &mut [FeatureInputRelationInstance],
     lane: &FeatureInputLane,
-) {
-    let scalars = lane
-        .scalars
-        .iter()
-        .map(|scalar| (scalar.id.as_str(), scalar))
-        .collect::<HashMap<_, _>>();
-    let names = lane
-        .names
-        .iter()
-        .map(|name| (name.id.as_str(), name.value.as_str()))
-        .collect::<HashMap<_, _>>();
+) -> Result<(), CodecError> {
+    let mut scalars = HashMap::new();
+    for scalar in &lane.scalars {
+        reserve_relation_map(ctx, &mut scalars)?;
+        scalars.insert(scalar.id.as_str(), scalar);
+    }
+    let mut names = HashMap::new();
+    for name in &lane.names {
+        reserve_relation_map(ctx, &mut names)?;
+        names.insert(name.id.as_str(), name.value.as_str());
+    }
     for relation in relations.iter_mut().filter(|relation| {
         relation.family == FeatureInputRelationFamily::CircleDiameter
             && relation.operands.len() == 1
@@ -1817,7 +1828,8 @@ pub(super) fn bind_circle_dimension_centers(
             continue;
         };
         let first = &relation.operands[0];
-        let candidates = lane
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(lane.scalars.len()), "match SLDPRT circle center scalars")?;
+        let candidates = collect_relation_vec(ctx, lane
             .scalars
             .iter()
             .enumerate()
@@ -1829,47 +1841,35 @@ pub(super) fn bind_circle_dimension_centers(
                         if candidate.kind == first.kind
                             && candidate.entity_index == first.entity_index)
             })
-            .collect::<Vec<_>>();
+            )?;
         if candidates.first().map(|candidate| candidate.0) != Some(display_index + 1)
             || candidates.windows(2).any(|pair| pair[1].0 != pair[0].0 + 1)
         {
             continue;
         }
-        let centers = candidates
-            .iter()
-            .filter_map(|(_, scalar)| scalar.operands.get(1))
-            .map(|operand| {
-                (
-                    operand.kind,
-                    operand.entity_index,
-                    operand.entity_ref.clone(),
-                )
-            })
-            .collect::<Vec<_>>();
-        let Some(center) = centers.first() else {
-            continue;
-        };
-        if centers.iter().any(|candidate| candidate != center) {
-            continue;
-        }
+        let mut centers = candidates.iter().filter_map(|(_, scalar)| scalar.operands.get(1))
+            .map(|operand| (operand.kind, operand.entity_index, operand.entity_ref.as_deref()));
+        let Some(center) = centers.next() else { continue; };
+        if centers.any(|candidate| candidate != center) { continue; }
         let Some((_, source)) = candidates.iter().find(|(_, scalar)| {
             scalar.operands.get(1).is_some_and(|operand| {
                 (
                     operand.kind,
                     operand.entity_index,
-                    operand.entity_ref.clone(),
-                ) == *center
+                    operand.entity_ref.as_deref(),
+                ) == center
             })
         }) else {
             continue;
         };
-        relation.operands = source.operands.clone();
+        relation.operands = copy_relation_operands(ctx, &source.operands)?;
         for (_, scalar) in candidates {
             if !relation.scalar_refs().contains(&scalar.id) {
-                relation.scalars.push(scalar.id.clone());
+                relation.scalars.push(ctx, &scalar.id)?;
             }
         }
     }
+    Ok(())
 }
 
 fn same_scalar_operands(left: &FeatureInputScalar, right: &FeatureInputScalar) -> bool {
@@ -1886,28 +1886,29 @@ fn same_scalar_operands(left: &FeatureInputScalar, right: &FeatureInputScalar) -
 }
 
 pub(super) fn circle_dimension_handle_driver<'a>(
+    ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     lane: &'a FeatureInputLane,
-) -> Option<&'a FeatureInputScalar> {
+) -> Result<Option<&'a FeatureInputScalar>, CodecError> {
     if relation.family != FeatureInputRelationFamily::CircleDiameter
         || relation.parameter_scalar_ref().is_some()
         || relation.scalar_refs().len() != 1
     {
-        return None;
+        return Ok(None);
     }
-    let mut scalars = lane.scalars.iter().collect::<Vec<_>>();
+    let mut scalars = collect_relation_vec(ctx, lane.scalars.iter())?;
     scalars.sort_unstable_by_key(|scalar| scalar.offset);
-    let names = lane
-        .names
-        .iter()
-        .map(|name| (name.id.as_str(), name.value.as_str()))
-        .collect::<HashMap<_, _>>();
-    let first = relation
+    let mut names = HashMap::new();
+    for name in &lane.names {
+        reserve_relation_map(ctx, &mut names)?;
+        names.insert(name.id.as_str(), name.value.as_str());
+    }
+    let Some(first) = relation
         .scalar_refs()
         .first()
         .and_then(|id| scalars.iter().find(|scalar| scalar.id == *id))
         .copied()
-        .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)?;
+        .filter(|scalar| scalar.role == FeatureInputScalarRole::Display) else { return Ok(None); };
     // No following relation class states no upper bound on this relation.
     let next_relation_offset = lane
         .classes
@@ -1915,7 +1916,9 @@ pub(super) fn circle_dimension_handle_driver<'a>(
         .filter(|class| class.offset > first.offset && relation_family(&class.name).is_some())
         .map(|class| class.offset)
         .min();
-    let candidates = scalars
+    let scan_steps = scalars.len().checked_mul(lane.classes.len()).ok_or_else(|| ctx.refuse_codec_limit("match SLDPRT circle handle driver", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(scan_steps), "match SLDPRT circle handle driver")?;
+    let mut candidates = scalars
         .windows(2)
         .filter_map(|pair| {
             let display = pair[0];
@@ -1946,81 +1949,64 @@ pub(super) fn circle_dimension_handle_driver<'a>(
                 && in_relation)
                 .then_some(driving)
         })
-        .collect::<Vec<_>>();
-    if candidates.len() == 1 {
-        Some(candidates[0])
-    } else {
-        None
-    }
+        ;
+    let first = candidates.next();
+    Ok(first.filter(|_| candidates.next().is_none()))
 }
 
 pub(super) fn bind_detached_relation_drivers(
+    ctx: &DecodeContext<'_>,
     relations: &mut [FeatureInputRelationInstance],
     lane: &FeatureInputLane,
-) {
-    let scalars = lane
-        .scalars
-        .iter()
-        .map(|scalar| (scalar.id.as_str(), scalar))
-        .collect::<HashMap<_, _>>();
-    let names = lane
-        .names
-        .iter()
-        .map(|name| (name.id.as_str(), name.value.as_str()))
-        .collect::<HashMap<_, _>>();
-    let claimed = relations
-        .iter()
-        .flat_map(crate::records::FeatureInputRelationInstance::scalar_refs)
-        .map(String::as_str)
-        .collect::<HashSet<_>>();
-    let mut drivers = HashMap::<(String, String), Vec<&FeatureInputScalar>>::new();
-    for scalar in lane.scalars.iter().filter(|scalar| {
-        scalar.role == FeatureInputScalarRole::Driving
-            && scalar.operands.is_empty()
-            && !claimed.contains(scalar.id.as_str())
-    }) {
-        let (Some(feature), Some(name)) = (
-            scalar.feature_ref.as_deref(),
-            names.get(scalar.name.as_str()).copied(),
-        ) else {
-            continue;
-        };
-        drivers
-            .entry((feature.to_string(), name.to_string()))
-            .or_default()
-            .push(scalar);
+) -> Result<(), CodecError> {
+    let mut scalars = HashMap::new();
+    for scalar in &lane.scalars {
+        reserve_relation_map(ctx, &mut scalars)?;
+        scalars.insert(scalar.id.as_str(), scalar);
+    }
+    let mut names = HashMap::new();
+    for name in &lane.names {
+        reserve_relation_map(ctx, &mut names)?;
+        names.insert(name.id.as_str(), name.value.as_str());
+    }
+    let mut claimed = HashSet::new();
+    for id in relations.iter().flat_map(crate::records::FeatureInputRelationInstance::scalar_refs) {
+        reserve_relation_set(ctx, &mut claimed)?;
+        claimed.insert(id.as_str());
+    }
+    let mut drivers = HashMap::<(&str, &str), Vec<&FeatureInputScalar>>::new();
+    for scalar in lane.scalars.iter().filter(|scalar| scalar.role == FeatureInputScalarRole::Driving
+        && scalar.operands.is_empty() && !claimed.contains(scalar.id.as_str())) {
+        ctx.charge_work(1, "match SLDPRT detached relation drivers")?;
+        let (Some(feature), Some(name)) = (scalar.feature_ref.as_deref(), names.get(scalar.name.as_str()).copied()) else { continue; };
+        reserve_relation_map(ctx, &mut drivers)?;
+        let values = drivers.entry((feature, name)).or_default();
+        ctx.reserve_collection_vec(values, 1, "collect SLDPRT detached relation drivers")?;
+        values.push(scalar);
     }
     let mut candidates = HashMap::<(String, String), Vec<usize>>::new();
     for (index, relation) in relations.iter().enumerate() {
-        if relation.parameter_scalar_ref().is_some() {
-            continue;
-        }
-        let relation_names = relation
-            .scalar_refs()
-            .iter()
-            .filter_map(|id| scalars.get(id.as_str()))
+        ctx.charge_work(1, "match SLDPRT detached relation candidates")?;
+        if relation.parameter_scalar_ref().is_some() { continue; }
+        let mut relation_names = relation.scalar_refs().iter().filter_map(|id| scalars.get(id.as_str()))
             .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
-            .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
-            .collect::<HashSet<_>>();
-        let mut relation_names = relation_names.into_iter();
-        let (Some(name), None) = (relation_names.next(), relation_names.next()) else {
-            continue;
-        };
-        candidates
-            .entry((relation.feature_ref.clone(), name.to_string()))
-            .or_default()
-            .push(index);
+            .filter_map(|scalar| names.get(scalar.name.as_str()).copied());
+        let Some(name) = relation_names.next() else { continue; };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(relation.scalar_refs().len()), "compare SLDPRT detached relation names")?;
+        if relation_names.any(|candidate| candidate != name) { continue; }
+        let key = (copy_relation_text(ctx, &relation.feature_ref)?, copy_relation_text(ctx, name)?);
+        reserve_relation_map(ctx, &mut candidates)?;
+        let values = candidates.entry(key).or_default();
+        ctx.reserve_collection_vec(values, 1, "collect SLDPRT detached relation candidates")?;
+        values.push(index);
     }
     for (key, relation_indices) in candidates {
-        let [relation_index] = relation_indices.as_slice() else {
-            continue;
-        };
-        let Some([driver]) = drivers.get(&key).map(Vec::as_slice) else {
-            continue;
-        };
+        let [relation_index] = relation_indices.as_slice() else { continue; };
+        let Some([driver]) = drivers.get(&(key.0.as_str(), key.1.as_str())).map(Vec::as_slice) else { continue; };
         let relation = &mut relations[*relation_index];
-        relation.scalars.push_parameter(driver.id.clone());
+        relation.scalars.push_parameter(ctx, &driver.id)?;
     }
+    Ok(())
 }
 
 fn relation_family(name: &str) -> Option<FeatureInputRelationFamily> {

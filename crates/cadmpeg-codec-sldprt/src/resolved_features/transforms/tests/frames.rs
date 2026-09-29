@@ -115,7 +115,7 @@ fn circle_dimension_driver_supplies_the_center_operand() {
         operands: vec![display_operand],
     }];
 
-    bind_circle_dimension_centers(&mut relations, &lane);
+    bind_circle_dimension_centers(&cadmpeg_test_support::service_decode_context(), &mut relations, &lane).unwrap();
 
     assert_eq!(relations[0].scalar_refs(), ["display", "driver"]);
     assert_eq!(relations[0].operands.len(), 2);
@@ -619,7 +619,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let mut detached_lane = lane.clone();
     detached_lane.scalars.push(detached);
     let mut detached_relation = vec![relation.clone()];
-    bind_detached_relation_drivers(&mut detached_relation, &detached_lane);
+    bind_detached_relation_drivers(&ctx, &mut detached_relation, &detached_lane).unwrap();
     assert_eq!(detached_relation[0].parameter_scalar_ref(), Some("driver"));
     assert_eq!(detached_relation[0].scalar_refs(), ["scalar", "driver"]);
 
@@ -661,7 +661,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
                     family: FeatureInputRelationFamily::PointPointDistance,
                     scalars: {
                         let mut scalars = relation.scalars.clone();
-                        scalars.push_parameter("driver".into());
+                        scalars.push_parameter(&ctx, "driver").unwrap();
                         scalars
                     },
                     ..relation.clone()
@@ -671,7 +671,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
                     family: FeatureInputRelationFamily::Angle,
                     scalars: {
                         let mut scalars = relation.scalars.clone();
-                        scalars.push_parameter("other-driver".into());
+                        scalars.push_parameter(&ctx, "other-driver").unwrap();
                         scalars
                     },
                     ..relation
