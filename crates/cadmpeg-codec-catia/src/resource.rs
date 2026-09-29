@@ -6,7 +6,7 @@ use std::fmt::Write;
 use std::hash::Hash;
 
 use cadmpeg_core::decode::{
-    DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation,
+    DecodeContext, ResourceDimension, ResourceLimit, ScopedReservation,
 };
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -27,22 +27,6 @@ impl std::fmt::Display for HexBytes<'_> {
     }
 }
 
-pub(crate) fn allocation_failed(
-    used: usize,
-    capacity: usize,
-    additional: usize,
-    operation: &'static str,
-) -> CodecError {
-    CodecError::ResourceLimit(ResourceLimit {
-        dimension: ResourceDimension::Codec(operation),
-        reason: ResourceFailure::AllocationFailed,
-        limit: capacity as u64,
-        used: used as u64,
-        additional: additional as u64,
-        operation,
-    })
-}
-
 pub(crate) fn push<T>(
     ctx: &DecodeContext<'_>,
     values: &mut Vec<T>,
@@ -52,7 +36,7 @@ pub(crate) fn push<T>(
     ctx.charge_collection_items(1, operation)?;
     values
         .try_reserve(1)
-        .map_err(|_| allocation_failed(values.len(), values.capacity(), 1, operation))?;
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(1), operation)))?;
     values.push(value);
     Ok(())
 }
@@ -66,7 +50,7 @@ pub(crate) fn push_back<T>(
     ctx.charge_collection_items(1, operation)?;
     values
         .try_reserve(1)
-        .map_err(|_| allocation_failed(values.len(), values.capacity(), 1, operation))?;
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(1), operation)))?;
     values.push_back(value);
     Ok(())
 }
@@ -80,7 +64,7 @@ pub(crate) fn reserve_vec<T>(
     ctx.charge_collection_items(additional as u64, operation)?;
     values
         .try_reserve(additional)
-        .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(additional), operation)))
 }
 
 pub(crate) fn reserve_heap<T: Ord>(
@@ -92,7 +76,7 @@ pub(crate) fn reserve_heap<T: Ord>(
     ctx.charge_collection_items(additional as u64, operation)?;
     values
         .try_reserve(additional)
-        .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(additional), operation)))
 }
 
 /// Reserve storage for items already charged as one aggregate admission.
@@ -103,7 +87,7 @@ pub(crate) fn reserve_admitted_vec<T>(
 ) -> Result<(), CodecError> {
     values
         .try_reserve(additional)
-        .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(additional), operation)))
 }
 
 pub(crate) fn copy_admitted_slice<T: Clone>(
@@ -137,7 +121,7 @@ pub(crate) fn reserve_admitted_map<K: Eq + Hash, V>(
 ) -> Result<(), CodecError> {
     values
         .try_reserve(additional)
-        .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(additional), operation)))
 }
 
 pub(crate) fn reserve_admitted_set<T: Eq + Hash>(
@@ -147,7 +131,7 @@ pub(crate) fn reserve_admitted_set<T: Eq + Hash>(
 ) -> Result<(), CodecError> {
     values
         .try_reserve(additional)
-        .map_err(|_| allocation_failed(values.len(), values.capacity(), additional, operation))
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(additional), operation)))
 }
 
 pub(crate) fn copy_slice<T: Clone>(
@@ -243,7 +227,7 @@ pub(crate) fn collect_string_set<'a>(
     let mut collected = HashSet::new();
     for value in values {
         if !collected.contains(value) {
-            let owned = copy_retained_str(ctx, value, operation)?;
+            let owned = ctx.copy_retained_text(value, operation)?;
             insert_set(ctx, &mut collected, owned, operation)?;
         }
     }
@@ -392,22 +376,7 @@ pub(crate) fn copy_id<T>(
     construct: impl FnOnce(String) -> Result<T, cadmpeg_ir::ids::IdentityError>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
-    construct(copy_retained_str(ctx, value, operation)?).map_err(CodecError::malformed)
-}
-
-pub(crate) fn copy_retained_str(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let bytes = u64::try_from(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut text = String::new();
-    text.try_reserve(value.len())
-        .map_err(|_| allocation_failed(0, text.capacity(), value.len(), operation))?;
-    text.push_str(value);
-    Ok(text)
+    construct(ctx.copy_retained_text(value, operation)?).map_err(CodecError::malformed)
 }
 
 pub(crate) fn record_coverage(
@@ -420,7 +389,7 @@ pub(crate) fn record_coverage(
     if !coverage.contains_key(key.as_str()) {
         ctx.charge_collection_items(1, operation)?;
     }
-    let name = copy_retained_str(ctx, key.as_str(), operation)?;
+    let name = ctx.copy_retained_text(key.as_str(), operation)?;
     coverage
         .record_owned(key, name, count)
         .map_err(CodecError::malformed)
@@ -448,7 +417,7 @@ pub(crate) fn string_attribute(
     value: std::fmt::Arguments<'_>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let key = copy_retained_str(ctx, key, operation)?;
+    let key = ctx.copy_retained_text(key, operation)?;
     let value = format_retained(ctx, value, operation)?;
     insert_btree_map(ctx, attributes, key, value, operation)?;
     Ok(())
@@ -481,7 +450,7 @@ pub(crate) fn derived_annotation(
     if inner {
         ctx.charge_collection_items(1, operation)?;
     }
-    let field = copy_retained_str(ctx, field, operation)?;
+    let field = ctx.copy_retained_text(field, operation)?;
     annotations
         .field_exactness_owned(id, field, cadmpeg_ir::Exactness::Derived)
         .map_err(CodecError::malformed)?;
@@ -546,7 +515,7 @@ pub(crate) fn format_retained(
     ctx.charge_retained(bytes, operation)?;
     let mut text = String::new();
     text.try_reserve(length)
-        .map_err(|_| allocation_failed(0, text.capacity(), length, operation))?;
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(text.capacity()), cadmpeg_core::decode::u64_from_index(length), operation)))?;
     std::fmt::write(&mut text, args).map_err(CodecError::malformed)?;
     Ok(text)
 }
@@ -562,7 +531,7 @@ pub(crate) fn format_scoped<'a>(
     let reservation = ctx.reserve_scoped(bytes, operation)?;
     let mut text = String::new();
     text.try_reserve(length)
-        .map_err(|_| allocation_failed(0, text.capacity(), length, operation))?;
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(text.capacity()), cadmpeg_core::decode::u64_from_index(length), operation)))?;
     std::fmt::write(&mut text, args).map_err(CodecError::malformed)?;
     Ok((text, reservation))
 }
@@ -626,7 +595,7 @@ pub(crate) fn extend_retained_bytes(
     ctx.charge_retained(count, operation)?;
     target
         .try_reserve(source.len())
-        .map_err(|_| allocation_failed(target.len(), target.capacity(), source.len(), operation))?;
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(target.capacity()), cadmpeg_core::decode::u64_from_index(source.len()), operation)))?;
     target.extend_from_slice(source);
     Ok(())
 }
@@ -653,7 +622,7 @@ pub(crate) fn format_usize_id(
     ctx.charge_retained(bytes, operation)?;
     let mut id = String::new();
     id.try_reserve(length)
-        .map_err(|_| allocation_failed(0, id.capacity(), length, operation))?;
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(id.capacity()), cadmpeg_core::decode::u64_from_index(length), operation)))?;
     id.push_str(prefix);
     write!(&mut id, "{value:0minimum_digits$}").map_err(CodecError::malformed)?;
     Ok(id)
@@ -796,7 +765,7 @@ pub(crate) fn copy_knot_vector(
     ctx.charge_retained(bytes, operation)?;
     knots
         .try_clone()
-        .map_err(|_| allocation_failed(0, 0, knots.len(), operation))
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(0), cadmpeg_core::decode::u64_from_index(knots.len()), operation)))
 }
 
 pub(crate) fn copy_nurbs_curve(
@@ -1054,7 +1023,7 @@ pub(crate) fn reserve_set<T: Eq + Hash>(
     ctx.charge_collection_items(count as u64, operation)?;
     values
         .try_reserve(count)
-        .map_err(|_| allocation_failed(values.len(), values.capacity(), count, operation))
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(count), operation)))
 }
 
 pub(crate) fn reserve_map<K: Eq + Hash, V>(
@@ -1066,7 +1035,7 @@ pub(crate) fn reserve_map<K: Eq + Hash, V>(
     ctx.charge_collection_items(count as u64, operation)?;
     values
         .try_reserve(count)
-        .map_err(|_| allocation_failed(values.len(), values.capacity(), count, operation))
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(count), operation)))
 }
 
 pub(crate) fn insert_set<T: Eq + Hash>(
@@ -1081,7 +1050,7 @@ pub(crate) fn insert_set<T: Eq + Hash>(
     ctx.charge_collection_items(1, operation)?;
     values
         .try_reserve(1)
-        .map_err(|_| allocation_failed(values.len(), values.capacity(), 1, operation))?;
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(1), operation)))?;
     Ok(values.insert(value))
 }
 
@@ -1096,7 +1065,7 @@ pub(crate) fn insert_map<K: Eq + Hash, V>(
         ctx.charge_collection_items(1, operation)?;
         values
             .try_reserve(1)
-            .map_err(|_| allocation_failed(values.len(), values.capacity(), 1, operation))?;
+            .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(1), operation)))?;
     }
     Ok(values.insert(key, value))
 }
@@ -1111,7 +1080,7 @@ pub(crate) fn admit_map_entry<K: Eq + Hash, V>(
         ctx.charge_collection_items(1, operation)?;
         values
             .try_reserve(1)
-            .map_err(|_| allocation_failed(values.len(), values.capacity(), 1, operation))?;
+            .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(1), operation)))?;
     }
     Ok(())
 }
@@ -1193,7 +1162,7 @@ pub(crate) fn temporary_set<'a, T: Eq + Hash>(
     let mut values = HashSet::new();
     values
         .try_reserve(count)
-        .map_err(|_| allocation_failed(0, values.capacity(), count, operation))?;
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(count), operation)))?;
     Ok((values, reservation))
 }
 
@@ -1207,7 +1176,7 @@ pub(crate) fn temporary_queue<'a, T>(
     let mut values = VecDeque::new();
     values
         .try_reserve(count)
-        .map_err(|_| allocation_failed(0, values.capacity(), count, operation))?;
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(values.capacity()), cadmpeg_core::decode::u64_from_index(count), operation)))?;
     Ok((values, reservation))
 }
 

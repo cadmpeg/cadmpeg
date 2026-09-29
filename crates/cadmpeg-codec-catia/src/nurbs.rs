@@ -370,11 +370,7 @@ pub(crate) fn reverse_nurbs_curve(
     range: [f64; 2],
 ) -> Result<Result<NurbsCurve, NurbsError>, cadmpeg_core::CodecError> {
     if !range.into_iter().all(f64::is_finite) || range[0] > range[1] {
-        let message = crate::resource::copy_retained_str(
-            ctx,
-            "reversal range must be finite and ordered",
-            "catia_reverse_curve_range_error",
-        )?;
+        let message = ctx.copy_retained_text("reversal range must be finite and ordered", "catia_reverse_curve_range_error")?;
         return Ok(Err(NurbsError::Structure(message)));
     }
     let mut poles = match curve.pole_rows() {

@@ -69,7 +69,7 @@ pub(crate) fn annotate(
     exactness: Exactness,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let id = resource::format_retained(ctx, format_args!("{id}"), "catia_annotation_id")?;
-    let exactness_id = resource::copy_retained_str(ctx, &id, "catia_annotation_exactness_id")?;
+    let exactness_id = ctx.copy_retained_text(&id, "catia_annotation_exactness_id")?;
     let stream_name = resource::format_retained(
         ctx,
         format_args!("catia:{stream_name}"),
@@ -859,7 +859,7 @@ pub(crate) fn link_payload_carriers(
         .map(|surface| surface.id.as_str())
         .chain(ir.model.curves.iter().map(|curve| curve.id.as_str()))
     {
-        let id = resource::copy_retained_str(ctx, id, "catia_payload_link_id")?;
+        let id = ctx.copy_retained_text(id, "catia_payload_link_id")?;
         resource::push(ctx, &mut links, id, "catia_payload_links")?;
     }
     if links.is_empty() {

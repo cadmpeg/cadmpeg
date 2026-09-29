@@ -319,11 +319,7 @@ pub(crate) fn consolidated_edge_runs(
 ) -> Result<Vec<CatiaConsolidatedEdgeRun>, CodecError> {
     let mut pcurve_ids = HashMap::new();
     for pcurve in pcurves {
-        let id = crate::resource::copy_retained_str(
-            ctx,
-            &pcurve.id,
-            "catia_native_edge_run_pcurve_index_id",
-        )?;
+        let id = ctx.copy_retained_text(&pcurve.id, "catia_native_edge_run_pcurve_index_id")?;
         crate::resource::insert_map(
             ctx,
             &mut pcurve_ids,
@@ -398,24 +394,12 @@ pub(crate) fn consolidated_edge_runs(
             )?,
             byte_offset: pcurve_offsets[0],
             pcurves: [
-                crate::resource::copy_retained_str(
-                    ctx,
-                    first,
-                    "catia_native_edge_run_first_pcurve_id",
-                )?,
-                crate::resource::copy_retained_str(
-                    ctx,
-                    second,
-                    "catia_native_edge_run_second_pcurve_id",
-                )?,
+                ctx.copy_retained_text(first, "catia_native_edge_run_first_pcurve_id")?,
+                ctx.copy_retained_text(second, "catia_native_edge_run_second_pcurve_id")?,
             ],
             parameter_range: run.edge.parameters.range,
             tolerance: run.edge.parameters.tolerance,
-            node: crate::resource::copy_retained_str(
-                ctx,
-                &node.id,
-                "catia_native_edge_run_node_id",
-            )?,
+            node: ctx.copy_retained_text(&node.id, "catia_native_edge_run_node_id")?,
             support_bindings: resolved.map_or([None, None], |resolved| {
                 resolved
                     .supports
@@ -515,11 +499,7 @@ pub(crate) fn consolidated_edge_nodes(
         let Some(circle) = circle_ids.get(&(run.circle.pos as u64)) else {
             continue;
         };
-        let circle = crate::resource::copy_retained_str(
-            ctx,
-            circle,
-            "catia_native_analytic_edge_circle_id",
-        )?;
+        let circle = ctx.copy_retained_text(circle, "catia_native_analytic_edge_circle_id")?;
         crate::resource::insert_map(
             ctx,
             &mut analytic_circles,
@@ -823,11 +803,7 @@ pub(crate) fn external_reference_views(
                 format_args!("catia:outer:external-reference#{}", views.len()),
                 "catia_native_external_reference_id",
             )?;
-            let segment_id = crate::resource::copy_retained_str(
-                ctx,
-                &segment.id,
-                "catia_native_external_reference_segment",
-            )?;
+            let segment_id = ctx.copy_retained_text(&segment.id, "catia_native_external_reference_segment")?;
             crate::resource::push(
                 ctx,
                 &mut views,
@@ -907,11 +883,7 @@ pub(crate) fn resolve_owner_chart_support_aliases(
     let resolve = |reference: &mut CatiaOwnerChartBridgeReference| -> Result<(), CodecError> {
         if let CatiaOwnerChartAddress::WidthCoded { alias } = &mut reference.address {
             *alias = if let Some(row) = unique_by_tag.get(&reference.value).copied().flatten() {
-                let id = crate::resource::copy_retained_str(
-                    ctx,
-                    &row.id,
-                    "catia_owner_alias_binding_id",
-                )?;
+                let id = ctx.copy_retained_text(&row.id, "catia_owner_alias_binding_id")?;
                 cadmpeg_core::text::NonBlankString::new(id)
                     .map(|id| CatiaOwnerChartAliasBinding::new(id, row.canonical_surface_tag))
             } else {
@@ -1045,16 +1017,8 @@ pub(crate) fn value_schema_selections(
             }
             CatiaValueSchemaSelectionKind::Selected(CatiaValueSchemaSelectionValue {
                 class: CatiaDesignClass {
-                    entry: crate::resource::copy_retained_str(
-                        ctx,
-                        &entry.id,
-                        "catia_value_selection_class_id",
-                    )?,
-                    name: crate::resource::copy_retained_str(
-                        ctx,
-                        &entry.value,
-                        "catia_value_selection_class_name",
-                    )?,
+                    entry: ctx.copy_retained_text(&entry.id, "catia_value_selection_class_id")?,
+                    name: ctx.copy_retained_text(&entry.value, "catia_value_selection_class_name")?,
                 },
                 encoded_value,
             })
@@ -1067,7 +1031,7 @@ pub(crate) fn value_schema_selections(
             "catia_value_selection_id",
         )?;
         let parent =
-            crate::resource::copy_retained_str(ctx, block_id, "catia_value_selection_parent")?;
+            ctx.copy_retained_text(block_id, "catia_value_selection_parent")?;
         crate::resource::push(
             ctx,
             &mut selections,
@@ -1105,14 +1069,10 @@ impl CatiaValueBlock {
             byte_offset,
             object_graph: object_graph
                 .map(|graph| {
-                    crate::resource::copy_retained_str(ctx, &graph.id, "catia_value_block_graph_id")
+                    ctx.copy_retained_text(&graph.id, "catia_value_block_graph_id")
                 })
                 .transpose()?,
-            catalog: crate::resource::copy_retained_str(
-                ctx,
-                &catalog.id,
-                "catia_value_block_catalog_id",
-            )?,
+            catalog: ctx.copy_retained_text(&catalog.id, "catia_value_block_catalog_id")?,
             payload: block.payload,
             schema_selections,
         })
@@ -1166,11 +1126,7 @@ impl CatiaCatalog {
                     format_args!("catia:outer:catalog-entry#{:010}", entry.pos),
                     "catia_native_catalog_entry_id",
                 )?,
-                parent: crate::resource::copy_retained_str(
-                    ctx,
-                    &id,
-                    "catia_native_catalog_entry_parent",
-                )?,
+                parent: ctx.copy_retained_text(&id, "catia_native_catalog_entry_parent")?,
                 ordinal: entry.ordinal,
                 byte_offset: u64::try_from(entry.pos).map_err(|_| {
                     ctx.refuse_codec_limit("catia_native_catalog_entry_offset", u64::MAX, u64::MAX)
@@ -1219,7 +1175,7 @@ pub(crate) fn native_object_graph(
                 format_args!("catia:outer:object-record#{:010}", record.pos),
                 "catia_native_record_id",
             )?,
-            parent: crate::resource::copy_retained_str(ctx, &id, "catia_native_record_parent")?,
+            parent: ctx.copy_retained_text(&id, "catia_native_record_parent")?,
             design_object: None,
             entity: entity
                 .map(|entity| -> Result<CatiaObjectEntity, CodecError> {
@@ -1332,16 +1288,8 @@ pub(crate) fn native_object_graph(
                 format_args!("catia:outer:entity-record#{:010}", entity.pos),
                 "catia_native_entity_id",
             )?,
-            object_graph: crate::resource::copy_retained_str(
-                ctx,
-                &id,
-                "catia_native_entity_graph",
-            )?,
-            object_record: crate::resource::copy_retained_str(
-                ctx,
-                &object_record.id,
-                "catia_native_entity_object",
-            )?,
+            object_graph: ctx.copy_retained_text(&id, "catia_native_entity_graph")?,
+            object_record: ctx.copy_retained_text(&object_record.id, "catia_native_entity_object")?,
             ordinal: ordinal as u64,
             byte_offset: entity.pos as u64,
             lead: entity.lead,
@@ -1385,21 +1333,9 @@ impl CatiaOuterContainerBinding {
         Ok(Self {
             data_offset: declaration.data_offset as u64,
             ordinal: declaration.ordinal,
-            class_name: crate::resource::copy_retained_str(
-                ctx,
-                &declaration.class_name,
-                "catia_native_outer_class",
-            )?,
-            base_class: crate::resource::copy_retained_str(
-                ctx,
-                &declaration.base_class,
-                "catia_native_outer_base_class",
-            )?,
-            stream_name: crate::resource::copy_retained_str(
-                ctx,
-                &declaration.stream_name,
-                "catia_native_outer_stream_name",
-            )?,
+            class_name: ctx.copy_retained_text(&declaration.class_name, "catia_native_outer_class")?,
+            base_class: ctx.copy_retained_text(&declaration.base_class, "catia_native_outer_base_class")?,
+            stream_name: ctx.copy_retained_text(&declaration.stream_name, "catia_native_outer_stream_name")?,
         })
     }
 }

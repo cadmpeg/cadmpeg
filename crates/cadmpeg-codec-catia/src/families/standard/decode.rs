@@ -2198,7 +2198,7 @@ fn rescope_standard_id(
             format_args!("catia:standard:{scope}/{rest}"),
             "catia_standard_population_identity",
         ),
-        None => crate::resource::copy_retained_str(ctx, text, "catia_standard_population_identity"),
+        None => ctx.copy_retained_text(text, "catia_standard_population_identity"),
     }
 }
 
@@ -2285,11 +2285,7 @@ fn merge_standard_population_annotations(
                 format_args!("catia:standard:{scope}/{rest}"),
                 "catia_standard_population_annotation_id",
             ),
-            None => crate::resource::copy_retained_str(
-                ctx,
-                id,
-                "catia_standard_population_annotation_id",
-            ),
+            None => ctx.copy_retained_text(id, "catia_standard_population_annotation_id"),
         },
         "catia_standard_population_annotation_remap",
     )? {
@@ -2805,8 +2801,7 @@ fn try_decode_standard_population(
                         "catia_standard_annotation_surface_id")),
                     "MainDataStream+SurfacicReps",
                     *pos,
-                    admitted!(crate::resource::copy_retained_str(ctx,
-                        "surfacic_reps_freeform_alias", "catia_standard_surface_annotation_tag")),
+                    admitted!(ctx.copy_retained_text("surfacic_reps_freeform_alias", "catia_standard_surface_annotation_tag")),
                     if freeform_procedural_surfaces.contains_key(tag)
                         || e5_freeform_tags.contains(tag)
                     {
@@ -2868,9 +2863,7 @@ fn try_decode_standard_population(
                 let (annotation_stream, annotation_offset, annotation_tag) =
                     if let Some(source_pos) = refined_analytic_surfaces.get(&i) {
                         ("consolidated_b2_03", *source_pos,
-                            admitted!(crate::resource::copy_retained_str(ctx,
-                                "consolidated_exact_analytic_surface",
-                                "catia_standard_surface_annotation_tag")))
+                            admitted!(ctx.copy_retained_text("consolidated_exact_analytic_surface", "catia_standard_surface_annotation_tag")))
                     } else {
                         ("MainDataStream+SurfacicReps", prefix.pos,
                             admitted!(crate::resource::format_retained(ctx,
