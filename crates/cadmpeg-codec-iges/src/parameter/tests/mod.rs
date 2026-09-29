@@ -391,6 +391,18 @@ fn integer_parameter_record(sequence: u32, values: &[i64]) -> ParameterRecord {
     }
 }
 
+#[test]
+fn counted_list_with_start_past_end_has_no_items() {
+    let record = integer_parameter_record(1, &[0]);
+    assert_eq!(record.count_with_stride_at(0, 2, 1, 1), None);
+}
+
+#[test]
+fn default_tail_with_start_past_end_has_no_items() {
+    let record = integer_parameter_record(1, &[0]);
+    assert_eq!(record.items_before_default_tail_at(2, 1, 1), None);
+}
+
 fn token_parameter_record(sequence: u32, values: Vec<TokenValue>) -> ParameterRecord {
     let parameter_end = values.len();
     ParameterRecord {
