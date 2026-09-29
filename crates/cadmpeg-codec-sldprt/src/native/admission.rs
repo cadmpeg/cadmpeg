@@ -163,7 +163,7 @@ pub(super) fn admit_temporary_clones<'a, 'ctx, T: Serialize + 'a>(
     Ok(ctx.reserve_scoped(bytes, operation)?)
 }
 
-pub(super) fn collect_temporary_clones<'a, 'ctx, T: Clone + Serialize + 'a>(
+pub(crate) fn collect_temporary_clones<'a, 'ctx, T: Clone + Serialize + 'a>(
     ctx: &'ctx DecodeContext<'_>,
     records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,

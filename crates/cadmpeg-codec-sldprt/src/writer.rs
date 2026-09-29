@@ -1778,7 +1778,11 @@ pub(crate) fn swobjects_metadata_identity_local_sha256(ir: &CadIr) -> Result<Str
 }
 
 fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {
-    validate_feature_graph(&history.features)?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    validate_feature_graph(&ctx, &history.features)?;
     let mut out = String::from("<Keywords");
     if let Some(name) = &history.part_name {
         xml_attribute(&mut out, "Name", name);
@@ -1845,6 +1849,7 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
 }
 
 pub(crate) fn validate_feature_graph(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &[crate::records::Feature],
 ) -> Result<(), CodecError> {
     if features
@@ -1855,10 +1860,15 @@ pub(crate) fn validate_feature_graph(
             "invalid feature XML element name".into(),
         ));
     }
-    let by_id = features
-        .iter()
-        .filter_map(|feature| Some((feature.source_id?, feature)))
-        .collect::<HashMap<_, _>>();
+    let mut by_id = HashMap::new();
+    for feature in features {
+        ctx.charge_work(1, "validate SLDPRT feature graph")?;
+        if let Some(id) = feature.source_id {
+            ctx.charge_collection_items(1, "index SLDPRT feature graph")?;
+            by_id.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT feature graph", u64::MAX - 1, u64::MAX))?;
+            by_id.insert(id, feature);
+        }
+    }
     if by_id.len()
         != features
             .iter()
@@ -1867,10 +1877,12 @@ pub(crate) fn validate_feature_graph(
     {
         return Err(CodecError::Malformed("duplicate feature source id".into()));
     }
-    let by_record = features
-        .iter()
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+    let mut by_record = HashMap::new();
+    for feature in features {
+        ctx.charge_collection_items(1, "index SLDPRT feature graph")?;
+        by_record.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT feature graph", u64::MAX - 1, u64::MAX))?;
+        by_record.insert(feature.id.as_str(), feature);
+    }
     if by_record.len() != features.len() {
         return Err(CodecError::Malformed("duplicate feature record id".into()));
     }
@@ -1878,6 +1890,9 @@ pub(crate) fn validate_feature_graph(
         let mut seen = HashSet::new();
         let mut parent = feature.parent_source_id();
         while let Some(id) = parent {
+            ctx.charge_work(1, "walk SLDPRT feature graph")?;
+            ctx.charge_collection_items(1, "index SLDPRT feature graph parents")?;
+            seen.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT feature graph parents", u64::MAX - 1, u64::MAX))?;
             if !seen.insert(id) {
                 return Err(CodecError::Malformed("feature parent cycle".into()));
             }
@@ -1889,6 +1904,9 @@ pub(crate) fn validate_feature_graph(
         let mut seen = HashSet::new();
         let mut parent = feature.tree_parent_record_id();
         while let Some(id) = parent {
+            ctx.charge_work(1, "walk SLDPRT feature graph")?;
+            ctx.charge_collection_items(1, "index SLDPRT feature graph parents")?;
+            seen.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT feature graph parents", u64::MAX - 1, u64::MAX))?;
             if !seen.insert(id) {
                 return Err(CodecError::Malformed("feature tree cycle".into()));
             }

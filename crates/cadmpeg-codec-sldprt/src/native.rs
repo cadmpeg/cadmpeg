@@ -40,7 +40,7 @@ const SLDPRT_ARENA_NAMES: &[&str] = &[
 
 type SldprtFamilyRow = FamilyRow<SldprtNative, (), cadmpeg_ir::NativeNamespace, ()>;
 
-mod admission;
+pub(crate) mod admission;
 
 struct HistoryArenaView<'a>(&'a FeatureHistory);
 
