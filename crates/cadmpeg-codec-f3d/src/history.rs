@@ -4149,7 +4149,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     crate::design::face_resolve::resolve_surface_delete_face_history_set(ctx, operand)?
                         .unwrap_or_default()
                 } else if preserves_stable_face_set {
-                    crate::design::face_resolve::resolve_stable_bounded_face_history_set(operand)
+                    crate::design::face_resolve::resolve_stable_bounded_face_history_set(ctx, operand)?
                         .or_else(|| {
                             crate::design::face_resolve::resolve_bounded_face_history_candidates(
                                 operand,

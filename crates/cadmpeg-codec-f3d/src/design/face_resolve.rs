@@ -1552,18 +1552,19 @@ pub(crate) fn resolve_bounded_face_history_candidates(
 }
 
 pub(crate) fn resolve_stable_bounded_face_history_set(
+    ctx: Option<&DecodeContext<'_>>,
     operand: &DesignFaceOperand,
-) -> Option<Vec<i64>> {
-    complete_counted_face_recipe(operand)?;
-    let mut active_faces = Vec::with_capacity(operand.preceding_candidate_faces.len());
+) -> Result<Option<Vec<i64>>, CodecError> {
+    if complete_counted_face_recipe(operand).is_none() { return Ok(None); }
+    let mut active_faces = Vec::new();
     for face in &operand.preceding_candidate_faces {
-        let slot = face.as_str().rsplit_once('#')?.1.parse::<i64>().ok()?;
+        let Some(slot) = face.as_str().rsplit_once('#').and_then(|(_, slot)| slot.parse::<i64>().ok()) else { return Ok(None); };
         if active_faces.contains(&slot) {
-            return None;
+            return Ok(None);
         }
-        active_faces.push(slot);
+        push_face_item(ctx, &mut active_faces, slot, "f3d stable bounded active face")?;
     }
-    stable_face_support_set(&active_faces, &operand.historical_support_contexts)
+    stable_face_support_set(ctx, &active_faces, &operand.historical_support_contexts)
 }
 
 /// Resolve the selected input faces of an unhealed `SurfaceDeleteFace`.
@@ -1647,26 +1648,34 @@ fn counted_face_recipe_frame(operand: &DesignFaceOperand) -> Option<usize> {
 }
 
 fn stable_face_support_set(
+    ctx: Option<&DecodeContext<'_>>,
     active_faces: &[i64],
     contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
-) -> Option<Vec<i64>> {
-    if active_faces.is_empty()
-        || contexts.len() != active_faces.len()
-        || active_faces.iter().collect::<HashSet<_>>().len() != active_faces.len()
-    {
-        return None;
+) -> Result<Option<Vec<i64>>, CodecError> {
+    if active_faces.is_empty() || contexts.len() != active_faces.len() {
+        return Ok(None);
     }
-    let mut covered = HashSet::with_capacity(active_faces.len());
+    let mut unique_active = HashSet::new();
+    for face in active_faces {
+        if !insert_face_set(ctx, &mut unique_active, *face,
+            "f3d stable bounded active face index")? { return Ok(None); }
+    }
+    let mut covered = HashSet::new();
     for context in contexts {
         if !active_faces.contains(&context.active_face_slot)
-            || !covered.insert(context.active_face_slot)
             || context.preceding_face_slots != [context.active_face_slot]
             || !context.changed_preceding_face_slots.is_empty()
         {
-            return None;
+            return Ok(None);
         }
+        if !insert_face_set(ctx, &mut covered, context.active_face_slot,
+            "f3d stable bounded covered face index")? { return Ok(None); }
     }
-    Some(active_faces.to_vec())
+    let mut result = Vec::new();
+    for face in active_faces {
+        push_face_item(ctx, &mut result, *face, "f3d stable bounded support face")?;
+    }
+    Ok(Some(result))
 }
 
 fn convergent_effective_face_support(operand: &DesignFaceOperand) -> Option<Vec<i64>> {
@@ -2497,7 +2506,8 @@ mod tests {
         bounded_face_candidate_by_boundary_cardinality, convergent_face_support,
         effective_historical_face_slots, extrude_start_plane_geometry_candidates,
         extrude_target_plane_candidate, legacy_face_recipe_reference_candidates,
-        loft_edge_profile_face_slot, resolve_surface_delete_face_history_set,
+        loft_edge_profile_face_slot, resolve_stable_bounded_face_history_set,
+        resolve_surface_delete_face_history_set,
         resolved_explicit_bounded_face_group, resolved_extrude_profile_face_group,
         resolved_face_group, resolved_historical_split_face_target_group_with_updated_faces,
         retain_face_operand_resolution, stable_face_support_set, ExtrudeFaceResolution,
@@ -3316,11 +3326,11 @@ mod tests {
         let mut contexts = vec![support(10, &[(10, 4)]), support(11, &[(11, 4)])];
 
         assert_eq!(
-            stable_face_support_set(&active_faces, &contexts),
+            stable_face_support_set(None, &active_faces, &contexts).unwrap(),
             Some(vec![10, 11])
         );
         contexts[1].preceding_face_slots = vec![12];
-        assert_eq!(stable_face_support_set(&active_faces, &contexts), None);
+        assert_eq!(stable_face_support_set(None, &active_faces, &contexts).unwrap(), None);
     }
 
     fn surface_delete_face_operand() -> DesignFaceOperand {
@@ -3376,6 +3386,92 @@ mod tests {
             context.changed_preceding_face_slots = vec![context.active_face_slot];
         }
         operand
+    }
+
+    fn stable_bounded_face_operand() -> DesignFaceOperand {
+        let mut operand = surface_delete_face_operand();
+        for context in &mut operand.historical_support_contexts {
+            context.changed_preceding_face_slots.clear();
+        }
+        let side = crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
+            header_value: 0,
+            scalars: Vec::new(),
+            payload_prefix: Vec::new(),
+            entries: Vec::new(),
+        };
+        operand.recipe_nodes[0].recipe_structure = Some(
+            crate::records::topology::face::DesignFaceRecipeStructure {
+                root: 0,
+                prelude: [0, 0],
+                sides: [side.clone(), side],
+                postlude_value: None,
+            },
+        );
+        operand
+    }
+
+    #[test]
+    fn stable_bounded_active_face_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let operand = stable_bounded_face_operand();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = resolve_stable_bounded_face_history_set(Some(&ctx), &operand).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d stable bounded active face"));
+    }
+
+    #[test]
+    fn stable_bounded_support_face_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let operand = stable_bounded_face_operand();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 6;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = resolve_stable_bounded_face_history_set(Some(&ctx), &operand).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d stable bounded support face"));
+    }
+
+    #[test]
+    fn stable_bounded_active_index_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let operand = stable_bounded_face_operand();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = resolve_stable_bounded_face_history_set(Some(&ctx), &operand).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d stable bounded active face index"));
+    }
+
+    #[test]
+    fn stable_bounded_covered_index_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let operand = stable_bounded_face_operand();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = resolve_stable_bounded_face_history_set(Some(&ctx), &operand).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(failure)
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d stable bounded covered face index"));
     }
 
     #[test]
