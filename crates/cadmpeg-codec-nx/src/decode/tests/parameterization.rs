@@ -6,9 +6,7 @@ use cadmpeg_test_support::{edit, EditableDecodeResult};
 
 use crate::decode::blend::blend_surface_point;
 use crate::decode::offset::{offset_surface_parameters, offset_surface_parameters_with_tolerance};
-use crate::decode::support_uv::{
-    complete_ext11_support_uv, SerializedSupportUv,
-};
+use crate::decode::support_uv::{complete_ext11_support_uv, SerializedSupportUv};
 use crate::test_support::test_bytes::put_ref;
 use crate::test_support::test_deltas::bspline_partition_stream;
 use crate::test_support::test_deltas::fully_extend_common_header;
@@ -49,8 +47,11 @@ use crate::NxCodec;
 fn offset_surface_parameter_solver_preserves_support_parameters() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let stream = offset_surface_topology_partition_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
@@ -71,7 +72,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     .unwrap()
     .get();
 
-    let actual = offset_surface_parameters(&geometry_ctx, result.ir(), &surface, point, None).unwrap();
+    let actual =
+        offset_surface_parameters(&geometry_ctx, result.ir(), &surface, point, None).unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
@@ -101,7 +103,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     )
     .unwrap()
     .get();
-    let translated_parameters = offset_surface_parameters_with_tolerance(&geometry_ctx,
+    let translated_parameters = offset_surface_parameters_with_tolerance(
+        &geometry_ctx,
         &translated,
         &surface,
         translated_point,
@@ -159,7 +162,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     )
     .unwrap()
     .get();
-    let nested_parameters = offset_surface_parameters_with_tolerance(&geometry_ctx,
+    let nested_parameters = offset_surface_parameters_with_tolerance(
+        &geometry_ctx,
         &translated,
         &nested_surface,
         nested_point,
@@ -175,8 +179,11 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
 fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let stream = offset_surface_topology_partition_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
@@ -198,7 +205,8 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     .get();
     point.x += 0.01;
 
-    let actual = offset_surface_parameters_with_tolerance(&geometry_ctx,
+    let actual = offset_surface_parameters_with_tolerance(
+        &geometry_ctx,
         result.ir(),
         &surface,
         point,
@@ -210,7 +218,10 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     assert_eq!(actual, seed);
 
     let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(256));
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+        &geometry_ctx,
+        cadmpeg_core::decode::u64_from_index(256),
+    );
     let local = crate::decode::offset::refine_offset_surface_parameters_with_index_and_budget(
         &index,
         &surface,
@@ -227,17 +238,20 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
 
 #[test]
 fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
-
     use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::Point3;
 
     const FIT_TOLERANCE: f64 = 0.000_001;
     const PARAMETER_TOLERANCE: f64 = 0.001;
+
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let support =
         SurfaceId::mint("test:model:entity#synthetic:wavy-support").expect("identity grammar");
@@ -312,7 +326,8 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
     )
     .expect("offset point")
     .get();
-    let actual = offset_surface_parameters_with_tolerance(&geometry_ctx,
+    let actual = offset_surface_parameters_with_tolerance(
+        &geometry_ctx,
         &ir,
         &offset,
         point,
@@ -363,7 +378,8 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
     )
     .expect("nested offset point")
     .get();
-    let nested_actual = offset_surface_parameters_with_tolerance(&geometry_ctx,
+    let nested_actual = offset_surface_parameters_with_tolerance(
+        &geometry_ctx,
         &ir,
         &nested,
         nested_point,
@@ -692,8 +708,11 @@ fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
 fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =
@@ -712,7 +731,8 @@ fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
         crate::intersection::SupportUvLane::new(vec![[0.0, 0.0], [0.0, 0.01]], 2),
     ];
 
-    let assigned = crate::decode::support_uv::assign_ext11_support_uv_to_surfaces(&geometry_ctx,
+    let assigned = crate::decode::support_uv::assign_ext11_support_uv_to_surfaces(
+        &geometry_ctx,
         result.ir(),
         [&surfaces[0], &surfaces[1]],
         &[
@@ -773,8 +793,11 @@ fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
 fn completed_intersection_support_lane_attaches_after_topology_emission() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge = cadmpeg_ir::ids::EdgeId::mint("synthetic:cube:edge#0").expect("identity grammar");
@@ -862,7 +885,10 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
     let graph =
         crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &[]))
             .unwrap();
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(usize::MAX));
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+        &geometry_ctx,
+        cadmpeg_core::decode::u64_from_index(usize::MAX),
+    );
 
     crate::test_support::with_decode_context(|ctx| {
         crate::decode::support_uv::attach_completed_intersection_pcurves_for_stream_with_budget(
@@ -970,8 +996,11 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
 fn ext11_uv_completion_runs_after_support_incidence_resolution() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =
@@ -1023,7 +1052,8 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
         ]),
     )];
 
-    complete_ext11_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending).expect("support-uv lanes pair");
+    complete_ext11_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending)
+        .expect("support-uv lanes pair");
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition()
@@ -1042,8 +1072,11 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
 fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =
@@ -1090,7 +1123,8 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
         SerializedSupportUv::default(),
     )];
 
-    crate::decode::support_uv::complete_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending).unwrap();
+    crate::decode::support_uv::complete_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending)
+        .unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition()
@@ -1107,11 +1141,6 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
 
 #[test]
 fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
-
     use cadmpeg_ir::geometry::{
         nurbs::NurbsSurface, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
         Surface,
@@ -1120,6 +1149,14 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
     use cadmpeg_ir::math::Point3;
 
     const FIT_TOLERANCE: f64 = 1.0e-9;
+
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let surface_id = SurfaceId::mint("test:model:entity#synthetic:serialized-seed-surface")
         .expect("identity grammar");
@@ -1224,7 +1261,10 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
         ]),
     )];
     let support_budget = cadmpeg_core::decode::WorkBudget::new(2);
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(64));
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+        &geometry_ctx,
+        cadmpeg_core::decode::u64_from_index(64),
+    );
     let coupled_support_budget = cadmpeg_core::decode::WorkBudget::new(2);
 
     crate::decode::support_uv::complete_support_uv_with_budget(
@@ -1253,16 +1293,19 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
 
 #[test]
 fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
-
     use cadmpeg_ir::geometry::{
         IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, ProceduralSurface, Surface,
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::Point3;
+
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let base_surfaces = [
         SurfaceId::mint("test:model:entity#synthetic:coupled-base-first")
@@ -1385,7 +1428,11 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         SerializedSupportUv::default(),
     )];
 
-    crate::decode::support_uv::complete_coupled_support_uv_for_test(&geometry_ctx, &mut ir, &pending);
+    crate::decode::support_uv::complete_coupled_support_uv_for_test(
+        &geometry_ctx,
+        &mut ir,
+        &pending,
+    );
 
     let procedural = &ir.model.procedural_curves[0];
     let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition() else {
@@ -1413,13 +1460,16 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
 
 #[test]
 fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
-
     use cadmpeg_ir::geometry::{BlendSupport, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =
@@ -1613,7 +1663,8 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         ),
     ];
 
-    crate::decode::support_uv::complete_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending).unwrap();
+    crate::decode::support_uv::complete_support_uv(&geometry_ctx, &mut result.ir_mut(), &pending)
+        .unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition()
@@ -1625,13 +1676,16 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
 
 #[test]
 fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
-
     use cadmpeg_ir::ids::ProceduralCurveId;
     use cadmpeg_ir::math::Point3;
+
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =
@@ -1722,7 +1776,12 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
         ),
     ];
     let support_budget = cadmpeg_core::decode::WorkBudget::new(10);
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+        &geometry_ctx,
+        cadmpeg_core::decode::u64_from_index(
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+        ),
+    );
     let coupled_support_budget = cadmpeg_core::decode::WorkBudget::new(10);
     crate::decode::support_uv::complete_support_uv_with_budget(
         &mut result.ir_mut(),

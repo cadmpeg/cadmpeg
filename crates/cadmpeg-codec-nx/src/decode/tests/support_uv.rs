@@ -24,8 +24,11 @@ use crate::NxCodec;
 fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =
@@ -129,7 +132,12 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
     ];
     let validated_lanes = BTreeSet::from([(validated_id.clone(), 0)]);
     let support_budget = WorkBudget::new(10);
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+        &geometry_ctx,
+        cadmpeg_core::decode::u64_from_index(
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+        ),
+    );
 
     crate::test_support::with_decode_context(|ctx| crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
         ctx,
@@ -232,12 +240,15 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
 
 #[test]
 fn full_support_uv_validation_publishes_endpoint_witnesses() {
+    const EPS_SUPPORT_WITNESS: f64 = 1e-9;
+
     let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
     let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
-
-    const EPS_SUPPORT_WITNESS: f64 = 1e-9;
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
     let partition =
@@ -294,7 +305,12 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
         SerializedSupportUv::default(),
     )];
     let support_budget = WorkBudget::new(crate::decode::support_uv::MAX_SUPPORT_UV_SAMPLES);
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+        &geometry_ctx,
+        cadmpeg_core::decode::u64_from_index(
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+        ),
+    );
 
     let witnesses =
         crate::test_support::with_decode_context(|ctx| crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
@@ -322,11 +338,6 @@ fn full_support_uv_validation_publishes_endpoint_witnesses() {
 
 #[test]
 fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
-    ).expect("empty geometry root is admitted");
-
     use cadmpeg_ir::geometry::{
         nurbs::NurbsSurface, Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide,
         ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -337,6 +348,14 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
 
     const FIT_TOLERANCE: f64 = 1.0e-6;
     const GEOMETRY_WORK: usize = 2_048;
+
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let support = SurfaceId::mint("test:model:entity#synthetic:seeded-offset-support")
         .expect("identity grammar");
@@ -478,20 +497,33 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     )];
     let mut seeded = ir.clone();
     let mut unseeded = ir;
-    crate::decode::support_uv::complete_coupled_support_uv_with_geometry_budget_for_test(&geometry_ctx,
+    crate::decode::support_uv::complete_coupled_support_uv_with_geometry_budget_for_test(
+        &geometry_ctx,
         &mut seeded,
         &pending,
         GEOMETRY_WORK,
-    );
-    crate::decode::support_uv::complete_coupled_support_uv_with_geometry_budget_for_test(&geometry_ctx,
-        &mut unseeded,
-        &[(
-            pending[0].0.clone(),
-            pending[0].1.clone(),
-            pending[0].2,
-            SerializedSupportUv::default(),
-        )],
-        GEOMETRY_WORK,
+    )
+    .expect("serialized seeds complete the lane within the geometry work slice");
+    let error =
+        crate::decode::support_uv::complete_coupled_support_uv_with_geometry_budget_for_test(
+            &geometry_ctx,
+            &mut unseeded,
+            &[(
+                pending[0].0.clone(),
+                pending[0].1.clone(),
+                pending[0].2,
+                SerializedSupportUv::default(),
+            )],
+            GEOMETRY_WORK,
+        )
+        .expect_err("an unseeded inverse exceeds the geometry work slice");
+    let cadmpeg_core::CodecError::ResourceLimit(refusal) = error else {
+        panic!("geometry work refusal");
+    };
+    assert_eq!(refusal.operation, "nx adaptive geometry work");
+    assert_eq!(
+        refusal.limit,
+        cadmpeg_core::decode::u64_from_index(GEOMETRY_WORK)
     );
 
     let pcurve_present = |ir: &cadmpeg_ir::document::CadIr| {

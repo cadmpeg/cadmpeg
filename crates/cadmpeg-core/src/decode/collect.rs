@@ -132,16 +132,16 @@ impl DecodeContext<'_> {
     ) -> Result<ScopedReservation<'_>, ResourceLimit> {
         let count_u64 = u64_from_index(count);
         self.charge_collection_items_limit(count_u64, operation)?;
-        let bytes = count.checked_mul(std::mem::size_of::<T>()).ok_or_else(|| {
-            ResourceLimit {
+        let bytes = count
+            .checked_mul(std::mem::size_of::<T>())
+            .ok_or_else(|| ResourceLimit {
                 dimension: ResourceDimension::MaterializedBytes,
                 reason: super::ResourceFailure::BudgetExceeded,
                 limit: self.policy().limits.max_materialized_bytes,
                 used: 0,
                 additional: u64::MAX,
                 operation,
-            }
-        })?;
+            })?;
         let reservation = self.reserve_scoped_limit(u64_from_index(bytes), operation)?;
         values.try_reserve_exact(count).map_err(|_| {
             ResourceLimit::allocation_failed(
@@ -1781,11 +1781,9 @@ mod tests {
     retained_case!(
         copy_retained_charges_before_allocation,
         3,
-        |ctx: &DecodeContext<'_>| ctx.copy_retained(
-            b"abc",
-            "test optional retained"
-        )
-        .map(|_| ())
+        |ctx: &DecodeContext<'_>| ctx
+            .copy_retained(b"abc", "test optional retained")
+            .map(|_| ())
     );
 
     macro_rules! materialized_case {
@@ -2070,7 +2068,8 @@ mod tests {
         let arena = DecodeArena::new();
         let need = super::u64_from_index(std::mem::size_of::<ObservedClone<'_>>());
         let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, need - 1);
-        let error = ctx.copy_temporary_slice(&[ObservedClone(&cloned)], "test scoped copy")
+        let error = ctx
+            .copy_temporary_slice(&[ObservedClone(&cloned)], "test scoped copy")
             .expect_err("copy exceeds scoped storage");
         assert_eq!(error.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(cloned.get(), 0);
@@ -2081,7 +2080,8 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("empty service root is admitted");
-        let (copy, reservation) = ctx.copy_temporary_slice(&[1u8, 2], "test scoped copy")
+        let (copy, reservation) = ctx
+            .copy_temporary_slice(&[1u8, 2], "test scoped copy")
             .expect("copy fits service profile");
         assert_eq!(copy, [1, 2]);
         drop(reservation);
