@@ -5285,53 +5285,90 @@ fn parasolid_topology_attribute_contexts<'a>(
 ) -> Result<Vec<ParasolidTopologyAttributeContext<'a>>, CodecError> {
     let mut entities_by_reference = BTreeMap::<&str, BTreeSet<&str>>::new();
     for class_use in class_uses {
-        entities_by_reference
-            .entry(class_use.topology_attribute_reference.as_str())
-            .or_default()
-            .insert(class_use.entity_51_record.as_str());
+        let key = class_use.topology_attribute_reference.as_str();
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(entities_by_reference.len()), "NX Parasolid attribute entity lookup")?;
+        if !entities_by_reference.contains_key(key) {
+            ctx.charge_collection_items(1, "NX Parasolid attribute entity groups")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, BTreeSet<&str>)>() * 4))?;
+        }
+        let entities = entities_by_reference.entry(key).or_default();
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(entities.len()), "NX Parasolid attribute entity uniqueness")?;
+        if !entities.contains(class_use.entity_51_record.as_str()) {
+            ctx.charge_collection_items(1, "NX Parasolid attribute group entity")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&str>() * 4))?;
+            entities.insert(class_use.entity_51_record.as_str());
+        }
     }
     let mut references_by_target = BTreeMap::<String, Vec<_>>::new();
     for reference in topology_references {
         let kind = reference.topology_type.as_str();
-        references_by_target
-            .entry(format!(
-                "nx:s{}:{kind}#{}",
-                reference.stream_ordinal, reference.topology_xmt
-            ))
-            .or_default()
-            .push(reference);
+        let key_capacity = kind.len().checked_add(26)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid topology reference key", 0, cadmpeg_core::decode::u64_from_index(kind.len())))?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(key_capacity))?;
+        let mut key = String::new();
+        key.try_reserve(key_capacity).map_err(|_| ctx.refuse_codec_limit("allocate NX Parasolid topology reference key", 0, cadmpeg_core::decode::u64_from_index(key_capacity)))?;
+        std::fmt::Write::write_fmt(&mut key, format_args!("nx:s{}:{kind}#{}", reference.stream_ordinal, reference.topology_xmt))
+            .map_err(|_| CodecError::malformed("NX Parasolid topology reference key formatting failed"))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(references_by_target.len()), "NX Parasolid topology reference lookup")?;
+        if !references_by_target.contains_key(&key) {
+            ctx.charge_collection_items(1, "NX Parasolid topology reference groups")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Vec<&crate::native::parasolid::ParasolidTopologyAttributeListReference>)>() * 4))?;
+        }
+        ctx.charge_collection_items(1, "NX Parasolid topology reference")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&crate::native::parasolid::ParasolidTopologyAttributeListReference>()))?;
+        let references = references_by_target.entry(key).or_default();
+        reserve_attach_vec(ctx, references, 1, "NX Parasolid topology reference")?;
+        references.push(reference);
     }
     let emitted_targets = parasolid_topology_attribute_targets(ctx, reservation, ir)?;
-    Ok(references_by_target
-        .into_iter()
-        .flat_map(|(target_key, references)| {
-            let Some(&reference) = references.first().filter(|_| references.len() == 1) else {
-                return Vec::new();
-            };
-            let Some(target) = emitted_targets.get(target_key.as_str()) else {
-                return Vec::new();
-            };
-            let mut entities = BTreeSet::new();
-            if let Some(entity) = reference.attribute_list_record.as_deref() {
-                entities.insert(entity);
+    let mut contexts = Vec::new();
+    for (target_key, references) in references_by_target {
+        let Some(&reference) = references.first().filter(|_| references.len() == 1) else {
+            continue;
+        };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(emitted_targets.len()), "NX Parasolid emitted target lookup")?;
+        let Some(target) = emitted_targets.get(target_key.as_str()) else {
+            continue;
+        };
+        let mut entities = BTreeSet::new();
+        if let Some(entity) = reference.attribute_list_record.as_deref() {
+            ctx.charge_collection_items(1, "NX Parasolid reference entity")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&str>() * 4))?;
+            entities.insert(entity);
+        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(entities_by_reference.len()), "NX Parasolid class entity lookup")?;
+        if let Some(class_entities) = entities_by_reference.get(reference.id.as_str()) {
+            for entity in class_entities {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(entities.len()), "NX Parasolid reference entity uniqueness")?;
+                if !entities.contains(entity) {
+                    ctx.charge_collection_items(1, "NX Parasolid reference entity")?;
+                    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&str>() * 4))?;
+                    entities.insert(entity);
+                }
             }
-            if let Some(class_entities) = entities_by_reference.get(reference.id.as_str()) {
-                entities.extend(class_entities.iter().copied());
-            }
-            let multiple_entities = entities.len() > 1;
-            entities
-                .into_iter()
-                .map(|entity| ParasolidTopologyAttributeContext {
-                    reference,
-                    entity,
-                    id_suffix: multiple_entities
-                        .then(|| entity_suffix_key(entity))
-                        .flatten(),
-                    target: target.clone(),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect())
+        }
+        let multiple_entities = entities.len() > 1;
+        for entity in entities {
+            let id_suffix = if multiple_entities {
+                entity_suffix_key(ctx, reservation, entity)?
+            } else {
+                None
+            };
+            let entry_bytes = std::mem::size_of::<ParasolidTopologyAttributeContext<'_>>()
+                .checked_add(target_key.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("NX Parasolid attribute context", 0, cadmpeg_core::decode::u64_from_index(target_key.len())))?;
+            ctx.charge_collection_items(1, "NX Parasolid attribute contexts")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(entry_bytes))?;
+            reserve_attach_vec(ctx, &mut contexts, 1, "NX Parasolid attribute contexts")?;
+            contexts.push(ParasolidTopologyAttributeContext {
+                reference,
+                entity,
+                id_suffix,
+                target: target.clone(),
+            });
+        }
+    }
+    Ok(contexts)
 }
 
 fn topology_attribute_id(
@@ -5353,12 +5390,18 @@ fn topology_attribute_id(
 ///
 /// The reference reaches this as stored record text, so it is admitted here;
 /// text that is not key text names no suffix.
-fn entity_suffix_key(entity: &str) -> Option<cadmpeg_ir::ids::IdentityKey> {
+fn entity_suffix_key(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    entity: &str,
+) -> Result<Option<cadmpeg_ir::ids::IdentityKey>, CodecError> {
     let suffix = entity.rsplit_once('#').map_or(entity, |(_, key)| key);
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(suffix.len()), "NX Parasolid entity suffix key")?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(suffix.len()))?;
     let Ok(key) = cadmpeg_ir::ids::IdentityKey::try_new(suffix) else {
-        return None;
+        return Ok(None);
     };
-    Some(key)
+    Ok(Some(key))
 }
 
 fn attach_parasolid_topology_numeric_attributes(
