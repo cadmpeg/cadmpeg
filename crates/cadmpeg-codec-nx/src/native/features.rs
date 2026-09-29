@@ -8902,11 +8902,23 @@ pub(super) fn feature_operation_terminal_discriminators(
             let Some(frame) = frame.and_then(|frame| frame.relocate(entry_offset)) else {
                 return;
             };
-            lanes.push(FeatureOperationTerminalDiscriminator {
-                id: format!("nx:feature-history:operation-terminal-discriminator#{section_key}-{operation_ordinal:010}"),
-                operation_label: format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"),
-                frame,
-            });
+            let projected = (|| -> Result<(), CodecError> {
+                let id = format_feature_history_id(ctx, "operation-terminal-discriminator",
+                    section_key, operation_ordinal, None)?;
+                let operation_label = format_feature_history_id(ctx, "operation-label",
+                    section_key, operation_ordinal, None)?;
+                ctx.charge_collection_items(1, "NX operation terminal discriminators")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureOperationTerminalDiscriminator>()),
+                    "NX operation terminal discriminators")?;
+                lanes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX operation terminal discriminators", 0, 1))?;
+                lanes.push(FeatureOperationTerminalDiscriminator { id, operation_label, frame });
+                Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
+            }
         },
     )?;
     if let Some(error) = failure {
@@ -8944,19 +8956,31 @@ pub(super) fn feature_operation_body_scalar_triples(
                 let Some(scalars) = triple.scalars.relocate(entry_offset) else {
                     continue;
                 };
-                triples.push(FeatureOperationBodyScalarTriple {
-                    id: format!(
-                        "nx:feature-history:operation-body-scalar-triple#{section_key}-{operation_ordinal:010}-{}",
-                        triple.body_reference_ordinal
-                    ),
-                    operation_label: format!(
-                        "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                    ),
-                    body_reference_ordinal: triple.body_reference_ordinal,
-                    body_object_index: triple.body_object_index,
-                    branch: triple.branch,
-                    scalars,
-                });
+                let projected = (|| -> Result<(), CodecError> {
+                    let id = format_charged_text(ctx,
+                        format_args!("nx:feature-history:operation-body-scalar-triple#{section_key}-{operation_ordinal:010}-{}",
+                            triple.body_reference_ordinal),
+                        "NX operation body scalar triple identity")?;
+                    let operation_label = format_feature_history_id(ctx, "operation-label",
+                        section_key, operation_ordinal, None)?;
+                    ctx.charge_collection_items(1, "NX operation body scalar triples")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeatureOperationBodyScalarTriple>()),
+                        "NX operation body scalar triples")?;
+                    triples.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "allocate NX operation body scalar triples", 0, 1))?;
+                    triples.push(FeatureOperationBodyScalarTriple {
+                        id, operation_label,
+                        body_reference_ordinal: triple.body_reference_ordinal,
+                        body_object_index: triple.body_object_index,
+                        branch: triple.branch, scalars,
+                    });
+                    Ok(())
+                })();
+                if let Err(error) = projected {
+                    failure = Some(error);
+                    break;
+                }
             }
         },
     )?;
@@ -8987,23 +9011,40 @@ pub(super) fn feature_operation_body_members(
                     return;
                 }
             };
-            members.extend(
-                groups
-                    .into_iter()
-                    .flat_map(|group| group.members.into_iter().enumerate().map(move |(ordinal, member)| FeatureOperationBodyMember {
-                        id: format!(
-                            "nx:feature-history:operation-body-member#{section_key}-{operation_ordinal:010}-{}-{}",
-                            group.body_reference_ordinal, ordinal as u32
-                        ),
-                        operation_label: format!(
-                            "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                        ),
-                        body_reference_ordinal: group.body_reference_ordinal,
-                        body_object_index: group.body_object_index,
-                        ordinal: ordinal as u32,
-                        member: LocatedCompactIndex { atom: member.atom, offset: entry_offset + member.offset as u64 },
-                    })),
-            );
+            let projected = (|| -> Result<(), CodecError> {
+                for group in groups {
+                    for (ordinal, member) in group.members.into_iter().enumerate() {
+                        let ordinal = u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit(
+                            "NX operation body member ordinal", 0, 1))?;
+                        let id = format_charged_text(ctx,
+                            format_args!("nx:feature-history:operation-body-member#{section_key}-{operation_ordinal:010}-{}-{ordinal}",
+                                group.body_reference_ordinal),
+                            "NX operation body member identity")?;
+                        let operation_label = format_feature_history_id(ctx, "operation-label",
+                            section_key, operation_ordinal, None)?;
+                        let offset = entry_offset.checked_add(
+                            cadmpeg_core::decode::u64_from_index(member.offset))
+                            .ok_or_else(|| ctx.refuse_codec_limit(
+                                "NX operation body member source offset", 0, 1))?;
+                        ctx.charge_collection_items(1, "NX operation body members")?;
+                        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                            std::mem::size_of::<FeatureOperationBodyMember>()),
+                            "NX operation body members")?;
+                        members.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                            "allocate NX operation body members", 0, 1))?;
+                        members.push(FeatureOperationBodyMember {
+                            id, operation_label,
+                            body_reference_ordinal: group.body_reference_ordinal,
+                            body_object_index: group.body_object_index,
+                            ordinal, member: LocatedCompactIndex { atom: member.atom, offset },
+                        });
+                    }
+                }
+                Ok(())
+            })();
+            if let Err(error) = projected {
+                failure = Some(error);
+            }
         },
     )?;
     if let Some(error) = failure {
