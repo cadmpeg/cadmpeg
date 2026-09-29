@@ -2082,9 +2082,10 @@ pub(crate) fn project_sketch_block_profiles(
                     .map_or(objects.len(), |(index, _)| index);
                 let intervening = &objects[profile_position + 1..end];
                 if !super::component_paths::profile_owns_intervening_sketch_blocks(
+                    ctx,
                     native_profile,
                     intervening.iter().map(|(_, feature)| *feature),
-                ) {
+                )? {
                     continue;
                 }
                 let inferred_children = if explicit_children.is_none() {

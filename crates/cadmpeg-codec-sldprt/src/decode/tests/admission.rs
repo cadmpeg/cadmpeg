@@ -1496,3 +1496,47 @@ fn geometry_scalar_binding_refuses_retained_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
             && limit.operation == "retain SLDPRT scalar binding identity"));
 }
+
+#[test]
+fn metadata_adjacent_profiles_refuses_collection_limit() {
+    let refusal = collection_refusal_with_options(&class_binding_source(), DecodeOptions { container_only: true, ..DecodeOptions::default() }, "collect SLDPRT adjacent profile objects");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn metadata_adjacent_profiles_refuses_retained_limit() {
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&class_binding_source(), &mut options, "retain SLDPRT adjacent profile identity");
+    assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "retain SLDPRT adjacent profile identity"));
+}
+
+#[test]
+fn metadata_adjacent_profiles_refuses_work_limit() {
+    let refusal = work_refusal_with_options(&class_binding_source(), DecodeOptions { container_only: true, ..DecodeOptions::default() }, "scan SLDPRT adjacent profile objects");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn geometry_adjacent_profiles_refuses_collection_limit() {
+    let refusal = collection_refusal_with_options(&class_binding_source(), DecodeOptions::default(), "collect SLDPRT adjacent profile objects");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn geometry_adjacent_profiles_refuses_retained_limit() {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&class_binding_source(), &mut options, "retain SLDPRT adjacent profile identity");
+    assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "retain SLDPRT adjacent profile identity"));
+}
+
+#[test]
+fn geometry_adjacent_profiles_refuses_work_limit() {
+    let refusal = work_refusal_with_options(&class_binding_source(), DecodeOptions::default(), "scan SLDPRT adjacent profile objects");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}

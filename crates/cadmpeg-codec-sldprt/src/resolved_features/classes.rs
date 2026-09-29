@@ -846,11 +846,11 @@ mod idless_history_binding_tests {
             },
         ];
 
-        project_adjacent_extrusion_profiles(
+        project_adjacent_extrusion_profiles(&cadmpeg_test_support::service_decode_context(),
             &mut features,
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
-        );
+        ).unwrap();
 
         assert!(matches!(
             features[1].evaluation.definition(),
@@ -1012,27 +1012,27 @@ mod idless_history_binding_tests {
         definition_b.input_class = Some("moSketchBlockDef_c".into());
         definition_b.source_id = FeatureSource::from_value(27);
         let objects = [&definition_a, &instance, &definition_b];
-        assert!(profile_owns_intervening_sketch_blocks(
+        assert!(profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
             &profile,
             objects.iter().copied()
-        ));
+        ).unwrap());
 
         definition_b.input_class = Some("moRefPlane_c".into());
         let objects = [&definition_a, &instance, &definition_b];
-        assert!(!profile_owns_intervening_sketch_blocks(
+        assert!(!profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
             &profile,
             objects.iter().copied()
-        ));
+        ).unwrap());
         definition_b.input_class = Some("moSketchBlockDef_c".into());
         let objects = [&definition_a, &instance, &definition_b];
         profile.properties.insert(
             cadmpeg_core::nonblank_literal!("DissectableChildren"),
             "23,23".into(),
         );
-        assert!(!profile_owns_intervening_sketch_blocks(
+        assert!(!profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
             &profile,
             objects.iter().copied()
-        ));
+        ).unwrap());
     }
 
     #[test]
@@ -1049,19 +1049,19 @@ mod idless_history_binding_tests {
         definition.input_class = Some("moSketchBlockDef_c".into());
         definition.source_id = FeatureSource::from_value(23);
 
-        assert!(profile_owns_intervening_sketch_blocks(
+        assert!(profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
             &profile,
             [&instance, &definition]
-        ));
+        ).unwrap());
 
         instance.properties.insert(
             cadmpeg_core::nonblank_literal!("BlockDefinition"),
             "24".into(),
         );
-        assert!(!profile_owns_intervening_sketch_blocks(
+        assert!(!profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
             &profile,
             [&instance, &definition]
-        ));
+        ).unwrap());
     }
 
     #[test]
@@ -1081,14 +1081,14 @@ mod idless_history_binding_tests {
         unused.input_class = Some("moSketchBlockDef_c".into());
         unused.source_id = FeatureSource::from_value(24);
 
-        assert!(!profile_owns_intervening_sketch_blocks(
+        assert!(!profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
             &profile,
             [&instance, &referenced, &unused]
-        ));
-        assert!(!profile_owns_intervening_sketch_blocks(
+        ).unwrap());
+        assert!(!profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
             &profile,
             [&referenced]
-        ));
+        ).unwrap());
 
         let mut second_instance = feature(4, "block instance");
         second_instance.input_class = Some("moSketchBlockInst_c".into());
@@ -1097,18 +1097,18 @@ mod idless_history_binding_tests {
             cadmpeg_core::nonblank_literal!("BlockDefinition"),
             "23".into(),
         );
-        assert!(profile_owns_intervening_sketch_blocks(
+        assert!(profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
             &profile,
             [&instance, &second_instance, &referenced]
-        ));
+        ).unwrap());
         second_instance.properties.insert(
             cadmpeg_core::nonblank_literal!("BlockDefinition"),
             "24".into(),
         );
-        assert!(!profile_owns_intervening_sketch_blocks(
+        assert!(!profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
             &profile,
             [&instance, &second_instance, &referenced]
-        ));
+        ).unwrap());
     }
 
     #[test]
