@@ -3386,10 +3386,15 @@ fn attach_feature_operations(
         let operation_payload_string_records = payload_strings_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
-        let operation_payload_strings = operation_payload_string_records
-            .iter()
-            .map(|value| value.value.as_str())
-            .collect::<Vec<_>>();
+        let payload_slots = operation_payload_string_records.len()
+            .checked_mul(std::mem::size_of::<&str>())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX operation payload string references", 0, cadmpeg_core::decode::u64_from_index(operation_payload_string_records.len())))?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(operation_payload_string_records.len()), "NX operation payload string references")?;
+        let _payload_reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(payload_slots), "NX operation payload string references")?;
+        let mut operation_payload_strings = Vec::new();
+        operation_payload_strings.try_reserve(operation_payload_string_records.len())
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX operation payload string references", 0, cadmpeg_core::decode::u64_from_index(operation_payload_string_records.len())))?;
+        operation_payload_strings.extend(operation_payload_string_records.iter().map(|value| value.value.as_str()));
         let block_dimension_values =
             block_dimensions_by_operation
                 .get(label.id.as_str())
@@ -3409,6 +3414,9 @@ fn attach_feature_operations(
         };
         if outputs.is_empty() {
             if let Some((body, _)) = &block_projection {
+                ctx.charge_collection_items(1, "NX block output bodies")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<BodyId>() + body.as_str().len()), "NX block output body")?;
+                outputs.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX block output bodies", 0, 1))?;
                 outputs.push(body.clone());
             }
         }
@@ -3417,17 +3425,11 @@ fn attach_feature_operations(
         } else {
             None
         };
-        let inferred_sphere_outputs = outputs
-            .is_empty()
-            .then(|| {
-                sphere_projection
-                    .as_ref()
-                    .map(|(body, _, _)| vec![body.clone()])
-            })
-            .flatten();
-        let sphere_outputs = inferred_sphere_outputs
-            .as_deref()
-            .unwrap_or(outputs.as_slice());
+        let sphere_outputs = if outputs.is_empty() {
+            sphere_projection.as_ref().map_or([].as_slice(), |(body, _, _)| std::slice::from_ref(body))
+        } else {
+            outputs.as_slice()
+        };
         let body_reference_count = body_reference_occurrences_by_operation
             .get(label.id.as_str())
             .map_or(0, Vec::len);
@@ -3468,8 +3470,13 @@ fn attach_feature_operations(
                 })
             });
         if sphere_op == BooleanOp::NewBody {
-            if let Some(inferred_outputs) = inferred_sphere_outputs {
-                outputs.extend(inferred_outputs);
+            if outputs.is_empty() {
+                if let Some((body, _, _)) = &sphere_projection {
+                    ctx.charge_collection_items(1, "NX sphere output bodies")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<BodyId>() + body.as_str().len()), "NX sphere output body")?;
+                    outputs.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX sphere output bodies", 0, 1))?;
+                    outputs.push(body.clone());
+                }
             }
         }
         if block_op == BooleanOp::NewBody || sphere_op == BooleanOp::NewBody {
