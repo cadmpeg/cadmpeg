@@ -1521,10 +1521,10 @@ pub(crate) fn project_relation_solved_line_geometry(
                 {
                     let generated = lines
                         .iter()
-                        .map(|(_, _, line)| line.clone())
+                        .map(|(_, _, line)| line)
                         .collect::<Vec<_>>();
                     if let Some([first, second]) =
-                        unique_dynamic_line_pair(expected, sketch, entities, &generated, QUANTUM)
+                        unique_dynamic_line_pair(ctx, expected, sketch, entities, &generated, QUANTUM)?
                     {
                         let selected = [first, second];
                         let aliases_match =
@@ -1691,18 +1691,20 @@ impl PointPointDistanceFamily {
     }
 }
 
-fn unique_dynamic_line_pair(
+fn unique_dynamic_line_pair<'a>(
+    ctx: &DecodeContext<'_>,
     expected: f64,
     sketch: &cadmpeg_ir::sketches::SketchId,
-    entities: &[SketchEntity],
-    generated: &[SketchEntity],
+    entities: &'a [SketchEntity],
+    generated: &[&'a SketchEntity],
     quantum: f64,
-) -> Option<[SketchEntity; 2]> {
+) -> Result<Option<[SketchEntity; 2]>, cadmpeg_core::CodecError> {
     if generated.len() != 2 {
-        return None;
+        return Ok(None);
     }
-    let mut candidates = Vec::<([GridPoint; 2], SketchEntity)>::new();
-    for entity in generated.iter().chain(entities.iter()) {
+    let mut candidates = Vec::<([GridPoint; 2], &SketchEntity)>::new();
+    for entity in generated.iter().copied().chain(entities.iter()) {
+        ctx.charge_work(1, "scan SLDPRT dynamic line candidates")?;
         if entity.sketch != *sketch
             || !matches!(
                 *entity.geometry.definition(),
@@ -1717,40 +1719,106 @@ fn unique_dynamic_line_pair(
         if candidates.iter().any(|(candidate, _)| *candidate == key) {
             continue;
         }
-        candidates.push((key, entity.clone()));
+        ctx.reserve_collection_vec(
+            &mut candidates,
+            1,
+            "collect SLDPRT dynamic line candidates",
+        )?;
+        candidates.push((key, entity));
     }
-    let mut matches = Vec::new();
+    let mut match_pair = None;
     for (first_index, (first_key, first)) in candidates.iter().enumerate() {
         for (second_key, second) in candidates.iter().skip(first_index + 1) {
+            ctx.charge_work(1, "compare SLDPRT dynamic line pairs")?;
             if line_line_distance(first, second)
                 .is_some_and(|measured| same_dimension_length(measured, expected))
             {
                 let mut pair_key = [*first_key, *second_key];
                 pair_key.sort_unstable();
-                matches.push((pair_key, [first.clone(), second.clone()]));
+                if let Some((previous, _)) = match_pair {
+                    if previous != pair_key {
+                        return Ok(None);
+                    }
+                } else {
+                    match_pair = Some((pair_key, [*first, *second]));
+                }
             }
         }
     }
-    matches.sort_by_key(|(key, _)| *key);
-    matches.dedup_by(|(left, _), (right, _)| left == right);
-    let [(_, pair)] = matches.as_slice() else {
-        return None;
+    let Some((_, pair)) = match_pair else {
+        return Ok(None);
     };
-    let first_key = dynamic_line_geometry_key(&generated[0], quantum)?;
-    let second_key = dynamic_line_geometry_key(&generated[1], quantum)?;
-    if dynamic_line_geometry_key(&pair[0], quantum) == Some(first_key) {
-        return Some(pair.clone());
+    let Some(first_key) = dynamic_line_geometry_key(generated[0], quantum) else {
+        return Ok(None);
+    };
+    let Some(second_key) = dynamic_line_geometry_key(generated[1], quantum) else {
+        return Ok(None);
+    };
+    let ordered = if dynamic_line_geometry_key(pair[0], quantum) == Some(first_key) {
+        pair
+    } else if dynamic_line_geometry_key(pair[1], quantum) == Some(first_key)
+        || dynamic_line_geometry_key(pair[0], quantum) == Some(second_key)
+    {
+        [pair[1], pair[0]]
+    } else {
+        pair
+    };
+    Ok(Some([
+        copy_dynamic_line_entity(ctx, ordered[0])?,
+        copy_dynamic_line_entity(ctx, ordered[1])?,
+    ]))
+}
+
+fn copy_dynamic_line_entity(
+    ctx: &DecodeContext<'_>,
+    entity: &SketchEntity,
+) -> Result<SketchEntity, cadmpeg_core::CodecError> {
+    let id_text = ctx.format_retained(
+        format_args!("{}", entity.id().as_str()),
+        "copy SLDPRT dynamic line identity",
+    )?;
+    let id = SketchEntityId::mint(id_text).map_err(|_| {
+        cadmpeg_core::CodecError::Malformed("SolidWorks dynamic line identity is invalid".into())
+    })?;
+    let sketch = copy_planar_sketch_id(ctx, &entity.sketch)?;
+    let native_ref = entity
+        .native_ref
+        .as_deref()
+        .map(|reference| {
+            ctx.format_retained(
+                format_args!("{reference}"),
+                "copy SLDPRT dynamic line native reference",
+            )
+        })
+        .transpose()?;
+    let geometry_ref = entity
+        .geometry_ref
+        .as_deref()
+        .map(|reference| {
+            ctx.format_retained(
+                format_args!("{reference}"),
+                "copy SLDPRT dynamic line geometry reference",
+            )
+        })
+        .transpose()?;
+    let mut endpoint_refs = Vec::new();
+    for reference in &entity.endpoint_refs {
+        let reference = ctx.format_retained(
+            format_args!("{reference}"),
+            "copy SLDPRT dynamic line endpoint reference",
+        )?;
+        ctx.reserve_collection_vec(
+            &mut endpoint_refs,
+            1,
+            "copy SLDPRT dynamic line endpoints",
+        )?;
+        endpoint_refs.push(reference);
     }
-    if dynamic_line_geometry_key(&pair[1], quantum) == Some(first_key) {
-        return Some([pair[1].clone(), pair[0].clone()]);
-    }
-    if dynamic_line_geometry_key(&pair[0], quantum) == Some(second_key) {
-        return Some([pair[1].clone(), pair[0].clone()]);
-    }
-    if dynamic_line_geometry_key(&pair[1], quantum) == Some(second_key) {
-        return Some(pair.clone());
-    }
-    Some(pair.clone())
+    Ok(SketchEntity::new(id, sketch, entity.geometry.clone())
+        .with_construction(entity.construction)
+        .with_native_ref(native_ref)
+        .with_geometry_ref(geometry_ref)
+        .with_endpoint_refs(endpoint_refs))
 }
 
 fn dynamic_line_geometry_key(entity: &SketchEntity, quantum: f64) -> Option<[GridPoint; 2]> {
@@ -3993,6 +4061,13 @@ mod relation_geometry_tests {
 
     #[test]
     fn dynamic_line_pair_fallback_preserves_the_existing_solver_slot() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            b"dynamic line pair",
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
         let line = |id: &str, start: Point2, end: Point2| {
             SketchEntity::new(
@@ -4020,13 +4095,16 @@ mod relation_geometry_tests {
             Point2::new(-16.0, 7.0),
         )];
 
+        let generated_refs = [&generated[0], &generated[1]];
         let [first, second] = unique_dynamic_line_pair(
+            &ctx,
             16.0,
             &sketch,
             &existing,
-            &generated,
+            &generated_refs,
             TEST_LINE_GEOMETRY_QUANTUM,
         )
+        .unwrap()
         .expect("one existing line pairs with the roster solver line");
         assert!(matches!(*first.geometry.definition(),
             SketchGeometryDefinition::Line { start, end }
