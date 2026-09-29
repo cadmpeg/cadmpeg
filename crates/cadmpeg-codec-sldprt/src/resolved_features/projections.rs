@@ -1802,6 +1802,7 @@ pub(crate) fn project_compact_surface_selections(
                         .and_then(|producer| feature_ids_by_native.get(producer))
                         .zip(component)
                         .and_then(|(feature, component)| Some((feature, component.local_id?)));
+                    const OPERATION: &str = "project SLDPRT surface face and vertex slots";
                     match slot {
                         SelectionSlot::Face(faces) => {
                             if matches!(
@@ -1811,17 +1812,19 @@ pub(crate) fn project_compact_surface_selections(
                             ) {
                                 *faces = match generated {
                                     Some((feature, local_id)) => {
-                                        cadmpeg_ir::features::GeneratedFaceRef::new(
-                                            feature.clone(),
-                                            local_id.to_string(),
-                                        )
-                                        .and_then(|face| {
-                                            cadmpeg_ir::features::FaceSelection::generated(
-                                                vec![face],
-                                                native.clone(),
-                                            )
-                                        })
-                                        .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+                                        let producer_id = copy_projection_feature_id(ctx, feature, OPERATION)?;
+                                        let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
+                                        match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text) {
+                                            Ok(face) => {
+                                                let mut generated_faces = Vec::new();
+                                                ctx.reserve_collection_vec(&mut generated_faces, 1, OPERATION)?;
+                                                generated_faces.push(face);
+                                                let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
+                                                cadmpeg_ir::features::FaceSelection::generated(generated_faces, native_copy)
+                                                    .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+                                            }
+                                            Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
+                                        }
                                     }
                                     None => cadmpeg_ir::features::FaceSelection::Native(native),
                                 };
@@ -1843,21 +1846,21 @@ pub(crate) fn project_compact_surface_selections(
                             {
                                 *vertex = match generated {
                                     Some((feature, local_id)) => {
-                                        cadmpeg_ir::features::GeneratedVertexRef::new(
-                                            feature.clone(),
-                                            local_id.to_string(),
-                                        )
-                                        .and_then(|vertex| {
-                                            cadmpeg_ir::features::VertexSelection::generated(
-                                                vertex,
-                                                native.clone(),
-                                            )
-                                        })
-                                        .unwrap_or_else(|_| {
-                                            cadmpeg_ir::features::VertexSelection::native(native).unwrap_or(
-                                                cadmpeg_ir::features::VertexSelection::Unresolved,
-                                            )
-                                        })
+                                        let producer_id = copy_projection_feature_id(ctx, feature, OPERATION)?;
+                                        let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
+                                        match cadmpeg_ir::features::GeneratedVertexRef::new(producer_id, local_id_text) {
+                                            Ok(generated_vertex) => {
+                                                let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
+                                                cadmpeg_ir::features::VertexSelection::generated(generated_vertex, native_copy)
+                                                    .unwrap_or_else(|_| {
+                                                        cadmpeg_ir::features::VertexSelection::native(native).unwrap_or(
+                                                            cadmpeg_ir::features::VertexSelection::Unresolved,
+                                                        )
+                                                    })
+                                            }
+                                            Err(_) => cadmpeg_ir::features::VertexSelection::native(native)
+                                                .unwrap_or(cadmpeg_ir::features::VertexSelection::Unresolved),
+                                        }
                                     }
                                     None => cadmpeg_ir::features::VertexSelection::native(native)
                                         .unwrap_or(cadmpeg_ir::features::VertexSelection::Unresolved),
@@ -1872,7 +1875,8 @@ pub(crate) fn project_compact_surface_selections(
                         .filter(|producer| *producer != feature_id)
                     {
                         if !dependencies.contains(producer) {
-                            dependencies.insert(producer.clone());
+                            let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
+                            dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
                         }
                     }
                 }
