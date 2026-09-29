@@ -1633,6 +1633,30 @@ fn spatial_surface_lanes_refuse_each_collection_limit() {
 }
 
 #[test]
+fn spatial_sketch_id_index_copy_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    let placement = owner_limit_placement();
+    let surface = owner_limit_surface();
+    for limit in 0..2048 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_spatial_sketch_design(
+            Some(&ctx), std::slice::from_ref(&placement), &[], &[],
+            std::slice::from_ref(&surface), &[], 1.0e-6,
+        ) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d spatial sketch id index copy" => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            other => panic!("expected spatial sketch ID copy refusal: {other:?}"),
+        }
+    }
+    panic!("no spatial sketch ID copy refusal");
+}
+
+#[test]
 fn sketch_nurbs_lanes_refuse_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
