@@ -271,6 +271,12 @@ pub(super) fn attach(
         },
     )?;
     for (tessellation, source_offset) in display_jt_tessellations {
+        ctx.charge_collection_items(1, "NX attached display tessellations")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&tessellation)),
+            "NX attached display tessellations",
+        )?;
+        reserve_attach_vec(ctx, &mut ir.model.tessellations, 1, "NX attached display tessellations")?;
         annotations
             .note(tessellation.id.as_str(), &annotation_stream, source_offset)
             .tag("DISPLAY_JT_TESSELLATION");
@@ -279,34 +285,18 @@ pub(super) fn attach(
     }
     NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, model, annotations);
     attach_material_texture_assets(ctx, ir, model, scan, annotations)?;
-    for attribute in &model.om.part_attributes {
-        annotations
-            .note(&attribute.id, &annotation_stream, attribute.source_offset)
-            .tag("Attribute");
-        annotations.exactness(&attribute.id, Exactness::ByteExact);
-        let id: AttributeId =
-            extended_id(attribute.id.as_str(), &cadmpeg_ir::identity_key!("neutral")).ok_or_else(
-                || CodecError::malformed(format_args!("NX part attribute id is not an identity")),
-            )?;
-        annotations
-            .note(id.as_str(), &annotation_stream, attribute.source_offset)
-            .tag("Attribute");
-        annotations
-            .derived(id.as_str(), "target")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        annotations
-            .derived(id.as_str(), "name")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        annotations
-            .derived(id.as_str(), "values")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        ir.model.attributes.push(SourceAttribute {
-            id,
-            target: AttributeTarget::Document,
-            name: attribute.title.clone(),
-            values: vec![AttributeValue::String(attribute.value.clone())],
-        });
-    }
+    attach_part_attributes(
+        ctx,
+        ir,
+        model.om.part_attributes.iter().map(|attribute| (
+            attribute.id.as_str(),
+            attribute.title.as_str(),
+            attribute.value.as_str(),
+            attribute.source_offset,
+        )),
+        annotations,
+        &annotation_stream,
+    )?;
     let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
         ir,
         &model.parasolid.parasolid_topology_attribute_list_references,
@@ -348,31 +338,153 @@ pub(super) fn attach(
     )?;
     NATIVE_CATALOGUE.note_phase(NotePhase::GroupB, model, annotations);
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
-    if !model.om.configurations.is_empty() {
-        for (ordinal, configuration) in model.om.configurations.iter().enumerate() {
+    let configuration_lookup_work = model.om.configurations.len()
+        .checked_mul(model.om.configuration_attribute_uses.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX configuration relation lookup", 0, cadmpeg_core::decode::u64_from_index(model.om.configurations.len())))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(configuration_lookup_work), "NX configuration relation lookup")?;
+    attach_configurations(
+        ctx,
+        ir,
+        model.om.configurations.iter().map(|configuration| (
+            configuration.id.as_str(),
+            configuration.name.as_str(),
+            configuration.source_offset,
+            model.om.configuration_attribute_uses.iter()
+                .find(|relation| relation.configuration == configuration.id)
+                .map(|relation| relation.id.as_str()),
+        )),
+        annotations,
+        &annotation_stream,
+    )?;
+    attach_expression_parameters(
+        ctx,
+        ir,
+        &model.om.expressions,
+        &model.om.expression_declarations,
+        &model.features.feature_parameter_uses,
+        annotations,
+    )?;
+    attach_active_configuration_parameter_values(ir, annotations)?;
+    attach_feature_operations(ctx, ir, model, annotations, losses)?;
+    attach_block_dimension_parameter_consumers(
+        ir,
+        &model.features.feature_block_dimensions,
+        annotations,
+    )?;
+    attach_current_feature_states(ir, annotations)?;
+    attach_active_configuration_feature_states(ir, annotations)?;
+    ir.model
+        .features
+        .sort_by(|first, second| first.id.cmp(&second.id));
+    let namespace = ir.native.namespace_mut("nx");
+    NATIVE_CATALOGUE
+        .emit_all(ctx, model, namespace)
+        .map_err(CodecError::from)?;
+    Ok(())
+}
+
+fn attach_part_attributes<'a>(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    attributes: impl IntoIterator<Item = (&'a str, &'a str, &'a str, u64)>,
+    annotations: &mut AnnotationBuilder,
+    annotation_stream: &StreamHandle,
+) -> Result<(), CodecError> {
+    for (attribute_id, attribute_title, attribute_value, source_offset) in attributes {
+        let id_bytes = attribute_id.len().checked_mul(2)
+            .and_then(|bytes| bytes.checked_add(":neutral".len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX part attribute identity", 0, cadmpeg_core::decode::u64_from_index(attribute_id.len())))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_bytes), "NX part attribute identity")?;
+        annotations
+            .note(attribute_id, &annotation_stream, source_offset)
+            .tag("Attribute");
+        annotations.exactness(attribute_id, Exactness::ByteExact);
+        let id: AttributeId =
+            extended_id(attribute_id, &cadmpeg_ir::identity_key!("neutral")).ok_or_else(
+                || CodecError::malformed(format_args!("NX part attribute id is not an identity")),
+            )?;
+        annotations
+            .note(id.as_str(), &annotation_stream, source_offset)
+            .tag("Attribute");
+        annotations
+            .derived(id.as_str(), "target")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "name")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "values")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        ctx.charge_collection_items(1, "NX attached part attributes")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SourceAttribute>()),
+            "NX attached part attributes",
+        )?;
+        ctx.charge_collection_items(1, "NX part attribute values")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<AttributeValue>()
+                    .checked_add(attribute_title.len())
+                    .and_then(|bytes| bytes.checked_add(attribute_value.len()))
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX part attribute value", 0, cadmpeg_core::decode::u64_from_index(attribute_value.len())))?,
+            ),
+            "NX part attribute values",
+        )?;
+        let mut values = Vec::new();
+        reserve_attach_vec(ctx, &mut values, 1, "NX part attribute values")?;
+        values.push(AttributeValue::String(attribute_value.to_string()));
+        reserve_attach_vec(ctx, &mut ir.model.attributes, 1, "NX attached part attributes")?;
+        ir.model.attributes.push(SourceAttribute {
+            id,
+            target: AttributeTarget::Document,
+            name: attribute_title.to_string(),
+            values,
+        });
+    }
+    Ok(())
+}
+
+fn attach_configurations<'a>(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    configurations: impl IntoIterator<Item = (&'a str, &'a str, u64, Option<&'a str>)>,
+    annotations: &mut AnnotationBuilder,
+    annotation_stream: &StreamHandle,
+) -> Result<(), CodecError> {
+    for (ordinal, (configuration_id, configuration_name, source_offset, active_attribute_use)) in configurations.into_iter().enumerate() {
+
             let id: ConfigurationId =
                 IdScope::native(cadmpeg_ir::identity_component!("arrangements"))
                     .id(&cadmpeg_ir::identity_component!("configuration"), ordinal);
-            let active_attribute_use = model
-                .om
-                .configuration_attribute_uses
-                .iter()
-                .find(|relation| relation.configuration == configuration.id);
+            let ordinal_u32 = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX configuration ordinal", 0, cadmpeg_core::decode::u64_from_index(ordinal)))?;
             let bodies = if active_attribute_use.is_some() {
-                Some(
-                    (ir.model
-                        .bodies
-                        .iter()
-                        .map(|body| body.id.clone())
-                        .collect::<Vec<_>>())
-                    .try_into()
-                    .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
-                )
+                let mut selected = Vec::new();
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()),
+                    "NX active configuration bodies",
+                )?;
+                let slots = ir.model.bodies.len().checked_mul(std::mem::size_of::<BodyId>())
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX active configuration bodies", 0, cadmpeg_core::decode::u64_from_index(ir.model.bodies.len())))?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(slots), "NX active configuration bodies")?;
+                reserve_attach_vec(ctx, &mut selected, ir.model.bodies.len(), "NX active configuration bodies")?;
+                for body in &ir.model.bodies {
+                    ctx.charge_retained(
+                        cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
+                        "NX active configuration bodies",
+                    )?;
+                    selected.push(body.id.clone());
+                }
+                let unique_work = selected.len().checked_mul(selected.len())
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX active configuration body uniqueness", 0, cadmpeg_core::decode::u64_from_index(selected.len())))?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(unique_work), "NX active configuration body uniqueness")?;
+                Some(DistinctMembers::try_from_unique_vec(selected)
+                    .map_err(|error| CodecError::Malformed(error.to_owned()))?)
             } else {
                 None
             };
             annotations
-                .note(id.as_str(), &annotation_stream, configuration.source_offset)
+                .note(id.as_str(), &annotation_stream, source_offset)
                 .tag("Arrangement");
             annotations
                 .derived(id.as_str(), "ordinal")
@@ -399,53 +511,48 @@ pub(super) fn attach(
                     .derived(id.as_str(), "bodies")
                     .map_err(cadmpeg_core::CodecError::malformed)?;
             }
+            ctx.charge_collection_items(1, "NX attached configurations")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DesignConfiguration>()),
+                "NX attached configurations",
+            )?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(configuration_name.len()),
+                "NX configuration name",
+            )?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(configuration_id.len()),
+                "NX configuration native reference",
+            )?;
+            let mut properties = BTreeMap::new();
+            if let Some(relation) = active_attribute_use {
+                ctx.charge_collection_items(1, "NX active configuration property")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<(String, String)>()
+                            .checked_add(relation.len())
+                            .ok_or_else(|| ctx.refuse_codec_limit("NX active configuration property", 0, cadmpeg_core::decode::u64_from_index(relation.len())))?,
+                    ),
+                    "NX active configuration property",
+                )?;
+                properties.insert(cadmpeg_core::nonblank_literal!("active_attribute_use"), relation.to_string());
+            }
+            reserve_attach_vec(ctx, &mut ir.model.configurations, 1, "NX attached configurations")?;
             ir.model.configurations.push(DesignConfiguration {
                 id,
-                ordinal: ordinal as u32,
+                ordinal: ordinal_u32,
                 active: active_attribute_use.is_some(),
-                source_index: Some(ordinal as u32),
-                name: configuration.name.clone().into(),
+                source_index: Some(ordinal_u32),
+                name: configuration_name.to_string().into(),
                 material: None,
-                properties: active_attribute_use
-                    .map(|relation| {
-                        BTreeMap::from([(
-                            cadmpeg_core::nonblank_literal!("active_attribute_use"),
-                            relation.id.clone(),
-                        )])
-                    })
-                    .unwrap_or_default(),
+                properties,
                 parameter_overrides: BTreeMap::new(),
                 bodies,
                 parameter_values: BTreeMap::new(),
                 feature_states: BTreeMap::new(),
-                native_ref: Some(configuration.id.clone()),
+                native_ref: Some(configuration_id.to_string()),
             });
-        }
     }
-    attach_expression_parameters(
-        ctx,
-        ir,
-        &model.om.expressions,
-        &model.om.expression_declarations,
-        &model.features.feature_parameter_uses,
-        annotations,
-    )?;
-    attach_active_configuration_parameter_values(ir, annotations)?;
-    attach_feature_operations(ctx, ir, model, annotations, losses)?;
-    attach_block_dimension_parameter_consumers(
-        ir,
-        &model.features.feature_block_dimensions,
-        annotations,
-    )?;
-    attach_current_feature_states(ir, annotations)?;
-    attach_active_configuration_feature_states(ir, annotations)?;
-    ir.model
-        .features
-        .sort_by(|first, second| first.id.cmp(&second.id));
-    let namespace = ir.native.namespace_mut("nx");
-    NATIVE_CATALOGUE
-        .emit_all(ctx, model, namespace)
-        .map_err(CodecError::from)?;
     Ok(())
 }
 
