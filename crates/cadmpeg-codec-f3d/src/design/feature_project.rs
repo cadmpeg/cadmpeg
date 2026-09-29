@@ -5681,30 +5681,47 @@ fn normalize_parameter_ordinals(
 
     let mut groups = HashMap::<Option<FeatureId>, Vec<usize>>::new();
     for (index, parameter) in parameters.iter().enumerate() {
-        groups
-            .entry(parameter.owner.clone())
-            .or_default()
-            .push(index);
+        if let Some(indices) = groups.get_mut(&parameter.owner) {
+            push_feature_item(ctx, indices, index, "f3d parameter owner member")?;
+        } else {
+            let owner = parameter.owner.as_ref()
+                .map(|id| copy_feature_id(ctx, id, "f3d parameter owner ID"))
+                .transpose()?;
+            let mut indices = Vec::new();
+            push_feature_item(ctx, &mut indices, index, "f3d parameter owner member")?;
+            // discarded-value: a new owner group has no previous member list.
+            let _ = insert_feature_map(ctx, &mut groups, owner, indices,
+                "f3d parameter owner group")?;
+        }
     }
     for (owner, indices) in groups {
-        let mut ordinals = indices
-            .iter()
-            .map(|index| parameters[*index].ordinal)
-            .collect::<Vec<_>>();
+        let mut ordinals = Vec::new();
+        for index in &indices {
+            push_feature_item(ctx, &mut ordinals, parameters[*index].ordinal,
+                "f3d parameter group ordinal")?;
+        }
         ordinals.sort_unstable();
-        let mut unresolved = indices.into_iter().collect::<HashSet<_>>();
+        let mut unresolved = HashSet::new();
+        for index in indices {
+            // discarded-value: each parameter index occurs once in its owner group.
+            let _ = insert_feature_set(ctx, &mut unresolved, index,
+                "f3d parameter unresolved index")?;
+        }
         let mut resolved = HashSet::<ParameterId>::new();
-        let mut order = Vec::with_capacity(unresolved.len());
+        let mut order = Vec::new();
         while !unresolved.is_empty() {
-            let mut ready = unresolved
-                .iter()
-                .copied()
-                .filter(|index| {
-                    parameters[*index].dependencies.iter().all(|dependency| {
-                        owners.get(dependency) != Some(&owner) || resolved.contains(dependency)
-                    })
-                })
-                .collect::<Vec<_>>();
+            let mut ready = Vec::new();
+            for index in &unresolved {
+                if let Some(ctx) = ctx {
+                    ctx.charge_work(1, "f3d parameter readiness")?;
+                }
+                if parameters[*index].dependencies.iter().all(|dependency| {
+                    owners.get(dependency) != Some(&owner) || resolved.contains(dependency)
+                }) {
+                    push_feature_item(ctx, &mut ready, *index,
+                        "f3d parameter ready index")?;
+                }
+            }
             ready.sort_by(|a, b| {
                 let pa = &parameters[*a];
                 let pb = &parameters[*b];
@@ -5734,10 +5751,14 @@ fn normalize_parameter_ordinals(
                         (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id))
                     });
                 if let Some((breaker, first, remaining)) = cycle {
-                    let members = std::iter::once(first)
-                        .chain(remaining)
-                        .map(|index| parameters[index].id.clone())
-                        .collect::<HashSet<_>>();
+                    let mut members = HashSet::new();
+                    for index in std::iter::once(first).chain(remaining) {
+                        let id = copy_parameter_id(ctx, &parameters[index].id,
+                            "f3d parameter cycle member ID")?;
+                        // discarded-value: component indices are distinct.
+                        let _ = insert_feature_set(ctx, &mut members, id,
+                            "f3d parameter cycle member")?;
+                    }
                     parameters[breaker]
                         .dependencies
                         .retain(|dependency| !members.contains(dependency));
@@ -5746,8 +5767,13 @@ fn normalize_parameter_ordinals(
             }
             for index in ready {
                 unresolved.remove(&index);
-                resolved.insert(parameters[index].id.clone());
-                order.push(index);
+                let id = copy_parameter_id(ctx, &parameters[index].id,
+                    "f3d parameter resolved ID")?;
+                // discarded-value: a parameter is resolved once.
+                let _ = insert_feature_set(ctx, &mut resolved, id,
+                    "f3d parameter resolved index")?;
+                push_feature_item(ctx, &mut order, index,
+                    "f3d parameter sorted order")?;
             }
         }
         for (index, ordinal) in order.into_iter().zip(ordinals) {
