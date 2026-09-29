@@ -1452,10 +1452,9 @@ fn consolidated_line_profiles(
         .into_iter()
         .enumerate()
     {
-        let id = CurveId::compose(
+        let id = crate::resource::compose_index_id(ctx,
             &cadmpeg_ir::identity_namespace!("catia", "consolidated", "line-profile-curve"),
-            index,
-        );
+            index, CurveId::mint, "catia_freeform_line_profile_id")?;
         let payload =
             cadmpeg_ir::geometry::analytic::LineCurve::new(line.origin, line.direction.into());
         crate::resource::push(ctx, &mut profiles, ConsolidatedLineProfile {
@@ -1559,10 +1558,9 @@ pub(super) fn append_freeform_surface_pools(
         .filter_map(|(offset, carrier)| Some((offset, carrier?)))
     {
         let surface_index = ir.model.surfaces.len();
-        let surface_id = SurfaceId::compose(
+        let surface_id = crate::resource::compose_index_id(admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "offset", "surf"),
-            surface_index,
-        );
+            surface_index, SurfaceId::mint, "catia_freeform_offset_surface_id")?;
         annotate(
             admission.context(),
             annotations,
@@ -1573,15 +1571,16 @@ pub(super) fn append_freeform_surface_pools(
             Exactness::Unknown)?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: surface_id.clone(),
+            id: crate::resource::copy_id(admission.context(), surface_id.as_str(),
+                SurfaceId::mint, "catia_freeform_offset_surface_record_id")?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
         });
 
-        let procedural_id = ProceduralSurfaceId::compose(
+        let procedural_id = crate::resource::compose_index_id(admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "offset", "construction"),
-            ir.model.procedural_surfaces.len(),
-        );
+            ir.model.procedural_surfaces.len(), ProceduralSurfaceId::mint,
+            "catia_freeform_offset_construction_id")?;
         annotate(
             admission.context(),
             annotations,
@@ -1663,10 +1662,9 @@ pub(super) fn append_freeform_surface_pools(
                 .map(|point| Point3::new(point[0], point[1], point[2])),
         );
         let geometry = NurbsCurve::from_lanes(guide.degree, knots, poles, None, false)?;
-        let id = CurveId::compose(
+        let id = crate::resource::compose_index_id(admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "guide", "curve"),
-            ir.model.curves.len(),
-        );
+            ir.model.curves.len(), CurveId::mint, "catia_freeform_guide_curve_id")?;
         annotate(
             admission.context(),
             annotations,
@@ -1699,10 +1697,10 @@ pub(super) fn append_freeform_surface_pools(
                 continue;
             };
             let side = usize::from(second_limit);
-            let id = CurveId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "rolling-ball", "limit"),
-                cadmpeg_ir::ids::IdentityKey::from(jet.pos).colon(side),
-            );
+            let id = CurveId::mint(crate::resource::format_retained(admission.context(),
+                format_args!("catia:rolling-ball:limit#{}:{side}", jet.pos),
+                "catia_freeform_rolling_ball_limit_id")?)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             annotate(
                 admission.context(),
                 annotations,
@@ -1732,14 +1730,13 @@ pub(super) fn append_freeform_surface_pools(
             "catia_freeform_rolling_ball_stations",
         )?;
         let surface_index = ir.model.surfaces.len();
-        let surface_id = SurfaceId::compose(
+        let surface_id = crate::resource::compose_index_id(admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "rolling-ball", "surf"),
-            surface_index,
-        );
-        let procedural_id = ProceduralSurfaceId::compose(
+            surface_index, SurfaceId::mint, "catia_freeform_rolling_ball_surface_id")?;
+        let procedural_id = crate::resource::compose_index_id(admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "rolling-ball", "construction"),
-            ir.model.procedural_surfaces.len(),
-        );
+            ir.model.procedural_surfaces.len(), ProceduralSurfaceId::mint,
+            "catia_freeform_rolling_ball_construction_id")?;
         annotate(
             admission.context(),
             annotations,
@@ -1750,9 +1747,12 @@ pub(super) fn append_freeform_surface_pools(
             Exactness::Unknown)?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: surface_id.clone(),
+            id: crate::resource::copy_id(admission.context(), surface_id.as_str(),
+                SurfaceId::mint, "catia_freeform_rolling_ball_surface_record_id")?,
             geometry: SurfaceGeometry::Procedural {
-                construction: procedural_id.clone(),
+                construction: crate::resource::copy_id(admission.context(),
+                    procedural_id.as_str(), ProceduralSurfaceId::mint,
+                    "catia_freeform_rolling_ball_construction_ref")?,
                 cache: None,
             },
             source_object: None,
@@ -2761,16 +2761,19 @@ fn append_resolved_consolidated_surface_curves(
         let attachment = match attachment {
             Some((identity, reversed)) => (|| -> Result<Option<_>, cadmpeg_core::CodecError> {
                 if reversed {
+                    let (label, _label_reservation) = crate::resource::format_scoped(
+                        admission.context(),
+                        format_args!(
+                            "consolidated surface-curve pcurve of the edge block at byte {} reversed onto its edge",
+                            resolved.block.pcurves[0].pos),
+                        "catia_freeform_reversed_surface_curve_label")?;
                     let reversed_pcurves = sides.each_ref().map(|side| match &side.pcurve {
                         Some(pcurve) => crate::nurbs::reverse_pcurve_geometry(
                             admission.context(),
                             &pcurve.geometry,
                             resolved.block.parameters.range.endpoints(),
                             refusal,
-                            &format!(
-                                "consolidated surface-curve pcurve of the edge block at byte {} reversed onto its edge",
-                                resolved.block.pcurves[0].pos
-                            ),
+                            &label,
                         ).map(|geometry| geometry.map(Some)),
                         None => Ok(Some(None)),
                     });
@@ -2888,15 +2891,18 @@ fn append_resolved_consolidated_surface_curves(
                                     return Ok(None);
                                 };
                                 if reversed {
+                                    let (label, _label_reservation) = crate::resource::format_scoped(
+                                        admission.context(),
+                                        format_args!(
+                                            "consolidated partner pcurve of the edge block at byte {} reversed onto its edge",
+                                            resolved.block.pcurves[0].pos),
+                                        "catia_freeform_reversed_partner_label")?;
                                     pcurve = option_or_none!(crate::nurbs::reverse_pcurve_geometry(
                                     admission.context(),
                                     &pcurve,
                                     resolved.block.parameters.range.endpoints(),
                                     refusal,
-                                    &format!(
-                                        "consolidated partner pcurve of the edge block at byte {} reversed onto its edge",
-                                        resolved.block.pcurves[0].pos
-                                    ),
+                                    &label,
                                 )?);
                                 }
                                 pcurve
@@ -2972,15 +2978,18 @@ fn append_resolved_consolidated_surface_curves(
                                 ir.model.coedges[coedge].sense,
                                 cadmpeg_ir::topology::Sense::Reversed
                             ) {
+                                let (label, _label_reservation) = crate::resource::format_scoped(
+                                    admission.context(),
+                                    format_args!(
+                                        "standard pcurve of the edge block at byte {} reversed onto coedge {coedge}",
+                                        resolved.block.pcurves[0].pos),
+                                    "catia_freeform_reversed_standard_label")?;
                                 let Some(reversed_geometry) = crate::nurbs::reverse_pcurve_geometry(
                                     admission.context(),
                                     &geometry,
                                     resolved.block.parameters.range.endpoints(),
                                     refusal,
-                                    &format!(
-                                        "standard pcurve of the edge block at byte {} reversed onto coedge {coedge}",
-                                        resolved.block.pcurves[0].pos
-                                    ),
+                                    &label,
                                 )? else { continue };
                                 geometry = reversed_geometry;
                             }
@@ -3708,14 +3717,13 @@ fn append_a8_rolling_ball_pools(
         else {
             continue;
         };
-        let surface_id = SurfaceId::compose(
+        let surface_id = crate::resource::compose_index_id(admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "a8-rolling-ball", "surf"),
-            ir.model.surfaces.len(),
-        );
-        let procedural_id = ProceduralSurfaceId::compose(
+            ir.model.surfaces.len(), SurfaceId::mint, "catia_freeform_a8_surface_id")?;
+        let procedural_id = crate::resource::compose_index_id(admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "a8-rolling-ball", "construction"),
-            ir.model.procedural_surfaces.len(),
-        );
+            ir.model.procedural_surfaces.len(), ProceduralSurfaceId::mint,
+            "catia_freeform_a8_construction_id")?;
         annotate(
             admission.context(),
             annotations,
@@ -3726,9 +3734,12 @@ fn append_a8_rolling_ball_pools(
             Exactness::Unknown)?;
         admission.reserve_entity(&mut ir.model.surfaces, "catia_family_emit_surfaces")?;
         ir.model.surfaces.push(Surface {
-            id: surface_id.clone(),
+            id: crate::resource::copy_id(admission.context(), surface_id.as_str(),
+                SurfaceId::mint, "catia_freeform_a8_surface_record_id")?,
             geometry: SurfaceGeometry::Procedural {
-                construction: procedural_id.clone(),
+                construction: crate::resource::copy_id(admission.context(),
+                    procedural_id.as_str(), ProceduralSurfaceId::mint,
+                    "catia_freeform_a8_construction_ref")?,
                 cache: None,
             },
             source_object: Some(cgm_source(admission.context(), "surface", jet.object_id)?),
@@ -4317,6 +4328,22 @@ mod tests {
             consolidated_line_profiles(ctx, &bytes, &records)
         }).expect("service profile admits line profile");
         assert_eq!(service.len(), 1);
+    }
+
+    #[test]
+    fn consolidated_line_profile_identity_refuses_retained_limit() {
+        let bytes = crate::test_support::test_b2::b2_line_profile_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let limited = crate::test_support::with_retained_limit(0, |ctx| {
+            consolidated_line_profiles(ctx, &bytes, &records)
+        });
+        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_freeform_line_profile_id"));
+        let service = crate::test_support::with_service_context(|ctx| {
+            consolidated_line_profiles(ctx, &bytes, &records)
+        }).expect("service budget");
+        assert_eq!(service.len(), 1);
+        assert_eq!(service[0].curve.id.as_str(), "catia:consolidated:line-profile-curve#0");
     }
 
     #[test]
