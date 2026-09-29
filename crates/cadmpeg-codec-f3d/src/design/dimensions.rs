@@ -6306,50 +6306,60 @@ pub(super) fn expression_identifiers(expression: &str) -> impl Iterator<Item = &
 /// Count decoded same-stream parameter-name symbols that have no neutral
 /// dependency edge.
 pub(crate) fn unresolved_parameter_expression_dependency_count(
+    ctx: Option<&DecodeContext<'_>>,
     native: &[DesignParameter],
     projected: &[cadmpeg_ir::features::DesignParameter],
-) -> usize {
-    let projected_by_native_ref = projected
-        .iter()
-        .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
-        .collect::<HashMap<_, _>>();
-    let projected_by_id = projected
-        .iter()
-        .map(|parameter| (&parameter.id, parameter))
-        .collect::<HashMap<_, _>>();
+) -> Result<usize, CodecError> {
+    let mut projected_by_native_ref = HashMap::new();
+    let mut projected_by_id = HashMap::new();
+    for parameter in projected {
+        if let Some(native_ref) = parameter.native_ref.as_deref() {
+            insert_dimension_index(ctx, &mut projected_by_native_ref, native_ref, parameter,
+                "f3d expression native parameter index")?;
+        }
+        insert_dimension_index(ctx, &mut projected_by_id, &parameter.id, parameter,
+            "f3d expression neutral parameter index")?;
+    }
     let mut names_by_stream = HashMap::<&str, HashSet<&str>>::new();
     for parameter in native {
         let Some(stream) = native_stream(&parameter.id) else {
             continue;
         };
-        names_by_stream
-            .entry(stream)
-            .or_default()
-            .insert(parameter.name());
+        if !names_by_stream.contains_key(stream) {
+            insert_dimension_index(ctx, &mut names_by_stream, stream, HashSet::new(),
+                "f3d expression stream index")?;
+        }
+        if let Some(names) = names_by_stream.get_mut(stream) {
+            insert_dimension_set(ctx, names, parameter.name(),
+                "f3d expression stream name")?;
+        }
     }
 
-    native
-        .iter()
-        .filter_map(|parameter| {
-            let stream = native_stream(&parameter.id)?;
-            let names = names_by_stream.get(stream)?;
-            let projected = projected_by_native_ref.get(parameter.id.as_str())?;
-            let dependency_names = projected
-                .dependencies
-                .iter()
-                .filter_map(|dependency| projected_by_id.get(dependency))
-                .map(|dependency| dependency.name.as_str())
-                .collect::<HashSet<_>>();
-            Some(
-                expression_identifiers(parameter.expression())
-                    .filter(|identifier| names.contains(*identifier))
-                    .collect::<HashSet<_>>()
-                    .into_iter()
-                    .filter(|identifier| !dependency_names.contains(*identifier))
-                    .count(),
-            )
-        })
-        .sum()
+    let mut unresolved = 0usize;
+    for parameter in native {
+        let Some(stream) = native_stream(&parameter.id) else { continue; };
+        let Some(names) = names_by_stream.get(stream) else { continue; };
+        let Some(projected) = projected_by_native_ref.get(parameter.id.as_str()) else {
+            continue;
+        };
+        let mut dependency_names = HashSet::new();
+        for dependency in &projected.dependencies {
+            if let Some(dependency) = projected_by_id.get(dependency) {
+                insert_dimension_set(ctx, &mut dependency_names, dependency.name.as_str(),
+                    "f3d expression dependency name")?;
+            }
+        }
+        let mut identifiers = HashSet::new();
+        for identifier in expression_identifiers(parameter.expression()) {
+            if names.contains(identifier) {
+                insert_dimension_set(ctx, &mut identifiers, identifier,
+                    "f3d expression identifier")?;
+            }
+        }
+        unresolved += identifiers.into_iter()
+            .filter(|identifier| !dependency_names.contains(*identifier)).count();
+    }
+    Ok(unresolved)
 }
 
 #[cfg(test)]

@@ -1279,9 +1279,10 @@ fn design_projection_gaps(
         ),
         unresolved_expression_dependencies:
             crate::design::dimensions::unresolved_parameter_expression_dependency_count(
+                ctx,
                 &native.design_parameters,
                 &ir.model.parameters,
-            ),
+            )?,
         native_sketch_relations,
         native_dimensions,
         unprojected_sketch_placements: native
