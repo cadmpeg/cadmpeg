@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Paged logical-record framing.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use cadmpeg_core::CodecError;
 
 use crate::layout::{continuation_page, instance_stream_header, record_start_page, terminal_page};
@@ -38,7 +38,9 @@ impl RecordFrame {
 /// offset 4. Every record is returned with the opening marker restored so
 /// record offsets match the on-page layout.
 pub fn record_frames_for_edit(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
-    frame_records(bytes, None)
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::default())?;
+    frame_records(bytes, &ctx)
 }
 
 /// Split an instance stream while charging every copied range and logical frame.
@@ -46,12 +48,12 @@ pub fn record_frames_admitted(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
 ) -> Result<Vec<RecordFrame>, CodecError> {
-    frame_records(bytes, Some(ctx))
+    frame_records(bytes, ctx)
 }
 
 fn frame_records(
     bytes: &[u8],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<RecordFrame>, CodecError> {
     if bytes.len() < STREAM_HEADER_LEN + PAGE_SIZE {
         return Err(CodecError::Malformed(
@@ -87,15 +89,13 @@ fn frame_records(
                         })?;
                 records.push(record);
             }
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "Protein logical record frame")?;
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(
-                        RECORD_MARKER.len() + page[record_start_page::BODY..].len(),
-                    ),
-                    "Protein copied record range",
-                )?;
-            }
+            ctx.charge_collection_items(1, "Protein logical record frame")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(
+                    RECORD_MARKER.len() + page[record_start_page::BODY..].len(),
+                ),
+                "Protein copied record range",
+            )?;
             let mut frame = RecordFrame {
                 logical_offset,
                 bytes: RECORD_MARKER.to_vec(),
@@ -110,12 +110,10 @@ fn frame_records(
             let frame = current.as_mut().ok_or_else(|| {
                 CodecError::Malformed("Protein continuation page has no open record".into())
             })?;
-            if let Some(ctx) = ctx {
-                ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(page[continuation_page::BODY..].len()),
-                    "Protein copied record range",
-                )?;
-            }
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(page[continuation_page::BODY..].len()),
+                "Protein copied record range",
+            )?;
             frame
                 .bytes
                 .extend_from_slice(&page[continuation_page::BODY..]);
@@ -130,20 +128,16 @@ fn frame_records(
                     CodecError::Malformed("Protein terminal payload is truncated".into())
                 })?;
             if current.is_none() {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "Protein logical record frame")?;
-                    ctx.charge_retained(
-                        cadmpeg_core::decode::u64_from_index(RECORD_MARKER.len()),
-                        "Protein copied record range",
-                    )?;
-                }
-            }
-            if let Some(ctx) = ctx {
+                ctx.charge_collection_items(1, "Protein logical record frame")?;
                 ctx.charge_retained(
-                    cadmpeg_core::decode::u64_from_index(payload.len()),
+                    cadmpeg_core::decode::u64_from_index(RECORD_MARKER.len()),
                     "Protein copied record range",
                 )?;
             }
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(payload.len()),
+                "Protein copied record range",
+            )?;
             let mut frame = current.take().unwrap_or_else(|| RecordFrame {
                 logical_offset,
                 bytes: RECORD_MARKER.to_vec(),
