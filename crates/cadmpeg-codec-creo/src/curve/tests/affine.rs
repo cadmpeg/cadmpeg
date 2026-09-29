@@ -19,6 +19,36 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[test]
+fn affine_math_arguments_fit_fixed_three_slot_frame() {
+    use crate::curve::{AffineValue, CreoMathFunction, ExpressionValue};
+
+    let values = [
+        AffineValue { constant: 1.0, linear: 0.0 },
+        AffineValue { constant: 2.0, linear: 0.0 },
+        AffineValue { constant: 3.0, linear: 0.0 },
+    ];
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    assert_eq!(
+        AffineValue::function_checked(
+            CreoMathFunction::If, None, &values,
+            RelationEvaluationContext::default(), &ctx,
+        ).expect("fixed frame needs no collection"),
+        Some(values[1]),
+    );
+    assert_eq!(
+        AffineValue::function_checked(
+            CreoMathFunction::If, None, &[values[0], values[1], values[2], values[0]],
+            RelationEvaluationContext::default(), &ctx,
+        ).expect("unsupported arity needs no collection"),
+        None,
+    );
+}
+
 #[derive(Clone, Copy)]
 enum DimensionLimitCase {
     Basic,
