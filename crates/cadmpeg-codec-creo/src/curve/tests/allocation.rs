@@ -47,6 +47,119 @@ fn resource_error<T>(result: Result<T, CodecError>) -> CodecError {
     }
 }
 
+fn target_limit_error(source: &str, collection_limit: u64, retained_limit: u64) -> CodecError {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    resource_error(with_expression_policy(policy, |ctx| {
+        super::super::expression_assignment_target(ctx, source)
+    }))
+}
+
+fn assert_target_limit(error: CodecError, dimension: ResourceDimension, operation: &'static str) {
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == dimension && limit.operation == operation));
+}
+
+#[test]
+fn expression_parsed_arguments_refuse_before_growth() {
+    assert_target_limit(
+        target_limit_error("foo(x,y)", 0, u64::MAX),
+        ResourceDimension::CollectionItems,
+        "creo expression parsed arguments",
+    );
+}
+
+#[test]
+fn expression_target_arguments_refuse_before_growth() {
+    assert_target_limit(
+        target_limit_error("foo(x,y)", 2, u64::MAX),
+        ResourceDimension::CollectionItems,
+        "creo expression target arguments",
+    );
+}
+
+#[test]
+fn expression_target_argument_text_refuses_before_copy() {
+    assert_target_limit(
+        target_limit_error("foo(x)", u64::MAX, 0),
+        ResourceDimension::RetainedBytes,
+        "creo expression target argument text",
+    );
+}
+
+#[test]
+fn expression_function_target_refuses_before_copy() {
+    assert_target_limit(
+        target_limit_error("foo()", u64::MAX, 0),
+        ResourceDimension::RetainedBytes,
+        "creo expression function target",
+    );
+}
+
+#[test]
+fn expression_table_column_refuses_before_copy() {
+    assert_target_limit(
+        target_limit_error("value(p,r,c)", u64::MAX, 0),
+        ResourceDimension::RetainedBytes,
+        "creo expression table column",
+    );
+}
+
+#[test]
+fn expression_table_parameter_refuses_before_copy() {
+    assert_target_limit(
+        target_limit_error("value(p,r,c)", u64::MAX, 1),
+        ResourceDimension::RetainedBytes,
+        "creo expression table parameter",
+    );
+}
+
+#[test]
+fn expression_table_row_refuses_before_copy() {
+    assert_target_limit(
+        target_limit_error("value(p,r,c)", u64::MAX, 2),
+        ResourceDimension::RetainedBytes,
+        "creo expression table row",
+    );
+}
+
+#[test]
+fn expression_scoped_target_refuses_before_copy() {
+    assert_target_limit(
+        target_limit_error("a:b", u64::MAX, 0),
+        ResourceDimension::RetainedBytes,
+        "creo expression scoped target",
+    );
+}
+
+#[test]
+fn expression_system_target_refuses_before_copy() {
+    assert_target_limit(
+        target_limit_error("D1", u64::MAX, 0),
+        ResourceDimension::RetainedBytes,
+        "creo expression system target",
+    );
+}
+
+#[test]
+fn expression_declared_unit_refuses_before_copy() {
+    assert_target_limit(
+        target_limit_error("a[mm]", u64::MAX, 0),
+        ResourceDimension::RetainedBytes,
+        "creo expression declared unit",
+    );
+}
+
+#[test]
+fn expression_parameter_target_refuses_before_copy() {
+    assert_target_limit(
+        target_limit_error("a", u64::MAX, 0),
+        ResourceDimension::RetainedBytes,
+        "creo expression parameter target",
+    );
+}
+
 #[test]
 fn expression_dependency_items_refuse_before_growth() {
     let line = expression_lines(&["a=b+c"]);
