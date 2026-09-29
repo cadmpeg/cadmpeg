@@ -105,7 +105,7 @@ fn parse_stream<'a>(
         .len()
         .checked_sub(protein_header::LEN)
         .ok_or_else(|| CodecError::Malformed("Inventor Protein header is truncated".into()))?;
-    if declared_len.get() as usize != payload_len {
+    if usize::try_from(declared_len.get()).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))? != payload_len {
         return Err(CodecError::malformed(format_args!(
             "Inventor Protein declares {declared_len} bytes but stores {payload_len}"
         )));
@@ -118,7 +118,7 @@ fn parse_stream<'a>(
         validate_entry_name(ctx, &entry.name)?;
     }
     ctx.charge_collection_items(
-        archive.entries().len() as u64,
+        cadmpeg_core::decode::u64_from_index(archive.entries().len()),
         "admit Inventor Protein package entries",
     )?;
     Ok(ParsedProtein::Package {
@@ -170,13 +170,13 @@ fn decode_instances_from(
         .iter()
         .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
         .count();
-    ctx.charge_collection_items(count as u64, "admit Inventor Protein instance streams")?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit Inventor Protein instance streams")?;
     let entries = archive
         .entries()
         .iter()
         .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
         .collect::<Vec<_>>();
-    ctx.charge_collection_items(count as u64, "admit Inventor Protein instance records")?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "admit Inventor Protein instance records")?;
     entries
         .into_iter()
         .map(|entry| {
@@ -184,7 +184,7 @@ fn decode_instances_from(
             let frames = cadmpeg_protein::framing::record_frames_admitted(ctx, instance.window())?;
             let outcome = cadmpeg_protein::decode_frames_admitted(ctx, &mut catalog, &frames)?;
             ctx.charge_retained(
-                entry.name.len() as u64,
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
                 "Inventor Protein instance entry name",
             )?;
             Ok(ProteinInstanceRecords {

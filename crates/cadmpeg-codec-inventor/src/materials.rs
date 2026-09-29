@@ -34,7 +34,7 @@ pub(crate) fn project_catalog(
             total.checked_add(instance.records.len())
         })
         .ok_or_else(|| CodecError::Malformed("Protein record count overflows".into()))?;
-    ctx.charge_collection_items(record_count as u64, "Inventor material record references")?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(record_count), "Inventor material record references")?;
     let records = instances
         .iter()
         .flat_map(|instance| instance.records.iter())
@@ -58,7 +58,7 @@ pub(crate) fn project_catalog(
     for (guid, count) in &guid_counts {
         if *count > 1 {
             ctx.charge_collection_items(1, "Inventor duplicate material GUIDs")?;
-            ctx.charge_retained(guid.len() as u64, "Inventor duplicate material GUID")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(guid.len()), "Inventor duplicate material GUID")?;
             duplicate_guids.push((*guid).to_owned());
         }
     }
@@ -86,7 +86,7 @@ pub(crate) fn project_catalog(
         };
         ctx.charge_collection_items(1, "Inventor material texture catalog")?;
         ctx.charge_retained(
-            texture.asset_guid.len() as u64,
+            cadmpeg_core::decode::u64_from_index(texture.asset_guid.len()),
             "Inventor material texture key",
         )?;
         textures.insert(texture.asset_guid.clone(), texture);
@@ -108,7 +108,7 @@ pub(crate) fn project_catalog(
                 {
                     ctx.charge_collection_items(1, "Inventor appearance properties")?;
                     ctx.charge_retained(
-                        neutral_property_name(id).len() as u64,
+                        cadmpeg_core::decode::u64_from_index(neutral_property_name(id).len()),
                         "Inventor appearance property name",
                     )?;
                     properties.insert(
@@ -145,14 +145,14 @@ pub(crate) fn project_catalog(
                 "Inventor neutral appearance",
             )?;
             for value in [&record.base, &record.guid, &record.schema] {
-                ctx.charge_retained(value.len() as u64, "Inventor appearance field")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), "Inventor appearance field")?;
             }
             if !is_physical_schema(&record.schema) {
-                ctx.charge_retained(record.guid.len() as u64, "Inventor visual GUID")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(record.guid.len()), "Inventor visual GUID")?;
             }
             if !record.asset_lib_id.is_empty() && record.asset_lib_id != NO_ASSET_LIB_ID {
                 ctx.charge_retained(
-                    record.asset_lib_id.len() as u64,
+                    cadmpeg_core::decode::u64_from_index(record.asset_lib_id.len()),
                     "Inventor appearance library ID",
                 )?;
             }
@@ -245,7 +245,7 @@ fn color_property(record: &cadmpeg_protein::DecodedRecord, id: &str) -> Option<C
     };
     let components = [*r, *g, *b, *a].map(|value| {
         if (0.0..=1.0).contains(&value) {
-            cadmpeg_ir::scalar::UnitBinary32::new(value as f32)
+            cadmpeg_core::convert::f32_from_f64(value).and_then(cadmpeg_ir::scalar::UnitBinary32::new)
         } else {
             None
         }

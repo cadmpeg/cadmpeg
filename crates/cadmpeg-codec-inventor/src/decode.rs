@@ -1306,10 +1306,9 @@ fn charge_items(
     ctx.charge_collection_items(count, operation)
 }
 
-fn decimal_digits(value: usize) -> usize {
-    value
-        .checked_ilog10()
-        .map_or(1, |digits| digits as usize + 1)
+fn decimal_digits(value: usize) -> Result<usize, CodecError> {
+    let digits = value.checked_ilog10().map_or(0, |digits| digits);
+    usize::try_from(digits).map(|digits| digits + 1).map_err(|_| CodecError::Malformed("Inventor decimal digit count exceeds address space".into()))
 }
 
 fn record_ordinal(
@@ -1637,7 +1636,7 @@ fn project_preview_asset(
     ctx.charge_retained(key_len, "retain Inventor preview identity key")?;
     ctx.charge_retained(24_u64 + key_len, "retain Inventor preview asset id")?;
     let _ordinal_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(decimal_digits(ordinal)),
+        cadmpeg_core::decode::u64_from_index(decimal_digits(ordinal)?),
         "format Inventor preview ordinal",
     )?;
     charge_retained_len(ctx, native_id.len(), "retain Inventor preview source id")?;
@@ -1974,7 +1973,7 @@ fn project_ufrx_model_state(
         )?,
     });
     let _scope_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index("ufrx-model-state-".len() + decimal_digits(ordinal)),
+        cadmpeg_core::decode::u64_from_index("ufrx-model-state-".len() + decimal_digits(ordinal)?),
         "format Inventor UFRx model-state issue scope",
     )?;
     let scope = format!("ufrx-model-state-{ordinal}");
@@ -2040,7 +2039,7 @@ fn project_ufrx_external_reference(
     });
     let _scope_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index(
-            "ufrx-external-reference-".len() + decimal_digits(ordinal),
+            "ufrx-external-reference-".len() + decimal_digits(ordinal)?,
         ),
         "format Inventor UFRx external issue scope",
     )?;
@@ -2098,7 +2097,7 @@ fn project_ufrx_embedded_reference(
     });
     let _scope_reservation = ctx.reserve_scoped(
         cadmpeg_core::decode::u64_from_index(
-            "ufrx-embedded-reference-".len() + decimal_digits(ordinal),
+            "ufrx-embedded-reference-".len() + decimal_digits(ordinal)?,
         ),
         "format Inventor UFRx embedded issue scope",
     )?;
@@ -2148,7 +2147,7 @@ fn project_ufrx_occurrence(
         )?,
     });
     let _scope_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index("ufrx-occurrence-".len() + decimal_digits(ordinal)),
+        cadmpeg_core::decode::u64_from_index("ufrx-occurrence-".len() + decimal_digits(ordinal)?),
         "format Inventor UFRx occurrence issue scope",
     )?;
     let scope = format!("ufrx-occurrence-{ordinal}");
@@ -2863,8 +2862,8 @@ fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static
             let mut header = View::over_retained(bytes);
             let image_kind = header.u32_le()?;
             let header_size = header.u16_le()?;
-            let width = header.u16_le()? as u32;
-            let height = header.u16_le()? as u32;
+            let width = u32::from(header.u16_le()?);
+            let height = u32::from(header.u16_le()?);
             let reserved = header.u16_le()?;
             let png = bytes.get(12..)?;
             let png_header = png.get(..24)?;

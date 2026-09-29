@@ -70,7 +70,7 @@ pub(crate) fn push_record<T>(
     ctx.charge_entities(1, operation)?;
     ctx.charge_retained(32, "retain Inventor PmDc record type id")?;
     ctx.charge_retained(
-        segment_token.as_str().len() as u64,
+        cadmpeg_core::decode::u64_from_index(segment_token.as_str().len()),
         "retain Inventor PmDc record segment token",
     )?;
     records.push(Located::new(
@@ -83,14 +83,14 @@ pub(crate) fn push_record<T>(
 }
 
 impl<T: RecordPayload> Located<T> {
-    pub(crate) fn id_len(&self) -> usize {
-        "inventor:pmdc:".len()
+    pub(crate) fn id_len(&self) -> Option<usize> {
+        Some("inventor:pmdc:".len()
             + T::KIND.len()
             + 1
             + self.identity.segment_token.as_str().len()
             + 1
-            + self.identity.record_ordinal.max(1).ilog10() as usize
-            + 1
+            + usize::try_from(self.identity.record_ordinal.max(1).ilog10()).ok()?
+            + 1)
     }
 
     pub(crate) fn id(&self) -> String {
