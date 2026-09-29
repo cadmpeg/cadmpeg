@@ -3446,7 +3446,7 @@ impl<'a> DecodeContext<'a> {
                     .add_procedural_surface(
                         &surface_id,
                         cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
-                            boundary.directrix.clone(),
+                            boundary.directrix.try_clone_for_decode(ctx, "Rhino extrusion directrix identity copy")?,
                             None,
                             extrusion.direction,
                             None,
@@ -4060,7 +4060,7 @@ fn stage_extrusion_caps(
                 .then(cadmpeg_ir::identity_key!(".profile-"))
                 .then(profile);
             let curve_id = if cap == 0 {
-                committed.directrix.clone()
+                committed.directrix.try_clone_for_decode(ctx, "Rhino extrusion cap directrix identity copy")?
             } else {
                 let id = cadmpeg_ir::ids::CurveId::compose(
                     &cadmpeg_ir::identity_namespace!("rhino", "object", "curve"),

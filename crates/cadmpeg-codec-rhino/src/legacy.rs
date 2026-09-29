@@ -3195,17 +3195,17 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             .ok_or(Point::NON_FINITE_POSITION)
                             .map_err(cadmpeg_core::CodecError::malformed)?;
                         ir.model.points.extend([
-                            Point::new(start_point.clone(), start, None),
-                            Point::new(end_point.clone(), end, None),
+                            Point::new(start_point.try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?, start, None),
+                            Point::new(end_point.try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?, end, None),
                         ]);
                         ir.model.vertices.extend([
                             Vertex {
-                                id: start_vertex.clone(),
+                                id: start_vertex.try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
                                 point: start_point,
                                 tolerance: None,
                             },
                             Vertex {
-                                id: end_vertex.clone(),
+                                id: end_vertex.try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
                                 point: end_point,
                                 tolerance: None,
                             },

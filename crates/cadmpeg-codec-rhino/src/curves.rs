@@ -1450,18 +1450,7 @@ fn read_cloud(
     require_major(version, reader.position() - 1)?;
     let minor = version & 0x0f;
     let point_count = crate::wire::element_count(reader, 24)?;
-    let point_count_u64 = cadmpeg_core::decode::u64_from_index(point_count);
-    ctx.charge_collection_items(point_count_u64, "Rhino point-cloud points")?;
-    let point_bytes = point_count_u64
-        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            FinitePoint3,
-        >()))
-        .ok_or_else(|| {
-            GeometryError::not_implemented("point-cloud storage exceeds address space")
-        })?;
-    ctx.charge_retained(point_bytes, "Rhino point-cloud points")?;
-    let mut points = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut points, point_count, "Rhino point-cloud points")?;
+    let mut points = ctx.retained_vec(point_count, "Rhino point-cloud points")?;
     for _ in 0..point_count {
         let point = native_point(reader)?;
         points.push(
