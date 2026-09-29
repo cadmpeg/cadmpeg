@@ -1,11 +1,12 @@
 use crate::families::standard::topology::{
     solve_boundary_orientation_constraints, EdgeBoundaryLayout, EdgeRow, StandardTopology,
 };
+use crate::solve::mesh_quotient::selection_search::mesh_assignment_can_merge;
 use crate::solve::mesh_quotient::{
     admit_orientation_option, deduplicate_mesh_quotient_assignments, initial_mesh_quotient,
-    mesh_assignment_can_merge, orientation_fingerprint, orientation_options_equivalent,
-    possible_face_choices, possible_face_choices_with_limit, possible_face_equations, MeshQuotient,
-    MeshSelectionSearch, SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS,
+    orientation_fingerprint, orientation_options_equivalent, possible_face_choices,
+    possible_face_choices_with_limit, possible_face_equations, MeshQuotient, MeshSelectionSearch,
+    SearchOutcome, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
     MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,

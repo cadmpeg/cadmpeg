@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Work-estimate tests for the mesh quotient search.
 
-use super::{direction_work_estimate, MeshQuotient, MeshSelectionSearch, SearchOutcome};
+use super::selection_search::direction_work_estimate;
+use super::{MeshQuotient, MeshSelectionSearch, SearchOutcome};
 use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
 use cadmpeg_core::decode::WorkBudget;
 use std::cell::RefCell;

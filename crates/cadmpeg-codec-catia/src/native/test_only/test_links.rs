@@ -3,9 +3,11 @@ use crate::container;
 use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 use crate::native::edge_node::consolidated_vertex_identities;
 use crate::native::edge_node::CatiaConsolidatedEdgeNode;
+use crate::native::projection::{
+    containing_finjpl_segment, finjpl_family, value_schema_selections,
+};
 use crate::native::{
-    containing_finjpl_segment, finjpl_family, repeated_reference_schema_selection,
-    value_schema_selections, CatiaAliasRow, CatiaCatalog, CatiaConsolidatedCircle,
+    repeated_reference_schema_selection, CatiaAliasRow, CatiaCatalog, CatiaConsolidatedCircle,
     CatiaConsolidatedCone, CatiaConsolidatedCylinder, CatiaConsolidatedEdgeRun,
     CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup, CatiaConsolidatedOwnerPacket,
     CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier, CatiaConsolidatedSphere,

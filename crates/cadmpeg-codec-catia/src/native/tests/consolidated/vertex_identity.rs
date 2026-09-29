@@ -143,7 +143,7 @@ fn native_edge_node_storage_refuses_collection_and_retained_limits() {
     let mut operations = std::collections::HashSet::new();
     for limit in 0..128 {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
-            super::super::super::consolidated_edge_nodes(ctx, &bytes, &records, &[])
+            super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])
         });
         if let Err(cadmpeg_core::CodecError::ResourceLimit(refusal)) = result {
             operations.insert(refusal.operation);
@@ -159,14 +159,14 @@ fn native_edge_node_storage_refuses_collection_and_retained_limits() {
         );
     }
     let limited = crate::test_support::with_retained_limit(0, |ctx| {
-        super::super::super::consolidated_edge_nodes(ctx, &bytes, &records, &[])
+        super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])
     });
     assert!(
         matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
         if refusal.operation == "catia_native_edge_node_id")
     );
     let nodes = crate::test_support::with_service_context(|ctx| {
-        super::super::super::consolidated_edge_nodes(ctx, &bytes, &records, &[])
+        super::super::super::projection::consolidated_edge_nodes(ctx, &bytes, &records, &[])
     })
     .expect("service context admits the edge node");
     assert_eq!(nodes.len(), 1);
@@ -446,7 +446,7 @@ fn owner_chart_alias_binding_refuses_retained_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("owner chart fixture fits the input limit");
     assert!(matches!(
-        super::super::super::resolve_owner_chart_support_aliases(
+        super::super::super::projection::resolve_owner_chart_support_aliases(
             &ctx,
             &mut packets,
             &native.alias_rows
@@ -467,7 +467,7 @@ fn owner_chart_alias_index_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("owner chart fixture fits the input limit");
     assert!(matches!(
-        super::super::super::resolve_owner_chart_support_aliases(
+        super::super::super::projection::resolve_owner_chart_support_aliases(
             &ctx,
             &mut packets,
             &native.alias_rows

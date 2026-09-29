@@ -715,7 +715,7 @@ fn alias_surface_resolution_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
         .expect("alias fixture fits the input limit");
     assert!(matches!(
-        super::super::resolve_alias_surface_tags(&ctx, &mut rows),
+        super::super::projection::resolve_alias_surface_tags(&ctx, &mut rows),
         Err(cadmpeg_core::CodecError::ResourceLimit(_))
     ));
 }

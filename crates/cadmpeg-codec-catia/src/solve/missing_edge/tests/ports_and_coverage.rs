@@ -694,7 +694,7 @@ fn standard_mesh_resolver_derives_trim_components_from_local_ports() {
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[0, 3]]];
 
     let (topology, assignment) =
-        crate::solve::mesh_quotient::parse_standard_mesh_endpoint_candidates(
+        crate::solve::mesh_quotient::selection_search::parse_standard_mesh_endpoint_candidates(
             &ctx,
             &bytes,
             &[[0, 0]; 4],
@@ -891,7 +891,7 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
         [[0, 1], [1, 2], [2, 3], [3, 0]]
     );
     let (searched, point_assignment) =
-        crate::solve::mesh_quotient::parse_standard_mesh_endpoint_candidates(
+        crate::solve::mesh_quotient::selection_search::parse_standard_mesh_endpoint_candidates(
             &ctx,
             &bytes,
             &[[0, 0]; 4],
@@ -1199,14 +1199,15 @@ fn standard_mesh_gap_assignment_uses_compact_endpoint_identity() {
             .len()
             == 4
     }));
-    let (topology, points) = crate::solve::mesh_quotient::parse_standard_mesh_endpoint_candidates(
-        &ctx,
-        &bytes,
-        &[[0, 0]; 4],
-        &[vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
-    )
-    .expect("service resource budget")
-    .expect("endpoint-constrained full gap");
+    let (topology, points) =
+        crate::solve::mesh_quotient::selection_search::parse_standard_mesh_endpoint_candidates(
+            &ctx,
+            &bytes,
+            &[[0, 0]; 4],
+            &[vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
+        )
+        .expect("service resource budget")
+        .expect("endpoint-constrained full gap");
     assert_eq!(topology.logical_vertex_count(), 4);
     assert_eq!(points, [0, 1, 2, 3]);
 }
@@ -1225,14 +1226,15 @@ fn standard_mesh_endpoint_domains_ignore_row_local_endpoint_order() {
     bytes[first_row + 2..first_row + 4].copy_from_slice(&end);
     bytes[first_row + 6..first_row + 8].copy_from_slice(&start);
 
-    let (topology, _) = crate::solve::mesh_quotient::parse_standard_mesh_endpoint_candidates(
-        &ctx,
-        &bytes,
-        &[[0, 0]; 4],
-        &[vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
-    )
-    .expect("service resource budget")
-    .expect("independent endpoint-port gauge");
+    let (topology, _) =
+        crate::solve::mesh_quotient::selection_search::parse_standard_mesh_endpoint_candidates(
+            &ctx,
+            &bytes,
+            &[[0, 0]; 4],
+            &[vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
+        )
+        .expect("service resource budget")
+        .expect("independent endpoint-port gauge");
     let coedges = &topology.faces()[0].boundaries[0].coedges;
     assert!(coedges.iter().all(|coedge| !coedge.reversed));
 }

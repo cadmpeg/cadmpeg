@@ -22,26 +22,29 @@ use crate::entity_table;
 use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 use crate::native::edge_node::{load_edge_nodes, CatiaConsolidatedEdgeNodeWire};
 use crate::native::entity_record::CatiaEntityRecord;
+use crate::native::projection::{external_reference_views, preview_views};
+use crate::native::projection::{
+    validate_alias_surface_tags, validate_owner_chart_support_aliases,
+};
 use crate::native::schema_configuration_chain::{
     derive_schema_configuration_row_chains, CatiaSchemaConfigurationRowChain,
 };
 use crate::native::{
     definition_schema_selections, derive_reference_signature_cohorts, design_object_id,
     design_objects, entity_class_index, entity_suffix_framing, entity_suffix_schema_selection,
-    entity_suffix_value, entity_value_schema_selections, external_reference_views,
-    object_production, payload_references, preview_views, range_interval, reference_signature,
-    semantic_entity_indices, store_projection, terminal_null_entity_id,
-    validate_alias_surface_tags, validate_owner_chart_support_aliases, value_production,
-    CatiaAliasRow, CatiaArenaProjection, CatiaCatalog, CatiaCatalogEntry, CatiaCatalogWire,
-    CatiaConsolidatedCircle, CatiaConsolidatedClass61Record, CatiaConsolidatedCone,
-    CatiaConsolidatedConeFace, CatiaConsolidatedCylinder, CatiaConsolidatedEdgeRun,
-    CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup, CatiaConsolidatedLineProfile,
-    CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint, CatiaConsolidatedPcurve,
-    CatiaConsolidatedPlaneCarrier, CatiaConsolidatedReferenceList, CatiaConsolidatedRevolution,
-    CatiaConsolidatedSphere, CatiaConsolidatedTorus, CatiaConsolidatedVertexIdentity,
-    CatiaDesignObject, CatiaEntityReferenceIndex, CatiaExternalReference, CatiaFinjplSegment,
-    CatiaLegacyEntityRun, CatiaNative, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord,
-    CatiaPreviewImage, CatiaReferenceSignatureCohort, CatiaValueBlock, CatiaValueSchemaSelection,
+    entity_suffix_value, entity_value_schema_selections, object_production, payload_references,
+    range_interval, reference_signature, semantic_entity_indices, store_projection,
+    terminal_null_entity_id, value_production, CatiaAliasRow, CatiaArenaProjection, CatiaCatalog,
+    CatiaCatalogEntry, CatiaCatalogWire, CatiaConsolidatedCircle, CatiaConsolidatedClass61Record,
+    CatiaConsolidatedCone, CatiaConsolidatedConeFace, CatiaConsolidatedCylinder,
+    CatiaConsolidatedEdgeRun, CatiaConsolidatedEmbeddedCylinder, CatiaConsolidatedGroup,
+    CatiaConsolidatedLineProfile, CatiaConsolidatedOwnerPacket, CatiaConsolidatedParameterPoint,
+    CatiaConsolidatedPcurve, CatiaConsolidatedPlaneCarrier, CatiaConsolidatedReferenceList,
+    CatiaConsolidatedRevolution, CatiaConsolidatedSphere, CatiaConsolidatedTorus,
+    CatiaConsolidatedVertexIdentity, CatiaDesignObject, CatiaEntityReferenceIndex,
+    CatiaExternalReference, CatiaFinjplSegment, CatiaLegacyEntityRun, CatiaNative,
+    CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecord, CatiaPreviewImage,
+    CatiaReferenceSignatureCohort, CatiaValueBlock, CatiaValueSchemaSelection,
     CatiaZeroEntityEdgeStride, CatiaZeroEntityEndpointLocusCandidate,
     CatiaZeroEntityEndpointPairCandidate, CatiaZeroEntityOrientedUsePair,
     CatiaZeroEntityOwnershipRoot, CatiaZeroEntityRecord, CatiaZeroEntitySupportRun,
