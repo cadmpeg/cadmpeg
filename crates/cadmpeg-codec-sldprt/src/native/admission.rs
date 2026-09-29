@@ -8,30 +8,12 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::hash::Hash;
 
-#[derive(Clone, Copy)]
-pub(super) enum NativeAdmission<'ctx, 'arena> {
-    Cadir,
-    Decode(&'ctx DecodeContext<'arena>),
-}
-
-impl<'ctx, 'arena> NativeAdmission<'ctx, 'arena> {
-    pub(super) fn context(self) -> Option<&'ctx DecodeContext<'arena>> {
-        match self {
-            Self::Cadir => None,
-            Self::Decode(ctx) => Some(ctx),
-        }
-    }
-}
-
 pub(super) fn collect_index_set<T: Eq + Hash>(
-    admission: NativeAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
     count: usize,
     items: impl Iterator<Item = T>,
     operation: &'static str,
 ) -> Result<HashSet<T>, NativeConvertError> {
-    let Some(ctx) = admission.context() else {
-        return Ok(items.collect());
-    };
     ctx.charge_collection_items(
         u64::try_from(count)
             .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
@@ -46,14 +28,11 @@ pub(super) fn collect_index_set<T: Eq + Hash>(
 }
 
 pub(super) fn collect_index_map<K: Eq + Hash, V>(
-    admission: NativeAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
     count: usize,
     items: impl Iterator<Item = (K, V)>,
     operation: &'static str,
 ) -> Result<HashMap<K, V>, NativeConvertError> {
-    let Some(ctx) = admission.context() else {
-        return Ok(items.collect());
-    };
     ctx.charge_collection_items(
         u64::try_from(count)
             .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
@@ -77,12 +56,9 @@ impl fmt::Write for FormattedByteCount {
 }
 
 pub(super) fn invalid_owner(
-    admission: NativeAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
     message: fmt::Arguments<'_>,
 ) -> Result<NativeConvertError, NativeConvertError> {
-    let Some(ctx) = admission.context() else {
-        return Ok(NativeConvertError::InvalidOwner(message.to_string()));
-    };
     let mut count = FormattedByteCount(0);
     fmt::write(&mut count, message).map_err(|_| {
         ctx.refuse_codec_limit("format SLDPRT native validation error", u64::MAX - 1, u64::MAX)
@@ -154,27 +130,22 @@ fn count_copy<'a, T: Serialize + 'a>(
 }
 
 pub(super) fn admit_retained_clones<'a, T: Serialize + 'a>(
-    admission: NativeAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
     records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,
 ) -> Result<(), NativeConvertError> {
-    if let Some(ctx) = admission.context() {
-        let bytes = count_copy(ctx, records, operation)?;
-        ctx.charge_retained(bytes, operation)?;
-    }
+    let bytes = count_copy(ctx, records, operation)?;
+    ctx.charge_retained(bytes, operation)?;
     Ok(())
 }
 
 pub(super) fn collect_retained_clones<'a, T: Clone + Serialize + 'a>(
-    admission: NativeAdmission<'_, '_>,
+    ctx: &DecodeContext<'_>,
     records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,
 ) -> Result<Vec<T>, NativeConvertError> {
     let count = records.clone().count();
-    admit_retained_clones(admission, records.clone(), operation)?;
-    let Some(ctx) = admission.context() else {
-        return Ok(records.cloned().collect());
-    };
+    admit_retained_clones(ctx, records.clone(), operation)?;
     let mut result = Vec::new();
     result
         .try_reserve(count)
@@ -184,29 +155,21 @@ pub(super) fn collect_retained_clones<'a, T: Clone + Serialize + 'a>(
 }
 
 pub(super) fn admit_temporary_clones<'a, 'ctx, T: Serialize + 'a>(
-    admission: NativeAdmission<'ctx, '_>,
+    ctx: &'ctx DecodeContext<'_>,
     records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,
-) -> Result<Option<ScopedReservation<'ctx>>, NativeConvertError> {
-    match admission.context() {
-        Some(ctx) => {
-            let bytes = count_copy(ctx, records, operation)?;
-            Ok(Some(ctx.reserve_scoped(bytes, operation)?))
-        }
-        None => Ok(None),
-    }
+) -> Result<ScopedReservation<'ctx>, NativeConvertError> {
+    let bytes = count_copy(ctx, records, operation)?;
+    Ok(ctx.reserve_scoped(bytes, operation)?)
 }
 
 pub(super) fn collect_temporary_clones<'a, 'ctx, T: Clone + Serialize + 'a>(
-    admission: NativeAdmission<'ctx, '_>,
+    ctx: &'ctx DecodeContext<'_>,
     records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,
-) -> Result<(Vec<T>, Option<ScopedReservation<'ctx>>), NativeConvertError> {
+) -> Result<(Vec<T>, ScopedReservation<'ctx>), NativeConvertError> {
     let count = records.clone().count();
-    let reservation = admit_temporary_clones(admission, records.clone(), operation)?;
-    let Some(ctx) = admission.context() else {
-        return Ok((records.cloned().collect(), reservation));
-    };
+    let reservation = admit_temporary_clones(ctx, records.clone(), operation)?;
     let mut result = Vec::new();
     result
         .try_reserve(count)
@@ -217,13 +180,10 @@ pub(super) fn collect_temporary_clones<'a, 'ctx, T: Clone + Serialize + 'a>(
 
 /// Admit scratch storage before validation constructs candidate collections.
 pub(super) fn admit_validation_candidates<'ctx>(
-    admission: NativeAdmission<'ctx, '_>,
+    ctx: &'ctx DecodeContext<'_>,
     source_units: usize,
     operation: &'static str,
-) -> Result<Option<ScopedReservation<'ctx>>, NativeConvertError> {
-    let Some(ctx) = admission.context() else {
-        return Ok(None);
-    };
+) -> Result<ScopedReservation<'ctx>, NativeConvertError> {
     let count = u64::try_from(source_units)
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(count, operation)?;
@@ -231,5 +191,5 @@ pub(super) fn admit_validation_candidates<'ctx>(
     let bytes = count
         .checked_mul(64)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    Ok(Some(ctx.reserve_scoped(bytes, operation)?))
+    Ok(ctx.reserve_scoped(bytes, operation)?)
 }

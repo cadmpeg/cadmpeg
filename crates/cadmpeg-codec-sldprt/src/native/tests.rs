@@ -412,7 +412,7 @@ fn native_body_validation_collection_limit_refuses_before_candidates() {
         u64::try_from(super::selection_payload_span(lane, record.offset)).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
-        super::body_selection_disagrees_with_payload(super::admission::NativeAdmission::Decode(&limited), lane, record).unwrap_err();
+        super::body_selection_disagrees_with_payload(&limited, lane, record).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -421,7 +421,7 @@ fn native_body_validation_collection_limit_refuses_before_candidates() {
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(!super::body_selection_disagrees_with_payload(super::admission::NativeAdmission::Decode(&service), lane, record).unwrap());
+    assert!(!super::body_selection_disagrees_with_payload(&service, lane, record).unwrap());
 }
 
 #[test]
@@ -447,7 +447,7 @@ fn native_body_state_validation_limit_refuses_before_state_ids() {
     policy.limits.max_collection_items = source_units - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
-        super::body_state_ids_disagree_with_payload(super::admission::NativeAdmission::Decode(&limited), lane, record).unwrap_err();
+        super::body_state_ids_disagree_with_payload(&limited, lane, record).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -456,7 +456,7 @@ fn native_body_state_validation_limit_refuses_before_state_ids() {
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(!super::body_state_ids_disagree_with_payload(super::admission::NativeAdmission::Decode(&service), lane, record).unwrap());
+    assert!(!super::body_state_ids_disagree_with_payload(&service, lane, record).unwrap());
 }
 
 #[test]
@@ -496,7 +496,7 @@ fn native_edge_validation_collection_limit_refuses_before_candidates() {
     policy.limits.max_collection_items =
         u64::try_from(super::selection_payload_span(&lane, record.offset)).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::edge_selection_disagrees_with_payload(super::admission::NativeAdmission::Decode(&limited), &lane, &record, &[])
+    let error = super::edge_selection_disagrees_with_payload(&limited, &lane, &record, &[])
         .unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
@@ -507,7 +507,7 @@ fn native_edge_validation_collection_limit_refuses_before_candidates() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert!(
-        !super::edge_selection_disagrees_with_payload(super::admission::NativeAdmission::Decode(&service), &lane, &record, &[]).unwrap()
+        !super::edge_selection_disagrees_with_payload(&service, &lane, &record, &[]).unwrap()
     );
 }
 
@@ -548,7 +548,7 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
         u64::try_from(super::selection_payload_span(&lane, record.offset)).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
-        super::surface_selection_disagrees_with_payload(super::admission::NativeAdmission::Decode(&limited), &lane, &record, &[])
+        super::surface_selection_disagrees_with_payload(&limited, &lane, &record, &[])
             .unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
@@ -559,7 +559,7 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert!(
-        !super::surface_selection_disagrees_with_payload(super::admission::NativeAdmission::Decode(&service), &lane, &record, &[])
+        !super::surface_selection_disagrees_with_payload(&service, &lane, &record, &[])
             .unwrap()
     );
 }
@@ -586,7 +586,7 @@ fn native_derived_lane_collection_limit_refuses_before_reconstruction() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = lane_count * 2 + payload_bytes - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::lanes::admit(&native, super::admission::NativeAdmission::Decode(&limited)).unwrap_err();
+    let error = super::lanes::admit(&native, &limited).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -595,7 +595,7 @@ fn native_derived_lane_collection_limit_refuses_before_reconstruction() {
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    super::lanes::admit(&native, super::admission::NativeAdmission::Decode(&service)).unwrap();
+    super::lanes::admit(&native, &service).unwrap();
 }
 
 #[test]
@@ -617,7 +617,7 @@ fn native_validation_scoped_limit_reaches_caller() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = u64::try_from(expected_bytes).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::lanes::admit(&native, super::admission::NativeAdmission::Decode(&limited))
+    let error = super::lanes::admit(&native, &limited)
         .unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
@@ -643,7 +643,7 @@ fn native_validation_retained_limit_reaches_caller() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::lanes::admit(&native, super::admission::NativeAdmission::Decode(&limited))
+    let error = super::lanes::admit(&native, &limited)
         .unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
@@ -696,7 +696,7 @@ fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = u64::try_from(lane.native_payload.len()).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::generated_surface_identities_disagree_with_payload(super::admission::NativeAdmission::Decode(&limited), &lane)
+    let error = super::generated_surface_identities_disagree_with_payload(&limited, &lane)
         .unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
@@ -707,7 +707,7 @@ fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert!(
-        !super::generated_surface_identities_disagree_with_payload(super::admission::NativeAdmission::Decode(&service), &lane).unwrap()
+        !super::generated_surface_identities_disagree_with_payload(&service, &lane).unwrap()
     );
 }
 
@@ -1135,7 +1135,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
             entity.local_id(),
         );
     }
-    let expected = crate::native::lanes::expected_lanes(&native).remove(0).1;
+    let expected = crate::native::lanes::expected_lanes_charged(&cadmpeg_test_support::service_decode_context(), &native).unwrap().remove(0).1;
     let lane = &mut native.feature_input_lanes[0];
     lane.scalars = expected.scalars;
     lane.relation_bindings = expected.relation_bindings;

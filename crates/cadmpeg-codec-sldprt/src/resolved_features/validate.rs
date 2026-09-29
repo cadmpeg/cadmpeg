@@ -11,16 +11,16 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Vec::new();
     };
-    let native = match crate::native::SldprtNative::load(namespace) {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = match cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ) {
+        Ok(context) => context,
+        Err(error) => return invalid_namespace(error),
+    };
+    let native = match crate::native::SldprtNative::load_charged(&ctx, namespace) {
         Ok(native) => native,
-        Err(error) => {
-            return vec![Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: format!("invalid SolidWorks native namespace: {error}"),
-                entity: None,
-            }]
-        }
+        Err(error) => return invalid_namespace(error),
     };
     let mut findings = Vec::new();
     for history in &native.feature_histories {
@@ -135,7 +135,11 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
             }
         }
     }
-    for (lane, expected_lane) in crate::native::lanes::expected_lanes(&native) {
+    let expected_lanes = match crate::native::lanes::expected_lanes_charged(&ctx, &native) {
+        Ok(lanes) => lanes,
+        Err(error) => return invalid_namespace(error),
+    };
+    for (lane, expected_lane) in expected_lanes {
         for (entity, expected_entity) in lane
             .sketch_entities
             .iter()
@@ -162,6 +166,15 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
     }
 
     findings
+}
+
+fn invalid_namespace(error: impl std::fmt::Display) -> Vec<Finding> {
+    vec![Finding {
+        check: Check::NativeLinks,
+        severity: Severity::Error,
+        message: format!("invalid SolidWorks native namespace: {error}"),
+        entity: None,
+    }]
 }
 
 #[cfg(test)]
