@@ -445,11 +445,8 @@ impl TryFrom<u8> for CatiaCircleLayout {
 }
 
 /// One complete consolidated `B:19` arc-length circle support.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "CatiaConsolidatedCircleWire",
-    into = "CatiaConsolidatedCircleWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "CatiaConsolidatedCircleWire")]
 pub(crate) struct CatiaConsolidatedCircle {
     /// Stable native-record identity.
     id: String,
@@ -493,6 +490,39 @@ struct CatiaConsolidatedCircleWire {
     full_circle: bool,
     chart_shift: FiniteReal,
 }
+#[derive(Serialize)]
+struct CatiaConsolidatedCircleWireRef<'a> {
+    id: &'a str,
+    byte_offset: u64,
+    layout: CatiaCircleLayout,
+    record_id: u32,
+    frame_token: u8,
+    center_pair: &'a FiniteVector<2>,
+    radius: &'a cadmpeg_ir::scalar::PositiveLength,
+    range: &'a cadmpeg_ir::topology::IncreasingParameterInterval,
+    full_circle: bool,
+    chart_shift: &'a FiniteReal,
+}
+impl Serialize for CatiaConsolidatedCircle {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        CatiaConsolidatedCircleWireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            layout: self.layout,
+            record_id: self.record_id,
+            frame_token: self.frame_token,
+            center_pair: &self.center_pair,
+            radius: &self.radius,
+            range: &self.range,
+            full_circle: self.full_circle(),
+            chart_shift: &self.chart_shift,
+        }
+        .serialize(serializer)
+    }
+}
 impl TryFrom<CatiaConsolidatedCircleWire> for CatiaConsolidatedCircle {
     type Error = String;
     fn try_from(wire: CatiaConsolidatedCircleWire) -> Result<Self, Self::Error> {
@@ -513,6 +543,7 @@ impl TryFrom<CatiaConsolidatedCircleWire> for CatiaConsolidatedCircle {
         Ok(circle)
     }
 }
+#[cfg(test)]
 impl From<CatiaConsolidatedCircle> for CatiaConsolidatedCircleWire {
     fn from(circle: CatiaConsolidatedCircle) -> Self {
         let full_circle = circle.full_circle();

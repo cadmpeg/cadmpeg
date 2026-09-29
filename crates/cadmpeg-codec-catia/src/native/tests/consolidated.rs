@@ -398,6 +398,42 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
 }
 
 #[test]
+fn consolidated_circle_borrowed_wire_preserves_json_bytes() {
+    let native = crate::native::CatiaNative::decode(&b2_circle_stream());
+    let [circle] = native.consolidated_circles.as_slice() else {
+        panic!("one consolidated circle")
+    };
+    let owned: crate::native::CatiaConsolidatedCircleWire = circle.clone().into();
+    assert_eq!(
+        serde_json::to_vec(circle).expect("borrowed circle JSON"),
+        serde_json::to_vec(&owned).expect("owned circle JSON")
+    );
+}
+
+#[test]
+fn consolidated_circle_retained_limit_refuses_json_record() {
+    let native = crate::native::CatiaNative::decode(&b2_circle_stream());
+    let [circle] = native.consolidated_circles.as_slice() else {
+        panic!("one consolidated circle")
+    };
+    let json_len = serde_json::to_vec(circle).expect("circle JSON").len();
+    let arena_name = "consolidated_circles";
+    let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
+    let refused = crate::test_support::with_retained_limit(limit, |ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace.set_arena(ctx, arena_name, std::slice::from_ref(circle))
+    });
+    let error = refused.expect_err("record exceeds retained-byte limit");
+    assert!(error.to_string().contains("RetainedBytes"), "{error}");
+    crate::test_support::with_service_context(|ctx| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(circle))
+            .expect("service profile admits circle");
+    });
+}
+
+#[test]
 fn consolidated_circle_deserialization_rejects_mismatched_full_circle() {
     let native = crate::native::CatiaNative::decode(&b2_circle_stream());
     let [circle] = native.consolidated_circles.as_slice() else {
