@@ -783,6 +783,7 @@ fn mirror_plane_from_surface(
 
 /// Bind mirror planes selected by persistent feature-local face identity.
 pub(crate) fn bind_mirror_surface_planes(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -790,45 +791,57 @@ pub(crate) fn bind_mirror_surface_planes(
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mirror_native_refs = histories
+    let mut mirror_native_refs = HashSet::new();
+    for feature in histories
         .iter()
         .flat_map(|history| &history.features)
         .filter(|feature| {
             native_object_class(feature.input_class.as_deref().unwrap_or_default())
                 == NativeClassKind::MirrorPattern
         })
-        .map(|feature| feature.id.as_str())
-        .collect::<HashSet<_>>();
+    {
+        ctx.charge_work(1, "index SLDPRT mirror surface planes")?;
+        ctx.charge_collection_items(1, "index SLDPRT mirror surface planes")?;
+        mirror_native_refs.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT mirror surface planes", u64::MAX - 1, u64::MAX))?;
+        mirror_native_refs.insert(feature.id.as_str());
+    }
     let mut faces_by_identity = HashMap::<(FeatureSourceId, u32), Vec<&str>>::new();
     for (face, identity) in face_identities {
+        reserve_feature_binding_map(ctx, &mut faces_by_identity, "index SLDPRT mirror surface planes")?;
         let candidates = faces_by_identity
             .entry((identity.feature_source_id, identity.local_id))
             .or_default();
         if !candidates.contains(&face.as_str()) {
+            ctx.reserve_collection_vec(candidates, 1, "collect SLDPRT mirror face identities")?;
             candidates.push(face.as_str());
         }
     }
-    let faces_by_id = faces
-        .iter()
-        .map(|face| (face.id.as_str(), face))
-        .collect::<HashMap<_, _>>();
-    let surfaces_by_id = surfaces
-        .iter()
-        .map(|surface| (surface.id.as_str(), surface))
-        .collect::<HashMap<_, _>>();
+    let mut faces_by_id = HashMap::new();
+    for face in faces {
+        reserve_feature_binding_map(ctx, &mut faces_by_id, "index SLDPRT mirror surface planes")?;
+        faces_by_id.insert(face.id.as_str(), face);
+    }
+    let mut surfaces_by_id = HashMap::new();
+    for surface in surfaces {
+        reserve_feature_binding_map(ctx, &mut surfaces_by_id, "index SLDPRT mirror surface planes")?;
+        surfaces_by_id.insert(surface.id.as_str(), surface);
+    }
 
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
+        let native_ref = feature.native_ref.as_deref();
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            edit_result = (|| {
+                'feature_edit: {
             let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
-                &mut definition
+                definition
             else {
                 break 'feature_edit;
             };
             if !pattern.is_unresolved() {
                 break 'feature_edit;
             }
-            let Some(native_ref) = feature.native_ref.as_deref() else {
+            let Some(native_ref) = native_ref else {
                 break 'feature_edit;
             };
             if !mirror_native_refs.contains(native_ref) {
@@ -841,6 +854,7 @@ pub(crate) fn bind_mirror_surface_planes(
                 .flat_map(|lane| &lane.surface_selections)
                 .filter(|selection| selection.feature_ref == native_ref)
             {
+                ctx.charge_work(1, "scan SLDPRT mirror plane selections")?;
                 let Some(component) = selection.components.last() else {
                     continue;
                 };
@@ -872,6 +886,7 @@ pub(crate) fn bind_mirror_surface_planes(
                     continue;
                 };
                 if !candidates.contains(&plane) {
+                    ctx.reserve_collection_vec(&mut candidates, 1, "collect SLDPRT mirror plane candidates")?;
                     candidates.push(plane);
                 }
             }
@@ -884,8 +899,11 @@ pub(crate) fn bind_mirror_surface_planes(
             }) {
                 *pattern = admitted;
             }
-        }
-        feature.evaluation.set_definition(definition);
+                }
+                Ok::<_, cadmpeg_core::CodecError>(())
+            })();
+        });
+        edit_result?;
     }
 
     Ok(())
@@ -898,15 +916,17 @@ pub(crate) fn bind_sweep_adjacent_profiles(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let metadata_ids = history_metadata_ids(ctx, histories)?;
-    let history_features = histories
+    let history_features = collect_feature_binding_vec(ctx, histories
         .iter()
         .flat_map(|history| &history.features)
-        .collect::<Vec<_>>();
-    let model_by_native = model_features
-        .iter()
-        .enumerate()
-        .filter_map(|(index, feature)| Some((feature.native_ref.as_deref()?, index)))
-        .collect::<HashMap<_, _>>();
+        )?;
+    let mut model_by_native = HashMap::new();
+    for (index, feature) in model_features.iter().enumerate() {
+        if let Some(native) = feature.native_ref.as_deref() {
+            reserve_feature_binding_map(ctx, &mut model_by_native, "index SLDPRT sweep adjacent profiles")?;
+            model_by_native.insert(native, index);
+        }
+    }
     let mut assignments = HashMap::<
         usize,
         Vec<(
@@ -916,11 +936,11 @@ pub(crate) fn bind_sweep_adjacent_profiles(
         )>,
     >::new();
     for lane in lanes {
-        let mut starts = history_features
+        let mut starts = collect_feature_binding_vec(ctx, history_features
             .iter()
             .filter(|feature| !metadata_ids.contains(feature.id.as_str()))
             .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
-            .collect::<Vec<_>>();
+            )?;
         starts.sort_unstable_by_key(|(offset, _)| *offset);
         for (index, (_, feature)) in starts.iter().enumerate() {
             if feature.input_class.as_deref() != Some("moSweep_c") {
@@ -964,64 +984,79 @@ pub(crate) fn bind_sweep_adjacent_profiles(
                 else {
                     return None;
                 };
-                Some((model_features[path_index].id.clone(), path.clone()))
+                Some((&model_features[path_index].id, path))
             });
+            let path = path.map(|(feature, sketch)| Ok::<_, cadmpeg_core::CodecError>((copy_feature_binding_id(ctx, feature)?, copy_feature_binding_sketch_id(ctx, sketch)?))).transpose()?;
             let candidate = (
-                model_features[profile_index].id.clone(),
-                sketch.clone(),
+                copy_feature_binding_id(ctx, &model_features[profile_index].id)?,
+                copy_feature_binding_sketch_id(ctx, sketch)?,
                 path,
             );
+            reserve_feature_binding_map(ctx, &mut assignments, "index SLDPRT sweep adjacent profiles")?;
             let candidates = assignments.entry(model_index).or_default();
             if !candidates.contains(&candidate) {
+                ctx.reserve_collection_vec(candidates, 1, "collect SLDPRT sweep profile assignments")?;
                 candidates.push(candidate);
             }
         }
     }
-    for (index, candidates) in assignments {
-        let [(profile_dependency, sketch, path)] = candidates.as_slice() else {
-            continue;
-        };
+    for (index, mut candidates) in assignments {
+        if candidates.len() != 1 { continue; }
+        let Some((profile_dependency, sketch, path)) = candidates.pop() else { continue; };
         let mut profile_bound = false;
-        let mut definition = model_features[index].evaluation.definition().clone();
-        if let FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape,
-            path: path_slot,
-            ..
-        }) = &mut definition
-        {
-            if shape.section_is_unresolved() {
-                shape.set_referenced_profile((sketch.clone()).into());
-                profile_bound = true;
-            }
-            if let Some((_, path)) = path {
-                if path_slot
-                    .as_ref()
-                    .is_none_or(|existing| matches!(existing, PathRef::Native(_)))
-                {
-                    *path_slot = Some(PathRef::Sketch(path.clone()));
+        let mut path_dependency = None;
+        model_features[index].evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, path: path_slot, .. }) = definition {
+                if shape.section_is_unresolved() {
+                    shape.set_referenced_profile(sketch.into());
+                    profile_bound = true;
                 }
+                if let Some((dependency, path)) = path {
+                    if path_slot.as_ref().is_none_or(|existing| matches!(existing, PathRef::Native(_))) {
+                        *path_slot = Some(PathRef::Sketch(path));
+                    }
+                    path_dependency = Some(dependency);
+                }
+            } else {
+                path_dependency = path.map(|(dependency, _)| dependency);
             }
+        });
+        if profile_bound && !model_features[index].dependencies.contains(&profile_dependency) {
+            model_features[index].dependencies.try_insert_charged(profile_dependency, ctx, "collect SLDPRT sweep profile dependencies")?;
         }
-        model_features[index].evaluation.set_definition(definition);
-
-        if profile_bound
-            && !model_features[index]
-                .dependencies
-                .contains(profile_dependency)
-        {
-            model_features[index]
-                .dependencies
-                .insert(profile_dependency.clone());
-        }
-        if let Some((path_dependency, _)) = path {
-            if !model_features[index].dependencies.contains(path_dependency) {
-                model_features[index]
-                    .dependencies
-                    .insert(path_dependency.clone());
+        if let Some(dependency) = path_dependency {
+            if !model_features[index].dependencies.contains(&dependency) {
+                model_features[index].dependencies.try_insert_charged(dependency, ctx, "collect SLDPRT sweep profile dependencies")?;
             }
         }
     }
     Ok(())
+}
+
+fn copy_feature_binding_id(ctx: &DecodeContext<'_>, id: &cadmpeg_ir::features::FeatureId) -> Result<cadmpeg_ir::features::FeatureId, cadmpeg_core::CodecError> {
+    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT feature binding identity")?;
+    cadmpeg_ir::features::FeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
+}
+
+fn copy_feature_binding_sketch_id(ctx: &DecodeContext<'_>, id: &SketchId) -> Result<SketchId, cadmpeg_core::CodecError> {
+    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT feature binding identity")?;
+    SketchId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
+}
+
+fn reserve_feature_binding_map<K: Eq + std::hash::Hash, V>(ctx: &DecodeContext<'_>, values: &mut HashMap<K, V>, operation: &'static str) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_work(1, operation)?;
+    ctx.charge_collection_items(1, operation)?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
+}
+
+fn collect_feature_binding_vec<T>(ctx: &DecodeContext<'_>, items: impl Iterator<Item = T>) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+    let mut values = Vec::new();
+    for item in items {
+        ctx.charge_work(1, "scan SLDPRT feature binding candidates")?;
+        ctx.reserve_collection_vec(&mut values, 1, "collect SLDPRT feature binding candidates")?;
+        values.push(item);
+    }
+    Ok(values)
 }
 
 pub(crate) fn bind_scalar_operands(

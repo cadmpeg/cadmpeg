@@ -3017,6 +3017,7 @@ fn build_geometry_ir(
         &topology_selection_inputs,
     )?;
     crate::resolved_features::bindings::bind_mirror_surface_planes(
+        ctx,
         &mut ir.model.features,
         &histories,
         &all_lanes,

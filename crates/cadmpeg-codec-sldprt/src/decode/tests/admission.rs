@@ -1584,3 +1584,74 @@ fn geometry_dissected_sketches_refuses_work_limit() {
     let refusal = work_refusal_with_options(&class_binding_source(), DecodeOptions::default(), "classify SLDPRT dissected profiles");
     assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
 }
+
+#[test]
+fn metadata_sweep_adjacent_profiles_refuses_collection_limit() {
+    let refusal = collection_refusal_with_options(&class_binding_source(), DecodeOptions { container_only: true, ..DecodeOptions::default() }, "collect SLDPRT feature binding candidates");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn metadata_sweep_adjacent_profiles_refuses_work_limit() {
+    let refusal = work_refusal_with_options(&class_binding_source(), DecodeOptions { container_only: true, ..DecodeOptions::default() }, "scan SLDPRT feature binding candidates");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn geometry_sweep_adjacent_profiles_refuses_collection_limit() {
+    let refusal = collection_refusal_with_options(&class_binding_source(), DecodeOptions::default(), "collect SLDPRT feature binding candidates");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn geometry_sweep_adjacent_profiles_refuses_work_limit() {
+    let refusal = work_refusal_with_options(&class_binding_source(), DecodeOptions::default(), "scan SLDPRT feature binding candidates");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn geometry_mirror_surface_planes_refuses_collection_limit() {
+    let refusal = collection_refusal_with_options(&class_binding_source(), DecodeOptions::default(), "index SLDPRT mirror surface planes");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn geometry_mirror_surface_planes_refuses_work_limit() {
+    let refusal = work_refusal_with_options(&class_binding_source(), DecodeOptions::default(), "index SLDPRT mirror surface planes");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
+fn sweep_binding_source() -> Vec<u8> {
+    let mut source = crate::test_support::container::sldprt_with_body(&triangle_body());
+    let mut payload = crate::test_support::history::resolved_feature_classes_with_ids(&[
+        ("moSweep_c", "Sweep1", 20),
+        ("moProfileFeature_c", "Sketch1", 10),
+    ]);
+    payload.extend(crate::test_support::parasolid::parasolid_with_body(
+        "profile", "SCH_SW_33103_11000", &triangle_body(),
+    ));
+    source.extend(make_block(0x45, "Contents/Config-0-ResolvedFeatures", &payload));
+    source.extend(make_block(0x43, "Contents/Keywords",
+        br#"<Keywords><Sweep Name="Sweep1" Type="Sweep" id="20"/><Sketch Name="Sketch1" Type="Sketch" id="10"/></Keywords>"#));
+    source
+}
+
+#[test]
+fn metadata_sweep_adjacent_profiles_refuses_retained_limit() {
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&sweep_binding_source(), &mut options, "retain SLDPRT feature binding identity");
+    assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "retain SLDPRT feature binding identity"));
+}
+
+#[test]
+fn geometry_sweep_adjacent_profiles_refuses_retained_limit() {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&sweep_binding_source(), &mut options, "retain SLDPRT feature binding identity");
+    assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "retain SLDPRT feature binding identity"));
+}
