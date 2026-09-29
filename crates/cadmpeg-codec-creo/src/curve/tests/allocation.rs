@@ -550,6 +550,63 @@ affine_helix_collection_test!(affine_defined_symbol_nodes_refuse, "creo affine d
 affine_helix_retained_test!(affine_defined_symbol_names_refuse, "creo affine defined symbol names");
 affine_helix_collection_test!(affine_value_nodes_refuse, "creo affine value nodes");
 
+fn solve_storage_limit_reaches(source: &[&str], operation: &'static str) {
+    let lines = expression_lines(source);
+    with_expression_policy(DecodePolicy::service(), |ctx| {
+        super::super::evaluate_expression_program_details(
+            ctx,
+            &lines,
+            None,
+            &super::super::ExternalRelationSymbols::default(),
+        )
+    })
+    .expect("service profile solves expression");
+    for limit in 0..8192 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let result = with_expression_policy(policy, |ctx| {
+            super::super::evaluate_expression_program_details(
+                ctx,
+                &lines,
+                None,
+                &super::super::ExternalRelationSymbols::default(),
+            )
+        });
+        if matches!(result, Err(CodecError::ResourceLimit(ref refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == operation)
+        {
+            return;
+        }
+    }
+    panic!("no limit reaches {operation}");
+}
+
+macro_rules! solve_storage_test {
+    ($name:ident, $source:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            solve_storage_limit_reaches($source, $operation);
+        }
+    };
+}
+
+solve_storage_test!(affine_variable_keys_refuse, &["SOLVE", "x=1", "FOR x"], "creo affine variable keys");
+solve_storage_test!(affine_known_value_nodes_refuse, &["y=2", "SOLVE", "x+y=3", "FOR x"], "creo affine known value nodes");
+solve_storage_test!(affine_coefficient_nodes_refuse, &["SOLVE", "x=1", "FOR x"], "creo affine coefficient nodes");
+solve_storage_test!(affine_unknown_value_nodes_refuse, &["SOLVE", "x=1", "FOR x"], "creo affine unknown value nodes");
+solve_storage_test!(affine_equation_coefficients_refuse, &["SOLVE", "x=1", "FOR x"], "creo affine equation coefficients");
+solve_storage_test!(affine_equation_rows_refuse, &["SOLVE", "x=1", "FOR x"], "creo affine equation rows");
+solve_storage_test!(affine_unique_solution_refuses, &["SOLVE", "x=1", "FOR x"], "creo affine unique solution");
+solve_storage_test!(affine_solved_values_refuse, &["SOLVE", "x=1", "FOR x"], "creo affine solved values");
+solve_storage_test!(nonlinear_initial_point_refuses, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear initial point");
+solve_storage_test!(nonlinear_line_search_point_refuses, &["x=1", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear line-search point");
+solve_storage_test!(nonlinear_solved_values_refuse, &["x=2", "SOLVE", "x*x*x=8", "FOR x"], "creo nonlinear solved values");
+evaluation_retained_test!(affine_variable_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo affine variable names");
+evaluation_retained_test!(affine_known_value_names_refuse, &["y=2", "SOLVE", "x+y=3", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo affine known value names");
+evaluation_retained_test!(affine_coefficient_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo affine coefficient names");
+evaluation_retained_test!(affine_unknown_value_names_refuse, &["SOLVE", "x=1", "FOR x"], super::super::ExternalRelationSymbols::default(), "creo affine unknown value names");
+
 #[test]
 fn solve_unknowns_refuse_before_vector_growth() {
     let service = with_expression_policy(DecodePolicy::service(), |ctx| {

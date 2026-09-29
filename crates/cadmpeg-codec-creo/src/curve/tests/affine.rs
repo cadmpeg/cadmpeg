@@ -623,8 +623,11 @@ fn affine_solver_is_invariant_under_independent_equation_scaling() {
         },
     ];
 
-    let solution =
-        solve_unique_affine_system(&mut rows, 2).expect("independently scaled unique system");
+    let solution = crate::decode::with_test_decode_ctx(|ctx| {
+        solve_unique_affine_system(ctx, &mut rows, 2)
+    })
+    .expect("service profile")
+    .expect("independently scaled unique system");
     assert!((solution[0] - 6.0).abs() <= 1.0e-12);
     assert!((solution[1] - 4.0).abs() <= 1.0e-12);
 }
