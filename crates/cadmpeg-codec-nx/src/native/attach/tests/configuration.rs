@@ -260,7 +260,11 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         .map(|operation| (operation.clone(), chamfer))
         .collect();
 
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let projection = hole_package_projection(
+        &ctx,
         &cadmpeg_ir::document::CadIr::empty(),
         &templates,
         std::slice::from_ref(&group),
@@ -268,7 +272,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         &outputs,
         &diameters,
         &chamfers,
-    );
+    ).unwrap();
     assert_eq!(
         projection.internal_operations,
         operations.iter().cloned().collect()
@@ -287,6 +291,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         })
         .collect::<Vec<_>>();
     let projection = hole_package_projection(
+        &ctx,
         &cadmpeg_ir::document::CadIr::empty(),
         &untreated_templates,
         std::slice::from_ref(&group),
@@ -294,7 +299,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         &outputs,
         &diameters,
         &BTreeMap::new(),
-    );
+    ).unwrap();
     assert_eq!(
         projection.internal_operations,
         operations.iter().cloned().collect()
@@ -306,6 +311,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     let mut mixed_templates = untreated_templates.clone();
     mixed_templates[0].start_treatment = SimpleHoleEndTreatment::Chamfer;
     let projection = hole_package_projection(
+        &ctx,
         &cadmpeg_ir::document::CadIr::empty(),
         &mixed_templates,
         std::slice::from_ref(&group),
@@ -313,7 +319,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         &outputs,
         &diameters,
         &BTreeMap::new(),
-    );
+    ).unwrap();
     assert!(projection.internal_operations.is_empty());
     assert!(projection.outputs.is_empty());
 
@@ -323,6 +329,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         vec![BodyId::mint("test:model:entity#other-body").expect("identity grammar")],
     );
     let projection = hole_package_projection(
+        &ctx,
         &cadmpeg_ir::document::CadIr::empty(),
         &templates,
         std::slice::from_ref(&group),
@@ -330,7 +337,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         &mismatched_outputs,
         &diameters,
         &chamfers,
-    );
+    ).unwrap();
     assert!(projection.internal_operations.is_empty());
     assert!(projection.outputs.is_empty());
 }

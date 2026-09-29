@@ -12,7 +12,11 @@ fn hole_diameters_for_operations(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, Length> {
-    hole_body_projection(ir, operations, outputs)
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    hole_body_projection(&ctx, ir, operations, outputs)
+        .expect("hole witness resource budget")
         .map(|projection| projection.diameters)
         .unwrap_or_default()
 }
