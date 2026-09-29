@@ -2193,17 +2193,13 @@ fn measurement_for_feature(
     unique_measurement(candidates)
 }
 
-fn child_feature_ids(feature: &Entity) -> Vec<&str> {
-    let mut ids = feature
+fn child_feature_ids(feature: &Entity) -> impl Iterator<Item = &str> {
+    feature
         .features
         .references
         .iter()
         .map(|reference| reference.id.as_str())
-        .collect::<Vec<_>>();
-    if let Some(subfeatures) = direct_subfeature_ids(feature) {
-        ids.extend(subfeatures);
-    }
-    ids
+        .chain(direct_subfeature_ids(feature).into_iter().flatten())
 }
 
 fn nominal_radius(feature: &Entity, name: &str) -> Option<PositiveReal> {
