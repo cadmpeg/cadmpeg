@@ -52,18 +52,6 @@ fn collect_pmi_references(
     Ok(ids)
 }
 
-fn claim_pmi_typed_many(
-    typed: &mut HashSet<u64>,
-    ids: impl IntoIterator<Item = u64>,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    for id in ids {
-        ctx.insert_hash_set(typed, id, "step_pmi_typed_claims")
-            ?;
-    }
-    Ok(())
-}
-
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
@@ -280,7 +268,7 @@ pub(super) fn decode(
         )?;
         ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
             ?;
-        claim_pmi_typed_many(&mut typed, datum_records, ctx)?;
+        ctx.extend_hash_set(&mut typed, datum_records, "step_pmi_typed_claims")?;
     }
 
     for id in exchange.matching_entity_ids(is_dimension_name) {
@@ -484,7 +472,7 @@ pub(super) fn decode(
                 })? {
                     ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
                         ?;
-                    claim_pmi_typed_many(&mut typed, refs, ctx)?;
+                    ctx.extend_hash_set(&mut typed, refs, "step_pmi_typed_claims")?;
                 } else {
                     ctx.push_vec(
                         &mut losses,
@@ -511,7 +499,7 @@ pub(super) fn decode(
             .map_err(|error| {
                 CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
             })? {
-                claim_pmi_typed_many(&mut typed, [id, fit_id], ctx)?;
+                ctx.extend_hash_set(&mut typed, [id, fit_id], "step_pmi_typed_claims")?;
             } else {
                 ctx.push_vec(
                     &mut losses,
@@ -692,19 +680,13 @@ pub(super) fn decode(
         )?;
         ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
             ?;
-        claim_pmi_typed_many(
-            &mut typed,
-            refs.iter().copied().filter(|reference| {
+        ctx.extend_hash_set(&mut typed, refs.iter().copied().filter(|reference| {
                 exchange
                     .records()
                     .get(reference)
                     .is_some_and(is_measure_record)
-            }),
-            ctx,
-        )?;
-        claim_pmi_typed_many(
-            &mut typed,
-            record
+            }), "step_pmi_typed_claims")?;
+        ctx.extend_hash_set(&mut typed, record
                 .partials
                 .iter()
                 .flat_map(|partial| partial.parameters.iter())
@@ -714,9 +696,7 @@ pub(super) fn decode(
                         .records()
                         .get(reference)
                         .is_some_and(is_measure_record)
-                }),
-            ctx,
-        )?;
+                }), "step_pmi_typed_claims")?;
     }
 
     for (id, record) in exchange.entities("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
@@ -835,7 +815,7 @@ pub(super) fn decode(
         )?;
         ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
             ?;
-        claim_pmi_typed_many(&mut typed, text_records, ctx)?;
+        ctx.extend_hash_set(&mut typed, text_records, "step_pmi_typed_claims")?;
     }
     for (id, _) in
         exchange.entities_any(&["DRAUGHTING_MODEL", "ANNOTATION_PLANE", "DRAUGHTING_CALLOUT"])
@@ -871,11 +851,7 @@ pub(super) fn decode(
                 }
                 _ => None,
             }), "step_pmi_targeted_aspects")?;
-    claim_pmi_typed_many(
-        &mut typed,
-        shape_aspects.intersection(&targeted_aspects).copied(),
-        ctx,
-    )?;
+    ctx.extend_hash_set(&mut typed, shape_aspects.intersection(&targeted_aspects).copied(), "step_pmi_typed_claims")?;
     mark_characteristic_representations(exchange, &annotations, &mut typed, ctx)?;
     Ok(StageOutcome {
         value: (),
@@ -967,7 +943,7 @@ fn resolve_feature_for_datum_target_relationships(
             ctx,
             "step_pmi_datum_basis_targets",
         )?;
-        claim_pmi_typed_many(typed, [id, relating], ctx)?;
+        ctx.extend_hash_set(typed, [id, relating], "step_pmi_typed_claims")?;
     }
     Ok(())
 }
@@ -1254,7 +1230,7 @@ fn datum_references_for_compartment(
             if annotations.get(datum).is_none() {
                 continue;
             }
-            let mut modifiers = clone_pmi_modifiers(&compartment_modifiers, ctx)?;
+            let mut modifiers = ctx.try_collect_vec(compartment_modifiers.iter().map(|value| ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy")), "step_pmi_datum_modifier_items")?;
             for modifier in datum_modifiers(element)
                 .and_then(ValueExt::list)
                 .into_iter()
@@ -1264,7 +1240,7 @@ fn datum_references_for_compartment(
                     ctx.push_vec(&mut modifiers, text, "step_pmi_datum_modifier_items")?;
                 }
             }
-            claim_pmi_typed_many(typed, [element_id, datum], ctx)?;
+            ctx.extend_hash_set(typed, [element_id, datum], "step_pmi_typed_claims")?;
             ctx.push_vec(
                 &mut output,
                 DatumReference {
@@ -1291,25 +1267,13 @@ fn datum_references_for_compartment(
                     datum: pmi_id(datum),
                     precedence,
                     common_group: None,
-                    modifiers: clone_pmi_modifiers(&compartment_modifiers, ctx)?,
+                    modifiers: ctx.try_collect_vec(compartment_modifiers.iter().map(|value| ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy")), "step_pmi_datum_modifier_items")?,
                 },
                 "step_pmi_datum_reference_items",
             )
         })?;
     }
     Ok(output)
-}
-
-fn clone_pmi_modifiers(
-    values: &[String],
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<String>, CodecError> {
-    let mut copy = Vec::new();
-    for value in values {
-        let text = ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy")?;
-        ctx.push_vec(&mut copy, text, "step_pmi_datum_modifier_items")?;
-    }
-    Ok(copy)
 }
 
 fn admit_datum_reference_maps(

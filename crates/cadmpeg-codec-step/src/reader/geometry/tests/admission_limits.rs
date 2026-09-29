@@ -45,122 +45,6 @@ fn uncertainty_note_text_refuses_retained_limit() {
     ));
 }
 
-macro_rules! deferred_ids_refusal_test {
-    ($name:ident, $operation:literal) => {
-        #[test]
-        fn $name() {
-            let arena = DecodeArena::new();
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = 0;
-            let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-                .expect("empty root fits policy");
-            assert!(matches!(
-                ctx.push_vec(&mut Vec::new(), 1u64, $operation),
-                Err(CodecError::ResourceLimit(refusal))
-                    if refusal.dimension == ResourceDimension::CollectionItems
-                        && refusal.operation == $operation
-            ));
-        }
-    };
-}
-
-deferred_ids_refusal_test!(
-    deferred_curve_ids_refuse_collection_limit,
-    "step_deferred_curve_ids"
-);
-deferred_ids_refusal_test!(
-    deferred_surface_ids_refuse_collection_limit,
-    "step_deferred_surface_ids"
-);
-deferred_ids_refusal_test!(
-    geometry_ir_curves_refuse_collection_limit,
-    "step_geometry_ir_curves"
-);
-deferred_ids_refusal_test!(
-    geometry_ir_surfaces_refuse_collection_limit,
-    "step_geometry_ir_surfaces"
-);
-deferred_ids_refusal_test!(
-    geometry_ir_pcurves_refuse_collection_limit,
-    "step_geometry_ir_pcurves"
-);
-deferred_ids_refusal_test!(
-    composite_curve_segments_refuse_collection_limit,
-    "step_composite_curve_segments"
-);
-deferred_ids_refusal_test!(
-    composite_curve_model_segments_refuse_collection_limit,
-    "step_composite_curve_model_segments"
-);
-deferred_ids_refusal_test!(
-    curve_bounded_boundaries_refuse_collection_limit,
-    "step_curve_bounded_boundaries"
-);
-deferred_ids_refusal_test!(
-    curve_bounded_pcurves_refuse_collection_limit,
-    "step_curve_bounded_pcurves"
-);
-deferred_ids_refusal_test!(
-    nurbs_control_point_ids_refuse_collection_limit,
-    "step_nurbs_control_point_ids"
-);
-deferred_ids_refusal_test!(
-    default_nurbs_knots_refuse_collection_limit,
-    "step_default_nurbs_knots"
-);
-deferred_ids_refusal_test!(
-    expanded_nurbs_knots_refuse_collection_limit,
-    "step_expanded_nurbs_knots"
-);
-deferred_ids_refusal_test!(
-    nurbs_weight_values_refuse_collection_limit,
-    "step_nurbs_weight_values"
-);
-deferred_ids_refusal_test!(
-    nurbs_curve_control_points_refuse_collection_limit,
-    "step_nurbs_curve_control_points"
-);
-deferred_ids_refusal_test!(
-    nurbs_pcurve_control_points_refuse_collection_limit,
-    "step_nurbs_pcurve_control_points"
-);
-deferred_ids_refusal_test!(
-    polyline_points_refuse_collection_limit,
-    "step_polyline_points"
-);
-deferred_ids_refusal_test!(
-    polyline_knots_refuse_collection_limit,
-    "step_polyline_knots"
-);
-deferred_ids_refusal_test!(
-    polyline_pcurve_points_refuse_collection_limit,
-    "step_polyline_pcurve_points"
-);
-deferred_ids_refusal_test!(
-    polyline_pcurve_knots_refuse_collection_limit,
-    "step_polyline_pcurve_knots"
-);
-deferred_ids_refusal_test!(
-    nurbs_surface_control_points_refuse_collection_limit,
-    "step_nurbs_surface_control_points"
-);
-deferred_ids_refusal_test!(
-    nurbs_surface_rows_refuse_collection_limit,
-    "step_nurbs_surface_rows"
-);
-deferred_ids_refusal_test!(
-    nurbs_surface_weight_values_refuse_collection_limit,
-    "step_nurbs_surface_weight_values"
-);
-deferred_ids_refusal_test!(
-    nurbs_surface_weight_rows_refuse_collection_limit,
-    "step_nurbs_surface_weight_rows"
-);
-deferred_ids_refusal_test!(
-    pcurve_nested_geometry_refuses_collection_limit,
-    "step_pcurve_nested_geometry"
-);
-
 fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_CURVE();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) =
@@ -654,10 +538,6 @@ fn curve_strips_refuse_collection_limit() {
     );
 }
 
-deferred_ids_refusal_test!(
-    curve_strip_points_refuse_collection_limit,
-    "step_curve_strip_points"
-);
 
 #[test]
 fn curve_strip_source_name_refuses_retained_limit() {

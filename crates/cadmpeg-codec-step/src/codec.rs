@@ -667,28 +667,7 @@ mod tests {
 
     use super::{insert_attribute, starts_with_step_magic, StepCodec};
 
-    #[test]
-    fn inspect_entry_refuses_collection_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits selected policy");
-        let mut entries = Vec::new();
-        assert!(matches!(
-            ctx.push_vec(&mut entries, cadmpeg_core::ContainerEntry {
-                name: "HEADER".into(),
-                role: cadmpeg_core::container::ContainerRole::Metadata,
-                storage: cadmpeg_core::container::EntryStorage::unreported(
-                    cadmpeg_core::container::VerbatimLabel::None,
-                ),
-                attributes: std::collections::BTreeMap::new(),
-            }, "step_inspect_entries"),
-            Err(CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "step_inspect_entries"
-        ));
-    }
+
 
     #[test]
     fn inspect_attribute_refuses_collection_limit() {
@@ -706,21 +685,7 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn codec_note_append_refuses_collection_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
-            .expect("empty root fits selected policy");
-        let mut notes = Vec::new();
-        assert!(matches!(
-            ctx.push_vec(&mut notes, String::from("container root"), "step_codec_notes"),
-            Err(CodecError::ResourceLimit(refusal))
-                if refusal.dimension == ResourceDimension::CollectionItems
-                    && refusal.operation == "step_codec_notes"
-        ));
-    }
+
 
     fn inspect_text_refuses(source: &[u8], operation: &str) {
         let mut limit = 0u64;
