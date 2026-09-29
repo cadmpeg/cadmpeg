@@ -129,6 +129,8 @@ fn compact_position_graph_selects_the_unique_bore_loci() {
 
 #[test]
 fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut lane = lane();
     lane.sketch_entities = [(1, [0.013, 0.007]), (2, [-0.009, 0.007])]
         .into_iter()
@@ -166,7 +168,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     };
     let mut surfaces = vec![surface(0, -9.0), surface(1, 13.0), surface(2, 100.0)];
 
-    let placements = marker_pattern_bore_axes(&lane, "position", 2.1, &surfaces, None)
+    let placements = marker_pattern_bore_axes(&ctx, &lane, "position", 2.1, &surfaces, None).unwrap()
         .expect("required invariant");
     assert_eq!(placements.len(), 2);
     assert!(placements.iter().any(|placement| matches!(
@@ -209,7 +211,7 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
         },
     ]);
     assert_eq!(
-        marker_pattern_bore_axes(&lane, "position", 2.1, &surfaces, None)
+        marker_pattern_bore_axes(&ctx, &lane, "position", 2.1, &surfaces, None).unwrap()
             .expect("object-indexed arc centers form the exact position roster")
             .len(),
         2
@@ -229,15 +231,16 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
         source_object: None,
     };
     surfaces.extend([opposite_side(3, -9.0), opposite_side(4, 13.0)]);
-    assert!(marker_pattern_bore_axes(&lane, "position", 2.1, &surfaces, None).is_none());
+    assert!(marker_pattern_bore_axes(&ctx, &lane, "position", 2.1, &surfaces, None).unwrap().is_none());
     assert_eq!(
         marker_pattern_bore_axes(
+            &ctx,
             &lane,
             "position",
             2.1,
             &surfaces,
             Some(Vector3::new(0.0, 0.0, 1.0)),
-        )
+        ).unwrap()
         .expect("required invariant")
         .len(),
         2
@@ -264,12 +267,13 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     surfaces.push(opposite);
     assert_eq!(
         marker_pattern_bore_axes(
+            &ctx,
             &lane,
             "position",
             2.1,
             &surfaces,
             Some(Vector3::new(0.0, 0.0, 1.0)),
-        )
+        ).unwrap()
         .expect("required invariant")
         .len(),
         2
@@ -278,6 +282,8 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
 
 #[test]
 fn curve_markers_can_contain_unmatched_construction_loci() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut lane = lane();
     lane.sketch_entities = [[-0.07, 0.011], [0.07, 0.011], [0.0, -0.004], [0.0, 0.011]]
         .into_iter()
@@ -321,7 +327,7 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
         .collect::<Vec<_>>();
 
     assert_eq!(
-        marker_pattern_bore_axes(&lane, "position", 3.0, &surfaces, None),
+        marker_pattern_bore_axes(&ctx, &lane, "position", 3.0, &surfaces, None).unwrap(),
         Some(vec![
             HolePlacement::Axis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-70.0, 11.0, 0.0))
@@ -341,6 +347,8 @@ fn curve_markers_can_contain_unmatched_construction_loci() {
 
 #[test]
 fn paired_object_loci_select_a_congruent_bore_pattern() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let marker = |id: &str, ordinal, object_index, kind, coordinates_m: Option<[f64; 2]>| {
         let marker_id: String = id.into();
         let marker_parent: String = "lane".into();
@@ -419,7 +427,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
     assert_eq!(paired, ["first", "second", "paired-duplicate"]);
 
     let mut surfaces = vec![cylinder(0, -9.0), cylinder(1, 13.0), cylinder(2, 100.0)];
-    let placements = marker_pattern_bore_axes(&lane, "position", 2.0, &surfaces, None)
+    let placements = marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None).unwrap()
         .expect("unique congruent pattern");
     assert_eq!(placements.len(), 2);
 
@@ -454,7 +462,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         .collect::<Vec<_>>();
     surfaces.extend(opposite);
     assert_eq!(
-        marker_pattern_bore_axes(&lane, "position", 2.0, &surfaces, None)
+        marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None).unwrap()
             .expect("unoriented coincident axes")
             .len(),
         2
@@ -474,7 +482,7 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         source_object: None,
     });
     assert_eq!(
-        marker_pattern_bore_axes(&lane, "position", 2.0, &surfaces, None)
+        marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None).unwrap()
             .expect("complete paired roster takes precedence")
             .len(),
         3
