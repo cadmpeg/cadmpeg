@@ -432,12 +432,13 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     };
     assert_eq!(
         relation_parameter_by_display_name(
+            &ctx,
             &relation,
             &lane,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&parameter),
         )
-        .map(|parameter| &parameter.id),
+        .unwrap().map(|parameter| &parameter.id),
         Some(&parameter.id)
     );
     assert_eq!(
@@ -457,12 +458,13 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     mismatched_parameter.value = Some(ParameterValue::Length(Length::new(20.0).unwrap()));
     assert_eq!(
         relation_parameter_by_display_name(
+            &ctx,
             &relation,
             &lane,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&mismatched_parameter),
         )
-        .map(|parameter| &parameter.id),
+        .unwrap().map(|parameter| &parameter.id),
         None
     );
     let mut synthesized_parameters = vec![mismatched_parameter.clone()];

@@ -406,7 +406,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             {
                 continue;
             }
-            let Some(scalar) = relation_display_scalar_for_parameter(relation, lane) else {
+            let Some(scalar) = relation_display_scalar_for_parameter(ctx, relation, lane)? else {
                 continue;
             };
             let Some(feature) = features_by_native_ref.get(relation.feature_ref.as_str()) else {
