@@ -90,7 +90,10 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let (dialects, dialect_losses) = classification.into_report_parts();
 
     let mut admitted_entities = 0_u64;
-    ctx.charge_entities(scan.streams.len() as u64, "admit NX streams")?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(scan.streams.len()),
+        "admit NX streams",
+    )?;
     if ctx.container_only() {
         let (ir, annotations, unknowns, native_losses) =
             build_metadata_ir(ctx, root, &scan, &dialects)?;
@@ -129,7 +132,7 @@ fn decoded(
     admitted_entities: &mut u64,
 ) -> Result<Decoded, CodecError> {
     ctx.admit_entities(
-        ir.model.entity_count() as u64,
+        cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
         admitted_entities,
         "admit NX entities",
     )?;
@@ -294,7 +297,7 @@ fn build_metadata_ir(
                 &mut annotations,
                 unknown.id().as_str(),
                 &source_stream,
-                stream.file_offset as u64,
+                cadmpeg_core::decode::u64_from_index(stream.file_offset),
                 stream.kind().label(),
             )?;
             annotations::exactness(

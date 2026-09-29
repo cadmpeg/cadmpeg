@@ -179,7 +179,7 @@ pub(super) fn emit_topology(
                 annotations,
                 id.as_str(),
                 source_stream,
-                shell.pos as u64,
+                cadmpeg_core::decode::u64_from_index(shell.pos),
                 "UNRESOLVED_BODY_REFERENCE",
             )?;
             super::annotations::exactness(ctx, annotations, id.as_str(), Exactness::Unknown)?;
@@ -240,7 +240,7 @@ pub(super) fn emit_topology(
                     annotations,
                     region.as_str(),
                     source_stream,
-                    node.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(node.pos),
                     "UNRESOLVED_REGION_REFERENCE",
                 )?;
                 super::annotations::exactness(
@@ -509,7 +509,7 @@ pub(super) fn emit_topology(
                     annotations,
                     carrier.as_str(),
                     source_stream,
-                    node.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(node.pos),
                     "PARAMETRIC_SURFACE_CURVE",
                 )?;
                 super::annotations::derived(ctx, annotations, carrier.as_str(), "geometry")?;
@@ -1100,7 +1100,7 @@ pub(super) fn emit_topology(
                     annotations,
                     pcurve_id.as_str(),
                     source_stream,
-                    node.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(node.pos),
                     "INTERSECTION_PCURVE",
                 )?;
                 super::annotations::derived(ctx, annotations, pcurve_id.as_str(), "geometry")?;
@@ -1337,7 +1337,7 @@ pub(super) fn retain_unresolved_topology_carriers(
             annotations,
             id.as_str(),
             source_stream,
-            face.pos as u64,
+            cadmpeg_core::decode::u64_from_index(face.pos),
             "UNRESOLVED_SURFACE_REFERENCE",
         )?;
         super::annotations::exactness(ctx, annotations, id.as_str(), Exactness::Unknown)?;
@@ -1373,7 +1373,7 @@ pub(super) fn retain_unresolved_topology_carriers(
             annotations,
             id.as_str(),
             source_stream,
-            edge.pos as u64,
+            cadmpeg_core::decode::u64_from_index(edge.pos),
             "UNRESOLVED_CURVE_REFERENCE",
         )?;
         super::annotations::exactness(ctx, annotations, id.as_str(), Exactness::Unknown)?;
@@ -1399,7 +1399,14 @@ pub(super) fn annotate_node(
     node: &Node,
     tag: &str,
 ) -> Result<(), CodecError> {
-    super::annotations::note(ctx, annotations, id, stream, node.pos as u64, tag)
+    super::annotations::note(
+        ctx,
+        annotations,
+        id,
+        stream,
+        cadmpeg_core::decode::u64_from_index(node.pos),
+        tag,
+    )
 }
 
 pub(super) fn surface_tag(geometry: &SolvedSurfaceGeometry) -> &'static str {
@@ -1487,7 +1494,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         annotations,
         point.as_str(),
         source_stream,
-        edge.pos as u64,
+        cadmpeg_core::decode::u64_from_index(edge.pos),
         "CLOSED_EDGE_POINT",
     )?;
     super::annotations::exactness(ctx, annotations, point.as_str(), Exactness::Inferred)?;
@@ -1496,7 +1503,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         annotations,
         vertex.as_str(),
         source_stream,
-        edge.pos as u64,
+        cadmpeg_core::decode::u64_from_index(edge.pos),
         "CLOSED_EDGE_VERTEX",
     )?;
     super::annotations::exactness(ctx, annotations, vertex.as_str(), Exactness::Inferred)?;
@@ -1773,7 +1780,7 @@ fn unknown_stream_record(
         "nx unknown stream id",
     )?;
     let id = UnknownId::mint(id).map_err(|error| CodecError::Malformed(error.to_string()))?;
-    let offset = stream.file_offset as u64;
+    let offset = cadmpeg_core::decode::u64_from_index(stream.file_offset);
     match data {
         Some(data) => Ok(UnknownRecord::retained(id, offset, data, Vec::new())),
         None => {
@@ -2180,7 +2187,8 @@ mod tests {
     fn unknown_stream_metadata_refuses_digest_text_at_retained_limit() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = "nx:container:parasolid#0".len() as u64;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("nx:container:parasolid#0".len());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             unknown_stream_metadata(&ctx, 0, &preview_stream(Vec::new())),
@@ -2275,7 +2283,8 @@ mod tests {
         let expected = source_meta(&service_ctx, &scan, &dialects).unwrap();
         assert_eq!(expected.attributes["file_size"], "0");
         let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_collection_items = expected.attributes.len() as u64;
+        limited_policy.limits.max_collection_items =
+            cadmpeg_core::decode::u64_from_index(expected.attributes.len());
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
         assert!(matches!(

@@ -25,10 +25,10 @@ impl<B> CountedPatternReferences<B> {
         let width = entries
             .as_slice()
             .iter()
-            .map(|(token, _)| token.raw().len() as u64)
+            .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
             .sum::<u64>();
         offset
-            .checked_add(2 + width + TRAILER.len() as u64)
+            .checked_add(2 + width + cadmpeg_core::decode::u64_from_index(TRAILER.len()))
             .ok_or("source_offset: counted reference frame overflows")?;
         Ok(Self { offset, entries })
     }
@@ -45,7 +45,7 @@ impl<B> CountedPatternReferences<B> {
         let mut at = self.offset + 2;
         self.entries.as_slice().iter().map(move |(token, target)| {
             let offset = at;
-            at += token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(token.raw().len());
             (offset, *token, target)
         })
     }

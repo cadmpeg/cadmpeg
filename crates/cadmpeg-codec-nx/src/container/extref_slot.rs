@@ -21,14 +21,20 @@ impl ExtrefSlot {
     }
 
     pub(crate) fn offset(self) -> u64 {
-        crate::layout::extrefstream_handle_set_record::ID_SLOTS as u64
-            + u64::from(u8::from(self)) * 4
+        cadmpeg_core::decode::u64_from_index(
+            crate::layout::extrefstream_handle_set_record::ID_SLOTS,
+        ) + u64::from(u8::from(self)) * 4
     }
 }
 
 impl From<ExtrefSlot> for u8 {
     fn from(slot: ExtrefSlot) -> Self {
-        slot as Self
+        match slot {
+            ExtrefSlot::First => 0,
+            ExtrefSlot::Second => 1,
+            ExtrefSlot::Third => 2,
+            ExtrefSlot::Fourth => 3,
+        }
     }
 }
 

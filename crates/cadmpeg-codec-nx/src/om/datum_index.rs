@@ -26,7 +26,7 @@ impl<O> DatumIndexLane<O> {
             .indices
             .as_slice()
             .iter()
-            .map(|atom| atom.raw().len() as u16)
+            .map(|atom| u16::from(atom.byte_len()))
             .sum::<u16>()
     }
 }
@@ -42,7 +42,7 @@ impl<O: Copy + Add<Output = O> + From<u16>> DatumIndexLane<O> {
                 atom: *atom,
                 offset,
             };
-            offset = offset + O::from(atom.raw().len() as u16);
+            offset = offset + O::from(u16::from(atom.byte_len()));
             token
         })
     }
@@ -73,7 +73,7 @@ checked_origin!(u64);
 impl DatumIndexLane<usize> {
     pub(crate) fn into_u64(self) -> DatumIndexLane<u64> {
         DatumIndexLane {
-            offset: self.offset as u64,
+            offset: cadmpeg_core::decode::u64_from_index(self.offset),
             indices: self.indices,
             trailer: self.trailer,
         }
@@ -187,7 +187,11 @@ mod tests {
     #[test]
     fn datum_terminal_positions_follow_mixed_token_widths_and_checked_extent() {
         for count in [1, 254] {
-            let mut bytes = vec![0x7f, 0x01, (count + 1) as u8];
+            let mut bytes = vec![
+                0x7f,
+                0x01,
+                u8::try_from(count + 1).expect("fixture value fits u8"),
+            ];
             let mut offsets = Vec::new();
             for slot in 0..count {
                 offsets.push(bytes.len());
@@ -209,14 +213,14 @@ mod tests {
             );
             assert_eq!(usize::from(lane.declared_count()), count + 1);
             assert_eq!(lane.trailer(), 0x1234_5678);
-            let origin = u64::MAX - (bytes.len() - 1) as u64;
+            let origin = u64::MAX - cadmpeg_core::decode::u64_from_index(bytes.len() - 1);
             let last =
                 DatumIndexLane::<u64>::new(lane.indices.clone(), lane.trailer, origin).unwrap();
             assert_eq!(
                 last.indices().map(|token| token.offset).collect::<Vec<_>>(),
                 offsets
                     .iter()
-                    .map(|offset| origin + (*offset - 1) as u64)
+                    .map(|offset| origin + cadmpeg_core::decode::u64_from_index(*offset - 1))
                     .collect::<Vec<_>>()
             );
             assert!(DatumIndexLane::<u64>::new(lane.indices, lane.trailer, origin + 1).is_none());

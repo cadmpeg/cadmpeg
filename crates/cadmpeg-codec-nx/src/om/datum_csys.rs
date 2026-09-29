@@ -47,10 +47,10 @@ impl<B> DatumCsysFrame<B> {
     ) -> Result<Self, &'static str> {
         let width: u64 = references
             .iter()
-            .map(|(token, _)| token.raw().len() as u64)
+            .map(|(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
             .sum();
         origin
-            .checked_add(14 + width + TRAILER.len() as u64)
+            .checked_add(14 + width + cadmpeg_core::decode::u64_from_index(TRAILER.len()))
             .ok_or("source_offsets: datum-CSYS frame end overflows")?;
         Ok(Self {
             control,
@@ -69,7 +69,7 @@ impl<B> DatumCsysFrame<B> {
         let mut at = self.origin + 14;
         self.references.each_ref().map(|(token, _)| {
             let offset = at;
-            at += token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(token.raw().len());
             offset
         })
     }
@@ -130,7 +130,7 @@ pub(crate) fn datum_csys_references(record: OperationPayload<'_>) -> Option<Datu
     }
     DatumCsysFrame::new(
         record.payload()[0],
-        record.payload_offset() as u64,
+        cadmpeg_core::decode::u64_from_index(record.payload_offset()),
         references,
     )
     .ok()

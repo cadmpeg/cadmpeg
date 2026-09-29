@@ -17,7 +17,9 @@ macro_rules! u8_discriminator {
         }
 
         impl From<$name> for u8 {
-            fn from(value: $name) -> Self { value as Self }
+            fn from(value: $name) -> Self {
+                match value { $($name::$variant => $value,)+ }
+            }
         }
 
         impl TryFrom<u8> for $name {
@@ -160,7 +162,7 @@ u8_discriminator! {
 impl super::scalar_run::ScalarFrame for DraftBinary32Branch {
     type Atom = super::scalar::ShiftedBinary32;
     fn prefix_len(self) -> u64 {
-        self.discriminator().len() as u64
+        cadmpeg_core::decode::u64_from_index(self.discriminator().len())
     }
 }
 
@@ -186,7 +188,10 @@ pub(crate) enum PointHeaderMode {
 
 impl From<PointHeaderMode> for u8 {
     fn from(mode: PointHeaderMode) -> Self {
-        mode as Self
+        match mode {
+            PointHeaderMode::Form02 => 0x02,
+            PointHeaderMode::Form03 => 0x03,
+        }
     }
 }
 

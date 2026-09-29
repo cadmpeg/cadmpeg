@@ -21,7 +21,7 @@ fn display_jt_inflate_propagates_expansion_and_retained_limits() {
     let service = DecodePolicy::service();
     let (ctx, root) = DecodeContext::from_root_bytes(&compressed, &arena, &service).unwrap();
     assert_eq!(
-        super::super::inflate_display_jt((&ctx, root), &compressed)
+        super::super::inflate_display_jt(&ctx, root)
             .unwrap()
             .unwrap(),
         expanded
@@ -29,10 +29,11 @@ fn display_jt_inflate_propagates_expansion_and_retained_limits() {
 
     let arena = DecodeArena::new();
     let mut expansion_policy = DecodePolicy::service();
-    expansion_policy.limits.max_decompressed_bytes_per_expand = expanded.len() as u64 - 1;
+    expansion_policy.limits.max_decompressed_bytes_per_expand =
+        cadmpeg_core::decode::u64_from_index(expanded.len()) - 1;
     let (ctx, root) =
         DecodeContext::from_root_bytes(&compressed, &arena, &expansion_policy).unwrap();
-    let error = super::super::inflate_display_jt((&ctx, root), &compressed).unwrap_err();
+    let error = super::super::inflate_display_jt(&ctx, root).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::DecompressedBytes)
@@ -40,10 +41,11 @@ fn display_jt_inflate_propagates_expansion_and_retained_limits() {
 
     let arena = DecodeArena::new();
     let mut retained_policy = DecodePolicy::service();
-    retained_policy.limits.max_retained_bytes = expanded.len() as u64 - 1;
+    retained_policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(expanded.len()) - 1;
     let (ctx, root) =
         DecodeContext::from_root_bytes(&compressed, &arena, &retained_policy).unwrap();
-    let error = super::super::inflate_display_jt((&ctx, root), &compressed).unwrap_err();
+    let error = super::super::inflate_display_jt(&ctx, root).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
@@ -107,14 +109,14 @@ fn assert_compressed_jt_limit(
     let arena = DecodeArena::new();
     let container = Container {
         data: std::borrow::Cow::Borrowed(&data),
-        physical_size: data.len() as u64,
+        physical_size: cadmpeg_core::decode::u64_from_index(data.len()),
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
             name: "/Root/UG_PART/DisplayJT".into(),
             region: Region::Footer,
             body: crate::container::DirEntryBody::File {
                 offset: 0,
-                len: data.len() as u64,
+                len: cadmpeg_core::decode::u64_from_index(data.len()),
             },
         }],
         fastload_table: None,
@@ -185,12 +187,17 @@ fn jt_compressed_sequence_refuses_before_vector_reservation() {
 fn jt_compressed_element_fields_refuse_before_string_allocation() {
     use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = framed_jt_element().len() as u64
-        + 3
-        + 2
-        + std::mem::size_of::<super::super::ParsedJtElement<'_>>() as u64
-        + std::mem::size_of::<String>() as u64
-        + std::mem::size_of::<super::super::DisplayJtCompressedElement>() as u64;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(framed_jt_element().len())
+            + 3
+            + 2
+            + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                super::super::ParsedJtElement<'_>,
+            >())
+            + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>())
+            + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                super::super::DisplayJtCompressedElement,
+            >());
     assert_compressed_jt_limit(
         policy,
         ResourceDimension::RetainedBytes,
@@ -220,18 +227,27 @@ struct CompressedJtRetainedStages {
 
 fn compressed_jt_retained_stages() -> CompressedJtRetainedStages {
     let segment = "nx:jt:segment#0";
-    let expanded_len = (framed_jt_element().len() + 3 + 2) as u64;
-    let before_ids = expanded_len + std::mem::size_of::<super::super::ParsedJtElement<'_>>() as u64;
-    let before_elements = before_ids + std::mem::size_of::<String>() as u64;
+    let expanded_len = cadmpeg_core::decode::u64_from_index(framed_jt_element().len() + 3 + 2);
+    let before_ids = expanded_len
+        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            super::super::ParsedJtElement<'_>,
+        >());
+    let before_elements =
+        before_ids + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>());
     let element_id_len = segment.len() + "-inflated-element-".len() + 1;
-    let element_fields = (element_id_len * 2 + segment.len() + 64) as u64;
+    let element_fields =
+        cadmpeg_core::decode::u64_from_index(element_id_len * 2 + segment.len() + 64);
     let before_sequence = before_elements
-        + std::mem::size_of::<super::super::DisplayJtCompressedElement>() as u64
+        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            super::super::DisplayJtCompressedElement,
+        >())
         + element_fields;
     let before_sequence_fields = before_sequence
-        + std::mem::size_of::<super::super::DisplayJtCompressedElementSequence>() as u64;
-    let before_tail =
-        before_sequence_fields + (segment.len() * 2 + "-inflated-sequence".len() + 64) as u64;
+        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            super::super::DisplayJtCompressedElementSequence,
+        >());
+    let before_tail = before_sequence_fields
+        + cadmpeg_core::decode::u64_from_index(segment.len() * 2 + "-inflated-sequence".len() + 64);
     CompressedJtRetainedStages {
         ids: before_ids,
         elements: before_elements,
@@ -372,8 +388,9 @@ fn display_jt_element_index_refuses_before_retained_reservation() {
     let bytes = framed_jt_element();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        std::mem::size_of::<super::super::ParsedJtElement<'_>>() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+        super::super::ParsedJtElement<'_>,
+    >()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = super::super::parse_jt_element_sequence(&ctx, &bytes).unwrap_err();
     assert!(

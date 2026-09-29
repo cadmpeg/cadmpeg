@@ -871,10 +871,9 @@ pub(super) fn segment_om_links(
             } else {
                 continue;
             };
-            let Some(location) = entry_offset
-                .checked_add(relative_u64)
-                .and_then(|offset| OmLocation::new(offset, separator_byte_len as u32))
-            else {
+            let Some(location) = entry_offset.checked_add(relative_u64).and_then(|offset| {
+                OmLocation::new(offset, u32::try_from(separator_byte_len).ok()?)
+            }) else {
                 continue;
             };
             ctx.reserve_retained_vec(&mut links, 1, "NX segment OM links")?;
@@ -1621,7 +1620,7 @@ mod tests {
             .expect("field declaration");
         let role = b"UGS::EXP_expression";
         let mut declaration = Vec::with_capacity(role.len() + 2);
-        declaration.push((role.len() + 1) as u8);
+        declaration.push(u8::try_from(role.len() + 1).expect("fixture value fits u8"));
         declaration.extend_from_slice(role);
         declaration.push(0xa1);
         section.splice(insertion..insertion, declaration);
@@ -1658,7 +1657,7 @@ mod tests {
             .expect("field declaration");
         let audit = b"UGS::OM::SaveAuditTrail";
         let mut declaration = Vec::with_capacity(audit.len() + 2);
-        declaration.push((audit.len() + 1) as u8);
+        declaration.push(u8::try_from(audit.len() + 1).expect("fixture value fits u8"));
         declaration.extend_from_slice(audit);
         declaration.push(0xa1);
         section.splice(insertion..insertion, declaration);
@@ -1709,7 +1708,7 @@ mod tests {
             operation_label: operation.to_string(),
             body: crate::om::reference_index::FeatureReferenceToken::from_wire(
                 body_object_index,
-                &[body_object_index as u8],
+                &[u8::try_from(body_object_index).expect("fixture value fits u8")],
             )
             .unwrap(),
             source_offset: 0,
@@ -1764,13 +1763,13 @@ mod tests {
             kind: FeatureBooleanKind::Unite,
             target: crate::test_support::native_references::boolean_reference(
                 target,
-                ordinal as u64,
+                cadmpeg_core::decode::u64_from_index(ordinal),
             ),
             tools: tools
                 .into_iter()
                 .map(|value| crate::test_support::native_references::boolean_reference(value, 0))
                 .collect(),
-            source_offset: ordinal as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(ordinal),
         };
         let booleans = [boolean(0, 20, vec![10]), boolean(1, 10, vec![20])];
         let bindings = [
@@ -1833,13 +1832,13 @@ mod tests {
             kind: FeatureBooleanKind::Unite,
             target: crate::test_support::native_references::boolean_reference(
                 target,
-                ordinal as u64,
+                cadmpeg_core::decode::u64_from_index(ordinal),
             ),
             tools: tools
                 .into_iter()
                 .map(|value| crate::test_support::native_references::boolean_reference(value, 0))
                 .collect(),
-            source_offset: ordinal as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(ordinal),
         };
         let booleans = [boolean(0, 10, Vec::new()), boolean(1, 20, vec![10])];
         let bindings = [

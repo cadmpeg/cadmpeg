@@ -23,13 +23,13 @@ fn display_jt_inflate_propagates_expansion_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_decompressed_bytes_total = 16;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::inflate_display_jt((&ctx, source), &member).unwrap_err();
+    let error = super::inflate_display_jt(&ctx, source).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::DecompressedBytes));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        super::inflate_display_jt((&service, source), &member)
+        super::inflate_display_jt(&service, source)
             .unwrap()
             .as_deref(),
         Some(b"DisplayJT payload".as_slice())
@@ -44,14 +44,14 @@ fn display_jt_inflate_propagates_retained_copy_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 16;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::inflate_display_jt((&ctx, source), &member).unwrap_err();
+    let error = super::inflate_display_jt(&ctx, source).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "retain inflated DisplayJT payload"));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        super::inflate_display_jt((&service, source), &member)
+        super::inflate_display_jt(&service, source)
             .unwrap()
             .as_deref(),
         Some(b"DisplayJT payload".as_slice())
@@ -99,7 +99,7 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
     data.extend_from_slice(&16_u32.to_le_bytes());
     data.extend_from_slice(&[0xff; 16]);
     data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
-    let data_len = data.len() as u64;
+    let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
         data: data.into(),
         physical_size: data_len,

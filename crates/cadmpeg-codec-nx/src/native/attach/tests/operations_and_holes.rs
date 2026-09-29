@@ -265,7 +265,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         operand: crate::om::compact::LocatedCompactIndex {
             atom: crate::om::compact::CompactIndexAtom::from_wire(
                 object_index,
-                &[object_index as u8],
+                &[u8::try_from(object_index).expect("fixture value fits u8")],
             )
             .unwrap(),
             offset: u64::from(ordinal),
@@ -379,7 +379,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
             operand: crate::om::compact::LocatedCompactIndex {
                 atom: crate::om::compact::CompactIndexAtom::from_wire(
                     object_index,
-                    &[object_index as u8],
+                    &[u8::try_from(object_index).expect("fixture value fits u8")],
                 )
                 .unwrap(),
                 offset: u64::from(ordinal),

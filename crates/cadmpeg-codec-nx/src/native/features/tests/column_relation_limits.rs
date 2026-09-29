@@ -40,8 +40,8 @@ fn column_relation_refusal(
             std::array::from_fn(|slot| {
                 (
                     crate::om::reference_index::PayloadIndexToken::from_wire(
-                        slot as u32,
-                        &[0xf0, slot as u8],
+                        u32::try_from(slot).expect("fixture value fits u32"),
+                        &[0xf0, u8::try_from(slot).expect("fixture value fits u8")],
                     )
                     .expect("datum reference token"),
                     format!("block#{slot}"),

@@ -11,7 +11,7 @@ pub(crate) trait AtomWidth {
 
 impl AtomWidth for ShiftedScalar {
     fn width(&self) -> u64 {
-        self.raw().len() as u64
+        cadmpeg_core::decode::u64_from_index(self.raw().len())
     }
 }
 
