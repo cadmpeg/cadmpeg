@@ -5,6 +5,11 @@ use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 
 #[test]
 fn periodic_circle_inverse_refuses_nonfinite_seeds() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let circle = SolvedCurveGeometry::Circle(
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -20,7 +25,7 @@ fn periodic_circle_inverse_refuses_nonfinite_seeds() {
                 &circle,
                 Point3::new(1.0, 0.0, 0.0),
                 Some(seed),
-                &GeometryWorkBudget::new(100),
+                &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100)),
             ),
             Ok(None)
         );
@@ -29,6 +34,11 @@ fn periodic_circle_inverse_refuses_nonfinite_seeds() {
 
 #[test]
 fn numerical_0922_contact_inverse_ignores_knot_units() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut ir = cadmpeg_ir::CadIr::empty();
     let id = SurfaceId::mint("nx:test:surface#1").unwrap();
     ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
@@ -63,7 +73,7 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
             &p,
             Point3::new(0.3, 0., 0.),
             None,
-            &GeometryWorkBudget::new(100_000),
+            &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100_000)),
         )
         .unwrap()
         .unwrap();
@@ -74,6 +84,11 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
 }
 #[test]
 fn numerical_0922_large_ellipse_keeps_inverse() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     for scale in [1., 1e200] {
         let g = SolvedCurveGeometry::Ellipse(
             cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
@@ -89,7 +104,7 @@ fn numerical_0922_large_ellipse_keeps_inverse() {
             &g,
             Point3::new(scale, 0., 0.),
             None,
-            &GeometryWorkBudget::new(10000),
+            &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(10000)),
         );
         println!(
             "NX ellipse axes ({scale:e}, {}), exact major tip: {r:?}",
@@ -100,6 +115,11 @@ fn numerical_0922_large_ellipse_keeps_inverse() {
 }
 #[test]
 fn numerical_0922_far_ellipse_query_keeps_inverse() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let g = SolvedCurveGeometry::Ellipse(
         cadmpeg_ir::geometry::analytic::EllipseCurve::try_new(
             Point3::new(0., 0., 0.),
@@ -114,7 +134,7 @@ fn numerical_0922_far_ellipse_query_keeps_inverse() {
         &g,
         Point3::new(2., 0., 1e200),
         None,
-        &GeometryWorkBudget::new(10000),
+        &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(10000)),
     );
     println!("NX ordinary ellipse with query z1e200: {r:?}");
     assert_eq!(r, Ok(Some(0.)));
@@ -122,6 +142,11 @@ fn numerical_0922_far_ellipse_query_keeps_inverse() {
 
 #[test]
 fn numerical_0922b_unclamped_curve_inverse() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     for knots in [vec![0., 0., 0., 1., 1., 1.], vec![-2., -1., 0., 1., 2., 3.]] {
         let curve = NurbsCurve::from_lanes(
             2,
@@ -136,7 +161,7 @@ fn numerical_0922b_unclamped_curve_inverse() {
         )
         .unwrap();
         let target = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.).unwrap();
-        let budget = GeometryWorkBudget::new(100_000);
+        let budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100_000));
         let p = closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget)
             .expect("evaluator allocation succeeds")
             .unwrap();
@@ -151,6 +176,11 @@ fn numerical_0922b_unclamped_curve_inverse() {
 }
 #[test]
 fn numerical_0922b_small_domain_inverse() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     for d in [1., 1e-16] {
         let curve = NurbsCurve::from_lanes(
             2,
@@ -165,7 +195,7 @@ fn numerical_0922b_small_domain_inverse() {
         )
         .unwrap();
         let target = cadmpeg_ir::eval::nurbs_curve_point_at(&curve, 0.75 * d).unwrap();
-        let budget = GeometryWorkBudget::new(100_000);
+        let budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100_000));
         let p = closest_nurbs_curve_parameter_with_budget(&curve, target.get(), None, &budget)
             .expect("evaluator allocation succeeds")
             .unwrap();
@@ -180,6 +210,11 @@ fn numerical_0922b_small_domain_inverse() {
 }
 #[test]
 fn numerical_0922b_discontinuous_curve_inverse() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let curve = NurbsCurve::from_lanes(
         2,
         vec![0., 0., 0., 0.5, 0.5, 0.5, 1., 1., 1.],
@@ -196,7 +231,7 @@ fn numerical_0922b_discontinuous_curve_inverse() {
         &curve,
         target,
         None,
-        &GeometryWorkBudget::new(100_000),
+        &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100_000)),
     )
     .expect("evaluator allocation succeeds")
     .unwrap();
@@ -206,6 +241,11 @@ fn numerical_0922b_discontinuous_curve_inverse() {
 }
 #[test]
 fn numerical_0922b_common_weight_inverse() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     for w in [1., 1e200] {
         let curve = NurbsCurve::from_lanes(
             1,
@@ -215,7 +255,7 @@ fn numerical_0922b_common_weight_inverse() {
             false,
         )
         .unwrap();
-        let budget = GeometryWorkBudget::new(100_000);
+        let budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100_000));
         let p = closest_nurbs_curve_parameter_with_budget(
             &curve,
             Point3::new(0., 0., 0.),
@@ -253,6 +293,11 @@ fn numerical_audit_pcurve_newton_converges_on_small_chart() {
 }
 #[test]
 fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     for [a, b] in [[0., 1.], [-1e308, 1e308]] {
         let curve = NurbsCurve::from_lanes(
             1,
@@ -266,7 +311,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
             &curve,
             Point3::new(0.3, 0., 0.),
             None,
-            &GeometryWorkBudget::new(100_000),
+            &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100_000)),
         )
         .expect("evaluator allocation succeeds")
         .unwrap();
@@ -294,7 +339,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
             &[0., 1.],
             0.,
             [-1e308, 1e308],
-            &GeometryWorkBudget::new(100)
+            &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100))
         ),
         Ok(0.5)
     );
@@ -303,7 +348,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
             &[[-0.5, 0., 1.], [0.5, 0., 1.]],
             0.,
             [-1e308, 1e308],
-            &GeometryWorkBudget::new(100),
+            &GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100)),
         ),
         Ok(0.)
     );
@@ -332,9 +377,14 @@ fn overflowing_plane_model() -> (cadmpeg_ir::CadIr, SurfaceId, SurfaceGeometry) 
 
 #[test]
 fn a_decoded_surface_point_that_overflows_is_returned_without_a_fallback() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let (ir, surface_id, geometry) = overflowing_plane_model();
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
-    let budget = GeometryWorkBudget::new(1024);
+    let budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(1024));
     for point in [
         decoded_surface_point_inner_with_budget(&index, &surface_id, f64::MAX, 3.0, 0, &budget)
             .expect("evaluator allocation succeeds"),
@@ -358,6 +408,11 @@ fn a_decoded_surface_point_that_overflows_is_returned_without_a_fallback() {
 
 #[test]
 fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     // The plane through the origin, placed by a transform that adds the
     // largest finite x coordinate: its point at u = MAX has no finite x.
     let surface_id = SurfaceId::mint("test:nx:surface#placed-overflow").expect("identity grammar");
@@ -387,7 +442,7 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
         source_object: None,
     });
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
-    let budget = GeometryWorkBudget::new(1024);
+    let budget = GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(1024));
     for point in [
         decoded_surface_point_inner_with_budget(&index, &surface_id, f64::MAX, 3.0, 0, &budget)
             .expect("evaluator allocation succeeds"),

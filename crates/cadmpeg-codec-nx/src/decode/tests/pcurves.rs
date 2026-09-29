@@ -125,6 +125,14 @@ fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
 
 #[test]
 fn analytic_closed_isocurves_retain_the_native_full_turn() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
+
     let mut ir = CadIr::empty();
     let cone = SurfaceId::mint("test:model:entity#nx:test:cone").expect("identity grammar");
     let sphere = SurfaceId::mint("test:model:entity#nx:test:sphere").expect("identity grammar");
@@ -236,7 +244,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     ]);
 
     let range = [0.0, std::f64::consts::TAU];
-    let cone_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
+    let cone_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(&ctx,
         &ir,
         &cone_ellipse,
         &cone,
@@ -244,7 +252,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         1.0e-12,
     )
     .expect("cone ellipse");
-    let sphere_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
+    let sphere_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(&ctx,
         &ir,
         &sphere_circle,
         &sphere,
@@ -252,7 +260,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         1.0e-12,
     )
     .expect("sphere parallel");
-    let torus_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
+    let torus_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(&ctx,
         &ir,
         &torus_circle,
         &torus,
@@ -359,15 +367,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
 
     let procedural_start = ir.model.procedural_curves.len();
     let mut annotations = AnnotationBuilder::new();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("test context");
     let transfer_budget = WorkBudget::new(usize::MAX);
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(usize::MAX);
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&ctx, cadmpeg_core::decode::u64_from_index(usize::MAX));
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
         &ctx,
         &mut ir,
@@ -458,6 +459,11 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
 
 #[test]
 fn boundary_pcurve_requires_an_affine_carrier_witness() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut ir = CadIr::empty();
     let curve =
         CurveId::mint("test:model:entity#nx:test:bowed-boundary-curve").expect("identity grammar");
@@ -494,7 +500,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
         source_object: None,
     });
 
-    assert!(exact_boundary_pcurve(
+    assert!(exact_boundary_pcurve(&geometry_ctx,
         &ir,
         &curve,
         &surface,
@@ -516,7 +522,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
         .unwrap(),
     ));
     assert!(matches!(
-        exact_boundary_pcurve(
+        exact_boundary_pcurve(&geometry_ctx,
             &ir,
             &curve,
             &surface,
@@ -531,6 +537,11 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
 
 #[test]
 fn boundary_plane_pcurve_keeps_wide_finite_parameterization() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut ir = CadIr::empty();
     let curve =
         CurveId::mint("test:model:entity#nx:test:wide-boundary-curve").expect("identity grammar");
@@ -563,7 +574,7 @@ fn boundary_plane_pcurve_keeps_wide_finite_parameterization() {
         source_object: None,
     });
 
-    let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(
+    let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(&geometry_ctx,
         &ir,
         &curve,
         &surface,
@@ -586,6 +597,11 @@ fn boundary_plane_pcurve_keeps_wide_finite_parameterization() {
 
 #[test]
 fn boundary_cylinder_generator_keeps_wide_finite_parameterization() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut ir = CadIr::empty();
     let curve =
         CurveId::mint("test:model:entity#nx:test:wide-generator-curve").expect("identity grammar");
@@ -618,7 +634,7 @@ fn boundary_cylinder_generator_keeps_wide_finite_parameterization() {
         )),
         source_object: None,
     });
-    let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(
+    let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(&geometry_ctx,
         &ir,
         &curve,
         &surface,
@@ -641,6 +657,11 @@ fn boundary_cylinder_generator_keeps_wide_finite_parameterization() {
 
 #[test]
 fn rational_generator_does_not_get_an_affine_boundary_certificate() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut ir = CadIr::empty();
     let surface = SurfaceId::mint("test:model:entity#nx:test:rational-generator-cylinder")
         .expect("identity grammar");
@@ -674,7 +695,7 @@ fn rational_generator_does_not_get_an_affine_boundary_certificate() {
         )
         .expect("linear generator"),
     );
-    assert!(!coincident_pcurve_pair(
+    assert!(!coincident_pcurve_pair(&geometry_ctx,
         &ir,
         [&surface, &surface],
         [&rational, &linear],
@@ -686,6 +707,11 @@ fn rational_generator_does_not_get_an_affine_boundary_certificate() {
 
 #[test]
 fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut ir = CadIr::empty();
     let curve = CurveId::mint("test:model:entity#nx:test:affine-nurbs-boundary-curve")
         .expect("identity grammar");
@@ -711,7 +737,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
         source_object: None,
     });
 
-    assert!(matches!(exact_boundary_pcurve(
+    assert!(matches!(exact_boundary_pcurve(&geometry_ctx,
             &ir,
             &curve,
             &surface,
@@ -728,6 +754,11 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
 
 #[test]
 fn boundary_nurbs_surface_keeps_wide_finite_affine_pcurve() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut ir = CadIr::empty();
     let curve = CurveId::mint("test:model:entity#nx:test:wide-nurbs-boundary-curve")
         .expect("identity grammar");
@@ -752,7 +783,7 @@ fn boundary_nurbs_surface_keeps_wide_finite_affine_pcurve() {
         geometry: affine_nurbs_surface(0.0),
         source_object: None,
     });
-    let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(
+    let Some(PcurveGeometry::Nurbs { nurbs }) = exact_boundary_pcurve(&geometry_ctx,
         &ir,
         &curve,
         &surface,
@@ -869,6 +900,11 @@ fn quadratic_paraboloid_surface() -> SurfaceGeometry {
 
 #[test]
 fn planar_offset_cache_fit_is_certified_over_the_control_net() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let support = affine_nurbs_surface(0.0);
     let mut candidate = affine_nurbs_surface(4.0);
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate)) = &mut candidate else {
@@ -888,7 +924,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
         })
         .unwrap();
 
-    let fit = certified_offset_cache_fit(
+    let fit = certified_offset_cache_fit(&geometry_ctx,
         &support,
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate.clone())),
         4.0,
@@ -896,7 +932,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
     )
     .expect("whole-patch fit");
     assert!((fit - 0.000_5).abs() < 1.0e-12);
-    assert!(certified_offset_cache_fit(
+    assert!(certified_offset_cache_fit(&geometry_ctx,
         &support,
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate.clone())),
         4.0,
@@ -907,11 +943,16 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
 
 #[test]
 fn adaptive_offset_certification_fails_closed_when_the_work_slice_is_empty() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let support = quadratic_paraboloid_surface();
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)) = &support else {
         unreachable!();
     };
-    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
+    let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(0));
 
     assert!(
         crate::decode::offset::certified_curved_offset_cache_fit_with_budget(
@@ -925,7 +966,12 @@ fn adaptive_offset_certification_fails_closed_when_the_work_slice_is_empty() {
 
 #[test]
 fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
-    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
+    let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(0));
     let span = crate::decode::blend::ScalarBezierSpan {
         domain: [0.0, 1.0],
         controls: vec![-1.0, 1.0],
@@ -941,6 +987,11 @@ fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
 
 #[test]
 fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let surface =
         SurfaceId::mint("test:model:entity#nx:test:budget-plane").expect("identity grammar");
     let start_point =
@@ -999,7 +1050,7 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
         tolerance: None,
     });
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
-    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
+    let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(0));
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(0.0, 0.0),
@@ -1025,8 +1076,13 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
 
 #[test]
 fn offset_cache_fit_accepts_higher_degree_translation_nets() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     assert_eq!(
-        certified_offset_cache_fit(
+        certified_offset_cache_fit(&geometry_ctx,
             &quadratic_translation_surface(0.0),
             &quadratic_translation_surface(4.0),
             4.0,
@@ -1038,6 +1094,11 @@ fn offset_cache_fit_accepts_higher_degree_translation_nets() {
 
 #[test]
 fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut support = quadratic_paraboloid_surface();
     let mut candidate = support.clone();
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support_surface)) = &mut support
@@ -1090,14 +1151,19 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
     };
 
     assert_eq!(
-        certified_offset_cache_fit(&support, &candidate, 0.0, NonNegativeLength::ZERO),
+        certified_offset_cache_fit(&geometry_ctx, &support, &candidate, 0.0, NonNegativeLength::ZERO),
         Some(0.0)
     );
 }
 
 #[test]
 fn offset_cache_fit_certifies_differing_bases_on_one_parameter_domain() {
-    let bound = certified_offset_cache_fit(
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
+    let bound = certified_offset_cache_fit(&geometry_ctx,
         &affine_nurbs_surface(0.0),
         &degree_elevated_affine_surface(4.0),
         4.0,
@@ -1109,12 +1175,17 @@ fn offset_cache_fit_certifies_differing_bases_on_one_parameter_domain() {
 
 #[test]
 fn curved_offset_cache_fit_uses_span_local_derivative_bounds() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let support = quadratic_paraboloid_surface();
     assert_eq!(
-        certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
+        certified_offset_cache_fit(&geometry_ctx, &support, &support, 0.0, NonNegativeLength::ZERO),
         Some(0.0)
     );
-    let bound = certified_offset_cache_fit(
+    let bound = certified_offset_cache_fit(&geometry_ctx,
         &support,
         &support,
         0.01,
@@ -1126,6 +1197,11 @@ fn curved_offset_cache_fit_uses_span_local_derivative_bounds() {
 
 #[test]
 fn offset_cache_fit_decouples_distant_knot_span_scale() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let x = [0.0, 0.25, 0.5, 1.0e9 + 0.5];
     let z = [0.0, 0.0, 0.1, 0.2];
     let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -1146,7 +1222,7 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
         .unwrap(),
     ));
 
-    let bound = certified_offset_cache_fit(
+    let bound = certified_offset_cache_fit(&geometry_ctx,
         &support,
         &support,
         0.01,
@@ -1158,6 +1234,11 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
 
 #[test]
 fn offset_cache_fit_certifies_regular_c0_knot_spans() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let x = [0.0, 0.25, 0.5, 1.0, 1.5];
     let z = [0.0, 0.0, 0.1, 0.1, 0.2];
     let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -1178,7 +1259,7 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
         .unwrap(),
     ));
 
-    let bound = certified_offset_cache_fit(
+    let bound = certified_offset_cache_fit(&geometry_ctx,
         &support,
         &support,
         0.01,
@@ -1190,6 +1271,11 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
 
 #[test]
 fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut support = quadratic_paraboloid_surface();
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
         unreachable!();
@@ -1210,7 +1296,7 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
             })
         })
         .unwrap();
-    assert!(certified_offset_cache_fit(
+    assert!(certified_offset_cache_fit(&geometry_ctx,
         &support,
         &support,
         0.0,
@@ -1221,6 +1307,11 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
 
 #[test]
 fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut support = quadratic_paraboloid_surface();
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
         unreachable!();
@@ -1239,13 +1330,18 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
         })
         .unwrap();
     assert_eq!(
-        certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
+        certified_offset_cache_fit(&geometry_ctx, &support, &support, 0.0, NonNegativeLength::ZERO),
         Some(0.0)
     );
 }
 
 #[test]
 fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let epsilon = 2.0_f64.powi(-100);
     let x = [0.0, epsilon / 3.0, 2.0 * epsilon / 3.0, 1.0 + epsilon];
     let z = [0.0, 0.0, 1.0 / 3.0, 1.0];
@@ -1272,7 +1368,7 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
 
     assert!(translation_net_normal(surface).is_none());
     assert_eq!(
-        certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
+        certified_offset_cache_fit(&geometry_ctx, &support, &support, 0.0, NonNegativeLength::ZERO),
         Some(0.0)
     );
 }
@@ -1305,6 +1401,11 @@ fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
 
 #[test]
 fn curved_offset_cache_fit_certifies_varying_positive_weights() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut support = quadratic_paraboloid_surface();
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
         unreachable!();
@@ -1336,10 +1437,10 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
     .unwrap();
 
     assert_eq!(
-        certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
+        certified_offset_cache_fit(&geometry_ctx, &support, &support, 0.0, NonNegativeLength::ZERO),
         Some(0.0)
     );
-    assert!(certified_offset_cache_fit(
+    assert!(certified_offset_cache_fit(&geometry_ctx,
         &support,
         &support,
         0.01,
@@ -1350,6 +1451,11 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
 
 #[test]
 fn rational_offset_cache_bounds_are_translation_invariant() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut support = quadratic_paraboloid_surface();
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
         unreachable!();
@@ -1393,7 +1499,7 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
     }
     .unwrap();
 
-    let bound = certified_offset_cache_fit(
+    let bound = certified_offset_cache_fit(&geometry_ctx,
         &support,
         &support,
         0.01,
@@ -1427,6 +1533,11 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
 
 #[test]
 fn nurbs_blend_contact_requires_the_declared_radius_shell() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut ir = CadIr::empty();
     let surface =
         SurfaceId::mint("test:model:entity#nx:test:contact-support").expect("identity grammar");
@@ -1437,11 +1548,11 @@ fn nurbs_blend_contact_requires_the_declared_radius_shell() {
     });
     let center = Point3::new(1.2, 0.7, 2.0);
 
-    let direction = surface_contact_direction(&ir, &surface, center, 2.0, 0)
+    let direction = surface_contact_direction(&geometry_ctx, &ir, &surface, center, 2.0, 0)
         .expect("evaluator allocation succeeds")
         .expect("the support contains one contact at the blend radius");
     assert!((direction - Vector3::new(0.0, 0.0, -1.0)).norm() < 1.0e-10);
-    assert!(surface_contact_direction(&ir, &surface, center, 1.0, 0)
+    assert!(surface_contact_direction(&geometry_ctx, &ir, &surface, center, 1.0, 0)
         .expect("evaluator allocation succeeds")
         .is_none());
 }
@@ -1490,6 +1601,11 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
 
 #[test]
 fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut ir = CadIr::empty();
     let curve_id = CurveId::mint("nx:test:curve#0").expect("identity grammar");
     ir.model.curves.push(Curve {
@@ -1625,9 +1741,9 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         .unwrap(),
     };
 
-    assert!(orient_edge_range(&ir, &curve_id, [0.0, 1.0], &start, &end, None).is_none());
-    assert!(!pcurve_matches_edge(&ir, &edge, &surface, &pcurve, None,));
-    assert!(pcurve_matches_edge(
+    assert!(orient_edge_range(&geometry_ctx, &ir, &curve_id, [0.0, 1.0], &start, &end, None).is_none());
+    assert!(!pcurve_matches_edge(&geometry_ctx, &ir, &edge, &surface, &pcurve, None,));
+    assert!(pcurve_matches_edge(&geometry_ctx,
         &ir,
         &edge,
         &surface,
@@ -1644,6 +1760,11 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
 
 #[test]
 fn boundary_coincidence_is_certified_between_uniform_samples() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let mut ir = CadIr::empty();
     let surfaces = [
         SurfaceId::mint("nx:test:surface#0").expect("identity grammar"),
@@ -1690,7 +1811,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         )
         .unwrap(),
     );
-    assert!(coincident_pcurve_pair(
+    assert!(coincident_pcurve_pair(&geometry_ctx,
         &ir,
         [&surfaces[0], &surfaces[1]],
         [&pcurve, &pcurve],
@@ -1717,7 +1838,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
             })
         })
         .unwrap();
-    assert!(!coincident_pcurve_pair(
+    assert!(!coincident_pcurve_pair(&geometry_ctx,
         &ir,
         [&surfaces[0], &surfaces[1]],
         [&pcurve, &pcurve],
@@ -1729,6 +1850,11 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
 
 #[test]
 fn rational_pcurve_incidence_isolates_close_branches() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
     let controls = [
         0.006_306_3,
@@ -1751,7 +1877,7 @@ fn rational_pcurve_incidence_isolates_close_branches() {
         )
         .unwrap(),
     };
-    let roots = closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(0.11))
+    let roots = closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(0.0, 0.0), Some(0.11))
         .expect("evaluator allocation succeeds")
         .expect("complete homogeneous root isolation");
 
@@ -1763,6 +1889,11 @@ fn rational_pcurve_incidence_isolates_close_branches() {
 
 #[test]
 fn rational_pcurve_closest_search_retains_close_global_branches() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
     let control_points = [
         0.006_306_3,
@@ -1785,7 +1916,7 @@ fn rational_pcurve_closest_search_retains_close_global_branches() {
         )
         .unwrap(),
     };
-    let parameters = closest_pcurve_parameters(&pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
+    let parameters = closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
         .expect("evaluator allocation succeeds")
         .expect("complete global closest-point search");
 
@@ -1797,6 +1928,11 @@ fn rational_pcurve_closest_search_retains_close_global_branches() {
 
 #[test]
 fn rational_spine_closest_search_resolves_close_global_branches() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
     let control_points = [
         0.006_306_3,
@@ -1823,7 +1959,7 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
         &curve,
         point,
         Some(0.099),
-        &crate::decode::geometry_work::GeometryWorkBudget::new(8_000_000),
+        &crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(8_000_000)),
     )
     .expect("evaluator allocation succeeds")
     .expect("first close branch");
@@ -1831,7 +1967,7 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
         &curve,
         point,
         Some(0.101),
-        &crate::decode::geometry_work::GeometryWorkBudget::new(8_000_000),
+        &crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(8_000_000)),
     )
     .expect("evaluator allocation succeeds")
     .expect("second close branch");
@@ -1839,7 +1975,7 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
         &curve,
         point,
         Some(0.69),
-        &crate::decode::geometry_work::GeometryWorkBudget::new(8_000_000),
+        &crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(8_000_000)),
     )
     .expect("evaluator allocation succeeds")
     .expect("remote global branch");
@@ -1851,6 +1987,11 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
 
 #[test]
 fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let knots = vec![0.0, 0.0, 1.0, 2.0, 2.0];
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -1880,7 +2021,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
     .unwrap();
 
     assert_eq!(
-        closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(4.1))
+        closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(0.0, 0.0), Some(4.1))
             .expect("evaluator allocation succeeds")
             .expect("periodic pcurve phase"),
         [4.0]
@@ -1890,7 +2031,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
             &curve,
             Point3::new(0.0, 0.0, 0.0),
             Some(4.1),
-            &crate::decode::geometry_work::GeometryWorkBudget::new(8_000_000)
+            &crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(8_000_000))
         )
         .expect("evaluator allocation succeeds")
         .expect("periodic curve phase"),
@@ -1910,6 +2051,11 @@ fn polynomial_root_isolation_retains_repeated_real_roots() {
 
 #[test]
 fn coincident_pcurve_interval_retains_seed_and_boundaries() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
             2,
@@ -1920,7 +2066,7 @@ fn coincident_pcurve_interval_retains_seed_and_boundaries() {
         )
         .unwrap(),
     };
-    let roots = closest_pcurve_parameters(&pcurve, Point2::new(2.0, -3.0), Some(0.3))
+    let roots = closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(2.0, -3.0), Some(0.3))
         .expect("evaluator allocation succeeds")
         .expect("coincident interval");
 
@@ -1929,6 +2075,11 @@ fn coincident_pcurve_interval_retains_seed_and_boundaries() {
 
 #[test]
 fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let knots = [0.0, 0.0, 0.0, 0.25, 0.75, 1.0, 1.0, 1.0];
     let points = [
         Point2::new(-1.0, 0.0),
@@ -1958,7 +2109,7 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
                 &span.controls,
                 parameter,
                 span.domain,
-                &crate::decode::geometry_work::GeometryWorkBudget::new(100),
+                &crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(100)),
             )
             .expect("test solver allocation succeeds");
             let expected = expected.as_raw();

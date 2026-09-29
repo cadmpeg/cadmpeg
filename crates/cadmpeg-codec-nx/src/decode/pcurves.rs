@@ -494,17 +494,14 @@ pub(crate) fn complete_intersection_pcurves_from_coedge_incidence(ir: &mut CadIr
 
 #[cfg(test)]
 pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     serialized: &BTreeSet<(CurveId, SurfaceId, PcurveId)>,
     annotations: &mut AnnotationBuilder,
 ) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
-            .expect("test context");
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget(
-        &ctx,
+        ctx,
         ir,
         serialized,
         annotations,
@@ -805,6 +802,7 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
 
 #[cfg(test)]
 pub(super) fn orient_tolerant_intersection_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     curve: &CurveId,
     support: &SurfaceId,
@@ -813,14 +811,10 @@ pub(super) fn orient_tolerant_intersection_pcurve(
     endpoints: [Point3; 2],
     tolerance: f64,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
-            .expect("test context");
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     orient_tolerant_intersection_pcurve_with_index_and_budget(
-        &ctx,
+        ctx,
         &index,
         curve,
         support,
@@ -1297,16 +1291,13 @@ fn reverse_analytic_pcurve_over_range(
 
 #[cfg(test)]
 pub(super) fn complete_intersection_pcurves_from_opposite_charts(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
-            .expect("test context");
     let transfer_budget = new_transfer_budget();
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     complete_intersection_pcurves_from_opposite_charts_with_budget(
-        &ctx,
+        ctx,
         ir,
         0,
         &transfer_budget,
@@ -1594,17 +1585,14 @@ fn reverse_blend_boundary_transfer_available(
 
 #[cfg(test)]
 pub(super) fn complete_exact_boundary_intersection_pcurves(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
-            .expect("test context");
     let transfer_budget = WorkBudget::new(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES);
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     complete_exact_boundary_intersection_pcurves_with_budget(
-        &ctx,
+        ctx,
         ir,
         annotations,
         0,
@@ -1917,6 +1905,7 @@ fn curve_is_cache_backed_with_index(
 
 #[cfg(test)]
 pub(super) fn exact_boundary_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     curve: &CurveId,
     surface: &SurfaceId,
@@ -1925,7 +1914,7 @@ pub(super) fn exact_boundary_pcurve(
     tolerance: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     exact_boundary_pcurve_with_index(
         &index,
         curve,
@@ -2311,7 +2300,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
     let mut breaks = Vec::new();
     let _curve_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut breaks,
             curve_breaks.len(),
             "nx boundary curve breaks",
@@ -2319,7 +2308,7 @@ fn exact_boundary_pcurve_matches_carrier_with_index(
     breaks.extend_from_slice(curve_breaks);
     let _surface_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut breaks,
             surface_breaks.len(),
             "nx boundary surface breaks",
@@ -2370,7 +2359,7 @@ fn exact_boundary_curve_breaks(
     let mut breaks = match geometry {
         SolvedCurveGeometry::Line(_) => {
             cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &range,
                 "nx boundary breaks",
             )
@@ -2396,7 +2385,7 @@ fn exact_boundary_curve_breaks(
                 return Ok(None);
             };
             cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 knots,
                 "nx boundary breaks",
             )
@@ -2409,7 +2398,7 @@ fn exact_boundary_curve_breaks(
     });
     let _range_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut breaks,
             2,
             "nx boundary range breaks",
@@ -2422,6 +2411,7 @@ fn exact_boundary_curve_breaks(
 
 #[cfg(test)]
 pub(super) fn exact_analytic_isocurve_pcurve(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     curve: &CurveId,
     surface: &SurfaceId,
@@ -2429,7 +2419,7 @@ pub(super) fn exact_analytic_isocurve_pcurve(
     tolerance: f64,
 ) -> Option<PcurveGeometry> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     exact_analytic_isocurve_pcurve_with_index_and_budget(
         &index,
         curve,
@@ -2480,7 +2470,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
         let mut samples = Vec::new();
         let _samples_reservation =
             match cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &mut samples,
                 SAMPLE_INTERVALS + 1,
                 "nx analytic pcurve samples",
@@ -2628,6 +2618,7 @@ fn exact_analytic_isocurve_pcurve_with_index_and_budget(
 
 #[cfg(test)]
 pub(super) fn coincident_pcurve_pair(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     pcurves: [&PcurveGeometry; 2],
@@ -2635,7 +2626,7 @@ pub(super) fn coincident_pcurve_pair(
     tolerance: cadmpeg_ir::scalar::NonNegativeReal,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     coincident_pcurve_pair_with_index(
         &index,
         surfaces,
@@ -2702,7 +2693,7 @@ fn coincident_pcurve_pair_with_index(
         let mut breaks = first;
         let _reservation =
             cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &mut breaks,
                 second.len(),
                 "nx coincident pcurve breaks",
@@ -2733,7 +2724,7 @@ fn coincident_pcurve_pair_with_index(
     let mut intervals = Vec::new();
     let _initial_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut intervals,
             1,
             "nx coincident pcurve intervals",
@@ -2765,7 +2756,7 @@ fn coincident_pcurve_pair_with_index(
         }
         let _child_reservation =
             cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 &mut intervals,
                 2,
                 "nx coincident pcurve intervals",
@@ -2791,7 +2782,7 @@ fn boundary_curve_affine_breaks_with_index(
         ) {
             return Some(
                 cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                    geometry_budget.charges,
+                    Some(geometry_budget.charges),
                     &range,
                     "nx boundary breaks",
                 )
@@ -2815,7 +2806,7 @@ fn boundary_curve_affine_breaks_with_index(
                 {
                     return Some(
                         cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                            geometry_budget.charges,
+                            Some(geometry_budget.charges),
                             &range,
                             "nx boundary breaks",
                         )
@@ -2873,7 +2864,7 @@ fn boundary_curve_affine_breaks_with_index(
                     };
                     if let Err(limit) =
                         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                            geometry_budget.charges,
+                            Some(geometry_budget.charges),
                             &mut breaks,
                             1,
                             "nx affine pcurve breaks",
@@ -2885,7 +2876,7 @@ fn boundary_curve_affine_breaks_with_index(
                 }
                 if let Err(limit) =
                     cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                        geometry_budget.charges,
+                        Some(geometry_budget.charges),
                         &mut breaks,
                         2,
                         "nx affine pcurve range",
@@ -2908,7 +2899,7 @@ fn boundary_curve_affine_breaks_with_index(
             {
                 return Some(
                     cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                        geometry_budget.charges,
+                        Some(geometry_budget.charges),
                         &range,
                         "nx boundary breaks",
                     )
@@ -2920,7 +2911,7 @@ fn boundary_curve_affine_breaks_with_index(
             {
                 return Some(
                     cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                        geometry_budget.charges,
+                        Some(geometry_budget.charges),
                         &range,
                         "nx boundary breaks",
                     )
@@ -2949,7 +2940,7 @@ fn boundary_curve_affine_breaks_with_index(
                 let count = isocurve.control_points().len();
                 let mut breaks =
                     match cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(
-                        geometry_budget.charges,
+                        Some(geometry_budget.charges),
                         isocurve.knots().get(degree..=count)?,
                         "nx boundary breaks",
                     )
@@ -2966,7 +2957,7 @@ fn boundary_curve_affine_breaks_with_index(
                 });
                 if let Err(limit) =
                     cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                        geometry_budget.charges,
+                        Some(geometry_budget.charges),
                         &mut breaks,
                         2,
                         "nx affine pcurve range",
@@ -3339,7 +3330,7 @@ fn transfer_intersection_pcurve_with_budget<'a>(
     let mut coarse = Vec::new();
     let _coarse_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut coarse,
             continuation_steps + 1,
             "nx transferred pcurve continuation samples",
@@ -3397,7 +3388,7 @@ fn transfer_intersection_pcurve_with_budget<'a>(
     let mut sample_parameters = Vec::new();
     let _parameter_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut sample_parameters,
             samples.len(),
             "nx transferred pcurve parameters",
@@ -3405,7 +3396,7 @@ fn transfer_intersection_pcurve_with_budget<'a>(
     let mut control_points = Vec::new();
     let _control_reservation =
         cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-            geometry_budget.charges,
+            Some(geometry_budget.charges),
             &mut control_points,
             samples.len(),
             "nx transferred pcurve controls",
@@ -3656,6 +3647,7 @@ fn blend_transfer_point_with_index(
 
 #[cfg(test)]
 pub(super) fn blend_boundary_parameter_from_support_spine(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     blend: &SurfaceId,
     support: &SurfaceId,
@@ -3664,13 +3656,14 @@ pub(super) fn blend_boundary_parameter_from_support_spine(
     tolerance: f64,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    blend_boundary_parameter_from_support_spine_with_index(
+    blend_boundary_parameter_from_support_spine_with_index(ctx,
         &index, blend, support, point, seed, tolerance,
     )
 }
 
 #[cfg(test)]
 fn blend_boundary_parameter_from_support_spine_with_index(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     blend: &SurfaceId,
     support: &SurfaceId,
@@ -3678,7 +3671,7 @@ fn blend_boundary_parameter_from_support_spine_with_index(
     seed: Option<Point2>,
     tolerance: f64,
 ) -> Result<Option<Point2>, cadmpeg_core::decode::ResourceLimit> {
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     blend_boundary_parameter_from_support_spine_with_index_and_budget(
         index,
         blend,
@@ -3959,7 +3952,7 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
     if fits {
         let _reservation =
             cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(
-                geometry_budget.charges,
+                Some(geometry_budget.charges),
                 samples,
                 1,
                 "nx transferred pcurve samples",
@@ -4102,12 +4095,10 @@ fn surface_parameters_for_fit_with_index_and_budget_and_grid_cache<'a>(
                     0,
                     geometry_budget,
                 )?;
-                geometry_budget.charges.map_or(Ok(()), |ctx| {
-                    ctx.charge_collection_items_limit(
+                geometry_budget.charges.charge_collection_items_limit(
                         cadmpeg_core::decode::u64_from_index(1),
                         "nx blend parameter grid cache",
-                    )
-                })?;
+                    )?;
                 blend_parameter_grids.insert(surface.as_str(), grid);
             }
             let grid = blend_parameter_grids
@@ -4177,6 +4168,7 @@ fn point_outside_nurbs_control_bounds(
 
 #[cfg(test)]
 pub(super) fn attach_tolerant_edge_intersections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     graph: &Graph,
     edges: &BTreeMap<u32, EdgeId>,
@@ -4184,13 +4176,9 @@ pub(super) fn attach_tolerant_edge_intersections(
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
     annotations: &mut AnnotationBuilder,
 ) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
-            .expect("test context");
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     attach_tolerant_edge_intersections_with_budget(
-        &ctx,
+        ctx,
         ir,
         graph,
         edges,
@@ -4453,17 +4441,19 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
 
 #[cfg(test)]
 pub(crate) fn pcurve_matches_edge(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     edge_id: &EdgeId,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     fit_tolerance: Option<f64>,
 ) -> bool {
-    pcurve_matches_edge_range(ir, edge_id, surface_id, geometry, None, fit_tolerance)
+    pcurve_matches_edge_range(ctx, ir, edge_id, surface_id, geometry, None, fit_tolerance)
 }
 
 #[cfg(test)]
 fn pcurve_matches_edge_range(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     edge_id: &EdgeId,
     surface_id: &SurfaceId,
@@ -4472,7 +4462,7 @@ fn pcurve_matches_edge_range(
     fit_tolerance: Option<f64>,
 ) -> bool {
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-    let geometry_budget = GeometryWorkBudget::new(MAX_ADAPTIVE_GEOMETRY_WORK);
+    let geometry_budget = GeometryWorkBudget::from_context(ctx, cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK));
     pcurve_matches_edge_range_with_index_and_budget(
         &index,
         edge_id,

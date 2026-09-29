@@ -34,31 +34,15 @@ pub(super) const MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK: usize = 8_000_000;
 /// certificates earned within the same accounting scope.
 pub(super) struct GeometryWorkBudget<'a> {
     work: WorkBudget<'a>,
-    pub(super) charges: Option<&'a DecodeContext<'a>>,
+    pub(super) charges: &'a DecodeContext<'a>,
     blend_frame_cache: Rc<RefCell<super::blend::BlendSurfaceFrameCache>>,
 }
 
 impl<'a> GeometryWorkBudget<'a> {
-    #[cfg(test)]
-    pub(super) fn new(limit: usize) -> Self {
-        Self::from_work_budget(WorkBudget::new(limit))
-    }
-
-    #[cfg(test)]
-    fn from_work_budget(work: WorkBudget<'a>) -> Self {
-        Self {
-            work,
-            charges: None,
-            blend_frame_cache: Rc::new(RefCell::new(
-                super::blend::BlendSurfaceFrameCache::default(),
-            )),
-        }
-    }
-
     pub(super) fn from_context(ctx: &'a DecodeContext<'_>, limit: u64) -> Self {
         Self {
             work: ctx.work_budget(limit),
-            charges: Some(ctx),
+            charges: ctx,
             blend_frame_cache: Rc::new(RefCell::new(
                 super::blend::BlendSurfaceFrameCache::default(),
             )),
@@ -66,7 +50,7 @@ impl<'a> GeometryWorkBudget<'a> {
     }
 
     pub(super) fn resource_refusal(&self) -> Option<ResourceLimit> {
-        let charges = self.charges?;
+        let charges = self.charges;
         if let Some(limit) = charges.resource_refusal() {
             return Some(limit);
         }

@@ -253,6 +253,11 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
 
 #[test]
 fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let pcurve = PcurveGeometry::Offset(
         cadmpeg_ir::geometry::pcurve::OffsetPcurve::try_new(
             2.5,
@@ -314,7 +319,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
     });
     let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).unwrap();
     let second = cadmpeg_ir::eval::pcurve_uv(&pcurve, 6.0).unwrap();
-    let oriented = orient_tolerant_intersection_pcurve(
+    let oriented = orient_tolerant_intersection_pcurve(&geometry_ctx,
         &ir,
         &CurveId::mint("test:model:entity#nx:test:unused-orientation-curve")
             .expect("identity grammar"),

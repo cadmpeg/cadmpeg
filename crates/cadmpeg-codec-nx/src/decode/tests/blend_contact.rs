@@ -64,6 +64,11 @@ fn test_pcurve(
 
 #[test]
 fn blend_grid_samples_a_wide_finite_spine_domain() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     use cadmpeg_ir::geometry::{BlendSupport, Curve, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 
@@ -142,9 +147,7 @@ fn blend_grid_samples_a_wide_finite_spine_domain() {
         None,
     ));
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
-    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(
-        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-    );
+    let budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
     let grid = crate::decode::blend::blend_surface_parameter_grid_with_index_and_budget(
         &index, &surface, 0, &budget,
     )
@@ -200,6 +203,11 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
 
 #[test]
 fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     use cadmpeg_ir::geometry::Surface;
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::Point3;
@@ -241,7 +249,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         Point3::new(2.0e-4, 1.0e-4, 5.0),
     ];
     let lanes =
-        continue_surface_intersection_parameters(&ir, [&first, &second], &chart, 1.0e-3).unwrap();
+        continue_surface_intersection_parameters(&geometry_ctx, &ir, [&first, &second], &chart, 1.0e-3).unwrap();
     assert_eq!(lanes[0].len(), chart.len());
     for (ordinal, expected_z) in [0.0, 2.0, 5.0].into_iter().enumerate() {
         let first_point = cadmpeg_ir::eval::model_surface_point_by_id(
@@ -266,11 +274,11 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
 
     let off_branch = [chart[0], Point3::new(1.0, 1.0, 2.0)];
     assert!(
-        continue_surface_intersection_parameters(&ir, [&first, &second], &off_branch, 1.0e-3,)
+        continue_surface_intersection_parameters(&geometry_ctx, &ir, [&first, &second], &off_branch, 1.0e-3,)
             .is_none()
     );
     assert!(
-        continue_surface_intersection_parameters(&ir, [&first, &first], &chart, 1.0e-3,).is_none()
+        continue_surface_intersection_parameters(&geometry_ctx, &ir, [&first, &first], &chart, 1.0e-3,).is_none()
     );
 
     let cylinder = SurfaceId::mint("test:model:entity#synthetic:intersection-cylinder")
@@ -306,7 +314,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     ]);
     let circular_chart =
         [0.0_f64, 0.3, 0.8].map(|angle| Point3::new(2.0 * angle.cos(), 2.0 * angle.sin(), 1.0e-5));
-    let circular_lanes = continue_surface_intersection_parameters(
+    let circular_lanes = continue_surface_intersection_parameters(&geometry_ctx,
         &ir,
         [&cylinder, &section_plane],
         &circular_chart,
@@ -365,7 +373,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         },
     ]);
     let tangent_chart = [0.0, 1.0, 3.0, 6.0].map(|y| Point3::new(0.0, y, 0.0));
-    let tangent_lanes = continue_surface_intersection_parameters(
+    let tangent_lanes = continue_surface_intersection_parameters(&geometry_ctx,
         &ir,
         [&tangent_cylinder, &tangent_plane],
         &tangent_chart,
@@ -379,7 +387,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
 
     let seam_chart = [3.0_f64, 3.1, 3.2, 3.3]
         .map(|angle| Point3::new(2.0 * angle.cos(), 2.0 * angle.sin(), 1.0e-5));
-    let seam_lanes = continue_surface_intersection_parameters(
+    let seam_lanes = continue_surface_intersection_parameters(&geometry_ctx,
         &ir,
         [&cylinder, &section_plane],
         &seam_chart,
@@ -430,7 +438,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             .unwrap()
             .get()
     });
-    let nurbs_lanes = continue_surface_intersection_parameters(
+    let nurbs_lanes = continue_surface_intersection_parameters(&geometry_ctx,
         &ir,
         [&periodic_nurbs, &nurbs_section],
         &nurbs_chart,
@@ -443,6 +451,11 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
 
 #[test]
 fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     use cadmpeg_ir::geometry::Surface;
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::Point3;
@@ -483,7 +496,7 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
         [0.0, 4.0, 8.0].map(|distance| Point3::new(origin.x + distance, origin.y, origin.z));
 
     let lanes =
-        continue_surface_intersection_parameters(&ir, [&horizontal, &vertical], &chart, 0.1)
+        continue_surface_intersection_parameters(&geometry_ctx, &ir, [&horizontal, &vertical], &chart, 0.1)
             .expect("exact plane partials keep the continuation Jacobian full rank");
 
     for (ordinal, expected) in [0.0, 4.0, 8.0].into_iter().enumerate() {
@@ -641,6 +654,11 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
 
 #[test]
 fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     use cadmpeg_ir::geometry::{nurbs::NurbsCurve, Curve};
     use cadmpeg_ir::ids::CurveId;
 
@@ -666,7 +684,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
         source_object: None,
     });
 
-    let actual = closest_spine_parameter(
+    let actual = closest_spine_parameter(&geometry_ctx,
         &ir,
         &curve,
         cadmpeg_ir::math::Point3::new(-5.0, 2.0, 0.0),
@@ -680,6 +698,11 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
 
 #[test]
 fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     let pcurve = test_pcurve(
         1,
         vec![2.0, 2.0, 5.0, 9.0, 9.0],
@@ -691,10 +714,10 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         None,
     );
 
-    let first = closest_pcurve_parameters(&pcurve, Point2::new(0.5, 4.5), None)
+    let first = closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(0.5, 4.5), None)
         .unwrap()
         .unwrap()[0];
-    let second = closest_pcurve_parameters(&pcurve, Point2::new(5.0, 4.5), None)
+    let second = closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(5.0, 4.5), None)
         .unwrap()
         .unwrap()[0];
 
@@ -707,7 +730,7 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
         Some(vec![1.0, 2.0]),
     );
-    let rational_parameter = closest_pcurve_parameters(&rational, Point2::new(0.5, 0.0), None)
+    let rational_parameter = closest_pcurve_parameters(&geometry_ctx, &rational, Point2::new(0.5, 0.0), None)
         .unwrap()
         .unwrap()[0];
     assert!((rational_parameter - 1.0 / 3.0).abs() < 1.0e-10);
@@ -722,7 +745,7 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         ],
         None,
     );
-    let quadratic_parameter = closest_pcurve_parameters(&quadratic, Point2::new(1.0, 0.5), None)
+    let quadratic_parameter = closest_pcurve_parameters(&geometry_ctx, &quadratic, Point2::new(1.0, 0.5), None)
         .unwrap()
         .unwrap()[0];
     assert!((quadratic_parameter - 0.5).abs() < 1.0e-10);
@@ -737,22 +760,22 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         ],
         None,
     );
-    let first_fold = closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
+    let first_fold = closest_pcurve_parameters(&geometry_ctx, &folded, Point2::new(0.0, 0.0), Some(0.1))
         .unwrap()
         .unwrap()[0];
-    let second_fold = closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
+    let second_fold = closest_pcurve_parameters(&geometry_ctx, &folded, Point2::new(0.0, 0.0), Some(1.9))
         .unwrap()
         .unwrap()[0];
     assert_eq!(first_fold, 0.0);
     assert_eq!(second_fold, 2.0);
     assert_eq!(
-        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
+        closest_pcurve_parameters(&geometry_ctx, &folded, Point2::new(0.0, 0.0), Some(0.1))
             .unwrap()
             .unwrap(),
         [0.0, 2.0]
     );
     assert_eq!(
-        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
+        closest_pcurve_parameters(&geometry_ctx, &folded, Point2::new(0.0, 0.0), Some(1.9))
             .unwrap()
             .unwrap(),
         [2.0, 0.0]
@@ -771,13 +794,13 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     )
     .unwrap();
     assert_eq!(
-        closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(0.1),)
+        closest_pcurve_parameters(&geometry_ctx, &rational_folded, Point2::new(0.0, 0.0), Some(0.1),)
             .unwrap()
             .unwrap(),
         [0.0, 2.0]
     );
     assert_eq!(
-        closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(1.9),)
+        closest_pcurve_parameters(&geometry_ctx, &rational_folded, Point2::new(0.0, 0.0), Some(1.9),)
             .unwrap()
             .unwrap(),
         [2.0, 0.0]
@@ -794,13 +817,13 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         None,
     );
     assert_eq!(
-        closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.1),)
+        closest_pcurve_parameters(&geometry_ctx, &quadratic_folded, Point2::new(0.0, 0.0), Some(0.1),)
             .unwrap()
             .unwrap(),
         [0.0, 1.0]
     );
     assert_eq!(
-        closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.9),)
+        closest_pcurve_parameters(&geometry_ctx, &quadratic_folded, Point2::new(0.0, 0.0), Some(0.9),)
             .unwrap()
             .unwrap(),
         [1.0, 0.0]
@@ -1040,6 +1063,11 @@ fn blend_contact_matches_concentric_blend_carriers() {
 
 #[test]
 fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     use cadmpeg_ir::geometry::{
         BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
         ProceduralSurface, Surface,
@@ -1205,9 +1233,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
     let expected = Point2::new(parameter, 0.0);
     let point = Point3::new(0.0, 0.0, parameter);
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
-        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-    );
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
     let mut contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
     let actual =
         crate::decode::blend::blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
@@ -1232,6 +1258,11 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
 
 #[test]
 fn closest_spine_parameter_inverts_periodic_analytic_curves() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     use cadmpeg_ir::geometry::Curve;
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::math::Point3;
@@ -1260,10 +1291,10 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         source_object: None,
     });
 
-    let first = closest_spine_parameter(&ir, &ellipse, point, None)
+    let first = closest_spine_parameter(&geometry_ctx, &ir, &ellipse, point, None)
         .expect("evaluator allocation succeeds")
         .unwrap();
-    let continued = closest_spine_parameter(
+    let continued = closest_spine_parameter(&geometry_ctx,
         &ir,
         &ellipse,
         point,
@@ -1279,10 +1310,10 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
     );
 
     let center = Point3::new(2.0, 3.0, 4.0);
-    let upper = closest_spine_parameter(&ir, &ellipse, center, Some(1.4))
+    let upper = closest_spine_parameter(&geometry_ctx, &ir, &ellipse, center, Some(1.4))
         .expect("evaluator allocation succeeds")
         .unwrap();
-    let lower = closest_spine_parameter(&ir, &ellipse, center, Some(4.8))
+    let lower = closest_spine_parameter(&geometry_ctx, &ir, &ellipse, center, Some(4.8))
         .expect("evaluator allocation succeeds")
         .unwrap();
     assert!(
@@ -1297,6 +1328,11 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
 
 #[test]
 fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &geometry_arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).expect("empty geometry root is admitted");
+
     use cadmpeg_ir::geometry::{
         BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
         ProceduralCurveDefinition, ProceduralSurface, Surface,
@@ -1417,14 +1453,14 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         None,
     ));
     let expected = Point2::new(8.0, 0.35);
-    let point = blend_surface_point(&ir, &surface, expected.u, expected.v)
+    let point = blend_surface_point(&geometry_ctx, &ir, &surface, expected.u, expected.v)
         .expect("evaluator allocation succeeds")
         .unwrap();
-    let boundary_without_contact_chart = blend_surface_point(&ir, &surface, expected.u, 1.0)
+    let boundary_without_contact_chart = blend_surface_point(&geometry_ctx, &ir, &surface, expected.u, 1.0)
         .expect("evaluator allocation succeeds")
         .expect("analytic supports provide a blend boundary without a spine pcurve");
     let boundary_without_contact_parameters =
-        blend_surface_parameters(&ir, &surface, boundary_without_contact_chart, None)
+        blend_surface_parameters(&geometry_ctx, &ir, &surface, boundary_without_contact_chart, None)
             .expect("evaluator allocation succeeds")
             .expect("blend inverse evaluates an analytic-support boundary");
     assert!((0.0..=1.0).contains(&boundary_without_contact_parameters.v));
@@ -1480,31 +1516,29 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         1.0
     );
 
-    let actual = blend_surface_parameters(&ir, &surface, point, None)
+    let actual = blend_surface_parameters(&geometry_ctx, &ir, &surface, point, None)
         .expect("evaluator allocation succeeds")
         .unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
 
-    let boundary_point = blend_surface_point(&ir, &surface, expected.u, 1.0)
+    let boundary_point = blend_surface_point(&geometry_ctx, &ir, &surface, expected.u, 1.0)
         .expect("evaluator allocation succeeds")
         .unwrap();
-    let boundary_parameters = blend_surface_parameters(&ir, &surface, boundary_point, None)
+    let boundary_parameters = blend_surface_parameters(&geometry_ctx, &ir, &surface, boundary_point, None)
         .expect("evaluator allocation succeeds")
         .expect("blend inverse returns the section boundary");
     assert!((0.0..=1.0).contains(&boundary_parameters.v));
 
     let outside_boundary_point =
-        blend_surface_point(&ir, &surface, expected.u, 1.0 + OUTSIDE_BLEND_SECTION_DELTA)
+        blend_surface_point(&geometry_ctx, &ir, &surface, expected.u, 1.0 + OUTSIDE_BLEND_SECTION_DELTA)
             .expect("evaluator allocation succeeds")
             .unwrap();
-    let outside_parameters = blend_surface_parameters(&ir, &surface, outside_boundary_point, None)
+    let outside_parameters = blend_surface_parameters(&geometry_ctx, &ir, &surface, outside_boundary_point, None)
         .expect("evaluator allocation succeeds");
     assert!(outside_parameters.is_none());
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
-        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-    );
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
     let continuation_parameters =
         crate::decode::blend::blend_surface_parameters_for_fit_with_source_continuation_and_budget(
             &cadmpeg_ir::index::ModelIndex::new(&ir),
@@ -1520,9 +1554,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     assert!((continuation_parameters.u - expected.u).abs() < 1.0e-8);
     assert!((continuation_parameters.v - (1.0 + OUTSIDE_BLEND_SECTION_DELTA)).abs() < 1.0e-8);
 
-    let direct_geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
-        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-    );
+    let direct_geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
     let mut direct_contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
     let direct_parameters =
         crate::decode::blend::blend_surface_parameters_from_point_with_index_and_budget(
@@ -1542,7 +1574,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             < DIRECT_INVERSE_TOLERANCE
     );
 
-    let continued = blend_surface_parameters_for_fit(
+    let continued = blend_surface_parameters_for_fit(&geometry_ctx,
         &ir,
         &surface,
         point,
@@ -1617,14 +1649,14 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             .unwrap();
         });
     let parameters = Point2::new(0.4, 0.35);
-    let exact = blend_surface_u_derivative(&varying_frame, &surface, parameters.u, parameters.v, 0)
+    let exact = blend_surface_u_derivative(&geometry_ctx, &varying_frame, &surface, parameters.u, parameters.v, 0)
         .expect("evaluator allocation succeeds")
         .expect("complete rolling-ball frame has an exact derivative");
     let step = 1.0e-6;
-    let before = blend_surface_point(&varying_frame, &surface, parameters.u - step, parameters.v)
+    let before = blend_surface_point(&geometry_ctx, &varying_frame, &surface, parameters.u - step, parameters.v)
         .expect("evaluator allocation succeeds")
         .unwrap();
-    let after = blend_surface_point(&varying_frame, &surface, parameters.u + step, parameters.v)
+    let after = blend_surface_point(&geometry_ctx, &varying_frame, &surface, parameters.u + step, parameters.v)
         .expect("evaluator allocation succeeds")
         .unwrap();
     let numerical = Vector3::new(
@@ -1677,10 +1709,10 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     let origin = cadmpeg_ir::features::FinitePoint3::new(origin).unwrap();
     *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
     *cache = geometry;
-    let translated_point = blend_surface_point(&translated, &surface, expected.u, expected.v)
+    let translated_point = blend_surface_point(&geometry_ctx, &translated, &surface, expected.u, expected.v)
         .expect("evaluator allocation succeeds")
         .unwrap();
-    let translated_parameters = blend_surface_parameters_for_fit(
+    let translated_parameters = blend_surface_parameters_for_fit(&geometry_ctx,
         &translated,
         &surface,
         translated_point,
@@ -1748,7 +1780,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                 .expect("positive finite tolerance"),
         ),
     });
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&geometry_ctx, &mut ir).unwrap();
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves.last().unwrap().definition()
     else {
@@ -1767,7 +1799,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         Some(&Point2::new(1.0, 0.0))
     );
     assert_eq!(
-        blend_boundary_parameter_from_support_spine(
+        blend_boundary_parameter_from_support_spine(&geometry_ctx,
             &ir,
             &surface,
             &first,
@@ -1792,7 +1824,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             cache: None,
         });
     assert_eq!(
-        blend_boundary_parameter_from_support_spine(
+        blend_boundary_parameter_from_support_spine(&geometry_ctx,
             &ir,
             &surface,
             &first,
@@ -1830,10 +1862,10 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .expect("solved carrier")
         .clone(),
     );
-    let coarse = coarse_blend_surface_parameters(&ir, &surface, point, 0)
+    let coarse = coarse_blend_surface_parameters(&geometry_ctx, &ir, &surface, point, 0)
         .expect("evaluator allocation succeeds")
         .unwrap();
-    let coarse_point = blend_surface_point(&ir, &surface, coarse.u, coarse.v)
+    let coarse_point = blend_surface_point(&geometry_ctx, &ir, &surface, coarse.u, coarse.v)
         .expect("evaluator allocation succeeds")
         .unwrap();
     assert!(
@@ -1844,7 +1876,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             < 1.0
     );
 
-    let refined = refine_blend_surface_parameters(
+    let refined = refine_blend_surface_parameters(&geometry_ctx,
         &ir,
         &surface,
         point,
@@ -1853,7 +1885,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     )
     .expect("evaluator allocation succeeds")
     .unwrap();
-    let refined_point = blend_surface_point(&ir, &surface, refined.u, refined.v)
+    let refined_point = blend_surface_point(&geometry_ctx, &ir, &surface, refined.u, refined.v)
         .expect("evaluator allocation succeeds")
         .unwrap();
     let refined_error = ((refined_point.x - point.x).powi(2)
@@ -1926,7 +1958,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         None,
     ));
     let expected = Point2::new(4.0, 0.2);
-    let point = blend_surface_point(&ir, &outer, expected.u, expected.v)
+    let point = blend_surface_point(&geometry_ctx, &ir, &outer, expected.u, expected.v)
         .expect("evaluator allocation succeeds")
         .unwrap();
     let outer_geometry = ir
@@ -1937,9 +1969,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         .map(|surface| &surface.geometry)
         .unwrap();
     let index = cadmpeg_ir::index::ModelIndex::new(&ir);
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
-        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
-    );
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&geometry_ctx, cadmpeg_core::decode::u64_from_index(crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK));
     let evaluated = crate::decode::blend::decoded_surface_point_with_geometry_and_budget(
         &index,
         &outer,
@@ -1952,7 +1982,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     .expect("evaluator allocation succeeds")
     .expect("budgeted evaluation handles a nested blend support");
     assert!(Point3::distance(evaluated, point) <= 64.0 * f64::EPSILON);
-    let actual = blend_surface_parameters(&ir, &outer, point, None)
+    let actual = blend_surface_parameters(&geometry_ctx, &ir, &outer, point, None)
         .expect("evaluator allocation succeeds")
         .unwrap();
     assert!((actual.u - expected.u).abs() < 1.0e-8);
@@ -1990,7 +2020,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         )
         .unwrap();
     });
-    assert!(blend_surface_point(&ir, &outer, expected.u, expected.v)
+    assert!(blend_surface_point(&geometry_ctx, &ir, &outer, expected.u, expected.v)
         .expect("evaluator allocation succeeds")
         .is_none());
 }
