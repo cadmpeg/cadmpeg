@@ -3020,13 +3020,14 @@ fn build_geometry_ir(
         &all_lanes,
     );
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
+        ctx,
         &mut ir.model.features,
         &ir.model.spatial_sketches,
         &ir.model.spatial_sketch_entities,
         &ir.model.surfaces,
         &histories,
         &all_lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_generated_hole_axes(
         &mut ir.model.features,
         &histories,
@@ -4237,13 +4238,14 @@ fn build_metadata_ir(
         &lanes,
     );
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
+        ctx,
         &mut ir.model.features,
         &ir.model.spatial_sketches,
         &ir.model.spatial_sketch_entities,
         &ir.model.surfaces,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_topological_hole_constructions(
         ctx,
         &mut ir.model.features,

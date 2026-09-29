@@ -718,13 +718,14 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         );
         crate::resolved_features::holes::project_spatial_hole_position_sketches(
+            ctx,
             &mut features,
             &ir.model.spatial_sketches,
             &ir.model.spatial_sketch_entities,
             &surfaces,
             histories,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::holes::project_topological_hole_constructions(
             ctx,
             &mut features,
