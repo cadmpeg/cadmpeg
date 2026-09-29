@@ -7813,6 +7813,44 @@ pub(super) fn project_fixed_sweep(
     )))
 }
 
+fn legacy_pipe_references_complete(
+    ctx: Option<&DecodeContext<'_>>,
+    scope: &DesignParameterScope,
+    path_group: &DesignConstructionOperandGroup,
+    record_indexes: [u32; 4],
+) -> Result<bool, CodecError> {
+    let mut claimed = HashSet::new();
+    for record_index in record_indexes {
+        if !insert_feature_set(ctx, &mut claimed, record_index,
+            "f3d Pipe claimed record")? {
+            return Ok(false);
+        }
+    }
+    if path_group.members().is_empty()
+        || !insert_feature_set(ctx, &mut claimed, path_group.record_index,
+            "f3d Pipe claimed record")?
+    {
+        return Ok(false);
+    }
+    for member in path_group.members() {
+        if !insert_feature_set(ctx, &mut claimed, member.value,
+            "f3d Pipe claimed record")? {
+            return Ok(false);
+        }
+    }
+    if scope.reference_members().len() != path_group.members().len() + 6 {
+        return Ok(false);
+    }
+    let mut references = HashSet::new();
+    for value in scope.reference_members().values() {
+        if !insert_feature_set(ctx, &mut references, *value,
+            "f3d Pipe reference record")? {
+            return Ok(false);
+        }
+    }
+    Ok(claimed.iter().all(|record_index| references.contains(record_index)))
+}
+
 fn project_fixed_pipe(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
@@ -7825,7 +7863,7 @@ fn project_fixed_pipe(
         FeatureDefinition, FeatureOperation, GeneratedSweepSection, SweepSection,
     };
 
-    let Some((path_group, section_size, wall_thickness)) = (|| {
+    let Some((path_group, section_size, wall_thickness, record_indexes, legacy_reference_layout)) = (|| {
         let crate::records::feature::scope::DesignScopePayload::Pipe(Some(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation,
@@ -7885,62 +7923,31 @@ fn project_fixed_pipe(
             return None;
         };
         let stream = native_stream(&scope.id)?;
-        let groups = construction_groups
-            .iter()
-            .filter(|group| {
-                native_stream(&group.id) == Some(stream)
-                    && group.scope_record_index == scope.record_index
-            })
-            .collect::<Vec<_>>();
+        let matching = || construction_groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        });
         let legacy_reference_layout = matches!(
             (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
             ("405", "259") | ("421", "257") | ("475", "260")
         );
         let path_group = if legacy_reference_layout {
-            if groups
-                .iter()
+            if matching()
                 .any(|group| group.role() != DesignOperandRole::ROLE_0X5)
             {
                 return None;
             }
-            let mut legacy_paths = groups
-                .iter()
-                .copied()
+            let mut legacy_paths = matching()
                 .filter(|group| group.role() == DesignOperandRole::ROLE_0X5);
             let path_group = legacy_paths.next()?;
             if legacy_paths.next().is_some() {
                 return None;
             }
-            let mut claimed = record_indexes.iter().copied().collect::<HashSet<_>>();
-            if claimed.len() != record_indexes.len()
-                || path_group.members().is_empty()
-                || !claimed.insert(path_group.record_index)
-                || path_group
-                    .members()
-                    .iter()
-                    .map(|member| &member.value)
-                    .any(|record_index| !claimed.insert(*record_index))
-                || scope.reference_members().len() != path_group.members().len() + 6
-                || scope
-                    .reference_members()
-                    .values()
-                    .collect::<HashSet<_>>()
-                    .len()
-                    != scope.reference_members().len()
-                || claimed.iter().any(|record_index| {
-                    !scope
-                        .reference_members()
-                        .values()
-                        .any(|value| value == record_index)
-                })
-            {
-                return None;
-            }
             path_group
         } else {
-            let [path_group] = groups.as_slice() else {
-                return None;
-            };
+            let mut groups = matching();
+            let path_group = groups.next()?;
+            if groups.next().is_some() { return None; }
             if path_group.role() != DesignOperandRole::ROLE_0X5
                 || path_group.scope_reference_ordinal != 5
                 || scope.reference_members().values().nth(5) != Some(&path_group.record_index)
@@ -7957,12 +7964,17 @@ fn project_fixed_pipe(
             {
                 return None;
             }
-            *path_group
+            path_group
         };
-        Some((path_group, section_size, wall_thickness))
+        Some((path_group, section_size, wall_thickness, *record_indexes, legacy_reference_layout))
     })() else {
         return Ok(None);
     };
+    if legacy_reference_layout
+        && !legacy_pipe_references_complete(ctx, scope, path_group, record_indexes)?
+    {
+        return Ok(None);
+    }
     let path = resolved_loft_path(
         path_group,
         construction_groups,
