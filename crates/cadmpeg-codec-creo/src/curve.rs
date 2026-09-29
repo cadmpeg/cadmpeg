@@ -5641,20 +5641,21 @@ fn refine_nonlinear_solution(
     let mut point = ctx.alloc_filled(seed.len(), 0.0, "creo nonlinear initial point")?;
     point.copy_from_slice(seed);
     let Some(mut residuals) =
-        evaluate_nonlinear_residuals(block, values, variable_dimensions, &point, context)
+        evaluate_nonlinear_residuals(ctx, block, values, variable_dimensions, &point, context)?
     else {
         return Ok(None);
     };
     for _ in 0..MAX_NONLINEAR_SOLVE_ITERATIONS {
         if nonlinear_residuals_converged(&residuals) {
             let Some(mut rank_rows) = nonlinear_jacobian_rows(
+                ctx,
                 block,
                 values,
                 variable_dimensions,
                 &point,
                 &residuals,
                 context,
-            ) else {
+            )? else {
                 return Ok(None);
             };
             if solve_unique_affine_system(ctx, &mut rank_rows, variable_count)?.is_none() {
@@ -5663,13 +5664,14 @@ fn refine_nonlinear_solution(
             return Ok(Some(point));
         }
         let Some(mut rows) = nonlinear_jacobian_rows(
+            ctx,
             block,
             values,
             variable_dimensions,
             &point,
             &residuals,
             context,
-        ) else {
+        )? else {
             return Ok(None);
         };
         for (row, residual) in rows.iter_mut().zip(&residuals) {
@@ -5697,12 +5699,13 @@ fn refine_nonlinear_solution(
             }
             if candidate.iter().all(|value| value.is_finite()) {
                 if let Some(candidate_residuals) = evaluate_nonlinear_residuals(
+                    ctx,
                     block,
                     values,
                     variable_dimensions,
                     &candidate,
                     context,
-                ) {
+                )? {
                     let candidate_norm = nonlinear_residual_norm(&candidate_residuals);
                     if nonlinear_residuals_converged(&candidate_residuals)
                         || candidate_norm < base_norm
@@ -5729,13 +5732,14 @@ fn refine_nonlinear_solution(
         return Ok(None);
     }
     let Some(mut rank_rows) = nonlinear_jacobian_rows(
+        ctx,
         block,
         values,
         variable_dimensions,
         &point,
         &residuals,
         context,
-    ) else {
+    )? else {
         return Ok(None);
     };
     if solve_unique_affine_system(ctx, &mut rank_rows, variable_count)?.is_none() {
@@ -5745,54 +5749,84 @@ fn refine_nonlinear_solution(
 }
 
 fn nonlinear_jacobian_rows(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
     variable_dimensions: &[RelationDimension],
     point: &[f64],
     residuals: &[SolveResidual],
     context: RelationEvaluationContext<'_>,
-) -> Option<Vec<AffineEquationRow>> {
+) -> Result<Option<Vec<AffineEquationRow>>, cadmpeg_core::CodecError> {
     let variable_count = variable_dimensions.len();
-    let mut rows = Vec::with_capacity(residuals.len());
+    let mut rows = Vec::new();
     for (row_index, residual) in residuals.iter().enumerate() {
-        let mut coefficients = Vec::with_capacity(variable_count);
+        let mut coefficients = Vec::new();
+        ctx.try_reserve_items(&mut coefficients, variable_count, "creo nonlinear Jacobian coefficients")?;
         for column in 0..variable_count {
             let step = NONLINEAR_SOLVE_DERIVATIVE_STEP * point[column].abs().max(1.0);
-            let mut plus = point.to_vec();
-            let mut minus = point.to_vec();
+            let mut plus = ctx.alloc_filled(point.len(), 0.0, "creo nonlinear positive probe")?;
+            let mut minus = ctx.alloc_filled(point.len(), 0.0, "creo nonlinear negative probe")?;
+            plus.copy_from_slice(point);
+            minus.copy_from_slice(point);
             plus[column] += step;
             minus[column] -= step;
-            let plus_residuals =
-                evaluate_nonlinear_residuals(block, values, variable_dimensions, &plus, context)?;
-            let minus_residuals =
-                evaluate_nonlinear_residuals(block, values, variable_dimensions, &minus, context)?;
-            let plus_residual = plus_residuals.get(row_index)?;
-            let minus_residual = minus_residuals.get(row_index)?;
-            (plus_residual.dimension == residual.dimension
-                && minus_residual.dimension == residual.dimension)
-                .then_some(())?;
+            let Some(plus_residuals) = evaluate_nonlinear_residuals(
+                ctx, block, values, variable_dimensions, &plus, context,
+            )? else {
+                return Ok(None);
+            };
+            let Some(minus_residuals) = evaluate_nonlinear_residuals(
+                ctx, block, values, variable_dimensions, &minus, context,
+            )? else {
+                return Ok(None);
+            };
+            let Some(plus_residual) = plus_residuals.get(row_index) else {
+                return Ok(None);
+            };
+            let Some(minus_residual) = minus_residuals.get(row_index) else {
+                return Ok(None);
+            };
+            if plus_residual.dimension != residual.dimension
+                || minus_residual.dimension != residual.dimension
+            {
+                return Ok(None);
+            }
             let derivative = (plus_residual.value - minus_residual.value) / (2.0 * step);
-            derivative.is_finite().then_some(())?;
+            if !derivative.is_finite() {
+                return Ok(None);
+            }
             coefficients.push(derivative);
         }
+        ctx.try_reserve_items(&mut rows, 1, "creo nonlinear Jacobian rows")?;
         rows.push(AffineEquationRow {
             coefficients,
             rhs: 0.0,
         });
     }
-    Some(rows)
+    Ok(Some(rows))
 }
 
 fn evaluate_nonlinear_residuals(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     block: &CurveExpressionSolveBlock,
     values: &BTreeMap<String, CurveExpressionValue>,
     variable_dimensions: &[RelationDimension],
     point: &[f64],
     context: RelationEvaluationContext<'_>,
-) -> Option<Vec<SolveResidual>> {
-    (variable_dimensions.len() == block.unknowns.len() && point.len() == variable_dimensions.len())
-        .then_some(())?;
-    let mut evaluation_values = values.clone();
+) -> Result<Option<Vec<SolveResidual>>, cadmpeg_core::CodecError> {
+    if variable_dimensions.len() != block.unknowns.len()
+        || point.len() != variable_dimensions.len()
+    {
+        return Ok(None);
+    }
+    let mut evaluation_values = BTreeMap::new();
+    for (name, value) in values {
+        ctx.charge_collection_items(1, "creo nonlinear known value nodes")?;
+        evaluation_values.insert(
+            ctx.copy_retained_text(name, "creo nonlinear known value names")?,
+            copy_expression_value(ctx, value, "creo nonlinear known string values")?,
+        );
+    }
     for ((variable, dimension), value) in block
         .unknowns
         .iter()
@@ -5800,38 +5834,57 @@ fn evaluate_nonlinear_residuals(
         .zip(variable_dimensions)
         .zip(point)
     {
-        value.is_finite().then_some(())?;
+        if !value.is_finite() {
+            return Ok(None);
+        }
+        let mut key = ctx.copy_retained_text(variable, "creo nonlinear unknown value names")?;
+        key.make_ascii_lowercase();
+        if !evaluation_values.contains_key(&key) {
+            ctx.charge_collection_items(1, "creo nonlinear unknown value nodes")?;
+        }
         evaluation_values.insert(
-            expression_identifier_key(variable),
+            key,
             quantity_value(*value, *dimension),
         );
     }
-    block
-        .equations
-        .iter()
-        .map(|equation| {
-            let left = parse_relation_expression::<CurveExpressionValue>(
-                &equation.left,
-                &evaluation_values,
-                context,
-            )?;
-            let right = parse_relation_expression::<CurveExpressionValue>(
-                &equation.right,
-                &evaluation_values,
-                context,
-            )?;
-            let (left, left_dimension) = quantity_parts_ref(&left)?;
-            let (right, right_dimension) = quantity_parts_ref(&right)?;
-            (left_dimension == right_dimension).then_some(())?;
-            let value = left - right;
-            let scale = left.abs().max(right.abs()).max(1.0);
-            (value.is_finite() && scale.is_finite()).then_some(SolveResidual {
-                value,
-                scale,
-                dimension: left_dimension,
-            })
-        })
-        .collect()
+    let mut residuals = Vec::new();
+    for equation in &block.equations {
+        let Some(left) = parse_relation_expression::<CurveExpressionValue>(
+            &equation.left,
+            &evaluation_values,
+            context,
+        ) else {
+            return Ok(None);
+        };
+        let Some(right) = parse_relation_expression::<CurveExpressionValue>(
+            &equation.right,
+            &evaluation_values,
+            context,
+        ) else {
+            return Ok(None);
+        };
+        let Some((left, left_dimension)) = quantity_parts_ref(&left) else {
+            return Ok(None);
+        };
+        let Some((right, right_dimension)) = quantity_parts_ref(&right) else {
+            return Ok(None);
+        };
+        if left_dimension != right_dimension {
+            return Ok(None);
+        }
+        let value = left - right;
+        let scale = left.abs().max(right.abs()).max(1.0);
+        if !value.is_finite() || !scale.is_finite() {
+            return Ok(None);
+        }
+        ctx.try_reserve_items(&mut residuals, 1, "creo nonlinear residual rows")?;
+        residuals.push(SolveResidual {
+            value,
+            scale,
+            dimension: left_dimension,
+        });
+    }
+    Ok(Some(residuals))
 }
 
 fn nonlinear_residual_norm(residuals: &[SolveResidual]) -> f64 {
