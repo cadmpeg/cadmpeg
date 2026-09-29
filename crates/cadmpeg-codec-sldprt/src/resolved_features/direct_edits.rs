@@ -357,15 +357,19 @@ pub(crate) fn enrich_history_move_body_translations(
         if !properties.contains_key("Translation") {
             ctx.charge_collection_items(1, "insert SLDPRT move-body translation")?;
         }
+        let translation = ctx.format_retained(
+            format_args!(
+                "{}mm,{}mm,{}mm",
+                first.x * 1000.0,
+                first.y * 1000.0,
+                first.z * 1000.0
+            ),
+            "format SLDPRT move-body translation",
+        )?;
         properties.insert(
-                cadmpeg_core::nonblank_literal!("Translation"),
-                format!(
-                    "{}mm,{}mm,{}mm",
-                    first.x * 1000.0,
-                    first.y * 1000.0,
-                    first.z * 1000.0
-                ),
-            );
+            cadmpeg_core::nonblank_literal!("Translation"),
+            translation,
+        );
     }
     Ok(())
 }
@@ -470,6 +474,65 @@ mod tests {
         .expect("move-body input fits root policy");
         let error = enrich_history_move_body_translations(&ctx, &mut histories, std::slice::from_ref(&lane))
             .expect_err("one feature scan requires work admission");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
+    }
+
+    #[test]
+    fn move_body_enrichment_refuses_retained_limit() {
+        let (mut histories, mut lane) = move_body_enrichment_input();
+        let selection_offset = 64;
+        let payload = &mut lane.native_payload;
+        payload[selection_offset..selection_offset + 4].copy_from_slice(&2u32.to_le_bytes());
+        payload[selection_offset + 4..selection_offset + 8].copy_from_slice(&17u32.to_le_bytes());
+        payload[selection_offset + 8..selection_offset + 12].copy_from_slice(&23u32.to_le_bytes());
+        payload[selection_offset + 12..selection_offset + 16]
+            .copy_from_slice(&u32::MAX.to_le_bytes());
+        let matrix_offset = selection_offset + 24;
+        for (index, value) in [1.0f64, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+            .into_iter()
+            .enumerate()
+        {
+            payload[matrix_offset + index * 8..matrix_offset + index * 8 + 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+        payload[matrix_offset + 72..matrix_offset + 80].copy_from_slice(&1u64.to_le_bytes());
+        payload[matrix_offset + 104..matrix_offset + 112].copy_from_slice(&1.0f64.to_le_bytes());
+        for (index, value) in [0.01f64, -0.02, 0.03].into_iter().enumerate() {
+            payload[matrix_offset + 112 + index * 8..matrix_offset + 120 + index * 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+        payload[matrix_offset + 200..matrix_offset + 208]
+            .copy_from_slice(&[1, 0, 0, 0, 0, 0, 1, 0]);
+        lane.classes.push(FeatureInputClass {
+            id: "move-body-data".into(),
+            parent: "lane".into(),
+            ordinal: 1,
+            offset: selection_offset as u64,
+            name: "moMoveCopyBodyData_c".into(),
+        });
+
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let service = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload, &arena, &service,
+        )
+        .expect("move-body input fits root policy");
+        enrich_history_move_body_translations(&ctx, &mut histories, std::slice::from_ref(&lane))
+            .expect("move-body translation fits service policy");
+        assert!(histories[0].features[0].properties.contains_key("Translation"));
+        histories[0].features[0].properties.remove("Translation");
+
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload, &arena, &policy,
+        )
+        .expect("move-body input fits root policy");
+        let error = enrich_history_move_body_translations(
+            &ctx, &mut histories, std::slice::from_ref(&lane),
+        )
+        .expect_err("translation text requires retained bytes");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     }
 
