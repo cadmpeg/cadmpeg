@@ -2452,12 +2452,13 @@ fn horizontal_ray_arc_winding(
     let principal = ordinate.asin();
     let sweep = end_angle - start_angle;
     let angles = if principal.cos().abs() <= EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12 {
-        vec![principal]
+        [Some(principal), None]
     } else {
-        vec![principal, std::f64::consts::PI - principal]
+        [Some(principal), Some(std::f64::consts::PI - principal)]
     };
     angles
         .into_iter()
+        .flatten()
         .filter(|angle| center.u + radius * angle.cos() > point.u)
         .filter_map(|angle| {
             let parameter = directed_angle_parameter(angle, start_angle, end_angle)?;

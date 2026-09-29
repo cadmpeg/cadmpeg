@@ -963,7 +963,7 @@ fn exact_current_extrude_prologue(
         let reference_record_index_offset = start.checked_add(26)?;
         let record_index = View::u32_le_at(bytes, reference_record_index_offset)?;
         let prefix_tail = start.checked_add(30)?;
-        let candidates = [
+        let mut candidates = [
             (start.checked_add(37)?, None),
             (start.checked_add(38)?, None),
             (start.checked_add(38)?, Some(start.checked_add(37)?)),
@@ -985,15 +985,13 @@ fn exact_current_extrude_prologue(
                 && matches!(bytes.get(operation_offset.saturating_add(12)), Some(0 | 1))
                 && matches!(bytes.get(operation_offset.saturating_add(13)), Some(0 | 1))
                 && matches!(bytes.get(operation_offset.saturating_add(14)), Some(0..=2))
-        })
-        .collect::<Vec<_>>();
-        let [(operation_offset, operation_marker_offset)] = candidates.as_slice() else {
-            return None;
-        };
-        let padding_end = operation_marker_offset.unwrap_or(*operation_offset);
+        });
+        let (operation_offset, operation_marker_offset) = candidates.next()?;
+        if candidates.next().is_some() { return None; }
+        let padding_end = operation_marker_offset.unwrap_or(operation_offset);
         let trailing_zero_count = u8::try_from(padding_end.checked_sub(prefix_tail)?).ok()?;
         Some((
-            *operation_offset,
+            operation_offset,
             DesignExtrudePrologueReference {
                 record_index,
                 record_index_offset: reference_record_index_offset as u64,
