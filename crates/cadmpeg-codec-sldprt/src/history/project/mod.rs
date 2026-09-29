@@ -276,14 +276,20 @@ pub(crate) fn project_feature_model(
                 .iter()
                 .filter(|feature| !is_history_metadata_record(feature, &history.features))
             {
-                    let parent = feature
+                    let parent = if let Some(parent) = feature
                         .tree_parent_record_id()
-                        .and_then(|parent| by_native.get(parent).cloned())
-                        .or_else(|| {
-                            feature.parent_source_id().and_then(|source| {
-                                by_source.get(String::from(source).as_str()).cloned()
-                            })
-                        });
+                        .and_then(|parent| by_native.get(parent))
+                    {
+                        Some(copy_projected_feature_id(ctx, parent)?)
+                    } else if let Some(source) = feature.parent_source_id() {
+                        let key = source_lookup_key(ctx, source)?;
+                        by_source
+                            .get(&key)
+                            .map(|parent| copy_projected_feature_id(ctx, parent))
+                            .transpose()?
+                    } else {
+                        None
+                    };
                     let projected = cadmpeg_ir::features::Feature {
                             id: neutral_feature_id_charged(ctx, &feature.id)?,
                             ordinal: source_ordered
@@ -295,9 +301,7 @@ pub(crate) fn project_feature_model(
                                 .then(|| copy_projected_feature_text(ctx, &feature.name))
                                 .transpose()?,
                             suppressed: Some(feature.suppressed),
-                            dependencies: (project_feature_dependencies(feature, &by_source))
-                                .into_iter()
-                                .collect(),
+                            dependencies: project_feature_dependencies(ctx, feature, &by_source)?,
                             source_properties: copy_projected_feature_properties(
                                 ctx,
                                 &feature.properties,
@@ -1202,25 +1206,37 @@ fn project_feature_content(
 }
 
 fn project_feature_dependencies(
+    ctx: &DecodeContext<'_>,
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
-) -> Vec<FeatureId> {
-    let owner = neutral_feature_id(&feature.id);
-    let mut seen = std::collections::HashSet::new();
-    FEATURE_REFERENCE_PROPERTIES
-        .iter()
-        .filter_map(|name| feature.properties.get(*name))
-        .flat_map(|value| {
-            value
-                .split(|character: char| {
-                    character == ',' || character == ';' || character.is_whitespace()
-                })
-                .filter(|reference| !reference.is_empty())
-        })
-        .filter_map(|reference| by_source.get(reference).cloned())
-        .filter(|dependency| dependency != &owner)
-        .filter(|dependency| seen.insert(dependency.clone()))
-        .collect()
+) -> Result<cadmpeg_ir::features::DistinctMembers<FeatureId>, CodecError> {
+    let owner = neutral_feature_id_charged(ctx, &feature.id)?;
+    let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
+    for property in FEATURE_REFERENCE_PROPERTIES {
+        let Some(value) = feature.properties.get(*property) else {
+            continue;
+        };
+        for reference in value
+            .split(|character: char| {
+                character == ',' || character == ';' || character.is_whitespace()
+            })
+            .filter(|reference| !reference.is_empty())
+        {
+            ctx.charge_work(1, "scan SLDPRT feature dependencies")?;
+            let Some(dependency) = by_source.get(reference) else {
+                continue;
+            };
+            if dependency == &owner || dependencies.contains(dependency) {
+                continue;
+            }
+            dependencies.try_insert_charged(
+                copy_projected_feature_id(ctx, dependency)?,
+                ctx,
+                "collect SLDPRT feature dependencies",
+            )?;
+        }
+    }
+    Ok(dependencies)
 }
 
 /// Project native configuration records into the neutral configuration arena.
