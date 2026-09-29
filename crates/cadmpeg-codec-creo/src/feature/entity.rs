@@ -78,6 +78,7 @@ impl FeatureEntityTable {
         &self.surface_ids
     }
 
+    #[cfg(test)]
     pub(crate) fn non_surface_entity_ids_iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.entries
             .iter()

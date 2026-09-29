@@ -71,21 +71,12 @@ pub fn short_form_float(data: &[u8]) {
 }
 
 /// Exercise Creo container scanning.
-pub fn container_scan(data: &[u8]) {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
-    else {
-        return;
-    };
-    match crate::container::scan_bytes(&ctx, data) {
-        Ok(scan) => {
-            let _probe = scan.framing.sections.len();
-        }
-        Err(refusal) => {
-            let _probe = refusal.to_string();
-        }
-    }
+pub fn container_scan(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+) -> Result<(), cadmpeg_core::CodecError> {
+    let _probe = crate::container::scan_bytes(ctx, data)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -103,7 +94,7 @@ mod tests {
         super::compact_int(&[]);
         super::psb_tokens(&[]);
         super::short_form_float(&[]);
-        super::container_scan(&[]);
+        let _probe = crate::decode::with_test_decode_ctx(|ctx| super::container_scan(ctx, &[]));
     }
 
     #[test]
@@ -120,7 +111,8 @@ mod tests {
         super::compact_int(&data);
         super::psb_tokens(&data);
         super::short_form_float(&data);
-        super::container_scan(&data);
+        crate::decode::with_test_decode_ctx(|ctx| super::container_scan(ctx, &data))
+            .expect("container fuzz wrapper");
     }
 
     #[test]
@@ -136,5 +128,25 @@ mod tests {
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo scalar cache unique images"));
+    }
+
+    #[test]
+    fn container_wrapper_propagates_caller_resource_refusal() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let data = crate::test_support::build_prt("1.0", &[("VisibGeom", Vec::new())]);
+        crate::decode::with_test_decode_ctx(|ctx| super::container_scan(ctx, &data))
+            .expect("service profile admits the container");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("root input is admitted");
+        let error = super::container_scan(&ctx, &data)
+            .expect_err("the first scanned section needs a collection item");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.limit == refusal.used
+                && refusal.additional > 0));
     }
 }
