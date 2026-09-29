@@ -187,19 +187,17 @@ impl TopologyIdentityIndex {
         Ok(())
     }
 
-    fn resolve(&self, identifier: &str) -> Option<PmiTarget> {
+    fn resolve(&self, identifier: &str) -> Option<&PmiTarget> {
         let (lane, suffix) = identifier.rsplit_once(':')?;
         if lane.is_empty() || suffix.is_empty() {
             return None;
         }
         let suffix = suffix.parse::<u64>().ok()?;
         if let Some(target) = self.sequence_targets.get(&suffix) {
-            return target.clone();
+            return target.as_ref();
         }
         let targets = self.entries.get(&suffix)?;
-        (targets.len() == 1)
-            .then(|| targets.first().cloned())
-            .flatten()
+        (targets.len() == 1).then(|| targets.first()).flatten()
     }
 }
 
@@ -947,7 +945,7 @@ fn project_with_topology(
         if suppressed(entity) {
             continue;
         }
-        if let Some(annotation) = project_datum(reference, entity, &feature_index, topology) {
+        if let Some(annotation) = project_datum(ctx, reference, entity, &feature_index, topology)? {
             ctx.reserve_collection_vec(&mut projected, 1, "collect SWIFT datum annotations")?;
             projected.push(annotation);
         }
@@ -966,7 +964,7 @@ fn project_with_topology(
             continue;
         }
         if let Some(tolerance) = project_tolerance(entity, &datum_ids) {
-            let Some(targets) = targets(entity, &feature_index, topology) else {
+            let Some(targets) = targets(ctx, entity, &feature_index, topology)? else {
                 continue;
             };
             ctx.charge_work(
@@ -1005,7 +1003,7 @@ fn project_with_topology(
             ctx.reserve_collection_vec(&mut projected, 1, "collect SWIFT tolerances")?;
             projected.push(PmiAnnotation {
                 id,
-                name: object_name(entity),
+                name: object_name(ctx, entity)?,
                 visible: None,
                 targets,
                 definition: PmiDefinition::GeometricTolerance {
@@ -1020,13 +1018,14 @@ fn project_with_topology(
             });
             if short_class(&entity.class) == "GdtCompositeSurfaceProfile" {
                 if let Some(lower_tier) =
-                    project_lower_profile_tier(reference, entity, &feature_index, topology)
+                    project_lower_profile_tier(ctx, reference, entity, &feature_index, topology)?
                 {
                     ctx.reserve_collection_vec(&mut projected, 1, "collect SWIFT lower tiers")?;
                     projected.push(lower_tier);
                 }
             }
         } else if let Some(annotation) = project_dimension(
+            ctx,
             root,
             reference,
             entity,
@@ -1034,7 +1033,7 @@ fn project_with_topology(
             topology,
             rendered,
             pattern_hole_nominals,
-        ) {
+        )? {
             ctx.reserve_collection_vec(&mut projected, 1, "collect SWIFT dimensions")?;
             projected.push(annotation);
         }
@@ -1043,25 +1042,27 @@ fn project_with_topology(
 }
 
 fn project_datum(
+    ctx: &DecodeContext<'_>,
     reference: &Reference,
     entity: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     topology: Option<&TopologyIdentityIndex>,
-) -> Option<PmiAnnotation> {
-    let identification = entity
+) -> Result<Option<PmiAnnotation>, CodecError> {
+    let Some(identification) = entity
         .strings
         .get("DatumIdentifier")
-        .filter(|value| !value.is_empty())?
-        .clone();
-    let targets = targets(entity, feature_index, topology)?;
-    let id = pmi_id(&reference.id)?;
-    (short_class(&entity.class) == "GdtDatum").then(|| PmiAnnotation {
+        .filter(|value| !value.is_empty()) else { return Ok(None) };
+    let identification = ctx.format_retained(format_args!("{identification}"), "copy SWIFT datum identifier")?;
+    let Some(targets) = targets(ctx, entity, feature_index, topology)? else { return Ok(None) };
+    let Some(id) = pmi_id_charged(ctx, &reference.id)? else { return Ok(None) };
+    let name = object_name(ctx, entity)?;
+    Ok((short_class(&entity.class) == "GdtDatum").then(|| PmiAnnotation {
         id,
-        name: object_name(entity),
+        name,
         visible: None,
         targets,
         definition: PmiDefinition::Datum { identification },
-    })
+    }))
 }
 
 struct ProjectedTolerance {
@@ -1084,22 +1085,26 @@ fn project_tolerance(
 }
 
 fn project_lower_profile_tier(
+    ctx: &DecodeContext<'_>,
     reference: &Reference,
     entity: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     topology: Option<&TopologyIdentityIndex>,
-) -> Option<PmiAnnotation> {
-    let magnitude = NonNegativeReal::new(entity.doubles.get("ToleranceLowerTier").copied()?)?;
-    Some(PmiAnnotation {
-        id: PmiId::from(
-            cadmpeg_ir::ids::Identity::from(pmi_id(&reference.id)?).with_key_tail(
-                &cadmpeg_ir::ids::IdentityKeyTail::empty()
-                    .then(cadmpeg_ir::identity_key!(":lower-tier")),
-            ),
-        ),
-        name: object_name(entity).map(|name| format!("{name} lower tier")),
+) -> Result<Option<PmiAnnotation>, CodecError> {
+    let Some(magnitude) = entity.doubles.get("ToleranceLowerTier").copied().and_then(NonNegativeReal::new) else { return Ok(None) };
+    let Some(id) = pmi_id_charged(ctx, &reference.id)? else { return Ok(None) };
+    let Some(targets) = targets(ctx, entity, feature_index, topology)? else { return Ok(None) };
+    let id = ctx.format_retained(format_args!("{}:lower-tier", id.as_str()), "format SWIFT lower-tier ID")?;
+    let id = PmiId::mint(id)
+        .map_err(|_| CodecError::malformed("invalid SWIFT lower-tier ID"))?;
+    let name = entity.strings.get("ObjectName").filter(|name| !name.is_empty())
+        .map(|name| ctx.format_retained(format_args!("{name} lower tier"), "format SWIFT lower-tier name"))
+        .transpose()?;
+    Ok(Some(PmiAnnotation {
+        id,
+        name,
         visible: None,
-        targets: targets(entity, feature_index, topology)?,
+        targets,
         definition: PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::SurfaceProfile,
             magnitude: cadmpeg_ir::pmi::PmiMagnitude::from_parts(magnitude, PmiQuantity::Length),
@@ -1109,10 +1114,11 @@ fn project_lower_profile_tier(
             datum_system: None,
             modifiers: vec!["composite_lower_tier".into()],
         },
-    })
+    }))
 }
 
 fn project_dimension(
+    ctx: &DecodeContext<'_>,
     root: &Entity,
     reference: &Reference,
     entity: &Entity,
@@ -1120,11 +1126,11 @@ fn project_dimension(
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
-) -> Option<PmiAnnotation> {
-    let dimension = dimension_kind(short_class(&entity.class))?;
+) -> Result<Option<PmiAnnotation>, CodecError> {
+    let Some(dimension) = dimension_kind(short_class(&entity.class)) else { return Ok(None) };
     let quantity = dimension_quantity(&dimension);
-    let explicit_nominal =
-        FiniteReal::new(entity.doubles.get("Nominal").copied()?).filter(|value| {
+    let Some(source_nominal) = entity.doubles.get("Nominal").copied().and_then(FiniteReal::new) else { return Ok(None) };
+    let explicit_nominal = Some(source_nominal).filter(|value| {
             value.get() != 0.0
                 || entity
                     .integers
@@ -1132,7 +1138,7 @@ fn project_dimension(
                     .is_some_and(|dimension| *dimension != 0)
         });
     let implicit_nominal = if explicit_nominal.is_none() {
-        implicit_dimension_nominal(root, entity, feature_index, rendered, pattern_hole_nominals)
+        implicit_dimension_nominal(ctx, root, entity, feature_index, rendered, pattern_hole_nominals)?
     } else {
         None
     };
@@ -1147,31 +1153,32 @@ fn project_dimension(
         }),
         _ => None,
     };
-    Some(PmiAnnotation {
-        id: pmi_id(&reference.id)?,
-        name: object_name(entity),
+    let Some(id) = pmi_id_charged(ctx, &reference.id)? else { return Ok(None) };
+    let Some(targets) = targets(ctx, entity, feature_index, topology)? else { return Ok(None) };
+    let Ok(dimension) = cadmpeg_ir::pmi::PmiDimension::new(
+        dimension,
+        nominal.map(|value| PmiValue::from_parts(value, quantity)),
+        tolerance,
+    ) else { return Ok(None) };
+    Ok(Some(PmiAnnotation {
+        id,
+        name: object_name(ctx, entity)?,
         visible: None,
-        targets: targets(entity, feature_index, topology)?,
-        definition: PmiDefinition::Dimension(
-            cadmpeg_ir::pmi::PmiDimension::new(
-                dimension,
-                nominal.map(|value| PmiValue::from_parts(value, quantity)),
-                tolerance,
-            )
-            .ok()?,
-        ),
-    })
+        targets,
+        definition: PmiDefinition::Dimension(dimension),
+    }))
 }
 
 fn implicit_dimension_nominal(
+    ctx: &DecodeContext<'_>,
     root: &Entity,
     entity: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     rendered: &[RenderedDimension],
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
-) -> Option<FiniteReal> {
+) -> Result<Option<FiniteReal>, CodecError> {
     let source = match short_class(&entity.class) {
-        "GdtDiameter" => diameter_nominal(root, entity, feature_index, pattern_hole_nominals),
+        "GdtDiameter" => diameter_nominal(ctx, root, entity, feature_index, pattern_hole_nominals)?,
         "GdtDepth" => depth_nominal(root, entity, feature_index),
         "GdtWidth" => {
             width_from_applied_geometry(entity, feature_index).map(ImplicitNominal::Exact)
@@ -1195,8 +1202,9 @@ fn implicit_dimension_nominal(
         "GdtCounterSinkAngle" => countersink_angle_from_direct_geometry(entity, feature_index)
             .map(ImplicitNominal::Exact),
         _ => None,
-    }?;
-    match source {
+    };
+    let Some(source) = source else { return Ok(None) };
+    Ok(match source {
         ImplicitNominal::Exact(value) => Some(FiniteReal::from(value)),
         ImplicitNominal::Rendered { kind, geometry } => entity
             .integers
@@ -1217,7 +1225,7 @@ fn implicit_dimension_nominal(
             .filter(|value| *value <= 9)
             .and_then(|decimal_places| rendered_nominal(geometry, decimal_places, kind, rendered))
             .or(Some(FiniteReal::from(exact))),
-    }
+    })
 }
 
 fn dimension_quantity(dimension: &DimensionKind) -> PmiQuantity {
@@ -1492,57 +1500,61 @@ fn collect_rotational_projections(
 }
 
 fn diameter_nominal(
+    ctx: &DecodeContext<'_>,
     root: &Entity,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
-) -> Option<ImplicitNominal> {
+) -> Result<Option<ImplicitNominal>, CodecError> {
     if let Some(geometry) = diameter_from_applied_geometry(annotation, feature_index)
         .or_else(|| hole_diameter_excluding_counterbore(root, annotation, feature_index))
     {
-        return Some(ImplicitNominal::RenderedOrExact {
+        return Ok(Some(ImplicitNominal::RenderedOrExact {
             kind: RenderedDimensionKind::Diameter,
             geometry,
             exact: geometry,
-        });
+        }));
     }
-    empty_pattern_hole_nominal(annotation, feature_index, pattern_hole_nominals).map(|geometry| {
+    Ok(empty_pattern_hole_nominal(ctx, annotation, feature_index, pattern_hole_nominals)?.map(|geometry| {
         ImplicitNominal::RenderedOrExact {
             kind: RenderedDimensionKind::Diameter,
             geometry,
             exact: geometry,
         }
-    })
+    }))
 }
 
 fn empty_pattern_hole_nominal(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     let [reference] = annotation.features.references.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    let pattern = feature_index.get(reference.id.as_str())?;
+    let Some(pattern) = feature_index.get(reference.id.as_str()) else { return Ok(None) };
     if short_class(&pattern.class) != "GdtPattern" || !pattern.features.references.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let collection = unique_related(pattern, "SubFeatures")?;
+    let Some(collection) = unique_related(pattern, "SubFeatures") else { return Ok(None) };
     if short_class(&collection.class) != "GdtAppliedFeatureCollection"
         || !collection.entity.related.is_empty()
     {
-        return None;
+        return Ok(None);
     }
-    let cad_identifiers = cad_identifiers(pattern);
-    if cad_identifiers.is_empty()
-        || cad_identifiers
-            .iter()
-            .any(|identifier| !identifier.is_empty())
-    {
-        return None;
+    let mut has_identifier = false;
+    let mut has_nonempty_identifier = false;
+    visit_cad_identifiers(ctx, pattern, &mut |identifier| {
+        has_identifier = true;
+        has_nonempty_identifier |= !identifier.is_empty();
+        Ok(())
+    })?;
+    if !has_identifier || has_nonempty_identifier {
+        return Ok(None);
     }
-    let name = object_name(pattern)?;
-    pattern_hole_nominals?.get(&name).copied()
+    let Some(name) = pattern.strings.get("ObjectName").filter(|name| !name.is_empty()) else { return Ok(None) };
+    Ok(pattern_hole_nominals.and_then(|nominals| nominals.get(name).copied()))
 }
 
 fn hole_diameter_excluding_counterbore(
@@ -2388,97 +2400,139 @@ fn feature_index<'a>(
 }
 
 fn targets(
+    ctx: &DecodeContext<'_>,
     entity: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     topology: Option<&TopologyIdentityIndex>,
-) -> Option<Vec<PmiTarget>> {
-    let mut ids = Vec::new();
-    for reference in &entity.features.references {
-        ids.extend(expanded_feature_ids(&reference.id, feature_index, 0));
-    }
+) -> Result<Option<Vec<PmiTarget>>, CodecError> {
     let mut seen = BTreeSet::new();
     let mut targets = Vec::new();
-    for source_id in ids.into_iter().filter(|id| seen.insert(id.clone())) {
-        let source_id = cadmpeg_core::text::NonBlankString::new(source_id)?;
-        let Some(feature) = feature_index.get(source_id.as_str()) else {
-            targets.push(PmiTarget::ShapeAspect { source_id });
-            continue;
-        };
-        let mut had_identifier = false;
-        let mut unresolved_identifier = false;
-        let mut resolved = Vec::new();
-        for identifier in cad_identifiers(feature) {
-            had_identifier = true;
-            let Some(topology) = topology else {
-                unresolved_identifier = true;
-                continue;
-            };
-            if let Some(target) = topology.resolve(identifier) {
-                if !resolved.contains(&target) {
-                    resolved.push(target);
+    for reference in &entity.features.references {
+        let valid = visit_expanded_feature_ids(
+            ctx,
+            &reference.id,
+            feature_index,
+            0,
+            &mut |source_id| {
+                if seen.contains(source_id) {
+                    return Ok(true);
                 }
-            } else {
-                unresolved_identifier = true;
-            }
-        }
-        let has_resolved = !resolved.is_empty();
-        targets.extend(resolved);
-        if !had_identifier || unresolved_identifier || !has_resolved {
-            targets.push(PmiTarget::ShapeAspect { source_id });
+                ctx.charge_collection_items(1, "deduplicate SWIFT target feature IDs")?;
+                seen.insert(source_id);
+                if !source_id.chars().any(|character| !character.is_whitespace()) {
+                    return Ok(false);
+                }
+                let Some(feature) = feature_index.get(source_id) else {
+                    ctx.reserve_collection_vec(&mut targets, 1, "collect SWIFT shape-aspect targets")?;
+                    targets.push(shape_aspect_target(ctx, source_id)?);
+                    return Ok(true);
+                };
+                let first_target = targets.len();
+                let mut had_identifier = false;
+                let mut unresolved_identifier = false;
+                visit_cad_identifiers(ctx, feature, &mut |identifier| {
+                    had_identifier = true;
+                    let Some(topology) = topology else {
+                        unresolved_identifier = true;
+                        return Ok(());
+                    };
+                    if let Some(target) = topology.resolve(identifier) {
+                        ctx.charge_work(u64_from_index(targets.len().checked_sub(first_target).unwrap_or_default()), "deduplicate SWIFT topology targets")?;
+                        if !targets.iter().skip(first_target).any(|existing| existing == target) {
+                            ctx.reserve_collection_vec(&mut targets, 1, "collect SWIFT topology targets")?;
+                            targets.push(copy_pmi_target(ctx, target)?);
+                        }
+                    } else {
+                        unresolved_identifier = true;
+                    }
+                    Ok(())
+                })?;
+                if !had_identifier || unresolved_identifier || targets.len() == first_target {
+                    ctx.reserve_collection_vec(&mut targets, 1, "collect SWIFT shape-aspect targets")?;
+                    targets.push(shape_aspect_target(ctx, source_id)?);
+                }
+                Ok(true)
+            },
+        )?;
+        if !valid {
+            return Ok(None);
         }
     }
-    Some(targets)
+    Ok(Some(targets))
 }
 
-fn cad_identifiers(feature: &Entity) -> Vec<&str> {
-    fn visit<'a>(entity: &'a Entity, identifiers: &mut Vec<&'a str>) {
-        if short_class(&entity.class) == "CadRef" {
-            if let Some(identifier) = entity.strings.get("CadIdentifier") {
-                identifiers.push(identifier.as_str());
-            }
-        }
-        for child in &entity.features.entities {
-            visit(child, identifiers);
-        }
-        for child in &entity.annotations.entities {
-            visit(child, identifiers);
-        }
-        for related in &entity.related {
-            visit(&related.entity, identifiers);
+fn shape_aspect_target(ctx: &DecodeContext<'_>, source_id: &str) -> Result<PmiTarget, CodecError> {
+    let source_id = ctx.format_retained(format_args!("{source_id}"), "copy SWIFT shape-aspect ID")?;
+    let source_id = cadmpeg_core::text::NonBlankString::new(source_id)
+        .ok_or_else(|| CodecError::malformed("invalid SWIFT shape-aspect ID"))?;
+    Ok(PmiTarget::ShapeAspect { source_id })
+}
+
+fn copy_pmi_target(ctx: &DecodeContext<'_>, target: &PmiTarget) -> Result<PmiTarget, CodecError> {
+    Ok(match target {
+        PmiTarget::Body { body } => PmiTarget::Body { body: copy_topology_id(ctx, body.as_str())? },
+        PmiTarget::Face { face } => PmiTarget::Face { face: copy_topology_id(ctx, face.as_str())? },
+        PmiTarget::Edge { edge } => PmiTarget::Edge { edge: copy_topology_id(ctx, edge.as_str())? },
+        PmiTarget::Vertex { vertex } => PmiTarget::Vertex { vertex: copy_topology_id(ctx, vertex.as_str())? },
+        PmiTarget::Point { point } => PmiTarget::Point { point: copy_topology_id(ctx, point.as_str())? },
+        PmiTarget::Curve { curve } => PmiTarget::Curve { curve: copy_topology_id(ctx, curve.as_str())? },
+        PmiTarget::Product { product } => PmiTarget::Product { product: copy_topology_id(ctx, product.as_str())? },
+        PmiTarget::Occurrence { occurrence } => PmiTarget::Occurrence { occurrence: copy_topology_id(ctx, occurrence.as_str())? },
+        PmiTarget::ShapeAspect { source_id } => shape_aspect_target(ctx, source_id.as_str())?,
+    })
+}
+
+fn visit_cad_identifiers(
+    ctx: &DecodeContext<'_>,
+    entity: &Entity,
+    visit: &mut impl FnMut(&str) -> Result<(), CodecError>,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("scan SWIFT CAD identifiers")?;
+    ctx.charge_work(1, "scan SWIFT CAD identifiers")?;
+    if short_class(&entity.class) == "CadRef" {
+        if let Some(identifier) = entity.strings.get("CadIdentifier") {
+            visit(identifier)?;
         }
     }
-
-    let mut identifiers = Vec::new();
-    visit(feature, &mut identifiers);
-    identifiers
+    for child in &entity.features.entities {
+        visit_cad_identifiers(ctx, child, visit)?;
+    }
+    for child in &entity.annotations.entities {
+        visit_cad_identifiers(ctx, child, visit)?;
+    }
+    for related in &entity.related {
+        visit_cad_identifiers(ctx, &related.entity, visit)?;
+    }
+    Ok(())
 }
 
-fn expanded_feature_ids(
-    id: &str,
-    feature_index: &BTreeMap<&str, &Entity>,
+fn visit_expanded_feature_ids<'a>(
+    ctx: &DecodeContext<'_>,
+    id: &'a str,
+    feature_index: &BTreeMap<&str, &'a Entity>,
     depth: usize,
-) -> Vec<String> {
+    visit: &mut impl FnMut(&'a str) -> Result<bool, CodecError>,
+) -> Result<bool, CodecError> {
+    let _depth = ctx.enter_nested("expand SWIFT target features")?;
+    ctx.charge_work(1, "expand SWIFT target features")?;
     let Some(feature) = feature_index.get(id) else {
-        return vec![id.to_string()];
+        return visit(id);
     };
     if short_class(&feature.class) != "GdtPattern" || depth >= MAX_DEPTH {
-        return vec![id.to_string()];
+        return visit(id);
     }
     let Some(subfeatures) = direct_subfeature_ids(feature) else {
-        return vec![id.to_string()];
+        return visit(id);
     };
-    let mut members = Vec::new();
     for subfeature in subfeatures {
         let Some(next_depth) = depth.checked_add(1) else {
-            return vec![id.to_string()];
+            return visit(id);
         };
-        members.extend(expanded_feature_ids(subfeature, feature_index, next_depth));
+        if !visit_expanded_feature_ids(ctx, subfeature, feature_index, next_depth, visit)? {
+            return Ok(false);
+        }
     }
-    if members.is_empty() {
-        vec![id.to_string()]
-    } else {
-        members
-    }
+    Ok(true)
 }
 
 fn direct_subfeature_ids(feature: &Entity) -> Option<impl Iterator<Item = &str>> {
@@ -2637,12 +2691,13 @@ fn short_class(class: &str) -> &str {
     class.rsplit('.').next().unwrap_or(class)
 }
 
-fn object_name(entity: &Entity) -> Option<String> {
+fn object_name(ctx: &DecodeContext<'_>, entity: &Entity) -> Result<Option<String>, CodecError> {
     entity
         .strings
         .get("ObjectName")
         .filter(|name| !name.is_empty())
-        .cloned()
+        .map(|name| ctx.format_retained(format_args!("{name}"), "copy SWIFT object name"))
+        .transpose()
 }
 
 fn pmi_id(source_id: &str) -> Option<PmiId> {

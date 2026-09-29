@@ -24,8 +24,12 @@ fn lower_profile_tier_holds_an_admitted_nonnegative_magnitude() {
         class: "GdtSurfaceProfile".into(),
     };
     let mut entity = Entity::default();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("empty test root fits policy");
     entity.doubles.insert("ToleranceLowerTier".into(), 0.0);
-    let projected = project_lower_profile_tier(&reference, &entity, &BTreeMap::new(), None)
+    let projected = project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
+        .expect("lower tier fits policy")
         .expect("zero is a valid lower tier");
     let PmiDefinition::GeometricTolerance { magnitude, .. } = projected.definition else {
         panic!("lower profile tier definition");
@@ -33,11 +37,13 @@ fn lower_profile_tier_holds_an_admitted_nonnegative_magnitude() {
     assert_eq!(magnitude.get(), length(0.0).expect("finite zero length"));
 
     entity.doubles.insert("ToleranceLowerTier".into(), -1.0);
-    assert!(project_lower_profile_tier(&reference, &entity, &BTreeMap::new(), None).is_none());
+    assert!(project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
+        .expect("invalid lower tier fits policy").is_none());
     entity
         .doubles
         .insert("ToleranceLowerTier".into(), f64::INFINITY);
-    assert!(project_lower_profile_tier(&reference, &entity, &BTreeMap::new(), None).is_none());
+    assert!(project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
+        .expect("invalid lower tier fits policy").is_none());
 }
 
 fn put_pstr(bytes: &mut Vec<u8>, value: &str) {
