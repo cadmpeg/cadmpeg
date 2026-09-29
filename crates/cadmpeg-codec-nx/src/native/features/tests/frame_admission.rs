@@ -7,10 +7,12 @@ use crate::native::features::{
     feature_sketch_payload_coordinate_pairs, feature_sketch_payload_fixed_pairs,
     feature_sketch_payload_mixed_pairs, feature_sketch_payload_scalar_lanes,
     feature_sketch_payload_names,
+    feature_sketch_payload_named_records,
     feature_surface_construction_scalar_pairs, feature_surface_construction_strings,
     offset_data_block_bytes, FeatureConstructionOwner,
     FeatureConstructionPayload, FeatureDatumCsysPayload, FeatureDatumPlanePayload,
     FeatureSketchConstructionInputs,
+    FeaturePayloadName,
     FeatureSurfaceConstructionPayload,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -27,6 +29,7 @@ enum FrameRoute {
     SketchMixed,
     SketchLane,
     SketchName,
+    SketchRecord,
     SurfacePair,
     SurfaceString,
 }
@@ -35,7 +38,11 @@ enum FramePayload {
     Csys(FeatureDatumCsysPayload),
     Plane(FeatureDatumPlanePayload),
     Sketch(FeatureConstructionPayload),
-    SketchInputs(FeatureSketchConstructionInputs),
+    SketchInputs {
+        inputs: FeatureSketchConstructionInputs,
+        payload: FeatureConstructionPayload,
+        names: Vec<FeaturePayloadName>,
+    },
     Surface(FeatureSurfaceConstructionPayload),
 }
 
@@ -49,7 +56,7 @@ fn frame_bytes(route: FrameRoute) -> Vec<u8> {
         FrameRoute::CsysScalar =>
             return vec![0x50, 0x59, 0x66, 0x64, 0, 0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72],
         FrameRoute::SurfaceString => return b"\x66\x1b\x03\x05Steel\0".to_vec(),
-        FrameRoute::SketchName => return b"\x03\x05ABC\0".to_vec(),
+        FrameRoute::SketchName | FrameRoute::SketchRecord => return b"\x03\x05ABC\0".to_vec(),
         FrameRoute::PlanePair =>
             vec![0x6d, 0, 0xf0, 8, 2, 3, 1, 3, 1, 0xc0, 0x45, 4, 0, 0x80, 0x86, 2, 0, 3],
         FrameRoute::SketchFixed | FrameRoute::SketchMixed =>
@@ -116,14 +123,29 @@ fn frame_fixture(route: FrameRoute) -> (crate::container::Container<'static>, Fr
                     owner: FeatureConstructionOwner::Sketch { construction_inputs: "inputs".into() }, content,
                 })
             }
-            FrameRoute::SketchName => {
+            FrameRoute::SketchName | FrameRoute::SketchRecord => {
+                let content: FeaturePayloadContent<Vec<FeaturePayloadBlock>> =
+                    FeaturePayloadContent::from_source(ctx, [id.clone()], &blocks)?
+                        .expect("sketch named record payload");
                 let inputs = serde_json::json!({
                     "id": "nx:feature-history:sketch-construction-inputs#0-0000000000",
                     "operation_label": "operation", "sketch_record": "record",
                     "member_references": [], "member_data_blocks": [],
                     "terminal_reference": "terminal", "terminal_data_block": id,
                 });
-                FramePayload::SketchInputs(serde_json::from_value(inputs).expect("sketch name inputs"))
+                let inputs: FeatureSketchConstructionInputs = serde_json::from_value(inputs)
+                    .expect("sketch name inputs");
+                let names = feature_sketch_payload_names(ctx, &container, std::slice::from_ref(&inputs))?;
+                FramePayload::SketchInputs {
+                    inputs,
+                    payload: FeatureConstructionPayload {
+                        id: "nx:feature-history:sketch-construction-payload#0-0000000000".into(),
+                        operation_label: "operation".into(),
+                        owner: FeatureConstructionOwner::Sketch { construction_inputs: "inputs".into() },
+                        content,
+                    },
+                    names,
+                }
             }
             FrameRoute::SurfacePair | FrameRoute::SurfaceString => {
                 let content: FeaturePayloadContent<[FeaturePayloadBlock; 14]> =
@@ -162,8 +184,11 @@ fn run_frame_route(
             feature_sketch_payload_mixed_pairs(ctx, container, std::slice::from_ref(payload)).map(|rows| rows.len()),
         (FrameRoute::SketchLane, FramePayload::Sketch(payload)) =>
             feature_sketch_payload_scalar_lanes(ctx, container, std::slice::from_ref(payload)).map(|rows| rows.len()),
-        (FrameRoute::SketchName, FramePayload::SketchInputs(inputs)) =>
+        (FrameRoute::SketchName, FramePayload::SketchInputs { inputs, .. }) =>
             feature_sketch_payload_names(ctx, container, std::slice::from_ref(inputs)).map(|rows| rows.len()),
+        (FrameRoute::SketchRecord, FramePayload::SketchInputs { payload, names, .. }) =>
+            feature_sketch_payload_named_records(ctx, std::slice::from_ref(payload), names, &[], &[], &[])
+                .map(|rows| rows.len()),
         (FrameRoute::SurfacePair, FramePayload::Surface(payload)) =>
             feature_surface_construction_scalar_pairs(ctx, container, std::slice::from_ref(payload)).map(|rows| rows.len()),
         (FrameRoute::SurfaceString, FramePayload::Surface(payload)) =>
@@ -209,5 +234,6 @@ frame_limit_tests!(FrameRoute::SketchFixed, sketch_fixed_frame_refuses_collectio
 frame_limit_tests!(FrameRoute::SketchMixed, sketch_mixed_frame_refuses_collection_limit, sketch_mixed_frame_refuses_retained_limit, sketch_mixed_frame_refuses_scoped_limit, sketch_mixed_frame_refuses_work_limit);
 frame_limit_tests!(FrameRoute::SketchLane, sketch_lane_frame_refuses_collection_limit, sketch_lane_frame_refuses_retained_limit, sketch_lane_frame_refuses_scoped_limit, sketch_lane_frame_refuses_work_limit);
 frame_limit_tests!(FrameRoute::SketchName, sketch_name_frame_refuses_collection_limit, sketch_name_frame_refuses_retained_limit, sketch_name_frame_refuses_scoped_limit, sketch_name_frame_refuses_work_limit);
+frame_limit_tests!(FrameRoute::SketchRecord, sketch_record_frame_refuses_collection_limit, sketch_record_frame_refuses_retained_limit, sketch_record_frame_refuses_scoped_limit, sketch_record_frame_refuses_work_limit);
 frame_limit_tests!(FrameRoute::SurfacePair, surface_pair_frame_refuses_collection_limit, surface_pair_frame_refuses_retained_limit, surface_pair_frame_refuses_scoped_limit, surface_pair_frame_refuses_work_limit);
 frame_limit_tests!(FrameRoute::SurfaceString, surface_string_frame_refuses_collection_limit, surface_string_frame_refuses_retained_limit, surface_string_frame_refuses_scoped_limit, surface_string_frame_refuses_work_limit);
