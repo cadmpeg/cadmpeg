@@ -264,10 +264,10 @@ pub(super) fn unique_relation_declaration_candidates_charged<'a>(
 }
 
 struct RelationGroup<'a> {
-    feature_ref: String,
+    feature_ref: &'a str,
     family: FeatureInputRelationFamily,
-    class_ref: String,
-    operands: Vec<FeatureInputOperand>,
+    class_ref: &'a str,
+    operands: &'a [FeatureInputOperand],
     scalars: Vec<(usize, &'a FeatureInputScalar)>,
 }
 
@@ -276,35 +276,37 @@ pub(super) fn relation_instances(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Result<Vec<FeatureInputRelationInstance>, CodecError> {
-    let sketch_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|feature| feature.xml_tag.eq_ignore_ascii_case("Sketch"))
-        .map(|feature| feature.id.as_str())
-        .collect::<HashSet<_>>();
+    let mut sketch_features = HashSet::new();
+    for feature in histories.iter().flat_map(|history| &history.features)
+        .filter(|feature| feature.xml_tag.eq_ignore_ascii_case("Sketch")) {
+        reserve_relation_set(ctx, &mut sketch_features)?;
+        sketch_features.insert(feature.id.as_str());
+    }
     let intervals = feature_intervals(ctx, histories, lane)?;
-    let declaration_candidates =
-        relation_declaration_candidates_impl(ctx, &lane.classes, &lane.scalars, &intervals, true)?;
+    let declaration_candidates = relation_declaration_candidates_impl(ctx, &lane.classes, &lane.scalars, &intervals, true)?;
     let mut candidate_counts = HashMap::<&str, usize>::new();
     for (_, scalar, _) in &declaration_candidates {
-        *candidate_counts.entry(scalar.id.as_str()).or_default() += 1;
+        if let Some(count) = candidate_counts.get_mut(scalar.id.as_str()) {
+            *count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit("count SLDPRT relation candidates", u64::MAX - 1, u64::MAX))?;
+        } else {
+            reserve_relation_map(ctx, &mut candidate_counts)?;
+            candidate_counts.insert(scalar.id.as_str(), 1);
+        }
     }
-    let declarations = declaration_candidates
-        .into_iter()
-        .filter(|(_, scalar, _)| candidate_counts.get(scalar.id.as_str()) == Some(&1))
-        .map(|(class, scalar, family)| {
-            (
-                scalar.id.as_str(),
-                (class.offset, family, class.id.as_str()),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    let ambiguous_scalars = candidate_counts
-        .into_iter()
-        .filter_map(|(scalar, count)| (count > 1).then_some(scalar))
-        .collect::<HashSet<_>>();
+    let mut declarations = HashMap::new();
+    for (class, scalar, family) in declaration_candidates {
+        if candidate_counts.get(scalar.id.as_str()) == Some(&1) {
+            reserve_relation_map(ctx, &mut declarations)?;
+            declarations.insert(scalar.id.as_str(), (class.offset, family, class.id.as_str()));
+        }
+    }
     let mut groups = Vec::<RelationGroup<'_>>::new();
     for (scalar_index, scalar) in lane.scalars.iter().enumerate() {
+        let comparisons = lane.names.len().checked_mul(lane.scalars.len()).and_then(|count| count.checked_mul(2))
+            .and_then(|count| count.checked_add(lane.classes.len()))
+            .and_then(|count| count.checked_add(scalar.operands.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("group SLDPRT relation scalars", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(comparisons), "group SLDPRT relation scalars")?;
         let Some(feature_ref) = scalar
             .feature_ref
             .as_deref()
@@ -314,7 +316,7 @@ pub(super) fn relation_instances(
         };
         let declaration = declarations.get(scalar.id.as_str());
         let Some((class_offset, family, class_ref)) = declaration else {
-            if ambiguous_scalars.contains(scalar.id.as_str()) {
+            if candidate_counts.get(scalar.id.as_str()).is_some_and(|count| *count > 1) {
                 continue;
             }
             let Some(group) = groups.last_mut() else {
@@ -356,19 +358,22 @@ pub(super) fn relation_instances(
                         && same_scalar_name(candidate, scalar, &lane.names)
                 });
             if repeated_circle_display {
+                ctx.reserve_collection_vec(&mut group.scalars, 1, "collect SLDPRT relation scalar groups")?;
                 group.scalars.push((scalar_index, scalar));
             } else if same_scope && same_operands && scalar.role == FeatureInputScalarRole::Driving
             {
                 if group.scalars.len() == 1 {
-                    group.scalars.push((scalar_index, scalar));
+                    ctx.reserve_collection_vec(&mut group.scalars, 1, "collect SLDPRT relation scalar groups")?;
+                group.scalars.push((scalar_index, scalar));
                 } else {
                     let next = RelationGroup {
-                        feature_ref: group.feature_ref.clone(),
+                        feature_ref: group.feature_ref,
                         family: group.family,
-                        class_ref: group.class_ref.clone(),
-                        operands: scalar.operands.clone(),
-                        scalars: vec![(scalar_index, scalar)],
+                        class_ref: group.class_ref,
+                        operands: &scalar.operands,
+                        scalars: ctx.alloc_filled(1, (scalar_index, scalar), "collect SLDPRT relation scalar groups")?,
                     };
+                    ctx.reserve_collection_vec(&mut groups, 1, "collect SLDPRT relation groups")?;
                     groups.push(next);
                 }
             }
@@ -402,44 +407,45 @@ pub(super) fn relation_instances(
         if let Some(group) = append {
             if promote_class {
                 group.family = *family;
-                group.class_ref = (*class_ref).to_string();
+                group.class_ref = *class_ref;
             }
-            group.scalars.push((scalar_index, scalar));
+            ctx.reserve_collection_vec(&mut group.scalars, 1, "collect SLDPRT relation scalar groups")?;
+                group.scalars.push((scalar_index, scalar));
         } else {
+            ctx.reserve_collection_vec(&mut groups, 1, "collect SLDPRT relation groups")?;
             groups.push(RelationGroup {
-                feature_ref: feature_ref.to_string(),
+                feature_ref,
                 family: *family,
-                class_ref: (*class_ref).to_string(),
-                operands: scalar.operands.clone(),
-                scalars: vec![(scalar_index, scalar)],
+                class_ref: *class_ref,
+                operands: &scalar.operands,
+                scalars: ctx.alloc_filled(1, (scalar_index, scalar), "collect SLDPRT relation scalar groups")?,
             });
         }
     }
-    let mut instances = groups
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, group)| {
-            let offset = group.scalars[0].1.offset;
-            FeatureInputRelationInstance {
-                id: format!(
-                    "sldprt:feature-input:relation-instance#{}:{offset}",
-                    lane.id
-                        .rsplit_once('#')
-                        .map_or(lane.id.as_str(), |(_, key)| key)
-                ),
-                parent: lane.id.clone(),
-                ordinal: ordinal as u32,
-                offset,
-                family: group.family,
-                class_ref: group.class_ref,
-                feature_ref: group.feature_ref,
-                scalars: crate::records::relation_scalars::RelationScalars::from_scalars(
-                    group.scalars.into_iter().map(|(_, scalar)| scalar),
-                ),
-                operands: group.operands,
-            }
-        })
-        .collect::<Vec<_>>();
+    let mut instances = Vec::new();
+    let mut claimed_scalar_refs = HashSet::new();
+    let lane_key = lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key);
+    for (ordinal, group) in groups.into_iter().enumerate() {
+        for (_, scalar) in &group.scalars {
+            ctx.charge_work(1, "index SLDPRT claimed relation scalars")?;
+            reserve_relation_set(ctx, &mut claimed_scalar_refs)?;
+            claimed_scalar_refs.insert(scalar.id.as_str());
+        }
+        let offset = group.scalars[0].1.offset;
+        let ordinal = u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit("number SLDPRT relation instances", u64::MAX - 1, u64::MAX))?;
+        ctx.reserve_collection_vec(&mut instances, 1, "collect SLDPRT relation instances")?;
+        instances.push(FeatureInputRelationInstance {
+            id: ctx.format_retained(format_args!("sldprt:feature-input:relation-instance#{lane_key}:{offset}"), "retain SLDPRT relation instance identity")?,
+            parent: copy_relation_text(ctx, &lane.id)?,
+            ordinal,
+            offset,
+            family: group.family,
+            class_ref: copy_relation_text(ctx, group.class_ref)?,
+            feature_ref: copy_relation_text(ctx, group.feature_ref)?,
+            scalars: crate::records::relation_scalars::RelationScalars::from_scalars(ctx, group.scalars.into_iter().map(|(_, scalar)| scalar))?,
+            operands: copy_relation_operands(ctx, group.operands)?,
+        });
+    }
     // A class can declare more than one scalar relation. The ordinary
     // instance grouper joins a display scalar to its adjacent driving scalar
     // when their operand signatures agree; a second scalar with a different
@@ -448,15 +454,8 @@ pub(super) fn relation_instances(
     // instance. A scalar has one relation-instance owner even if malformed
     // input associates it with more than one class. Non-sketch bindings remain
     // native-only, matching the existing relation-instance scope.
-    let lane_key = lane
-        .id
-        .rsplit_once('#')
-        .map_or(lane.id.as_str(), |(_, key)| key);
-    let mut claimed_scalar_refs = instances
-        .iter()
-        .flat_map(|relation| relation.scalar_refs().iter().cloned())
-        .collect::<HashSet<_>>();
     for binding in &lane.relation_bindings {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(lane.scalars.len()), "promote SLDPRT relation bindings")?;
         let Some(feature_ref) = binding
             .feature_ref
             .as_deref()
@@ -471,32 +470,64 @@ pub(super) fn relation_instances(
         else {
             continue;
         };
-        if !claimed_scalar_refs.insert(binding.scalar_ref.clone()) {
+        if claimed_scalar_refs.contains(binding.scalar_ref.as_str()) {
             continue;
         }
+        reserve_relation_set(ctx, &mut claimed_scalar_refs)?;
+        claimed_scalar_refs.insert(binding.scalar_ref.as_str());
+        ctx.reserve_collection_vec(&mut instances, 1, "collect SLDPRT relation instances")?;
         instances.push(FeatureInputRelationInstance {
-            id: format!(
+            id: ctx.format_retained(format_args!(
                 "sldprt:feature-input:relation-instance#{lane_key}:{}",
                 scalar.offset
-            ),
-            parent: lane.id.clone(),
-            ordinal: 0,
+            ), "retain SLDPRT relation instance identity")?,
+            parent: copy_relation_text(ctx, &lane.id)?,
+            ordinal: u32::try_from(instances.len()).map_err(|_| ctx.refuse_codec_limit("number SLDPRT relation instances", u64::MAX - 1, u64::MAX))?,
             offset: scalar.offset,
             family: binding.family,
-            class_ref: binding.class_ref.clone(),
-            feature_ref: feature_ref.to_owned(),
-            scalars: crate::records::relation_scalars::RelationScalars::from_scalars([scalar]),
-            operands: scalar.operands.clone(),
+            class_ref: copy_relation_text(ctx, &binding.class_ref)?,
+            feature_ref: copy_relation_text(ctx, feature_ref)?,
+            scalars: crate::records::relation_scalars::RelationScalars::from_scalars(ctx, [scalar])?,
+            operands: copy_relation_operands(ctx, &scalar.operands)?,
         });
     }
-    instances.sort_by_key(|relation| relation.offset);
+    instances.sort_unstable_by_key(|relation| (relation.offset, relation.ordinal));
     for (ordinal, relation) in instances.iter_mut().enumerate() {
-        relation.ordinal = ordinal as u32;
+        relation.ordinal = u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit("number SLDPRT relation instances", u64::MAX - 1, u64::MAX))?;
     }
     bind_detached_relation_drivers(&mut instances, lane);
     bind_circle_dimension_centers(&mut instances, lane);
     bind_relation_geometry_operands(&mut instances, lane);
     Ok(instances)
+}
+
+fn copy_relation_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
+    ctx.format_retained(format_args!("{text}"), "retain SLDPRT relation record identity")
+}
+
+fn reserve_relation_map<K: Eq + std::hash::Hash, V>(ctx: &DecodeContext<'_>, values: &mut HashMap<K, V>) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "index SLDPRT relation records")?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT relation records", u64::MAX - 1, u64::MAX))
+}
+
+fn reserve_relation_set<T: Eq + std::hash::Hash>(ctx: &DecodeContext<'_>, values: &mut HashSet<T>) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, "index SLDPRT relation records")?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT relation records", u64::MAX - 1, u64::MAX))
+}
+
+fn copy_relation_operands(ctx: &DecodeContext<'_>, operands: &[FeatureInputOperand]) -> Result<Vec<FeatureInputOperand>, CodecError> {
+    let mut copy = Vec::new();
+    ctx.reserve_collection_vec(&mut copy, operands.len(), "collect SLDPRT relation operands")?;
+    for operand in operands {
+        copy.push(FeatureInputOperand {
+            offset: operand.offset,
+            reference_ref: copy_relation_text(ctx, &operand.reference_ref)?,
+            kind: operand.kind,
+            entity_index: operand.entity_index,
+            entity_ref: operand.entity_ref.as_deref().map(|id| copy_relation_text(ctx, id)).transpose()?,
+        });
+    }
+    Ok(copy)
 }
 
 #[allow(clippy::items_after_test_module)]
@@ -2750,9 +2781,9 @@ mod binary_relation_operand_tests {
             family: FeatureInputRelationFamily::PointPointDistance,
             class_ref: "class#0".to_string(),
             feature_ref: "feature#0".to_string(),
-            scalars: crate::records::relation_scalars::RelationScalars::from_scalars(
+            scalars: crate::records::relation_scalars::RelationScalars::from_scalars(&cadmpeg_test_support::service_decode_context(),
                 std::iter::empty(),
-            ),
+            ).unwrap(),
             operands,
         }
     }

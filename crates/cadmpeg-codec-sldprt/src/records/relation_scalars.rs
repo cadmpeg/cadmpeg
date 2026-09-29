@@ -13,25 +13,36 @@ pub(crate) struct RelationScalars {
 
 impl RelationScalars {
     pub(crate) fn from_scalars<'a>(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         scalars: impl IntoIterator<Item = &'a FeatureInputScalar>,
-    ) -> Self {
-        let scalars = scalars.into_iter().collect::<Vec<_>>();
-        let unique = |role| {
-            let mut indices = scalars
-                .iter()
-                .enumerate()
-                .filter_map(|(index, scalar)| (scalar.role == role).then_some(index));
-            let first = indices.next()?;
-            indices.next().is_none().then_some(first)
-        };
-        Self {
-            parameter: unique(FeatureInputScalarRole::Driving),
-            display: unique(FeatureInputScalarRole::Display),
-            refs: scalars
-                .into_iter()
-                .map(|scalar| scalar.id.clone())
-                .collect(),
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut refs = Vec::new();
+        let mut parameter = None;
+        let mut display = None;
+        let mut duplicate_parameter = false;
+        let mut duplicate_display = false;
+        for scalar in scalars {
+            ctx.charge_work(1, "select SLDPRT relation scalar roles")?;
+            let index = refs.len();
+            match scalar.role {
+                FeatureInputScalarRole::Driving => {
+                    duplicate_parameter |= parameter.is_some();
+                    parameter = Some(index);
+                }
+                FeatureInputScalarRole::Display => {
+                    duplicate_display |= display.is_some();
+                    display = Some(index);
+                }
+                FeatureInputScalarRole::Native => {}
+            }
+            ctx.reserve_collection_vec(&mut refs, 1, "collect SLDPRT relation scalar references")?;
+            refs.push(ctx.format_retained(format_args!("{}", scalar.id), "retain SLDPRT relation scalar identity")?);
         }
+        Ok(Self {
+            parameter: if duplicate_parameter { None } else { parameter },
+            display: if duplicate_display { None } else { display },
+            refs,
+        })
     }
 
     pub(crate) fn from_refs(
