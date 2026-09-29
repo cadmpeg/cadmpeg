@@ -49,7 +49,9 @@ impl CompactIndexAtom {
         }
     }
 
-    pub(crate) fn byte_len(self) -> u8 { self.1 }
+    pub(crate) fn byte_len(self) -> u8 {
+        self.1
+    }
 
     pub(crate) fn raw(&self) -> &[u8] {
         match &self.0 {
@@ -232,7 +234,8 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         if !(1..=usize::from(u8::MAX - RESERVED)).contains(&members.len()) {
             return Err("members: must be nonempty and fit the declared byte count");
         }
-        let count = u8::try_from(members.len() + usize::from(RESERVED)).map_err(|_| "members: must be nonempty and fit the declared byte count")?;
+        let count = u8::try_from(members.len() + usize::from(RESERVED))
+            .map_err(|_| "members: must be nonempty and fit the declared byte count")?;
         Ok(Self(members, count))
     }
 

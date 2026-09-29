@@ -31,7 +31,10 @@ fn counted_lane_positions_follow_every_encoded_width() {
                 assert_eq!(lane.declared_count(), count);
                 let base = u64::MAX - cadmpeg_core::decode::u64_from_index(bytes.len());
                 let absolute = lane.clone().into_absolute(base).unwrap();
-                assert_eq!(absolute.anchor().offset, base + cadmpeg_core::decode::u64_from_index(anchor_offset));
+                assert_eq!(
+                    absolute.anchor().offset,
+                    base + cadmpeg_core::decode::u64_from_index(anchor_offset)
+                );
                 assert_eq!(
                     absolute
                         .members()

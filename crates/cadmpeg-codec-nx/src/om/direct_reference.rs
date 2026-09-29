@@ -56,7 +56,11 @@ impl<O> DirectReferenceFrame<O> {
         self.object
     }
     pub(crate) fn byte_len(&self) -> u8 {
-        3 + self.object.byte_len() + match self.kind { ReferenceFieldKind::Tagged17 => 5, ReferenceFieldKind::DataBlock03 => 6 }
+        3 + self.object.byte_len()
+            + match self.kind {
+                ReferenceFieldKind::Tagged17 => 5,
+                ReferenceFieldKind::DataBlock03 => 6,
+            }
     }
 }
 

@@ -253,7 +253,10 @@ mod tests {
             )
             .unwrap();
             assert_eq!(frame.prefix(), prefix);
-            assert_eq!(frame.identity_offset(), 10 + cadmpeg_core::decode::u64_from_index(prefix.len()));
+            assert_eq!(
+                frame.identity_offset(),
+                10 + cadmpeg_core::decode::u64_from_index(prefix.len())
+            );
             let mut bytes = prefix.to_vec();
             bytes.extend_from_slice(b"0af?");
             let parsed = crate::test_support::with_decode_context(|ctx| {

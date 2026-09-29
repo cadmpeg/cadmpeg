@@ -39,7 +39,6 @@ const TARGET_PREFIX_LEN: u8 = 5;
 const TARGET_MIDDLE_LEN: u8 = 4;
 const ROW_SUFFIX_LEN: u8 = 5;
 
-
 fn positions<T, O: Copy + Add<Output = O> + From<u8>, const N: usize>(
     indices: &[CompactIndexTarget<T>; N],
     mut offset: O,
@@ -180,12 +179,7 @@ impl<T, O: Copy + Add<Output = O> + From<u8>> LinkedRow<T, O> {
             atom: self.target_index.atom,
             target: &self.target_index.target,
             offset: self.offset
-                + O::from(
-                    LINKED_PREFIX_LEN
-                        + self.first_index.byte_len()
-                        + LINKED_MIDDLE_LEN
-                        + 1,
-                ),
+                + O::from(LINKED_PREFIX_LEN + self.first_index.byte_len() + LINKED_MIDDLE_LEN + 1),
         }
     }
     pub(crate) fn indices(&self) -> [PositionedIndex<'_, T, O>; 3] {

@@ -91,8 +91,9 @@ fn display_jt_toc_count_refuses_before_vector_reservation() {
 #[test]
 fn display_jt_toc_storage_refuses_before_vector_reservation() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        80 + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>()) - 1;
+    policy.limits.max_retained_bytes = 80
+        + cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::DisplayJtTocEntry>())
+        - 1;
     assert_eq!(
         refused_at(policy),
         (

@@ -37,7 +37,11 @@ impl<B> Extrude32Frame<B> {
             terminal,
         };
         origin
-            .checked_add(frame.terminal_position() + cadmpeg_core::decode::u64_from_index(frame.terminal.raw().len()) + 2)
+            .checked_add(
+                frame.terminal_position()
+                    + cadmpeg_core::decode::u64_from_index(frame.terminal.raw().len())
+                    + 2,
+            )
             .ok_or("source_offset: extrusion branch end overflows")?;
         Ok(frame)
     }
@@ -92,7 +96,13 @@ impl<B> Extrude32Frame<B> {
             .as_slice()
             .iter()
             .enumerate()
-            .map(|(slot, (token, binding))| (*token, binding, self.origin + 13 + 4 * cadmpeg_core::decode::u64_from_index(slot)))
+            .map(|(slot, (token, binding))| {
+                (
+                    *token,
+                    binding,
+                    self.origin + 13 + 4 * cadmpeg_core::decode::u64_from_index(slot),
+                )
+            })
     }
     pub(crate) fn first_indices(
         &self,

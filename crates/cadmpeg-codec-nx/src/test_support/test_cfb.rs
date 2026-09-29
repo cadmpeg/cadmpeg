@@ -35,7 +35,11 @@ pub(crate) fn legacy_cfb_with_ug_part() -> Vec<u8> {
     for index in 0..109 {
         put_u32(&mut file, 76 + index * 4, FREE);
     }
-    put_u32(&mut file, 76, u32::try_from(FAT_SECTOR).expect("fixture value fits u32"));
+    put_u32(
+        &mut file,
+        76,
+        u32::try_from(FAT_SECTOR).expect("fixture value fits u32"),
+    );
 
     let directory = sector_mut(&mut file, 0);
     for index in 0..4 {
@@ -62,7 +66,9 @@ pub(crate) fn legacy_cfb_with_ug_part() -> Vec<u8> {
     let mut at = 9;
     payload[at..at + 2].copy_from_slice(b"PS");
     at += 2;
-    payload[at..at + 4].copy_from_slice(&(u32::try_from(description.len()).expect("fixture value fits u32")).to_be_bytes());
+    payload[at..at + 4].copy_from_slice(
+        &(u32::try_from(description.len()).expect("fixture value fits u32")).to_be_bytes(),
+    );
     at += 4;
     payload[at..at + description.len()].copy_from_slice(description);
 
@@ -113,7 +119,11 @@ pub(crate) fn legacy_cfb_with_two_streams() -> Vec<u8> {
     const FAT_SECTOR: usize = 20;
     let mut file = legacy_cfb_with_ug_part();
     file.resize(SECTOR * (1 + FAT_SECTOR + 1), 0);
-    put_u32(&mut file, 76, u32::try_from(FAT_SECTOR).expect("fixture value fits u32"));
+    put_u32(
+        &mut file,
+        76,
+        u32::try_from(FAT_SECTOR).expect("fixture value fits u32"),
+    );
     sector_mut(&mut file, 11).fill(0xff);
 
     let directory = sector_mut(&mut file, 0);
@@ -176,7 +186,11 @@ fn cfb_directory_entry(
     for (offset, unit) in name.encode_utf16().enumerate() {
         put_u16(entry, offset * 2, unit);
     }
-    put_u16(entry, 64, u16::try_from((name.encode_utf16().count() + 1) * 2).expect("fixture value fits u16"));
+    put_u16(
+        entry,
+        64,
+        u16::try_from((name.encode_utf16().count() + 1) * 2).expect("fixture value fits u16"),
+    );
     entry[66] = object_type;
     entry[67] = 1;
     put_u32(entry, 68, 0xffff_ffff);

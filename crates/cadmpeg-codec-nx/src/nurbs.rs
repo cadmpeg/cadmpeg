@@ -149,12 +149,12 @@ fn decode_surfaces(
             let normal_reversed = node.byte_at(18)? == b'-';
             let surface = NurbsPoleGrid::from_checked_lanes(
                 control_points
-                    .chunks(usize::from(descriptor.v_count))
+                    .chunks(descriptor.v_count)
                     .map(<[_]>::to_vec)
                     .collect(),
                 weights.map(|values| {
                     values
-                        .chunks(usize::from(descriptor.v_count))
+                        .chunks(descriptor.v_count)
                         .map(<[_]>::to_vec)
                         .collect()
                 }),

@@ -48,16 +48,15 @@ impl EntityReferences {
         if !(1..=MAX_TRAILING_REFERENCE_COUNT).contains(&values.len()) {
             return Err("trailing_references: must contain 1 through 32 references");
         }
-        let count = u32::try_from(values.len()).map_err(|_| "trailing_references: must contain 1 through 32 references")?;
+        let count = u32::try_from(values.len())
+            .map_err(|_| "trailing_references: must contain 1 through 32 references")?;
         Ok(Self { values, count })
     }
     pub(crate) fn fields(&self) -> impl Iterator<Item = (FieldPosition, &u32)> {
-        self.values.iter().zip(LEADING_REFERENCE_COUNT..37).map(|(value, ordinal)| {
-            (
-                FieldPosition(ordinal),
-                value,
-            )
-        })
+        self.values
+            .iter()
+            .zip(LEADING_REFERENCE_COUNT..37)
+            .map(|(value, ordinal)| (FieldPosition(ordinal), value))
     }
     pub(crate) fn count(&self) -> u32 {
         self.count

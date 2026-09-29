@@ -42,7 +42,9 @@ impl<B> ThruCurveBranch<B> {
     }
 
     fn byte_len(&self) -> u64 {
-        self.terminal_position() + cadmpeg_core::decode::u64_from_index(self.terminal.0.raw().len()) + 3
+        self.terminal_position()
+            + cadmpeg_core::decode::u64_from_index(self.terminal.0.raw().len())
+            + 3
     }
 }
 

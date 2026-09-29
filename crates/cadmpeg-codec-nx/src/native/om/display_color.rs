@@ -155,8 +155,8 @@ pub(in crate::native) fn rm_display_color_assignments(
         };
         let record_area_offset = record_area.offset;
         let record_area = record_area.bytes;
-        let source_base =
-            entry.file_span().map_or(0, |(offset, _)| offset) + cadmpeg_core::decode::u64_from_index(record_area_offset);
+        let source_base = entry.file_span().map_or(0, |(offset, _)| offset)
+            + cadmpeg_core::decode::u64_from_index(record_area_offset);
         for row in crate::om::column_row::scan::linked_rows(ctx, record_area)? {
             let Some(color) =
                 crate::om::column_row::scan::preceding_color(record_area, row.offset())

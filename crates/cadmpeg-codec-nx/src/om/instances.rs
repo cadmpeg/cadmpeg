@@ -163,7 +163,9 @@ mod tests {
             (2..=u8::MAX).collect::<Vec<_>>()
         );
         let mapped = crate::test_support::with_decode_context(|ctx| {
-            outputs.map_offsets(ctx, |offset| cadmpeg_core::decode::u64_from_index(offset) + 1000)
+            outputs.map_offsets(ctx, |offset| {
+                cadmpeg_core::decode::u64_from_index(offset) + 1000
+            })
         })
         .unwrap();
         assert_eq!(mapped.selectors().len(), 254);

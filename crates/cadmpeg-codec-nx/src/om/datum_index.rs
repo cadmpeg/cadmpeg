@@ -187,7 +187,11 @@ mod tests {
     #[test]
     fn datum_terminal_positions_follow_mixed_token_widths_and_checked_extent() {
         for count in [1, 254] {
-            let mut bytes = vec![0x7f, 0x01, u8::try_from(count + 1).expect("fixture value fits u8")];
+            let mut bytes = vec![
+                0x7f,
+                0x01,
+                u8::try_from(count + 1).expect("fixture value fits u8"),
+            ];
             let mut offsets = Vec::new();
             for slot in 0..count {
                 offsets.push(bytes.len());

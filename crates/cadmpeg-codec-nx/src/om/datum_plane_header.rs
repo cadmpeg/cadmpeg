@@ -213,7 +213,10 @@ impl<B> DatumPlaneFrame<B> {
                 Some((
                     &second.0,
                     &second.1,
-                    self.origin + 10 + cadmpeg_core::decode::u64_from_index(first.0.raw().len()) + cadmpeg_core::decode::u64_from_index(form.separator().len()),
+                    self.origin
+                        + 10
+                        + cadmpeg_core::decode::u64_from_index(first.0.raw().len())
+                        + cadmpeg_core::decode::u64_from_index(form.separator().len()),
                 )),
             ],
         };

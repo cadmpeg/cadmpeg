@@ -1426,10 +1426,9 @@ pub(in crate::native) fn feature_multi_instance_output_lanes(
                         return;
                     }
                 };
-            let outputs = match lane
-                .outputs
-                .map_offsets(ctx, |offset| entry_offset + cadmpeg_core::decode::u64_from_index(offset))
-            {
+            let outputs = match lane.outputs.map_offsets(ctx, |offset| {
+                entry_offset + cadmpeg_core::decode::u64_from_index(offset)
+            }) {
                 Ok(outputs) => outputs,
                 Err(error) => {
                     failure = Some(error);

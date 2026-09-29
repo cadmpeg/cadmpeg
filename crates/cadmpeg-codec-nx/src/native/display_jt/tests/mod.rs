@@ -379,7 +379,8 @@ fn display_jt_index_requires_every_declared_header() {
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder.write_all(&inflated).expect("required invariant");
     let compressed = encoder.finish().expect("required invariant");
-    let segment_byte_len = 24 + 9 + u32::try_from(compressed.len()).expect("fixture value fits u32");
+    let segment_byte_len =
+        24 + 9 + u32::try_from(compressed.len()).expect("fixture value fits u32");
     let mut data = Vec::new();
     data.extend_from_slice(&9_u32.to_le_bytes());
     data.extend_from_slice(&1_u32.to_le_bytes());
@@ -404,7 +405,9 @@ fn display_jt_index_requires_every_declared_header() {
     data.extend_from_slice(&1_u32.to_le_bytes());
     data.extend_from_slice(&segment_byte_len.to_le_bytes());
     data.extend_from_slice(&2_u32.to_le_bytes());
-    data.extend_from_slice(&(u32::try_from(compressed.len()).expect("fixture value fits u32") + 1).to_le_bytes());
+    data.extend_from_slice(
+        &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 1).to_le_bytes(),
+    );
     data.push(2);
     data.extend_from_slice(&compressed);
     let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
@@ -511,8 +514,9 @@ fn display_jt_index_requires_every_declared_header() {
     assert_eq!(sequences[0].tail, [6, 5]);
 
     let mut malformed_compression = container.clone();
-    malformed_compression.data.to_mut()[193..197]
-        .copy_from_slice(&(u32::try_from(compressed.len()).expect("fixture value fits u32") + 2).to_le_bytes());
+    malformed_compression.data.to_mut()[193..197].copy_from_slice(
+        &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 2).to_le_bytes(),
+    );
     assert!(
         with_jt_budget(&malformed_compression, |budget| super::display_jt_segments(
             budget,
@@ -641,11 +645,15 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
 
     let key = "JT_LLPROP_SHAPEIMPL";
     let mut string_body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
-    string_body.extend_from_slice(&(u32::try_from(key.len()).expect("fixture value fits u32")).to_le_bytes());
+    string_body.extend_from_slice(
+        &(u32::try_from(key.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for unit in key.encode_utf16() {
         string_body.extend_from_slice(&unit.to_le_bytes());
     }
-    inflated.extend_from_slice(&(21_u32 + u32::try_from(string_body.len()).expect("fixture value fits u32")).to_le_bytes());
+    inflated.extend_from_slice(
+        &(21_u32 + u32::try_from(string_body.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     inflated.extend_from_slice(&[
         0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -1781,7 +1789,12 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
     body.extend_from_slice(&1_u16.to_le_bytes());
     body.extend_from_slice(&representation);
     let source_offset = 64_u64;
-    let mut data = vec![0; cadmpeg_core::decode::index_from_u64(source_offset).expect("fixture offset fits usize") + 25];
+    let mut data = vec![
+        0;
+        cadmpeg_core::decode::index_from_u64(source_offset)
+            .expect("fixture offset fits usize")
+            + 25
+    ];
     data.extend_from_slice(&body);
     let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());

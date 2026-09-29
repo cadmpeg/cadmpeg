@@ -11,13 +11,17 @@ pub(crate) struct PaletteIndex(u8);
 
 impl PaletteIndex {
     pub(crate) fn new(value: u16) -> Option<Self> {
-        if !(1..=216).contains(&value) { return None; }
+        if !(1..=216).contains(&value) {
+            return None;
+        }
         Some(Self(u8::try_from(value).ok()?))
     }
 
     pub(crate) fn all() -> [Self; PALETTE_SIZE] {
         let mut all = [Self(1); PALETTE_SIZE];
-        for (slot, value) in all.iter_mut().zip(1u8..=216) { *slot = Self(value); }
+        for (slot, value) in all.iter_mut().zip(1u8..=216) {
+            *slot = Self(value);
+        }
         all
     }
 
@@ -89,7 +93,7 @@ impl ColorComponent {
                 let scalar = ShiftedScalar::read(bytes)?;
                 let value = cadmpeg_core::convert::f32_from_f64(scalar.value().get() / 4.0)?;
                 ColorAtom::Shifted(scalar, value.to_bits())
-            },
+            }
         };
         if let ColorAtom::Shifted(scalar, _) = atom {
             if !(0.0..=1.0).contains(&(scalar.value().get() / 4.0)) {

@@ -396,8 +396,9 @@ fn header_directory_refuses_retained_name_limit_before_copy() {
     let file = single_part_prt();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DirEntry>() + "/Root/UG_PART/UG_PART".len() - 1);
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<DirEntry>() + "/Root/UG_PART/UG_PART".len() - 1,
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
     let error =
         container::scan_bytes(&ctx, file.as_slice()).expect_err("name copy needs one more byte");

@@ -39,7 +39,9 @@ impl BlockReferencePosition {
         if ordinal > 18 {
             return Err("ordinal: block reference position must be within 0..=18");
         }
-        Ok(Self(u8::try_from(ordinal).map_err(|_| "ordinal: block reference position must be within 0..=18")?))
+        Ok(Self(u8::try_from(ordinal).map_err(|_| {
+            "ordinal: block reference position must be within 0..=18"
+        })?))
     }
     pub(super) fn ordinal(self) -> u32 {
         u32::from(self.0)
@@ -92,10 +94,16 @@ mod tests {
         for (ordinal, (position, value)) in BlockReferencePosition::enumerate([42; 19]).enumerate()
         {
             assert_eq!(value, 42);
-            assert_eq!(position.ordinal(), u32::try_from(ordinal).expect("fixture value fits u32"));
+            assert_eq!(
+                position.ordinal(),
+                u32::try_from(ordinal).expect("fixture value fits u32")
+            );
             assert_eq!(position.terminal(), ordinal == 18);
             assert_eq!(
-                BlockReferencePosition::new(u32::try_from(ordinal).expect("fixture value fits u32")).unwrap(),
+                BlockReferencePosition::new(
+                    u32::try_from(ordinal).expect("fixture value fits u32")
+                )
+                .unwrap(),
                 position
             );
             let terminal = ordinal == 18;

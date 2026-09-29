@@ -207,7 +207,9 @@ impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
         at = at
             .checked_add(cadmpeg_core::decode::u64_from_index(state_lane.byte_len()) + 3)
             .ok_or("source_offset overflow")?;
-        if wire.terminal.ordinal != u32::try_from(wire.members.len()).map_err(|_| "members: count exceeds u32")? {
+        if wire.terminal.ordinal
+            != u32::try_from(wire.members.len()).map_err(|_| "members: count exceeds u32")?
+        {
             return Err("terminal ordinal does not match serialized order".to_owned());
         }
         if wire.terminal.source_offset != at {

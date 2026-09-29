@@ -21,8 +21,9 @@ impl<B> DeleteReferences<B> {
         let width = slots
             .iter()
             .map(|slot| {
-                slot.as_ref()
-                    .map_or(1, |(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()))
+                slot.as_ref().map_or(1, |(token, _)| {
+                    cadmpeg_core::decode::u64_from_index(token.raw().len())
+                })
             })
             .sum::<u64>();
         offset
@@ -48,9 +49,9 @@ impl<B> DeleteReferences<B> {
         let mut at = self.offset + 7;
         self.slots.each_ref().map(|slot| {
             let offset = at;
-            at += slot
-                .as_ref()
-                .map_or(1, |(token, _)| cadmpeg_core::decode::u64_from_index(token.raw().len()));
+            at += slot.as_ref().map_or(1, |(token, _)| {
+                cadmpeg_core::decode::u64_from_index(token.raw().len())
+            });
             offset
         })
     }

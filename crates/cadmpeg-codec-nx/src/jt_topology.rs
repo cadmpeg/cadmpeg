@@ -119,7 +119,9 @@ impl Symbols<'_> {
         ctx: &DecodeContext<'_>,
         degree: NonZeroUsize,
     ) -> Result<Option<Vec<bool>>, CodecError> {
-        let Some(context) = AttributeMaskContext::of(degree) else { return Ok(None); };
+        let Some(context) = AttributeMaskContext::of(degree) else {
+            return Ok(None);
+        };
         let lane = context.lane();
         let degree = degree.get();
         if degree <= 64 {

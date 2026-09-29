@@ -136,7 +136,10 @@ fn deltas_events_retain_bounded_records_tombstones_and_revisions() {
     assert_eq!(events.records.len(), 1);
     assert_eq!(events.records[0].family.family_name(), "TYPE_45");
     assert_eq!(events.records[0].xmt, 10);
-    assert_eq!(events.records[0].inflated_offset, cadmpeg_core::decode::u64_from_index(type_45_offset));
+    assert_eq!(
+        events.records[0].inflated_offset,
+        cadmpeg_core::decode::u64_from_index(type_45_offset)
+    );
     assert_eq!(events.records[0].byte_len, 24);
     assert_eq!(events.tombstones.len(), 1);
     assert_eq!(events.tombstones[0].kind.name(), "POINT");
@@ -196,7 +199,10 @@ fn deltas_events_subtract_typed_term_use_numeric_tails_from_residuals() {
     assert_eq!(tail.values.term_use_count(), 1);
     assert_eq!(tail.values.values().len(), 8);
     assert_eq!(tail.values.byte_len(), 64);
-    assert_eq!(tail.inflated_offset, cadmpeg_core::decode::u64_from_index(tail_offset));
+    assert_eq!(
+        tail.inflated_offset,
+        cadmpeg_core::decode::u64_from_index(tail_offset)
+    );
     assert_eq!(events.residual_spans.len(), 2);
     assert_eq!(events.residual_spans[0].byte_len, 2);
     assert_eq!(
@@ -238,7 +244,10 @@ fn deltas_events_subtract_tagged_reference_lanes_from_residuals() {
         [(79, 10), (80, 32_768)]
     );
     assert_eq!(lane.byte_len, 10);
-    assert_eq!(lane.inflated_offset, cadmpeg_core::decode::u64_from_index(lane_offset));
+    assert_eq!(
+        lane.inflated_offset,
+        cadmpeg_core::decode::u64_from_index(lane_offset)
+    );
     assert_eq!(
         lane.sha256,
         crate::native::hex::Sha256Hex::digest(&bytes[lane_offset..lane_end])
@@ -258,9 +267,13 @@ fn deltas_events_subtract_transmit_headers_from_residuals() {
     let description = b": TRANSMIT FILE (deltas) created by modeller version 3501171";
     let schema = b"SCH_3501171_35102_13006";
     let mut bytes = b"PS".to_vec();
-    bytes.extend_from_slice(&(u32::try_from(description.len()).expect("fixture value fits u32")).to_be_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(description.len()).expect("fixture value fits u32")).to_be_bytes(),
+    );
     bytes.extend_from_slice(description);
-    bytes.extend_from_slice(&(u32::try_from(schema.len()).expect("fixture value fits u32")).to_be_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(schema.len()).expect("fixture value fits u32")).to_be_bytes(),
+    );
     bytes.extend_from_slice(schema);
     bytes.extend_from_slice(&[
         0, 0xe7, 0, 0, 0, 0, 0, 3, 0xff, 0x04, 0x27, 0x04, 0x28, 0, 0,
@@ -288,13 +301,19 @@ fn deltas_events_subtract_transmit_headers_from_residuals() {
     assert_eq!(header.state.description().as_bytes(), description);
     assert_eq!(header.state.schema().as_bytes(), schema);
     assert_eq!(header.state.references(), [1063, 1064]);
-    assert_eq!(header.byte_len, cadmpeg_core::decode::u64_from_index(header_end));
+    assert_eq!(
+        header.byte_len,
+        cadmpeg_core::decode::u64_from_index(header_end)
+    );
     assert_eq!(
         header.sha256,
         crate::native::hex::Sha256Hex::digest(&bytes[..header_end])
     );
     assert_eq!(events.residual_spans.len(), 1);
-    assert_eq!(events.residual_spans[0].inflated_offset, cadmpeg_core::decode::u64_from_index(header_end));
+    assert_eq!(
+        events.residual_spans[0].inflated_offset,
+        cadmpeg_core::decode::u64_from_index(header_end)
+    );
     assert_eq!(events.residual_spans[0].byte_len, 2);
 }
 
@@ -319,14 +338,20 @@ fn deltas_events_retain_terminal_null_references() {
     let trailer = &events.terminal_null_references[0];
     assert_eq!(trailer.form.references(), [1; 4]);
     assert_eq!(trailer.form.raw().len(), 8);
-    assert_eq!(trailer.inflated_offset, cadmpeg_core::decode::u64_from_index(trailer_offset));
+    assert_eq!(
+        trailer.inflated_offset,
+        cadmpeg_core::decode::u64_from_index(trailer_offset)
+    );
     assert_eq!(
         serde_json::to_value(trailer).unwrap()["sha256"],
         serde_json::json!(crate::native::hex::Sha256Hex::digest(&bytes[trailer_offset..]).as_str())
     );
     assert_eq!(events.residual_spans.len(), 1);
     assert_eq!(events.residual_spans[0].inflated_offset, 0);
-    assert_eq!(events.residual_spans[0].byte_len, cadmpeg_core::decode::u64_from_index(trailer_offset));
+    assert_eq!(
+        events.residual_spans[0].byte_len,
+        cadmpeg_core::decode::u64_from_index(trailer_offset)
+    );
 }
 
 #[test]
@@ -361,7 +386,10 @@ fn deltas_events_subtract_reference_type_maps_from_residuals() {
     );
     assert_eq!(map.target_kind.map(std::num::NonZeroU16::get), Some(55));
     assert_eq!(map.byte_len, 20);
-    assert_eq!(map.inflated_offset, cadmpeg_core::decode::u64_from_index(map_offset));
+    assert_eq!(
+        map.inflated_offset,
+        cadmpeg_core::decode::u64_from_index(map_offset)
+    );
     assert_eq!(
         map.sha256,
         crate::native::hex::Sha256Hex::digest(&bytes[map_offset..map_end])
@@ -417,7 +445,10 @@ fn deltas_events_subtract_reference_state_packets_from_residuals() {
     );
     assert!(!packet.terminal);
     assert_eq!(packet.byte_len, 37);
-    assert_eq!(packet.inflated_offset, cadmpeg_core::decode::u64_from_index(packet_offset));
+    assert_eq!(
+        packet.inflated_offset,
+        cadmpeg_core::decode::u64_from_index(packet_offset)
+    );
     assert_eq!(
         packet.sha256,
         crate::native::hex::Sha256Hex::digest(&bytes[packet_offset..packet_end])
@@ -482,8 +513,14 @@ fn deltas_events_retain_schema_reference_preambles() {
     assert_eq!(preamble.state.count(), 5);
     assert_eq!(preamble.state.entries(), [(81, 4), (82, 5), (81, 6)]);
     assert_eq!(preamble.state.terminal_value(), 9);
-    assert_eq!(preamble.inflated_offset, cadmpeg_core::decode::u64_from_index(preamble_offset));
-    assert_eq!(preamble.byte_len, cadmpeg_core::decode::u64_from_index(preamble_end - preamble_offset));
+    assert_eq!(
+        preamble.inflated_offset,
+        cadmpeg_core::decode::u64_from_index(preamble_offset)
+    );
+    assert_eq!(
+        preamble.byte_len,
+        cadmpeg_core::decode::u64_from_index(preamble_end - preamble_offset)
+    );
     assert_eq!(
         preamble.sha256,
         crate::native::hex::Sha256Hex::digest(&bytes[preamble_offset..preamble_end])
@@ -517,7 +554,10 @@ fn deltas_events_subtract_reference_marker_packets_from_residuals() {
     assert_eq!(u32::from(packet.reference), 9);
     assert_eq!(u8::from(packet.marker), 0x53);
     assert_eq!(packet.byte_len, 10);
-    assert_eq!(packet.inflated_offset, cadmpeg_core::decode::u64_from_index(packet_offset));
+    assert_eq!(
+        packet.inflated_offset,
+        cadmpeg_core::decode::u64_from_index(packet_offset)
+    );
     assert_eq!(
         packet.sha256,
         crate::native::hex::Sha256Hex::digest(&bytes[packet_offset..packet_end])
@@ -574,7 +614,10 @@ fn deltas_events_subtract_inline_schema_declarations_from_residuals() {
         }
     );
     assert_eq!(declaration.byte_len, 51);
-    assert_eq!(declaration.inflated_offset, cadmpeg_core::decode::u64_from_index(declaration_offset));
+    assert_eq!(
+        declaration.inflated_offset,
+        cadmpeg_core::decode::u64_from_index(declaration_offset)
+    );
     assert_eq!(
         declaration.sha256,
         crate::native::hex::Sha256Hex::digest(&bytes[declaration_offset..declaration_end])
@@ -624,8 +667,14 @@ fn deltas_events_subtract_type_150_state_packets_from_residuals() {
     assert_eq!(packet.state.references(), [1, 3, 6_192, 6_193, 6_194]);
     assert_eq!(u8::from(packet.state.marker), 0x2b);
     assert_eq!(packet.state.values(), values);
-    assert_eq!(packet.inflated_offset, cadmpeg_core::decode::u64_from_index(packet_offset));
-    assert_eq!(packet.byte_len, cadmpeg_core::decode::u64_from_index(packet_end - packet_offset));
+    assert_eq!(
+        packet.inflated_offset,
+        cadmpeg_core::decode::u64_from_index(packet_offset)
+    );
+    assert_eq!(
+        packet.byte_len,
+        cadmpeg_core::decode::u64_from_index(packet_end - packet_offset)
+    );
     assert_eq!(
         packet.sha256,
         crate::native::hex::Sha256Hex::digest(&bytes[packet_offset..packet_end])

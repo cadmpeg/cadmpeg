@@ -318,7 +318,9 @@ mod tests {
         lane.extend_from_slice(&[0xff; 15]);
         lane.extend_from_slice(&[0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03]);
         store.splice(end..end, lane.iter().copied());
-        store[end_at..end_at + 4].copy_from_slice(&(u32::try_from(end + lane.len()).expect("fixture value fits u32")).to_le_bytes());
+        store[end_at..end_at + 4].copy_from_slice(
+            &(u32::try_from(end + lane.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", store)]);
         let container =
             crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file))

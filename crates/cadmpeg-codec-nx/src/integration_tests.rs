@@ -571,7 +571,10 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
         .map(|feature| feature.ordinal)
         .collect::<Vec<_>>();
     ordinals.sort_unstable();
-    assert_eq!(ordinals, (0..cadmpeg_core::decode::u64_from_index(ordinals.len())).collect::<Vec<_>>());
+    assert_eq!(
+        ordinals,
+        (0..cadmpeg_core::decode::u64_from_index(ordinals.len())).collect::<Vec<_>>()
+    );
     let namespace = result.ir().native.namespace("nx").unwrap();
     assert!(!namespace.arenas()["feature_operation_records"].is_empty());
     assert!(!namespace.arenas()["feature_input_blocks"].is_empty());

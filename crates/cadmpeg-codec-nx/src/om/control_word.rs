@@ -21,9 +21,12 @@ impl TryFrom<u32> for ControlWord24 {
             return Err("value exceeds the unsigned 24-bit control-word range");
         }
         Ok(Self([
-            u8::try_from(value & 0xff).map_err(|_| "value exceeds the unsigned 24-bit control-word range")?,
-            u8::try_from((value >> 8) & 0xff).map_err(|_| "value exceeds the unsigned 24-bit control-word range")?,
-            u8::try_from(value >> 16).map_err(|_| "value exceeds the unsigned 24-bit control-word range")?,
+            u8::try_from(value & 0xff)
+                .map_err(|_| "value exceeds the unsigned 24-bit control-word range")?,
+            u8::try_from((value >> 8) & 0xff)
+                .map_err(|_| "value exceeds the unsigned 24-bit control-word range")?,
+            u8::try_from(value >> 16)
+                .map_err(|_| "value exceeds the unsigned 24-bit control-word range")?,
         ]))
     }
 }

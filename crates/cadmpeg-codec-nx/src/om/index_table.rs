@@ -59,7 +59,10 @@ impl<'a> DescendingU32Edges<'a> {
             return None;
         }
         let first = base.checked_add(cadmpeg_core::decode::index_from_u32(words.u32_le()?))?;
-        let last = base.checked_add(cadmpeg_core::decode::index_from_u32(View::u32_le_at(self.bytes, end - 4)?))?;
+        let last = base.checked_add(cadmpeg_core::decode::index_from_u32(View::u32_le_at(
+            self.bytes,
+            end - 4,
+        )?))?;
         let source = self.bytes.get(..last)?;
         Some(IndexRecords {
             source,
@@ -150,7 +153,8 @@ impl<'a> FixedIndex<'a> {
         let ids_start = self.object_id_table_offset + 8;
         let ids = std::iter::from_fn(move || {
             let offset = ids_start + ids.position();
-            ids.u32_le().map(|value| (value, cadmpeg_core::decode::u64_from_index(offset)))
+            ids.u32_le()
+                .map(|value| (value, cadmpeg_core::decode::u64_from_index(offset)))
         });
         self.records
             .records()

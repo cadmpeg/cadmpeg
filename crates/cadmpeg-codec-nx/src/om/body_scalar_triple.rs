@@ -14,9 +14,9 @@ pub(crate) struct ScalarTriple {
 
 impl ScalarTriple {
     pub(crate) fn new(origin: u64, atoms: [PayloadScalarAtom; 3]) -> Option<Self> {
-        atoms
-            .iter()
-            .try_fold(origin, |at, atom| at.checked_add(cadmpeg_core::decode::u64_from_index(atom.raw().len())))?;
+        atoms.iter().try_fold(origin, |at, atom| {
+            at.checked_add(cadmpeg_core::decode::u64_from_index(atom.raw().len()))
+        })?;
         Some(Self { origin, atoms })
     }
 

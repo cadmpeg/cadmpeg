@@ -254,7 +254,9 @@ impl SourceChartData {
         ctx: &DecodeContext<'_>,
         points: Vec<Point3>,
     ) -> Result<Option<(Vec<FinitePoint3>, u32)>, CodecError> {
-        let Ok(count) = u32::try_from(points.len()) else { return Ok(None); };
+        let Ok(count) = u32::try_from(points.len()) else {
+            return Ok(None);
+        };
         if points.len() < 2 {
             return Ok(None);
         }
@@ -353,7 +355,7 @@ impl SourceChartData {
         if points.len() < 2 {
             return Err("points: at least two points required");
         }
-let points = points
+        let points = points
             .into_iter()
             .map(|point| FinitePoint3::new(point).ok_or("points: coordinates must be finite"))
             .collect::<Result<_, _>>()?;
