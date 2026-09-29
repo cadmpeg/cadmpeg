@@ -2165,16 +2165,17 @@ fn evaluate_expression_program_details(
         }
         let source = line.text.trim();
         if let Some(condition_source) = conditional_keyword_expression(source, "if") {
-            let condition = (activity == CurveExpressionActivation::Active)
-                .then(|| {
-                    parse_relation_expression::<CurveExpressionValue>(
-                        condition_source,
-                        &values,
-                        context,
-                    )
-                })
-                .flatten()
-                .and_then(|value| value.truth());
+            let condition = if activity == CurveExpressionActivation::Active {
+                parse_relation_expression::<CurveExpressionValue>(
+                    ctx,
+                    condition_source,
+                    &values,
+                    context,
+                )?
+                .and_then(|value| value.truth())
+            } else {
+                None
+            };
             let parent = activity;
             activity = branch_activation(parent, condition, false);
             stack.push(ctx, ConditionalFrame { parent, condition })?;
@@ -2207,18 +2208,17 @@ fn evaluate_expression_program_details(
         }
         match activity {
             CurveExpressionActivation::Active => {
-                assignment.value = declaration_is_valid
-                    .then(|| {
-                        parse_relation_expression::<CurveExpressionValue>(
-                            &assignment.expression,
-                            &values,
-                            context,
-                        )
-                    })
-                    .flatten()
-                    .and_then(|value| {
-                        apply_declared_relation_unit(value, declared_unit)
-                    });
+                assignment.value = if declaration_is_valid {
+                    parse_relation_expression::<CurveExpressionValue>(
+                        ctx,
+                        &assignment.expression,
+                        &values,
+                        context,
+                    )?
+                    .and_then(|value| apply_declared_relation_unit(value, declared_unit))
+                } else {
+                    None
+                };
                 if let Some(value) = assignment.value.as_ref() {
                     if !values.contains_key(&key) {
                         ctx.charge_collection_items(1, "creo evaluated value nodes")?;
@@ -4352,6 +4352,8 @@ struct ExpressionParser<'a, V> {
     cursor: usize,
     values: &'a BTreeMap<String, V>,
     context: RelationEvaluationContext<'a>,
+    ctx: &'a cadmpeg_core::decode::DecodeContext<'a>,
+    resource_error: Option<cadmpeg_core::CodecError>,
     nesting: usize,
 }
 
@@ -4381,6 +4383,16 @@ impl ComparisonOperator {
 }
 
 impl<V: ExpressionValue> ExpressionParser<'_, V> {
+    fn admit<T>(&mut self, result: Result<T, cadmpeg_core::CodecError>) -> Option<T> {
+        match result {
+            Ok(value) => Some(value),
+            Err(error) => {
+                self.resource_error = Some(error);
+                None
+            }
+        }
+    }
+
     fn finite_value(value: V) -> Option<V> {
         value.finite().then_some(value)
     }
@@ -4501,6 +4513,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             return Some(value);
         }
         (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
+        let _depth = self.admit(self.ctx.enter_nested("creo relation exponent depth"))?;
+        self.admit(self.ctx.charge_work(1, "creo relation exponent work"))?;
         self.cursor += 1;
         self.nesting += 1;
         let exponent = self.unary()?;
@@ -4513,6 +4527,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         let mut value = match self.source.get(self.cursor)? {
             b'(' => {
                 (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
+                let _depth = self.admit(self.ctx.enter_nested("creo relation group depth"))?;
+                self.admit(self.ctx.charge_work(1, "creo relation group work"))?;
                 self.cursor += 1;
                 self.nesting += 1;
                 let value = self.logical_or()?;
@@ -4554,9 +4570,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             self.cursor += 1;
         }
         (self.source.get(self.cursor) == Some(&delimiter)).then_some(())?;
-        let value = std::str::from_utf8(&self.source[start..self.cursor])
-            .ok()?
-            .to_owned();
+        let source = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
+        let value = self.admit(self.ctx.copy_retained_text(source, "creo relation literal text"))?;
         self.cursor += 1;
         V::string(value)
     }
@@ -4603,17 +4618,28 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             if let Some(value) = V::reserved(name) {
                 return Some(value);
             }
-            return self.values.get(&expression_identifier_key(name)).cloned();
+            let (mut key, _reservation) =
+                self.admit(self.ctx.copy_scoped_text(name, "creo relation lookup key"))?;
+            key.make_ascii_lowercase();
+            return self.values.get(&key).cloned();
         }
         (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
         let (function, scope) = creo_relation_function(name)?;
+        let _depth = self.admit(self.ctx.enter_nested("creo relation function depth"))?;
+        self.admit(self.ctx.charge_work(1, "creo relation function work"))?;
         self.cursor += 1;
         self.nesting += 1;
         self.whitespace();
         let mut arguments = Vec::new();
         if self.source.get(self.cursor) != Some(&b')') {
             loop {
-                arguments.push(self.logical_or()?);
+                let argument = self.logical_or()?;
+                self.admit(self.ctx.try_reserve_items(
+                    &mut arguments,
+                    1,
+                    "creo relation function arguments",
+                ))?;
+                arguments.push(argument);
                 self.whitespace();
                 if self.source.get(self.cursor) != Some(&b',') {
                     break;
@@ -5117,20 +5143,26 @@ fn format_relation_real(value: f64, decimals: Option<usize>, scientific: bool) -
 }
 
 fn parse_relation_expression<V: ExpressionValue>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     expression: &str,
     values: &BTreeMap<String, V>,
     context: RelationEvaluationContext<'_>,
-) -> Option<V> {
+) -> Result<Option<V>, cadmpeg_core::CodecError> {
     let mut parser = ExpressionParser {
         source: expression.as_bytes(),
         cursor: 0,
         values,
         context,
+        ctx,
+        resource_error: None,
         nesting: 0,
     };
-    let value = parser.logical_or()?;
+    let value = parser.logical_or();
+    if let Some(error) = parser.resource_error {
+        return Err(error);
+    }
     parser.whitespace();
-    (parser.cursor == parser.source.len() && value.finite()).then_some(value)
+    Ok(value.filter(|value| parser.cursor == parser.source.len() && value.finite()))
 }
 
 fn apply_declared_relation_unit(
@@ -5196,17 +5228,19 @@ fn infer_solve_variable_dimensions(
     let mut constraints = Vec::new();
     for equation in &block.equations {
         let Some(left) = parse_relation_expression::<DimensionProbeValue>(
+            ctx,
             &equation.left,
             &probe_values,
             context,
-        ) else {
+        )? else {
             return Ok(None);
         };
         let Some(right) = parse_relation_expression::<DimensionProbeValue>(
+            ctx,
             &equation.right,
             &probe_values,
             context,
-        ) else {
+        )? else {
             return Ok(None);
         };
         constraints.extend(left.constraints.iter().cloned());
@@ -5413,17 +5447,19 @@ fn solve_affine_expression_block(
     let mut rows = Vec::new();
     for equation in &block.equations {
         let Some(left) = parse_relation_expression::<SimultaneousAffineValue>(
+            ctx,
             &equation.left,
             &affine_values,
             context,
-        ) else {
+        )? else {
             return Ok(None);
         };
         let Some(right) = parse_relation_expression::<SimultaneousAffineValue>(
+            ctx,
             &equation.right,
             &affine_values,
             context,
-        ) else {
+        )? else {
             return Ok(None);
         };
         let Some(difference) = left.combine(right, true) else {
@@ -5852,17 +5888,19 @@ fn evaluate_nonlinear_residuals(
     let mut residuals = Vec::new();
     for equation in &block.equations {
         let Some(left) = parse_relation_expression::<CurveExpressionValue>(
+            ctx,
             &equation.left,
             &evaluation_values,
             context,
-        ) else {
+        )? else {
             return Ok(None);
         };
         let Some(right) = parse_relation_expression::<CurveExpressionValue>(
+            ctx,
             &equation.right,
             &evaluation_values,
             context,
-        ) else {
+        )? else {
             return Ok(None);
         };
         let Some((left, left_dimension)) = quantity_parts_ref(&left) else {
@@ -6031,19 +6069,20 @@ fn evaluate_affine_program(
         }
         match assignment.activation {
             CurveExpressionActivation::Active => {
-                let value = declaration_is_valid
-                    .then(|| {
-                        parse_relation_expression::<crate::curve::AffineValue>(
-                            &assignment.expression,
-                            &values,
-                            RelationEvaluationContext::default(),
-                        )
-                    })
-                    .flatten()
+                let value = if declaration_is_valid {
+                    parse_relation_expression::<crate::curve::AffineValue>(
+                        ctx,
+                        &assignment.expression,
+                        &values,
+                        RelationEvaluationContext::default(),
+                    )?
                     .and_then(|value| {
                         declared_unit
                             .map_or(Some(value), |unit| value.with_unit(relation_unit(unit)?))
-                    });
+                    })
+                } else {
+                    None
+                };
                 if let Some(value) = value {
                     if !values.contains_key(&key) {
                         ctx.charge_collection_items(1, "creo affine value nodes")?;
