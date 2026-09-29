@@ -239,7 +239,7 @@ pub(crate) fn parse_property_set_stream<'a>(
         ));
     }
     ctx.charge_collection_items(section_count as u64, "admit OLE section directories")?;
-    let mut directories = Vec::with_capacity(section_count);
+    let mut directories = DecodeContext::admitted_vec(section_count, "admit OLE section directories")?;
     ctx.charge_collection_items(section_count as u64, "admit OLE section FMTIDs")?;
     let mut fmtids = BTreeSet::new();
     for _ in 0..section_count {
@@ -255,7 +255,7 @@ pub(crate) fn parse_property_set_stream<'a>(
     directories.sort_by_key(|(_, offset)| *offset);
     let mut previous_end = header_end;
     ctx.charge_collection_items(section_count as u64, "admit OLE property-set sections")?;
-    let mut sections = Vec::with_capacity(section_count);
+    let mut sections = DecodeContext::admitted_vec(section_count, "admit OLE property-set sections")?;
     for (fmtid, offset) in directories {
         if offset < previous_end || offset % 4 != 0 {
             return Err(CodecError::Malformed(
@@ -315,7 +315,7 @@ fn parse_section<'a>(
     ctx.charge_collection_items(property_count as u64, "admit OLE property IDs")?;
     let mut ids = BTreeSet::new();
     ctx.charge_collection_items(property_count as u64, "admit OLE property directory")?;
-    let mut directory = Vec::with_capacity(property_count);
+    let mut directory = DecodeContext::admitted_vec(property_count, "admit OLE property directory")?;
     for _ in 0..property_count {
         let id = cursor.u32("property id")?;
         if !ids.insert(id) {
@@ -377,7 +377,7 @@ fn parse_section<'a>(
         .transpose()?
         .unwrap_or_default();
     ctx.charge_collection_items(property_count as u64, "admit OLE properties")?;
-    let mut properties = Vec::with_capacity(property_count);
+    let mut properties = DecodeContext::admitted_vec(property_count, "admit OLE properties")?;
     for (id, start, end) in ranges {
         let raw = source
             .child(source.start() + start, source.start() + end)
@@ -495,7 +495,7 @@ fn parse_vector<'a>(
 ) -> Result<PropertyValue<'a>, CodecError> {
     let count = cursor.count("vector element count", MAX_PROPERTIES)?;
     ctx.charge_collection_items(count as u64, "admit OLE property vector elements")?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = DecodeContext::admitted_vec(count, "admit OLE property vector elements")?;
     for _ in 0..count {
         if element_type == VT_VARIANT {
             let nested_type = cursor.u16("variant type")?;
