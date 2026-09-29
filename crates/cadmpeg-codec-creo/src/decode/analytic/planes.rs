@@ -731,20 +731,22 @@ struct PlaneBranchConstraint {
 }
 
 fn stored_frame_branch_constraints(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     domains: &BTreeMap<u32, Vec<PlaneCandidate>>,
-) -> Vec<PlaneBranchConstraint> {
+) -> Result<Vec<PlaneBranchConstraint>, cadmpeg_core::CodecError> {
     let mut constraints = Vec::new();
-    let mut add = |faces: [Option<NonZeroU32>; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+    let mut add = |faces: [Option<NonZeroU32>; 2], endpoint_sets: [[[f64; 2]; 2]; 2]|
+        -> Result<(), cadmpeg_core::CodecError> {
         let [Some(first), Some(second)] = faces else {
-            return;
+            return Ok(());
         };
         let faces = [first.get(), second.get()];
         if faces[0] == faces[1] {
-            return;
+            return Ok(());
         }
         let (Some(first), Some(second)) = (domains.get(&faces[0]), domains.get(&faces[1])) else {
-            return;
+            return Ok(());
         };
         let compatible = first
             .iter()
@@ -755,11 +757,13 @@ fn stored_frame_branch_constraints(
             })
             .count();
         if compatible != 0 {
+            ctx.try_reserve_items(&mut constraints, 1, "creo plane branch constraints")?;
             constraints.push(PlaneBranchConstraint {
                 faces,
                 endpoint_sets,
             });
         }
+        Ok(())
     };
     for pcurve in &scan.curves.pcurves {
         add(
@@ -770,7 +774,7 @@ fn stored_frame_branch_constraints(
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
             ),
-        );
+        )?;
     }
     for pcurve in &scan.curves.bound_prototype_pcurves {
         add(
@@ -781,7 +785,7 @@ fn stored_frame_branch_constraints(
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
             ),
-        );
+        )?;
     }
     for pcurve in &scan.curves.two_chart_pcurves {
         let faces = pcurve.faces.map(NonZeroU32::new);
@@ -796,9 +800,9 @@ fn stored_frame_branch_constraints(
                 [first[0], last[0]],
                 [first[1], last[1]],
             ),
-        );
+        )?;
     }
-    constraints
+    Ok(constraints)
 }
 
 fn fc05_cylinder_branch_witnesses(
@@ -1108,36 +1112,44 @@ fn plane_candidate_pcurve_lies_on_carrier(
             .all(|point| point_on_carrier(<[f64; 3]>::from(point.get()), carrier))
 }
 
-fn native_positional_cylinder_carriers(scan: &ContainerScan) -> BTreeMap<u32, CarrierEquation> {
-    crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
-        .into_iter()
-        .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
-        .filter_map(|row| {
-            let frame =
-                crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?
-                    .positional_cylinder_frame()?;
-            Some((
-                row.id,
-                CarrierEquation::Cylinder(super::equations::CylinderEquation {
-                    origin: frame.frame().origin(),
-                    axis: frame.frame().axis(),
-                    ref_direction: frame.frame().ref_direction(),
-                    radius: frame.radius().get(),
-                }),
-            ))
-        })
-        .collect()
+fn native_positional_cylinder_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<BTreeMap<u32, CarrierEquation>, cadmpeg_core::CodecError> {
+    let mut carriers = BTreeMap::new();
+    for row in crate::identity::uniquely_identified_rows_checked(
+        ctx, &scan.surfaces.rows, |row| row.id,
+    )? {
+        if row.kind != crate::surface::SurfaceKind::Cylinder {
+            continue;
+        }
+        let Some(frame) = crate::surface::unique_surface_parameter(
+            &scan.surfaces.parameters, row.id,
+        ).and_then(|record| record.positional_cylinder_frame()) else {
+            continue;
+        };
+        ctx.charge_collection_items(1, "creo plane branch cylinder carrier nodes")?;
+        carriers.insert(row.id, CarrierEquation::Cylinder(super::equations::CylinderEquation {
+            origin: frame.frame().origin(),
+            axis: frame.frame().axis(),
+            ref_direction: frame.frame().ref_direction(),
+            radius: frame.radius().get(),
+        }));
+    }
+    Ok(carriers)
 }
 
 fn select_stored_frame_carrier_pcurve_branches(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     variable_domains: &BTreeMap<u32, Vec<PlaneCandidate>>,
     domains: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
-) {
-    let carriers = native_positional_cylinder_carriers(scan);
-    let mut apply = |faces: [Option<NonZeroU32>; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+) -> Result<(), cadmpeg_core::CodecError> {
+    let carriers = native_positional_cylinder_carriers(ctx, scan)?;
+    let mut apply = |faces: [Option<NonZeroU32>; 2], endpoint_sets: [[[f64; 2]; 2]; 2]|
+        -> Result<(), cadmpeg_core::CodecError> {
         let [Some(first), Some(second)] = faces else {
-            return;
+            return Ok(());
         };
         let faces = [first.get(), second.get()];
         for face_index in 0..2 {
@@ -1148,7 +1160,7 @@ fn select_stored_frame_carrier_pcurve_branches(
             let Some(carrier) = carriers.get(&faces[1 - face_index]).copied() else {
                 continue;
             };
-            let retained = options
+            let mut retained = options
                 .iter()
                 .copied()
                 .filter(|candidate| {
@@ -1157,12 +1169,15 @@ fn select_stored_frame_carrier_pcurve_branches(
                         endpoint_sets[face_index],
                         carrier,
                     )
-                })
-                .collect::<Vec<_>>();
-            if retained.len() == 1 {
-                domains.insert(plane_id, retained);
+                });
+            if let (Some(candidate), None) = (retained.next(), retained.next()) {
+                let mut selected = Vec::new();
+                ctx.try_reserve_items(&mut selected, 1, "creo carrier pcurve plane branch")?;
+                selected.push(candidate);
+                domains.insert(plane_id, selected);
             }
         }
+        Ok(())
     };
     for pcurve in &scan.curves.pcurves {
         apply(
@@ -1173,7 +1188,7 @@ fn select_stored_frame_carrier_pcurve_branches(
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
             ),
-        );
+        )?;
     }
     for pcurve in &scan.curves.bound_prototype_pcurves {
         apply(
@@ -1184,7 +1199,7 @@ fn select_stored_frame_carrier_pcurve_branches(
                 pcurve.face_0_endpoints,
                 pcurve.face_1_endpoints,
             ),
-        );
+        )?;
     }
     for pcurve in &scan.curves.two_chart_pcurves {
         let faces = pcurve.faces.map(NonZeroU32::new);
@@ -1199,8 +1214,9 @@ fn select_stored_frame_carrier_pcurve_branches(
                 [first[0], last[0]],
                 [first[1], last[1]],
             ),
-        );
+        )?;
     }
+    Ok(())
 }
 
 fn select_stored_frame_branches(
@@ -1219,23 +1235,37 @@ fn select_stored_frame_branches(
             if let Some((origin_options, origin_count)) =
                 stored_parameter_normal_candidates_with_origin_branches(frame, true)
             {
-                let known = origin_domains.entry(frame.surface_id).or_default();
+                let known = match origin_domains.entry(frame.surface_id) {
+                    std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        ctx.charge_collection_items(1, "creo plane origin domain nodes")?;
+                        entry.insert(Vec::new())
+                    }
+                };
                 for option in origin_options.into_iter().take(origin_count) {
                     if !known
                         .iter()
                         .any(|candidate| plane_candidates_equivalent(*candidate, option))
                     {
+                        ctx.try_reserve_items(known, 1, "creo plane origin domain candidates")?;
                         known.push(option);
                     }
                 }
             }
         }
-        let known = variable_domains.entry(frame.surface_id).or_default();
+        let known = match variable_domains.entry(frame.surface_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo plane variable domain nodes")?;
+                entry.insert(Vec::new())
+            }
+        };
         for option in options.into_iter().take(option_count) {
             if !known
                 .iter()
                 .any(|candidate| plane_candidates_equivalent(*candidate, option))
             {
+                ctx.try_reserve_items(known, 1, "creo plane variable domain candidates")?;
                 known.push(option);
             }
         }
@@ -1244,30 +1274,39 @@ fn select_stored_frame_branches(
         let Some(witnesses) = cylinder_witnesses.get(&surface_id) else {
             continue;
         };
-        let retained = options
+        let mut retained = options
             .into_iter()
             .filter(|candidate| {
                 witnesses
                     .iter()
                     .copied()
                     .any(|cylinder| plane_candidate_is_fc05_tangent(*candidate, cylinder))
-            })
-            .collect::<Vec<_>>();
-        if retained.len() == 1 {
-            variable_domains.insert(surface_id, retained);
+            });
+        if let (Some(candidate), None) = (retained.next(), retained.next()) {
+            let mut selected = Vec::new();
+            ctx.try_reserve_items(&mut selected, 1, "creo FC05 origin plane branch")?;
+            selected.push(candidate);
+            variable_domains.insert(surface_id, selected);
         }
     }
     if variable_domains.is_empty() {
         return Ok(());
     }
 
-    let mut domains = variable_domains.clone();
-    select_stored_frame_carrier_pcurve_branches(scan, &variable_domains, &mut domains);
+    let mut domains = BTreeMap::new();
+    for (surface_id, options) in &variable_domains {
+        let mut copied = Vec::new();
+        ctx.try_reserve_items(&mut copied, options.len(), "creo copied plane domain candidates")?;
+        copied.extend_from_slice(options);
+        ctx.charge_collection_items(1, "creo copied plane domain nodes")?;
+        domains.insert(*surface_id, copied);
+    }
+    select_stored_frame_carrier_pcurve_branches(ctx, scan, &variable_domains, &mut domains)?;
     for (surface_id, options) in &variable_domains {
         let Some(witnesses) = cylinder_witnesses.get(surface_id) else {
             continue;
         };
-        let retained = options
+        let mut retained = options
             .iter()
             .copied()
             .filter(|candidate| {
@@ -1275,10 +1314,12 @@ fn select_stored_frame_branches(
                     .iter()
                     .copied()
                     .any(|cylinder| plane_candidate_is_fc05_tangent(*candidate, cylinder))
-            })
-            .collect::<Vec<_>>();
-        if retained.len() == 1 {
-            domains.insert(*surface_id, retained);
+            });
+        if let (Some(candidate), None) = (retained.next(), retained.next()) {
+            let mut selected = Vec::new();
+            ctx.try_reserve_items(&mut selected, 1, "creo FC05 tangent plane branch")?;
+            selected.push(candidate);
+            domains.insert(*surface_id, selected);
         }
     }
     for (surface_id, known) in candidates.iter() {
@@ -1299,49 +1340,60 @@ fn select_stored_frame_branches(
             })
         };
         if let Some(fixed) = fixed {
-            domains.entry(*surface_id).or_insert_with(|| vec![fixed]);
+            if !domains.contains_key(surface_id) {
+                let mut selected = Vec::new();
+                ctx.try_reserve_items(&mut selected, 1, "creo fixed plane domain candidates")?;
+                selected.push(fixed);
+                ctx.charge_collection_items(1, "creo fixed plane domain nodes")?;
+                domains.insert(*surface_id, selected);
+            }
         }
     }
-    let constraints = stored_frame_branch_constraints(scan, &domains);
+    let constraints = stored_frame_branch_constraints(ctx, scan, &domains)?;
 
-    let variable_ids = variable_domains.keys().copied().collect::<BTreeSet<_>>();
     let mut filtered = domains;
     loop {
         let mut changed = false;
         for constraint in &constraints {
-            let Some(first) = filtered.get(&constraint.faces[0]).cloned() else {
+            ctx.charge_work(1, "creo plane branch constraint steps")?;
+            let Some(first) = filtered.get(&constraint.faces[0]) else {
                 continue;
             };
-            let Some(second) = filtered.get(&constraint.faces[1]).cloned() else {
+            let Some(second) = filtered.get(&constraint.faces[1]) else {
                 continue;
             };
-            if variable_ids.contains(&constraint.faces[0]) {
-                let retained = first
-                    .into_iter()
-                    .filter(|first| {
-                        second.iter().any(|second| {
-                            pcurve_candidates_agree(*first, *second, constraint.endpoint_sets)
-                        })
-                    })
-                    .collect::<Vec<_>>();
+            if variable_domains.contains_key(&constraint.faces[0]) {
+                let mut retained = Vec::new();
+                for candidate in first {
+                    if second.iter().any(|other| {
+                        pcurve_candidates_agree(*candidate, *other, constraint.endpoint_sets)
+                    }) {
+                        ctx.try_reserve_items(&mut retained, 1, "creo filtered first plane candidates")?;
+                        retained.push(*candidate);
+                    }
+                }
                 if retained.is_empty() {
                     continue;
                 }
                 changed |= retained.len() != filtered[&constraint.faces[0]].len();
                 filtered.insert(constraint.faces[0], retained);
             }
-            if variable_ids.contains(&constraint.faces[1]) {
-                let Some(first) = filtered.get(&constraint.faces[0]).cloned() else {
+            if variable_domains.contains_key(&constraint.faces[1]) {
+                let Some(first) = filtered.get(&constraint.faces[0]) else {
                     continue;
                 };
-                let retained = second
-                    .into_iter()
-                    .filter(|second| {
-                        first.iter().any(|first| {
-                            pcurve_candidates_agree(*first, *second, constraint.endpoint_sets)
-                        })
-                    })
-                    .collect::<Vec<_>>();
+                let Some(second) = filtered.get(&constraint.faces[1]) else {
+                    continue;
+                };
+                let mut retained = Vec::new();
+                for candidate in second {
+                    if first.iter().any(|other| {
+                        pcurve_candidates_agree(*other, *candidate, constraint.endpoint_sets)
+                    }) {
+                        ctx.try_reserve_items(&mut retained, 1, "creo filtered second plane candidates")?;
+                        retained.push(*candidate);
+                    }
+                }
                 if retained.is_empty() {
                     continue;
                 }
@@ -1353,11 +1405,17 @@ fn select_stored_frame_branches(
             break;
         }
     }
-    for surface_id in variable_ids {
+    for surface_id in variable_domains.keys().copied() {
         let Some([candidate]) = filtered.get(&surface_id).map(Vec::as_slice) else {
             continue;
         };
-        candidates.insert(surface_id, vec![*candidate]);
+        let mut selected = Vec::new();
+        ctx.try_reserve_items(&mut selected, 1, "creo selected plane branch")?;
+        selected.push(*candidate);
+        if !candidates.contains_key(&surface_id) {
+            ctx.charge_collection_items(1, "creo selected plane branch nodes")?;
+        }
+        candidates.insert(surface_id, selected);
     }
     Ok(())
 }
