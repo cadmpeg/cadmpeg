@@ -13,7 +13,9 @@ const TAIL: &str = "ENDSEC;END-ISO-10303-21;";
 
 fn pmi_refuses(records: &str, operation: &str) {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid PMI exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid PMI exchange");
     let arena = DecodeArena::new();
     let (setup_ctx, _) =
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
@@ -43,7 +45,9 @@ fn pmi_refuses(records: &str, operation: &str) {
 
 fn pmi_retained_refuses(records: &str, operation: &str) {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid PMI exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid PMI exchange");
     let arena = DecodeArena::new();
     let (setup_ctx, _) =
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
@@ -160,15 +164,8 @@ fn source_index_refusal(
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits collection policy");
     let mut groups = BTreeMap::new();
-    super::super::push_source_id(
-        &mut groups,
-        1,
-        1u64,
-        &ctx,
-        group_operation,
-        item_operation,
-    )
-    .expect_err("source group exceeds the limit")
+    super::super::push_source_id(&mut groups, 1, 1u64, &ctx, group_operation, item_operation)
+        .expect_err("source group exceeds the limit")
 }
 
 fn source_identity_refusal(operation: &'static str) -> CodecError {
@@ -436,7 +433,9 @@ fn pmi_datum_modifier_copy_refuses_retained_limit() {
 #[test]
 fn pmi_datum_modifier_text_refuses_retained_limit() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;
@@ -460,20 +459,27 @@ fn pmi_datum_modifier_text_refuses_retained_limit() {
 
 fn datum_reference_refuses(records: &str, operation: &str) {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid datum exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid datum exchange");
     let mut annotations = super::super::Annotations::default();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     crate::test_support::with_service_context(source.as_bytes(), |_, ctx| {
-    annotations
-        .push(ctx, &mut ir, 2, super::super::annotations::AnnotationDraft {
-                name: None,
-                targets: Vec::new(),
-                visible: None,
-                definition: cadmpeg_ir::pmi::PmiDefinition::Datum {
-                    identification: "A".into(),
+        annotations
+            .push(
+                ctx,
+                &mut ir,
+                2,
+                super::super::annotations::AnnotationDraft {
+                    name: None,
+                    targets: Vec::new(),
+                    visible: None,
+                    definition: cadmpeg_ir::pmi::PmiDefinition::Datum {
+                        identification: "A".into(),
+                    },
                 },
-            })
-        .expect("datum annotation setup");
+            )
+            .expect("datum annotation setup");
     });
     let refused = (0..=8).any(|limit| {
         let arena = DecodeArena::new();
@@ -542,7 +548,9 @@ fn placement_refuses(operation: &str) {
     let source = format!(
         "{HEADER}#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(0.,0.,1.));#3=DIRECTION('',(1.,0.,0.));#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);#5=TEXT_LITERAL('note',#4,'left',.RIGHT.,$);{TAIL}"
     );
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid placement exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid placement exchange");
     let arena = DecodeArena::new();
     let (setup_ctx, _) =
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
@@ -579,7 +587,9 @@ fn pmi_placement_candidates_refuse_collection_limit() {
 #[test]
 fn pmi_placement_walk_refuses_depth_limit() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid exchange");
     let arena = DecodeArena::new();
     let (setup_ctx, _) =
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
@@ -667,9 +677,14 @@ fn target_slot_refusal(operation: &'static str) -> CodecError {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits collection policy");
-    super::super::push_target(&mut Vec::new(), cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
+    super::super::push_target(
+        &mut Vec::new(),
+        cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
             source_id: crate::reader::step_source_id(1),
-        }, &ctx, operation)
+        },
+        &ctx,
+        operation,
+    )
     .expect_err("target slot exceeds collection limit")
 }
 
@@ -720,7 +735,9 @@ fn pmi_usage_annotation_indices_refuse_collection_limit() {
 
 fn measure_id_refusal(limit: u64, depth_limit: Option<u64>) -> CodecError {
     let source = format!("{HEADER}#1=MEASURE_REPRESENTATION_ITEM();{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid measure exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid measure exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
@@ -729,7 +746,15 @@ fn measure_id_refusal(limit: u64, depth_limit: Option<u64>) -> CodecError {
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    super::super::collect_measure_ids(&crate::parse::Value::Reference(1), &exchange, &mut std::collections::BTreeSet::new(), 0, 64, &mut std::collections::BTreeSet::new(), &ctx)
+    super::super::collect_measure_ids(
+        &crate::parse::Value::Reference(1),
+        &exchange,
+        &mut std::collections::BTreeSet::new(),
+        0,
+        64,
+        &mut std::collections::BTreeSet::new(),
+        &ctx,
+    )
     .expect_err("measure ID walk exceeds the limit")
 }
 
@@ -765,7 +790,9 @@ fn pmi_measure_id_walk_refuses_depth_limit() {
 
 fn measure_eval_refusal(limit: u64, depth_limit: Option<u64>, record: &str) -> CodecError {
     let source = format!("{HEADER}{record}{TAIL}");
-    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid measure exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("valid measure exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
@@ -781,7 +808,12 @@ fn measure_eval_refusal(limit: u64, depth_limit: Option<u64>, record: &str) -> C
         graph_limit: 64,
         losses: &mut losses,
     };
-    super::super::measure(&crate::parse::Value::Reference(1), &exchange, &mut measurements, &ctx)
+    super::super::measure(
+        &crate::parse::Value::Reference(1),
+        &exchange,
+        &mut measurements,
+        &ctx,
+    )
     .expect_err("measure evaluation exceeds the limit")
 }
 

@@ -82,7 +82,8 @@ impl Packaging {
 }
 
 fn record_graph_limit(ctx: &DecodeContext<'_>) -> usize {
-    usize::try_from(ctx.policy().limits.max_recursion_depth).ok()
+    usize::try_from(ctx.policy().limits.max_recursion_depth)
+        .ok()
         .map_or(MAX_RECORD_GRAPH_DEPTH, |policy| {
             policy.min(MAX_RECORD_GRAPH_DEPTH)
         })
@@ -1571,7 +1572,8 @@ fn decode_text_charged(
                 "step_invalid_string_loss_text",
             )?;
             ctx.charge_collection_items(1, "step_invalid_string_losses")?;
-            losses.try_reserve(1).map_err(|_| cadmpeg_core::CodecError::ResourceLimit(
+            losses.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
                         cadmpeg_core::decode::ResourceDimension::Codec(
                             "step_invalid_string_losses",
@@ -1580,7 +1582,8 @@ fn decode_text_charged(
                         1,
                         "step_invalid_string_losses",
                     ),
-                ))?;
+                )
+            })?;
             losses.push(code.note(message));
             Ok(None)
         }

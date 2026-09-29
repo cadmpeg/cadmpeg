@@ -852,7 +852,10 @@ impl<'a> Cur<'a, '_, '_> {
         if self.resource.is_some() {
             return;
         }
-        let copy = match self.ctx.copy_retained_text(value, "retain SAT typed string") {
+        let copy = match self
+            .ctx
+            .copy_retained_text(value, "retain SAT typed string")
+        {
             Ok(copy) => copy,
             Err(error) => {
                 self.resource = Some(error);

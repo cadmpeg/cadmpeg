@@ -642,7 +642,9 @@ pub(crate) fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .collect();
     ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(face_loops);
     let output = export(&ir);
-    let (exchange, diagnostics) = crate::test_support::with_service_context(output.as_bytes(), crate::parse::parse_inner).unwrap();
+    let (exchange, diagnostics) =
+        crate::test_support::with_service_context(output.as_bytes(), crate::parse::parse_inner)
+            .unwrap();
     assert!(diagnostics.is_empty());
     let (face_step, outer_bound, inner_bound, outer_loop) = exchange
         .records()
@@ -876,7 +878,9 @@ fn face_name_refuses_retained_limit() {
     let source = export(&unit_cube().expect("unit cube fixture is admitted"));
     let named = source.replacen("ADVANCED_FACE('", "ADVANCED_FACE('budgeted face ", 1);
     assert_ne!(named, source, "STEP export contains an advanced face");
-    let (exchange, _) = crate::test_support::with_service_context(named.as_bytes(), crate::parse::parse_inner).expect("valid named-face exchange");
+    let (exchange, _) =
+        crate::test_support::with_service_context(named.as_bytes(), crate::parse::parse_inner)
+            .expect("valid named-face exchange");
     let arena = DecodeArena::new();
     let refused = (0..4096).any(|limit| {
         let mut policy = DecodePolicy::service();

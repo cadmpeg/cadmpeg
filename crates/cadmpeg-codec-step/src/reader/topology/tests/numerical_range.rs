@@ -150,9 +150,11 @@ fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
         source_object: None,
     });
     let index = ModelIndex::new_model_only(&ir);
-    let (exchange, _) =
-        crate::test_support::with_service_context(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"), crate::parse::parse_inner)
-            .expect("STEP fixture parses");
+    let (exchange, _) = crate::test_support::with_service_context(
+        include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"),
+        crate::parse::parse_inner,
+    )
+    .expect("STEP fixture parses");
     let edge = EdgeDef::Curve {
         start: 1,
         end: 2,
@@ -205,7 +207,9 @@ fn pcurve_locus_fractions_refuse_collection_limit() {
     });
     let index = ModelIndex::new_model_only(&ir);
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#54=LINE('',#55,#56);#55=DUMMY();#56=DUMMY();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid line reference");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid line reference");
     let edge = EdgeDef::Curve {
         start: 1,
         end: 2,
@@ -274,9 +278,11 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
         .expect("resource allocation did not fail")
         .is_some());
     }
-    let (exchange, _) =
-        crate::test_support::with_service_context(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"), crate::parse::parse_inner)
-            .expect("STEP fixture parses");
+    let (exchange, _) = crate::test_support::with_service_context(
+        include_bytes!("../../../../tests/fixtures/ap214_sheet.p21"),
+        crate::parse::parse_inner,
+    )
+    .expect("STEP fixture parses");
     let edge = EdgeDef::Curve {
         start: 1,
         end: 2,

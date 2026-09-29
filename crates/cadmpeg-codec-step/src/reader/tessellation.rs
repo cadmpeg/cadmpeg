@@ -140,7 +140,14 @@ pub(super) fn decode(
         else {
             continue;
         };
-        let bodies = super::topology::representation_bodies(id, exchange, topology, &mut representation_cache, &mut BTreeSet::new(), ctx)?;
+        let bodies = super::topology::representation_bodies(
+            id,
+            exchange,
+            topology,
+            &mut representation_cache,
+            &mut BTreeSet::new(),
+            ctx,
+        )?;
         let product_linked = product_representations.contains(&id)
             || items
                 .iter()

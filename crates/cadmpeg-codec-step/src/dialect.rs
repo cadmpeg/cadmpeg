@@ -293,7 +293,10 @@ impl StepDialect {
         ctx.charge_collection_items(1, "step_dialect_declared_entries")?;
         declared.insert(
             cadmpeg_core::nonblank_const!(DECLARED_IMPLEMENTATION_LEVEL),
-            ctx.copy_retained_text(exchange.implementation_level(), "step_dialect_declared_text")?,
+            ctx.copy_retained_text(
+                exchange.implementation_level(),
+                "step_dialect_declared_text",
+            )?,
         );
 
         Ok(if dialect == Self::Unknown {

@@ -46,7 +46,8 @@ pub(crate) fn decode_payload(
         at += 1;
     }
     let estimate = base64::decoded_len_estimate(compact.len());
-    let _cms_reservation = ctx.reserve_scoped(u64_from_index(estimate), "step_signature_cms_temp")?;
+    let _cms_reservation =
+        ctx.reserve_scoped(u64_from_index(estimate), "step_signature_cms_temp")?;
     let mut cms = ctx.alloc_filled(estimate, 0_u8, "step_signature_cms_bytes")?;
     let decoded =
         STANDARD

@@ -47,8 +47,6 @@ pub(super) struct ProductData {
     pub(super) product_definition_ids_by_shape: BTreeMap<u64, ProductDefinitionId>,
 }
 
-
-
 fn join_product_references(
     ids: impl IntoIterator<Item = u64>,
     ctx: &DecodeContext<'_>,
@@ -60,14 +58,16 @@ fn join_product_references(
         let separator = if text.is_empty() { "" } else { ", " };
         let additional = separator.len() + numbered.len();
         ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
-        text.try_reserve(additional).map_err(|_| cadmpeg_core::CodecError::ResourceLimit(
+        text.try_reserve(additional).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::Codec(operation),
                     0,
                     1,
                     operation,
                 ),
-            ))?;
+            )
+        })?;
         text.push_str(separator);
         text.push_str(&numbered);
     }
@@ -84,21 +84,21 @@ fn join_product_texts<'a>(
         let separator = if text.is_empty() { "" } else { ", " };
         let additional = separator.len() + value.len();
         ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
-        text.try_reserve(additional).map_err(|_| cadmpeg_core::CodecError::ResourceLimit(
+        text.try_reserve(additional).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::Codec(operation),
                     0,
                     1,
                     operation,
                 ),
-            ))?;
+            )
+        })?;
         text.push_str(separator);
         text.push_str(value);
     }
     Ok(text)
 }
-
-
 
 pub(super) fn decode(
     exchange: &Exchange,
@@ -142,7 +142,8 @@ pub(super) fn decode(
             .entry(product)
             .or_default();
         ctx.charge_collection_items(1, "step_product_definition_group_members")?;
-        grouped.try_reserve(1).map_err(|_| cadmpeg_core::CodecError::ResourceLimit(
+        grouped.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::Codec(
                         "step_product_definition_group_members",
@@ -151,7 +152,8 @@ pub(super) fn decode(
                     1,
                     "step_product_definition_group_members",
                 ),
-            ))?;
+            )
+        })?;
         grouped.push(definition);
     }
     for definitions in definitions_by_product_in_source_order.values_mut() {
@@ -286,8 +288,8 @@ pub(super) fn decode(
             let definition_description = definition
                 .and_then(|definition| definition_descriptions.get(&definition))
                 .map(|text| {
-                        ctx.copy_retained_text(text, "step_product_definition_description_copy")
-                    })
+                    ctx.copy_retained_text(text, "step_product_definition_description_copy")
+                })
                 .transpose()?;
             let description = if definition_count <= 1 {
                 product_description
@@ -300,9 +302,7 @@ pub(super) fn decode(
                     Some(description) => Some(description),
                     None => product_description
                         .as_deref()
-                        .map(|text| {
-                                ctx.copy_retained_text(text, "step_product_description_copy")
-                            })
+                        .map(|text| ctx.copy_retained_text(text, "step_product_description_copy"))
                         .transpose()?,
                 }
             };
@@ -338,7 +338,10 @@ pub(super) fn decode(
             );
             if !missing.is_empty() {
                 ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
-                losses.push(StepLossCode::DecodeWarning.note(ctx.format_retained(format_args!("{owner} omitted uncommitted shape body reference(s): {missing}"), "step_missing_shape_body_loss_text")?));
+                losses.push(StepLossCode::DecodeWarning.note(ctx.format_retained(
+                    format_args!("{owner} omitted uncommitted shape body reference(s): {missing}"),
+                    "step_missing_shape_body_loss_text",
+                )?));
             }
             if has_shape_binding && bodies.is_empty() {
                 ctx.reserve_vec(&mut losses, 1, "step_product_losses")?;
@@ -346,7 +349,11 @@ pub(super) fn decode(
                     "{owner} has a shape representation with no committed topology body"
                 )));
             }
-            ctx.reserve_vec(&mut ir.model.product_definitions, 1, "step_product_definition_ir_items")?;
+            ctx.reserve_vec(
+                &mut ir.model.product_definitions,
+                1,
+                "step_product_definition_ir_items",
+            )?;
             ir.model.product_definitions.push(ProductDefinition {
                 id: product_definition_id.clone(),
                 kind: ProductDefinitionKind::Part,
@@ -359,7 +366,9 @@ pub(super) fn decode(
                     .map(|text| ctx.copy_retained_text(text, "step_product_label_copy"))
                     .transpose()?,
                 description,
-                part_number: Some(ctx.copy_retained_text(&product_id, "step_product_part_number_copy")?),
+                part_number: Some(
+                    ctx.copy_retained_text(&product_id, "step_product_part_number_copy")?,
+                ),
                 bom_properties: BTreeMap::new(),
                 bodies,
                 native_ref: Some(
@@ -373,7 +382,8 @@ pub(super) fn decode(
             ctx.reserve_vec(grouped, 1, "step_product_source_group_members")?;
             grouped.push(product_definition_id);
         }
-        ctx.insert_hash_set(&mut typed, step_id, "step_product_typed_claims").map(|_| ())?;
+        ctx.insert_hash_set(&mut typed, step_id, "step_product_typed_claims")
+            .map(|_| ())?;
     }
     let mut product_definition_ids_by_shape = BTreeMap::new();
     for (shape_id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
@@ -387,7 +397,8 @@ pub(super) fn decode(
         product_definition_ids_by_shape.insert(shape_id, prototype.clone());
     }
     for id in formations.keys().chain(definitions.keys()) {
-        ctx.insert_hash_set(&mut typed, *id, "step_product_typed_claims").map(|_| ())?;
+        ctx.insert_hash_set(&mut typed, *id, "step_product_typed_claims")
+            .map(|_| ())?;
     }
 
     let mut usages = BTreeMap::new();
@@ -467,14 +478,22 @@ pub(super) fn decode(
             link: None,
             native_ref: None,
         });
-        ctx.admit_entities(u64_from_index(ir.model.entity_count()), admitted_ir_entities, "step_assembly_occurrence")?;
+        ctx.admit_entities(
+            u64_from_index(ir.model.entity_count()),
+            admitted_ir_entities,
+            "step_assembly_occurrence",
+        )?;
         root_ordinal = root_ordinal
             .checked_add(1)
             .ok_or_else(|| CodecError::malformed("STEP root occurrence ordinal exceeds u32"))?;
         ctx.charge_collection_items(1, "step_root_occurrence_path_map")?;
         ctx.charge_collection_items(1, "step_root_occurrence_path_members")?;
         occurrence_paths.insert(id.clone(), BTreeSet::from([definition]));
-        ctx.push_back(&mut pending_occurrences, (definition, id), "step_pending_occurrence")?;
+        ctx.push_back(
+            &mut pending_occurrences,
+            (definition, id),
+            "step_pending_occurrence",
+        )?;
     }
     let mut ambiguous_placements = BTreeMap::new();
     let mut competing_placements = BTreeMap::new();
@@ -530,7 +549,8 @@ pub(super) fn decode(
         }
         let grouped = usages_by_parent.entry(usage.parent_definition).or_default();
         ctx.charge_collection_items(1, "step_product_usage_parent_members")?;
-        grouped.try_reserve(1).map_err(|_| cadmpeg_core::CodecError::ResourceLimit(
+        grouped.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::Codec(
                         "step_product_usage_parent_members",
@@ -539,7 +559,8 @@ pub(super) fn decode(
                     1,
                     "step_product_usage_parent_members",
                 ),
-            ))?;
+            )
+        })?;
         grouped.push(usage_id);
     }
     let had_roots = !pending_occurrences.is_empty();
@@ -636,15 +657,17 @@ pub(super) fn decode(
                 name: usage
                     .name
                     .as_deref()
-                    .map(|text| {
-                            ctx.copy_retained_text(text, "step_product_occurrence_name_copy")
-                        })
+                    .map(|text| ctx.copy_retained_text(text, "step_product_occurrence_name_copy"))
                     .transpose()?,
                 visible: None,
                 link: None,
                 native_ref: Some(format!("#{usage_id}")),
             });
-            ctx.admit_entities(u64_from_index(ir.model.entity_count()), admitted_ir_entities, "step_assembly_occurrence")?;
+            ctx.admit_entities(
+                u64_from_index(ir.model.entity_count()),
+                admitted_ir_entities,
+                "step_assembly_occurrence",
+            )?;
             *ordinal = ordinal.checked_add(1).ok_or_else(|| {
                 CodecError::malformed("STEP child occurrence ordinal exceeds u32")
             })?;
@@ -659,8 +682,13 @@ pub(super) fn decode(
             ctx.charge_collection_items(1, "step_child_occurrence_path_map")?;
             path.insert(usage.child_definition);
             occurrence_paths.insert(id.clone(), path);
-            ctx.push_back(&mut pending_occurrences, (usage.child_definition, id), "step_pending_occurrence")?;
-            ctx.insert_hash_set(&mut typed, usage_id, "step_product_typed_claims").map(|_| ())?;
+            ctx.push_back(
+                &mut pending_occurrences,
+                (usage.child_definition, id),
+                "step_pending_occurrence",
+            )?;
+            ctx.insert_hash_set(&mut typed, usage_id, "step_product_typed_claims")
+                .map(|_| ())?;
         }
     }
     if !had_roots && !usages.is_empty() {
@@ -711,7 +739,8 @@ pub(super) fn decode(
                 .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
                 .is_some()
         {
-            ctx.insert_hash_set(&mut typed, id, "step_product_typed_claims").map(|_| ())?;
+            ctx.insert_hash_set(&mut typed, id, "step_product_typed_claims")
+                .map(|_| ())?;
         }
     }
     for (&usage_id, source_ids) in &ambiguous_placements {
@@ -731,15 +760,15 @@ pub(super) fn decode(
     })
 }
 
-
-
 fn occurrence_limit(ctx: &DecodeContext<'_>) -> usize {
-    usize::try_from(ctx.policy().limits.max_entities).ok()
+    usize::try_from(ctx.policy().limits.max_entities)
+        .ok()
         .map_or(MAX_OCCURRENCES, |policy| policy.min(MAX_OCCURRENCES))
 }
 
 fn assembly_depth_limit(ctx: &DecodeContext<'_>) -> usize {
-    usize::try_from(ctx.policy().limits.max_recursion_depth).ok()
+    usize::try_from(ctx.policy().limits.max_recursion_depth)
+        .ok()
         .map_or(MAX_ASSEMBLY_DEPTH, |policy| policy.min(MAX_ASSEMBLY_DEPTH))
 }
 
@@ -808,7 +837,14 @@ fn apply_body_placements(
         if is_two_dimensional_mapping(origin, target, exchange) {
             continue;
         }
-        let bodies = super::topology::representation_bodies(representation, exchange, topology, &mut representation_cache, &mut BTreeSet::new(), ctx)?;
+        let bodies = super::topology::representation_bodies(
+            representation,
+            exchange,
+            topology,
+            &mut representation_cache,
+            &mut BTreeSet::new(),
+            ctx,
+        )?;
         if bodies.is_empty() {
             continue;
         }
@@ -945,7 +981,6 @@ fn collect_references(
     Ok(())
 }
 
-
 struct Usage {
     parent_definition: u64,
     child_definition: u64,
@@ -1020,7 +1055,14 @@ fn shape_binding<'a>(
     else {
         return Ok(None);
     };
-    let bodies = super::topology::representation_bodies(representation, exchange, topology, representation_cache, &mut BTreeSet::new(), ctx)?;
+    let bodies = super::topology::representation_bodies(
+        representation,
+        exchange,
+        topology,
+        representation_cache,
+        &mut BTreeSet::new(),
+        ctx,
+    )?;
     Ok(Some((definition, bodies)))
 }
 
@@ -1109,7 +1151,12 @@ fn occurrence_placements(
                     let grouped = context_candidates.entry(usage).or_default();
                     ctx.reserve_vec(grouped, 1, "step_context_candidate_members")?;
                     grouped.push(record_id);
-                    ctx.insert_btree_map(&mut result, usage, transform, "step_occurrence_placement_results")?;
+                    ctx.insert_btree_map(
+                        &mut result,
+                        usage,
+                        transform,
+                        "step_occurrence_placement_results",
+                    )?;
                 }
             }
             Ok(None) => {}
@@ -1125,12 +1172,21 @@ fn occurrence_placements(
     for (&usage, source_ids) in &context_candidates {
         if source_ids.len() > 1 {
             let mut copied = Vec::new();
-            ctx.reserve_vec(&mut copied, source_ids.len(), "step_ambiguous_context_source_copy")?;
+            ctx.reserve_vec(
+                &mut copied,
+                source_ids.len(),
+                "step_ambiguous_context_source_copy",
+            )?;
             copied.extend_from_slice(source_ids);
             let mut source_ids = copied;
             source_ids.sort_unstable();
             source_ids.dedup();
-            ctx.insert_btree_map(ambiguous, usage, source_ids, "step_ambiguous_placement_groups")?;
+            ctx.insert_btree_map(
+                ambiguous,
+                usage,
+                source_ids,
+                "step_ambiguous_placement_groups",
+            )?;
         }
     }
     let mut occurrence_representations = BTreeMap::<u64, Vec<(u64, u64)>>::new();
@@ -1210,9 +1266,17 @@ fn occurrence_placements(
         {
             let original = &context_candidates[&usage_id];
             let mut source_ids = Vec::new();
-            ctx.reserve_vec(&mut source_ids, original.len(), "step_competing_context_source_copy")?;
+            ctx.reserve_vec(
+                &mut source_ids,
+                original.len(),
+                "step_competing_context_source_copy",
+            )?;
             source_ids.extend_from_slice(original);
-            ctx.reserve_vec(&mut source_ids, candidates.len(), "step_competing_mapped_sources")?;
+            ctx.reserve_vec(
+                &mut source_ids,
+                candidates.len(),
+                "step_competing_mapped_sources",
+            )?;
             source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
             source_ids.sort_unstable();
             source_ids.dedup();
@@ -1220,22 +1284,46 @@ fn occurrence_placements(
             let mut copied = Vec::new();
             ctx.reserve_vec(&mut copied, source_ids.len(), "step_competing_source_copy")?;
             copied.extend_from_slice(&source_ids);
-            ctx.insert_btree_map(ambiguous, usage_id, copied, "step_ambiguous_placement_groups")?;
-            ctx.insert_btree_map(competing, usage_id, source_ids, "step_competing_placement_groups")?;
+            ctx.insert_btree_map(
+                ambiguous,
+                usage_id,
+                copied,
+                "step_ambiguous_placement_groups",
+            )?;
+            ctx.insert_btree_map(
+                competing,
+                usage_id,
+                source_ids,
+                "step_competing_placement_groups",
+            )?;
             continue;
         }
         match candidates.as_slice() {
             [(_, transform)] => {
-                ctx.insert_btree_map(&mut result, usage_id, *transform, "step_occurrence_placement_results")?;
+                ctx.insert_btree_map(
+                    &mut result,
+                    usage_id,
+                    *transform,
+                    "step_occurrence_placement_results",
+                )?;
             }
             [] => {}
             _ => {
                 let mut source_ids = Vec::new();
-                ctx.reserve_vec(&mut source_ids, candidates.len(), "step_ambiguous_mapped_sources")?;
+                ctx.reserve_vec(
+                    &mut source_ids,
+                    candidates.len(),
+                    "step_ambiguous_mapped_sources",
+                )?;
                 source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
                 source_ids.sort_unstable();
                 source_ids.dedup();
-                ctx.insert_btree_map(ambiguous, usage_id, source_ids, "step_ambiguous_placement_groups")?;
+                ctx.insert_btree_map(
+                    ambiguous,
+                    usage_id,
+                    source_ids,
+                    "step_ambiguous_placement_groups",
+                )?;
             }
         }
     }
@@ -1306,7 +1394,12 @@ fn occurrence_placements(
         let sibling_usage_count =
             sibling_usage_counts[&(usage.parent_definition, usage.child_definition)];
         if sibling_usage_count == 1 && placements.len() == 1 {
-            ctx.insert_btree_map(&mut result, usage_id, placements[0], "step_occurrence_placement_results")?;
+            ctx.insert_btree_map(
+                &mut result,
+                usage_id,
+                placements[0],
+                "step_occurrence_placement_results",
+            )?;
         } else if !placements.is_empty() {
             ctx.reserve_vec(losses, 1, "step_product_losses")?;
             losses.push(StepLossCode::DecodeWarning.note(format!(

@@ -4,8 +4,11 @@ use super::super::{AnchorResolver, BTreeMap, Value};
 #[test]
 fn entity_index_is_not_part_of_exchange_equality() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POINT();ENDSEC;END-ISO-10303-21;";
-    let (indexed, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("required invariant");
-    let (untouched, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("required invariant");
+    let (indexed, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("required invariant");
+    let (untouched, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("required invariant");
     assert_eq!(indexed.entities("POINT").count(), 1);
     assert_eq!(indexed, untouched);
 }
@@ -13,7 +16,9 @@ fn entity_index_is_not_part_of_exchange_equality() {
 #[test]
 fn released_source_graph_drops_records_and_cached_entity_indexes() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POINT();ENDSEC;END-ISO-10303-21;";
-    let (mut exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("required invariant");
+    let (mut exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("required invariant");
     assert!(exchange.has_entity("POINT"));
 
     let _ = exchange.release_source_graph();
@@ -27,7 +32,9 @@ fn released_source_graph_drops_records_and_cached_entity_indexes() {
 #[test]
 fn entity_unions_are_ordered_unique_and_name_order_independent() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#2=(A()B());#1=B();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("required invariant");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("required invariant");
 
     let forward = exchange
         .entities_any(&["A", "B"])
@@ -45,7 +52,9 @@ fn entity_unions_are_ordered_unique_and_name_order_independent() {
 #[test]
 fn entity_union_queries_remain_ordered_across_repeated_queries() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#3=C();#2=(A()B());#1=B();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid record graph");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid record graph");
     assert_eq!(
         exchange
             .entities_any(&["A", "B"])

@@ -22,7 +22,9 @@ fn validation_resource_refuses(
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid validation collection source");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid validation collection source");
     let setup_arena = DecodeArena::new();
     let setup_policy = DecodePolicy::service();
     let (setup_ctx, _) = DecodeContext::from_root_bytes(source, &setup_arena, &setup_policy)
@@ -117,8 +119,11 @@ fn validation_limit_result(
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    let (exchange, _) =
-        crate::test_support::with_service_context(VALIDATION_LIMIT_SOURCE, crate::parse::parse_inner).expect("valid validation-property exchange");
+    let (exchange, _) = crate::test_support::with_service_context(
+        VALIDATION_LIMIT_SOURCE,
+        crate::parse::parse_inner,
+    )
+    .expect("valid validation-property exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     if let Some(limit) = retained_limit {

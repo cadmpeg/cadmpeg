@@ -88,7 +88,11 @@ impl AdmittedSchemaIdentifier {
             return Ok(None);
         };
         let mut numbers = Vec::new();
-        ctx.push_vec(&mut numbers, u64::from(root), "step_schema_object_identifier_components")?;
+        ctx.push_vec(
+            &mut numbers,
+            u64::from(root),
+            "step_schema_object_identifier_components",
+        )?;
         for component in components {
             let ComponentForm::Number(number) = schema_oid_component_form(component) else {
                 return Ok(None);
@@ -96,7 +100,11 @@ impl AdmittedSchemaIdentifier {
             let Ok(number) = number.parse() else {
                 return Ok(None);
             };
-            ctx.push_vec(&mut numbers, number, "step_schema_object_identifier_components")?;
+            ctx.push_vec(
+                &mut numbers,
+                number,
+                "step_schema_object_identifier_components",
+            )?;
         }
         Ok((numbers.len() >= 2).then_some(numbers))
     }

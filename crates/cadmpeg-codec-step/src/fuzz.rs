@@ -67,8 +67,13 @@ mod tests {
             )
         }
 
-        assert_eq!(super::parse_entity_count(exchange(1).as_bytes()).expect("normal input"), 1);
-        let limit = cadmpeg_core::decode::DecodePolicy::default().limits.max_recursion_depth;
+        assert_eq!(
+            super::parse_entity_count(exchange(1).as_bytes()).expect("normal input"),
+            1
+        );
+        let limit = cadmpeg_core::decode::DecodePolicy::default()
+            .limits
+            .max_recursion_depth;
         let depth = usize::try_from(limit).expect("default depth fits usize");
         assert!(matches!(
             super::parse_entity_count(exchange(depth).as_bytes()),

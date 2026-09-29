@@ -136,8 +136,10 @@ fn schema_identifier_list_refuses_retained_limit() {
 #[test]
 fn unverified_dialect_loss_text_refuses_retained_limit() {
     let exchange = exchange(&["UNKNOWN_SCHEMA"], "2;1");
-    let matched =
-        crate::test_support::with_service_context(b"", |_, ctx| StepDialect::classify(&exchange, ctx)).expect("classification fits local storage");
+    let matched = crate::test_support::with_service_context(b"", |_, ctx| {
+        StepDialect::classify(&exchange, ctx)
+    })
+    .expect("classification fits local storage");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
@@ -268,8 +270,10 @@ const CASES: &[Case] = &[
 #[test]
 fn each_declaration_classifies_into_the_row_its_discriminants_match() {
     for case in CASES {
-        let matched = crate::test_support::with_service_context(b"", |_, ctx| StepDialect::classify(&exchange(case.identifiers, "2;1"), ctx))
-            .expect("classification fits local storage");
+        let matched = crate::test_support::with_service_context(b"", |_, ctx| {
+            StepDialect::classify(&exchange(case.identifiers, "2;1"), ctx)
+        })
+        .expect("classification fits local storage");
         let context = format!("FILE_SCHEMA {:?}", case.identifiers);
 
         assert_eq!(matched.dialect().as_str(), case.id, "{context}");
@@ -308,11 +312,14 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         .note(String::new())
         .code;
     for case in CASES {
-        let matched = crate::test_support::with_service_context(b"", |_, ctx| StepDialect::classify(&exchange(case.identifiers, "2;1"), ctx))
-            .expect("classification fits local storage");
-        let charged = crate::test_support::with_service_context(b"", |_, ctx| dialect_loss(&matched, ctx))
-            .expect("loss formatting fits local storage")
-            .is_some_and(|note| note.code == expected);
+        let matched = crate::test_support::with_service_context(b"", |_, ctx| {
+            StepDialect::classify(&exchange(case.identifiers, "2;1"), ctx)
+        })
+        .expect("classification fits local storage");
+        let charged =
+            crate::test_support::with_service_context(b"", |_, ctx| dialect_loss(&matched, ctx))
+                .expect("loss formatting fits local storage")
+                .is_some_and(|note| note.code == expected);
         let admitted = matched.admission() == &Admission::Admitted;
 
         assert_eq!(
@@ -348,25 +355,31 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
     // the edition unspecified. The reader's single Part 21 grammar is that
     // row's declared strategy and the edition axis is undeclared rather than
     // substituted, so this is a verified read: `DecodeMode::Strict` accepts it.
-    let matched = crate::test_support::with_service_context(b"", |_, ctx| StepDialect::classify(
-        &exchange(&["AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"], "2;1"),
-        ctx,
-    ))
+    let matched = crate::test_support::with_service_context(b"", |_, ctx| {
+        StepDialect::classify(
+            &exchange(&["AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"], "2;1"),
+            ctx,
+        )
+    })
     .expect("classification fits local storage");
 
     assert_eq!(matched.dialect().as_str(), "step:ap242");
     assert_eq!(matched.admission(), &Admission::Admitted);
-    assert!(crate::test_support::with_service_context(b"", |_, ctx| dialect_loss(&matched, ctx))
-        .expect("loss formatting fits local storage")
-        .is_none());
+    assert!(
+        crate::test_support::with_service_context(b"", |_, ctx| dialect_loss(&matched, ctx))
+            .expect("loss formatting fits local storage")
+            .is_none()
+    );
     assert!(!matched.declared().contains_key(DECLARED_LONG_FORM_ARCS));
 }
 
 #[test]
 fn written_schema_declarations_classify_to_their_target_identity() {
     for schema in StepSchema::ALL {
-        let matched = crate::test_support::with_service_context(b"", |_, ctx| StepDialect::classify(&exchange(&[schema.file_schema()], "2;1"), ctx))
-            .expect("classification fits local storage");
+        let matched = crate::test_support::with_service_context(b"", |_, ctx| {
+            StepDialect::classify(&exchange(&[schema.file_schema()], "2;1"), ctx)
+        })
+        .expect("classification fits local storage");
         assert_eq!(matched.dialect().as_str(), schema.descriptor().id.as_str());
     }
 }
@@ -376,8 +389,10 @@ fn the_implementation_level_is_recorded_and_never_classified_on() {
     // The five levels the parser admits select different section grammars.
     // None of them moves the identity, and each is recorded verbatim.
     for level in ["1", "2", "2;1", "2;2", "3;1", "3;2", "4;1", "4;2", "4;3"] {
-        let matched = crate::test_support::with_service_context(b"", |_, ctx| StepDialect::classify(&exchange(&["AUTOMOTIVE_DESIGN"], level), ctx))
-            .expect("classification fits local storage");
+        let matched = crate::test_support::with_service_context(b"", |_, ctx| {
+            StepDialect::classify(&exchange(&["AUTOMOTIVE_DESIGN"], level), ctx)
+        })
+        .expect("classification fits local storage");
 
         assert_eq!(
             matched.dialect().as_str(),
