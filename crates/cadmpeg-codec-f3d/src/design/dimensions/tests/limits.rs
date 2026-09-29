@@ -382,6 +382,64 @@ fn native_pair_sketch_id_refuses_retained_limit() {
 }
 
 #[test]
+fn native_pair_constraint_reference_refuses_retained_limit() {
+    assert_native_fallback_refusal(false, "f3d dimension pair native reference",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn native_group_constraint_reference_refuses_retained_limit() {
+    assert_native_fallback_refusal(true, "f3d dimension group native reference",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn annotation_constraint_reference_refuses_retained_limit() {
+    assert_native_auxiliary_refusal(true, "f3d dimension annotation native reference",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn null_pair_constraint_reference_refuses_retained_limit() {
+    assert_native_auxiliary_refusal(false, "f3d dimension null pair native reference",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn exact_null_pair_constraint_reference_refuses_retained_limit() {
+    let mut fixture = fixture();
+    let mut parameter = parse_design_parameter_record(&parameter_record(
+        Some(21), "1 mm", "Radius Dimension", Some("mm"), "r1", 0.1,
+    )).unwrap();
+    parameter.id = fixture.parameter.id.clone();
+    parameter.record_index = fixture.parameter.record_index;
+    fixture.parameter = parameter;
+    fixture.entity.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+        center: Point2::new(0.0, 0.0),
+        radius: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+    }).unwrap();
+    let pair = native_fallback_null_pair();
+    let mut inputs = fixture.inputs();
+    inputs.null_pairs = std::slice::from_ref(&pair);
+    let operation = "f3d dimension null pair native reference";
+    for limit in 0..256 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
 fn native_group_sketch_id_refuses_retained_limit() {
     assert_native_fallback_refusal(true, "f3d dimension group sketch id",
         ResourceDimension::RetainedBytes);

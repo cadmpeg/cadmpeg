@@ -957,11 +957,17 @@ fn project_all_dimension_constraints(
                     Err(error) => return Some(Err(error)),
                 }
             };
+            let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
+                .ok()?;
+            let native_ref = match copy_dimension_text(ctx, &group.id,
+                "f3d dimension group native reference") {
+                Ok(native_ref) => native_ref,
+                Err(error) => return Some(Err(error)),
+            };
             Some(Ok(SketchConstraint {
                 id: neutral_sketch_constraint_id(&group.id, group.record_index),
                 sketch,
-                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
-                    .ok()?,
+                definition,
                 name: None,
                 driving: None,
                 active: None,
@@ -971,7 +977,7 @@ fn project_all_dimension_constraints(
                 label_distance: None,
                 label_position: None,
                 metadata: None,
-                native_ref: Some(group.id.clone()),
+                native_ref: Some(native_ref),
             }))
     }).collect::<Result<Vec<_>, _>>()?;
     let mut pair_constraints = Vec::new();
@@ -1039,7 +1045,8 @@ fn project_all_dimension_constraints(
                 label_distance: None,
                 label_position: None,
                 metadata: None,
-                native_ref: Some(pair.id.clone()),
+                native_ref: Some(copy_dimension_text(ctx, &pair.id,
+                    "f3d dimension pair native reference")?),
             }, "f3d pair dimension constraint")?;
     }
     let mut constraints = pair_constraints.into_iter()
@@ -1126,6 +1133,11 @@ fn project_all_dimension_constraints(
             let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition) else {
                 return None;
             };
+            let native_ref = match copy_dimension_text(ctx, &frame.id,
+                "f3d dimension annotation native reference") {
+                Ok(native_ref) => native_ref,
+                Err(error) => return Some(Err(error)),
+            };
             Some(Ok(SketchConstraint {
                 id: constraint_id,
                 sketch,
@@ -1139,7 +1151,7 @@ fn project_all_dimension_constraints(
                 label_distance: None,
                 label_position: None,
                 metadata: None,
-                native_ref: Some(frame.id.clone()),
+                native_ref: Some(native_ref),
             }))
         }))
         .chain(null_pairs.iter().filter_map(|pair| {
@@ -1169,13 +1181,18 @@ fn project_all_dimension_constraints(
                         parameter_id.clone(),
                         linear_tolerance,
                     ) {
+                        let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                            definition,
+                        ).ok()?;
+                        let native_ref = match copy_dimension_text(ctx, &pair.id,
+                            "f3d dimension null pair native reference") {
+                            Ok(native_ref) => native_ref,
+                            Err(error) => return Some(Err(error)),
+                        };
                         return Some(Ok(SketchConstraint {
                             id: constraint_id,
                             sketch,
-                            definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
-                                definition,
-                            )
-                            .ok()?,
+                            definition,
                             name: None,
                             driving: None,
                             active: None,
@@ -1185,7 +1202,7 @@ fn project_all_dimension_constraints(
                             label_distance: None,
                             label_position: None,
                             metadata: None,
-                            native_ref: Some(pair.id.clone()),
+                            native_ref: Some(native_ref),
                         }));
                     }
                 }
@@ -1242,7 +1259,8 @@ fn project_all_dimension_constraints(
                 label_distance: None,
                 label_position: None,
                 metadata: None,
-                native_ref: Some(pair.id.clone()),
+                native_ref: Some(copy_dimension_text(ctx, &pair.id,
+                    "f3d dimension null pair native reference")?),
                 }))
             })();
             match fallback {
