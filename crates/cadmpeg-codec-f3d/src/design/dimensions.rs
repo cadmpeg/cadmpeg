@@ -3974,35 +3974,36 @@ pub(crate) fn remove_dimension_frame_relations(
 /// Bind geometry referenced only by dimensional companions to the sketch
 /// reached through the parameter scope or the counted frame's explicit owner.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn bind_dimension_loci(
+pub(crate) fn bind_dimension_loci<'a>(
+    ctx: &DecodeContext<'_>,
     placements: &[DesignSketchPlacement],
     owners: &[DesignParameterOwner],
-    pairs: &[DesignDimensionLocusPair],
-    groups: &[DesignDimensionLocusGroup],
-    annotation_frames: &[DesignDimensionAnnotationFrame],
-    null_pairs: &[DesignDimensionLocusPair],
+    pairs: &'a [DesignDimensionLocusPair],
+    groups: &'a [DesignDimensionLocusGroup],
+    annotation_frames: &'a [DesignDimensionAnnotationFrame],
+    null_pairs: &'a [DesignDimensionLocusPair],
     points: &mut [SketchPoint],
     curves: &mut [SketchCurveIdentity],
 ) -> Result<(), CodecError> {
-    let placements_by_scope = placements
-        .iter()
-        .filter_map(|placement| {
-            Some((
-                (native_stream(&placement.id)?, placement.scope_record_index?),
-                u32::try_from(placement.entity_id.suffix()).ok()?,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let scopes_by_companion = owners
-        .iter()
-        .filter_map(|owner| {
-            Some((
-                (native_stream(owner.id())?, owner.companion_record_index()),
-                owner.scope_record_index(),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let mut bindings = HashMap::<(String, u32), u32>::new();
+    let mut placements_by_scope = HashMap::new();
+    for placement in placements {
+        if let (Some(scope), Some(record_index), Ok(owner)) = (
+            native_stream(&placement.id), placement.scope_record_index,
+            u32::try_from(placement.entity_id.suffix()),
+        ) {
+            insert_dimension_index(Some(ctx), &mut placements_by_scope,
+                (scope, record_index), owner, "f3d dimension placement scope")?;
+        }
+    }
+    let mut scopes_by_companion = HashMap::new();
+    for owner in owners {
+        if let Some(scope) = native_stream(owner.id()) {
+            insert_dimension_index(Some(ctx), &mut scopes_by_companion,
+                (scope, owner.companion_record_index()), owner.scope_record_index(),
+                "f3d dimension companion scope")?;
+        }
+    }
+    let mut bindings = HashMap::<&str, HashMap<u32, u32>>::new();
     for pair in pairs {
         let Some(scope) = native_stream(&pair.id) else {
             continue;
@@ -4016,8 +4017,8 @@ pub(crate) fn bind_dimension_loci(
         let Some(owner) = placements_by_scope.get(&(scope, parameter_scope)).copied() else {
             continue;
         };
-        insert_dimension_binding(&mut bindings, scope, pair.loci()[0].geometry_index(), owner)?;
-        insert_dimension_binding(&mut bindings, scope, pair.loci()[1].geometry_index(), owner)?;
+        insert_dimension_binding(ctx, &mut bindings, scope, pair.loci()[0].geometry_index(), owner)?;
+        insert_dimension_binding(ctx, &mut bindings, scope, pair.loci()[1].geometry_index(), owner)?;
     }
     for group in groups {
         let Some(scope) = native_stream(&group.id) else {
@@ -4025,6 +4026,7 @@ pub(crate) fn bind_dimension_loci(
         };
         for locus in &group.loci {
             insert_dimension_binding(
+                ctx,
                 &mut bindings,
                 scope,
                 locus.geometry_record_index,
@@ -4041,7 +4043,7 @@ pub(crate) fn bind_dimension_loci(
             .iter()
             .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
         {
-            insert_dimension_binding(&mut bindings, scope, record_index, frame.owner_reference)?;
+            insert_dimension_binding(ctx, &mut bindings, scope, record_index, frame.owner_reference)?;
         }
     }
     for pair in null_pairs {
@@ -4057,14 +4059,15 @@ pub(crate) fn bind_dimension_loci(
         let Some(owner) = placements_by_scope.get(&(scope, parameter_scope)).copied() else {
             continue;
         };
-        insert_dimension_binding(&mut bindings, scope, pair.loci()[1].geometry_index(), owner)?;
+        insert_dimension_binding(ctx, &mut bindings, scope, pair.loci()[1].geometry_index(), owner)?;
     }
     for point in points {
         let Some(scope) = native_stream(&point.id) else {
             continue;
         };
         let Some(owner) = bindings
-            .get(&(scope.to_owned(), point.record_index))
+            .get(scope)
+            .and_then(|records| records.get(&point.record_index))
             .copied()
         else {
             continue;
@@ -4085,7 +4088,8 @@ pub(crate) fn bind_dimension_loci(
             continue;
         };
         let Some(owner) = bindings
-            .get(&(scope.to_owned(), curve.record_index))
+            .get(scope)
+            .and_then(|records| records.get(&curve.record_index))
             .copied()
         else {
             continue;
@@ -4104,14 +4108,25 @@ pub(crate) fn bind_dimension_loci(
     Ok(())
 }
 
-fn insert_dimension_binding(
-    bindings: &mut HashMap<(String, u32), u32>,
-    scope: &str,
+fn insert_dimension_binding<'a>(
+    ctx: &DecodeContext<'_>,
+    bindings: &mut HashMap<&'a str, HashMap<u32, u32>>,
+    scope: &'a str,
     record_index: u32,
     owner: u32,
 ) -> Result<(), CodecError> {
-    if bindings
-        .insert((scope.to_owned(), record_index), owner)
+    if !bindings.contains_key(scope) {
+        insert_dimension_index(Some(ctx), bindings, scope, HashMap::new(),
+            "f3d dimension binding scope")?;
+    }
+    let records = bindings.get_mut(scope).ok_or_else(||
+        CodecError::malformed("dimension binding scope missing after insertion"))?;
+    if !records.contains_key(&record_index) {
+        ctx.charge_collection_items(1, "f3d dimension binding record")?;
+        records.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "f3d dimension binding record", 0, 1))?;
+    }
+    if records.insert(record_index, owner)
         .is_some_and(|existing| existing != owner)
     {
         return Err(CodecError::malformed(format_args!(
