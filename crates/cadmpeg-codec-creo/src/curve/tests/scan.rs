@@ -818,17 +818,81 @@ fn prototype_pcurve_binding_requires_unique_native_identity() {
         next_edges: [44, 44],
         offset: 20,
     };
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
 
     assert!(crate::curve::bind_prototype_pcurves(
+        &ctx,
         &[pcurve.clone(), pcurve.clone()],
         std::slice::from_ref(&topology),
     )
+    .expect("duplicate pcurve identity")
     .is_empty());
     assert!(crate::curve::bind_prototype_pcurves(
+        &ctx,
         std::slice::from_ref(&pcurve),
         &[topology.clone(), topology],
     )
+    .expect("duplicate topology identity")
     .is_empty());
+}
+
+#[test]
+fn prototype_topology_rows_refuse_collection_limit() {
+    let mut payload = visibgeom_payload(0, 0);
+    payload.extend_from_slice(b"crv_id\0\x2c type\0\x00");
+    payload.extend_from_slice(b"crv_hdr_geom_ptr[0]\0\x0a crv_hdr_geom_ptr[1]\0\x0b");
+    payload.extend_from_slice(b"next_crv_hdr_ptr[0]\0\x2c next_crv_hdr_ptr[1]\0\x2c");
+    payload.extend_from_slice(b"topol_ref_data\0");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = crate::curve::prototype_topology(&ctx, &payload)
+        .expect_err("one labeled topology exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo prototype topology rows"));
+}
+
+fn assert_prototype_binding_collection_refusal(limit: u64, operation: &'static str) {
+    let pcurve = crate::curve::PrototypePcurveEndpoints {
+        curve_id: 44,
+        face_0_endpoints: [[0.0, 1.0], [1.0, 0.0]],
+        face_1_endpoints: [[3.0, 0.0], [3.0, 1.0]],
+        offset: 10,
+    };
+    let topology = crate::curve::CurvePrototypeTopology {
+        curve_id: 44,
+        faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
+        next_edges: [44, 44],
+        offset: 20,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = crate::curve::bind_prototype_pcurves(&ctx, &[pcurve], &[topology])
+        .expect_err("one bound prototype exceeds collection limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn prototype_binding_refuses_pcurve_count_node() {
+    assert_prototype_binding_collection_refusal(0, "creo prototype pcurve count nodes");
+}
+
+#[test]
+fn prototype_binding_refuses_topology_count_node() {
+    assert_prototype_binding_collection_refusal(1, "creo prototype topology count nodes");
+}
+
+#[test]
+fn prototype_binding_refuses_bound_output() {
+    assert_prototype_binding_collection_refusal(2, "creo bound prototype pcurves");
 }
 
 #[test]

@@ -7149,7 +7149,10 @@ pub(crate) fn prototype_pcurve_endpoints(
 }
 
 /// Decode the four labeled topology pointers of each curve prototype.
-pub(crate) fn prototype_topology(payload: &[u8]) -> Vec<CurvePrototypeTopology> {
+pub(crate) fn prototype_topology(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Vec<CurvePrototypeTopology>, cadmpeg_core::CodecError> {
     let mut result = Vec::new();
     let mut search = 0;
     while let Some(namespace) = find(payload, b"crv_array\0", search) {
@@ -7180,6 +7183,7 @@ pub(crate) fn prototype_topology(payload: &[u8]) -> Vec<CurvePrototypeTopology> 
         let Some(next_1) = reference(b"next_crv_hdr_ptr[1]\0") else {
             continue;
         };
+        ctx.try_reserve_items(&mut result, 1, "creo prototype topology rows")?;
         result.push(CurvePrototypeTopology {
             curve_id,
             faces: [face_0, face_1].map(NonZeroU32::new),
@@ -7188,41 +7192,60 @@ pub(crate) fn prototype_topology(payload: &[u8]) -> Vec<CurvePrototypeTopology> 
         });
     }
     result.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 /// Bind complete prototype UV endpoints to labeled prototype topology.
 pub(crate) fn bind_prototype_pcurves(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     pcurves: &[PrototypePcurveEndpoints],
     topology: &[CurvePrototypeTopology],
-) -> Vec<BoundPrototypePcurve> {
+) -> Result<Vec<BoundPrototypePcurve>, cadmpeg_core::CodecError> {
     let mut pcurve_counts = BTreeMap::new();
     for pcurve in pcurves {
-        *pcurve_counts.entry(pcurve.curve_id).or_insert(0usize) += 1;
+        let count = match pcurve_counts.entry(pcurve.curve_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo prototype pcurve count nodes")?;
+                entry.insert(0usize)
+            }
+        };
+        *count += 1;
     }
     let mut topology_counts = BTreeMap::new();
     for row in topology {
-        *topology_counts.entry(row.curve_id).or_insert(0usize) += 1;
+        let count = match topology_counts.entry(row.curve_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo prototype topology count nodes")?;
+                entry.insert(0usize)
+            }
+        };
+        *count += 1;
     }
-    let mut result = pcurves
+    let mut result = Vec::new();
+    for pcurve in pcurves
         .iter()
         .filter(|pcurve| pcurve_counts.get(&pcurve.curve_id) == Some(&1))
         .filter(|pcurve| topology_counts.get(&pcurve.curve_id) == Some(&1))
-        .filter_map(|pcurve| {
-            let topology = topology
-                .iter()
-                .find(|topology| topology.curve_id == pcurve.curve_id)?;
-            Some(BoundPrototypePcurve {
-                curve_id: pcurve.curve_id,
-                faces: topology.faces,
-                face_0_endpoints: pcurve.face_0_endpoints,
-                face_1_endpoints: pcurve.face_1_endpoints,
-                offset: pcurve.offset,
-            })
-        })
-        .collect::<Vec<_>>();
+    {
+        let topology = topology
+            .iter()
+            .find(|topology| topology.curve_id == pcurve.curve_id);
+        let Some(topology) = topology else {
+            continue;
+        };
+        ctx.try_reserve_items(&mut result, 1, "creo bound prototype pcurves")?;
+        result.push(BoundPrototypePcurve {
+            curve_id: pcurve.curve_id,
+            faces: topology.faces,
+            face_0_endpoints: pcurve.face_0_endpoints,
+            face_1_endpoints: pcurve.face_1_endpoints,
+            offset: pcurve.offset,
+        });
+    }
     result.sort_by_key(|record| record.offset);
-    result
+    Ok(result)
 }
 
 /// The stored face identifier of a bounded half-edge side; `0` is unbounded.

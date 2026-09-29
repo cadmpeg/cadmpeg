@@ -1796,7 +1796,7 @@ fn curve_prototype_topology(
     collect_section_records_result(
         ctx,
         sections.iter(),
-        |bytes| Ok(curve::prototype_topology(bytes)),
+        |bytes| curve::prototype_topology(ctx, bytes),
         |record, base| record.offset += base,
         |record| record.offset,
     )
@@ -2909,7 +2909,7 @@ pub(crate) fn scan_bytes<'a>(
         curve::fc05_cylinder_cap_pairs(ctx, &fc05_circles, &curve_topology_rows, &surface_rows)?;
     let prototype_pcurves = prototype_pcurves(ctx, &model_geometry_sections)?;
     let bound_prototype_pcurves =
-        curve::bind_prototype_pcurves(&prototype_pcurves, &curve_prototype_topology);
+        curve::bind_prototype_pcurves(ctx, &prototype_pcurves, &curve_prototype_topology)?;
     let (half_edges, loops) = topology::build(ctx, &curve_topology_rows)?;
     let vertex_orbits = topology::vertex_orbits(ctx, &half_edges)?;
     let face_components = topology::face_components(ctx, &curve_topology_rows)?;
