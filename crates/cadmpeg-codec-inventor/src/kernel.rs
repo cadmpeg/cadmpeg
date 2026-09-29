@@ -86,13 +86,7 @@ fn parse_kernel_header(
     };
     if parsed.is_none() {
         ctx.charge_retained(
-            u64::try_from(absent.len()).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "Inventor absent kernel header detail",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?,
+            cadmpeg_core::decode::u64_from_index(absent.len()),
             "retain Inventor absent kernel header detail",
         )?;
     }
@@ -112,13 +106,7 @@ fn charge_header_copy(
     .into_iter()
     .flatten()
     {
-        let length = u64::try_from(value.len()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "Inventor kernel header string length",
-                u64::MAX - 1,
-                u64::MAX,
-            )
-        })?;
+        let length = cadmpeg_core::decode::u64_from_index(value.len());
         ctx.charge_retained(length, operation)?;
     }
     Ok(())
@@ -326,9 +314,7 @@ fn parse_carrier<'a>(
     // The carrier window is what the record holds between its header and its
     // footer. Admitting its length here is what gives every reader a nonzero
     // length instead of a check at the point of use.
-    let carrier_len = u64::try_from(carrier.window().len()).map_err(|_| {
-        ctx.refuse_codec_limit("Inventor kernel carrier length", u64::MAX - 1, u64::MAX)
-    })?;
+    let carrier_len = cadmpeg_core::decode::u64_from_index(carrier.window().len());
     let Some(carrier_len) = std::num::NonZeroU64::new(carrier_len) else {
         return Err(CodecError::Malformed(
             "Inventor kernel-carrier record holds no carrier bytes".into(),
@@ -373,9 +359,7 @@ fn parse_carrier<'a>(
             "Inventor kernel-carrier footer is not exactly exhausted".into(),
         ));
     }
-    let token_bytes = u64::try_from(segment_token.as_str().len()).map_err(|_| {
-        ctx.refuse_codec_limit("Inventor carrier token length", u64::MAX - 1, u64::MAX)
-    })?;
+    let token_bytes = cadmpeg_core::decode::u64_from_index(segment_token.as_str().len());
     ctx.charge_retained(token_bytes, "retain Inventor selected carrier token")?;
     Ok(ActiveCarrier {
         segment_token: segment_token.clone(),

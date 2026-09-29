@@ -15,7 +15,7 @@ use crate::instances::{hex, DefinitionKind, LinkSource, UnitDetail};
 use crate::loss::RhinoLossCode;
 use crate::settings::UnitBinding;
 use crate::wire::Uuid;
-use crate::wire::{admitted_format, copy_retained_string, reserve_collection};
+use crate::wire::{admitted_format, reserve_collection};
 
 fn reserve_map<K: Eq + std::hash::Hash, V>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -24,14 +24,12 @@ fn reserve_map<K: Eq + std::hash::Hash, V>(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
     map.try_reserve(1).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: 1,
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            u64::MAX,
+            1,
             operation,
-        })
+        ))
     })
 }
 
@@ -165,12 +163,9 @@ fn external_record(
                     format_args!("{definition_uuid}"),
                     "Rhino external definition UUID",
                 )?,
-                full_path: copy_retained_string(ctx, &value.full_path, "Rhino external full path")?,
-                relative_path: copy_retained_string(
-                    ctx,
-                    &value.relative_path,
-                    "Rhino external relative path",
-                )?,
+                full_path: ctx.copy_retained_text(&value.full_path, "Rhino external full path")?,
+                relative_path: ctx
+                    .copy_retained_text(&value.relative_path, "Rhino external relative path")?,
                 relative_path_preferred: false,
                 byte_count: Some(value.content_hash.byte_count),
                 hash_time: Some(value.content_hash.hash_time),
@@ -212,8 +207,8 @@ fn external_record(
             format_args!("{definition_uuid}"),
             "Rhino external definition UUID",
         )?,
-        full_path: copy_retained_string(ctx, full_path, "Rhino external full path")?,
-        relative_path: copy_retained_string(ctx, relative_path, "Rhino external relative path")?,
+        full_path: ctx.copy_retained_text(full_path, "Rhino external full path")?,
+        relative_path: ctx.copy_retained_text(relative_path, "Rhino external relative path")?,
         relative_path_preferred,
         byte_count: None,
         hash_time: None,
@@ -258,7 +253,7 @@ pub(crate) fn install(
         let external_reference = external_record(ctx, definition.id(), &definition.link)?;
         let external_id = external_reference
             .as_ref()
-            .map(|value| copy_retained_string(ctx, &value.id, "Rhino definition external ID"))
+            .map(|value| ctx.copy_retained_text(&value.id, "Rhino definition external ID"))
             .transpose()?;
         if let Some(value) = external_reference {
             reserve_collection(ctx, &mut external, 1, "Rhino external references")?;
@@ -272,19 +267,11 @@ pub(crate) fn install(
             .filter(|matches| matches.len() == 1)
         {
             reserve_collection(ctx, &mut links, 1, "Rhino definition links")?;
-            links.push(copy_retained_string(
-                ctx,
-                &matches[0].1,
-                "Rhino definition member link",
-            )?);
+            links.push(ctx.copy_retained_text(&matches[0].1, "Rhino definition member link")?);
         }
         if let Some(id) = &external_id {
             reserve_collection(ctx, &mut links, 1, "Rhino definition links")?;
-            links.push(copy_retained_string(
-                ctx,
-                id,
-                "Rhino definition external link",
-            )?);
+            links.push(ctx.copy_retained_text(id, "Rhino definition external link")?);
         }
         links.sort();
         links.dedup();
@@ -312,18 +299,14 @@ pub(crate) fn install(
                 "Rhino definition source UUID",
             )?,
             archive_index: definition.index,
-            name: copy_retained_string(ctx, &definition.name, "Rhino product definition name")?,
-            description: copy_retained_string(
-                ctx,
+            name: ctx.copy_retained_text(&definition.name, "Rhino product definition name")?,
+            description: ctx.copy_retained_text(
                 &definition.description,
                 "Rhino product definition description",
             )?,
-            url: copy_retained_string(ctx, &definition.url, "Rhino product definition URL")?,
-            url_tag: copy_retained_string(
-                ctx,
-                &definition.url_tag,
-                "Rhino product definition URL tag",
-            )?,
+            url: ctx.copy_retained_text(&definition.url, "Rhino product definition URL")?,
+            url_tag: ctx
+                .copy_retained_text(&definition.url_tag, "Rhino product definition URL tag")?,
             kind: definition.kind,
             member_object_ids,
             units: &definition.units,
@@ -341,14 +324,12 @@ pub(crate) fn install(
         if !definition_ids.contains(&definition.id()) {
             ctx.charge_collection_items(1, "Rhino product definition keys")?;
             definition_ids.try_reserve(1).map_err(|_| {
-                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-                    dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                    reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-                    limit: u64::MAX,
-                    used: 0,
-                    additional: 1,
-                    operation: "Rhino product definition keys",
-                })
+                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    u64::MAX,
+                    1,
+                    "Rhino product definition keys",
+                ))
             })?;
         }
         definition_ids.insert(definition.id());
@@ -424,11 +405,7 @@ pub(crate) fn install(
                 "Rhino occurrence parents",
             )?;
             for parent in source_parents {
-                parents.push(copy_retained_string(
-                    ctx,
-                    parent,
-                    "Rhino occurrence parent UUID",
-                )?);
+                parents.push(ctx.copy_retained_text(parent, "Rhino occurrence parent UUID")?);
             }
         }
         let key = if identity.object_id.is_nil()
@@ -476,7 +453,7 @@ pub(crate) fn install(
             )?,
             transform,
             parent_definition_uuids: parents,
-            name: copy_retained_string(ctx, &identity.name, "Rhino occurrence name")?,
+            name: ctx.copy_retained_text(&identity.name, "Rhino occurrence name")?,
             visible: identity.effective_visible,
             links,
         });

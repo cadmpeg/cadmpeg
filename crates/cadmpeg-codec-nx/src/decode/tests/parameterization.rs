@@ -1741,17 +1741,17 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
                     let PcurveGeometry::Nurbs { nurbs } = &mut support.geometry else {
                         panic!("NURBS support lane");
                     };
-                    let mut pole_index = 0usize;
                     nurbs
-                        .edit_control_points(|point| {
+                        .try_map_control_points(|pole_index, point| {
                             if pole_index == 1 {
-                                *point = Point2::new(
+                                cadmpeg_ir::units::FinitePoint2::new(Point2::new(
                                     crate::decode::MISSING_TOLERANCE,
                                     crate::decode::MISSING_TOLERANCE,
-                                );
+                                ))
+                                .ok_or(())
+                            } else {
+                                Ok(point)
                             }
-                            pole_index += 1;
-                            Ok(())
                         })
                         .unwrap();
                 };
@@ -1829,9 +1829,13 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
                         panic!("NURBS support lane");
                     };
                     nurbs
-                        .edit_control_points(|point| {
-                            point.u += 100.0;
-                            Ok(())
+                        .try_map_control_points(|_, point| {
+                            let point = point.get();
+                            cadmpeg_ir::units::FinitePoint2::new(Point2::new(
+                                point.u + 100.0,
+                                point.v,
+                            ))
+                            .ok_or(())
                         })
                         .unwrap();
                 };

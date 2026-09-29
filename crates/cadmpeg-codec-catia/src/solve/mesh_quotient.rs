@@ -5428,8 +5428,7 @@ fn admit_orientation_option(
     directions: &[Vec<bool>],
     quotient: &MeshQuotient,
 ) -> Result<bool, CodecError> {
-    let work = u64::try_from(quotient.union.len())
-        .map_err(|_| ctx.refuse_codec_limit("catia_orientation_dedup_work", u64::MAX, u64::MAX))?;
+    let work = cadmpeg_core::decode::u64_from_index(quotient.union.len());
     ctx.charge_work(work, "catia_orientation_dedup_work")?;
     let fingerprint = orientation_fingerprint(quotient, directions);
     if let Some(indices) = seen.get(&fingerprint) {
@@ -5851,9 +5850,7 @@ fn deduplicate_mesh_quotient_assignments(
         let mut best = None;
         for values in [&forward, &reversed] {
             for start in 0..values.len() {
-                let work = u64::try_from(values.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("catia_mesh_quotient_cycle_compare", u64::MAX, u64::MAX)
-                })?;
+                let work = cadmpeg_core::decode::u64_from_index(values.len());
                 ctx.charge_work(work, "catia_mesh_quotient_cycle_compare")?;
                 let candidate = values[start..].iter().chain(&values[..start]);
                 if best.is_none_or(|(best_values, best_start): (&Vec<_>, usize)| {
@@ -9682,7 +9679,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
                 .try_fold(row_bytes, |total, row| {
                     total.checked_add(row.len().checked_mul(std::mem::size_of::<usize>())?)
                 })
-                .and_then(|bytes| u64::try_from(bytes).ok())
+                .map(cadmpeg_core::decode::u64_from_index)
             else {
                 return Err(ctx.refuse_codec_limit(
                     "catia_singleton_signature_retained",

@@ -183,14 +183,13 @@ fn prt_with_file_entry(name: &[u8], payload: &[u8]) -> Result<Vec<u8>, CodecErro
     f.extend_from_slice(name);
 
     let dir_end = f.len().checked_add(16).ok_or_else(offset_overflow)?;
-    let payload_off = u64::try_from(dir_end).map_err(|_| offset_overflow())?;
-    let payload_len = u64::try_from(payload.len())
-        .map_err(|_| CodecError::InvalidInput("NX seed payload length overflows".into()))?;
+    let payload_off = cadmpeg_core::decode::u64_from_index(dir_end);
+    let payload_len = cadmpeg_core::decode::u64_from_index(payload.len());
     f.extend_from_slice(&payload_off.to_le_bytes());
     f.extend_from_slice(&payload_len.to_le_bytes());
     f.extend_from_slice(payload);
 
-    let footer_offset = u64::try_from(f.len()).map_err(|_| offset_overflow())?;
+    let footer_offset = cadmpeg_core::decode::u64_from_index(f.len());
     let footer_offset = footer_offset.to_le_bytes();
     let (footer_offset, high) = footer_offset.split_at(FOOTER_OFFSET_LEN);
     if high.iter().any(|&byte| byte != 0) {

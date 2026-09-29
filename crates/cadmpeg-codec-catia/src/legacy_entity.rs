@@ -160,11 +160,7 @@ impl LegacyRelationSignature {
         let (output, result_type) = match self.result {
             LegacyRelationResult::Void { output } => (
                 Some(output),
-                crate::resource::copy_retained_str(
-                    ctx,
-                    "VoidType",
-                    "catia_legacy_void_result_type",
-                )?,
+                ctx.copy_retained_text("VoidType", "catia_legacy_void_result_type")?,
             ),
             LegacyRelationResult::Typed(result_type) => (None, result_type),
         };
@@ -455,8 +451,7 @@ fn charge_scan(
     length: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let work =
-        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    let work = cadmpeg_core::decode::u64_from_index(length);
     ctx.charge_work(work, operation)
 }
 
@@ -710,11 +705,7 @@ pub(crate) fn parse_schema_identifiers(
         };
         let identifier = LegacySchemaIdentifier {
             offset,
-            value: crate::resource::copy_retained_str(
-                ctx,
-                value,
-                "catia_legacy_schema_identifier_value",
-            )?,
+            value: ctx.copy_retained_text(value, "catia_legacy_schema_identifier_value")?,
         };
         crate::resource::push(
             ctx,
@@ -816,11 +807,9 @@ fn parse_type_descriptors(
             continue;
         };
         let value = match name {
-            Some(name) => LegacyTypeValue::Name(crate::resource::copy_retained_str(
-                ctx,
-                name,
-                "catia_legacy_type_name",
-            )?),
+            Some(name) => {
+                LegacyTypeValue::Name(ctx.copy_retained_text(name, "catia_legacy_type_name")?)
+            }
             None => LegacyTypeValue::Selector(selector),
         };
         crate::resource::push(
@@ -892,9 +881,7 @@ fn parse_scalar_values(
     )?;
     for index in 1..values.len() {
         ctx.charge_work(
-            u64::try_from(index).map_err(|_| {
-                ctx.refuse_codec_limit("catia_legacy_scalar_sort", u64::MAX, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(index),
             "catia_legacy_scalar_sort",
         )?;
         let mut at = index;
@@ -995,7 +982,7 @@ fn bind_value_names<Value: LegacyNamedValue>(
         {
             value.bind_name(
                 name.offset,
-                crate::resource::copy_retained_str(ctx, &name.value, "catia_legacy_bound_name")?,
+                ctx.copy_retained_text(&name.value, "catia_legacy_bound_name")?,
             );
         }
     }
@@ -1036,7 +1023,7 @@ fn parse_string_values(
                 entity_id,
                 name_offset: None,
                 name: None,
-                value: crate::resource::copy_retained_str(ctx, value, "catia_legacy_string_value")?,
+                value: ctx.copy_retained_text(value, "catia_legacy_string_value")?,
             },
             "catia_legacy_string_values",
         )?;
@@ -1233,14 +1220,12 @@ fn parse_relations(
                         identities,
                     ),
                     expression_offset: expression.offset,
-                    expression: crate::resource::copy_retained_str(
-                        ctx,
+                    expression: ctx.copy_retained_text(
                         &expression.value,
                         "catia_legacy_relation_expression",
                     )?,
                     signature_offset: type_signature.offset,
-                    type_signature: crate::resource::copy_retained_str(
-                        ctx,
+                    type_signature: ctx.copy_retained_text(
                         &type_signature.value,
                         "catia_legacy_relation_signature",
                     )?,
@@ -1316,16 +1301,9 @@ pub(crate) fn parse_relation_signature(
             }
             crate::resource::insert_set(ctx, &mut names, parameter, "catia_legacy_relation_names")?;
             let parameter = LegacyRelationParameter {
-                parameter: crate::resource::copy_retained_str(
-                    ctx,
-                    parameter,
-                    "catia_legacy_relation_parameter",
-                )?,
-                value_type: crate::resource::copy_retained_str(
-                    ctx,
-                    value_type,
-                    "catia_legacy_relation_value_type",
-                )?,
+                parameter: ctx.copy_retained_text(parameter, "catia_legacy_relation_parameter")?,
+                value_type: ctx
+                    .copy_retained_text(value_type, "catia_legacy_relation_value_type")?,
             };
             if output_role {
                 if output.replace(parameter).is_some() {
@@ -1342,11 +1320,9 @@ pub(crate) fn parse_relation_signature(
         };
         LegacyRelationResult::Void { output }
     } else if output.is_none() {
-        LegacyRelationResult::Typed(crate::resource::copy_retained_str(
-            ctx,
-            result_type,
-            "catia_legacy_relation_result_type",
-        )?)
+        LegacyRelationResult::Typed(
+            ctx.copy_retained_text(result_type, "catia_legacy_relation_result_type")?,
+        )
     } else {
         return Ok(None);
     };
@@ -1382,7 +1358,7 @@ fn parse_text_fields(
             entity_id,
             encoding,
             role,
-            value: crate::resource::copy_retained_str(ctx, value, "catia_legacy_text_value")?,
+            value: ctx.copy_retained_text(value, "catia_legacy_text_value")?,
         };
         crate::resource::push(ctx, &mut fields, field, "catia_legacy_text_fields")?;
     }
@@ -1393,7 +1369,7 @@ impl LegacyRoleSelector {
     fn copy_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let name = match &self.name {
             LegacyRoleName::Literal(name) => LegacyRoleName::Literal(
-                crate::resource::copy_retained_str(ctx, name, "catia_legacy_copied_role_name")?,
+                ctx.copy_retained_text(name, "catia_legacy_copied_role_name")?,
             ),
             LegacyRoleName::Selector(selector) => LegacyRoleName::Selector(*selector),
         };
@@ -1544,11 +1520,7 @@ fn parse_role_selectors(
         let role = LegacyRoleSelector {
             offset,
             entity_id,
-            name: LegacyRoleName::Literal(crate::resource::copy_retained_str(
-                ctx,
-                name,
-                "catia_legacy_role_name",
-            )?),
+            name: LegacyRoleName::Literal(ctx.copy_retained_text(name, "catia_legacy_role_name")?),
             encoding,
             selector,
             field_code: None,
@@ -1666,9 +1638,7 @@ fn parse_role_selectors(
     roles.extend(field_bound_roles);
     for index in 1..roles.len() {
         ctx.charge_work(
-            u64::try_from(index).map_err(|_| {
-                ctx.refuse_codec_limit("catia_legacy_role_sort", u64::MAX, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(index),
             "catia_legacy_role_sort",
         )?;
         let mut at = index;

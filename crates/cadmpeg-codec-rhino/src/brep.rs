@@ -2317,10 +2317,14 @@ fn read_mesh_sides(
                 let object = chunk_at(bytes, start, child.end(), archive, false)?;
                 ctx.charge_collection_items(1, "Rhino Brep mesh cache child ranges")?;
                 children.try_reserve(1).map_err(|_| {
-                    crate::curves::collection_allocation_failed(
-                        "Rhino Brep mesh cache child ranges",
-                        1,
-                    )
+                    crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                            u64::MAX,
+                            cadmpeg_core::decode::u64_from_index(1),
+                            "Rhino Brep mesh cache child ranges",
+                        ),
+                    ))
                 })?;
                 children.push(object.range());
                 let class = parse_class_wrapper_with_userdata(
@@ -2776,7 +2780,14 @@ fn validate_regions(
             if !listed_sides.contains(&side) {
                 ctx.charge_collection_items(1, "Rhino Brep listed region sides")?;
                 listed_sides.try_reserve(1).map_err(|_| {
-                    crate::curves::collection_allocation_failed("Rhino Brep listed region sides", 1)
+                    crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                            u64::MAX,
+                            cadmpeg_core::decode::u64_from_index(1),
+                            "Rhino Brep listed region sides",
+                        ),
+                    ))
                 })?;
             }
             if !listed_sides.insert(side) || sides[side].region != Some(index) {
@@ -2974,7 +2985,14 @@ fn unique(ctx: &DecodeContext<'_>, values: &[i32], label: &str) -> Result<(), Ge
         }
         ctx.charge_collection_items(1, "Rhino Brep unique references")?;
         seen.try_reserve(1).map_err(|_| {
-            crate::curves::collection_allocation_failed("Rhino Brep unique references", 1)
+            crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    u64::MAX,
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "Rhino Brep unique references",
+                ),
+            ))
         })?;
         seen.insert(*value);
     }

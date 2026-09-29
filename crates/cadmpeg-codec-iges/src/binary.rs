@@ -13,7 +13,7 @@ use crate::decode_resource::{
     reserve_vec_growth,
 };
 use crate::directory::DirectoryFieldSlot;
-use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -278,10 +278,15 @@ impl<'a> BitReader<'a> {
                 ctx.charge_retained(u64_from_index(count), "iges binary string payload")?;
             }
             output.try_reserve(count).map_err(|_| {
-                refuse_local_limit(
-                    "iges binary string payload",
-                    u64_from_index(count),
-                    u64_from_index(count),
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "iges binary string payload",
+                        ),
+                        u64_from_index(count),
+                        u64_from_index(count),
+                        "iges binary string payload",
+                    ),
                 )
             })?;
             for _ in 0..count {
@@ -385,9 +390,16 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
         if let Some(ctx) = self.ctx {
             ctx.charge_collection_items(1, "iges binary repeated values")?;
         }
-        self.pending
-            .try_reserve(1)
-            .map_err(|_| refuse_local_limit("iges binary repeated values", 1, 1))
+        self.pending.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("iges binary repeated values"),
+                    1,
+                    1,
+                    "iges binary repeated values",
+                ),
+            )
+        })
     }
 
     fn clone_value(&self, value: &BinaryValue) -> Result<BinaryValue, CodecError> {
@@ -754,9 +766,16 @@ fn append_retained(
 ) -> Result<(), CodecError> {
     let count = u64_from_index(bytes.len());
     ctx.charge_retained(count, operation)?;
-    output
-        .try_reserve(bytes.len())
-        .map_err(|_| refuse_local_limit(operation, count, count))?;
+    output.try_reserve(bytes.len()).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                count,
+                count,
+                operation,
+            ),
+        )
+    })?;
     output.extend_from_slice(bytes);
     Ok(())
 }
@@ -1392,9 +1411,16 @@ fn append_output_card(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     ctx.charge_retained(81, "iges binary normalized card")?;
-    output
-        .try_reserve(81)
-        .map_err(|_| refuse_local_limit("iges binary normalized card", 81, 81))?;
+    output.try_reserve(81).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("iges binary normalized card"),
+                81,
+                81,
+                "iges binary normalized card",
+            ),
+        )
+    })?;
     output.extend_from_slice(card);
     output.push(b'\n');
     Ok(())

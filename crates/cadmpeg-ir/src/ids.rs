@@ -10,6 +10,8 @@
 //! components before `#`). Compose typed IDs from an [`IdentityNamespace`]
 //! and an [`IdentityKey`]; validate existing strings with [`is_valid_identity`].
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::Deserialize;
 
 fn deserialize_local_id<'de, D: serde::Deserializer<'de>>(
@@ -74,6 +76,15 @@ impl schemars::JsonSchema for Identity {
 }
 
 impl Identity {
+    /// Copies an admitted identity under the decode retained-byte budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(Self(ctx.copy_retained_text(self.as_str(), operation)?))
+    }
+
     /// Admit a string matching the entity identity grammar.
     pub fn new(value: impl Into<String>) -> Result<Self, IdentityError> {
         let value = value.into();
@@ -905,6 +916,15 @@ macro_rules! id_type {
         }
 
         impl $name {
+            /// Copies an admitted identity under the decode retained-byte budget.
+            pub fn try_clone_for_decode(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                Ok(Self(self.0.try_clone_for_decode(ctx, operation)?))
+            }
+
             /// Mint an identity that matches `<format>:<scope>:<kind>#<key>`.
             pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
                 $crate::ids::Identity::new(value).map(Self::from)

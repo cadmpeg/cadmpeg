@@ -495,8 +495,7 @@ pub(super) fn revolve_nurbs(
 ) -> Result<Option<NurbsSurface>, CodecError> {
     let [angular_interval, native_interval] = intervals;
     let admit_items = |count: usize, operation: &'static str| -> Result<(), CodecError> {
-        let items = u64::try_from(count)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let items = cadmpeg_core::decode::u64_from_index(count);
         ctx.charge_collection_items(items, operation)
     };
     (|| -> Option<Result<NurbsSurface, CodecError>> {

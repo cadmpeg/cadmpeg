@@ -14,10 +14,7 @@ use crate::native::{
     CopyOnChangePolicy as NativeCopyOnChangePolicy, LinkArrayCardinality, LinkOccurrence,
     ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord,
 };
-use crate::resource::{
-    collection_allocation_failed, collection_vec, reserve_vec_items, retained_format,
-    retained_string, retained_strings,
-};
+use crate::resource::{collection_vec, reserve_vec_items, retained_format, retained_strings};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
@@ -40,9 +37,16 @@ pub(crate) fn transfer(
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
             ctx.charge_collection_items(1, "fcstd product owner index")?;
-            by_owner
-                .try_reserve(1)
-                .map_err(|_| collection_allocation_failed(ctx, 1, "fcstd product owner index"))?;
+            by_owner.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "fcstd product owner index",
+                    ),
+                )
+            })?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
@@ -116,14 +120,16 @@ pub(crate) fn transfer(
             .transpose()?
             .unwrap_or_default();
         let placement_property = placement
-            .map(|property| retained_string(ctx, &property.id, "fcstd product placement property"))
+            .map(|property| {
+                ctx.copy_retained_text(&property.id, "fcstd product placement property")
+            })
             .transpose()?;
         let node = match kind {
             ProductKind::Occurrence => ProductNode::Occurrence(LinkOccurrence {
                 members,
                 prototype: prototype_link
                     .and_then(|link| link.object())
-                    .map(|name| retained_string(ctx, name, "fcstd product prototype"))
+                    .map(|name| ctx.copy_retained_text(name, "fcstd product prototype"))
                     .transpose()?,
                 external_document: prototype_link
                     .and_then(|link| link.document())
@@ -176,7 +182,7 @@ pub(crate) fn transfer(
         reserve_vec_items(ctx, &mut output, 1, "fcstd product records")?;
         output.push(ProductNodeRecord {
             id: crate::native::native_id_charged(ctx, "product", &object.name)?,
-            object: retained_string(ctx, &object.id, "fcstd product object")?,
+            object: ctx.copy_retained_text(&object.id, "fcstd product object")?,
             node,
         });
     }
@@ -195,11 +201,7 @@ fn linked_object_names(
     let mut names = collection_vec(ctx, count, "fcstd product linked object names")?;
     for link in links.iter().flatten() {
         if let Some(name) = link.object() {
-            names.push(retained_string(
-                ctx,
-                name,
-                "fcstd product linked object name",
-            )?);
+            names.push(ctx.copy_retained_text(name, "fcstd product linked object name")?);
         }
     }
     Ok(names)
@@ -212,11 +214,7 @@ fn nonempty_subelements(
     let count = values.iter().filter(|value| !value.is_empty()).count();
     let mut subelements = collection_vec(ctx, count, "fcstd product linked subelements")?;
     for value in values.iter().filter(|value| !value.is_empty()) {
-        subelements.push(retained_string(
-            ctx,
-            value,
-            "fcstd product linked subelement",
-        )?);
+        subelements.push(ctx.copy_retained_text(value, "fcstd product linked subelement")?);
     }
     Ok(subelements)
 }
@@ -228,7 +226,14 @@ fn product_record_index<'a>(
     let mut index = HashMap::new();
     ctx.charge_collection_items(records.len() as u64, "fcstd product record index")?;
     index.try_reserve(records.len()).map_err(|_| {
-        collection_allocation_failed(ctx, records.len() as u64, "fcstd product record index")
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                records.len() as u64,
+                "fcstd product record index",
+            ),
+        )
     })?;
     for record in records {
         if index.insert(record.object.as_str(), record).is_some() {
@@ -356,7 +361,14 @@ pub(crate) fn transfer_neutral(
         if !properties_by_owner.contains_key(property.owner.as_str()) {
             ctx.charge_collection_items(1, "fcstd product neutral owner index")?;
             properties_by_owner.try_reserve(1).map_err(|_| {
-                collection_allocation_failed(ctx, 1, "fcstd product neutral owner index")
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "fcstd product neutral owner index",
+                    ),
+                )
             })?;
             properties_by_owner.insert(property.owner.as_str(), Vec::new());
         }
@@ -371,7 +383,14 @@ pub(crate) fn transfer_neutral(
             if let Some(placement) = placement_matrix(ctx, property)? {
                 ctx.charge_collection_items(1, "fcstd product placements")?;
                 placements_by_object.try_reserve(1).map_err(|_| {
-                    collection_allocation_failed(ctx, 1, "fcstd product placements")
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                            ctx.policy().limits.max_collection_items,
+                            1,
+                            "fcstd product placements",
+                        ),
+                    )
                 })?;
                 placements_by_object.insert(owner, placement.transform());
             }
@@ -407,7 +426,14 @@ pub(crate) fn transfer_neutral(
                 None => {
                     ctx.charge_collection_items(1, "fcstd product parent index")?;
                     parent_by_object.try_reserve(1).map_err(|_| {
-                        collection_allocation_failed(ctx, 1, "fcstd product parent index")
+                        cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                                ctx.policy().limits.max_collection_items,
+                                1,
+                                "fcstd product parent index",
+                            ),
+                        )
                     })?;
                     parent_by_object.insert(member, record.object.as_str());
                 }
@@ -508,7 +534,7 @@ pub(crate) fn transfer_neutral(
                         object: record
                             .prototype()
                             .map(|value| {
-                                retained_string(ctx, value, "fcstd product external prototype")
+                                ctx.copy_retained_text(value, "fcstd product external prototype")
                             })
                             .transpose()?,
                     }
@@ -522,8 +548,7 @@ pub(crate) fn transfer_neutral(
                 parent: parent
                     .as_ref()
                     .map(|occurrence| {
-                        OccurrenceId::mint(retained_string(
-                            ctx,
+                        OccurrenceId::mint(ctx.copy_retained_text(
                             occurrence.as_str(),
                             "fcstd product parent identity",
                         )?)
@@ -542,11 +567,9 @@ pub(crate) fn transfer_neutral(
                 linked_prototype: (record.link_transform() == Some(true))
                     .then_some(prototype_transform),
                 scale,
-                name: Some(retained_string(
-                    ctx,
-                    &record.object,
-                    "fcstd product occurrence name",
-                )?),
+                name: Some(
+                    ctx.copy_retained_text(&record.object, "fcstd product occurrence name")?,
+                ),
                 visible: None,
                 link: LinkState::new(
                     retained_strings(
@@ -562,8 +585,7 @@ pub(crate) fn transfer_neutral(
                     record.claim_child(),
                     copy_on_change,
                 ),
-                native_ref: Some(retained_string(
-                    ctx,
+                native_ref: Some(ctx.copy_retained_text(
                     &record.object,
                     "fcstd product occurrence native reference",
                 )?),
@@ -574,7 +596,14 @@ pub(crate) fn transfer_neutral(
     let mut object_by_id = HashMap::new();
     ctx.charge_collection_items(objects.len() as u64, "fcstd product object index")?;
     object_by_id.try_reserve(objects.len()).map_err(|_| {
-        collection_allocation_failed(ctx, objects.len() as u64, "fcstd product object index")
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                objects.len() as u64,
+                "fcstd product object index",
+            ),
+        )
     })?;
     for object in objects {
         object_by_id.insert(object.id.as_str(), object);
@@ -582,10 +611,13 @@ pub(crate) fn transfer_neutral(
     let mut property_owner = HashMap::new();
     ctx.charge_collection_items(properties.len() as u64, "fcstd product property owners")?;
     property_owner.try_reserve(properties.len()).map_err(|_| {
-        collection_allocation_failed(
-            ctx,
-            properties.len() as u64,
-            "fcstd product property owners",
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                properties.len() as u64,
+                "fcstd product property owners",
+            ),
         )
     })?;
     for property in properties {
@@ -650,11 +682,9 @@ pub(crate) fn transfer_neutral(
                 "fcstd product definition bodies",
             )?;
             definition_bodies.push(
-                cadmpeg_ir::ids::BodyId::mint(retained_string(
-                    ctx,
-                    body.id.as_str(),
-                    "fcstd product body identity",
-                )?)
+                cadmpeg_ir::ids::BodyId::mint(
+                    ctx.copy_retained_text(body.id.as_str(), "fcstd product body identity")?,
+                )
                 .map_err(CodecError::malformed)?,
             );
         }
@@ -662,7 +692,7 @@ pub(crate) fn transfer_neutral(
             id: definition_id(object)?,
             kind,
             source_name: source_object
-                .map(|object| retained_string(ctx, &object.name, "fcstd product source name"))
+                .map(|object| ctx.copy_retained_text(&object.name, "fcstd product source name"))
                 .transpose()?,
             label: metadata_string(ctx, owned, "Label")?,
             description: metadata_string(ctx, owned, "Description")?,
@@ -671,11 +701,9 @@ pub(crate) fn transfer_neutral(
                 .or(id_part_number),
             bom_properties,
             bodies: definition_bodies,
-            native_ref: Some(retained_string(
-                ctx,
-                object,
-                "fcstd product definition native reference",
-            )?),
+            native_ref: Some(
+                ctx.copy_retained_text(object, "fcstd product definition native reference")?,
+            ),
         });
     }
 
@@ -704,35 +732,34 @@ pub(crate) fn transfer_neutral(
             transform: local_transform,
             linked_prototype: None,
             scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: Some(retained_string(
-                ctx,
-                object,
-                "fcstd product container name",
-            )?),
+            name: Some(ctx.copy_retained_text(object, "fcstd product container name")?),
             visible: None,
             link: None,
-            native_ref: Some(retained_string(
-                ctx,
-                object,
-                "fcstd product container native reference",
-            )?),
+            native_ref: Some(
+                ctx.copy_retained_text(object, "fcstd product container native reference")?,
+            ),
         });
     }
     let mut next_ordinal = HashMap::<Option<String>, u32>::new();
     for occurrence in &mut occurrences {
         let parent = match &occurrence.parent {
             OccurrenceParent::Root {} => None,
-            OccurrenceParent::Occurrence { occurrence } => Some(retained_string(
-                ctx,
-                occurrence.as_str(),
-                "fcstd product ordinal parent",
-            )?),
+            OccurrenceParent::Occurrence { occurrence } => {
+                Some(ctx.copy_retained_text(occurrence.as_str(), "fcstd product ordinal parent")?)
+            }
         };
         if !next_ordinal.contains_key(&parent) {
             ctx.charge_collection_items(1, "fcstd product ordinal index")?;
-            next_ordinal
-                .try_reserve(1)
-                .map_err(|_| collection_allocation_failed(ctx, 1, "fcstd product ordinal index"))?;
+            next_ordinal.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "fcstd product ordinal index",
+                    ),
+                )
+            })?;
         }
         let ordinal = next_ordinal.entry(parent).or_default();
         occurrence.ordinal = *ordinal;
@@ -765,11 +792,7 @@ fn linked_prototype_transform(
         )?));
     }
     reserve_vec_items(ctx, stack, 1, "fcstd nested product stack")?;
-    stack.push(retained_string(
-        ctx,
-        &record.object,
-        "fcstd nested product identity",
-    )?);
+    stack.push(ctx.copy_retained_text(&record.object, "fcstd nested product identity")?);
     let target_record = records.get(prototype).copied();
     let placement = target_record
         .and_then(ProductNodeRecord::local_transform)
@@ -824,11 +847,9 @@ fn copy_on_change_policy(
         1 => CopyOnChangePolicy::Enabled,
         2 => CopyOnChangePolicy::Owned,
         3 => CopyOnChangePolicy::Tracking,
-        _ => CopyOnChangePolicy::Native(retained_string(
-            ctx,
-            value.as_str(),
-            "fcstd product copy on change",
-        )?),
+        _ => CopyOnChangePolicy::Native(
+            ctx.copy_retained_text(value.as_str(), "fcstd product copy on change")?,
+        ),
     })
 }
 
@@ -837,7 +858,7 @@ pub(crate) fn external_document_reference_charged(
     value: &str,
     attribute: Option<&str>,
 ) -> Result<ExternalDocument, CodecError> {
-    let value = crate::resource::retained_string(ctx, value, "fcstd external document reference")?;
+    let value = ctx.copy_retained_text(value, "fcstd external document reference")?;
     Ok(
         if attribute.is_some_and(|name| name.eq_ignore_ascii_case("file")) {
             ExternalDocument::path(value)
@@ -1211,7 +1232,7 @@ fn metadata_string(
     }
     value
         .attribute("value")
-        .map(|value| retained_string(ctx, value, "fcstd product metadata"))
+        .map(|value| ctx.copy_retained_text(value, "fcstd product metadata"))
         .transpose()
 }
 
@@ -1298,7 +1319,7 @@ fn copy_on_change_property(
             "fcstd product missing enumeration",
         )?));
     };
-    NativeCopyOnChangePolicy::from_raw(retained_string(ctx, raw, "fcstd copy on change policy")?)
+    NativeCopyOnChangePolicy::from_raw(ctx.copy_retained_text(raw, "fcstd copy on change policy")?)
         .map(Some)
         .or_else(|_| {
             Err(CodecError::Malformed(retained_format(
@@ -1339,7 +1360,7 @@ fn neutral_link_target(
             )?,
             object: target
                 .object()
-                .map(|name| retained_string(ctx, name, "fcstd product external target"))
+                .map(|name| ctx.copy_retained_text(name, "fcstd product external target"))
                 .transpose()?,
         }));
     }
@@ -1493,7 +1514,14 @@ pub(crate) fn product_cycle_nodes<'a>(
     let mut reverse = HashMap::<&str, Vec<&str>>::new();
     ctx.charge_collection_items(nodes.len() as u64, "fcstd product reverse graph")?;
     reverse.try_reserve(nodes.len()).map_err(|_| {
-        collection_allocation_failed(ctx, nodes.len() as u64, "fcstd product reverse graph")
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                nodes.len() as u64,
+                "fcstd product reverse graph",
+            ),
+        )
     })?;
     for &source in nodes.keys() {
         reverse.insert(source, Vec::new());

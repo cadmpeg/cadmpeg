@@ -681,11 +681,7 @@ fn g2_side(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
 ) -> Option<Result<EmbeddedG2Side, cadmpeg_core::CodecError>> {
-    let label = propagate_resource!(crate::decode_alloc::copy_string(
-        ctx,
-        cur.take_str()?,
-        "ASM G2 side label",
-    ));
+    let label = propagate_resource!(ctx.copy_retained_text(cur.take_str()?, "ASM G2 side label"));
     let surface = propagate_resource!(embedded_surface(ctx, cur)?);
     let (curve, curve_end) = propagate_resource!(curve_block(ctx, cur.toks(), cur.pos())?);
     cur.set_pos(curve_end);
@@ -712,7 +708,7 @@ fn bridge_token(
         Token::Double(_) => Some(Ok(LoftBridgeToken::Double(cur.take_f64()?))),
         Token::Enum(_) => Some(Ok(LoftBridgeToken::Enum(cur.take_enum()?))),
         Token::Str(_) => Some(
-            crate::decode_alloc::copy_string(ctx, cur.take_str()?, "ASM loft bridge text")
+            ctx.copy_retained_text(cur.take_str()?, "ASM loft bridge text")
                 .map(LoftBridgeToken::Text),
         ),
         _ => None,
@@ -2211,11 +2207,8 @@ fn loft_spl_sur(
             )),
             Token::Str(_) => {
                 let value = cur.take_str()?;
-                let value = propagate_resource!(crate::decode_alloc::copy_string(
-                    ctx,
-                    value,
-                    "ASM loft bridge text",
-                ));
+                let value =
+                    propagate_resource!(ctx.copy_retained_text(value, "ASM loft bridge text"));
                 propagate_resource!(crate::decode_alloc::push_vec(
                     ctx,
                     &mut bridge,
@@ -2682,11 +2675,7 @@ fn sweep_law_expression(
             .chars()
             .any(|character| !character.is_whitespace())
             .then_some(())?;
-        let copied = propagate_resource!(crate::decode_alloc::copy_string(
-            ctx,
-            source,
-            "ASM sweep law text",
-        ));
+        let copied = propagate_resource!(ctx.copy_retained_text(source, "ASM sweep law text"));
         return Some(Ok(EmbeddedLawExpression::Text(
             cadmpeg_core::text::NonBlankString::new(copied)?,
         )));
@@ -2821,11 +2810,8 @@ fn law_expression_resolving(
                     resolver
                 )?));
             }
-            let operator = propagate_resource!(crate::decode_alloc::copy_string(
-                ctx,
-                operator,
-                "ASM law operator",
-            ));
+            let operator =
+                propagate_resource!(ctx.copy_retained_text(operator, "ASM law operator"));
             Some(Ok(EmbeddedLawExpression::Algebraic { operator, operands }))
         }
     }
@@ -2844,11 +2830,7 @@ fn law_formula_resolving(
     cur: &mut Cur<'_>,
     resolver: Option<&SubtypeTable>,
 ) -> Option<Result<EmbeddedLawFormula, cadmpeg_core::CodecError>> {
-    let name = propagate_resource!(crate::decode_alloc::copy_string(
-        ctx,
-        cur.take_str()?,
-        "ASM law formula name",
-    ));
+    let name = propagate_resource!(ctx.copy_retained_text(cur.take_str()?, "ASM law formula name"));
     if name == "null_law" {
         return Some(Ok(EmbeddedLawFormula::Null));
     }
@@ -4320,9 +4302,7 @@ pub(crate) fn copy_revision_discontinuities(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         source: &[f64],
     ) -> Result<Vec<f64>, cadmpeg_core::CodecError> {
-        let count = u64::try_from(source.len()).map_err(|_| {
-            ctx.refuse_codec_limit("ASM revision discontinuities", u64::MAX, u64::MAX)
-        })?;
+        let count = cadmpeg_core::decode::u64_from_index(source.len());
         let bytes = count.checked_mul(8).ok_or_else(|| {
             ctx.refuse_codec_limit("ASM revision discontinuities", u64::MAX, u64::MAX)
         })?;
@@ -4743,22 +4723,16 @@ fn t_spline_subtransform(
     match cur.take_ident()? {
         "t_spl_subtrans_object" => {
             let program_text = cur.take_str()?;
-            let program = propagate_resource!(crate::decode_alloc::copy_string(
-                ctx,
-                program_text,
-                "ASM t spline program",
-            ));
+            let program =
+                propagate_resource!(ctx.copy_retained_text(program_text, "ASM t spline program"));
             let separator = if matches!(cur.peek(), Some(Token::Str(_))) {
                 None
             } else {
                 Some(cur.take_bool()?)
             };
             let values_text = cur.take_str()?;
-            let values = propagate_resource!(crate::decode_alloc::copy_string(
-                ctx,
-                values_text,
-                "ASM t spline values",
-            ));
+            let values =
+                propagate_resource!(ctx.copy_retained_text(values_text, "ASM t spline values"));
             Some(Ok(EmbeddedTSplineSubtransform::Inline {
                 program,
                 separator,

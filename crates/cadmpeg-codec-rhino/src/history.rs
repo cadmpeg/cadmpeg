@@ -2456,35 +2456,28 @@ pub(crate) fn project(
             "Rhino history projected features",
         )
         .map_err(ProjectionError::Codec)?;
-        let feature_id_text = crate::wire::copy_retained_string(
-            ctx,
-            ids[index].as_str(),
-            "Rhino history projected feature identity",
-        )
-        .map_err(ProjectionError::Codec)?;
+        let feature_id_text = ctx
+            .copy_retained_text(
+                ids[index].as_str(),
+                "Rhino history projected feature identity",
+            )
+            .map_err(ProjectionError::Codec)?;
         let feature_id = FeatureId::mint(feature_id_text).map_err(|error| error.to_string())?;
-        let source_tag = crate::wire::copy_retained_string(
-            ctx,
-            "HistoryRecord",
-            "Rhino history feature source tag",
-        )
-        .map_err(ProjectionError::Codec)?;
+        let source_tag = ctx
+            .copy_retained_text("HistoryRecord", "Rhino history feature source tag")
+            .map_err(ProjectionError::Codec)?;
         let kind = crate::wire::admitted_format(
             ctx,
             format_args!("{}", record.command_id),
             "Rhino history feature kind",
         )
         .map_err(ProjectionError::Codec)?;
-        let native_ref = crate::wire::copy_retained_string(
-            ctx,
-            &native_ids[index],
-            "Rhino history feature native reference",
-        )
-        .map_err(ProjectionError::Codec)?;
+        let native_ref = ctx
+            .copy_retained_text(&native_ids[index], "Rhino history feature native reference")
+            .map_err(ProjectionError::Codec)?;
         ir.model.features.push(Feature {
             id: feature_id,
-            ordinal: u64::try_from(index)
-                .map_err(|_| "history source order exceeds u64".to_string())?,
+            ordinal: cadmpeg_core::decode::u64_from_index(index),
             name: None,
             suppressed: Some(false),
             dependencies,
@@ -2503,8 +2496,7 @@ pub(crate) fn project(
         });
     }
     for record in records {
-        u64::try_from(record.source_range.start)
-            .map_err(|_| "history source offset exceeds u64".to_string())?;
+        cadmpeg_core::decode::u64_from_index(record.source_range.start);
     }
     let native = records
         .iter()

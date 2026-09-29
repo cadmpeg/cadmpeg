@@ -12,12 +12,8 @@ pub(crate) fn neutral_history_id(
     native_id: &str,
     kind: &IdentityComponent,
 ) -> Result<Identity, CodecError> {
-    let native = Identity::new(resource::copy_retained_str(
-        ctx,
-        native_id,
-        "catia_neutral_history_source",
-    )?)
-    .map_err(CodecError::malformed)?;
+    let native = Identity::new(ctx.copy_retained_text(native_id, "catia_neutral_history_source")?)
+        .map_err(CodecError::malformed)?;
     let (namespace, key) = native
         .as_str()
         .split_once('#')

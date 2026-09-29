@@ -209,15 +209,18 @@ fn decode_retains_generated_helix_construction() {
     let SolvedCurveGeometry::Nurbs(mut edited_cache) = solved_cache.clone() else {
         panic!("expected helix NURBS cache")
     };
-    let mut pole_index = 0usize;
     edited_cache
-        .edit_control_points(|point| {
-            if pole_index == 1 {
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 1 {
                 point.x = 17.0;
                 point.z = -2.0;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     *solved_cache = SolvedCurveGeometry::Nurbs(edited_cache);
@@ -305,7 +308,8 @@ fn cacheless_helix_construction_is_the_exact_edge_carrier() {
             .map(|curve| &curve.geometry),
         Some(CurveGeometry::Procedural { construction, .. }) if *construction == procedural.id
     ));
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "validation findings: {:?}",

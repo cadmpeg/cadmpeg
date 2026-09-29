@@ -181,14 +181,12 @@ pub(crate) fn reserve_admitted_vec<T>(
             error => FramingError::unpositioned(error.to_string()),
         })?;
     values.try_reserve(additional).map_err(|_| {
-        FramingError::Resource(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: u64::MAX,
-            used: 0,
-            additional: cadmpeg_core::decode::u64_from_index(additional),
+        FramingError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            u64::MAX,
+            cadmpeg_core::decode::u64_from_index(additional),
             operation,
-        })
+        ))
     })
 }
 
