@@ -17,7 +17,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputScalarRole,
     SketchInputKind,
 };
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -2280,7 +2280,7 @@ pub(crate) fn project_hole_topology_axes(
         set_hole_placements(&mut features[unresolved_index], residual);
     }
 
-    let cylinders = cylindrical_bore_face_spans(topology);
+    let cylinders = cylindrical_bore_face_spans(ctx, topology)?;
     project_flat_blind_topology_axes(features, &cylinders);
     project_drilled_hole_topology_axes(ctx, features, &cylinders, topology)?;
     Ok(())
@@ -3312,96 +3312,104 @@ fn carrier_placements(
     (!placements.is_empty()).then_some(placements)
 }
 
+fn topology_index<'a, T, K: Eq + std::hash::Hash>(
+    ctx: &DecodeContext<'_>,
+    records: &'a [T],
+    key: impl Fn(&'a T) -> &'a K,
+) -> Result<HashMap<&'a K, &'a T>, CodecError> {
+    const OPERATION: &str = "index SLDPRT hole topology records";
+    ctx.charge_work(u64_from_index(records.len()), OPERATION)?;
+    ctx.charge_collection_items(u64_from_index(records.len()), OPERATION)?;
+    let mut index = HashMap::new();
+    index.try_reserve(records.len()).map_err(|_| {
+        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+    })?;
+    for record in records {
+        index.insert(key(record), record);
+    }
+    Ok(index)
+}
+
 fn cylindrical_bore_face_spans(
+    ctx: &DecodeContext<'_>,
     topology: &HoleTopology<'_>,
-) -> Vec<(Point3, FeatureDirection3, f64, f64, bool)> {
-    let surfaces = topology
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, surface))
-        .collect::<HashMap<_, _>>();
-    let loops = topology
-        .loops
-        .iter()
-        .map(|loop_| (&loop_.id, loop_))
-        .collect::<HashMap<_, _>>();
-    let coedges = topology
-        .coedges
-        .iter()
-        .map(|coedge| (&coedge.id, coedge))
-        .collect::<HashMap<_, _>>();
-    let edges = topology
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge))
-        .collect::<HashMap<_, _>>();
-    let vertices = topology
-        .vertices
-        .iter()
-        .map(|vertex| (&vertex.id, vertex))
-        .collect::<HashMap<_, _>>();
-    let points = topology
-        .points
-        .iter()
-        .map(|point| (&point.id, point))
-        .collect::<HashMap<_, _>>();
-    topology
-        .faces
-        .iter()
-        .filter_map(|face| {
-            let surface = surfaces.get(&face.surface)?;
-            let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
-            else {
-                return None;
-            };
-            let origin = cylinder_surface.origin().get();
-            let axis = FeatureDirection3::from(*cylinder_surface.frame().axis());
-            let radius = cylinder_surface.radius().get();
-            let mut stations = face
-                .loops
-                .iter()
-                .filter_map(|loop_id| loops.get(loop_id))
-                .flat_map(|loop_| {
-                    loop_
-                        .coedges()
-                        .iter()
-                        .filter_map(|coedge_id| coedges.get(coedge_id))
-                        .filter_map(|coedge| edges.get(&coedge.edge))
-                        .flat_map(|edge| [&edge.start, &edge.end])
-                        .chain(loop_.vertices())
-                })
-                .filter_map(|vertex_id| vertices.get(vertex_id))
-                .filter_map(|vertex| points.get(&vertex.point))
-                .map(|point| {
-                    Vector3::new(
-                        point.position().get().x - origin.x,
-                        point.position().get().y - origin.y,
-                        point.position().get().z - origin.z,
-                    )
-                    .dot(axis.get())
-                });
-            let first = stations.next()?;
-            let (minimum, maximum) = stations
-                .fold((first, first), |(minimum, maximum), station| {
-                    (minimum.min(station), maximum.max(station))
-                });
-            let span = maximum - minimum;
-            (span.is_finite() && span > 0.0).then_some((
-                origin,
-                axis,
-                radius,
-                span,
-                face.sense == Sense::Reversed,
-            ))
-        })
-        .collect()
+) -> Result<Vec<(Point3, FeatureDirection3, f64, f64, bool)>, CodecError> {
+    let surfaces = topology_index(ctx, topology.surfaces, |surface| &surface.id)?;
+    let loops = topology_index(ctx, topology.loops, |loop_| &loop_.id)?;
+    let coedges = topology_index(ctx, topology.coedges, |coedge| &coedge.id)?;
+    let edges = topology_index(ctx, topology.edges, |edge| &edge.id)?;
+    let vertices = topology_index(ctx, topology.vertices, |vertex| &vertex.id)?;
+    let points = topology_index(ctx, topology.points, |point| &point.id)?;
+    let mut spans = Vec::new();
+    for face in topology.faces {
+        ctx.charge_work(1, "scan SLDPRT hole bore faces")?;
+        let Some(surface) = surfaces.get(&face.surface) else {
+            continue;
+        };
+        let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
+        else {
+            continue;
+        };
+        let origin = cylinder_surface.origin().get();
+        let axis = FeatureDirection3::from(*cylinder_surface.frame().axis());
+        let radius = cylinder_surface.radius().get();
+        for loop_id in &face.loops {
+            ctx.charge_work(1, "scan SLDPRT hole bore loops")?;
+            if let Some(loop_) = loops.get(loop_id) {
+                ctx.charge_work(u64_from_index(loop_.coedges().len()), "scan SLDPRT hole bore coedges")?;
+                for _ in loop_.vertices() {
+                    ctx.charge_work(1, "scan SLDPRT hole bore vertices")?;
+                }
+            }
+        }
+        let mut stations = face
+            .loops
+            .iter()
+            .filter_map(|loop_id| loops.get(loop_id))
+            .flat_map(|loop_| {
+                loop_
+                    .coedges()
+                    .iter()
+                    .filter_map(|coedge_id| coedges.get(coedge_id))
+                    .filter_map(|coedge| edges.get(&coedge.edge))
+                    .flat_map(|edge| [&edge.start, &edge.end])
+                    .chain(loop_.vertices())
+            })
+            .filter_map(|vertex_id| vertices.get(vertex_id))
+            .filter_map(|vertex| points.get(&vertex.point))
+            .map(|point| {
+                Vector3::new(
+                    point.position().get().x - origin.x,
+                    point.position().get().y - origin.y,
+                    point.position().get().z - origin.z,
+                )
+                .dot(axis.get())
+            });
+        let Some(first) = stations.next() else {
+            continue;
+        };
+        let mut minimum = first;
+        let mut maximum = first;
+        for station in stations {
+            ctx.charge_work(1, "scan SLDPRT hole bore stations")?;
+            minimum = minimum.min(station);
+            maximum = maximum.max(station);
+        }
+        let span = maximum - minimum;
+        if span.is_finite() && span > 0.0 {
+            ctx.reserve_collection_vec(&mut spans, 1, "collect SLDPRT hole bore spans")?;
+            spans.push((origin, axis, radius, span, face.sense == Sense::Reversed));
+        }
+    }
+    Ok(spans)
 }
 
 pub(crate) fn project_topological_hole_constructions(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     topology: &HoleTopology<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let bore_faces = cylindrical_bore_face_spans(topology);
+    let bore_faces = cylindrical_bore_face_spans(ctx, topology)?;
     for feature in features {
         let mut definition = feature.evaluation.definition().clone();
         'feature_edit: {

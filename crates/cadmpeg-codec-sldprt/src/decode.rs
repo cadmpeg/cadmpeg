@@ -3036,6 +3036,7 @@ fn build_geometry_ir(
         &ir.model.surfaces,
     );
     crate::resolved_features::holes::project_topological_hole_constructions(
+        ctx,
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
             surfaces: &ir.model.surfaces,
@@ -4244,6 +4245,7 @@ fn build_metadata_ir(
         &lanes,
     );
     crate::resolved_features::holes::project_topological_hole_constructions(
+        ctx,
         &mut ir.model.features,
         &crate::resolved_features::holes::HoleTopology {
             surfaces: &ir.model.surfaces,

@@ -81,6 +81,52 @@ fn hole_topology_axes_refuse_lookup_work() {
 }
 
 #[test]
+fn topological_hole_constructions_refuse_topology_index_collection() {
+    let surfaces = [cylinder(0, 0.0)];
+    let topology = HoleTopology {
+        surfaces: &surfaces,
+        faces: &[],
+        loops: &[],
+        coedges: &[],
+        edges: &[],
+        vertices: &[],
+        points: &[],
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let error = project_topological_hole_constructions(&ctx, &mut [model_hole()], &topology)
+        .expect_err("one surface index entry requires collection admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "index SLDPRT hole topology records"));
+}
+
+#[test]
+fn topological_hole_constructions_refuse_topology_index_work() {
+    let surfaces = [cylinder(0, 0.0)];
+    let topology = HoleTopology {
+        surfaces: &surfaces,
+        faces: &[],
+        loops: &[],
+        coedges: &[],
+        edges: &[],
+        vertices: &[],
+        points: &[],
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
+    let error = project_topological_hole_constructions(&ctx, &mut [model_hole()], &topology)
+        .expect_err("one surface index entry requires work admission");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "index SLDPRT hole topology records"));
+}
+
+#[test]
 fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
     let plane_frame = SketchPlaneFrame::from_frame(
         (
@@ -874,7 +920,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
     )
     .unwrap();
     updated_hole_evaluation.set_definition(updated_hole_definition);
-    project_topological_hole_constructions(std::slice::from_mut(&mut hole), &topology).unwrap();
+    project_topological_hole_constructions(&ctx, std::slice::from_mut(&mut hole), &topology).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
         hole.evaluation.definition()
     else {
