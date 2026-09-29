@@ -317,3 +317,9 @@ fn serialized_inline_code_must_match_the_inline_byte_count() {
         .expect_err("inline code disagreeing with the byte count");
     assert!(error.to_string().contains("code"), "{error}");
 }
+
+#[test]
+fn inline_bytes_serialization_refuses_wrapped_length() {
+    let bytes = InlineBytes(vec![0; 256]);
+    assert!(serde_json::to_value(&bytes).is_err());
+}

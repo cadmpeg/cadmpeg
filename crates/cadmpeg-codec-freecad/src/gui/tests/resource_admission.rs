@@ -612,7 +612,7 @@ fn gui_material_appearance_name_refuses_at_retained_limit() {
 #[test]
 fn gui_material_asset_guid_refuses_at_retained_limit() {
     let name = "Provider face 1 material";
-    let error = material_appearance_refusal(name.len() as u64);
+    let error = material_appearance_refusal(cadmpeg_core::decode::u64_from_index(name.len()));
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
@@ -991,7 +991,7 @@ fn gui_provider_object_identity_refuses_at_retained_limit() {
 fn gui_provider_key_refuses_before_encoding() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = "A%20B%23".len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("A%20B%23".len()) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     let error = super::super::provider_identity_key(&ctx, "A B#")
@@ -1019,7 +1019,7 @@ fn gui_object_appearance_identity_refuses_at_retained_limit() {
     let identity = format!("fcstd:appearance:object#{key}");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = identity.len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(identity.len()) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     let error = super::super::object_appearance_id(&ctx, &key)
@@ -1048,7 +1048,7 @@ fn assert_gui_identity_refusal(
 ) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     let error = make(&ctx).expect_err("identity must charge before construction");
@@ -1142,7 +1142,8 @@ fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
     let mut options = DecodeOptions::default();
     // The ZIP snapshot retains four copies of each decoded central-directory name.
     let zip_names = 4 * ("Document.xml".len() + "GuiDocument.xml".len());
-    options.policy.limits.max_retained_bytes = (zip_names + document.len() + gui.len()) as u64;
+    options.policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(zip_names + document.len() + gui.len());
     let mut error = None;
     for _ in 0..256 {
         let refused = FcstdCodec
@@ -1495,9 +1496,9 @@ fn gui_asset_identity_refuses_at_retained_limit() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        (document_id.len() + "Other".len() + crate::native::native_id("entry", "asset").len() - 1)
-            as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        document_id.len() + "Other".len() + crate::native::native_id("entry", "asset").len() - 1,
+    );
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::super::transfer_neutral_presentation(&ctx,
@@ -1512,11 +1513,13 @@ fn gui_state_identity_refuses_at_retained_limit() {
     let document = roxmltree::Document::parse(xml).expect("GUI state XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = ("Camera".len()
-        + xml.len()
-        + "Camera:0".len()
-        + crate::native::native_id("gui-state", "Camera:0").len()
-        - 1) as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        "Camera".len()
+            + xml.len()
+            + "Camera:0".len()
+            + crate::native::native_id("gui-state", "Camera:0").len()
+            - 1,
+    );
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
             .expect("GUI state context");
@@ -1667,7 +1670,7 @@ fn y4_2_gui_state_xml_copy_refuses_at_the_retained_byte_limit() {
     let node = roxmltree::Document::parse(xml).expect("GUI state XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = "Camera".len() as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("Camera".len());
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
             .expect("GUI state context");

@@ -1006,10 +1006,10 @@ fn targeted_surface_resolution_follows_a_supported_surface_to_a_rolling_ball_car
         1,
         Some(B5Surface::RollingBall {
             carrier_object_id: 1,
-            definition: ProceduralSurfaceDefinition::Unknown {
+            definition: Box::new(ProceduralSurfaceDefinition::Unknown {
                 record: None,
                 cache: None,
-            },
+            }),
         }),
     )]);
     assert_eq!(
@@ -1130,10 +1130,10 @@ fn targeted_surface_resolution_has_no_alias_depth_limit() {
         21,
         Some(B5Surface::RollingBall {
             carrier_object_id: 21,
-            definition: ProceduralSurfaceDefinition::Unknown {
+            definition: Box::new(ProceduralSurfaceDefinition::Unknown {
                 record: None,
                 cache: None,
-            },
+            }),
         }),
     )]);
     assert_eq!(
@@ -1170,10 +1170,10 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
         1,
         Some(B5Surface::RollingBall {
             carrier_object_id: 1,
-            definition: ProceduralSurfaceDefinition::Unknown {
+            definition: Box::new(ProceduralSurfaceDefinition::Unknown {
                 record: None,
                 cache: None,
-            },
+            }),
         }),
     )]);
     let resolved = HashMap::from([(
@@ -1212,7 +1212,12 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
 fn requested_edge_support_scan_closes_through_its_unique_wrapper() {
     let mut bytes = Vec::new();
     let append = |bytes: &mut Vec<u8>, class, object_id: u32, payload: &[u8]| {
-        bytes.extend_from_slice(&[0xb5, 0x03, class, payload.len() as u8]);
+        bytes.extend_from_slice(&[
+            0xb5,
+            0x03,
+            class,
+            u8::try_from(payload.len()).expect("fixture value fits u8"),
+        ]);
         bytes.extend_from_slice(&object_id.to_le_bytes());
         bytes.extend_from_slice(payload);
     };

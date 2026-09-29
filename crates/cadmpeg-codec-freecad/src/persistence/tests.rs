@@ -35,7 +35,7 @@ fn persistence_object_identity_refuses_at_retained_limit() {
     assert_retained_operation(
         &parse_with_retained_limit(
             document,
-            ("Body".len() + "Part::Feature".len() + id_len) as u64 - 1,
+            cadmpeg_core::decode::u64_from_index("Body".len() + "Part::Feature".len() + id_len) - 1,
         ),
         "FreeCAD native identity",
     );
@@ -57,7 +57,7 @@ fn persistence_property_identity_refuses_at_retained_limit() {
     let owner = "fcstd:native:object#Body";
     let expected = crate::native::native_child_id("property", owner, "Shape");
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(
@@ -81,7 +81,8 @@ fn persistence_extension_identity_refuses_at_retained_limit() {
     let child = "2:Proxy";
     let expected = crate::native::native_child_id("extension", owner, child);
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = ("2".len() + child.len() + expected.len()) as u64 - 1;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("2".len() + child.len() + expected.len()) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::extension_id(&ctx, owner, "Proxy", 2),
@@ -491,7 +492,7 @@ fn x63_decode_counts_object_copies_in_retained_budget() {
         .expect("service profile admits the object");
 
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = document.len() as u64;
+    options.policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(document.len());
     let mut error = None;
     for _ in 0..256 {
         let refused = FcstdCodec
@@ -565,7 +566,10 @@ fn x63_transient_and_persisted_property_xml_copies_are_charged() {
 fn x63_nested_value_xml_charges_the_actual_copied_bytes() {
     let document = r#"<Document SchemaVersion="4"><Properties Count="1"><Property name="P" type="App::PropertyString"><String value="x"/></Property></Properties><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
     assert_retained_operation(
-        &parse_with_retained_limit(document, 1 + "App::PropertyString".len() as u64 + 6 + 5 + 1),
+        &parse_with_retained_limit(
+            document,
+            1 + cadmpeg_core::decode::u64_from_index("App::PropertyString".len()) + 6 + 5 + 1,
+        ),
         "FCStd value XML",
     );
 }
@@ -583,7 +587,10 @@ fn x63_link_target_attribute_copy_is_charged() {
         + "A".len()
         + value.len();
     assert_retained_operation(
-        &parse_with_retained_limit(&document, prior_copies as u64),
+        &parse_with_retained_limit(
+            &document,
+            cadmpeg_core::decode::u64_from_index(prior_copies),
+        ),
         "FCStd link object",
     );
 }

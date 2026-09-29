@@ -12,6 +12,8 @@
 //! [`crate::variant::Variant`]. [`summarize`] converts the scan into the
 //! container view returned by codec inspection.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use cadmpeg_core::container::{CompressionMethod, ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::borrow::Cow;
@@ -859,10 +861,11 @@ pub(crate) fn consolidated_record_sources(
             for descriptor in &directory.descriptors {
                 let mut source = Vec::new();
                 for extent in &descriptor.extents {
-                    let Some(start) = directory.inner.checked_add(extent.phys_off as usize) else {
+                    let Some(start) = directory.inner.checked_add(index_from_u32(extent.phys_off))
+                    else {
                         continue;
                     };
-                    let Some(end) = start.checked_add(extent.phys_len as usize) else {
+                    let Some(end) = start.checked_add(index_from_u32(extent.phys_len)) else {
                         continue;
                     };
                     // A descriptor extent the image does not hold states no record
@@ -1119,7 +1122,7 @@ fn parse_directory_region(
                     let logical_length =
                         View::u32_be_at(dirbuf, ds + stream_desc::LOGICAL_STREAM_LENGTH)
                             .unwrap_or(0);
-                    if logical_length as usize == cum {
+                    if index_from_u32(logical_length) == cum {
                         let name = descriptor_name(ctx, dirbuf, ds)?;
                         ctx.push_vec(
                             &mut descriptors,
@@ -1186,7 +1189,7 @@ fn directory_region_has_descriptor(
         let ds = o - stream_desc::EXTENT_COUNT;
         if cum > 0
             && View::u32_be_at(dirbuf, ds + stream_desc::LOGICAL_STREAM_LENGTH)
-                .is_some_and(|length| length as usize == cum)
+                .is_some_and(|length| index_from_u32(length) == cum)
         {
             return true;
         }
@@ -1205,10 +1208,7 @@ fn parse_extents(
     physical_base: usize,
     file_len: usize,
 ) -> Result<Option<(Vec<Extent>, usize)>, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(k),
-        "catia_extent_validation",
-    )?;
+    ctx.charge_work(u64_from_index(k), "catia_extent_validation")?;
     let Some(cum) = validate_extents(dirbuf, o, k, physical_base, file_len) else {
         return Ok(None);
     };
@@ -1234,16 +1234,16 @@ fn validate_extents(
     for i in 0..k {
         let (extent, log_len, log_off) = read_extent_fields(dirbuf, o, i)?;
         let phys_end = physical_base
-            .checked_add(extent.phys_off as usize)
-            .and_then(|start| start.checked_add(extent.phys_len as usize));
+            .checked_add(index_from_u32(extent.phys_off))
+            .and_then(|start| start.checked_add(index_from_u32(extent.phys_len)));
         if extent.phys_len == 0
             || phys_end.is_none_or(|end| end > file_len)
-            || log_off as usize != cum
+            || index_from_u32(log_off) != cum
             || log_len != extent.phys_len
         {
             return None;
         }
-        let next = cum.checked_add(log_len as usize)?;
+        let next = cum.checked_add(index_from_u32(log_len))?;
         cum = next;
     }
     Some(cum)
@@ -1352,8 +1352,8 @@ fn reconstruct_logical_stream(
             .extents
             .iter()
             .try_fold(0usize, |logical_length, extent| {
-                let start = inner.checked_add(extent.phys_off as usize)?;
-                let end = start.checked_add(extent.phys_len as usize)?;
+                let start = inner.checked_add(index_from_u32(extent.phys_off))?;
+                let end = start.checked_add(index_from_u32(extent.phys_len))?;
                 (end <= data.len())
                     .then(|| logical_length.checked_add(end - start))
                     .flatten()
@@ -1361,13 +1361,13 @@ fn reconstruct_logical_stream(
     else {
         return Ok(Vec::new());
     };
-    let bytes = cadmpeg_core::decode::u64_from_index(logical_length);
+    let bytes = u64_from_index(logical_length);
     ctx.charge_retained(bytes, "catia_logical_stream_bytes")?;
     let mut out = Vec::new();
     ctx.reserve_vec(&mut out, logical_length, "catia_logical_stream_bytes")?;
     for extent in &descriptor.extents {
-        let start = inner + extent.phys_off as usize;
-        let end = start + extent.phys_len as usize;
+        let start = inner + index_from_u32(extent.phys_off);
+        let end = start + index_from_u32(extent.phys_len);
         out.extend_from_slice(&data[start..end]);
     }
     Ok(out)
@@ -1403,7 +1403,7 @@ pub(crate) fn outer_container_for_extent<'a>(
     byte_len: u64,
 ) -> Option<&'a OuterContainerDeclaration> {
     let byte_end = byte_offset.checked_add(byte_len)?;
-    let physical_base = cadmpeg_core::decode::u64_from_index(outer.inner);
+    let physical_base = u64_from_index(outer.inner);
     let mut containing = declarations.iter().filter(|declaration| {
         outer
             .descriptors
@@ -1907,7 +1907,7 @@ pub(crate) fn summarize(
                 role: ContainerRole::Preview,
                 storage: EntryStorage::Compressed {
                     method: CompressionMethod::Jpeg,
-                    stored: Some((preview.range.end - preview.range.start) as u64),
+                    stored: Some(u64_from_index(preview.range.end - preview.range.start)),
                     expanded: None,
                 },
                 attributes,
@@ -1982,7 +1982,7 @@ pub(crate) fn summarize(
                 role: ContainerRole::FinjplSegment,
                 storage: EntryStorage::verbatim(
                     VerbatimLabel::None,
-                    (segment.range.end - segment.range.start) as u64,
+                    u64_from_index(segment.range.end - segment.range.start),
                 ),
                 attributes,
             },

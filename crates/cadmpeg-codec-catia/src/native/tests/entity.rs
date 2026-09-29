@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_core::decode::u64_from_index;
+
 use cadmpeg_test_support::wire;
 
 use std::io::Cursor;
@@ -43,7 +45,7 @@ fn inline_entity_and_object_records_pair_by_extent_and_cardinality() {
     let graph = native
         .object_graphs
         .iter()
-        .find(|graph| graph.byte_offset == graph_offset as u64)
+        .find(|graph| graph.byte_offset == u64_from_index(graph_offset))
         .expect("entity-paired graph");
     assert_eq!(graph.records.len(), 1);
     assert_eq!(graph.records[0].entity_id(), Some(1));
@@ -1575,7 +1577,7 @@ fn native_namespace_binds_and_validates_definition_values() {
         .storage
         .as_mut()
         .expect("decoded storage role")
-        .storage_record = None;
+        .record = None;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_storage
         .store(&mut namespace)
@@ -1787,5 +1789,8 @@ fn the_minimal_parsed_entity_frame_is_the_empty_nested_body() {
         crate::native::CatiaEntityRecordBody::empty_nested()
     );
     assert_eq!(record.byte_len(), 24);
-    assert_eq!(record.byte_len() as usize, frame.len());
+    assert_eq!(
+        cadmpeg_core::decode::index_from_u64(record.byte_len()).expect("fixture length fits usize"),
+        frame.len()
+    );
 }

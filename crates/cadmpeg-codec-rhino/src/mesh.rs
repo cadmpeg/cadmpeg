@@ -1943,14 +1943,17 @@ mod tests {
 
     fn chunk(body: &[u8]) -> Vec<u8> {
         let mut result = 0x4000_8000_u32.to_le_bytes().to_vec();
-        result.extend(((body.len() + 4) as i64).to_le_bytes());
+        result
+            .extend((i64::try_from(body.len() + 4).expect("fixture value fits i64")).to_le_bytes());
         result.extend(body);
         result.extend(crc32fast::hash(body).to_le_bytes());
         result
     }
 
     fn buffer(value: &[u8], method: u8) -> Vec<u8> {
-        let mut result = (value.len() as u32).to_le_bytes().to_vec();
+        let mut result = (u32::try_from(value.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         result.extend(crc32fast::hash(value).to_le_bytes());
         result.push(method);
         if method == 0 {
@@ -1971,7 +1974,7 @@ mod tests {
         body.extend(3_i32.to_le_bytes());
         body.extend(0_u32.to_le_bytes());
         body.extend(0_u32.to_le_bytes());
-        body.extend((points.len() as i32).to_le_bytes());
+        body.extend((i32::try_from(points.len()).expect("fixture value fits i32")).to_le_bytes());
         for point in points {
             for coordinate in point {
                 body.extend(coordinate.to_le_bytes());
@@ -2006,7 +2009,7 @@ mod tests {
         body.extend(1_i32.to_le_bytes());
         body.extend(minor.to_le_bytes());
         body.extend(1_i32.to_le_bytes());
-        body.extend((vertices.len() as i32).to_le_bytes());
+        body.extend((i32::try_from(vertices.len()).expect("fixture value fits i32")).to_le_bytes());
         body.extend(vertices.iter().flat_map(|value| value.to_le_bytes()));
         body.extend(faces.iter().flat_map(|value| value.to_le_bytes()));
         if minor >= 1 {
@@ -2035,7 +2038,7 @@ mod tests {
         let mut body = version.to_le_bytes().to_vec();
         body.extend(7_i32.to_le_bytes());
         for value in 0..30 {
-            body.extend((value as f64).to_le_bytes());
+            body.extend((f64::from(value)).to_le_bytes());
         }
         if mapping {
             body.extend(2_i32.to_le_bytes());
@@ -2927,8 +2930,10 @@ mod tests {
             let mut bytes = width.to_le_bytes().to_vec();
             for index in [0_u32, 1, 2, 2] {
                 match width {
-                    1 => bytes.push(index as u8),
-                    2 => bytes.extend((index as u16).to_le_bytes()),
+                    1 => bytes.push(u8::try_from(index).expect("fixture value fits u8")),
+                    2 => bytes.extend(
+                        (u16::try_from(index).expect("fixture value fits u16")).to_le_bytes(),
+                    ),
                     4 => bytes.extend(index.to_le_bytes()),
                     _ => unreachable!(),
                 }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entity-table bodies and their resolved native productions.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use super::{
     entity_suffix_framing, entity_suffix_value, CatiaConstraintRange, CatiaDefinitionChainValue,
     CatiaDefinitionSchemaSelection, CatiaDefinitionValue, CatiaEntityReference,
@@ -115,17 +117,17 @@ impl CatiaEntityRecord {
     /// Total framed byte length.
     pub(super) fn byte_len(&self) -> u64 {
         match &self.body {
-            CatiaEntityRecordBody::Inline(bytes) => 6 + bytes.len() as u64,
+            CatiaEntityRecordBody::Inline(bytes) => 6 + u64_from_index(bytes.len()),
             CatiaEntityRecordBody::Nested {
                 definition_prefix,
                 definition_suffix,
                 value_payload,
                 record_suffix,
             } => {
-                24 + definition_prefix.len() as u64
-                    + definition_suffix.len() as u64
-                    + value_payload.len() as u64
-                    + record_suffix.len() as u64
+                24 + u64_from_index(definition_prefix.len())
+                    + u64_from_index(definition_suffix.len())
+                    + u64_from_index(value_payload.len())
+                    + u64_from_index(record_suffix.len())
             }
         }
     }
@@ -599,10 +601,11 @@ impl CatiaEntityRecordWire {
                 record_suffix,
             } => (
                 None,
-                11 + definition_prefix.len() as u64 + definition_suffix.len() as u64,
+                11 + u64_from_index(definition_prefix.len())
+                    + u64_from_index(definition_suffix.len()),
                 definition_prefix,
                 definition_suffix,
-                6 + value_payload.len() as u64,
+                6 + u64_from_index(value_payload.len()),
                 value_payload,
                 record_suffix,
             ),
@@ -706,17 +709,21 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
     fn try_from(wire: CatiaEntityRecordWire) -> Result<Self, Self::Error> {
         if wire.inline_body.is_none() {
             if wire.definition_len
-                != 11 + wire.definition_prefix.len() as u64 + wire.definition_suffix.len() as u64
+                != 11
+                    + u64_from_index(wire.definition_prefix.len())
+                    + u64_from_index(wire.definition_suffix.len())
             {
                 return Err("definition_len disagrees with definition bytes".to_owned());
             }
-            if wire.value_len != 6 + wire.value_payload.len() as u64 {
+            if wire.value_len != 6 + u64_from_index(wire.value_payload.len()) {
                 return Err("value_len disagrees with value_payload".to_owned());
             }
         }
         let byte_len = match &wire.inline_body {
-            Some(bytes) => 6 + bytes.len() as u64,
-            None => 7 + wire.definition_len + wire.value_len + wire.record_suffix.len() as u64,
+            Some(bytes) => 6 + u64_from_index(bytes.len()),
+            None => {
+                7 + wire.definition_len + wire.value_len + u64_from_index(wire.record_suffix.len())
+            }
         };
         if wire.byte_len != byte_len {
             return Err("byte_len disagrees with body".to_owned());

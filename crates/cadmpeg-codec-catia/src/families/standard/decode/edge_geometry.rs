@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard carrier curves, pcurves, and analytic geometry.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use super::{
     annotate, cgm_source, circle_parameter_range_from_surface_branch, face_surface, ordered_range,
     point_on_nurbs_surface, rational_pcurve_arc, standard_id,
@@ -1039,21 +1041,51 @@ pub(super) fn standard_oriented_native_support_pcurves(
     Ok(Some([first, second]))
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(super) struct BuildStandardEdgeCurveInputs<
+    'input0,
+    'input1,
+    'input2,
+    'input3,
+    'input4,
+    'input5,
+    'input6,
+    'input7,
+    'input8,
+    'input9,
+    'input10,
+    'input11,
+> {
+    pub(super) ir: &'input0 mut CadIr,
+    pub(super) annotations: &'input1 mut AnnotationBuilder,
+    pub(super) bindings: &'input2 [(SurfaceId, bool, usize)],
+    pub(super) surface_indices: &'input3 HashMap<SurfaceId, usize>,
+    pub(super) brep: &'input4 [u8],
+    pub(super) support: &'input5 crate::families::standard::records::StandardCurveSupport,
+    pub(super) points: [usize; 2],
+    pub(super) native_support: Option<&'input6 StandardEdgeSupport>,
+    pub(super) limit_curve: Option<(&'input7 NurbsCurve, [f64; 2])>,
+    pub(super) refusal: &'input8 mut crate::nurbs::LaneRefusals,
+    pub(super) admission: &'input11 mut FamilyEntityAdmission<'input9, 'input10>,
+}
+
 pub(super) fn build_standard_edge_curve(
     ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    bindings: &[(SurfaceId, bool, usize)],
-    surface_indices: &HashMap<SurfaceId, usize>,
-    brep: &[u8],
-    support: &crate::families::standard::records::StandardCurveSupport,
-    points: [usize; 2],
-    native_support: Option<&StandardEdgeSupport>,
-    limit_curve: Option<(&NurbsCurve, [f64; 2])>,
-    refusal: &mut crate::nurbs::LaneRefusals,
-    admission: &mut FamilyEntityAdmission<'_, '_>,
+    inputs: BuildStandardEdgeCurveInputs<'_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_, '_>,
 ) -> Result<(Option<CurveId>, Option<[f64; 2]>), cadmpeg_core::CodecError> {
+    let BuildStandardEdgeCurveInputs {
+        ir,
+        annotations,
+        bindings,
+        surface_indices,
+        brep,
+        support,
+        points,
+        native_support,
+        limit_curve,
+        refusal,
+        admission,
+    } = inputs;
+
     let (mut geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
             let start_point = &ir.model.points[points[0]];
@@ -1158,21 +1190,7 @@ pub(super) fn build_standard_edge_curve(
                         let reference = cadmpeg_ir::geometry::derive_reference_direction(
                             *candidate_axis.as_raw(),
                         );
-                        let mut range = standard_circle_param_range(
-                            ctx,
-                            ir,
-                            bindings,
-                            surface_indices,
-                            brep,
-                            support,
-                            center,
-                            radius,
-                            *candidate_axis.as_raw(),
-                            reference,
-                            start,
-                            end,
-                            refusal,
-                        )?;
+                        let mut range = standard_circle_param_range(ctx, crate::families::standard::decode::edge_geometry::StandardCircleParamRangeInputs { ir, bindings, surface_indices, brep, support, center, radius, axis: *candidate_axis.as_raw(), ref_direction: reference, start, end, refusal })?;
                         if range.is_none() {
                             if let Some(native) = native_support {
                                 range = native_support_circle_param_range(
@@ -1365,7 +1383,7 @@ pub(super) fn build_standard_edge_curve(
         annotations,
         &id,
         "MainDataStream+SurfacicReps",
-        support.pos as u64,
+        u64_from_index(support.pos),
         "curve_support_60",
         match (&support.geometry, &geometry) {
             (_, CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })) => Exactness::Unknown,
@@ -1571,7 +1589,7 @@ pub(super) fn build_standard_edge_curve(
                     annotations,
                     &procedural_id,
                     "MainDataStream+SurfacicReps",
-                    support.pos as u64,
+                    u64_from_index(support.pos),
                     "standard_surface_intersection",
                     Exactness::Derived,
                 )?;
@@ -1900,22 +1918,47 @@ pub(super) fn circular_ranges_are_nonoverlapping_or_coincident_by(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(super) struct StandardCircleParamRangeInputs<
+    'input0,
+    'input1,
+    'input2,
+    'input3,
+    'input4,
+    'input5,
+> {
+    pub(super) ir: &'input0 CadIr,
+    pub(super) bindings: &'input1 [(SurfaceId, bool, usize)],
+    pub(super) surface_indices: &'input2 HashMap<SurfaceId, usize>,
+    pub(super) brep: &'input3 [u8],
+    pub(super) support: &'input4 crate::families::standard::records::StandardCurveSupport,
+    pub(super) center: Point3,
+    pub(super) radius: f64,
+    pub(super) axis: Vector3,
+    pub(super) ref_direction: Vector3,
+    pub(super) start: Point3,
+    pub(super) end: Point3,
+    pub(super) refusal: &'input5 mut crate::nurbs::LaneRefusals,
+}
+
 pub(super) fn standard_circle_param_range(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    bindings: &[(SurfaceId, bool, usize)],
-    surface_indices: &HashMap<SurfaceId, usize>,
-    brep: &[u8],
-    support: &crate::families::standard::records::StandardCurveSupport,
-    center: Point3,
-    radius: f64,
-    axis: Vector3,
-    ref_direction: Vector3,
-    start: Point3,
-    end: Point3,
-    refusal: &mut crate::nurbs::LaneRefusals,
+    inputs: StandardCircleParamRangeInputs<'_, '_, '_, '_, '_, '_>,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
+    let StandardCircleParamRangeInputs {
+        ir,
+        bindings,
+        surface_indices,
+        brep,
+        support,
+        center,
+        radius,
+        axis,
+        ref_direction,
+        start,
+        end,
+        refusal,
+    } = inputs;
+
     let mut selected: Option<[f64; 2]> = None;
     for face in &support.faces {
         let Some(surface) = face_surface(ir, bindings, surface_indices, *face) else {
@@ -1942,15 +1985,17 @@ pub(super) fn standard_circle_param_range(
             continue;
         };
         let Some(range) = circle_parameter_range_from_surface_branch(
-            &surface.geometry,
-            center,
-            radius,
-            axis,
-            ref_direction,
-            start,
-            end,
-            *line_pcurve.origin(),
-            (*line_pcurve.direction()).into(),
+            crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                surface: &surface.geometry,
+                center,
+                radius,
+                axis,
+                ref_direction,
+                start,
+                end,
+                pcurve_origin: *line_pcurve.origin(),
+                pcurve_direction: (*line_pcurve.direction()).into(),
+            },
         )?
         else {
             continue;
@@ -1968,7 +2013,6 @@ pub(super) fn standard_circle_param_range(
     Ok(selected)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn native_support_circle_param_range(
     support: &StandardEdgeSupport,
     center: Point3,
@@ -2114,7 +2158,7 @@ pub(super) fn attach_standard_circles(
             annotations,
             &id,
             "MainDataStream+SurfacicReps",
-            support.pos as u64,
+            u64_from_index(support.pos),
             "curve_support_60_circle",
             Exactness::ByteExact,
         )?;
@@ -2349,7 +2393,7 @@ pub(super) fn attach_standard_lines(
             annotations,
             &id,
             "MainDataStream+SurfacicReps",
-            support.pos as u64,
+            u64_from_index(support.pos),
             "curve_support_60_line",
             Exactness::ByteExact,
         )?;

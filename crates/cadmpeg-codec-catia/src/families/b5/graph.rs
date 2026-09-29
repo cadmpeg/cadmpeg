@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object-id topology in the CATIA `b5 03` short-frame family.
 
+use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_i64, truncate_f64_to_usize};
+use cadmpeg_core::decode::u64_from_index;
+
 type VertexComponentOutput = Result<(HashMap<u32, usize>, Vec<usize>, bool), CodecError>;
 type CirclePcurveFields = Option<(u32, [f64; 2], f64, [f64; 2], [f64; 2])>;
 type Class1aPcurveFields = Option<(u32, [f64; 2], [f64; 2], [f64; 2], f64, [f64; 2], [f64; 2])>;
@@ -245,7 +248,6 @@ impl B5Profile {
 
 /// A resolved `b5 03` surface node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::large_enum_variant)]
 pub(in crate::families) enum B5Surface {
     /// A NURBS surface whose parameter lattice is decoded but whose pole
     /// representation remains opaque.
@@ -396,7 +398,7 @@ pub(in crate::families) enum B5Surface {
         /// Persistent object id of the `a8 03 32` result carrier.
         carrier_object_id: u32,
         /// Exact procedural definition decoded from the stored jet.
-        definition: ProceduralSurfaceDefinition,
+        definition: Box<ProceduralSurfaceDefinition>,
     },
 }
 
@@ -1123,7 +1125,7 @@ fn parse_from_records_with_class21(
                 jet.object_id,
                 B5Surface::RollingBall {
                     carrier_object_id: jet.object_id,
-                    definition,
+                    definition: Box::new(definition),
                 },
             )?;
         }
@@ -1697,8 +1699,11 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
         }
         B5Surface::RollingBall {
             carrier_object_id,
-            definition: ProceduralSurfaceDefinition::RollingBallJet(jet),
+            definition,
         } => {
+            let ProceduralSurfaceDefinition::RollingBallJet(jet) = definition.as_ref() else {
+                return Ok(surface.clone());
+            };
             let stations =
                 ctx.copy_retained_slice(jet.stations(), "catia_b5_copied_rolling_ball_stations")?;
             let jet =
@@ -1706,7 +1711,7 @@ fn copy_surface(ctx: &DecodeContext<'_>, surface: &B5Surface) -> Result<B5Surfac
                     .map_err(CodecError::malformed)?;
             B5Surface::RollingBall {
                 carrier_object_id: *carrier_object_id,
-                definition: ProceduralSurfaceDefinition::RollingBallJet(jet),
+                definition: Box::new(ProceduralSurfaceDefinition::RollingBallJet(jet)),
             }
         }
         other => other.clone(),
@@ -1828,7 +1833,7 @@ fn parse_a8_class21_pcurve(
         count: usize,
         operation: &'static str,
     ) -> Result<(), CodecError> {
-        let items = cadmpeg_core::decode::u64_from_index(count);
+        let items = u64_from_index(count);
         ctx.charge_collection_items(items, operation)
     }
 
@@ -2289,7 +2294,7 @@ pub(in crate::families) fn targeted_surfaces_from_frames(
             jet.object_id,
             B5Surface::RollingBall {
                 carrier_object_id: jet.object_id,
-                definition,
+                definition: Box::new(definition),
             },
         )?;
     }
@@ -3492,8 +3497,10 @@ fn pcurve_endpoints(
 /// CATIA's object-stream on-carrier incidence tolerance, in millimetres.
 const POINT_TOLERANCE: f64 = 1e-3;
 
-fn point_cell(point: [f64; 3]) -> [i64; 3] {
-    point.map(|coordinate| (coordinate / POINT_TOLERANCE).floor() as i64)
+fn point_cell(point: [f64; 3]) -> Option<[i64; 3]> {
+    let [x, y, z] =
+        point.map(|coordinate| truncate_f64_to_i64((coordinate / POINT_TOLERANCE).floor()));
+    Some([x?, y?, z?])
 }
 
 fn point_index(
@@ -3502,7 +3509,8 @@ fn point_index(
 ) -> Result<HashMap<[i64; 3], Vec<usize>>, CodecError> {
     let mut index = HashMap::<[i64; 3], Vec<usize>>::new();
     for (point_index, point) in points.iter().enumerate() {
-        let cell = point_cell(coordinates(*point));
+        let cell = point_cell(coordinates(*point))
+            .ok_or_else(|| CodecError::malformed("B5 point exceeds spatial index range"))?;
         ctx.admit_hash_map_entry(&mut index, &cell, "catia_b5_point_index_cells")?;
         ctx.push_vec(
             index.entry(cell).or_default(),
@@ -3518,7 +3526,7 @@ fn canonical_point(
     index: &HashMap<[i64; 3], Vec<usize>>,
     endpoint: [f64; 3],
 ) -> Option<usize> {
-    let cell = point_cell(endpoint);
+    let cell = point_cell(endpoint)?;
     let mut best = None;
     for dx in -1..=1 {
         for dy in -1..=1 {
@@ -4797,7 +4805,7 @@ fn parse_offset_curve_directrix(
     }
     ctx.charge_collection_items(1, "catia_b5_offset_directrix_box")?;
     ctx.charge_retained(
-        std::mem::size_of::<B5ExtrusionDirectrix>() as u64,
+        u64_from_index(std::mem::size_of::<B5ExtrusionDirectrix>()),
         "catia_b5_offset_directrix_box",
     )?;
     Ok(Some(B5ExtrusionDirectrix::Offset {
@@ -5268,14 +5276,16 @@ fn parse_circle_pcurve(
     };
     rational_arc_pcurve(
         ctx,
-        record,
-        surface,
-        center,
-        [1.0, 0.0],
-        [0.0, 1.0],
-        radius,
-        range,
-        angles,
+        crate::families::b5::graph::RationalArcPcurveInputs {
+            record,
+            surface,
+            center,
+            reference_x: [1.0, 0.0],
+            reference_y: [0.0, 1.0],
+            radius,
+            parameter_range: range,
+            angle_range: angles,
+        },
     )
 }
 
@@ -5321,14 +5331,16 @@ fn parse_class_1a_pcurve(
     };
     rational_arc_pcurve(
         ctx,
-        record,
-        surface,
-        center,
-        reference_x,
-        reference_y,
-        radius,
-        range,
-        angles,
+        crate::families::b5::graph::RationalArcPcurveInputs {
+            record,
+            surface,
+            center,
+            reference_x,
+            reference_y,
+            radius,
+            parameter_range: range,
+            angle_range: angles,
+        },
     )
 }
 
@@ -5376,11 +5388,9 @@ fn parse_class_1a_pcurve_fields(record: &B5Record) -> Class1aPcurveFields {
         angles,
     ))
 }
-
-#[allow(clippy::too_many_arguments)]
-fn rational_arc_pcurve(
-    ctx: &DecodeContext<'_>,
-    record: &B5Record,
+#[derive(Clone, Copy)]
+struct RationalArcPcurveInputs<'input0> {
+    record: &'input0 B5Record,
     surface: u32,
     center: [f64; 2],
     reference_x: [f64; 2],
@@ -5388,17 +5398,34 @@ fn rational_arc_pcurve(
     radius: f64,
     parameter_range: [f64; 2],
     angle_range: [f64; 2],
+}
+
+fn rational_arc_pcurve(
+    ctx: &DecodeContext<'_>,
+    inputs: RationalArcPcurveInputs<'_>,
 ) -> Result<Option<B5Pcurve>, CodecError> {
+    let RationalArcPcurveInputs {
+        record,
+        surface,
+        center,
+        reference_x,
+        reference_y,
+        radius,
+        parameter_range,
+        angle_range,
+    } = inputs;
+
     let [start, end] = parameter_range;
     let [start_angle, end_angle] = angle_range;
     let span_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2).ceil();
-    if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+    if !span_count.is_finite() || span_count > crate::MAX_EXACT_ARC_SPANS {
         return Ok(None);
     }
     // `ceil` answers zero only for an angular span of exactly zero: an arc that
     // sweeps no angle states no span, which this route refuses as it refuses
     // every other degeneracy.
-    let Some(span_count) = std::num::NonZeroUsize::new(span_count as usize) else {
+    let Some(span_count) = truncate_f64_to_usize(span_count).and_then(std::num::NonZeroUsize::new)
+    else {
         return Ok(None);
     };
     let span_count = span_count.get();
@@ -5431,8 +5458,20 @@ fn rational_arc_pcurve(
     distinct_knots.push(start);
     multiplicities.push(3);
     for span in 0..span_count {
-        let fraction0 = span as f64 / span_count as f64;
-        let fraction1 = (span + 1) as f64 / span_count as f64;
+        let fraction0 = match f64_from_index(span) {
+            Some(value) => value,
+            None => return Ok(None),
+        } / match f64_from_index(span_count) {
+            Some(value) => value,
+            None => return Ok(None),
+        };
+        let fraction1 = match f64_from_index(span + 1) {
+            Some(value) => value,
+            None => return Ok(None),
+        } / match f64_from_index(span_count) {
+            Some(value) => value,
+            None => return Ok(None),
+        };
         let angle0 = start_angle + (end_angle - start_angle) * fraction0;
         let angle1 = start_angle + (end_angle - start_angle) * fraction1;
         let middle = (angle0 + angle1) * 0.5;

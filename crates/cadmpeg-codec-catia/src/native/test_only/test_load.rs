@@ -1,3 +1,5 @@
+use cadmpeg_core::decode::u64_from_index;
+
 use super::test_consolidated::{
     validate_consolidated_circles, validate_consolidated_class5b5c_records,
     validate_consolidated_class61_records, validate_consolidated_cone_faces,
@@ -237,7 +239,7 @@ impl CatiaNative {
                     || graph_entities
                         .iter()
                         .enumerate()
-                        .any(|(ordinal, entity)| entity.ordinal != ordinal as u64)
+                        .any(|(ordinal, entity)| entity.ordinal != u64_from_index(ordinal))
                     || graph_entities
                         .windows(2)
                         .any(|pair| pair[0].entity_id >= pair[1].entity_id)
@@ -422,7 +424,7 @@ impl CatiaNative {
                                 .get(&entity_id)
                                 .and_then(|index| graph.records.get(*index));
                             actual.entity_id() == entity_id
-                                && actual.payload_offset() == payload_offset as u64
+                                && actual.payload_offset() == u64_from_index(payload_offset)
                                 && actual.source() == &source
                                 && actual.is_null() == (Some(entity_id) == terminal_null_entity_id)
                                 && actual.target() == target.map(|target| target.id.as_str())

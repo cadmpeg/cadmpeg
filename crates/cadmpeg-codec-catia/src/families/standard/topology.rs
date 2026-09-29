@@ -1,6 +1,8 @@
 //! `StandardTopology` container and face-cycle orientation for standard
 //! nested CATIA V5 B-rep streams.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::families::standard::fbb::{
     boundary_cycles, classify_fbb_edge_layouts, cover_cycle, largest_fbb_run,
     parse_fbb_edge_tables, parse_trim_chain, parse_vertex_table,
@@ -466,6 +468,15 @@ pub(crate) enum EdgeBoundaryLayout {
     InteriorWithFlankingCorners,
     /// Every handle belongs to the trim boundary, including both endpoints.
     CompleteBoundaryRun,
+}
+
+impl From<EdgeBoundaryLayout> for u64 {
+    fn from(layout: EdgeBoundaryLayout) -> Self {
+        match layout {
+            EdgeBoundaryLayout::InteriorWithFlankingCorners => 0,
+            EdgeBoundaryLayout::CompleteBoundaryRun => 1,
+        }
+    }
 }
 
 /// One row of a counted standard/FBB edge table, with handles read big-endian.
@@ -1297,7 +1308,7 @@ pub(crate) fn incidence_cycles(
             } else {
                 left
             };
-            let scan_len = cadmpeg_core::decode::u64_from_index(unseen.len());
+            let scan_len = u64_from_index(unseen.len());
             ctx.charge_work(scan_len, "catia_incidence_unseen_scan")?;
             let Some(index) = unseen.iter().position(|(edge, _)| *edge == next.edge) else {
                 return Ok(None);

@@ -200,8 +200,9 @@ fn attachment_identity_refuses_at_retained_limit() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        crate::native::native_id("attachment", &object.name).len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        crate::native::native_id("attachment", &object.name).len(),
+    ) - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::transfer(&ctx, &[object], &[property]),

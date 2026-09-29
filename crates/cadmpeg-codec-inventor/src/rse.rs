@@ -1040,7 +1040,7 @@ mod tests {
             .expect("service admission")
             .expect("unframed issue");
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = (detail.len() - 1) as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail.len() - 1);
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
@@ -1083,7 +1083,8 @@ mod tests {
             .expect("service admission")
             .expect("metadata declaration");
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = (expected.marker.len() - 1) as u64;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(expected.marker.len() - 1);
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
@@ -1274,7 +1275,7 @@ mod tests {
         let detail = error.to_string();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = (detail.len() - 1) as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(detail.len() - 1);
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
             .expect("empty root fits input cap");
         assert!(matches!(
@@ -1404,8 +1405,9 @@ mod tests {
         let bytes = meta_fixture(false);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            (MetaStreamDeclaration::VERIFIED_MARKER.len() * 2 - 1) as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            MetaStreamDeclaration::VERIFIED_MARKER.len() * 2 - 1,
+        );
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("metadata stream fits input cap");
         assert!(matches!(
@@ -1559,13 +1561,17 @@ mod tests {
     }
 
     fn push_bytes(output: &mut Vec<u8>, value: &[u8]) {
-        output.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        output.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         output.extend_from_slice(value);
     }
 
     fn push_utf16(output: &mut Vec<u8>, value: &str) {
         let units = value.encode_utf16().collect::<Vec<_>>();
-        output.extend_from_slice(&(units.len() as u32).to_le_bytes());
+        output.extend_from_slice(
+            &(u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for unit in units {
             output.extend_from_slice(&unit.to_le_bytes());
         }

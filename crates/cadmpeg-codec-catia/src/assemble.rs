@@ -5,6 +5,9 @@
 //! loss accounting, neutral-model admissibility, source metadata, generic
 //! vector/range helpers, and the metadata/geometry/container report builders.
 
+use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
+use cadmpeg_core::decode::u64_from_index;
+
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::DecodeBody;
@@ -75,8 +78,7 @@ pub(crate) fn annotate(
     )?;
     let stream_name = cadmpeg_ir::StreamName::try_from(stream_name)
         .map_err(cadmpeg_core::CodecError::malformed)?;
-    let stream_bytes =
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
+    let stream_bytes = u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
     ctx.charge_retained(stream_bytes, "catia_annotation_stream_handle")?;
     let tag = ctx.format_retained(format_args!("{tag}"), "catia_annotation_tag")?;
     ctx.charge_collection_items(1, "catia_annotation_provenance")?;
@@ -150,7 +152,7 @@ fn unresolved_carrier_ids<'a>(
             .procedural_surfaces
             .len()
             .checked_add(ir.model.procedural_curves.len())
-            .map(cadmpeg_core::decode::u64_from_index)
+            .map(u64_from_index)
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("catia_carrier_resolution_work", u64::MAX, u64::MAX)
             })?;
@@ -339,19 +341,34 @@ pub(crate) fn ordered_range(range: [f64; 2]) -> [f64; 2] {
         [range[1], range[0]]
     }
 }
+#[derive(Clone, Copy)]
+pub(crate) struct CircleParameterRangeFromSurfaceBranchInputs<'input0> {
+    pub(crate) surface: &'input0 SurfaceGeometry,
+    pub(crate) center: Point3,
+    pub(crate) radius: f64,
+    pub(crate) axis: Vector3,
+    pub(crate) ref_direction: Vector3,
+    pub(crate) start: Point3,
+    pub(crate) end: Point3,
+    pub(crate) pcurve_origin: FinitePoint2,
+    pub(crate) pcurve_direction: FinitePoint2,
+}
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn circle_parameter_range_from_surface_branch(
-    surface: &SurfaceGeometry,
-    center: Point3,
-    radius: f64,
-    axis: Vector3,
-    ref_direction: Vector3,
-    start: Point3,
-    end: Point3,
-    pcurve_origin: FinitePoint2,
-    pcurve_direction: FinitePoint2,
+    inputs: CircleParameterRangeFromSurfaceBranchInputs<'_>,
 ) -> Result<Option<[f64; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    let CircleParameterRangeFromSurfaceBranchInputs {
+        surface,
+        center,
+        radius,
+        axis,
+        ref_direction,
+        start,
+        end,
+        pcurve_origin,
+        pcurve_direction,
+    } = inputs;
+
     if !center.is_finite()
         || !start.is_finite()
         || !end.is_finite()
@@ -938,13 +955,15 @@ pub(crate) fn rational_pcurve_arc(
         return Ok(None);
     }
     let segment_count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil();
-    if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+    if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS {
         return Ok(None);
     }
     // `ceil` answers zero only for an angular span of exactly zero: an arc that
     // sweeps no angle states no span, which this route refuses as it refuses
     // every other degeneracy.
-    let Some(segment_count) = std::num::NonZeroUsize::new(segment_count as usize) else {
+    let Some(segment_count) =
+        truncate_f64_to_usize(segment_count).and_then(std::num::NonZeroUsize::new)
+    else {
         return Ok(None);
     };
     let segment_count = segment_count.get();
@@ -960,11 +979,12 @@ pub(crate) fn rational_pcurve_arc(
     else {
         return Ok(None);
     };
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(segment_count),
-        "catia_rational_arc_segments",
-    )?;
-    let step = span / segment_count as f64;
+    ctx.charge_work(u64_from_index(segment_count), "catia_rational_arc_segments")?;
+    let step = span
+        / match f64_from_index(segment_count) {
+            Some(value) => value,
+            None => return Ok(None),
+        };
     let mut control_points = Vec::new();
     ctx.reserve_vec(
         &mut control_points,
@@ -977,7 +997,11 @@ pub(crate) fn rational_pcurve_arc(
     ctx.reserve_vec(&mut knots, knot_count, "catia_rational_arc_knots")?;
     knots.extend([range[0]; 3]);
     for index in 0..segment_count {
-        let start = range[0] + index as f64 * step;
+        let start = range[0]
+            + match f64_from_index(index) {
+                Some(value) => value,
+                None => return Ok(None),
+            } * step;
         let end = start + step;
         let middle = (start + end) * 0.5;
         let middle_weight = (step * 0.5).cos();
@@ -1412,15 +1436,19 @@ mod route_tests {
             .expect("valid PlaneSurface fixture"),
         ));
         let range = circle_parameter_range_from_surface_branch(
-            &surface,
-            Point3::new(0.0, 0.0, 0.0),
-            1.0,
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(sweep.cos(), sweep.sin(), 0.0),
-            FinitePoint2::new(Point2::new(1.0, 0.0)).expect("finite pcurve origin"),
-            FinitePoint2::new(Point2::new(0.0, sweep)).expect("finite pcurve direction"),
+            crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                surface: &surface,
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: 1.0,
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                start: Point3::new(1.0, 0.0, 0.0),
+                end: Point3::new(sweep.cos(), sweep.sin(), 0.0),
+                pcurve_origin: FinitePoint2::new(Point2::new(1.0, 0.0))
+                    .expect("finite pcurve origin"),
+                pcurve_direction: FinitePoint2::new(Point2::new(0.0, sweep))
+                    .expect("finite pcurve direction"),
+            },
         )
         .expect("circle evaluation resources")
         .expect("tiny circle branch");
@@ -1452,41 +1480,47 @@ mod route_tests {
         let (center, radius, axis, ref_direction, start, end, pcurve_origin, pcurve_direction) =
             args();
         assert!(circle_parameter_range_from_surface_branch(
-            &surface,
-            Point3::new(f64::NAN, center.y, center.z),
-            radius,
-            axis,
-            ref_direction,
-            start,
-            end,
-            pcurve_origin,
-            pcurve_direction,
+            crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                surface: &surface,
+                center: Point3::new(f64::NAN, center.y, center.z),
+                radius,
+                axis,
+                ref_direction,
+                start,
+                end,
+                pcurve_origin,
+                pcurve_direction
+            }
         )
         .expect("circle evaluation resources")
         .is_none());
         assert!(circle_parameter_range_from_surface_branch(
-            &surface,
-            center,
-            0.0,
-            axis,
-            ref_direction,
-            start,
-            end,
-            pcurve_origin,
-            pcurve_direction,
+            crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                surface: &surface,
+                center,
+                radius: 0.0,
+                axis,
+                ref_direction,
+                start,
+                end,
+                pcurve_origin,
+                pcurve_direction
+            }
         )
         .expect("circle evaluation resources")
         .is_none());
         assert!(circle_parameter_range_from_surface_branch(
-            &surface,
-            center,
-            radius,
-            axis,
-            axis,
-            start,
-            end,
-            pcurve_origin,
-            pcurve_direction,
+            crate::assemble::CircleParameterRangeFromSurfaceBranchInputs {
+                surface: &surface,
+                center,
+                radius,
+                axis,
+                ref_direction: axis,
+                start,
+                end,
+                pcurve_origin,
+                pcurve_direction
+            }
         )
         .expect("circle evaluation resources")
         .is_none());

@@ -1,5 +1,7 @@
 //! Lower complete zero-entity endpoint relations into neutral B-rep topology.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::WorkBudget;
@@ -625,7 +627,7 @@ pub(super) fn transfer_closed_face_topology(
                 annotations,
                 &point_ids[index],
                 "zero_entity_a9_03",
-                ownership_root.map_or(first_face.pos, |root| root.face_roster_pos) as u64,
+                u64_from_index(ownership_root.map_or(first_face.pos, |root| root.face_roster_pos)),
                 "endpoint_locus_point",
                 Exactness::Inferred
             ));
@@ -655,7 +657,7 @@ pub(super) fn transfer_closed_face_topology(
                 annotations,
                 &vertex_ids[index],
                 "zero_entity_a9_03",
-                ownership_root.map_or(first_face.pos, |root| root.face_roster_pos) as u64,
+                u64_from_index(ownership_root.map_or(first_face.pos, |root| root.face_roster_pos)),
                 "endpoint_locus_vertex",
                 Exactness::Inferred
             ));
@@ -692,7 +694,7 @@ pub(super) fn transfer_closed_face_topology(
                 annotations,
                 &pcurve.id,
                 "zero_entity_a9_03",
-                occurrence.support_record_ordinal as u64,
+                u64::from(occurrence.support_record_ordinal),
                 "topology_pcurve",
                 Exactness::Derived
             ));
@@ -802,7 +804,7 @@ pub(super) fn transfer_closed_face_topology(
                 annotations,
                 &edge_id,
                 "zero_entity_a9_03",
-                first_occurrence.support_record_ordinal as u64,
+                u64::from(first_occurrence.support_record_ordinal),
                 "topology_physical_edge_candidate",
                 Exactness::Inferred
             ));
@@ -895,7 +897,7 @@ pub(super) fn transfer_closed_face_topology(
                 annotations,
                 face_id,
                 "zero_entity_a9_03",
-                face.record_ordinal as u64,
+                u64::from(face.record_ordinal),
                 "topology_face",
                 Exactness::Inferred
             ));
@@ -1007,7 +1009,7 @@ pub(super) fn transfer_closed_face_topology(
                     annotations,
                     loop_id,
                     "zero_entity_a9_03",
-                    loop_record.record_ordinal as u64,
+                    u64::from(loop_record.record_ordinal),
                     "topology_loop",
                     Exactness::Inferred
                 ));
@@ -1129,7 +1131,7 @@ pub(super) fn transfer_closed_face_topology(
                         annotations,
                         &coedge_id,
                         "zero_entity_a9_03",
-                        occurrence.support_record_ordinal as u64,
+                        u64::from(occurrence.support_record_ordinal),
                         "topology_coedge",
                         Exactness::Inferred
                     ));
@@ -1237,7 +1239,7 @@ pub(super) fn transfer_closed_face_topology(
             annotations,
             &body_id,
             "zero_entity_a9_03",
-            ownership_root.map_or(first_face.pos, |root| root.body_pos) as u64,
+            u64_from_index(ownership_root.map_or(first_face.pos, |root| root.body_pos)),
             "topology_body",
             Exactness::Derived
         ));
@@ -1287,7 +1289,7 @@ pub(super) fn transfer_closed_face_topology(
             annotations,
             &region_id,
             "zero_entity_a9_03",
-            ownership_root.map_or(first_face.pos, |root| root.shell_pos) as u64,
+            u64_from_index(ownership_root.map_or(first_face.pos, |root| root.shell_pos)),
             "topology_region",
             Exactness::Derived
         ));
@@ -1333,7 +1335,7 @@ pub(super) fn transfer_closed_face_topology(
             annotations,
             &shell_id,
             "zero_entity_a9_03",
-            ownership_root.map_or(first_face.pos, |root| root.shell_pos) as u64,
+            u64_from_index(ownership_root.map_or(first_face.pos, |root| root.shell_pos)),
             "topology_shell",
             Exactness::Derived
         ));
@@ -1476,7 +1478,7 @@ mod tests {
 
     fn support(ordinal: u32, start: Point3, end: Point3) -> ZeroEntitySupportOccurrence {
         ZeroEntitySupportOccurrence {
-            pos: ordinal as usize,
+            pos: cadmpeg_core::decode::index_from_u32(ordinal),
             record_ordinal: ordinal,
             tag: [0x21, 0x71],
             face_local_slot: ordinal,
@@ -1547,12 +1549,12 @@ mod tests {
             carrier_pos: 100,
             carrier_record_ordinal: face_ordinal,
             face: Some(super::super::records::ZeroEntityFace {
-                pos: face_ordinal as usize,
+                pos: cadmpeg_core::decode::index_from_u32(face_ordinal),
                 record_ordinal: face_ordinal,
                 tag: [0x5f, 0x0c],
                 allocations: vec![10, 3],
                 loops: Some(vec![super::super::records::ZeroEntityLoop {
-                    pos: face_ordinal as usize + 1,
+                    pos: cadmpeg_core::decode::index_from_u32(face_ordinal) + 1,
                     record_ordinal: face_ordinal + 100,
                     tag: [0x62, 0x14],
                     members: crate::families::zero_entity::records::ZeroEntityLoopMembers::try_new(

@@ -864,7 +864,8 @@ mod tests {
                     .expect("assembly record is admitted");
             let token_len = admitted.3.as_deref().expect("record token").len();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = (6 + token_len - 1) as u64;
+            policy.limits.max_retained_bytes =
+                cadmpeg_core::decode::u64_from_index(6 + token_len - 1);
             assert!(matches!(
                 inventory_with_record(kind, type_id, &payload, policy),
                 Err(CodecError::ResourceLimit(limit))
@@ -895,13 +896,13 @@ mod tests {
             ),
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit_bytes as u64;
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(limit_bytes);
             assert!(matches!(
                 inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
                 Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::RetainedBytes
                         && limit.operation == operation
-                        && limit.used == used as u64
+                        && limit.used == cadmpeg_core::decode::u64_from_index(used)
             ));
         }
     }
@@ -1227,7 +1228,10 @@ mod tests {
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 5);
         push_u32(&mut bytes, 0x3000_0002);
-        push_u32(&mut bytes, related.len() as u32);
+        push_u32(
+            &mut bytes,
+            u32::try_from(related.len()).expect("fixture value fits u32"),
+        );
         if !related.is_empty() {
             push_u32(&mut bytes, 1);
             push_u32(&mut bytes, 0);

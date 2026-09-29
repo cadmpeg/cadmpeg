@@ -109,17 +109,19 @@ fn standard_edge_circle_axes_refuse_before_vector_growth() {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
             ctx,
-            &mut service_ir,
-            &mut AnnotationBuilder::new(),
-            &bindings,
-            &indices,
-            &[],
-            &support,
-            [0, 1],
-            None,
-            None,
-            &mut crate::nurbs::LaneRefusals::new(),
-            &mut admission,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut service_ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &bindings,
+                surface_indices: &indices,
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
         )
     })
     .expect("service edge circle budget");
@@ -128,17 +130,19 @@ fn standard_edge_circle_axes_refuse_before_vector_growth() {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
             ctx,
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bindings,
-            &indices,
-            &[],
-            &support,
-            [0, 1],
-            None,
-            None,
-            &mut crate::nurbs::LaneRefusals::new(),
-            &mut admission,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &bindings,
+                surface_indices: &indices,
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
         )
     });
     assert!(
@@ -227,17 +231,19 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
             ctx,
-            &mut ir,
-            &mut AnnotationBuilder::new(),
-            &bindings,
-            &surface_indices,
-            &[],
-            &support,
-            [0, 1],
-            None,
-            None,
-            &mut crate::nurbs::LaneRefusals::new(),
-            &mut admission,
+            crate::families::standard::decode::edge_geometry::BuildStandardEdgeCurveInputs {
+                ir: &mut ir,
+                annotations: &mut AnnotationBuilder::new(),
+                bindings: &bindings,
+                surface_indices: &surface_indices,
+                brep: &[],
+                support: &support,
+                points: [0, 1],
+                native_support: None,
+                limit_curve: None,
+                refusal: &mut crate::nurbs::LaneRefusals::new(),
+                admission: &mut admission,
+            },
         )
     })
     .expect("valid source object identity");

@@ -1262,7 +1262,7 @@ fn projected_body_ids_refuse_collection_and_retained_limits_before_copy() {
     ));
 
     policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (id.as_str().len() - 1) as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
         collect_body_ids(&ctx, [&id]),
@@ -1329,7 +1329,7 @@ fn projected_appearance_color_index_refuses_limits_before_id_copy() {
     ));
 
     policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (id.as_str().len() - 1) as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
         index_projected_colors(&ctx, [(&id, color)]),
@@ -1361,7 +1361,7 @@ fn face_color_index_refuses_limits_before_face_id_copy() {
     ));
 
     policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (id.as_str().len() - 1) as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
         index_face_colors(&ctx, [(&id, color)]),

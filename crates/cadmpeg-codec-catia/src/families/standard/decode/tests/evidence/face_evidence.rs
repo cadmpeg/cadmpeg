@@ -395,7 +395,7 @@ fn standard_spline_retains_complete_surface_incidence_pair_domain() {
     for index in 0..138 {
         ir.model.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(index as f64, 0.0, 0.0))
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::from(index), 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ));
@@ -897,7 +897,7 @@ fn a_native_circle_range_reads_from_the_finite_support_when_its_partner_overflow
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, -1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0)
         ),
         Ok(Some([0.0, 1.5 * std::f64::consts::PI]))
     );

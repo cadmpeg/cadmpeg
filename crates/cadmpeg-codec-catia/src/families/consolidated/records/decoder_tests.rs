@@ -632,7 +632,13 @@ fn consolidated_record_walk_inventory_preserves_width_flag_and_boundaries() {
 #[test]
 fn consolidated_record_walk_suppresses_payload_records_and_resumes_after_parent() {
     let nested = [0xb2, 0x03, 0x20, 1, 7, 0xaa];
-    let mut outer = vec![0xb2, 0x03, 0x20, nested.len() as u8, 1];
+    let mut outer = vec![
+        0xb2,
+        0x03,
+        0x20,
+        u8::try_from(nested.len()).expect("fixture value fits u8"),
+        1,
+    ];
     outer.extend_from_slice(&nested);
     let sibling_start = outer.len();
     outer.extend_from_slice(&[0xb2, 0x03, 0x20, 1, 2, 0xbb]);
@@ -656,7 +662,10 @@ fn consolidated_support_resolution_withholds_cross_family_matches() {
             .expect("cylinder endpoint");
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
         for value in [point.x, point.y, point.z] {
-            bytes.extend_from_slice(&(value as f32).to_le_bytes());
+            bytes.extend_from_slice(
+                &(cadmpeg_core::convert::f32_from_f64(value).expect("fixture value fits f32"))
+                    .to_le_bytes(),
+            );
         }
     }
 
@@ -1154,7 +1163,13 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         }) if trailing.len() == 20
     ));
 
-    let mut bytes = vec![0xb2, 0x03, 0x25, plain.len() as u8, 0x05];
+    let mut bytes = vec![
+        0xb2,
+        0x03,
+        0x25,
+        u8::try_from(plain.len()).expect("fixture value fits u8"),
+        0x05,
+    ];
     bytes.extend_from_slice(&plain);
     bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
     let native = crate::native::CatiaNative::decode(&bytes);
@@ -1175,7 +1190,13 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     let mut descriptor_payload = vec![0x08, 0x34, 0x12, 0x02];
     descriptor_payload.extend_from_slice(&3.0_f64.to_le_bytes());
     descriptor_payload.extend_from_slice(&7.0_f64.to_le_bytes());
-    let mut described = vec![0xb2, 0x03, 0x18, descriptor_payload.len() as u8, 0x05];
+    let mut described = vec![
+        0xb2,
+        0x03,
+        0x18,
+        u8::try_from(descriptor_payload.len()).expect("fixture value fits u8"),
+        0x05,
+    ];
     described.extend_from_slice(&descriptor_payload);
     described.extend_from_slice(&bytes);
     let runs = crate::families::consolidated::records::consolidated_class25_edge_runs(&described);
@@ -1201,7 +1222,13 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
 #[test]
 fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     fn record(class: u8, token: u8, payload: &[u8]) -> Vec<u8> {
-        let mut bytes = vec![0xb2, 0x03, class, payload.len() as u8, token];
+        let mut bytes = vec![
+            0xb2,
+            0x03,
+            class,
+            u8::try_from(payload.len()).expect("fixture value fits u8"),
+            token,
+        ];
         bytes.extend_from_slice(payload);
         bytes
     }
@@ -1291,7 +1318,13 @@ fn analytic_circle_edge_carriers_and_retained_frames_refuse_collection_limits() 
     use std::collections::HashSet;
 
     fn record(class: u8, token: u8, payload: &[u8]) -> Vec<u8> {
-        let mut bytes = vec![0xb2, 0x03, class, payload.len() as u8, token];
+        let mut bytes = vec![
+            0xb2,
+            0x03,
+            class,
+            u8::try_from(payload.len()).expect("fixture value fits u8"),
+            token,
+        ];
         bytes.extend_from_slice(payload);
         bytes
     }
@@ -1344,9 +1377,21 @@ fn class25_edge_descriptor_and_runs_refuse_collection_limits() {
     for value in [1.0_f64, 2.0, 0.001, 3.0, 4.0, 1.0, 5.0, 0.001] {
         definition.extend_from_slice(&value.to_le_bytes());
     }
-    let mut bytes = vec![0xb2, 0x03, 0x18, descriptor.len() as u8, 0x05];
+    let mut bytes = vec![
+        0xb2,
+        0x03,
+        0x18,
+        u8::try_from(descriptor.len()).expect("fixture value fits u8"),
+        0x05,
+    ];
     bytes.extend_from_slice(&descriptor);
-    bytes.extend_from_slice(&[0xb2, 0x03, 0x25, definition.len() as u8, 0x05]);
+    bytes.extend_from_slice(&[
+        0xb2,
+        0x03,
+        0x25,
+        u8::try_from(definition.len()).expect("fixture value fits u8"),
+        0x05,
+    ]);
     bytes.extend_from_slice(&definition);
     bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
     let records = crate::wire::records::consolidated_records(&bytes);
@@ -1383,9 +1428,21 @@ fn class25_edge_run_accepts_segmented_finite_lane_and_rejects_unknown_marker() {
     for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 0.001] {
         definition.extend_from_slice(&value.to_le_bytes());
     }
-    let mut bytes = vec![0xb2, 0x03, 0x18, descriptor.len() as u8, 0x05];
+    let mut bytes = vec![
+        0xb2,
+        0x03,
+        0x18,
+        u8::try_from(descriptor.len()).expect("fixture value fits u8"),
+        0x05,
+    ];
     bytes.extend_from_slice(&descriptor);
-    bytes.extend_from_slice(&[0xb2, 0x03, 0x25, definition.len() as u8, 0x05]);
+    bytes.extend_from_slice(&[
+        0xb2,
+        0x03,
+        0x25,
+        u8::try_from(definition.len()).expect("fixture value fits u8"),
+        0x05,
+    ]);
     let definition_start = bytes.len();
     bytes.extend_from_slice(&definition);
     bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));

@@ -1,5 +1,7 @@
 //! Checked trim-handle partitions and primitive expansion.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use std::sync::OnceLock;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -106,7 +108,7 @@ impl TrimPacket {
         let (independent, mut remaining) = self.handles.split_at(3 * self.independent_count);
         for triple in independent.chunks_exact(3) {
             ctx.charge_retained(
-                std::mem::size_of::<[u32; 3]>() as u64,
+                u64_from_index(std::mem::size_of::<[u32; 3]>()),
                 "catia_trim_triangles",
             )?;
             ctx.push_vec(
@@ -120,7 +122,7 @@ impl TrimPacket {
             remaining = tail;
             for index in 0..length - length.min(2) {
                 ctx.charge_retained(
-                    std::mem::size_of::<[u32; 3]>() as u64,
+                    u64_from_index(std::mem::size_of::<[u32; 3]>()),
                     "catia_trim_triangles",
                 )?;
                 ctx.push_vec(
@@ -139,7 +141,7 @@ impl TrimPacket {
             remaining = tail;
             for index in 1..length - length.min(1) {
                 ctx.charge_retained(
-                    std::mem::size_of::<[u32; 3]>() as u64,
+                    u64_from_index(std::mem::size_of::<[u32; 3]>()),
                     "catia_trim_triangles",
                 )?;
                 ctx.push_vec(

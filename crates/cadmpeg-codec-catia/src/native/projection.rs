@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CATIA native ownership, alias, and wire projections.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::object_graph;
 
 use super::{
@@ -43,7 +45,7 @@ pub(crate) fn consolidated_owner_packets(
             };
         let key = (chart.source_index, chart.owner_pos);
         let value = CatiaOwnerChartRelation {
-            carrier_byte_offset: chart.carrier_pos as u64,
+            carrier_byte_offset: u64_from_index(chart.carrier_pos),
             carrier: match chart.carrier {
                 crate::families::b2::records::B2OwnerChartCarrier::B28 => {
                     CatiaOwnerChartCarrier::B28
@@ -65,7 +67,7 @@ pub(crate) fn consolidated_owner_packets(
                     terminal_control,
                     construction_radius,
                 } => CatiaOwnerChartBridge::SupportedSurface {
-                    byte_offset: pos as u64,
+                    byte_offset: u64_from_index(pos),
                     carrier_surface: native_reference(carrier_surface),
                     support_surfaces: support_surfaces.map(native_reference),
                     support_pcurves: support_pcurves.map(native_reference),
@@ -75,12 +77,12 @@ pub(crate) fn consolidated_owner_packets(
                 },
                 crate::families::b2::records::B2OwnerChartBridge::Extended { pos, references } => {
                     CatiaOwnerChartBridge::Extended {
-                        byte_offset: pos as u64,
+                        byte_offset: u64_from_index(pos),
                         references: references.map(native_reference),
                     }
                 }
             },
-            parameter_point_byte_offsets: chart.parameter_point_offsets().map(|pos| pos as u64),
+            parameter_point_byte_offsets: chart.parameter_point_offsets().map(u64_from_index),
         };
         ctx.insert_hash_map(&mut owner_charts, key, value, "catia_native_owner_charts")?;
     }
@@ -92,7 +94,7 @@ pub(crate) fn consolidated_owner_packets(
         let value = CatiaOwnerIdentityTarget {
             slot: target.slot,
             distance: target.distance,
-            target_byte_offset: target.target_pos as u64,
+            target_byte_offset: u64_from_index(target.target_pos),
             target_class: target.target_class,
         };
         if let Some(targets) = identity_targets.get_mut(&key) {
@@ -123,8 +125,8 @@ pub(crate) fn consolidated_owner_packets(
                     face_node: cycle.face_node.and_then(|face_node| {
                         let byte_len = cycle.owner_pos.checked_sub(face_node.pos)?;
                         Some(CatiaFaceNodeRelation {
-                            byte_offset: face_node.pos as u64,
-                            byte_len: byte_len as u64,
+                            byte_offset: u64_from_index(face_node.pos),
+                            byte_len: u64_from_index(byte_len),
                             header_token: face_node.header_token,
                             target_encoding: match face_node.target_encoding {
                                 crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
@@ -140,8 +142,8 @@ pub(crate) fn consolidated_owner_packets(
                     }),
                     edges: cycle.edges.map(|edge| CatiaOwnerBoundaryEdge {
                         slot: edge.slot,
-                        byte_offset: edge.target_pos as u64,
-                        endpoint_records: edge.endpoint_records.map(|pos| pos as u64),
+                        byte_offset: u64_from_index(edge.target_pos),
+                        endpoint_records: edge.endpoint_records.map(u64_from_index),
                     }),
                 };
         ctx.insert_hash_map(
@@ -255,12 +257,15 @@ pub(crate) fn consolidated_owner_packets(
             *stored_targets = identity_targets
                 .remove(&(source_index, pos))
                 .unwrap_or_default();
-            *owner_chart = owner_charts.remove(&(source_index, pos));
-            *boundary_cycle = boundary_cycles.get(&(source_index, pos)).copied();
+            *owner_chart = owner_charts.remove(&(source_index, pos)).map(Box::new);
+            *boundary_cycle = boundary_cycles
+                .get(&(source_index, pos))
+                .copied()
+                .map(Box::new);
         }
         output.push(CatiaConsolidatedOwnerPacket {
                 id: crate::resource::format_usize_id(ctx, "catia:consolidated:owner-packet#", pos, 10, "catia_native_owner_packet_id")?,
-                byte_offset: pos as u64,
+                byte_offset: u64_from_index(pos),
                 source_index,
                 header_token,
                 payload,
@@ -269,8 +274,8 @@ pub(crate) fn consolidated_owner_packets(
                     .and_then(|face_node| {
                         let byte_len = pos.checked_sub(face_node.pos)?;
                         Some(CatiaFaceNodeRelation {
-                            byte_offset: face_node.pos as u64,
-                            byte_len: byte_len as u64,
+                            byte_offset: u64_from_index(face_node.pos),
+                            byte_len: u64_from_index(byte_len),
                             header_token: face_node.header_token,
                             target_encoding: match face_node.target_encoding {
                                 crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
@@ -337,9 +342,13 @@ pub(crate) fn consolidated_edge_runs(
         .into_iter()
         .enumerate()
     {
-        let pcurve_offsets = run.edge.pcurves.each_ref().map(|pcurve| pcurve.pos as u64);
+        let pcurve_offsets = run
+            .edge
+            .pcurves
+            .each_ref()
+            .map(|pcurve| u64_from_index(pcurve.pos));
         let resolved = resolved.get(&run.edge.pcurves[0].pos);
-        let Some(node) = nodes_by_offset.get(&(run.node.pos as u64)) else {
+        let Some(node) = nodes_by_offset.get(&(u64_from_index(run.node.pos))) else {
             continue;
         };
         if node.uses.is_none() {
@@ -438,7 +447,7 @@ pub(crate) fn consolidated_edge_nodes(
         ctx.insert_hash_map(
             &mut compact_endpoints,
             binding.node.pos,
-            binding.endpoint_records.map(|pos| pos as u64),
+            binding.endpoint_records.map(u64_from_index),
             "catia_native_edge_compact_endpoints",
         )?;
     }
@@ -467,7 +476,7 @@ pub(crate) fn consolidated_edge_nodes(
             ctx, bytes, records,
         )?
     {
-        let Some(circle) = circle_ids.get(&(run.circle.pos as u64)) else {
+        let Some(circle) = circle_ids.get(&(u64_from_index(run.circle.pos))) else {
             continue;
         };
         let circle = ctx.copy_retained_text(circle, "catia_native_analytic_edge_circle_id")?;
@@ -489,7 +498,7 @@ pub(crate) fn consolidated_edge_nodes(
             &mut class25_descriptors,
             run.node.pos,
             CatiaConsolidatedClass25Descriptor {
-                byte_offset: run.descriptor.pos as u64,
+                byte_offset: u64_from_index(run.descriptor.pos),
                 record_id: run.descriptor.record_id,
                 control: run.descriptor.control,
                 values: run.descriptor.values,
@@ -532,7 +541,7 @@ pub(crate) fn consolidated_edge_nodes(
                 1,
                 "catia_native_edge_node_id",
             )?,
-            byte_offset: node.pos as u64,
+            byte_offset: u64_from_index(node.pos),
             source_index,
             width,
             flag,
@@ -630,46 +639,46 @@ pub(crate) fn native_consolidated_support_binding(
     match binding {
         crate::families::consolidated::records::ConsolidatedSupportBinding::Cylinder { pos } => {
             CatiaConsolidatedSupportBinding::Cylinder {
-                byte_offset: *pos as u64,
+                byte_offset: u64_from_index(*pos),
             }
         }
         crate::families::consolidated::records::ConsolidatedSupportBinding::EmbeddedCylinder {
             pos,
             wrapper_pos,
         } => CatiaConsolidatedSupportBinding::EmbeddedCylinder {
-            byte_offset: *pos as u64,
-            wrapper_byte_offset: *wrapper_pos as u64,
+            byte_offset: u64_from_index(*pos),
+            wrapper_byte_offset: u64_from_index(*wrapper_pos),
         },
         crate::families::consolidated::records::ConsolidatedSupportBinding::Circle { pos } => {
             CatiaConsolidatedSupportBinding::Circle {
-                byte_offset: *pos as u64,
+                byte_offset: u64_from_index(*pos),
             }
         }
         crate::families::consolidated::records::ConsolidatedSupportBinding::Cone { pos } => {
             CatiaConsolidatedSupportBinding::Cone {
-                byte_offset: *pos as u64,
+                byte_offset: u64_from_index(*pos),
             }
         }
         crate::families::consolidated::records::ConsolidatedSupportBinding::Sphere { pos } => {
             CatiaConsolidatedSupportBinding::Sphere {
-                byte_offset: *pos as u64,
+                byte_offset: u64_from_index(*pos),
             }
         }
         crate::families::consolidated::records::ConsolidatedSupportBinding::Torus { pos } => {
             CatiaConsolidatedSupportBinding::Torus {
-                byte_offset: *pos as u64,
+                byte_offset: u64_from_index(*pos),
             }
         }
         crate::families::consolidated::records::ConsolidatedSupportBinding::Plane { pos } => {
             CatiaConsolidatedSupportBinding::Plane {
-                byte_offset: *pos as u64,
+                byte_offset: u64_from_index(*pos),
             }
         }
         crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier {
             pos,
             offset,
         } => CatiaConsolidatedSupportBinding::NurbsCarrier {
-            byte_offset: *pos as u64,
+            byte_offset: u64_from_index(*pos),
             offset: *offset,
         },
     }
@@ -724,7 +733,9 @@ pub(crate) fn preview_views(
     let mut views = Vec::new();
     for segment in segments {
         for preview in container::preview_images(ctx, &segment.data)? {
-            let Some(byte_offset) = segment.byte_offset.checked_add(preview.range.start as u64)
+            let Some(byte_offset) = segment
+                .byte_offset
+                .checked_add(u64_from_index(preview.range.start))
             else {
                 continue;
             };
@@ -741,7 +752,7 @@ pub(crate) fn preview_views(
                 CatiaPreviewImage {
                     id,
                     byte_offset,
-                    byte_len: (preview.range.end - preview.range.start) as u64,
+                    byte_len: u64_from_index(preview.range.end - preview.range.start),
                     width: preview.width,
                     height: preview.height,
                     components: preview.components,
@@ -761,7 +772,10 @@ pub(crate) fn external_reference_views(
     let mut views = Vec::new();
     for segment in segments {
         for reference in container::external_references(ctx, &segment.data)? {
-            let Some(byte_offset) = segment.byte_offset.checked_add(reference.offset as u64) else {
+            let Some(byte_offset) = segment
+                .byte_offset
+                .checked_add(u64_from_index(reference.offset))
+            else {
                 continue;
             };
             let id = ctx.format_retained(
@@ -949,7 +963,7 @@ pub(crate) fn value_schema_selections(
         if ordinal_index > catalog.entries.len() {
             continue;
         }
-        let offset = cadmpeg_core::decode::u64_from_index(*offset);
+        let offset = u64_from_index(*offset);
         let Some(byte_offset) = block_byte_offset
             .checked_add(6)
             .and_then(|base| base.checked_add(offset))
@@ -1009,7 +1023,7 @@ impl CatiaValueBlock {
             "catia_value_block_id",
         )?;
         let fields = value_block::tokenize_charged(ctx, &block.payload)?;
-        let byte_offset = cadmpeg_core::decode::u64_from_index(block.pos);
+        let byte_offset = u64_from_index(block.pos);
         let schema_selections = value_schema_selections(ctx, &id, byte_offset, &fields, catalog)?;
         Ok(Self {
             id,
@@ -1034,7 +1048,7 @@ impl CatiaAliasRow {
                 format_args!("catia:outer:alias-row#{:010}", row.pos),
                 "catia_native_alias_row_id",
             )?,
-            byte_offset: cadmpeg_core::decode::u64_from_index(row.pos),
+            byte_offset: u64_from_index(row.pos),
             lead_raw: row.lead_raw,
             tag_raw: row.tag_raw,
             flag: row.flag,
@@ -1068,15 +1082,15 @@ impl CatiaCatalog {
                 )?,
                 parent: ctx.copy_retained_text(&id, "catia_native_catalog_entry_parent")?,
                 ordinal: entry.ordinal,
-                byte_offset: cadmpeg_core::decode::u64_from_index(entry.pos),
+                byte_offset: u64_from_index(entry.pos),
                 value: entry.value,
             };
             ctx.push_vec(&mut entries, native_entry, "catia_native_catalog_entries")?;
         }
         Ok(Self {
             id,
-            byte_offset: cadmpeg_core::decode::u64_from_index(catalog.pos),
-            byte_len: cadmpeg_core::decode::u64_from_index(catalog.total_len),
+            byte_offset: u64_from_index(catalog.pos),
+            byte_len: u64_from_index(catalog.total_len),
             entries,
         })
     }
@@ -1115,9 +1129,9 @@ pub(crate) fn native_object_graph(
                     })
                 })
                 .transpose()?,
-            ordinal: ordinal as u64,
-            byte_offset: record.pos as u64,
-            byte_len: record.total_len as u64,
+            ordinal: u64_from_index(ordinal),
+            byte_offset: u64_from_index(record.pos),
+            byte_len: u64_from_index(record.total_len),
             lead: record.lead,
             head: ctx.copy_retained_slice(record.head(), "catia_native_record_head")?,
             inline_body: record
@@ -1126,14 +1140,14 @@ pub(crate) fn native_object_graph(
                 .transpose()?,
             owner: roles.owner.map(CatiaObjectOwner::from),
             class: roles.class_ref.map(|class_ref| CatiaObjectClass {
-                class_ref,
-                class_name: None,
-                class_entry: None,
+                ordinal: class_ref,
+                name: None,
+                entry: None,
             }),
             storage: roles.storage_ref.map(|storage_ref| CatiaObjectStorage {
-                storage_ref,
-                storage_record: None,
-                storage_design_object: None,
+                reference: storage_ref,
+                record: None,
+                design_object: None,
             }),
             payload: record.payload().copy_charged(ctx)?,
             repeated_reference_schema_selection: None,
@@ -1144,7 +1158,7 @@ pub(crate) fn native_object_graph(
     for record in &mut records {
         record.design_object = record
             .owner_entity_id()
-            .map(|owner| design_object_id(ctx, graph.pos as u64, owner))
+            .map(|owner| design_object_id(ctx, u64_from_index(graph.pos), owner))
             .transpose()?;
     }
     let record_indices = ctx.collect_hash_map(
@@ -1159,7 +1173,7 @@ pub(crate) fn native_object_graph(
         let storage_ref = records[index]
             .storage
             .as_ref()
-            .map(|storage| storage.storage_ref);
+            .map(|storage| storage.reference);
         let (storage_record, storage_design_object) =
             resolved_storage_link(ctx, storage_ref, &records, &record_indices)?;
         let references = resolved_payload_references(
@@ -1171,8 +1185,8 @@ pub(crate) fn native_object_graph(
         )?;
         let record = &mut records[index];
         if let Some(storage) = &mut record.storage {
-            storage.storage_record = storage_record;
-            storage.storage_design_object = storage_design_object;
+            storage.record = storage_record;
+            storage.design_object = storage_design_object;
         }
         record.references = references;
     }
@@ -1205,8 +1219,8 @@ pub(crate) fn native_object_graph(
             object_graph: ctx.copy_retained_text(&id, "catia_native_entity_graph")?,
             object_record: ctx
                 .copy_retained_text(&object_record.id, "catia_native_entity_object")?,
-            ordinal: ordinal as u64,
-            byte_offset: entity.pos as u64,
+            ordinal: u64_from_index(ordinal),
+            byte_offset: u64_from_index(entity.pos),
             lead: entity.lead,
             body,
             definition_schema_selections: Vec::new(),
@@ -1228,11 +1242,11 @@ pub(crate) fn native_object_graph(
     Ok((
         CatiaObjectGraph {
             id,
-            byte_offset: graph.pos as u64,
-            byte_len: graph.total_len as u64,
+            byte_offset: u64_from_index(graph.pos),
+            byte_len: u64_from_index(graph.total_len),
             finjpl_segment,
             outer_container,
-            catalog_byte_offset: graph.catalog_pos.map(|pos| pos as u64),
+            catalog_byte_offset: graph.catalog_pos.map(u64_from_index),
             catalog: None,
             records,
         },
@@ -1246,7 +1260,7 @@ impl CatiaOuterContainerBinding {
         declaration: &container::OuterContainerDeclaration,
     ) -> Result<Self, CodecError> {
         Ok(Self {
-            data_offset: declaration.data_offset as u64,
+            data_offset: u64_from_index(declaration.data_offset),
             ordinal: declaration.ordinal,
             class_name: ctx
                 .copy_retained_text(&declaration.class_name, "catia_native_outer_class")?,

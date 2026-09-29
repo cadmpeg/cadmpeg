@@ -110,14 +110,15 @@ fn unit_scale_admission_preserves_redundant_bits_and_rejects_invalid_custom_scal
                     scan.definitions.definitions.len(),
                     1 + usize::from(admitted)
                 );
-                let source_offset = scan
-                    .tables
-                    .iter()
-                    .find(|table| table.typecode == 0x1000_0021)
-                    .unwrap()
-                    .records[0]
-                    .range
-                    .start as u64;
+                let source_offset = cadmpeg_core::decode::u64_from_index(
+                    scan.tables
+                        .iter()
+                        .find(|table| table.typecode == 0x1000_0021)
+                        .unwrap()
+                        .records[0]
+                        .range
+                        .start,
+                );
                 if admitted {
                     let units = &scan.definitions.definitions[0].units;
                     assert_eq!(units.unit, unit);

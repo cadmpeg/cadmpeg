@@ -608,7 +608,10 @@ fn standard_full_table_reuses_terminal_handles_for_every_row_layout() {
     let mut bytes = vec![0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2];
     bytes.extend_from_slice(&[0x01, 0x01, 0x03]);
     for handles in [&[10u16, 11][..], &[11, 12, 13][..], &[11, 12][..]] {
-        bytes.extend_from_slice(&[0x02, handles.len() as u8]);
+        bytes.extend_from_slice(&[
+            0x02,
+            u8::try_from(handles.len()).expect("fixture value fits u8"),
+        ]);
         for handle in handles {
             bytes.extend_from_slice(&handle.to_be_bytes());
         }

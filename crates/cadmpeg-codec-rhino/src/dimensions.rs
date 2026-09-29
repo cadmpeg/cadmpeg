@@ -2253,7 +2253,7 @@ pub(crate) mod tests {
         let mut bytes = vec![0x10];
         bytes.extend(kind.to_le_bytes());
         bytes.extend(plane());
-        bytes.extend((points.len() as i32).to_le_bytes());
+        bytes.extend((i32::try_from(points.len()).expect("fixture value fits i32")).to_le_bytes());
         for point in points {
             bytes.extend(point[0].to_le_bytes());
             bytes.extend(point[1].to_le_bytes());
@@ -2547,7 +2547,8 @@ pub(crate) mod tests {
         let mut annotation = kind.to_le_bytes().to_vec();
         annotation.extend(0_i32.to_le_bytes());
         annotation.extend(plane());
-        annotation.extend((points.len() as i32).to_le_bytes());
+        annotation
+            .extend((i32::try_from(points.len()).expect("fixture value fits i32")).to_le_bytes());
         for point in points {
             annotation.extend(point[0].to_le_bytes());
             annotation.extend(point[1].to_le_bytes());
@@ -2577,7 +2578,7 @@ pub(crate) mod tests {
         bytes.extend(kind.to_le_bytes());
         bytes.extend(0_i32.to_le_bytes());
         bytes.extend(plane());
-        bytes.extend((points.len() as i32).to_le_bytes());
+        bytes.extend((i32::try_from(points.len()).expect("fixture value fits i32")).to_le_bytes());
         for point in points {
             bytes.extend(point[0].to_le_bytes());
             bytes.extend(point[1].to_le_bytes());

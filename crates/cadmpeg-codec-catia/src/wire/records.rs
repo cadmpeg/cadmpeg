@@ -10,6 +10,8 @@
 //! `families::consolidated::records`; a rename cascades across ~40 call sites
 //! and several `native` field paths, so the names carry naming debt here.
 
+use cadmpeg_core::decode::u64_from_index;
+
 type NativePcurveLanesOutput = Result<
     (
         Vec<FiniteReal>,
@@ -372,7 +374,7 @@ impl ConsolidatedRawFrame {
 impl From<ConsolidatedRawFrame> for ConsolidatedRawFrame<u64> {
     fn from(frame: ConsolidatedRawFrame) -> Self {
         Self {
-            pos: frame.pos as u64,
+            pos: u64_from_index(frame.pos),
             width: frame.width,
             flag: frame.flag,
             header_token: frame.header_token,

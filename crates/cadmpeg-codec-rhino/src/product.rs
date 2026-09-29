@@ -798,7 +798,10 @@ mod tests {
             .provenance
             .as_ref()
             .expect("located occurrence loss");
-        assert_eq!(provenance.offset, source_offset as u64);
+        assert_eq!(
+            provenance.offset,
+            cadmpeg_core::decode::u64_from_index(source_offset)
+        );
         assert!(ir.native.namespace("rhino").unwrap().arenas()["product_occurrences"].is_empty());
     }
 
@@ -979,7 +982,10 @@ mod tests {
                 .expect("framed malformed occurrence");
             let provenance = loss.provenance.as_ref().expect("located product loss");
             assert_eq!(wire::field::<String>(&provenance, "format"), "rhino");
-            assert_eq!(provenance.offset, source.range.start as u64);
+            assert_eq!(
+                provenance.offset,
+                cadmpeg_core::decode::u64_from_index(source.range.start)
+            );
             assert!(loss.message.contains(&source.identity.source_id));
             assert_eq!(
                 provenance.tag.as_deref(),

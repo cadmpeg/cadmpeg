@@ -213,19 +213,21 @@ fn endpoint_candidate_validation_charges_full_incidence_work() {
     let mut visited = false;
     let outcome = visit_incidence_endpoint_pair_solutions(
         &ctx,
-        &rows,
-        &points,
-        &edge_faces,
-        &candidates,
-        1,
-        None,
-        None,
-        None,
-        Some(&budget),
-        &|_| Ok(true),
-        &mut |_| {
-            visited = true;
-            Ok(ControlFlow::Continue(()))
+        crate::solve::incidence::VisitIncidenceEndpointPairSolutionsInputs {
+            edge_rows: &rows,
+            vertex_points: &points,
+            edge_faces: &edge_faces,
+            edge_candidates: &candidates,
+            face_count: 1,
+            mesh_assignments: None,
+            mesh_quotient: None,
+            partial_solution_valid: None,
+            complete_solution_budget: Some(&budget),
+            solution_valid: &|_| Ok(true),
+            visitor: &mut |_| {
+                visited = true;
+                Ok(ControlFlow::Continue(()))
+            },
         },
     )
     .expect("service resource budget");

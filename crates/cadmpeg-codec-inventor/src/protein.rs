@@ -272,7 +272,8 @@ mod tests {
             let offset = entry_start + index * 2;
             bytes[offset..offset + 2].copy_from_slice(&unit.to_le_bytes());
         }
-        let name_len = ((name.encode_utf16().count() + 1) * 2) as u16;
+        let name_len =
+            u16::try_from((name.encode_utf16().count() + 1) * 2).expect("fixture value fits u16");
         bytes[entry_start + 64..entry_start + 66].copy_from_slice(&name_len.to_le_bytes());
         let arena = DecodeArena::new();
         let (setup, root) =
@@ -308,11 +309,13 @@ mod tests {
             assert!(matches!(parse_stream(ctx, root), Ok(ParsedProtein::Empty)));
         });
         let zip = zip_fixture("Schemas/ExampleSchema.xml");
-        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.extend_from_slice(&zip);
         assert_eq!(
             u32::from_le_bytes(bytes[..4].try_into().expect("planted payload length")),
-            zip.len() as u32
+            u32::try_from(zip.len()).expect("fixture value fits u32")
         );
         with_stream(&bytes, |ctx, root| {
             let ParsedProtein::Package {
@@ -323,7 +326,10 @@ mod tests {
             else {
                 panic!("package state")
             };
-            assert_eq!(declared_len.get(), zip.len() as u32);
+            assert_eq!(
+                declared_len.get(),
+                u32::try_from(zip.len()).expect("fixture value fits u32")
+            );
             assert_eq!(archive.entries().len(), 1);
         });
     }
@@ -337,7 +343,9 @@ mod tests {
         });
 
         let zip = zip_fixture("../escape");
-        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.extend_from_slice(&zip);
         with_stream(&bytes, |ctx, root| {
             assert!(parse_stream(ctx, root).is_err());
@@ -357,7 +365,9 @@ mod tests {
             ("Schemas/SimpleSchema.xml", schema),
             ("AssetData/InstanceProperties.bin", &instance),
         ]);
-        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.extend_from_slice(&zip);
         with_stream(&bytes, |ctx, root| {
             let ParsedProtein::Package {
@@ -368,7 +378,10 @@ mod tests {
             else {
                 panic!("package state")
             };
-            assert_eq!(declared_len.get() as usize, payload.window().len());
+            assert_eq!(
+                cadmpeg_core::decode::index_from_u32(declared_len.get()),
+                payload.window().len()
+            );
             let instances =
                 decode_instances_from(ctx, &archive, payload).expect("instances decode");
             assert_eq!(instances.len(), 1);
@@ -392,7 +405,9 @@ mod tests {
             ("Schemas/SimpleSchema.xml", schema),
             ("AssetData/InstanceProperties.bin", &instance),
         ]);
-        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.extend_from_slice(&zip);
         with_stream(&bytes, |ctx, root| {
             let ParsedProtein::Package {
@@ -439,7 +454,9 @@ mod tests {
             ("Schemas/SimpleSchema.xml", schema),
             ("AssetData/InstanceProperties.bin", b"bad"),
         ]);
-        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.extend_from_slice(&zip);
         let arena = DecodeArena::new();
         let (setup, root) =
@@ -526,12 +543,14 @@ mod tests {
             ("First/InstanceProperties.bin", &instance),
             ("Second/InstanceProperties.bin", &instance),
         ]);
-        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.extend_from_slice(&zip);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         // Two three-entry ZIP inventories, one schema parse, and one closure.
-        policy.limits.max_work_units = schema.len() as u64 + 10;
+        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(schema.len()) + 10;
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("package fits the service input limit");
         let ParsedProtein::Package {
@@ -566,7 +585,9 @@ mod tests {
             ("Schemas/SimpleSchema.xml", schema),
             ("AssetData/InstanceProperties.bin", &instance),
         ]);
-        let mut bytes = (zip.len() as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(zip.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.extend_from_slice(&zip);
         with_stream(&bytes, |ctx, root| {
             let ParsedProtein::Package {
@@ -612,13 +633,17 @@ mod tests {
     }
 
     fn push_lp(bytes: &mut Vec<u8>, value: &str) {
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     }
 
     fn paged_instance(record: &[u8]) -> Vec<u8> {
         const BODY_SIZE: usize = PAGE_SIZE - 8;
-        let mut bytes = (PAGE_SIZE as u32).to_le_bytes().to_vec();
+        let mut bytes = (u32::try_from(PAGE_SIZE).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         bytes.resize(STREAM_HEADER_LEN, 0);
         let mut chunks = record.chunks(BODY_SIZE).peekable();
         let first = chunks.next().expect("record is nonempty");
@@ -632,7 +657,9 @@ mod tests {
                 bytes.extend_from_slice(CONTINUATION_MARKER);
             } else {
                 bytes.extend_from_slice(TERMINAL_MARKER);
-                bytes.extend_from_slice(&(chunk.len() as u16).to_le_bytes());
+                bytes.extend_from_slice(
+                    &(u16::try_from(chunk.len()).expect("fixture value fits u16")).to_le_bytes(),
+                );
                 bytes.extend_from_slice(&[0, 0]);
             }
             bytes.extend_from_slice(chunk);
