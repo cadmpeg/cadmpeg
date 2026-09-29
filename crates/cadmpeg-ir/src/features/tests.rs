@@ -5,6 +5,7 @@ use crate::features::TrimCellSelection;
 use crate::math::{Point3, Vector3};
 
 mod unit_directions;
+mod revolve;
 
 #[test]
 fn native_feature_kind_preserves_the_source_spelling() {

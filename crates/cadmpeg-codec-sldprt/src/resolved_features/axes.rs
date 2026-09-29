@@ -1217,15 +1217,13 @@ pub(crate) fn bind_profile_revolution_axes(
     }
 
     for (index, axis) in assignments {
-        let mut definition = model_features[index].evaluation.definition().clone();
-        if let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
-            &mut definition
-        {
-            if construction.axis().is_none() {
-                construction.set_axis(Some(axis));
+        model_features[index].evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) = definition {
+                if construction.axis().is_none() {
+                    construction.set_axis(Some(axis));
+                }
             }
-        }
-        model_features[index].evaluation.set_definition(definition);
+        });
     }
     Ok(())
 }
