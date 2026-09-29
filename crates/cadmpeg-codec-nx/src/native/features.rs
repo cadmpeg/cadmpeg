@@ -10308,19 +10308,6 @@ fn data_block_object_frame_id(
     Ok(id)
 }
 
-fn unique_offset_data_block(
-    indexed: &[(
-        crate::container::entry_ref::EntryRef<'_>,
-        crate::om::IndexedSection<'_>,
-    )],
-    object_index: u32,
-) -> Option<String> {
-    let section_ordinal = unique_offset_data_store(indexed, &[object_index])?;
-    Some(format!(
-        "nx:om-data-blocks-{section_ordinal}:block#{object_index}"
-    ))
-}
-
 fn charged_unique_offset_data_block(
     ctx: &DecodeContext<'_>,
     indexed: &[(
