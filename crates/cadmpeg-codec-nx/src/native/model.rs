@@ -904,11 +904,12 @@ impl NativeModel {
         let feature_operation_terminal_frames =
             feature_operation_terminal_frames(ctx, container, &feature_operation_common_frames)?;
         let feature_operation_state_journal_uses = feature_operation_state_journal_uses(
+            ctx,
             &feature_operation_labels,
             &feature_operation_records,
             &feature_operation_terminal_frames,
             &operation_state_journal_groups,
-        );
+        )?;
         let feature_payload_strings = feature_payload_strings(ctx, container)?;
         let feature_symbolic_threads = feature_symbolic_threads(ctx, container)?;
         let feature_threaded_hole_templates = feature_threaded_hole_templates(

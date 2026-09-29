@@ -1295,6 +1295,66 @@ fn terminal_frame(operation_record: &str, local_ordinal: u32) -> FeatureOperatio
     }
 }
 
+fn state_journal_uses_for_test(
+    labels: &[FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    terminal_frames: &[FeatureOperationTerminalFrame],
+    groups: &[OmOperationStateJournalGroup],
+) -> Vec<FeatureOperationStateJournalUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        feature_operation_state_journal_uses(ctx, labels, records, terminal_frames, groups)
+    }).expect("admitted operation state journal uses")
+}
+
+fn state_journal_use_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let label = label(0, [None; 4]);
+    let record = operation_record(
+        "nx:feature-history:operation-record#0000000000-0000000000", &label.id,
+    );
+    let group = journal_group(
+        "nx:feature-history:operation-state-journal-group#0000000000-0000000000",
+        &label.section_link, vec![journal_row(7, 520)],
+    );
+    let frame = terminal_frame(&record.id, 7);
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_operation_state_journal_uses(ctx, std::slice::from_ref(&label),
+            std::slice::from_ref(&record), std::slice::from_ref(&frame),
+            std::slice::from_ref(&group))
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted operation journal use");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("operation journal use resource limit")
+}
+
+#[test]
+fn state_journal_use_route_refuses_collection_limit() {
+    let error = state_journal_use_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn state_journal_use_route_refuses_retained_limit() {
+    let error = state_journal_use_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn state_journal_use_route_refuses_work_limit() {
+    let error = state_journal_use_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 #[test]
 fn operation_terminal_ordinal_joins_unique_section_journal_row() {
     let label = label(0, [None; 4]);
@@ -1309,7 +1369,7 @@ fn operation_terminal_ordinal_joins_unique_section_journal_row() {
     );
     let frame = terminal_frame(&record.id, 7);
 
-    let uses = feature_operation_state_journal_uses(
+    let uses = state_journal_uses_for_test(
         std::slice::from_ref(&label),
         std::slice::from_ref(&record),
         std::slice::from_ref(&frame),
@@ -1358,7 +1418,7 @@ fn operation_terminal_ordinal_rejects_wrong_section_and_ambiguous_rows() {
         vec![journal_row(7, 640)],
     );
 
-    let section_scoped = feature_operation_state_journal_uses(
+    let section_scoped = state_journal_uses_for_test(
         std::slice::from_ref(&label),
         std::slice::from_ref(&record),
         std::slice::from_ref(&frame),
@@ -1367,7 +1427,7 @@ fn operation_terminal_ordinal_rejects_wrong_section_and_ambiguous_rows() {
     assert_eq!(section_scoped.len(), 1);
     assert_eq!(section_scoped[0].journal_source_offset, 620);
 
-    let ambiguous = feature_operation_state_journal_uses(
+    let ambiguous = state_journal_uses_for_test(
         std::slice::from_ref(&label),
         std::slice::from_ref(&record),
         std::slice::from_ref(&frame),
