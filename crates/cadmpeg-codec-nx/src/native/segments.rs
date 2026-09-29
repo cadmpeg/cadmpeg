@@ -95,8 +95,7 @@ pub(super) fn segment_index_rows(
         .ok_or_else(|| ctx.refuse_codec_limit("nx segment index rows", 0, count_u64))?;
     ctx.charge_retained(slot_bytes, "nx segment index rows")?;
     let mut rows = Vec::new();
-    rows.try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("nx segment index rows", 0, count_u64))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut rows, count, "nx segment index rows")?;
     for (ordinal, row) in index.rows().enumerate() {
         let ordinal_u32 = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("nx segment index ordinal", 0, count_u64))?;
@@ -106,18 +105,7 @@ pub(super) fn segment_index_rows(
             .len()
             .checked_add(digits)
             .ok_or_else(|| ctx.refuse_codec_limit("nx segment index row identity", 0, count_u64))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "nx segment index row identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx segment index row identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(id_len),
-            )
-        })?;
+        let mut id = ctx.retained_string(id_len, "nx segment index row identity")?;
         write!(&mut id, "{prefix}{ordinal}").map_err(|_| {
             ctx.refuse_codec_limit(
                 "nx segment index row identity",
@@ -126,18 +114,7 @@ pub(super) fn segment_index_rows(
             )
         })?;
         let name_len = entry.name.len();
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(name_len),
-            "nx segment index source entry",
-        )?;
-        let mut source_entry = String::new();
-        source_entry.try_reserve_exact(name_len).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx segment index source entry",
-                0,
-                cadmpeg_core::decode::u64_from_index(name_len),
-            )
-        })?;
+        let mut source_entry = ctx.retained_string(name_len, "nx segment index source entry")?;
         source_entry.push_str(&entry.name);
         let byte_offset = ordinal
             .checked_mul(12)
@@ -391,13 +368,7 @@ fn terminal_feature_body_indices(
         {
             continue;
         }
-        ctx.charge_collection_items(1, "NX terminal body object references")?;
-        object_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            &FeatureBodyReference,
-        >()))?;
-        object_references.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX terminal body object references", 0, 1)
-        })?;
+        ctx.reserve_scoped_vec(&mut object_reservation, &mut object_references, 1, "NX terminal body object references")?;
         object_references.push(reference);
     }
     if object_references.is_empty() && bindings.is_empty() {
@@ -603,26 +574,10 @@ pub(super) fn segment_body_lineage_statuses(
             .len()
             .checked_add(key.len())
             .ok_or_else(|| ctx.refuse_codec_limit("NX segment lineage status identity", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX segment lineage status identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX segment lineage status identity", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX segment lineage status identity")?;
         id.push_str(prefix);
         id.push_str(key);
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(binding.id.len()),
-            "NX segment lineage binding identity",
-        )?;
-        let mut segment_body_binding = String::new();
-        segment_body_binding
-            .try_reserve_exact(binding.id.len())
-            .map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX segment lineage binding identity", 0, 1)
-            })?;
+        let mut segment_body_binding = ctx.retained_string(binding.id.len(), "NX segment lineage binding identity")?;
         segment_body_binding.push_str(&binding.id);
         ctx.reserve_retained_vec(&mut output, 1, "NX segment lineage statuses")?;
         output.push(SegmentBodyLineageStatus {
@@ -709,14 +664,7 @@ pub(super) fn boolean_offset_store_resolution(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, String)>() * 4),
             "NX Boolean offset-store participant slots",
         )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(block.id.len()),
-            "NX Boolean offset-store block identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(block.id.len()).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX Boolean offset-store block identity", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(block.id.len(), "NX Boolean offset-store block identity")?;
         id.push_str(&block.id);
         complete.insert(object_index, id);
     }
@@ -748,11 +696,7 @@ fn segment_boolean_operation_labels(
             .ok_or_else(|| ctx.refuse_codec_limit("NX segment Boolean operation labels", 0, 1))?;
         reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
         let mut label = String::new();
-        label
-            .try_reserve_exact(operation.operation_label.len())
-            .map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX segment Boolean operation label", 0, 1)
-            })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut label, operation.operation_label.len(), "allocate NX segment Boolean operation label")?;
         label.push_str(&operation.operation_label);
         labels.insert(label);
     }
@@ -801,13 +745,7 @@ pub(super) fn body_alias_roots(
         let mut component_reservation = ctx.reserve_scoped(0, "NX segment alias component")?;
         let mut pending_reservation = ctx.reserve_scoped(0, "NX segment alias traversal")?;
         let mut pending = Vec::new();
-        ctx.charge_collection_items(1, "NX segment alias traversal")?;
-        pending_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<u32>(),
-        ))?;
-        pending
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX segment alias traversal", 0, 1))?;
+        ctx.reserve_scoped_vec(&mut pending_reservation, &mut pending, 1, "NX segment alias traversal")?;
         pending.push(identity);
         while let Some(member) = pending.pop() {
             ctx.charge_collection_items(1, "NX segment alias component")?;
@@ -821,13 +759,7 @@ pub(super) fn body_alias_roots(
                 if component.contains(neighbor) {
                     continue;
                 }
-                ctx.charge_collection_items(1, "NX segment alias traversal")?;
-                pending_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                    std::mem::size_of::<u32>(),
-                ))?;
-                pending.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("allocate NX segment alias traversal", 0, 1)
-                })?;
+                ctx.reserve_scoped_vec(&mut pending_reservation, &mut pending, 1, "NX segment alias traversal")?;
                 pending.push(*neighbor);
             }
         }
@@ -944,14 +876,7 @@ fn segment_link_identity(
         .len()
         .checked_add(decimal_digits(ordinal))
         .ok_or_else(|| ctx.refuse_codec_limit("NX segment link identity length", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "retain NX segment link identity",
-    )?;
-    let mut identity = String::new();
-    identity
-        .try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX segment link identity", 0, 1))?;
+    let mut identity = ctx.retained_string(length, "retain NX segment link identity")?;
     write!(identity, "{prefix}{ordinal}")
         .map_err(|_| ctx.refuse_codec_limit("write NX segment link identity", 0, 1))?;
     Ok(identity)
@@ -986,18 +911,7 @@ pub(super) fn segment_stream_links(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SegmentStreamLink>()),
             "nx segment stream links",
         )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "nx segment stream link identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx segment stream link identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(id_len),
-            )
-        })?;
+        let mut id = ctx.retained_string(id_len, "nx segment stream link identity")?;
         write!(&mut id, "{prefix}{ordinal}").map_err(|_| {
             ctx.refuse_codec_limit(
                 "nx segment stream link identity",
@@ -1005,9 +919,7 @@ pub(super) fn segment_stream_links(
                 cadmpeg_core::decode::u64_from_index(id_len),
             )
         })?;
-        links
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx segment stream links", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut links, 1, "nx segment stream links")?;
         links.push(SegmentStreamLink {
             id,
             row: candidate.wrapper.row_ordinal,
@@ -1115,13 +1027,7 @@ pub(super) fn segment_body_bindings(
             "nx segment body stream link identity",
         )?;
         let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx segment body binding identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(id_len),
-            )
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut id, id_len, "nx segment body binding identity")?;
         write!(&mut id, "{binding_prefix}{ordinal}").map_err(|_| {
             ctx.refuse_codec_limit(
                 "nx segment body binding identity",
@@ -1130,13 +1036,7 @@ pub(super) fn segment_body_bindings(
             )
         })?;
         let mut stream_link = String::new();
-        stream_link.try_reserve_exact(link_len).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx segment body stream link identity",
-                0,
-                cadmpeg_core::decode::u64_from_index(link_len),
-            )
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut stream_link, link_len, "nx segment body stream link identity")?;
         write!(&mut stream_link, "{link_prefix}{ordinal}").map_err(|_| {
             ctx.refuse_codec_limit(
                 "nx segment body stream link identity",
@@ -1144,9 +1044,7 @@ pub(super) fn segment_body_bindings(
                 cadmpeg_core::decode::u64_from_index(link_len),
             )
         })?;
-        bindings
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx segment body bindings", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bindings, 1, "nx segment body bindings")?;
         bindings.push(SegmentBodyBinding {
             id,
             stream_link,

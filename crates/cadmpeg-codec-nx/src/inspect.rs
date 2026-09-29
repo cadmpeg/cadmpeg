@@ -360,8 +360,7 @@ fn insert_summary_attribute(
         "nx summary attribute text",
     )?;
     let mut key = String::new();
-    key.try_reserve_exact(key_len)
-        .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut key, key_len, "nx summary attribute text")?;
     key.push_str(prefix);
     if lowercase_suffix {
         for character in suffix.chars() {
@@ -371,9 +370,7 @@ fn insert_summary_attribute(
         key.push_str(suffix);
     }
     let mut rendered = String::new();
-    rendered
-        .try_reserve_exact(value_len)
-        .map_err(|_| ctx.refuse_codec_limit("nx summary attribute text", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut rendered, value_len, "nx summary attribute text")?;
     match value {
         SummaryValue::Text(text) => rendered.push_str(text),
         SummaryValue::Number(number) => write!(&mut rendered, "{number}")

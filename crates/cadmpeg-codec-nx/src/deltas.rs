@@ -524,11 +524,7 @@ fn term_use_numeric_tails(
             ctx.refuse_codec_limit("NX deltas event start bytes", 0, u64_from_index(count))
         })?;
     let _reservation = ctx.reserve_scoped(u64_from_index(bytes), "NX deltas event starts")?;
-    ctx.charge_collection_items(u64_from_index(count), "NX deltas event starts")?;
-    let mut event_starts = Vec::new();
-    event_starts
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit("NX deltas event starts", 0, u64_from_index(count)))?;
+    let mut event_starts = ctx.collection_vec(count, "NX deltas event starts")?;
     event_starts.extend(
         census
             .records
@@ -1685,9 +1681,7 @@ fn merged_event_spans(
         })?;
     ctx.charge_work(sort_work, "sort NX deltas event spans")?;
     let mut covered = Vec::new();
-    covered.try_reserve(count).map_err(|_| {
-        ctx.refuse_codec_limit("NX deltas event span allocation", 0, u64_from_index(count))
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut covered, count, "NX deltas event span allocation")?;
     covered.extend(
         census
             .transmit_header
@@ -1941,11 +1935,7 @@ fn push_merge_event(
         )>()))?;
     }
     let bucket = events.entry(key).or_default();
-    ctx.charge_collection_items(1, "NX deltas merge events")?;
-    reservation.grow(u64_from_index(std::mem::size_of::<MergeEvent>()))?;
-    bucket
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("NX deltas merge events", 0, 1))?;
+    ctx.reserve_scoped_vec(reservation, bucket, 1, "NX deltas merge events")?;
     bucket.push(event);
     Ok(())
 }
@@ -2117,9 +2107,7 @@ fn merge_records(
         let reservation =
             ctx.reserve_scoped(u64_from_index(total_len), "NX merged partition bytes")?;
         let mut merged = Vec::new();
-        merged.try_reserve_exact(total_len).map_err(|_| {
-            ctx.refuse_codec_limit("NX merged partition bytes", 0, u64_from_index(total_len))
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut merged, total_len, "NX merged partition bytes")?;
         merged.extend_from_slice(partition);
         for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
             if included(kind) {
@@ -2337,9 +2325,7 @@ fn current_revision_scopes(
         "NX snapshot revision indices",
     )?;
     let mut snapshot_revisions = Vec::new();
-    snapshot_revisions.try_reserve_exact(count).map_err(|_| {
-        ctx.refuse_codec_limit("NX snapshot revision indices", 0, u64_from_index(count))
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut snapshot_revisions, count, "NX snapshot revision indices")?;
     for (index, revision) in census.body_revisions.iter().enumerate() {
         if u32::from(revision.xmt) == 3 {
             snapshot_revisions.push(index);
@@ -2368,11 +2354,7 @@ fn current_revision_scopes(
         let previous = census.body_revisions[pair[0]].node_id;
         let current = census.body_revisions[pair[1]].node_id;
         if !revision_follows_direction(previous, current, direction) {
-            ctx.charge_collection_items(1, "NX revision run starts")?;
-            run_reservation.grow(u64_from_index(std::mem::size_of::<usize>()))?;
-            run_starts
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX revision run starts", 0, 1))?;
+            ctx.reserve_scoped_vec(&mut run_reservation, &mut run_starts, 1, "NX revision run starts")?;
             run_starts.push(position + 1);
         }
     }
@@ -2390,11 +2372,7 @@ fn current_revision_scopes(
             census.body_revisions[snapshot_revisions[next_run_start]].offset
         });
         if current_revision.offset < end {
-            ctx.charge_collection_items(1, "NX current revision scopes")?;
-            scopes_reservation.grow(u64_from_index(std::mem::size_of::<RevisionScope>()))?;
-            scopes
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX current revision scopes", 0, 1))?;
+            ctx.reserve_scoped_vec(&mut scopes_reservation, &mut scopes, 1, "NX current revision scopes")?;
             scopes.push(RevisionScope {
                 start: current_revision.offset,
                 end,
@@ -2508,9 +2486,7 @@ pub(crate) fn semantic_residual_with_census(
     }
     ctx.charge_retained(u64_from_index(total_len), "NX semantic residual bytes")?;
     let mut residual = Vec::new();
-    residual.try_reserve_exact(total_len).map_err(|_| {
-        ctx.refuse_codec_limit("NX semantic residual bytes", 0, u64_from_index(total_len))
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut residual, total_len, "NX semantic residual bytes")?;
     residual.extend_from_slice(stream);
     residual.fill(0xff);
     for scope in &current_scopes {
@@ -2581,11 +2557,7 @@ impl FixedCandidate {
         let canonical_len = cadmpeg_core::decode::u64_from_index(self.canonical_len);
         ctx.charge_retained(canonical_len, "NX deltas fixed record bytes")?;
         let mut canonical_bytes = Vec::new();
-        canonical_bytes
-            .try_reserve_exact(self.canonical_len)
-            .map_err(|_| {
-                ctx.refuse_codec_limit("NX deltas fixed record bytes", 0, canonical_len)
-            })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut canonical_bytes, self.canonical_len, "NX deltas fixed record bytes")?;
         canonical_bytes.extend_from_slice(&stream[self.offset..self.prefix_end]);
         let mut at = self.prefix_end;
         for token in signature {

@@ -96,11 +96,7 @@ fn retain_jt_tessellation_id(
         .and_then(|length| length.checked_add(1 + digits(u64::from(object_id))))
         .and_then(|length| length.checked_add(path_length))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
-    let mut id = String::new();
-    id.try_reserve_exact(length).map_err(|_| {
-        ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(length))
-    })?;
+    let mut id = ctx.retained_string(length, operation)?;
     id.push_str(prefix);
     std::fmt::Write::write_fmt(&mut id, format_args!("{offset}-{object_id}")).map_err(|_| {
         ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(length))
@@ -3146,8 +3142,7 @@ pub(super) fn display_jt_indices(
                 "retain DisplayJT index rows",
             )?;
             let mut rows = Vec::new();
-            rows.try_reserve_exact(row_count)
-                .map_err(|_| ctx.refuse_codec_limit("allocate DisplayJT index rows", 0, 1))?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut rows, row_count, "allocate DisplayJT index rows")?;
             let mut previous_header_offset = None;
             for ordinal in 0..row_count {
                 let row_offset = 8 + ordinal * 16;
@@ -4484,12 +4479,12 @@ pub(super) fn display_jt_compressed_element_sequences(
             ctx.charge_retained(element_slots, "retain DisplayJT compressed elements")?;
         }
         let mut element_ids = Vec::new();
-        if element_ids.try_reserve_exact(parsed.len()).is_err() {
+        if cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut element_ids, parsed.len(), "allocate DisplayJT element ids").is_err() {
             return Err(budget
                 .0
                 .refuse_codec_limit("allocate DisplayJT element ids", 0, 1));
         }
-        if elements.try_reserve_exact(parsed.len()).is_err() {
+        if cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut elements, parsed.len(), "allocate DisplayJT compressed elements").is_err() {
             return Err(budget.0.refuse_codec_limit(
                 "allocate DisplayJT compressed elements",
                 0,
@@ -4568,9 +4563,7 @@ pub(super) fn display_jt_compressed_element_sequences(
             ctx.charge_work(tail_work, "hash DisplayJT compressed sequence tail")?;
         }
         let ctx = budget.0;
-        sequences
-            .try_reserve_exact(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate DisplayJT compressed sequence", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut sequences, 1, "allocate DisplayJT compressed sequence")?;
         let retained_tail = ctx.copy_retained(tail, "retain DisplayJT compressed sequence tail")?;
         let tail_work = cadmpeg_core::decode::u64_from_index(tail.len());
         ctx.charge_work(tail_work, "check DisplayJT compressed sequence tail hash")?;
@@ -5530,23 +5523,11 @@ fn resolve_display_jt_node_paths(
                 .checked_mul(std::mem::size_of::<DisplayJtPath>())
                 .ok_or_else(|| ctx.refuse_codec_limit("nx JT parent path states", 0, 1))?;
             parent_states_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-            parent_states.try_reserve(count).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "nx JT parent path states",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(count),
-                )
-            })?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut parent_states, count, "nx JT parent path states")?;
             parent_states.extend(paths);
         }
     } else {
-        ctx.charge_collection_items(1, "nx JT root path state")?;
-        parent_states_reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<DisplayJtPath>(),
-        ))?;
-        parent_states
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx JT root path state", 0, 1))?;
+        ctx.reserve_scoped_vec(&mut parent_states_reservation, &mut parent_states, 1, "nx JT root path state")?;
         parent_states.push(DisplayJtPath {
             matrix: [
                 [1.0, 0.0, 0.0, 0.0],
@@ -5761,12 +5742,7 @@ fn display_jt_node_paths(
                 ))?;
             }
             let ids = parents.entry(child).or_default();
-            ctx.charge_collection_items(1, "nx JT parent references")?;
-            parents_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                u32,
-            >()))?;
-            ids.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx JT parent references", 0, 1))?;
+            ctx.reserve_scoped_vec(&mut parents_reservation, ids, 1, "nx JT parent references")?;
             ids.push(*object_id);
         }
     }

@@ -288,9 +288,7 @@ impl StreamView {
                 "nx auxiliary replacement views",
             )?;
             let mut replacement_streams = Vec::new();
-            replacement_streams
-                .try_reserve_exact(delta_indices.len())
-                .map_err(|_| ctx.refuse_codec_limit("nx auxiliary replacement views", 0, 1))?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut replacement_streams, delta_indices.len(), "nx auxiliary replacement views")?;
             for delta in delta_indices {
                 replacement_streams.push(scan.streams[*delta].inflated.as_slice());
             }
@@ -419,9 +417,7 @@ impl<'a> ParsedStreams<'a> {
                         census,
                     )?;
                     residual_reservation.grow(cadmpeg_core::decode::u64_from_index(part.len()))?;
-                    residual.try_reserve(part.len()).map_err(|_| {
-                        ctx.refuse_codec_limit("nx semantic residual aggregation", 0, 1)
-                    })?;
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut residual, part.len(), "nx semantic residual aggregation")?;
                     residual.extend_from_slice(&part);
                 }
             }
@@ -435,9 +431,7 @@ impl<'a> ParsedStreams<'a> {
                         )?;
                         residual_reservation
                             .grow(cadmpeg_core::decode::u64_from_index(part.len()))?;
-                        residual.try_reserve(part.len()).map_err(|_| {
-                            ctx.refuse_codec_limit("nx semantic residual aggregation", 0, 1)
-                        })?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut residual, part.len(), "nx semantic residual aggregation")?;
                         residual.extend_from_slice(&part);
                     }
                 }
@@ -468,9 +462,7 @@ impl<'a> ParsedStreams<'a> {
                         Cow::Borrowed(bytes) => Cow::Borrowed(*bytes),
                         Cow::Owned(bytes) => {
                             let mut copy = Vec::new();
-                            copy.try_reserve_exact(bytes.len()).map_err(|_| {
-                                ctx.refuse_codec_limit("nx auxiliary topology snapshot", 0, 1)
-                            })?;
+                            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut copy, bytes.len(), "nx auxiliary topology snapshot")?;
                             copy.extend_from_slice(bytes);
                             Cow::Owned(copy)
                         }
@@ -489,9 +481,7 @@ impl<'a> ParsedStreams<'a> {
                             "nx extended semantic topology",
                         )?;
                         let mut owned = Vec::new();
-                        owned.try_reserve_exact(total_len).map_err(|_| {
-                            ctx.refuse_codec_limit("nx extended semantic topology", 0, 1)
-                        })?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut owned, total_len, "nx extended semantic topology")?;
                         owned.extend_from_slice(bytes);
                         owned.extend_from_slice(&residual);
                         semantic_bytes = Cow::Owned(owned);
@@ -501,9 +491,7 @@ impl<'a> ParsedStreams<'a> {
                             cadmpeg_core::decode::u64_from_index(residual.len()),
                             "nx extended semantic topology",
                         )?;
-                        bytes.try_reserve(residual.len()).map_err(|_| {
-                            ctx.refuse_codec_limit("nx extended semantic topology", 0, 1)
-                        })?;
+                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(bytes, residual.len(), "nx extended semantic topology")?;
                         bytes.extend_from_slice(&residual);
                     }
                 }

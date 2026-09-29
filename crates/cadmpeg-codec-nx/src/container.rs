@@ -532,11 +532,7 @@ impl<'a> Container<'a> {
         let count = strings.len();
         let mut paths = ctx.retained_vec(count, "nx external reference paths")?;
         for (_, _, path) in strings {
-            let path_len = cadmpeg_core::decode::u64_from_index(path.len());
-            ctx.charge_retained(path_len, "nx external reference path")?;
-            let mut copy = String::new();
-            copy.try_reserve_exact(path.len())
-                .map_err(|_| ctx.refuse_codec_limit("nx external reference path", 0, path_len))?;
+            let mut copy = ctx.retained_string(path.len(), "nx external reference path")?;
             copy.push_str(&path);
             paths.push(copy);
         }
@@ -702,9 +698,7 @@ impl<'a> Container<'a> {
         ctx.charge_collection_items(count_u64, "admit NX FastLoad object IDs")?;
         ctx.charge_retained(id_bytes_u64, "retain NX FastLoad object IDs")?;
         let mut object_ids = Vec::new();
-        object_ids
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX FastLoad object IDs", 0, count_u64))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut object_ids, count, "allocate NX FastLoad object IDs")?;
         for ordinal in 0..count {
             let offset = ids_start + ordinal * 4;
             let object_id = View::u32_le_at(bytes, offset).ok_or_else(|| {
@@ -826,11 +820,7 @@ fn parse_extref_string_table(
         let Ok(value) = std::str::from_utf8(raw) else {
             return Ok(None);
         };
-        let len = cadmpeg_core::decode::u64_from_index(value.len());
-        ctx.charge_retained(len, "nx external reference string")?;
-        let mut copy = String::new();
-        copy.try_reserve_exact(value.len())
-            .map_err(|_| ctx.refuse_codec_limit("nx external reference string", 0, len))?;
+        let mut copy = ctx.retained_string(value.len(), "nx external reference string")?;
         copy.push_str(value);
         out.push((string_offset, copy));
         pos = end;
@@ -1137,15 +1127,7 @@ fn offset_block_key(
         .and_then(|length| length.checked_add(":block#".len()))
         .and_then(|length| length.checked_add(decimal_len(block)))
         .ok_or_else(|| ctx.refuse_codec_limit("NX offset block key", u64::MAX, u64::MAX))?;
-    ctx.charge_retained(u64_from_index(length), "NX offset block key")?;
-    let mut key = String::new();
-    key.try_reserve_exact(length).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "NX offset block key",
-            u64_from_index(length),
-            u64_from_index(length),
-        )
-    })?;
+    let mut key = ctx.retained_string(length, "NX offset block key")?;
     write!(&mut key, "nx:om-data-blocks-{section}:block#{block}").map_err(|_| {
         ctx.refuse_codec_limit(
             "NX offset block key",
@@ -1356,9 +1338,7 @@ pub(crate) fn scan_bytes<'a>(
             cadmpeg_core::decode::u64_from_index(footer_bytes),
             "join NX directory regions",
         )?;
-        entries
-            .try_reserve_exact(footer_entries.len())
-            .map_err(|_| ctx.refuse_codec_limit("join NX directory regions", 0, footer_items))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut entries, footer_entries.len(), "join NX directory regions")?;
         entries.extend(footer_entries);
     }
     if header_end > fo {
@@ -1465,9 +1445,7 @@ pub(crate) fn scan_legacy<'a>(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&view)),
             "legacy NX stream views",
         )?;
-        stream_views
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("legacy NX stream views", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut stream_views, 1, "legacy NX stream views")?;
         stream_views.push(view);
     }
     let logical_data = ctx.concat_views(&stream_views)?;
@@ -1491,21 +1469,13 @@ pub(crate) fn scan_legacy<'a>(
                 }),
             CompoundEntry::Storage(_) => DirEntryBody::Directory,
         };
-        entries
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("retain legacy NX directory entry", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut entries, 1, "retain legacy NX directory entry")?;
         let name_len = "/Root/"
             .len()
             .checked_add(entry.path().len())
             .ok_or_else(|| ctx.refuse_codec_limit("retain legacy NX directory entry", 0, 1))?;
         let mut name = String::new();
-        name.try_reserve_exact(name_len).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "retain legacy NX directory entry",
-                0,
-                cadmpeg_core::decode::u64_from_index(name_len),
-            )
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut name, name_len, "retain legacy NX directory entry")?;
         name.push_str("/Root/");
         name.push_str(entry.path());
         entries.push(DirEntry {
@@ -1570,9 +1540,7 @@ fn directory_region(
         .map_err(|_| CodecError::NotImplemented("NX directory entries exceed u64".into()))?;
     ctx.charge_retained(entry_bytes_u64, "retain NX directory entries")?;
     let mut entries = Vec::new();
-    entries.try_reserve_exact(capacity).map_err(|_| {
-        ctx.refuse_codec_limit("allocate NX directory entries", 0, u64::from(count))
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut entries, capacity, "allocate NX directory entries")?;
     let mut at = entries_offset;
     for ordinal in 0..count {
         let Some((entry, next)) = try_entry(ctx, data, at, region, region_end, ordinal)? else {
@@ -1633,13 +1601,7 @@ fn try_entry(
         return Ok(None);
     };
     let mut name = String::new();
-    name.try_reserve_exact(name_len).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "retain NX directory name",
-            0,
-            cadmpeg_core::decode::u64_from_index(name_len),
-        )
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut name, name_len, "retain NX directory name")?;
     name.push_str(value);
     // Interpret the 16-byte payload as a file span when it lands within the file.
     let body = match (

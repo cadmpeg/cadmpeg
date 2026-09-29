@@ -6,7 +6,7 @@ use crate::om::roll_forward::{GroupTableFooter, OperationStateGroup, OperationSt
 use crate::om::state_group::{
     OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers,
 };
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{DecodeContext};
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
@@ -33,13 +33,7 @@ fn group_id(ctx: &DecodeContext<'_>, section: usize, ordinal: u32) -> Result<Str
         .checked_add(section_digits)
         .and_then(|length| length.checked_add(ordinal_digits))
         .ok_or_else(|| ctx.refuse_codec_limit("NX roll-forward group identity length", 0, 1))?;
-    ctx.charge_retained(
-        u64_from_index(length),
-        "retain NX roll-forward group identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX roll-forward group identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "retain NX roll-forward group identity")?;
     write!(
         id,
         "nx:feature-history:roll-forward-state-group#{section:010}-{ordinal:010}"

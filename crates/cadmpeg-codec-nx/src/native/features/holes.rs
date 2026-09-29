@@ -697,9 +697,7 @@ fn owned_symbolic_thread(
         "NX symbolic thread text frames",
     )?;
     let mut text_frames = Vec::new();
-    text_frames
-        .try_reserve_exact(frames.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX symbolic thread text frames", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut text_frames, frames.len(), "allocate NX symbolic thread text frames")?;
     for (ordinal, frame) in frames.into_iter().enumerate() {
         let ordinal_u32 = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX symbolic thread text frame ordinal", 0, 1))?;
@@ -783,9 +781,7 @@ pub(in crate::native) fn feature_symbolic_threads(
                     )
                 })
                 .and_then(|()| {
-                    threads
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit("allocate NX symbolic threads", 0, 1))
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut threads, 1, "allocate NX symbolic threads")
                 })
             {
                 failure = Some(error);
@@ -818,10 +814,7 @@ fn copy_replaced_id(
         .checked_sub(marker.len())
         .and_then(|length| length.checked_add(replacement.len()))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), operation)?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    let mut id = ctx.retained_string(length, operation)?;
     id.push_str(&source[..start]);
     id.push_str(replacement);
     id.push_str(&source[end..]);
@@ -1051,13 +1044,7 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lanes(
                     )
                 })
                 .and_then(|()| {
-                    pairs.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "allocate NX simple hole repeated scalar lanes",
-                            0,
-                            1,
-                        )
-                    })
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut pairs, 1, "allocate NX simple hole repeated scalar lanes")
                 })
             {
                 failure = Some(error);
@@ -1232,13 +1219,7 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_referenc
                     )
                 })
                 .and_then(|()| {
-                    references.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "allocate NX simple hole block reference lanes",
-                            0,
-                            1,
-                        )
-                    })
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut references, 1, "allocate NX simple hole block reference lanes")
                 })
             {
                 failure = Some(error);
@@ -1281,15 +1262,7 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
             .filter(|other| other.section_link == label.section_link)
             .map(|other| other.source_offset)
             .fold(label.source_offset, u64::min);
-        ctx.charge_collection_items(1, "NX hole operation chronology")?;
-        chronology_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-            usize,
-            &FeatureOperationLabel,
-            u64,
-        )>()))?;
-        chronology
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX hole operation chronology", 0, 1))?;
+        ctx.reserve_scoped_vec(&mut chronology_reservation, &mut chronology, 1, "NX hole operation chronology")?;
         chronology.push((index, label, first_offset));
     }
     chronology.sort_unstable_by(
@@ -1362,14 +1335,7 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
             ))?;
         }
         let bucket = grouped.entry(key).or_default();
-        ctx.charge_collection_items(1, "NX simple hole group candidates")?;
-        grouped_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-            &FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
-            &FeatureSimpleHoleRepeatedScalarLane,
-        )>()))?;
-        bucket.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX simple hole group candidates", 0, 1)
-        })?;
+        ctx.reserve_scoped_vec(&mut grouped_reservation, bucket, 1, "NX simple hole group candidates")?;
         bucket.push((reference, lane));
     }
     let mut groups = Vec::new();
@@ -1388,18 +1354,7 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
                 missing = true;
                 break;
             };
-            ctx.charge_collection_items(1, "NX simple hole group positions")?;
-            positions_reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(
-                    usize,
-                    usize,
-                    &FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
-                    &FeatureSimpleHoleRepeatedScalarLane,
-                )>(),
-            ))?;
-            positioned.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX simple hole group positions", 0, 1)
-            })?;
+            ctx.reserve_scoped_vec(&mut positions_reservation, &mut positioned, 1, "NX simple hole group positions")?;
             positioned.push((position, index, reference, lane));
         }
         if missing {
@@ -1463,13 +1418,7 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
             .len()
             .checked_add(id_key.len())
             .ok_or_else(|| ctx.refuse_codec_limit("NX simple hole group identity", 0, 1))?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(length),
-            "NX simple hole group identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(length)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX simple hole group identity", 0, 1))?;
+        let mut id = ctx.retained_string(length, "NX simple hole group identity")?;
         id.push_str(prefix);
         id.push_str(id_key);
         let members = SimpleHoleConstructionMembers::new(members)
@@ -1590,9 +1539,7 @@ pub(in crate::native) fn feature_hole_package_construction_group_lanes(
                     )
                 })
                 .and_then(|()| {
-                    lanes
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit("allocate NX hole package lanes", 0, 1))
+                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut lanes, 1, "allocate NX hole package lanes")
                 })
             {
                 failure = Some(error);
@@ -1666,14 +1613,7 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
         let (Some(lane), None) = (matching_lanes.next(), matching_lanes.next()) else {
             continue;
         };
-        ctx.charge_collection_items(1, "NX hole package group candidates")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-            &FeatureSimpleHoleConstructionGroup,
-            &FeatureHolePackageConstructionGroupLane,
-        )>()))?;
-        matches.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX hole package group candidates", 0, 1)
-        })?;
+        ctx.reserve_scoped_vec(&mut reservation, &mut matches, 1, "NX hole package group candidates")?;
         matches.push((group, lane));
     }
     let sort_work = matches

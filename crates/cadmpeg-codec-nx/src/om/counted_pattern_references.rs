@@ -102,9 +102,7 @@ impl CountedPatternReferences<()> {
         ctx.charge_collection_items(count_u64, "NX counted pattern references")?;
         ctx.charge_retained(slot_bytes, "NX counted pattern references")?;
         let mut entries = Vec::new();
-        entries
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit("NX counted pattern references", 0, count_u64))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut entries, count, "NX counted pattern references")?;
         let Some(mut at) = start.checked_add(2) else {
             return Ok(None);
         };

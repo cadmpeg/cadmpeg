@@ -229,34 +229,19 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
         ) {
             (Some(_), Some(data_block)) => {
                 if !offset_blocks.contains(&data_block) {
-                    ctx.charge_collection_items(1, "NX feature body offset blocks")?;
-                    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        &String,
-                    >(
-                    )))?;
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut offset_blocks, 1, "NX feature body offset blocks")?;
+                    ctx.reserve_scoped_vec(&mut reservation, &mut offset_blocks, 1, "NX feature body offset blocks")?;
                     offset_blocks.push(data_block);
                 }
             }
             (Some(root), None) => {
                 if !roots.contains(root) {
-                    ctx.charge_collection_items(1, "NX feature body roots")?;
-                    reservation
-                        .grow(cadmpeg_core::decode::u64_from_index(
-                            std::mem::size_of::<u32>(),
-                        ))?;
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut roots, 1, "NX feature body roots")?;
+                    ctx.reserve_scoped_vec(&mut reservation, &mut roots, 1, "NX feature body roots")?;
                     roots.push(*root);
                 }
             }
             (None, Some(data_block)) => {
                 if !offset_blocks.contains(&data_block) {
-                    ctx.charge_collection_items(1, "NX feature body offset blocks")?;
-                    reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                        &String,
-                    >(
-                    )))?;
-                    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut offset_blocks, 1, "NX feature body offset blocks")?;
+                    ctx.reserve_scoped_vec(&mut reservation, &mut offset_blocks, 1, "NX feature body offset blocks")?;
                     offset_blocks.push(data_block);
                 }
             }
@@ -333,11 +318,7 @@ pub(super) fn feature_body_selection_with_offset_blocks<'ctx>(
     if all_resolved {
         let mut identity_keys = Vec::new();
         for root in roots {
-            ctx.charge_collection_items(1, "NX feature body segment identities")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                FeatureBodyIdentity,
-            >()))?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut identity_keys, 1, "NX feature body segment identities")?;
+            ctx.reserve_scoped_vec(&mut reservation, &mut identity_keys, 1, "NX feature body segment identities")?;
             identity_keys.push(FeatureBodyIdentity::Segment(root));
         }
         return Ok(FeatureBodySelection::Resolved {
@@ -386,11 +367,7 @@ pub(super) fn feature_body_set_selection(
         )?;
         let root = body_alias_roots.get(index).copied().unwrap_or(*index);
         if !roots.contains(&root) {
-            ctx.charge_collection_items(1, "NX feature body set roots")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<u32>(),
-            ))?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut roots, 1, "NX feature body set roots")?;
+            ctx.reserve_scoped_vec(&mut reservation, &mut roots, 1, "NX feature body set roots")?;
             roots.push(root);
         }
     }
@@ -428,11 +405,7 @@ pub(super) fn feature_body_set_selection(
     }
     let mut bodies = Vec::new();
     for root in roots {
-        ctx.charge_collection_items(1, "NX feature body set local selection")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            String,
-        >()))?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bodies, 1, "NX feature body set local selection")?;
+        ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX feature body set local selection")?;
         bodies.push(ctx.format_scoped_text_with_work(&mut reservation, format_args!("nx:om-body-object#{root}"), "NX body selection text")?);
     }
     FeatureBodySelection::Local {
@@ -571,9 +544,7 @@ pub(super) fn copy_feature_output_bodies(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX feature output body",
         )?;
-        outputs
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX feature output bodies", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut outputs, 1, "allocate NX feature output bodies")?;
         outputs.push(body.clone());
     }
     Ok(outputs)

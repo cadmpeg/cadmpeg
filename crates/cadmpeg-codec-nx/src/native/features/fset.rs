@@ -319,16 +319,13 @@ fn fset_construction_payload_from_group(
         "NX FSET source block references",
     )?;
     let mut data_blocks = Vec::new();
-    data_blocks
-        .try_reserve_exact(source_blocks.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX FSET source block references", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut data_blocks, source_blocks.len(), "allocate NX FSET source block references")?;
     for (_, target) in source_blocks {
         let Some(block) = target else {
             return Ok(None);
         };
         let mut id = String::new();
-        id.try_reserve_exact(block.len())
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX FSET source block reference", 0, 1))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut id, block.len(), "allocate NX FSET source block reference")?;
         id.push_str(block);
         data_blocks.push(id);
     }
@@ -364,13 +361,7 @@ fn fset_construction_payload_from_group(
         .checked_add(operation_key.len())
         .and_then(|length| length.checked_add(1 + group_name.len()))
         .ok_or_else(|| ctx.refuse_codec_limit("NX FSET construction identity", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(id_len),
-        "NX FSET construction identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(id_len)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX FSET construction identity", 0, 1))?;
+    let mut id = ctx.retained_string(id_len, "NX FSET construction identity")?;
     write!(&mut id, "{prefix}{operation_key}-{group_name}")
         .map_err(|_| ctx.refuse_codec_limit("write NX FSET construction identity", 0, 1))?;
     Ok(Some(FeatureConstructionPayload {

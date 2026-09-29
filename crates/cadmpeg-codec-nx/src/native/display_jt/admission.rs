@@ -418,20 +418,10 @@ fn invalid(ctx: &DecodeContext<'_>, id: &str, field: &str) -> NativeConvertError
             1,
         ));
     };
-    if let Err(error) = ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "retain DisplayJT graph rejection",
-    ) {
-        return NativeConvertError::Resource(error);
-    }
-    let mut message = String::new();
-    if message.try_reserve_exact(length).is_err() {
-        return NativeConvertError::Resource(ctx.refuse_codec_limit(
-            "allocate DisplayJT graph rejection",
-            0,
-            1,
-        ));
-    }
+    let mut message = match ctx.retained_string(length, "retain DisplayJT graph rejection") {
+        Ok(message) => message,
+        Err(error) => return NativeConvertError::Resource(error),
+    };
     if write!(&mut message, "{code}{prefix}{id}{separator}{field}").is_err() {
         return NativeConvertError::Resource(ctx.refuse_codec_limit(
             "format DisplayJT graph rejection",

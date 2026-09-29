@@ -278,17 +278,13 @@ fn delete_construction_payload_from_field(
         "NX DELETE source block references",
     )?;
     let mut data_blocks = Vec::new();
-    data_blocks
-        .try_reserve_exact(slots.len())
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX DELETE source block references", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut data_blocks, slots.len(), "allocate NX DELETE source block references")?;
     for reference in slots {
         let Some((_, Some(block))) = reference else {
             return Ok(None);
         };
         let mut id = String::new();
-        id.try_reserve_exact(block.len()).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX DELETE source block reference", 0, 1)
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut id, block.len(), "allocate NX DELETE source block reference")?;
         id.push_str(block);
         data_blocks.push(id);
     }
@@ -319,13 +315,7 @@ fn delete_construction_payload_from_field(
         .len()
         .checked_add(operation_key.len())
         .ok_or_else(|| ctx.refuse_codec_limit("NX DELETE construction identity", 0, 1))?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(id_len),
-        "NX DELETE construction identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(id_len)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX DELETE construction identity", 0, 1))?;
+    let mut id = ctx.retained_string(id_len, "NX DELETE construction identity")?;
     write!(&mut id, "{prefix}{operation_key}")
         .map_err(|_| ctx.refuse_codec_limit("write NX DELETE construction identity", 0, 1))?;
     Ok(Some(FeatureDeleteConstructionPayload {

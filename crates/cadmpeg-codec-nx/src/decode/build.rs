@@ -166,12 +166,9 @@ fn push_unknown_link(
         "nx unknown entity link text",
     )?;
     let links = unknown.links_mut();
-    links
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx unknown entity links", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(links, 1, "nx unknown entity links")?;
     let mut link = String::new();
-    link.try_reserve_exact(id.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx unknown entity link text", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut link, id.len(), "nx unknown entity link text")?;
     link.push_str(id);
     links.push(link);
     Ok(())
@@ -1573,11 +1570,7 @@ fn extend_endpoint_witnesses(
                 entry.insert(Vec::new())
             }
         };
-        let count = cadmpeg_core::decode::u64_from_index(witnesses.len());
-        ctx.charge_collection_items(count, "nx endpoint witness merge")?;
-        target_witnesses
-            .try_reserve(witnesses.len())
-            .map_err(|_| ctx.refuse_codec_limit("nx endpoint witness merge", 0, count))?;
+        ctx.reserve_vec(target_witnesses, witnesses.len(), "nx endpoint witness merge")?;
         target_witnesses.extend(witnesses);
     }
     Ok(())
@@ -1600,11 +1593,7 @@ fn copy_endpoint_witnesses(
                 entry.insert(Vec::new())
             }
         };
-        let count = cadmpeg_core::decode::u64_from_index(witnesses.len());
-        ctx.charge_collection_items(count, "nx model endpoint witnesses")?;
-        target_witnesses
-            .try_reserve(witnesses.len())
-            .map_err(|_| ctx.refuse_codec_limit("nx model endpoint witnesses", 0, count))?;
+        ctx.reserve_vec(target_witnesses, witnesses.len(), "nx model endpoint witnesses")?;
         for (geometry, range, endpoints) in witnesses {
             target_witnesses.push((
                 geometry.try_clone_for_decode(ctx, "nx endpoint witness geometry")?,
@@ -1779,18 +1768,7 @@ fn insert_live_identity(
     identity: &str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "nx live annotation identities")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(identity.len()),
-        "nx live annotation identity text",
-    )?;
-    let mut copy = String::new();
-    copy.try_reserve_exact(identity.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "nx live annotation identity text",
-            0,
-            cadmpeg_core::decode::u64_from_index(identity.len()),
-        )
-    })?;
+    let mut copy = ctx.retained_string(identity.len(), "nx live annotation identity text")?;
     copy.push_str(identity);
     ids.insert(copy);
     Ok(())
@@ -2385,13 +2363,7 @@ fn finalize_point_topology(
         "nx point topology free vertices",
     )?;
     let mut free_vertices = ctx.collection_vec(point_count, "nx point topology vertices")?;
-    ir.model.vertices.try_reserve(point_count).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "nx point topology vertices",
-            0,
-            cadmpeg_core::decode::u64_from_index(point_count),
-        )
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.vertices, point_count, "nx point topology vertices")?;
     for (index, point) in ir.model.points.iter().enumerate() {
         let vertex_id: VertexId =
             derived.id_charged(ctx, &cadmpeg_ir::identity_component!("point-vertex"), index)?;

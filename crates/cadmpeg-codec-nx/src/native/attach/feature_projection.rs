@@ -80,11 +80,7 @@ pub(super) fn body_faces<'a, 'ctx>(
                 else {
                     return Ok(None);
                 };
-                ctx.charge_collection_items(1, "NX body faces")?;
-                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    &Face,
-                >()))?;
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut faces, 1, "NX body faces")?;
+                ctx.reserve_scoped_vec(&mut reservation, &mut faces, 1, "NX body faces")?;
                 faces.push(face);
             }
         }
@@ -168,11 +164,7 @@ pub(super) fn connected_solid_body_faces<'a, 'ctx>(
         else {
             return Ok(None);
         };
-        ctx.charge_collection_items(1, "NX connected solid faces")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            &Face,
-        >()))?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut faces, 1, "NX connected solid faces")?;
+        ctx.reserve_scoped_vec(&mut reservation, &mut faces, 1, "NX connected solid faces")?;
         faces.push(face);
     }
     Ok(Some(ScopedFaces {
@@ -283,18 +275,7 @@ pub(super) fn selection_indices_native(
         cadmpeg_core::decode::u64_from_index(length),
         "NX body selection indices",
     )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(length),
-        "NX body selection indices",
-    )?;
-    let mut text = String::new();
-    text.try_reserve(length).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "NX body selection indices",
-            0,
-            cadmpeg_core::decode::u64_from_index(length),
-        )
-    })?;
+    let mut text = ctx.retained_string(length, "NX body selection indices")?;
     text.push_str(PREFIX);
     for (ordinal, index) in indices.enumerate() {
         if ordinal != 0 {
@@ -434,8 +415,7 @@ pub(super) fn blend_feature_definition(
         if *cross_section != BlendCrossSection::Circular {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "NX blend result surfaces")?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut surfaces, 1, "NX blend result surfaces")?;
+        ctx.reserve_vec(&mut surfaces, 1, "NX blend result surfaces")?;
         surfaces.push(owner.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
         match radius {
             BlendRadiusLaw::Constant { signed_radius } if signed_radius.get() != 0.0 => {
@@ -625,11 +605,7 @@ pub(super) fn blend_support_bipartition<'ctx>(
             std::mem::size_of::<(&SurfaceId, bool)>() * 4,
         ))?;
         sides.insert(*seed, false);
-        ctx.charge_collection_items(1, "NX blend support queue")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            &SurfaceId,
-        >()))?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut pending, 1, "NX blend support queue")?;
+        ctx.reserve_scoped_vec(&mut reservation, &mut pending, 1, "NX blend support queue")?;
         pending.push(*seed);
         while let Some(surface) = pending.pop() {
             let side = sides[&surface];
@@ -644,11 +620,7 @@ pub(super) fn blend_support_bipartition<'ctx>(
                             std::mem::size_of::<(&SurfaceId, bool)>() * 4,
                         ))?;
                         sides.insert(*neighbor, !side);
-                        ctx.charge_collection_items(1, "NX blend support queue")?;
-                        reservation.grow(cadmpeg_core::decode::u64_from_index(
-                            std::mem::size_of::<&SurfaceId>(),
-                        ))?;
-                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut pending, 1, "NX blend support queue")?;
+                        ctx.reserve_scoped_vec(&mut reservation, &mut pending, 1, "NX blend support queue")?;
                         pending.push(*neighbor);
                     }
                 }
@@ -761,8 +733,7 @@ pub(super) fn unique_carrier_supports(
         if supports.contains(support) {
             continue;
         }
-        ctx.charge_collection_items(1, "NX offset support output")?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut supports, 1, "NX offset support output")?;
+        ctx.reserve_vec(&mut supports, 1, "NX offset support output")?;
         supports.push(support.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
     }
     let sort_work = supports
@@ -813,12 +784,7 @@ pub(super) fn owned_offset_carriers<'a, 'ctx>(
         };
         let support = definition_payload.support();
         let candidate = definition_payload.distance();
-        ctx.charge_collection_items(1, "NX offset carriers")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-            &SurfaceId,
-            FiniteReal,
-        )>()))?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut carriers, 1, "NX offset carriers")?;
+        ctx.reserve_scoped_vec(&mut reservation, &mut carriers, 1, "NX offset carriers")?;
         carriers.push((support, candidate));
     }
     Ok((!carriers.is_empty()).then_some((
@@ -955,8 +921,7 @@ pub(super) fn owned_thicken_surface_data<'a>(
     };
     let mut supports = Vec::new();
     for support in positive {
-        ctx.charge_collection_items(1, "NX thicken support output")?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut supports, 1, "NX thicken support output")?;
+        ctx.reserve_vec(&mut supports, 1, "NX thicken support output")?;
         supports.push(support.try_clone_for_decode(ctx, "NX feature projection surface identity")?);
     }
     Ok(Some(OwnedThickenSurfaceData {
@@ -1046,11 +1011,7 @@ pub(in crate::native) fn feature_source_content(
     let mut sorted = Vec::new();
     let mut reservation = ctx.reserve_scoped(0, "NX feature source text order")?;
     for &value in payload_strings {
-        ctx.charge_collection_items(1, "NX feature source text order")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            &crate::native::features::FeaturePayloadString,
-        >()))?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut sorted, 1, "NX feature source text order")?;
+        ctx.reserve_scoped_vec(&mut reservation, &mut sorted, 1, "NX feature source text order")?;
         sorted.push(value);
     }
     let count = sorted.len();
@@ -1091,13 +1052,7 @@ pub(in crate::native) fn feature_source_content(
             "NX feature source text",
         )?;
         let mut owned = String::new();
-        owned.try_reserve(text.len()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "allocate NX feature source text",
-                0,
-                cadmpeg_core::decode::u64_from_index(text.len()),
-            )
-        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut owned, text.len(), "allocate NX feature source text")?;
         owned.push_str(text);
         cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut content, 1, "NX feature source text")?;
         content.push(FeatureSourceContent::Text(owned));
@@ -2287,11 +2242,7 @@ pub(super) fn simple_hole_operations(
         {
             return Ok(None);
         }
-        ctx.charge_collection_items(1, "NX simple hole selected templates")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            &crate::native::features::holes::FeatureSimpleHoleTemplate,
-        >()))?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ordered_templates, 1, "NX simple hole selected templates")?;
+        ctx.reserve_scoped_vec(&mut reservation, &mut ordered_templates, 1, "NX simple hole selected templates")?;
         ordered_templates.push(template);
     }
     if ordered_templates.is_empty() {

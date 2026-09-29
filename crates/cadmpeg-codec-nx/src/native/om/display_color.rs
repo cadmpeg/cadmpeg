@@ -100,10 +100,7 @@ fn assignment_id(ctx: &DecodeContext<'_>, ordinal: usize) -> Result<String, Code
         .len()
         .checked_add(digits)
         .ok_or_else(|| ctx.refuse_codec_limit("NX display color identity length", 0, 1))?;
-    ctx.charge_retained(u64_from_index(length), "retain NX display color identity")?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX display color identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "retain NX display color identity")?;
     write!(id, "nx:rm-display-color-assignments:assignment#{ordinal}")
         .map_err(|_| ctx.refuse_codec_limit("write NX display color identity", 0, 1))?;
     Ok(id)

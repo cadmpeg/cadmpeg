@@ -446,15 +446,7 @@ fn parse_saved_toggle_stream(
         let Some((toggle_id, state)) = value.rsplit_once(':') else {
             return Ok(None);
         };
-        ctx.charge_retained(toggle_id.len() as u64, "retain NX saved toggle identity")?;
-        let mut owned_id = String::new();
-        owned_id.try_reserve_exact(toggle_id.len()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "allocate NX saved toggle identity",
-                0,
-                toggle_id.len() as u64,
-            )
-        })?;
+        let mut owned_id = ctx.retained_string(toggle_id.len(), "retain NX saved toggle identity")?;
         owned_id.push_str(toggle_id);
         let Ok(toggle_id) = ToggleId::try_from(owned_id) else {
             return Ok(None);
@@ -476,11 +468,7 @@ fn parse_saved_toggle_stream(
             ordinal.ilog10() as usize + 1
         };
         let id_len = PREFIX.len() + digits;
-        ctx.charge_retained(id_len as u64, "retain NX saved toggle entry id")?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX saved toggle entry id", 0, id_len as u64)
-        })?;
+        let mut id = ctx.retained_string(id_len, "retain NX saved toggle entry id")?;
         id.push_str(PREFIX);
         if write!(&mut id, "{ordinal}").is_err() {
             return Ok(None);
@@ -546,11 +534,7 @@ fn assign_stable_toggle_identities(
         if counts.get(&entry.toggle_id) == Some(&1) {
             const PREFIX: &str = "nx:saved-toggle:identity#";
             let byte_len = PREFIX.len() + 32;
-            ctx.charge_retained(byte_len as u64, "retain NX stable toggle identity")?;
-            let mut identity = String::new();
-            identity.try_reserve_exact(byte_len).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX stable toggle identity", 0, byte_len as u64)
-            })?;
+            let mut identity = ctx.retained_string(byte_len, "retain NX stable toggle identity")?;
             identity.push_str(PREFIX);
             identity.push_str(entry.toggle_id.as_str());
             entry.stable_identity = Some(identity);

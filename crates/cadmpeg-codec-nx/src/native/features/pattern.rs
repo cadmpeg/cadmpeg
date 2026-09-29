@@ -1121,13 +1121,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             .iter()
             .filter(|reference| reference.operation_label == operation_label)
         {
-            ctx.charge_collection_items(1, "NX pattern construction graph")?;
-            graph_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                &FeaturePatternReference,
-            >()))?;
-            graph.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("allocate NX pattern construction graph", 0, 1)
-            })?;
+            ctx.reserve_scoped_vec(&mut graph_reservation, &mut graph, 1, "NX pattern construction graph")?;
             graph.push(reference);
         }
         let sort_work = graph
@@ -1195,14 +1189,7 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("NX pattern construction payload identity", 0, 1)
             })?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(id_len),
-            "NX pattern construction payload identity",
-        )?;
-        let mut id = String::new();
-        id.try_reserve_exact(id_len).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX pattern construction payload identity", 0, 1)
-        })?;
+        let mut id = ctx.retained_string(id_len, "NX pattern construction payload identity")?;
         id.push_str(prefix);
         id.push_str(operation_key);
         let mut construction_references = Vec::new();

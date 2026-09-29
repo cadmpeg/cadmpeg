@@ -58,10 +58,7 @@ fn counted_lane_id(
         .and_then(|length| length.checked_add(digits(ordinal)))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
     ctx.charge_work(u64_from_index(length), operation)?;
-    ctx.charge_retained(u64_from_index(length), operation)?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    let mut id = ctx.retained_string(length, operation)?;
     write!(
         &mut id,
         "nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}"

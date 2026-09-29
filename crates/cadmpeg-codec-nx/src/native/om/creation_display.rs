@@ -54,13 +54,7 @@ fn retained_identity(
         .len()
         .checked_add(decimal_len(ordinal))
         .ok_or_else(|| ctx.refuse_codec_limit("NX creation display identity length", 0, 1))?;
-    ctx.charge_retained(
-        u64_from_index(length),
-        "retain NX creation display identity",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(length)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX creation display identity", 0, 1))?;
+    let mut id = ctx.retained_string(length, "retain NX creation display identity")?;
     write!(id, "{prefix}{ordinal}")
         .map_err(|_| ctx.refuse_codec_limit("write NX creation display identity", 0, 1))?;
     Ok(id)
@@ -90,14 +84,7 @@ fn push_relation(
         .checked_add(decimal_len(entry_index))
         .and_then(|length| length.checked_add(decimal_len(definition_offset)))
         .ok_or_else(|| ctx.refuse_codec_limit("NX creation display class identity length", 0, 1))?;
-    ctx.charge_retained(
-        u64_from_index(class_len),
-        "retain NX creation display class identity",
-    )?;
-    let mut class_definition = String::new();
-    class_definition
-        .try_reserve_exact(class_len)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX creation display class identity", 0, 1))?;
+    let mut class_definition = ctx.retained_string(class_len, "retain NX creation display class identity")?;
     write!(
         class_definition,
         "nx:om-entry-{entry_index}:class#{definition_offset}"

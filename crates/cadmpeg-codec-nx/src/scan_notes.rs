@@ -185,12 +185,9 @@ fn push_note(
         cadmpeg_core::decode::u64_from_index(measured.len),
         "nx scan note text",
     )?;
-    notes
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx scan notes", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(notes, 1, "nx scan notes")?;
     let mut note = String::new();
-    note.try_reserve_exact(measured.len)
-        .map_err(|_| ctx.refuse_codec_limit("nx scan note text", 0, 1))?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut note, measured.len, "nx scan note text")?;
     note.write_fmt(args)
         .map_err(|_| ctx.refuse_codec_limit("nx scan note text", 0, 1))?;
     notes.push(note);
