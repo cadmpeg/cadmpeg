@@ -1,7 +1,8 @@
 //! Compact selection projection and resource-limit tests.
 
 use super::super::{
-    full_round_fillet_selection_triple, project_compact_body_selections, project_compact_edge_selections,
+    cut_with_surface_selection_pair, full_round_fillet_selection_triple,
+    project_compact_body_selections, project_compact_edge_selections,
     project_compact_surface_selections,
 };
 use crate::records::{FeatureInputBodySelection, FeatureInputLane, FeatureInputSurfaceSelection, FeatureInputSurfaceSelectionKind};
@@ -324,4 +325,36 @@ fn full_round_fillet_grouping_refuses_work_limit() {
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "group SLDPRT full round fillet selections"));
+}
+
+#[test]
+fn surface_cut_grouping_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let selection = full_round_selection();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = cut_with_surface_selection_pair(&ctx, &[&selection])
+        .expect_err("surface cut lane grouping exceeds collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "group SLDPRT surface cut selections"));
+}
+
+#[test]
+fn surface_cut_grouping_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let selection = full_round_selection();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    let error = cut_with_surface_selection_pair(&ctx, &[&selection])
+        .expect_err("surface cut lane scan exceeds work limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "group SLDPRT surface cut selections"));
 }
