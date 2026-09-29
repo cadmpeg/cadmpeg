@@ -1441,8 +1441,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
     let membership = standard_face_point_membership(&ctx, &ir, &bindings, &surface_indices, None)
-        .expect("service decode")
-        .expect("complete face membership");
+        .expect("service decode");
 
     assert!(membership[0][0]);
     assert!(!membership[0][1]);
