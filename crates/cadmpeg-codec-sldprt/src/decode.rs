@@ -2815,10 +2815,11 @@ fn build_geometry_ir(
     )?;
     crate::history::bind::bind_unique_sketch_feature(ctx, &mut ir.model.features, &sketches, &histories)?;
     crate::resolved_features::component_paths::project_dissected_sketches(
+        ctx,
         &mut ir.model.features,
         &sketches,
         &histories,
-    );
+    )?;
     crate::resolved_features::axes::bind_profile_revolution_axes(
         ctx,
         &mut ir.model.features,
@@ -4171,10 +4172,11 @@ fn build_metadata_ir(
         &histories,
     )?;
     crate::resolved_features::component_paths::project_dissected_sketches(
+        ctx,
         &mut ir.model.features,
         &ir.model.sketches,
         &histories,
-    );
+    )?;
     crate::resolved_features::axes::bind_profile_revolution_axes(
         ctx,
         &mut ir.model.features,

@@ -175,17 +175,17 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     let mut native_features = HashMap::new();
     let mut history_features = HashMap::new();
     for history in histories {
-        reserve_component_map(ctx, &mut history_features)?;
+        reserve_component_map(ctx, &mut history_features, "index SLDPRT adjacent profiles")?;
         history_features.insert(history.id.as_str(), history.features.as_slice());
         for feature in &history.features {
-            reserve_component_map(ctx, &mut native_features)?;
+            reserve_component_map(ctx, &mut native_features, "index SLDPRT adjacent profiles")?;
             native_features.insert(feature.id.as_str(), feature);
         }
     }
     let mut neutral_indices = HashMap::new();
     for (index, feature) in features.iter().enumerate() {
         if let Some(native) = feature.native_ref.as_deref() {
-            reserve_component_map(ctx, &mut neutral_indices)?;
+            reserve_component_map(ctx, &mut neutral_indices, "index SLDPRT adjacent profiles")?;
             neutral_indices.insert(copy_component_text(ctx, native)?, index);
         }
     }
@@ -223,7 +223,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         };
         for (_, (name, feature)) in &objects {
             if object_kind(name, feature) == NativeClassKind::Extrusion {
-                reserve_component_map(ctx, &mut profiles)?;
+                reserve_component_map(ctx, &mut profiles, "index SLDPRT adjacent profiles")?;
                 let votes = profiles.entry(feature.id.as_str()).or_default();
                 ctx.reserve_collection_vec(votes, 1, "collect SLDPRT adjacent profile votes")?;
                 votes.push(ProfileVote::Missing);
@@ -361,7 +361,7 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
             ctx.charge_work(1, "parse SLDPRT profile block children")?;
             let Ok(source) = value.trim().parse::<u32>() else { return Ok(false); };
             if source == 0 || children.contains(&source) { return Ok(false); }
-            reserve_component_set(ctx, &mut children)?;
+            reserve_component_set(ctx, &mut children, "index SLDPRT profile block ownership")?;
             children.insert(source);
         }
         Some(children)
@@ -379,11 +379,11 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
         if object_ids.contains(&source) {
             return Ok(false);
         }
-        reserve_component_set(ctx, &mut object_ids)?;
+        reserve_component_set(ctx, &mut object_ids, "index SLDPRT profile block ownership")?;
         object_ids.insert(source);
         match kind {
             NativeClassKind::SketchBlockDefinition => {
-                reserve_component_set(ctx, &mut definitions)?;
+                reserve_component_set(ctx, &mut definitions, "index SLDPRT profile block ownership")?;
                 definitions.insert(source);
             }
             NativeClassKind::SketchBlockInstance => {
@@ -396,7 +396,7 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
                 else {
                     continue;
                 };
-                reserve_component_set(ctx, &mut referenced_definitions)?;
+                reserve_component_set(ctx, &mut referenced_definitions, "index SLDPRT profile block ownership")?;
                 referenced_definitions.insert(definition);
             }
             _ => return Ok(false),
@@ -423,160 +423,126 @@ pub(crate) fn is_dissected_profile_feature(feature: &crate::records::Feature) ->
 }
 
 pub(crate) fn project_dissected_sketches(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[crate::records::FeatureHistory],
-) {
-    let native_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
-    let single_profile_sketches = sketches
-        .iter()
-        .filter(|sketch| sketch.profiles.len() == 1)
-        .map(|sketch| sketch.id.clone())
-        .collect::<HashSet<_>>();
-    let resolved = features
-        .iter()
-        .filter_map(|feature| {
-            let FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
-            }) = feature.evaluation.definition()
-            else {
-                return None;
-            };
-            Some((feature.id.clone(), sketch.clone()))
-        })
-        .collect::<HashMap<_, _>>();
-    let planar_features = features
-        .iter()
-        .filter(|feature| {
-            matches!(
-                feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
-            )
-        })
-        .map(|feature| feature.id.clone())
-        .collect::<HashSet<_>>();
-    let aliases = features
-        .iter()
-        .filter(|feature| {
-            matches!(
-                feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved
-                        | cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-                    ..
-                })
-            ) && feature
-                .native_ref
-                .as_deref()
-                .and_then(|native| native_features.get(native))
-                .is_some_and(|native| is_dissected_profile_feature(native))
-        })
-        .filter_map(|feature| {
-            let mut candidates = feature
-                .dependencies
-                .iter()
-                .filter(|dependency| planar_features.contains(*dependency));
-            let owner = candidates.next()?;
-            candidates
-                .next()
-                .is_none()
-                .then(|| (feature.id.clone(), owner.clone()))
-        })
-        .collect::<HashMap<_, _>>();
-    let profile_aliases = aliases
-        .iter()
-        .filter_map(|(child, owner)| {
-            let sketch = resolved.get(owner)?;
-            single_profile_sketches
-                .contains(sketch)
-                .then(|| (child.clone(), (owner.clone(), sketch.clone())))
-        })
-        .collect::<HashMap<_, _>>();
-
-    for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            if aliases.contains_key(&feature.id) {
-                definition = FeatureDefinition::Operation(FeatureOperation::TreeNode {
-                    role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
-                    children: cadmpeg_ir::features::TreeChildren::default(),
-                });
-                break 'feature_edit;
-            }
-            let replace = |profile: &mut cadmpeg_ir::features::ProfileRef| {
-                let cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Feature(child),
-                ) = profile
-                else {
-                    return None;
-                };
-                let (owner, sketch) = profile_aliases.get(child)?;
-                let child = child.clone();
-                *profile = cadmpeg_ir::features::ProfileRef::Planar(
-                    cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch.clone()),
-                );
-                Some((child, owner.clone()))
-            };
-            let replace_planar = |profile: &mut cadmpeg_ir::features::PlanarProfileRef| {
-                let PlanarProfileRef::Feature(child) = profile else {
-                    return None;
-                };
-                let (owner, sketch) = profile_aliases.get(child)?;
-                let child = child.clone();
-                *profile = sketch.clone().into();
-                Some((child, owner.clone()))
-            };
-            let replaced = match &mut definition {
-                FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
-                    replace(profile).into_iter().collect()
-                }
-                FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => {
-                    replace_planar(profile).into_iter().collect()
-                }
-                FeatureDefinition::Operation(FeatureOperation::Rib { construction, .. }) => {
-                    construction
-                        .profile
-                        .as_mut()
-                        .and_then(replace_planar)
-                        .into_iter()
-                        .collect()
-                }
-                FeatureDefinition::Operation(FeatureOperation::Revolve {
-                    construction, ..
-                }) => construction
-                    .profile_mut()
-                    .and_then(replace_planar)
-                    .into_iter()
-                    .collect(),
-                FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => shape
-                    .referenced_profile_mut()
-                    .and_then(replace_planar)
-                    .into_iter()
-                    .collect(),
-                FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => sections
-                    .iter_mut()
-                    .filter_map(|section| match section {
-                        cadmpeg_ir::features::LoftSection::Profile(profile) => replace(profile),
-                        cadmpeg_ir::features::LoftSection::Point(_) => None,
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            };
-            for (child, owner) in replaced {
-                feature
-                    .dependencies
-                    .retain(|dependency| dependency != &child);
-                if !feature.dependencies.contains(&owner) {
-                    feature.dependencies.insert(owner);
-                }
+) -> Result<(), CodecError> {
+    const INDEX: &str = "index SLDPRT dissected profiles";
+    let mut native_features = HashMap::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        reserve_component_map(ctx, &mut native_features, INDEX)?;
+        native_features.insert(feature.id.as_str(), feature);
+    }
+    let mut single_profile_sketches = HashSet::new();
+    for sketch in sketches.iter().filter(|sketch| sketch.profiles.len() == 1) {
+        reserve_component_set(ctx, &mut single_profile_sketches, INDEX)?;
+        single_profile_sketches.insert(&sketch.id);
+    }
+    let mut resolved = HashMap::new();
+    let mut planar_features = HashSet::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, "classify SLDPRT dissected profiles")?;
+        if let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch }) = feature.evaluation.definition() {
+            reserve_component_set(ctx, &mut planar_features, INDEX)?;
+            planar_features.insert(copy_dissected_feature_id(ctx, &feature.id)?);
+            if let cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)) = sketch {
+                reserve_component_map(ctx, &mut resolved, INDEX)?;
+                resolved.insert(copy_dissected_feature_id(ctx, &feature.id)?, copy_dissected_sketch_id(ctx, sketch)?);
             }
         }
-        feature.evaluation.set_definition(definition);
     }
+    let mut aliases = HashMap::new();
+    for feature in features.iter().filter(|feature| {
+        matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved | cadmpeg_ir::features::SketchFeatureBinding::Planar(None), ..
+        })) && feature.native_ref.as_deref().and_then(|native| native_features.get(native)).is_some_and(|native| is_dissected_profile_feature(native))
+    }) {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(feature.dependencies.len()), "resolve SLDPRT dissected profile owner")?;
+        let mut candidates = feature.dependencies.iter().filter(|dependency| planar_features.contains(*dependency));
+        let (Some(owner), None) = (candidates.next(), candidates.next()) else { continue; };
+        reserve_component_map(ctx, &mut aliases, INDEX)?;
+        aliases.insert(copy_dissected_feature_id(ctx, &feature.id)?, copy_dissected_feature_id(ctx, owner)?);
+    }
+    let mut profile_aliases = HashMap::new();
+    for (child, owner) in &aliases {
+        let Some(sketch) = resolved.get(owner) else { continue; };
+        if single_profile_sketches.contains(sketch) {
+            reserve_component_map(ctx, &mut profile_aliases, INDEX)?;
+            profile_aliases.insert(copy_dissected_feature_id(ctx, child)?, (copy_dissected_feature_id(ctx, owner)?, copy_dissected_sketch_id(ctx, sketch)?));
+        }
+    }
+    for feature in features {
+        if aliases.contains_key(&feature.id) {
+            feature.evaluation.set_definition(FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
+                children: cadmpeg_ir::features::TreeChildren::default(),
+            }));
+            continue;
+        }
+        let replace_planar = |profile: &mut PlanarProfileRef| -> Result<Option<(cadmpeg_ir::features::FeatureId, cadmpeg_ir::features::FeatureId)>, CodecError> {
+            let PlanarProfileRef::Feature(child) = profile else { return Ok(None); };
+            let Some((owner, sketch)) = profile_aliases.get(child) else { return Ok(None); };
+            let child = copy_dissected_feature_id(ctx, child)?;
+            let owner = copy_dissected_feature_id(ctx, owner)?;
+            let sketch = copy_dissected_sketch_id(ctx, sketch)?;
+            *profile = sketch.into();
+            Ok(Some((child, owner)))
+        };
+        let replace = |profile: &mut cadmpeg_ir::features::ProfileRef| {
+            let cadmpeg_ir::features::ProfileRef::Planar(planar) = profile else { return Ok(None); };
+            replace_planar(planar)
+        };
+        let mut replaced = Ok(Vec::new());
+        feature.evaluation.edit(|definition, _| {
+            replaced = (|| {
+                let mut replacements = Vec::new();
+                let single = match definition {
+                    FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => replace(profile)?,
+                    FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => replace_planar(profile)?,
+                    FeatureDefinition::Operation(FeatureOperation::Rib { construction, .. }) => construction.profile.as_mut().map(replace_planar).transpose()?.flatten(),
+                    FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) => construction.profile_mut().map(replace_planar).transpose()?.flatten(),
+                    FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => shape.referenced_profile_mut().map(replace_planar).transpose()?.flatten(),
+                    FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) => {
+                        for section in sections {
+                            ctx.charge_work(1, "replace SLDPRT dissected loft profile")?;
+                            if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
+                                if let Some(replacement) = replace(profile)? {
+                                    ctx.reserve_collection_vec(&mut replacements, 1, "collect SLDPRT dissected profile replacements")?;
+                                    replacements.push(replacement);
+                                }
+                            }
+                        }
+                        None
+                    }
+                    _ => None,
+                };
+                if let Some(single) = single {
+                    ctx.reserve_collection_vec(&mut replacements, 1, "collect SLDPRT dissected profile replacements")?;
+                    replacements.push(single);
+                }
+                Ok::<_, CodecError>(replacements)
+            })();
+        });
+        for (child, owner) in replaced? {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(feature.dependencies.len()), "replace SLDPRT dissected profile dependency")?;
+            feature.dependencies.retain(|dependency| dependency != &child);
+            if !feature.dependencies.contains(&owner) {
+                feature.dependencies.try_insert_charged(owner, ctx, "collect SLDPRT dissected profile dependencies")?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn copy_dissected_feature_id(ctx: &DecodeContext<'_>, id: &cadmpeg_ir::features::FeatureId) -> Result<cadmpeg_ir::features::FeatureId, CodecError> {
+    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
+    cadmpeg_ir::features::FeatureId::mint(text).map_err(CodecError::malformed)
+}
+
+fn copy_dissected_sketch_id(ctx: &DecodeContext<'_>, id: &cadmpeg_ir::sketches::SketchId) -> Result<cadmpeg_ir::sketches::SketchId, CodecError> {
+    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
+    cadmpeg_ir::sketches::SketchId::mint(text).map_err(CodecError::malformed)
 }
 
 fn compact_edge_selection_value(local_edge_ids: &[u32]) -> String {
@@ -764,14 +730,14 @@ fn copy_component_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, Co
     ctx.format_retained(format_args!("{text}"), "retain SLDPRT adjacent profile identity")
 }
 
-fn reserve_component_map<K: Eq + std::hash::Hash, V>(ctx: &DecodeContext<'_>, values: &mut HashMap<K, V>) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "index SLDPRT adjacent profiles")?;
-    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT adjacent profiles", u64::MAX - 1, u64::MAX))
+fn reserve_component_map<K: Eq + std::hash::Hash, V>(ctx: &DecodeContext<'_>, values: &mut HashMap<K, V>, operation: &'static str) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
 }
 
-fn reserve_component_set<T: Eq + std::hash::Hash>(ctx: &DecodeContext<'_>, values: &mut HashSet<T>) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "index SLDPRT profile block ownership")?;
-    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT profile block ownership", u64::MAX - 1, u64::MAX))
+fn reserve_component_set<T: Eq + std::hash::Hash>(ctx: &DecodeContext<'_>, values: &mut HashSet<T>, operation: &'static str) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))
 }
 
 fn collect_component_vec<T>(ctx: &DecodeContext<'_>, items: impl Iterator<Item = T>) -> Result<Vec<T>, CodecError> {
