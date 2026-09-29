@@ -4779,50 +4779,44 @@ pub(super) fn feature_operation_terminal_frames(
 
 /// Join operation terminal ordinals to exact rows in the owning state journal.
 pub(super) fn feature_operation_state_journal_uses(
+    ctx: &DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     records: &[FeatureOperationRecord],
     terminal_frames: &[FeatureOperationTerminalFrame],
     journal_groups: &[OmOperationStateJournalGroup],
-) -> Vec<FeatureOperationStateJournalUse> {
-    let labels_by_id = labels
-        .iter()
-        .map(|label| (label.id.as_str(), label))
-        .collect::<BTreeMap<_, _>>();
-    let record_labels = records
-        .iter()
-        .filter_map(|record| {
-            let label = labels_by_id.get(record.operation_label.as_str())?;
-            Some((record.id.as_str(), *label))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let mut journal_rows = BTreeMap::new();
-    for group in journal_groups {
-        for (row_ordinal, row) in group.frame.rows().iter().enumerate() {
-            let Some(row_ordinal) = u32::try_from(row_ordinal).ok() else {
-                continue;
-            };
-            let key = (group.section_link.as_str(), row.ordinal().value());
-            match journal_rows.entry(key) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(Some((group, row_ordinal, row)));
-                }
-                std::collections::btree_map::Entry::Occupied(entry) => {
-                    *entry.into_mut() = None;
-                }
-            }
-        }
-    }
+) -> Result<Vec<FeatureOperationStateJournalUse>, CodecError> {
+    let row_count = journal_groups.iter().try_fold(0usize, |count, group| {
+        count.checked_add(group.frame.rows().len())
+            .ok_or_else(|| ctx.refuse_codec_limit("scan NX operation journal rows", 0, 1))
+    })?;
+    let scan_width = labels.len().checked_mul(records.len())
+        .and_then(|count| count.checked_add(row_count))
+        .and_then(|count| count.checked_add(journal_groups.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX operation journal rows", 0, 1))?;
+    let work = terminal_frames.len().checked_mul(scan_width)
+        .and_then(|count| count.checked_add(row_count))
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX operation journal rows", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work),
+        "join NX operation journal rows")?;
     let mut uses = Vec::new();
     for frame in terminal_frames {
-        let Some(label) = record_labels.get(frame.operation_record.as_str()) else {
-            continue;
-        };
-        let Some(Some((group, journal_row_ordinal, row))) = journal_rows.get(&(
-            label.section_link.as_str(),
-            frame.frame.suffix().local_ordinal(),
-        )) else {
-            continue;
-        };
+        let Some(label) = records.iter().rev()
+            .filter(|record| record.id == frame.operation_record)
+            .find_map(|record| labels.iter().rev()
+                .find(|label| label.id == record.operation_label)) else { continue; };
+        let mut matching_row = None;
+        let mut ambiguous = false;
+        for group in journal_groups.iter().filter(|group| group.section_link == label.section_link) {
+            for (row_ordinal, row) in group.frame.rows().iter().enumerate() {
+                let Some(row_ordinal) = u32::try_from(row_ordinal).ok() else { continue; };
+                if row.ordinal().value() != frame.frame.suffix().local_ordinal() { continue; }
+                if matching_row.is_some() { ambiguous = true; break; }
+                matching_row = Some((group, row_ordinal, row));
+            }
+            if ambiguous { break; }
+        }
+        if ambiguous { continue; }
+        let Some((group, journal_row_ordinal, row)) = matching_row else { continue; };
         let operation_key = frame
             .operation_record
             .strip_prefix("nx:feature-history:operation-record#")
@@ -4831,22 +4825,43 @@ pub(super) fn feature_operation_state_journal_uses(
             .id
             .strip_prefix("nx:feature-history:operation-state-journal-group#")
             .unwrap_or(group.id.as_str());
+        let prefix = "nx:feature-history:operation-state-journal-use#";
+        let id_len = prefix.len().checked_add(operation_key.len())
+            .and_then(|length| length.checked_add(journal_key.len()))
+            .and_then(|length| length.checked_add(12))
+            .ok_or_else(|| ctx.refuse_codec_limit("format NX operation journal use identity", 0, 1))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_len),
+            "NX operation journal use identity")?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_len).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX operation journal use identity", 0, 1))?;
+        write!(&mut id, "{prefix}{operation_key}-{journal_key}-{journal_row_ordinal:010}")
+            .map_err(|_| ctx.refuse_codec_limit("format NX operation journal use identity", 0, 1))?;
+        ctx.charge_collection_items(1, "NX operation journal uses")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureOperationStateJournalUse>()),
+            "NX operation journal uses")?;
+        uses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX operation journal uses", 0, 1))?;
         uses.push(FeatureOperationStateJournalUse {
-            id: format!(
-                "nx:feature-history:operation-state-journal-use#{operation_key}-{journal_key}-{journal_row_ordinal:010}"
-            ),
-            section_link: label.section_link.clone(),
-            operation_label: label.id.clone(),
-            operation_record: frame.operation_record.clone(),
-            operation_terminal_frame: frame.id.clone(),
-            journal_group: group.id.clone(),
-            journal_row_ordinal: *journal_row_ordinal,
+            id,
+            section_link: copy_operation_text(ctx, &label.section_link,
+                "NX operation journal section link")?,
+            operation_label: copy_operation_text(ctx, &label.id,
+                "NX operation journal label identity")?,
+            operation_record: copy_operation_text(ctx, &frame.operation_record,
+                "NX operation journal record identity")?,
+            operation_terminal_frame: copy_operation_text(ctx, &frame.id,
+                "NX operation journal terminal identity")?,
+            journal_group: copy_operation_text(ctx, &group.id,
+                "NX operation journal group identity")?,
+            journal_row_ordinal,
             state_ordinal: row.ordinal().value(),
             operation_source_offset: frame.frame.offset(),
             journal_source_offset: row.offset(),
         });
     }
-    uses
+    Ok(uses)
 }
 
 /// Decode ordered self-framed strings from feature-operation payloads.
