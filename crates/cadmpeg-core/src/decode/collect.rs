@@ -1893,13 +1893,16 @@ mod tests {
     }
 
     macro_rules! operation_case {
-        ($name:ident, $dimension:expr, $needed:expr, $operation:expr) => {
+        ($name:ident, $success:ident, $dimension:expr, $needed:expr, $operation:expr) => {
             #[test]
             fn $name() {
                 let arena = DecodeArena::new();
                 let ctx = operation_context(&arena, $dimension, $needed - 1);
                 let result: Result<(), CodecError> = ($operation)(&ctx);
                 assert!(matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == $dimension));
+            }
+            #[test]
+            fn $success() {
                 let arena = DecodeArena::new();
                 let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
                 let result: Result<(), CodecError> = ($operation)(&ctx);
@@ -1908,38 +1911,38 @@ mod tests {
         };
     }
 
-    operation_case!(reserve_retained_vec_refuses_before_growth, ResourceDimension::RetainedBytes, 2,
+    operation_case!(reserve_retained_vec_refuses_before_growth,reserve_retained_vec_succeeds_under_service_profile, ResourceDimension::RetainedBytes, 2,
         |ctx: &DecodeContext<'_>| { let mut values = Vec::<u8>::new(); let result = ctx.reserve_retained_vec(&mut values, 2, "test retained growth"); if result.is_err() { assert_eq!(values.capacity(), 0); } result });
-    operation_case!(retained_vec_refuses_before_allocation, ResourceDimension::RetainedBytes, 2,
+    operation_case!(retained_vec_refuses_before_allocation,retained_vec_succeeds_under_service_profile, ResourceDimension::RetainedBytes, 2,
         |ctx: &DecodeContext<'_>| ctx.retained_vec::<u8>(2, "test retained vec").map(|_| ()));
-    operation_case!(reserve_retained_admitted_vec_refuses_before_growth, ResourceDimension::RetainedBytes, 2,
+    operation_case!(reserve_retained_admitted_vec_refuses_before_growth,reserve_retained_admitted_vec_succeeds_under_service_profile, ResourceDimension::RetainedBytes, 2,
         |ctx: &DecodeContext<'_>| { let mut values = Vec::<u8>::new(); let result = ctx.reserve_retained_admitted_vec(&mut values, 2, "test retained admitted vec"); if result.is_err() { assert_eq!(values.capacity(), 0); } result });
-    operation_case!(reserve_scoped_vec_refuses_before_growth, ResourceDimension::MaterializedBytes, 2,
+    operation_case!(reserve_scoped_vec_refuses_before_growth,reserve_scoped_vec_succeeds_under_service_profile, ResourceDimension::MaterializedBytes, 2,
         |ctx: &DecodeContext<'_>| { let mut reservation = ctx.reserve_scoped(0, "test scoped vec")?; let mut values = Vec::<u8>::new(); let result = ctx.reserve_scoped_vec(&mut reservation, &mut values, 2, "test scoped vec"); if result.is_err() { assert_eq!(values.capacity(), 0); } result });
-    operation_case!(reserve_temporary_vec_refuses_before_growth, ResourceDimension::MaterializedBytes, 2,
+    operation_case!(reserve_temporary_vec_refuses_before_growth,reserve_temporary_vec_succeeds_under_service_profile, ResourceDimension::MaterializedBytes, 2,
         |ctx: &DecodeContext<'_>| { let mut values = Vec::<u8>::new(); let result = ctx.reserve_temporary_vec(&mut values, 2, "test temporary vec").map(|_| ()); if result.is_err() { assert_eq!(values.capacity(), 0); } result });
-    operation_case!(reserve_temporary_vec_optional_limit_refuses_before_growth, ResourceDimension::MaterializedBytes, 2,
+    operation_case!(reserve_temporary_vec_optional_limit_refuses_before_growth,reserve_temporary_vec_optional_limit_succeeds_under_service_profile, ResourceDimension::MaterializedBytes, 2,
         |ctx: &DecodeContext<'_>| { let mut values = Vec::<u8>::new(); let result = DecodeContext::reserve_temporary_vec_optional_limit(Some(ctx), &mut values, 2, "test geometry vec").map(|_| ()).map_err(CodecError::from); if result.is_err() { assert_eq!(values.capacity(), 0); } result });
-    operation_case!(collect_retained_texts_refuses_at_byte_limit, ResourceDimension::RetainedBytes, super::u64_from_index(std::mem::size_of::<String>() + 2),
+    operation_case!(collect_retained_texts_refuses_at_byte_limit,collect_retained_texts_succeeds_under_service_profile, ResourceDimension::RetainedBytes, super::u64_from_index(std::mem::size_of::<String>() + 2),
         |ctx: &DecodeContext<'_>| ctx.collect_retained_texts(["ab"], "test retained texts").map(|_| ()));
-    operation_case!(collect_scoped_texts_refuses_at_byte_limit, ResourceDimension::MaterializedBytes, super::u64_from_index(std::mem::size_of::<String>() + 2),
+    operation_case!(collect_scoped_texts_refuses_at_byte_limit,collect_scoped_texts_succeeds_under_service_profile, ResourceDimension::MaterializedBytes, super::u64_from_index(std::mem::size_of::<String>() + 2),
         |ctx: &DecodeContext<'_>| ctx.collect_scoped_texts(["ab"], "test scoped texts").map(|_| ()));
-    operation_case!(format_retained_with_work_refuses_before_formatting, ResourceDimension::WorkUnits, 2,
+    operation_case!(format_retained_with_work_refuses_before_formatting,format_retained_with_work_succeeds_under_service_profile, ResourceDimension::WorkUnits, 2,
         |ctx: &DecodeContext<'_>| ctx.format_retained_with_work(format_args!("ab"), "test formatted work").map(|_| ()));
-    operation_case!(format_scoped_text_with_work_refuses_before_formatting, ResourceDimension::WorkUnits, 2,
+    operation_case!(format_scoped_text_with_work_refuses_before_formatting,format_scoped_text_with_work_succeeds_under_service_profile, ResourceDimension::WorkUnits, 2,
         |ctx: &DecodeContext<'_>| { let mut reservation = ctx.reserve_scoped(0, "test scoped formatted work")?; ctx.format_scoped_text_with_work(&mut reservation, format_args!("ab"), "test scoped formatted work").map(|_| ()) });
-    operation_case!(reserve_record_vec_refuses_before_growth, ResourceDimension::Entities, 2,
+    operation_case!(reserve_record_vec_refuses_before_growth,reserve_record_vec_succeeds_under_service_profile, ResourceDimension::Entities, 2,
         |ctx: &DecodeContext<'_>| { let mut values = Vec::<u8>::new(); let result = ctx.reserve_record_vec(&mut values, 2, 0, "test record vec"); if result.is_err() { assert_eq!(values.capacity(), 0); } result });
 
     #[test]
     fn copy_admitted_text_preserves_utf8() {
         assert_eq!(DecodeContext::copy_admitted_text("aé", "test admitted text").expect("admitted text"), "aé");
     }
-    operation_case!(copy_temporary_slice_optional_limit_refuses_before_copy, ResourceDimension::MaterializedBytes, 2,
+    operation_case!(copy_temporary_slice_optional_limit_refuses_before_copy,copy_temporary_slice_optional_limit_succeeds_under_service_profile, ResourceDimension::MaterializedBytes, 2,
         |ctx: &DecodeContext<'_>| DecodeContext::copy_temporary_slice_optional_limit(Some(ctx), &[1u8, 2], "test temporary copy").map(|_| ()).map_err(CodecError::from));
-    operation_case!(collect_retained_vec_refuses_before_first_allocation, ResourceDimension::RetainedBytes, 2,
+    operation_case!(collect_retained_vec_refuses_before_first_allocation,collect_retained_vec_succeeds_under_service_profile, ResourceDimension::RetainedBytes, 2,
         |ctx: &DecodeContext<'_>| ctx.collect_retained_vec([1u16], "test retained collection").map(|_| ()));
-    operation_case!(copy_slice_with_work_refuses_before_copy, ResourceDimension::WorkUnits, 2,
+    operation_case!(copy_slice_with_work_refuses_before_copy,copy_slice_with_work_succeeds_under_service_profile, ResourceDimension::WorkUnits, 2,
         |ctx: &DecodeContext<'_>| ctx.copy_slice_with_work(&[1u8, 2], "test work copy").map(|_| ()));
 
     #[test]
@@ -2071,6 +2074,107 @@ mod tests {
         ctx.reserve_scoped_string(&mut reservation, &mut text, 2, "test scoped string").unwrap();
         text.push_str("bc");
         assert_eq!(text, "abc");
+    }
+
+
+fn manual_group_with_limit(
+    configure: impl FnOnce(&mut crate::decode::DecodePolicy),
+) -> Result<(), crate::CodecError> {
+    let arena = crate::decode::DecodeArena::new();
+    let mut policy = crate::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) =
+        crate::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut reservation = ctx.reserve_scoped(0, "NX feature operation group indexes")?;
+    let mut grouped = std::collections::BTreeMap::new();
+    ctx.push_scoped_btree_group(&mut reservation, &mut grouped, "operation", || 1u32, 0, "NX feature operation group index")?;
+    ctx.push_scoped_btree_group(&mut reservation, &mut grouped, "operation", || 2u32, 0, "NX feature operation group index")?;
+    assert_eq!(grouped["operation"], [1, 2]);
+    Ok(())
+}
+
+#[test]
+fn manual_operation_group_refuses_collection_limit() {
+    let error =
+        manual_group_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(
+        matches!(error, crate::CodecError::ResourceLimit(limit)
+        if limit.dimension == crate::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn manual_operation_group_refuses_scoped_limit() {
+    let error =
+        manual_group_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, crate::CodecError::ResourceLimit(limit)
+        if limit.dimension == crate::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn manual_operation_group_refuses_work_limit() {
+    let error = manual_group_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, crate::CodecError::ResourceLimit(limit)
+        if limit.dimension == crate::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn jt_rendered_node_path_refuses_retained_limit() {
+    let arena = crate::decode::DecodeArena::new();
+    let mut policy = crate::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = crate::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    let error = ctx.join_display_retained((&[12, 34]).iter(), "-", "nx JT rendered node path")
+        .expect_err("five text bytes exceed the four-byte retained limit");
+    assert!(matches!(
+        error,
+        crate::CodecError::ResourceLimit(limit)
+            if limit.dimension == crate::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "nx JT rendered node path"
+    ));
+    {
+        let arena = crate::decode::DecodeArena::new();
+        let (service, _) = crate::decode::DecodeContext::from_root_bytes(&[], &arena, &crate::decode::DecodePolicy::service()).expect("test decode context");
+        assert_eq!(
+            service.join_display_retained((&[12, 34]).iter(), "-", "nx JT rendered node path").unwrap(),
+            "12-34"
+        );
+    }
+}
+
+#[test]
+fn jt_tessellation_channel_bytes_refuse_collection_limit() {
+    let arena = crate::decode::DecodeArena::new();
+    let mut policy = crate::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = crate::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("test decode context");
+    let mut bytes = Vec::<u8>::new();
+    let error = ctx.reserve_retained_vec(&mut bytes, 3, "nx JT tessellation colors")
+        .expect_err("three color bytes exceed two collection items");
+    assert!(matches!(
+        error,
+        crate::CodecError::ResourceLimit(limit)
+            if limit.dimension == crate::decode::ResourceDimension::CollectionItems
+                && limit.operation == "nx JT tessellation colors"
+    ));
+    assert!(bytes.is_empty());
+}
+
+    #[test]
+    fn retained_vector_slots_do_not_charge_entities() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_entities = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
+        let mut values = Vec::<u8>::new();
+        ctx.reserve_retained_vec(&mut values, 1, "test retained slots").expect("vector slot is not an entity");
+        assert!(values.is_empty());
     }
 
 }
