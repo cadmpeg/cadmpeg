@@ -147,7 +147,7 @@ fn append_equal_length_coordinate_values(
     equations: &mut Vec<SectionCoordinateEquation>,
 ) -> Result<bool, CodecError> {
     let mut appended = false;
-    for (variable, value) in section_equal_length_coordinate_values(constraints, coordinates) {
+    for (variable, value) in section_equal_length_coordinate_values(ctx, constraints, coordinates)? {
         let Some(value) = value else {
             continue;
         };

@@ -838,7 +838,10 @@ fn numerical_followup_equal_length_tangency_keeps_its_single_coordinate() {
     let expected: BTreeMap<SectionCoordinateVariable, Option<f64>> =
         BTreeMap::from([((3, SectionAxis::U), Some(0.0))]);
     assert_eq!(
-        super::section_equal_length_coordinate_values(&constraints, &coordinates),
+        crate::decode::with_test_decode_ctx(|ctx| {
+            super::section_equal_length_coordinate_values(ctx, &constraints, &coordinates)
+        })
+        .expect("equal-length candidate"),
         expected
     );
 }
@@ -868,7 +871,32 @@ fn equal_length_tangency_u(
         offset: 0,
         active: true,
     }];
-    super::section_equal_length_coordinate_values(&constraints, &coordinates)
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::section_equal_length_coordinate_values(ctx, &constraints, &coordinates)
+    })
+    .expect("equal-length candidate")
+}
+
+#[test]
+fn equal_length_candidate_node_refuses_before_insertion() {
+    let coordinates = BTreeMap::from([
+        (1, [Some(0.0), Some(0.0)]),
+        (2, [Some(0.3), Some(0.4)]),
+        (3, [None, Some(0.0)]),
+        (4, [Some(0.0), Some(0.5)]),
+    ]);
+    let constraints = [SectionEqualLengthConstraint {
+        first: [1, 2],
+        second: [3, 4],
+        equation_id: 7,
+        offset: 0,
+        active: true,
+    }];
+    assert!(matches!(with_collection_limit(0, |ctx| {
+        super::section_equal_length_coordinate_values(ctx, &constraints, &coordinates)
+    }), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo equal-length coordinate candidates"));
 }
 
 #[test]
