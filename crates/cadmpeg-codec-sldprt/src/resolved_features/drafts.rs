@@ -189,16 +189,16 @@ fn compact_draft_selection_at(
     let mut cursor = header + compact_sel::LEN;
     let mut paths = Vec::new();
     loop {
-        let candidates = (1..=MAX_PATH_CELLS)
+        let candidate = (1..=MAX_PATH_CELLS)
             .filter_map(|length| compact_mixed_component_path(payload, cursor, length, false))
             .filter(|(_, path_end)| {
                 payload.get(*path_end..path_end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])
             })
-            .collect::<Vec<_>>();
-        let Some((path, path_end)) = candidates.iter().min_by_key(|(_, path_end)| *path_end) else {
+            .min_by_key(|(_, path_end)| *path_end);
+        let Some((path, path_end)) = candidate else {
             return (!paths.is_empty()).then_some((role, paths, cursor));
         };
-        paths.push(path.clone());
+        paths.push(path);
         cursor = path_end + 8;
     }
 }
