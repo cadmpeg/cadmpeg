@@ -10,7 +10,7 @@ use super::{named_parameter, record_values, source_numeric_id, RecordExt, ValueE
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{Identity, PmiId};
+use cadmpeg_ir::ids::{PmiId};
 use cadmpeg_ir::pmi::{
     DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
     LimitsAndFits, PmiDefinition, PmiDimension, PmiQuantity, PmiTarget, PmiValue,
@@ -46,7 +46,7 @@ fn collect_pmi_set<T: Ord>(
     let mut values = BTreeSet::new();
     for item in items {
         ctx.insert_btree_set(&mut values, item, operation)
-            .map(|_| ())?;
+            ?;
     }
     Ok(values)
 }
@@ -87,7 +87,7 @@ fn claim_pmi_typed_many(
 ) -> Result<(), CodecError> {
     for id in ids {
         ctx.insert_hash_set(typed, id, "step_pmi_typed_claims")
-            .map(|_| ())?;
+            ?;
     }
     Ok(())
 }
@@ -169,7 +169,7 @@ pub(super) fn decode(
             },
         )?;
         ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            .map(|_| ())?;
+            ?;
     }
 
     for id in exchange.matching_entity_ids(is_datum_target_name) {
@@ -235,7 +235,7 @@ pub(super) fn decode(
             },
         )?;
         ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            .map(|_| ())?;
+            ?;
     }
 
     for (id, record) in exchange.entities("DATUM_SYSTEM") {
@@ -315,7 +315,7 @@ pub(super) fn decode(
             },
         )?;
         ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            .map(|_| ())?;
+            ?;
         claim_pmi_typed_many(&mut typed, datum_records, ctx)?;
     }
 
@@ -402,7 +402,7 @@ pub(super) fn decode(
             },
         )?;
         ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            .map(|_| ())?;
+            ?;
     }
 
     for (id, record) in exchange.entities("PLUS_MINUS_TOLERANCE") {
@@ -519,7 +519,7 @@ pub(super) fn decode(
                     CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
                 })? {
                     ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-                        .map(|_| ())?;
+                        ?;
                     claim_pmi_typed_many(&mut typed, refs, ctx)?;
                 } else {
                     ctx.push_vec(
@@ -727,7 +727,7 @@ pub(super) fn decode(
             },
         )?;
         ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            .map(|_| ())?;
+            ?;
         claim_pmi_typed_many(
             &mut typed,
             refs.iter().copied().filter(|reference| {
@@ -775,7 +775,7 @@ pub(super) fn decode(
                 }
             }
             ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-                .map(|_| ())?;
+                ?;
         }
     }
 
@@ -877,14 +877,14 @@ pub(super) fn decode(
             },
         )?;
         ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            .map(|_| ())?;
+            ?;
         claim_pmi_typed_many(&mut typed, text_records, ctx)?;
     }
     for (id, _) in
         exchange.entities_any(&["DRAUGHTING_MODEL", "ANNOTATION_PLANE", "DRAUGHTING_CALLOUT"])
     {
         ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
-            .map(|_| ())?;
+            ?;
     }
 
     resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed, ctx)?;
@@ -955,7 +955,7 @@ fn mark_characteristic_representations(
             continue;
         };
         ctx.insert_hash_set(typed, id, "step_pmi_typed_claims")
-            .map(|_| ())?;
+            ?;
         for parameter in record_values(record) {
             for representation_id in references(parameter) {
                 let Some(representation) = exchange.records().get(&representation_id) else {
@@ -969,7 +969,7 @@ fn mark_characteristic_representations(
                     continue;
                 }
                 ctx.insert_hash_set(typed, representation_id, "step_pmi_typed_claims")
-                    .map(|_| ())?;
+                    ?;
                 for parameter in record_values(representation) {
                     for reference in references(parameter) {
                         if exchange
@@ -978,7 +978,7 @@ fn mark_characteristic_representations(
                             .is_some_and(is_measure_record)
                         {
                             ctx.insert_hash_set(typed, reference, "step_pmi_typed_claims")
-                                .map(|_| ())?;
+                                ?;
                         }
                     }
                 }
@@ -1103,7 +1103,7 @@ fn resolve_geometric_item_usages(
                 index,
                 "step_pmi_usage_annotation_indices",
             )
-            .map(|_| ())?;
+            ?;
         }
         if let Some(aspects) = relationship_aspects.get(&definition) {
             for aspect in aspects {
@@ -1113,7 +1113,7 @@ fn resolve_geometric_item_usages(
                         index,
                         "step_pmi_usage_annotation_indices",
                     )
-                    .map(|_| ())?;
+                    ?;
                 }
             }
         }
@@ -1136,7 +1136,7 @@ fn resolve_geometric_item_usages(
             }
         }
         ctx.insert_hash_set(typed, id, "step_pmi_typed_claims")
-            .map(|_| ())?;
+            ?;
     }
     Ok(())
 }
@@ -1155,7 +1155,7 @@ fn topology_targets(
 ) -> Result<Vec<PmiTarget>, CodecError> {
     let mut targets = Vec::new();
     for body in topology.body_by_root.get(&id).into_iter().flatten() {
-        let body = copy_pmi_identity(body.as_str(), ctx, "step_pmi_topology_identity")?;
+        let body = body.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
         push_target(
             &mut targets,
             PmiTarget::Body { body },
@@ -1164,7 +1164,7 @@ fn topology_targets(
         )?;
     }
     for face in topology.faces_by_source.get(&id).into_iter().flatten() {
-        let face = copy_pmi_identity(face.as_str(), ctx, "step_pmi_topology_identity")?;
+        let face = face.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
         push_target(
             &mut targets,
             PmiTarget::Face { face },
@@ -1173,7 +1173,7 @@ fn topology_targets(
         )?;
     }
     for edge in topology.edges_by_source.get(&id).into_iter().flatten() {
-        let edge = copy_pmi_identity(edge.as_str(), ctx, "step_pmi_topology_identity")?;
+        let edge = edge.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
         push_target(
             &mut targets,
             PmiTarget::Edge { edge },
@@ -1182,7 +1182,7 @@ fn topology_targets(
         )?;
     }
     for vertex in topology.vertices_by_source.get(&id).into_iter().flatten() {
-        let vertex = copy_pmi_identity(vertex.as_str(), ctx, "step_pmi_topology_identity")?;
+        let vertex = vertex.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
         push_target(
             &mut targets,
             PmiTarget::Vertex { vertex },
@@ -1191,7 +1191,7 @@ fn topology_targets(
         )?;
     }
     for point in geometry_sources.points.get(&id).into_iter().flatten() {
-        let point = copy_pmi_identity(point.as_str(), ctx, "step_pmi_topology_identity")?;
+        let point = point.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
         push_target(
             &mut targets,
             PmiTarget::Point { point },
@@ -1200,7 +1200,7 @@ fn topology_targets(
         )?;
     }
     for curve in geometry_sources.curves.get(&id).into_iter().flatten() {
-        let curve = copy_pmi_identity(curve.as_str(), ctx, "step_pmi_topology_identity")?;
+        let curve = curve.try_clone_for_decode(ctx, "step_pmi_topology_identity")?;
         push_target(
             &mut targets,
             PmiTarget::Curve { curve },
@@ -1252,18 +1252,10 @@ fn push_source_id<T>(
     if !values.contains_key(&source) {
         ctx.charge_collection_items(1, group_operation)?;
     }
-    ctx.charge_collection_items(1, item_operation)?;
+
     let items = values.entry(source).or_default();
-    items.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(item_operation),
-                0,
-                1,
-                item_operation,
-            ),
-        )
-    })?;
+
+    ctx.reserve_vec(items, 1, item_operation)?;
     items.push(id);
     Ok(())
 }
@@ -1277,7 +1269,7 @@ fn point_sources(
         let Some(source) = source_numeric_id(point.id.as_str(), "point") else {
             continue;
         };
-        let id = copy_pmi_identity(point.id.as_str(), ctx, "step_pmi_point_source_identity")?;
+        let id = point.id.try_clone_for_decode(ctx, "step_pmi_point_source_identity")?;
         push_source_id(
             &mut points,
             source,
@@ -1299,7 +1291,7 @@ fn curve_sources(
         let Some(source) = source_numeric_id(curve.id.as_str(), "curve") else {
             continue;
         };
-        let id = copy_pmi_identity(curve.id.as_str(), ctx, "step_pmi_curve_source_identity")?;
+        let id = curve.id.try_clone_for_decode(ctx, "step_pmi_curve_source_identity")?;
         push_source_id(
             &mut curves,
             source,
@@ -1333,7 +1325,7 @@ fn datum_references_for_compartment(
         return Ok(Vec::new());
     }
     ctx.insert_hash_set(typed, compartment_id, "step_pmi_typed_claims")
-        .map(|_| ())?;
+        ?;
     let mut compartment_modifiers = Vec::new();
     for modifier in datum_modifiers(compartment)
         .and_then(ValueExt::list)
@@ -1400,7 +1392,7 @@ fn datum_references_for_compartment(
                 return Ok(());
             }
             ctx.insert_hash_set(typed, datum, "step_pmi_typed_claims")
-                .map(|_| ())?;
+                ?;
             ctx.push_vec(
                 &mut output,
                 DatumReference {
@@ -1521,7 +1513,7 @@ fn modifier_text(
             };
             let parameters = parameters.parameters.as_slice();
             ctx.insert_hash_set(typed, *id, "step_pmi_typed_claims")
-                .map(|_| ())?;
+                ?;
             let Some(kind) = parameters.first().and_then(ValueExt::enumeration) else {
                 return Ok(None);
             };
@@ -1534,7 +1526,7 @@ fn modifier_text(
             };
             let value = value.value.get();
             ctx.insert_hash_set(typed, measure_id, "step_pmi_typed_claims")
-                .map(|_| ())?;
+                ?;
             let mut text = ctx.format_retained(
                 format_args!("{kind}:{value}"),
                 "step_pmi_datum_modifier_value_text",
@@ -1589,7 +1581,7 @@ fn hidden_presentation_annotation_ids(
                 .is_some_and(is_supported_invisibility_target)
             {
                 ctx.insert_btree_set(&mut hidden, target, "step_pmi_hidden_annotation_ids")
-                    .map(|_| ())?;
+                    ?;
             }
         }
     }
@@ -1632,7 +1624,7 @@ fn collect_typed_placement_candidates(
                         transform,
                         "step_pmi_placement_candidates",
                     )
-                    .map(|_| ())?;
+                    ?;
                 }
             }
         }
@@ -1737,7 +1729,7 @@ fn collect_placement_candidates(
     }
     let _nested = ctx.enter_nested("step_pmi_placement_walk")?;
     ctx.insert_btree_map(visited, id, depth, "step_pmi_placement_visited")
-        .map(|_| ())?;
+        ?;
     if let Some(record) = exchange.records().get(&id) {
         collect_typed_placement_candidates(record, geometry, candidates, ctx)?;
     }
@@ -1769,18 +1761,10 @@ fn targets(
             continue;
         }
         ctx.charge_collection_items(1, "step_pmi_target_ids")?;
-        ctx.charge_collection_items(1, "step_pmi_target_items")?;
+
         seen.insert(id);
-        targets.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_target_items"),
-                    0,
-                    1,
-                    "step_pmi_target_items",
-                ),
-            )
-        })?;
+
+        ctx.reserve_vec(&mut targets, 1, "step_pmi_target_items")?;
         targets.push(PmiTarget::ShapeAspect {
             source_id: super::step_source_id(id),
         });
@@ -1792,17 +1776,6 @@ fn pmi_id(id: u64) -> PmiId {
     PmiId::from(ids::presentation(kind!("pmi"), id))
 }
 
-fn copy_pmi_identity<T: From<Identity>>(
-    value: &str,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<T, CodecError> {
-    let copy = ctx.copy_retained_text(value, operation)?;
-    let identity = Identity::new(copy)
-        .map_err(|_| CodecError::malformed("STEP PMI target has an invalid identity"))?;
-    Ok(T::from(identity))
-}
-
 fn copy_pmi_target(
     target: &PmiTarget,
     ctx: &DecodeContext<'_>,
@@ -1810,28 +1783,28 @@ fn copy_pmi_target(
 ) -> Result<PmiTarget, CodecError> {
     Ok(match target {
         PmiTarget::Body { body } => PmiTarget::Body {
-            body: copy_pmi_identity(body.as_str(), ctx, operation)?,
+            body: body.try_clone_for_decode(ctx, operation)?,
         },
         PmiTarget::Face { face } => PmiTarget::Face {
-            face: copy_pmi_identity(face.as_str(), ctx, operation)?,
+            face: face.try_clone_for_decode(ctx, operation)?,
         },
         PmiTarget::Edge { edge } => PmiTarget::Edge {
-            edge: copy_pmi_identity(edge.as_str(), ctx, operation)?,
+            edge: edge.try_clone_for_decode(ctx, operation)?,
         },
         PmiTarget::Vertex { vertex } => PmiTarget::Vertex {
-            vertex: copy_pmi_identity(vertex.as_str(), ctx, operation)?,
+            vertex: vertex.try_clone_for_decode(ctx, operation)?,
         },
         PmiTarget::Point { point } => PmiTarget::Point {
-            point: copy_pmi_identity(point.as_str(), ctx, operation)?,
+            point: point.try_clone_for_decode(ctx, operation)?,
         },
         PmiTarget::Curve { curve } => PmiTarget::Curve {
-            curve: copy_pmi_identity(curve.as_str(), ctx, operation)?,
+            curve: curve.try_clone_for_decode(ctx, operation)?,
         },
         PmiTarget::Product { product } => PmiTarget::Product {
-            product: copy_pmi_identity(product.as_str(), ctx, operation)?,
+            product: product.try_clone_for_decode(ctx, operation)?,
         },
         PmiTarget::Occurrence { occurrence } => PmiTarget::Occurrence {
-            occurrence: copy_pmi_identity(occurrence.as_str(), ctx, operation)?,
+            occurrence: occurrence.try_clone_for_decode(ctx, operation)?,
         },
         PmiTarget::ShapeAspect { source_id } => {
             let copy = ctx.copy_retained_text(source_id.as_str(), operation)?;
@@ -2280,36 +2253,14 @@ fn characteristic_measure_values(
                 .map(|record| measure_item_name(id, record, exchange, measurements.losses, ctx))
                 .transpose()?
                 .flatten();
-            ctx.charge_collection_items(1, "step_pmi_measure_values")?;
-            values.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"),
-                        0,
-                        1,
-                        "step_pmi_measure_values",
-                    ),
-                )
-            })?;
+            ctx.reserve_vec(&mut values, 1, "step_pmi_measure_values")?;
             values.push((name, value));
         }
     }
     if values.is_empty() {
         parameters.visit(|parameter| {
             if let Some(value) = measure(parameter, exchange, measurements, ctx)? {
-                ctx.charge_collection_items(1, "step_pmi_measure_values")?;
-                values.try_reserve(1).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::Codec(
-                                "step_pmi_measure_values",
-                            ),
-                            0,
-                            1,
-                            "step_pmi_measure_values",
-                        ),
-                    )
-                })?;
+                ctx.reserve_vec(&mut values, 1, "step_pmi_measure_values")?;
                 values.push((None, value));
             }
             Ok(())
@@ -2337,11 +2288,11 @@ fn collect_measure_ids(
                 return Ok(());
             }
             ctx.insert_btree_set(active, *id, "step_pmi_measure_active_ids")
-                .map(|_| ())?;
+                ?;
             if let Some(record) = exchange.records().get(id) {
                 if is_measure_record(record) {
                     ctx.insert_btree_set(measure_ids, *id, "step_pmi_measure_ids")
-                        .map(|_| ())?;
+                        ?;
                 } else {
                     for partial in &record.partials {
                         for parameter in &partial.parameters {
@@ -2500,7 +2451,7 @@ fn measure_inner(
                 return Ok(None);
             }
             ctx.insert_btree_set(active, *id, "step_pmi_measure_eval_active")
-                .map(|_| ())?;
+                ?;
             let Some(record) = exchange.records().get(id) else {
                 active.remove(id);
                 return Ok(None);

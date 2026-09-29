@@ -156,26 +156,14 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             cadmpeg_ir::report::decode::DecodeTransfer::full(false)
         });
         for entry in exchange.references() {
-            ctx.charge_collection_items(1, "step_decode_reference_notes")?;
-            body.notes.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec(
-                            "step_decode_reference_notes",
-                        ),
-                        0,
-                        1,
-                        "step_decode_reference_notes",
-                    ),
-                )
-            })?;
+            ctx.reserve_vec(&mut body.notes, 1, "step_decode_reference_notes")?;
             body.notes.push(ctx.format_retained(
                 format_args!("external reference {} -> {}", entry.name, entry.uri),
                 "step_decode_reference_note_text",
             )?);
         }
         if let Some(loss) = dialect_loss {
-            push_decode_loss(&mut body.losses, loss, ctx)?;
+            ctx.push_vec(&mut body.losses, loss, "step_decode_loss_notes")?;
         }
         for diagnostic in diagnostics {
             let (code, tag) = match diagnostic.kind {
@@ -205,7 +193,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 )
                 .with_tag(tag),
             );
-            push_decode_loss(&mut body.losses, loss, ctx)?;
+            ctx.push_vec(&mut body.losses, loss, "step_decode_loss_notes")?;
         }
 
         Ok(Self {
@@ -248,50 +236,11 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             .iter()
             .filter(|id| !self.typed_records.contains(id))
             .count();
-        self.ctx
-            .charge_collection_items(u64_from_index(new_claims), "step_stage_claims")?;
-        self.typed_records.try_reserve(new_claims).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("step_stage_claims"),
-                    0,
-                    u64_from_index(new_claims),
-                    "step_stage_claims",
-                ),
-            )
-        })?;
+        self.ctx.reserve_set(&mut self.typed_records, new_claims, "step_stage_claims")?;
         self.typed_records.extend(outcome.claims.drain());
-        self.ctx
-            .charge_collection_items(u64_from_index(outcome.losses.len()), "step_stage_losses")?;
-        self.body
-            .losses
-            .try_reserve(outcome.losses.len())
-            .map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("step_stage_losses"),
-                        0,
-                        u64_from_index(outcome.losses.len()),
-                        "step_stage_losses",
-                    ),
-                )
-            })?;
+        self.ctx.reserve_vec(&mut self.body.losses, outcome.losses.len(), "step_stage_losses")?;
         self.body.losses.append(&mut outcome.losses);
-        self.ctx
-            .charge_collection_items(u64_from_index(outcome.notes.len()), "step_stage_notes")?;
-        self.body
-            .notes
-            .try_reserve(outcome.notes.len())
-            .map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("step_stage_notes"),
-                        0,
-                        u64_from_index(outcome.notes.len()),
-                        "step_stage_notes",
-                    ),
-                )
-            })?;
+        self.ctx.reserve_vec(&mut self.body.notes, outcome.notes.len(), "step_stage_notes")?;
         self.body.notes.append(&mut outcome.notes);
         Ok(())
     }
@@ -333,26 +282,6 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             opaque_offsets,
         })
     }
-}
-
-fn push_decode_loss(
-    losses: &mut Vec<LossNote>,
-    loss: LossNote,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "step_decode_loss_notes")?;
-    losses.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_decode_loss_notes"),
-                0,
-                1,
-                "step_decode_loss_notes",
-            ),
-        )
-    })?;
-    losses.push(loss);
-    Ok(())
 }
 
 pub(crate) struct AnalyzedExchange {
@@ -557,24 +486,7 @@ fn decode_exchange_mode(
         &mut post_decode_losses,
         session.ctx,
     )?;
-    session.ctx.charge_collection_items(
-        u64_from_index(post_decode_losses.len()),
-        "step_carrier_retention_losses",
-    )?;
-    session
-        .body
-        .losses
-        .try_reserve(post_decode_losses.len())
-        .map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("step_carrier_retention_losses"),
-                    0,
-                    u64_from_index(post_decode_losses.len()),
-                    "step_carrier_retention_losses",
-                ),
-            )
-        })?;
+    session.ctx.reserve_vec(&mut session.body.losses, post_decode_losses.len(), "step_carrier_retention_losses")?;
     session.body.losses.append(&mut post_decode_losses);
 
     session.charge_stage("step_opaque_record_retention")?;
@@ -598,21 +510,7 @@ fn decode_exchange_mode(
             session.ctx.charge_collection_items(1, "step_opaque_ids")?;
             opaque_ids.insert(id, unknown_id);
         }
-        session
-            .ctx
-            .charge_collection_items(u64_from_index(opaque_ids.len()), "step_opaque_sources")?;
-        opaque_sources
-            .try_reserve_exact(opaque_ids.len())
-            .map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("step_opaque_sources"),
-                        0,
-                        u64_from_index(opaque_ids.len()),
-                        "step_opaque_sources",
-                    ),
-                )
-            })?;
+        session.ctx.reserve_vec(&mut opaque_sources, opaque_ids.len(), "step_opaque_sources")?;
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(&id) {
                 continue;
@@ -687,20 +585,7 @@ fn decode_exchange_mode(
                     .ctx
                     .refuse_codec_limit("step_opaque_records", 0, u64::MAX)
             })?;
-        session
-            .ctx
-            .charge_collection_items(u64_from_index(opaque_count), "step_opaque_records")?;
-        let mut opaque = Vec::new();
-        opaque.try_reserve_exact(opaque_count).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("step_opaque_records"),
-                    0,
-                    u64_from_index(opaque_count),
-                    "step_opaque_records",
-                ),
-            )
-        })?;
+        let mut opaque = session.ctx.collection_vec(opaque_count, "step_opaque_records")?;
         for source in opaque_sources {
             session
                 .ctx
@@ -767,43 +652,23 @@ fn decode_exchange_mode(
         accounting.unclassified.to_string(),
     );
     if accounting.unclassified > 0 {
-        push_decode_loss(
-            &mut session.body.losses,
-            StepLossCode::ByteAccountingUnclassified.note(format!(
+        (session.ctx).push_vec(&mut session.body.losses, StepLossCode::ByteAccountingUnclassified.note(format!(
                 "STEP byte accounting left {} byte(s) unclassified",
                 accounting.unclassified
-            )),
-            session.ctx,
-        )?;
+            )), "step_decode_loss_notes")?;
     }
     let accounting_note = format!(
         "byte accounting: {} structural, {} typed, {} named opaque, {} unclassified",
         accounting.structural, accounting.typed, accounting.opaque, accounting.unclassified
     );
-    session
-        .ctx
-        .charge_collection_items(1, "step_byte_accounting_note")?;
-    session.body.notes.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_byte_accounting_note"),
-                0,
-                1,
-                "step_byte_accounting_note",
-            ),
-        )
-    })?;
+    session.ctx.reserve_vec(&mut session.body.notes, 1, "step_byte_accounting_note")?;
     session.body.notes.push(accounting_note);
     for (name, count) in counts {
         let message = session.ctx.format_retained(
             format_args!("preserved {count} {name} instance(s) as named opaque STEP records"),
             "step_opaque_preservation_loss_text",
         )?;
-        push_decode_loss(
-            &mut session.body.losses,
-            StepLossCode::OpaqueRecordPreserved.note(message),
-            session.ctx,
-        )?;
+        (session.ctx).push_vec(&mut session.body.losses, StepLossCode::OpaqueRecordPreserved.note(message), "step_decode_loss_notes")?;
     }
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
     session.into_result(source_fidelity, opaque_offsets)
@@ -1116,9 +981,9 @@ fn retain_unowned_carriers(
         .filter(|id| protected.contains(id))
         .count();
     let opaque_pcurves = unowned_pcurves.len() - protected_pcurves;
-    push_decode_loss(losses, StepLossCode::DecodeWarning.note(format!(
+    ctx.push_vec(losses, StepLossCode::DecodeWarning.note(format!(
         "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
-    )), ctx)?;
+    )), "step_decode_loss_notes")?;
     Ok(())
 }
 
@@ -1187,18 +1052,7 @@ fn record_closure(
     ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut closure = BTreeSet::new();
-    ctx.charge_collection_items(u64_from_index(roots.len()), "step_record_closure_pending")?;
-    let mut pending = Vec::new();
-    pending.try_reserve_exact(roots.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_record_closure_pending"),
-                0,
-                u64_from_index(roots.len()),
-                "step_record_closure_pending",
-            ),
-        )
-    })?;
+    let mut pending = ctx.collection_vec(roots.len(), "step_record_closure_pending")?;
     pending.extend(roots.iter().copied());
     while let Some(id) = pending.pop() {
         if closure.contains(&id) {
@@ -1217,20 +1071,7 @@ fn record_closure(
         {
             collect_references(value, &mut references, ctx)?;
         }
-        ctx.charge_collection_items(
-            u64_from_index(references.len()),
-            "step_record_closure_pending",
-        )?;
-        pending.try_reserve(references.len()).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("step_record_closure_pending"),
-                    0,
-                    u64_from_index(references.len()),
-                    "step_record_closure_pending",
-                ),
-            )
-        })?;
+        ctx.reserve_vec(&mut pending, references.len(), "step_record_closure_pending")?;
         pending.extend(references);
     }
     Ok(closure)
@@ -1276,17 +1117,7 @@ fn push_opaque_link(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let copy = ctx.format_retained(format_args!("{identity}"), "step_opaque_link_text")?;
-    ctx.charge_collection_items(1, "step_opaque_links")?;
-    links.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_opaque_links"),
-                0,
-                1,
-                "step_opaque_links",
-            ),
-        )
-    })?;
+    ctx.reserve_vec(links, 1, "step_opaque_links")?;
     links.push(copy);
     Ok(())
 }
@@ -1307,18 +1138,9 @@ fn opaque_record_id(
                 .checked_add(partial.name.len())
         })
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(u64_from_index(len), operation)?;
-    let mut kind = String::new();
-    kind.try_reserve_exact(len).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                u64_from_index(len),
-                operation,
-            ),
-        )
-    })?;
+    let mut kind = ctx.retained_string(len, operation)?;
+
+
     for (index, partial) in record.partials.iter().enumerate() {
         if index > 0 {
             kind.push('_');
@@ -1571,19 +1393,7 @@ fn decode_text_charged(
                 format_args!("STEP record #{record_id} has an invalid {field} string: {error}"),
                 "step_invalid_string_loss_text",
             )?;
-            ctx.charge_collection_items(1, "step_invalid_string_losses")?;
-            losses.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec(
-                            "step_invalid_string_losses",
-                        ),
-                        0,
-                        1,
-                        "step_invalid_string_losses",
-                    ),
-                )
-            })?;
+            ctx.reserve_vec(losses, 1, "step_invalid_string_losses")?;
             losses.push(code.note(message));
             Ok(None)
         }

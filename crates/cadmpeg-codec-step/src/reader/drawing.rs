@@ -205,7 +205,7 @@ pub(super) fn decode(
     let mut drawing_ids = BTreeSet::new();
     for candidate in &candidates {
         ctx.insert_btree_set(&mut drawing_ids, candidate.id, "step_drawing_ids")
-            .map(|_| ())?;
+            ?;
     }
     let mut hidden_drawing_ids = BTreeSet::new();
     for record in exchange.records().values() {
@@ -220,7 +220,7 @@ pub(super) fn decode(
         visit_drawing_references(items, ctx, &mut |id| {
             if drawing_ids.contains(&id) {
                 ctx.insert_btree_set(&mut hidden_drawing_ids, id, "step_hidden_drawing_ids")
-                    .map(|_| ())?;
+                    ?;
             }
             Ok(())
         })?;
@@ -243,7 +243,7 @@ pub(super) fn decode(
             )?,
             "step_drawing_target_members",
         )
-        .map(|_| ())?;
+        ?;
     }
     // DR-01: a drawing association scoped by PRODUCT_DEFINITION_SHAPE targets
     // that shape's one owning product-definition view, not a product-wide
@@ -259,7 +259,7 @@ pub(super) fn decode(
             )?,
             "step_drawing_target_members",
         )
-        .map(|_| ())?;
+        ?;
     }
     let drawing_target_ids = referenced_target_ids(exchange, &candidates, ctx)?;
     add_source_typed_targets(
@@ -372,11 +372,11 @@ pub(super) fn decode(
     let mut typed_records = HashSet::new();
     for &id in drawings.keys() {
         ctx.insert_hash_set(&mut typed_records, id, "step_drawing_typed_claims")
-            .map(|_| ())?;
+            ?;
     }
     for id in association_ids {
         ctx.insert_hash_set(&mut typed_records, id, "step_drawing_typed_claims")
-            .map(|_| ())?;
+            ?;
     }
     ctx.reserve_vec(
         &mut ir.model.drawings,
@@ -440,7 +440,7 @@ fn referenced_target_ids(
         {
             if let Some(placeholder_id) = association_placeholder_reference(record, parameters) {
                 ctx.insert_btree_set(&mut ids, placeholder_id, "step_drawing_referenced_targets")
-                    .map(|_| ())?;
+                    ?;
             }
         }
     }
@@ -958,7 +958,7 @@ fn add_draughting_model_associations(
             target_context
                 .ctx
                 .insert_hash_set(typed, association_id, "step_drawing_typed_claims")
-                .map(|_| ())?;
+                ?;
         }
     }
     Ok(())
@@ -1069,7 +1069,7 @@ fn wrapper_target_resolution(
         if leaving {
             active.remove(&id);
             ctx.insert_btree_set(&mut complete, id, "step_drawing_wrapper_complete")
-                .map(|_| ())?;
+                ?;
             continue;
         }
         if complete.contains(&id) {
@@ -1079,7 +1079,7 @@ fn wrapper_target_resolution(
             return Ok(None);
         }
         ctx.insert_btree_set(&mut active, id, "step_drawing_wrapper_active")
-            .map(|_| ())?;
+            ?;
         ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")?;
         pending.push((id, true));
         if let Some(targets) = target_identities.get(&id) {
@@ -1196,21 +1196,9 @@ fn value_text(
                 "step_drawing_value_text",
             )?;
             for byte in value.data() {
-                ctx.charge_retained(2, "step_drawing_value_text")?;
-                text.try_reserve(2).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::Codec(
-                                "step_drawing_value_text",
-                            ),
-                            0,
-                            2,
-                            "step_drawing_value_text",
-                        ),
-                    )
-                })?;
-                text.push(char::from(HEX[usize::from(byte >> 4)]));
-                text.push(char::from(HEX[usize::from(byte & 0x0f)]));
+                ctx.append_formatted_retained(&mut text, format_args!("{}{}",
+                    char::from(HEX[usize::from(byte >> 4)]),
+                    char::from(HEX[usize::from(byte & 0x0f)])), "step_drawing_value_text")?;
             }
             text
         }

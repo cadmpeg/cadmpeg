@@ -1108,6 +1108,19 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
+    /// Appends formatted text after admitting its exact retained byte count.
+    pub fn append_formatted_retained(
+        &self,
+        output: &mut String,
+        args: fmt::Arguments<'_>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let length = self.formatted_length(args, operation)?;
+        self.charge_retained(u64_from_index(length), operation)?;
+        Self::reserve_admitted_string(output, length, operation)?;
+        fmt::write(output, args).map_err(CodecError::malformed)
+    }
+
     /// Reserves an empty retained string after charging its declared length.
     pub fn retained_string(
         &self,
@@ -2686,4 +2699,31 @@ mod tests {
         assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
         if limit.dimension == crate::decode::ResourceDimension::WorkUnits));
     }
+    #[test]
+    fn append_formatted_retained_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("test context");
+        let mut output = String::new();
+        let error = ctx.append_formatted_retained(&mut output, format_args!("{}", 123),
+            "test formatted append").expect_err("three bytes exceed two");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes));
+        assert!(output.is_empty());
+        assert_eq!(output.capacity(), 0);
+    }
+
+    #[test]
+    fn append_formatted_retained_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let mut output = String::from("prefix:");
+        ctx.append_formatted_retained(&mut output, format_args!("{}", 123),
+            "test formatted append").expect("service profile admits text");
+        assert_eq!(output, "prefix:123");
+    }
+
 }
