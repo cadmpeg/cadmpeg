@@ -2952,6 +2952,7 @@ fn build_geometry_ir(
         }
     }
     crate::history::bind::derive_feature_outputs(
+        ctx,
         &mut ir.model.features,
         &histories,
         &face_producers,

@@ -6,6 +6,7 @@ use cadmpeg_ir::features::{
     FeatureDefinition, FeatureId, FeatureOperation, PathRef, PlanarProfileRef, ProfileRef,
     SplitFaceTool,
 };
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::topology::Face;
 use std::collections::{HashMap, HashSet};
 
@@ -351,31 +352,62 @@ pub(crate) fn order_model_features_for_regeneration(
 
 /// Mutable references to every side an extrusion extent carries.
 /// Bind each decoded face to the body owning it.
-fn face_owner_bodies(
-    faces: &[Face],
-    shells: &[cadmpeg_ir::topology::Shell],
-    regions: &[cadmpeg_ir::topology::Region],
-) -> HashMap<String, cadmpeg_ir::ids::BodyId> {
-    let region_bodies = regions
-        .iter()
-        .map(|region| (region.id.as_str(), &region.body))
-        .collect::<HashMap<_, _>>();
-    let shell_bodies = shells
-        .iter()
-        .filter_map(|shell| {
-            region_bodies
-                .get(shell.region.as_str())
-                .map(|body| (shell.id.as_str(), (*body).clone()))
-        })
-        .collect::<HashMap<_, _>>();
-    faces
-        .iter()
-        .filter_map(|face| {
-            shell_bodies
-                .get(face.shell.as_str())
-                .map(|body| (face.id.as_str().to_owned(), body.clone()))
-        })
-        .collect()
+fn face_owner_bodies<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    faces: &'a [Face],
+    shells: &'a [cadmpeg_ir::topology::Shell],
+    regions: &'a [cadmpeg_ir::topology::Region],
+) -> Result<HashMap<&'a str, &'a BodyId>, cadmpeg_core::CodecError> {
+    let mut region_bodies = HashMap::new();
+    for region in regions {
+        ctx.charge_work(1, "index SLDPRT face owner regions")?;
+        if !region_bodies.contains_key(region.id.as_str()) {
+            ctx.charge_collection_items(1, "index SLDPRT face owner regions")?;
+            region_bodies.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT face owner regions", u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        region_bodies.insert(region.id.as_str(), &region.body);
+    }
+    let mut shell_bodies = HashMap::new();
+    for shell in shells {
+        ctx.charge_work(1, "index SLDPRT face owner shells")?;
+        let Some(&body) = region_bodies.get(shell.region.as_str()) else {
+            continue;
+        };
+        if !shell_bodies.contains_key(shell.id.as_str()) {
+            ctx.charge_collection_items(1, "index SLDPRT face owner shells")?;
+            shell_bodies.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT face owner shells", u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        shell_bodies.insert(shell.id.as_str(), body);
+    }
+    let mut owners = HashMap::new();
+    for face in faces {
+        ctx.charge_work(1, "index SLDPRT face owner bodies")?;
+        let Some(&body) = shell_bodies.get(face.shell.as_str()) else {
+            continue;
+        };
+        if !owners.contains_key(face.id.as_str()) {
+            ctx.charge_collection_items(1, "index SLDPRT face owner bodies")?;
+            owners.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT face owner bodies", u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        owners.insert(face.id.as_str(), body);
+    }
+    Ok(owners)
+}
+
+fn copy_output_body_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    id: &str,
+) -> Result<BodyId, cadmpeg_core::CodecError> {
+    let mut text = String::new();
+    ctx.reserve_retained_string(&mut text, id.len(), "retain SLDPRT feature output body")?;
+    text.push_str(id);
+    BodyId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
 /// Derive feature output bodies from the producing-feature identity the
@@ -391,6 +423,7 @@ fn face_owner_bodies(
 /// that body to the corresponding feature's outputs. An ordinal that is absent
 /// or ambiguous across history records is ignored.
 pub(crate) fn derive_feature_outputs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
     face_producers: &[(String, u32)],
@@ -407,7 +440,16 @@ pub(crate) fn derive_feature_outputs(
             .iter()
             .filter(|record| !is_history_metadata_record(record, &history.features))
         {
-            ordinal = ordinal.saturating_add(1);
+            ctx.charge_work(1, "index SLDPRT body modifier ordinals")?;
+            ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("index SLDPRT body modifier ordinals", u64::MAX - 1, u64::MAX)
+            })?;
+            if !feature_ids_by_ordinal.contains_key(&ordinal) {
+                ctx.charge_collection_items(1, "index SLDPRT body modifier ordinals")?;
+                feature_ids_by_ordinal.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT body modifier ordinals", u64::MAX - 1, u64::MAX)
+                })?;
+            }
             match feature_ids_by_ordinal.entry(ordinal) {
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     entry.insert(Some(record.id.as_str()));
@@ -426,16 +468,27 @@ pub(crate) fn derive_feature_outputs(
             .iter_mut()
             .filter(|feature| feature.native_ref.as_deref() == Some(native_ref))
         {
-            let Ok(body) = cadmpeg_ir::ids::BodyId::mint(body.clone()) else {
-                continue;
+            let body = match copy_output_body_id(ctx, body) {
+                Ok(body) => body,
+                Err(cadmpeg_core::CodecError::Malformed(_)) => continue,
+                Err(error) => return Err(error),
             };
             if !feature.evaluation.outputs().contains(&body) {
-                let mut outputs = feature.evaluation.outputs().clone();
+                let mut outputs = Vec::new();
+                let count = feature.evaluation.outputs().len().checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit("collect SLDPRT body modifier outputs", u64::MAX - 1, u64::MAX)
+                })?;
+                ctx.reserve_collection_vec(
+                    &mut outputs,
+                    count,
+                    "collect SLDPRT body modifier outputs",
+                )?;
+                for output in feature.evaluation.outputs() {
+                    outputs.push(copy_output_body_id(ctx, output.as_str())?);
+                }
                 outputs.push(body);
                 feature.evaluation.set_outputs(
-                    outputs
-                        .try_into()
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                    cadmpeg_ir::features::DistinctMembers::try_from_charged(outputs, ctx)?,
                 );
             }
         }
@@ -443,15 +496,23 @@ pub(crate) fn derive_feature_outputs(
     if face_producers.is_empty() {
         return Ok(());
     }
-    let owners = face_owner_bodies(faces, shells, regions);
-    let mut produced: HashMap<u32, Vec<cadmpeg_ir::ids::BodyId>> = HashMap::new();
+    let owners = face_owner_bodies(ctx, faces, shells, regions)?;
+    let mut produced: HashMap<u32, Vec<&BodyId>> = HashMap::new();
     for (face, source_id) in face_producers {
-        let Some(body) = owners.get(face) else {
+        ctx.charge_work(1, "collect SLDPRT produced bodies")?;
+        let Some(body) = owners.get(face.as_str()) else {
             continue;
         };
+        if !produced.contains_key(source_id) {
+            ctx.charge_collection_items(1, "index SLDPRT produced bodies")?;
+            produced.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT produced bodies", u64::MAX - 1, u64::MAX)
+            })?;
+        }
         let bodies = produced.entry(*source_id).or_default();
         if !bodies.contains(body) {
-            bodies.push(body.clone());
+            ctx.reserve_collection_vec(bodies, 1, "collect SLDPRT produced bodies")?;
+            bodies.push(body);
         }
     }
     for feature in features {
@@ -472,11 +533,13 @@ pub(crate) fn derive_feature_outputs(
             continue;
         };
         if let Some(bodies) = produced.get(&source_id) {
+            let mut outputs = Vec::new();
+            ctx.reserve_collection_vec(&mut outputs, bodies.len(), "collect SLDPRT feature outputs")?;
+            for body in bodies {
+                outputs.push(copy_output_body_id(ctx, body.as_str())?);
+            }
             feature.evaluation.set_outputs(
-                bodies
-                    .clone()
-                    .try_into()
-                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                cadmpeg_ir::features::DistinctMembers::try_from_charged(outputs, ctx)?,
             );
         }
     }
@@ -581,13 +644,14 @@ pub(super) fn bind_definition_sketch(
 
 #[cfg(test)]
 mod tests {
-    use super::{order_features_for_regeneration, order_model_features_for_regeneration};
+    use super::{derive_feature_outputs, order_features_for_regeneration, order_model_features_for_regeneration};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::features::{
         DistinctMembers, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
         FeatureOperation,
     };
     use cadmpeg_ir::scalar::Length;
+    use crate::records::FeatureHistory;
 
     fn ordering_feature() -> Feature {
         Feature {
@@ -645,6 +709,71 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "scan SLDPRT feature parents"
+        ));
+    }
+
+    fn feature_output_error(
+        limits: impl FnOnce(&mut cadmpeg_core::decode::ResourceLimits),
+    ) -> cadmpeg_core::CodecError {
+        let histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: Default::default(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![crate::history::tests::feature("native", Some("700"), 0)],
+        }];
+        let mut projected = crate::history::project::project_features(&histories)
+            .unwrap_or_else(|error| panic!("test projection failed: {error}"));
+        let body_modifiers = [("sldprt:brep:body#333".to_owned(), 1)];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        limits(&mut policy.limits);
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .unwrap_or_else(|error| panic!("test context failed: {error}"));
+        derive_feature_outputs(
+            &ctx,
+            &mut projected,
+            &histories,
+            &[],
+            &body_modifiers,
+            &[],
+            &[],
+            &[],
+        )
+        .expect_err("the feature-output route must refuse the selected limit")
+    }
+
+    #[test]
+    fn feature_outputs_refuse_collection_limit() {
+        let error = feature_output_error(|limits| limits.max_collection_items = 0);
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "index SLDPRT body modifier ordinals"
+        ));
+    }
+
+    #[test]
+    fn feature_outputs_refuse_retained_limit() {
+        let error = feature_output_error(|limits| limits.max_retained_bytes = 0);
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "retain SLDPRT feature output body"
+        ));
+    }
+
+    #[test]
+    fn feature_outputs_refuse_work_limit() {
+        let error = feature_output_error(|limits| limits.max_work_units = 0);
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "index SLDPRT body modifier ordinals"
         ));
     }
 }
