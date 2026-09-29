@@ -575,7 +575,7 @@ fn evaluate_parameter_expressions(
         for parameter in parameters.iter_mut().filter(|parameter| parameter.value.is_none()) {
             ctx.charge_work(1, "evaluate SLDPRT parameter expressions")?;
             let aliases = aliases.for_owner(parameter.owner.as_ref());
-            let Some(value) = ParameterExpressionParser::new(&parameter.expression, aliases, &values).parse() else { continue; };
+            let Some(value) = ParameterExpressionParser::new(ctx, &parameter.expression, aliases, &values).parse()? else { continue; };
             insert_parameter_value(ctx, &mut values, &parameter.id, &value)?;
             parameter.value = Some(value);
             changed = true;
@@ -634,7 +634,7 @@ pub(crate) fn parameters_with_unevaluable_expressions(
         for values in &mut states {
             ctx.charge_work(1, "check SLDPRT parameter evaluation")?;
             let own = values.remove_entry(&parameter.id);
-            let evaluated = ParameterExpressionParser::new(&parameter.expression, aliases, values).parse()
+            let evaluated = ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values).parse()?
                 .or_else(|| text_parameter_literal(&parameter.name, &parameter.expression));
             if let Some((id, value)) = own {
                 values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("restore SLDPRT parameter evaluation value", u64::MAX - 1, u64::MAX))?;
@@ -671,7 +671,7 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
         for values in &mut states {
             ctx.charge_work(1, "check SLDPRT evaluated parameter coherence")?;
             let own = values.remove_entry(&parameter.id);
-            let evaluated = ParameterExpressionParser::new(&parameter.expression, aliases, values).parse();
+            let evaluated = ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values).parse()?;
             let incoherent = own.as_ref().zip(evaluated.as_ref())
                 .is_some_and(|((_, actual), evaluated)| !equivalent_parameter_values(actual, evaluated));
             if let Some((id, value)) = own {
