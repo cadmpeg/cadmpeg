@@ -6741,7 +6741,7 @@ fn revolve_face_axis_operand<'a>(
                 && operand.group_member_ordinal() == Some(0)
                 && operand.record_index() == axis_member
         }))?;
-    (!crate::design::face_resolve::historical_face_operand_candidates(operand).is_empty())
+    (crate::design::face_resolve::historical_face_operand_candidate_iter(operand).next().is_some())
         .then_some(operand)
 }
 
@@ -6812,13 +6812,12 @@ pub(crate) fn bind_revolve_face_axes(
             });
             let recipe_axis = revolve_face_axis_operand(scope, group, *member, face_operands)
                 .and_then(|operand| {
-                    let candidates =
-                        crate::design::face_resolve::historical_face_operand_candidates(operand);
-                    let mut axes = candidates
-                        .iter()
-                        .map(|face_id| analytic_axis_for_face(face_id, faces, surfaces));
-                    let first = axes.next().flatten()?;
-                    axes.all(|axis| {
+                    let first_face = crate::design::face_resolve::historical_face_operand_candidate_iter(operand)
+                        .min_by(|left, right| left.as_str().cmp(right.as_str()))?;
+                    let first = analytic_axis_for_face(first_face, faces, surfaces)?;
+                    crate::design::face_resolve::historical_face_operand_candidate_iter(operand)
+                        .map(|face_id| analytic_axis_for_face(face_id, faces, surfaces))
+                        .all(|axis| {
                         axis.is_some_and(|axis| {
                             crate::history::same_axis_line(
                                 (first.origin.get(), first.direction.get()),

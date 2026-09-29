@@ -1549,9 +1549,11 @@ pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperan
     let Some(direct) = unique_face_operand_history_candidate(operand) else {
         return resolve_face_operand_support_candidate(operand);
     };
-    if !historical_face_operand_candidates(operand).contains(direct)
-        && nested_bounded_face_history_candidates(operand)
-            .is_none_or(|candidates| !candidates.contains(direct))
+    if !historical_face_operand_candidate_iter(operand).any(|candidate| candidate == direct)
+        && (!has_nested_bounded_face_history_candidates(operand)
+            || !operand.recipe_references.iter().flat_map(|reference| {
+                reference.candidate_faces.iter().chain(&reference.alternate_selector_faces)
+            }).any(|candidate| candidate == direct))
     {
         return None;
     }
@@ -1999,6 +2001,21 @@ pub(crate) fn historical_face_operand_candidates(
         }
     }
     face_operand_candidates(operand).to_vec()
+}
+
+pub(crate) fn historical_face_operand_candidate_iter(
+    operand: &DesignFaceOperand,
+) -> impl Iterator<Item = &cadmpeg_ir::ids::FaceId> {
+    let use_referenced = operand.recipe_kind
+        == crate::records::recipes::ConstructionRecipeKind::Face
+        && operand.recipe_references.iter().any(|reference| {
+            !reference.candidate_faces.is_empty()
+                || !reference.alternate_selector_faces.is_empty()
+        });
+    operand.recipe_references.iter().flat_map(|reference| {
+        reference.candidate_faces.iter().chain(&reference.alternate_selector_faces)
+    }).filter(move |_| use_referenced)
+        .chain(face_operand_candidates(operand).iter().filter(move |_| !use_referenced))
 }
 
 /// Return nested persistent-reference faces for a complete bounded-face
