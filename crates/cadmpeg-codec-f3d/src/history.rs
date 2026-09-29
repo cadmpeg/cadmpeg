@@ -6693,7 +6693,8 @@ fn bind_face_selection(
     };
     if native == &scope.id {
         if let Some(resolved) =
-            crate::design::feature_project::direct_face_selection(scope, operands)
+            crate::design::feature_project::direct_face_selection(None, scope, operands)
+                .unwrap_or(None)
         {
             if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
                 *selection = resolved;
