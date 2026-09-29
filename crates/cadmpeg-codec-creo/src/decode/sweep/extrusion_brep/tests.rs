@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    cap_coedge_ids_admitted, copy_extrusion_identity, copy_ring_coedges,
+    cap_coedge_ids_admitted, cap_record, copy_extrusion_identity, copy_ring_coedges,
     generated_extrusion_identity, push_rejected_extrusion,
+    refused_lane_message, missing_cap_message,
     sketch_profiles_cover_generated_extrusion_sides, JoinedLaneRecords,
 };
 use crate::decode::tests::surface_row;
@@ -13,6 +14,63 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchEntityUse, SketchId, SketchPlacement};
 use cadmpeg_ir::AnnotationBuilder;
+
+#[test]
+fn extrusion_cap_record_refuses_temporary_text_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = cap_record(&ctx, 7, 2, "bottom", 3)
+        .expect_err("cap record exceeds temporary limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::MaterializedBytes
+            && resource.operation == "creo extrusion cap record text"));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service root admitted");
+    assert_eq!(cap_record(&ctx, 7, 2, "bottom", 3).expect("bottom record").0,
+        "extrusion feature 7 profile 2 bottom cap at entity 3");
+    assert_eq!(cap_record(&ctx, 7, 2, "top", 4).expect("top record").0,
+        "extrusion feature 7 profile 2 top cap at entity 4");
+}
+
+#[test]
+fn extrusion_refused_lane_error_refuses_retained_text_limit() {
+    let records = ["first".to_string(), "second".to_string()];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = refused_lane_message(&ctx, "cap 7", &records)
+        .expect_err("refused lane message exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo extrusion refused lane error"));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service root admitted");
+    assert_eq!(refused_lane_message(&ctx, "cap 7", &records).expect("service message"),
+        "Refused lanes on cap 7: first; second");
+}
+
+#[test]
+fn extrusion_missing_cap_error_refuses_retained_text_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = missing_cap_message(&ctx, "cap 7")
+        .expect_err("missing cap message exceeds retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo extrusion missing cap error"));
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("service root admitted");
+    assert_eq!(missing_cap_message(&ctx, "cap 7").expect("service message"),
+        "cap 7 states no pcurve geometry");
+}
 
 fn admitted_extrusion_fixture() -> (crate::container::ContainerScan<'static>, CadIr) {
     use cadmpeg_ir::sketches::{

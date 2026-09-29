@@ -20,6 +20,21 @@ pub(crate) struct LaneRefusalContext<'record, 'sink> {
     pub(crate) refusals: &'sink mut LaneRefusals,
 }
 
+/// Render retained lane refusals in their original order without a joined allocation.
+pub(crate) struct JoinedLaneRecords<'a>(pub(crate) &'a [String]);
+
+impl std::fmt::Display for JoinedLaneRecords<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, record) in self.0.iter().enumerate() {
+            if index != 0 {
+                formatter.write_str("; ")?;
+            }
+            formatter.write_str(record)?;
+        }
+        Ok(())
+    }
+}
+
 impl<'record, 'sink> LaneRefusalContext<'record, 'sink> {
     /// Pair a source record with the sink that owns its refusal report.
     pub(crate) fn new(
