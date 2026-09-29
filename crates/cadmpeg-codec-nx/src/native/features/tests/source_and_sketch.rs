@@ -1075,7 +1075,7 @@ fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
         )
         .unwrap(),
     };
-    let uses = feature_datum_plane_csys_identity_uses(&[plane], &[csys]);
+    let uses = crate::test_support::with_decode_context(|ctx| feature_datum_plane_csys_identity_uses(ctx, &[plane], &[csys])).unwrap();
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].identity.as_str(), "012345678901234567890123456789");
     assert_eq!(uses[0].datum_plane_operation_label, "operation#4");
