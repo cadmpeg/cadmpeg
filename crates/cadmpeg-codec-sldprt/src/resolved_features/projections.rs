@@ -1,8 +1,9 @@
 //! Parameter scalar and compact selection projection.
 
 use super::component_paths::{
-    compact_body_selection_value, compact_edge_path_value, compact_edge_selection_set_value,
-    component_path_feature, component_path_terminal_feature, ComponentPathEnd,
+    compact_body_selection_value, compact_edge_path_value_charged,
+    compact_edge_selection_set_value_charged, component_path_feature,
+    component_path_terminal_feature, ComponentPathEnd,
 };
 use super::drafts::{draft_operand_candidates, same_draft_operands, DraftAnchor, DraftOperands};
 use super::holes::feature_object_byte_ranges;
@@ -745,26 +746,41 @@ pub(crate) fn project_compact_edge_selections(
             else {
                 return Ok(());
             };
-            let projected_edges = |selections: &[&FeatureInputEdgeSelection]| {
-                let native = compact_edge_selection_set_value(selections);
-                let generated = selections.iter().try_fold(
-                    Vec::<cadmpeg_ir::features::GeneratedEdgeRef>::new(),
-                    |mut edges, selection| {
-                        let native_feature = selection.terminal_feature_ref.as_ref()?;
-                        let feature = feature_ids_by_native.get(native_feature)?.clone();
-                        let local_id = compact_edge_path_value(selection);
-                        let edge =
-                            cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id).ok()?;
-                        if !edges.contains(&edge) {
-                            edges.push(edge);
-                        }
-                        Some(edges)
-                    },
-                );
-                match generated.filter(|edges| !edges.is_empty()) {
-                    Some(edges) => EdgeSelection::generated(edges, native.clone())
-                        .unwrap_or(EdgeSelection::Native(native)),
-                    None => EdgeSelection::Native(native),
+            let projected_edges = |selections: &[&FeatureInputEdgeSelection]| -> Result<_, cadmpeg_core::CodecError> {
+                const OPERATION: &str = "project SLDPRT compact generated edges";
+                let native = compact_edge_selection_set_value_charged(ctx, selections)?;
+                let mut generated = Vec::<cadmpeg_ir::features::GeneratedEdgeRef>::new();
+                let mut complete = true;
+                for selection in selections {
+                    let Some(native_feature) = selection.terminal_feature_ref.as_ref() else {
+                        complete = false;
+                        break;
+                    };
+                    let Some(feature_id) = feature_ids_by_native.get(native_feature) else {
+                        complete = false;
+                        break;
+                    };
+                    let mut id_text = String::new();
+                    ctx.reserve_retained_string(&mut id_text, feature_id.as_str().len(), OPERATION)?;
+                    id_text.push_str(feature_id.as_str());
+                    let feature = cadmpeg_ir::features::FeatureId::mint(id_text)
+                        .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT generated edge feature id"))?;
+                    let local_id = compact_edge_path_value_charged(ctx, selection)?;
+                    let Ok(edge) = cadmpeg_ir::features::GeneratedEdgeRef::new(feature, local_id) else {
+                        complete = false;
+                        break;
+                    };
+                    ctx.charge_work(generated.len() as u64, OPERATION)?;
+                    if !generated.contains(&edge) {
+                        ctx.reserve_collection_vec(&mut generated, 1, OPERATION)?;
+                        generated.push(edge);
+                    }
+                }
+                if complete && !generated.is_empty() {
+                    EdgeSelection::generated(generated, native)
+                        .map_err(cadmpeg_core::CodecError::malformed)
+                } else {
+                    Ok(EdgeSelection::Native(native))
                 }
             };
             if let Some((existing_edges, tangency_weight)) =
@@ -788,7 +804,7 @@ pub(crate) fn project_compact_edge_selections(
                                 .into_iter()
                                 .map(|(radius, selections)| {
                                     let edges = if unresolved_edges {
-                                        projected_edges(&selections)
+                                        projected_edges(&selections)?
                                     } else {
                                         carried_edges.take().ok_or_else(|| {
                                             cadmpeg_core::CodecError::malformed(
@@ -818,7 +834,7 @@ pub(crate) fn project_compact_edge_selections(
                 _ => return Ok(()),
             };
             for edges in groups {
-                *edges = projected_edges(edge_selections);
+                *edges = projected_edges(edge_selections)?;
             }
             for dependency in edge_selections
                 .iter()
