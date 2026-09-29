@@ -6606,22 +6606,30 @@ pub(super) fn feature_sketch_fixed_points(
 
 /// Group every bit-identical same-name sketch-point witness.
 pub(super) fn feature_sketch_point_groups(
+    ctx: &DecodeContext<'_>,
     points: &[FeatureSketchPoint],
-) -> Vec<FeatureSketchPointGroup> {
+) -> Result<Vec<FeatureSketchPointGroup>, CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(points.len())
+        .checked_mul(cadmpeg_core::decode::u64_from_index(points.len()))
+        .and_then(|work| work.checked_mul(4))
+        .ok_or_else(|| ctx.refuse_codec_limit("group NX sketch points", 0, 1))?;
+    ctx.charge_work(work, "group NX sketch points")?;
     let mut grouped = BTreeSet::new();
+    let mut grouped_reservation = ctx.reserve_scoped(0, "index NX sketch point groups")?;
     let mut groups = Vec::new();
     for point in points {
         let key = (point.operation_label.as_str(), point.name.as_str());
-        if !grouped.insert(key) {
+        if grouped.contains(&key) {
             continue;
         }
-        let witnesses = points
-            .iter()
-            .filter(|candidate| {
-                candidate.operation_label == point.operation_label && candidate.name == point.name
-            })
-            .collect::<Vec<_>>();
-        if witnesses.iter().any(|candidate| {
+        ctx.charge_collection_items(1, "NX sketch point group keys")?;
+        grouped_reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, &str)>() + 64))?;
+        grouped.insert(key);
+        let matches = |candidate: &&FeatureSketchPoint| {
+            candidate.operation_label == point.operation_label && candidate.name == point.name
+        };
+        let count = points.iter().filter(&matches).count();
+        if points.iter().filter(&matches).any(|candidate| {
             candidate
                 .coordinates
                 .iter()
@@ -6630,21 +6638,39 @@ pub(super) fn feature_sketch_point_groups(
         }) {
             continue;
         }
+        let bytes = count.checked_mul(std::mem::size_of::<String>())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch point group members", 0, 1))?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "NX sketch point group members")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX sketch point group member slots")?;
+        let mut members = Vec::new();
+        members.try_reserve_exact(count)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch point group members", 0, cadmpeg_core::decode::u64_from_index(count)))?;
+        for witness in points.iter().filter(&matches) {
+            members.push(copy_operation_text(ctx, &witness.id, "NX sketch point group member")?);
+        }
+        let prefix = "nx:feature-history:sketch-point-group#";
+        let key = point.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let length = prefix.len().checked_add(key.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch point group identity", 0, 1))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(length), "NX sketch point group identity")?;
+        let mut id = String::new();
+        id.try_reserve_exact(length)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch point group identity", 0, 1))?;
+        id.push_str(prefix);
+        id.push_str(key);
+        ctx.charge_collection_items(1, "NX sketch point groups")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSketchPointGroup>()), "NX sketch point group record")?;
+        groups.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch point groups", 0, 1))?;
         groups.push(FeatureSketchPointGroup {
-            id: format!(
-                "nx:feature-history:sketch-point-group#{}",
-                point.id.rsplit_once('#').map_or("unknown", |(_, key)| key)
-            ),
-            operation_label: point.operation_label.clone(),
-            name: point.name.clone(),
-            points: witnesses
-                .into_iter()
-                .map(|point| point.id.clone())
-                .collect(),
+            id,
+            operation_label: copy_operation_text(ctx, &point.operation_label, "NX sketch point group label")?,
+            name: copy_operation_text(ctx, &point.name, "NX sketch point group name")?,
+            points: members,
             coordinates: point.coordinates,
         });
     }
-    groups
+    Ok(groups)
 }
 
 /// Decode exact named point objects across consecutive offset-store blocks.
