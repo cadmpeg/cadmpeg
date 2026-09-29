@@ -8,6 +8,17 @@ use crate::native::features::operation_record::FeatureOperationRecord;
 
 use crate::native::features::test_support::check_lane_wire;
 
+fn hole_package_group_uses(
+    lanes: &[crate::native::features::holes::FeatureHolePackageConstructionGroupLane],
+    groups: &[FeatureSimpleHoleConstructionGroup],
+) -> Vec<crate::native::features::holes::FeatureHolePackageConstructionGroupUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_hole_package_construction_group_uses(
+            ctx, lanes, groups,
+        )
+    }).expect("hole package group uses")
+}
+
 fn simple_hole_templates(
     labels: &[crate::native::features::FeatureOperationLabel],
     records: &[FeatureOperationRecord],
@@ -966,7 +977,6 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
 
 #[test]
 fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
-    use crate::native::features::holes::feature_hole_package_construction_group_uses;
     use crate::native::features::holes::FeatureHolePackageConstructionGroupLane;
     use crate::native::features::holes::FeatureSimpleHoleConstructionGroup;
     let blocks = [
@@ -1013,7 +1023,7 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
         .unwrap(),
     };
 
-    let uses = feature_hole_package_construction_group_uses(
+    let uses = hole_package_group_uses(
         std::slice::from_ref(&lane),
         std::slice::from_ref(&group),
     );
@@ -1022,16 +1032,104 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
     assert_eq!(uses[0].construction_group_lane, lane.id);
     assert_eq!(uses[0].simple_hole_construction_group, group.id);
 
-    assert!(feature_hole_package_construction_group_uses(
+    assert!(hole_package_group_uses(
         &[lane.clone(), lane.clone()],
         std::slice::from_ref(&group),
     )
     .is_empty());
-    assert!(feature_hole_package_construction_group_uses(
+    assert!(hole_package_group_uses(
         std::slice::from_ref(&lane),
         &[group.clone(), group],
     )
     .is_empty());
+}
+
+fn package_use_inputs() -> (
+    crate::native::features::holes::FeatureHolePackageConstructionGroupLane,
+    FeatureSimpleHoleConstructionGroup,
+) {
+    let blocks = ["a", "b", "c", "d"].map(str::to_string);
+    let lane = crate::native::features::holes::FeatureHolePackageConstructionGroupLane {
+        id: "hole-package-construction-group-lane#1".to_string(),
+        operation_label: "operation#1".to_string(),
+        selector: std::num::NonZeroU8::new(0x46).unwrap(),
+        branch: std::num::NonZeroU8::new(0x11).unwrap(),
+        references: std::array::from_fn(|index| {
+            crate::native::features::reference::ConstructionReference {
+                token: crate::om::reference_index::ReferenceIndexToken::from_wire(
+                    index as u32 + 1, &[0xf0, index as u8 + 1],
+                ).unwrap(),
+                data_block: blocks[index].clone(),
+                source_offset: [132, 134, 141, 143][index],
+            }
+        }),
+        payload_offset: 20,
+        source_offset: 120,
+    };
+    let group = FeatureSimpleHoleConstructionGroup {
+        id: "simple-hole-group".to_string(),
+        first_data_blocks: [blocks[0].clone(), blocks[1].clone()],
+        second_data_blocks: [blocks[2].clone(), blocks[3].clone()],
+        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "simple-hole-1".into(),
+                scalar_lane: "scalar-1".into(),
+                block_reference: "references-1".into(),
+            },
+            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                operation_label: "simple-hole-2".into(),
+                scalar_lane: "scalar-2".into(),
+                block_reference: "references-2".into(),
+            },
+        ]).unwrap(),
+    };
+    (lane, group)
+}
+
+fn package_use_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let (lane, group) = package_use_inputs();
+    let admitted = hole_package_group_uses(
+        std::slice::from_ref(&lane), std::slice::from_ref(&group),
+    );
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    crate::native::features::holes::feature_hole_package_construction_group_uses(
+        &ctx, &[lane], &[group],
+    ).expect_err("hole package group use resource limit")
+}
+
+#[test]
+fn hole_package_use_route_refuses_collection_limit() {
+    let error = package_use_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn hole_package_use_route_refuses_retained_limit() {
+    let error = package_use_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn hole_package_use_route_refuses_scoped_limit() {
+    let error = package_use_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn hole_package_use_route_refuses_work_limit() {
+    let error = package_use_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
