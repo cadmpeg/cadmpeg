@@ -1344,7 +1344,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane {
                         scope.work_plane_transform().map_or_else(
                             || native_scope_definition(ctx, scope, &parameters),
-                            |transform| Ok(project_work_plane(scope, transform.into())),
+                            |transform| project_work_plane(ctx, scope, transform.into()),
                         )?
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkAxis {
                         scope
@@ -2218,9 +2218,10 @@ fn project_work_point_construction(
 }
 
 fn project_work_plane(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     transform: [[f64; 4]; 4],
-) -> cadmpeg_ir::features::FeatureDefinition {
+) -> Result<cadmpeg_ir::features::FeatureDefinition, CodecError> {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, UnresolvedFamily, VertexSelection,
     };
@@ -2234,49 +2235,51 @@ fn project_work_plane(
     let u_axis = Vector3::new(transform[0][0], transform[1][0], transform[2][0]);
     let Some(frame) = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, normal, u_axis)
     else {
-        return FeatureDefinition::Operation(FeatureOperation::Unresolved {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
-        });
+        }));
     };
     let Some(construction) = scope.work_plane_construction() else {
-        return FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame });
+        return Ok(FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }));
     };
     let Some(state_id) = work_plane_recipe_state_id(scope) else {
-        return FeatureDefinition::Operation(FeatureOperation::Unresolved {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane,
-        });
+        }));
     };
     let feature_id = neutral_feature_id(scope);
     let feature_key = feature_id.key();
     let prefix = ids::history_input_prefix(&feature_key, state_id);
-    let points = construction
-        .inputs()
-        .iter()
-        .map(|recipe| {
-            Some(
-                VertexSelection::historical(
+    let vertex = |recipe: &crate::records::feature::work_geometry::DesignVertexRecipe|
+        -> Result<Option<VertexSelection>, CodecError> {
+            let Some(resolution) = recipe.resolution else { return Ok(None); };
+            let native = copy_feature_text(ctx, &recipe.recipe_id,
+                "f3d WorkPlane vertex recipe id")?;
+            let selection = match VertexSelection::historical(
                     feature_input_topology_id(&feature_id, state_id),
-                    ids::history_input_vertex_id(&prefix, recipe.resolution?.vertex_slot()),
-                    recipe.recipe_id.clone(),
-                )
-                .unwrap_or_else(|_| {
-                    VertexSelection::native(recipe.recipe_id.clone())
-                        .unwrap_or(VertexSelection::Unresolved)
-                }),
-            )
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(points) = points
-        .and_then(|points| <[_; 3]>::try_from(points).ok())
-        .and_then(|points| {
-            cadmpeg_ir::features::ThreePointSelection::try_from(Box::new(points)).ok()
-        })
-    else {
-        return FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::DatumPlane,
-        });
+                    ids::history_input_vertex_id(&prefix, resolution.vertex_slot()),
+                    native,
+                ) {
+                Ok(selection) => selection,
+                Err(_) => VertexSelection::Unresolved,
+            };
+            Ok(Some(selection))
     };
-    FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { frame, points })
+    let [first, second, third] = construction.inputs();
+    let (Some(first), Some(second), Some(third)) =
+        (vertex(first)?, vertex(second)?, vertex(third)?) else {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        }));
+    };
+    let Some(points) = cadmpeg_ir::features::ThreePointSelection::try_from(Box::new([
+        first, second, third,
+    ])).ok() else {
+        return Ok(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        }));
+    };
+    Ok(FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { frame, points }))
 }
 
 pub(super) fn project_combine(

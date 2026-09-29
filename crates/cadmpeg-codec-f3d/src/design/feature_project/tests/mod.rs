@@ -36,6 +36,7 @@ mod surface;
 mod timeline;
 mod treatments;
 mod work_point_binding_limits;
+mod work_plane_limits;
 
 fn project_single_scope_with_context(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
