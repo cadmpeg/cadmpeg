@@ -228,6 +228,20 @@ impl DecodeContext<'_> {
         }
     }
 
+    /// Appends a lazily built value to a scoped group after aggregate admission.
+    pub fn push_scoped_btree_group<K: Ord, V>(&self, reservation: &mut ScopedReservation<'_>, groups: &mut BTreeMap<K, Vec<V>>, key: K, value: impl FnOnce() -> V, owned_bytes: usize, operation: &'static str) -> Result<(), CodecError> {
+        self.charge_work(1, operation)?;
+        let vacant = !groups.contains_key(&key);
+        let key_bytes = if vacant { std::mem::size_of::<(K, Vec<V>)>() } else { 0 };
+        let bytes = key_bytes.checked_add(std::mem::size_of::<V>()).and_then(|bytes| bytes.checked_add(owned_bytes)).ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        self.charge_collection_items(1 + u64::from(vacant), operation)?;
+        reservation.grow(u64_from_index(bytes))?;
+        let values = groups.entry(key).or_default();
+        Self::reserve_admitted_vec(values, 1, operation)?;
+        values.push(value());
+        Ok(())
+    }
+
     fn collection_allocation_failed(&self, count: usize, operation: &'static str) -> CodecError {
         CodecError::ResourceLimit(ResourceLimit::allocation_failed(
             ResourceDimension::CollectionItems,
@@ -1998,6 +2012,31 @@ mod tests {
         assert!(ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut values, 7u8, 9u8, "test scoped lookup", "test scoped tree").unwrap());
         assert!(!ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut values, 7u8, 11u8, "test scoped lookup", "test scoped tree").unwrap());
         assert_eq!(values, BTreeMap::from([(7, 9)]));
+    }
+
+    #[test]
+    fn scoped_group_refuses_one_below_storage_before_allocation() {
+        let arena = DecodeArena::new();
+        let need = super::u64_from_index(std::mem::size_of::<(u8, Vec<u16>)>() + std::mem::size_of::<u16>() + 3);
+        let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, need - 1);
+        let mut reservation = ctx.reserve_scoped(0, "test scoped group").unwrap();
+        let mut groups = BTreeMap::new();
+        let built = std::cell::Cell::new(false);
+        let error = ctx.push_scoped_btree_group(&mut reservation, &mut groups, 1u8, || { built.set(true); 7u16 }, 3, "test scoped group").unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes));
+        assert!(groups.is_empty());
+        assert!(!built.get());
+    }
+
+    #[test]
+    fn scoped_group_preserves_member_order_under_service_profile() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
+        let mut reservation = ctx.reserve_scoped(0, "test scoped group").unwrap();
+        let mut groups = BTreeMap::new();
+        ctx.push_scoped_btree_group(&mut reservation, &mut groups, 1u8, || 7u16, 3, "test scoped group").unwrap();
+        ctx.push_scoped_btree_group(&mut reservation, &mut groups, 1u8, || 9u16, 3, "test scoped group").unwrap();
+        assert_eq!(groups[&1], [7, 9]);
     }
 
 }

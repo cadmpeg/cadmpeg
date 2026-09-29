@@ -3,7 +3,6 @@
 use crate::native::attach::insert_source_property;
 use crate::native::attach::insert_source_property_reference;
 use crate::native::attach::last_record_index;
-use crate::native::attach::push_grouped_operation;
 use crate::native::attach::records_by_operation;
 use crate::native::attach::segment_binding_body_indexes;
 
@@ -234,22 +233,8 @@ fn manual_group_with_limit(
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut reservation = ctx.reserve_scoped(0, "NX feature operation group indexes")?;
     let mut grouped = std::collections::BTreeMap::new();
-    push_grouped_operation(
-        &ctx,
-        &mut reservation,
-        &mut grouped,
-        "operation",
-        || 1u32,
-        0,
-    )?;
-    push_grouped_operation(
-        &ctx,
-        &mut reservation,
-        &mut grouped,
-        "operation",
-        || 2u32,
-        0,
-    )?;
+    ctx.push_scoped_btree_group(&mut reservation, &mut grouped, "operation", || 1u32, 0, "NX feature operation group index")?;
+    ctx.push_scoped_btree_group(&mut reservation, &mut grouped, "operation", || 2u32, 0, "NX feature operation group index")?;
     assert_eq!(grouped["operation"], [1, 2]);
     Ok(())
 }
