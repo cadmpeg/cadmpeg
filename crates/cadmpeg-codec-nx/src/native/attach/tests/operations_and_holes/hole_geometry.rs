@@ -1,11 +1,48 @@
 use crate::native::attach::hole_axis_placements_for_operations;
 use crate::native::attach::hole_body_projection;
+use crate::native::attach::hole_operations_by_body;
 use crate::native::attach::simple_hole_chamfers;
 use crate::native::attach::simple_hole_native_properties;
 use crate::native::attach::tests::hole_diameters_for_operations;
 use crate::native::attach::tests::simple_hole_diameters;
 use crate::native::attach::SolvedSurfaceGeometry;
 use crate::native::attach::SurfaceGeometry;
+
+fn hole_body_group_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let body = cadmpeg_ir::ids::BodyId::mint("test:model:entity#hole-group-body").unwrap();
+    let operations = ["hole-operation".to_string()];
+    let outputs = std::collections::BTreeMap::from([(operations[0].clone(), vec![body])]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let groups = hole_operations_by_body(&ctx, &cadmpeg_ir::document::CadIr::empty(), &operations, &outputs)?;
+    assert_eq!(groups.unwrap().len(), 1);
+    Ok(())
+}
+
+#[test]
+fn hole_body_group_refuses_collection_limit() {
+    let error = hole_body_group_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn hole_body_group_refuses_retained_limit() {
+    let error = hole_body_group_result(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn hole_body_group_refuses_work_limit() {
+    let error = hole_body_group_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
 
 #[test]
 fn nx_simple_hole_feature_owns_its_exact_native_constructions() {

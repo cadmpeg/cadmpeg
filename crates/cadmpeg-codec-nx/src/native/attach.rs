@@ -5801,6 +5801,38 @@ fn connected_solid_body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec
         .collect()
 }
 
+fn connected_solid_body_exists(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    body: &cadmpeg_ir::topology::Body,
+) -> Result<bool, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()), "NX connected solid identity scan")?;
+    let Some(body) = ir.model.bodies.iter().find(|candidate| candidate.id == body.id) else {
+        return Ok(false);
+    };
+    if body.kind != BodyKind::Solid {
+        return Ok(false);
+    }
+    let [region_id] = body.regions.as_slice() else {
+        return Ok(false);
+    };
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.regions.len()), "NX connected solid region scan")?;
+    let Some(region) = ir.model.regions.iter().find(|region| region.id == *region_id && region.body == body.id) else {
+        return Ok(false);
+    };
+    let [shell_id] = region.shells.as_slice() else {
+        return Ok(false);
+    };
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.shells.len()), "NX connected solid shell scan")?;
+    let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == *shell_id && shell.region == region.id) else {
+        return Ok(false);
+    };
+    let face_work = shell.faces().len().checked_mul(ir.model.faces.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX connected solid face scan", 0, cadmpeg_core::decode::u64_from_index(shell.faces().len())))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(face_work), "NX connected solid face scan")?;
+    Ok(shell.faces().iter().all(|face_id| ir.model.faces.iter().any(|face| face.id == *face_id && face.shell == shell.id)))
+}
+
 fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>> {
     Some(
         body_faces(ir, body_id)?
@@ -7532,7 +7564,7 @@ fn hole_body_projection(
     {
         return Ok(None);
     }
-    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
         return Ok(None);
     };
 
@@ -7581,7 +7613,7 @@ fn counterbore_body_projection(
     {
         return Ok(None);
     }
-    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
         return Ok(None);
     };
     let mut projected_outputs = BTreeMap::new();
@@ -7634,7 +7666,7 @@ fn blind_hole_body_projection(
     {
         return Ok(None);
     }
-    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
         return Ok(None);
     };
     let mut projected_outputs = BTreeMap::new();
@@ -7688,7 +7720,7 @@ fn hole_axis_placements_for_operations(
     {
         return Ok(BTreeMap::new());
     }
-    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
         return Ok(BTreeMap::new());
     };
 
@@ -7716,7 +7748,7 @@ fn counterbore_axis_placements_for_operations(
     {
         return Ok(BTreeMap::new());
     }
-    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
         return Ok(BTreeMap::new());
     };
     let mut placements = BTreeMap::new();
@@ -7760,7 +7792,7 @@ fn blind_hole_axis_placements_for_operations(
     {
         return Ok(BTreeMap::new());
     }
-    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, operations, outputs)? else {
         return Ok(BTreeMap::new());
     };
     let mut placements = BTreeMap::new();
@@ -8449,41 +8481,69 @@ fn blind_bore_cylinders(ctx: &DecodeContext<'_>, ir: &CadIr, body_faces: &[&Face
 /// connected solid when NX omits every operation-output relation. An output
 /// entry with no body is an explicit unresolved relation and blocks fallback.
 fn hole_operations_by_body(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Option<BTreeMap<BodyId, Vec<String>>> {
+) -> Result<Option<BTreeMap<BodyId, Vec<String>>>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(operations.len()), "NX hole output relation scan")?;
     let related = operations
         .iter()
         .filter(|operation| outputs.contains_key(*operation))
         .count();
     if related != 0 && related != operations.len() {
-        return None;
+        return Ok(None);
     }
     if related == operations.len() {
         let mut operations_by_body = BTreeMap::<BodyId, Vec<String>>::new();
         for operation in operations {
-            let [body] = outputs.get(operation)?.as_slice() else {
-                return None;
+            let Some([body]) = outputs.get(operation).map(Vec::as_slice) else {
+                return Ok(None);
             };
-            operations_by_body
-                .entry(body.clone())
-                .or_default()
-                .push(operation.clone());
+            if !operations_by_body.contains_key(body) {
+                ctx.charge_collection_items(1, "NX hole operation body groups")?;
+                let bytes = std::mem::size_of::<(BodyId, Vec<String>)>()
+                    .checked_add(body.as_str().len())
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX hole operation body groups", 0, cadmpeg_core::decode::u64_from_index(body.as_str().len())))?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX hole operation body groups")?;
+                operations_by_body.insert(body.clone(), Vec::new());
+            }
+            let group = operations_by_body.get_mut(body).ok_or_else(|| ctx.refuse_codec_limit("NX hole operation body groups", 0, 1))?;
+            ctx.charge_collection_items(1, "NX hole operations per body")?;
+            let bytes = std::mem::size_of::<String>().checked_add(operation.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("NX hole operations per body", 0, cadmpeg_core::decode::u64_from_index(operation.len())))?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX hole operations per body")?;
+            reserve_attach_vec(ctx, group, 1, "NX hole operations per body")?;
+            group.push(operation.clone());
         }
-        return Some(operations_by_body);
+        return Ok(Some(operations_by_body));
     }
 
-    let mut connected_solids = ir
-        .model
-        .bodies
-        .iter()
-        .filter(|body| connected_solid_body_faces(ir, &body.id).is_some());
-    let body = connected_solids.next()?;
-    if connected_solids.next().is_some() {
-        return None;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()), "NX connected solid body scan")?;
+    let mut selected = None;
+    for body in &ir.model.bodies {
+        if connected_solid_body_exists(ctx, ir, body)? {
+            if selected.replace(body).is_some() {
+                return Ok(None);
+            }
+        }
     }
-    Some(BTreeMap::from([(body.id.clone(), operations.to_vec())]))
+    let Some(body) = selected else { return Ok(None); };
+    ctx.charge_collection_items(1, "NX hole operation body groups")?;
+    let map_bytes = std::mem::size_of::<(BodyId, Vec<String>)>()
+        .checked_add(body.id.as_str().len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX hole operation body groups", 0, cadmpeg_core::decode::u64_from_index(body.id.as_str().len())))?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(map_bytes), "NX hole operation body groups")?;
+    let mut group = Vec::new();
+    for operation in operations {
+        ctx.charge_collection_items(1, "NX hole operations per body")?;
+        let bytes = std::mem::size_of::<String>().checked_add(operation.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX hole operations per body", 0, cadmpeg_core::decode::u64_from_index(operation.len())))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX hole operations per body")?;
+        reserve_attach_vec(ctx, &mut group, 1, "NX hole operations per body")?;
+        group.push(operation.clone());
+    }
+    Ok(Some(BTreeMap::from([(body.id.clone(), group)])))
 }
 
 fn through_bore_cylinders(ctx: &DecodeContext<'_>, ir: &CadIr, body_faces: &[&Face]) -> Result<Option<Vec<(Point3, Vector3, f64)>>, CodecError> {
@@ -8537,7 +8597,7 @@ fn simple_hole_chamfers(
         return Ok(BTreeMap::new());
     }
     let operations = operations.into_iter().collect::<Vec<_>>();
-    let Some(operations_by_body) = hole_operations_by_body(ir, &operations, outputs) else {
+    let Some(operations_by_body) = hole_operations_by_body(ctx, ir, &operations, outputs)? else {
         return Ok(BTreeMap::new());
     };
 
