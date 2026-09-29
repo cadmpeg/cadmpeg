@@ -4,6 +4,8 @@
 //! curve-support/edge-incidence table, standard vertex rosters, and the
 //! inline big-endian curved-surface parameter block.
 
+use cadmpeg_core::decode::{index_from_u32};
+
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
@@ -493,7 +495,7 @@ pub(super) fn standard_surface_records(
     let ordered_records = &table.records;
     let successors = &table.successors;
     let remaining_steps = face_count - 1;
-    let level_count = cadmpeg_core::decode::index_from_u32(usize::BITS) - cadmpeg_core::decode::index_from_u32(remaining_steps.leading_zeros());
+    let level_count = index_from_u32(usize::BITS) - index_from_u32(remaining_steps.leading_zeros());
     let mut jumps = Vec::new();
     ctx.reserve_vec(&mut jumps, level_count, "catia_surface_jump_levels")?;
     if level_count > 0 {
@@ -1064,7 +1066,7 @@ fn f32_le(bytes: &[u8], at: usize) -> Option<f32> {
 
 fn face_ref(bytes: &[u8], at: usize) -> Option<(usize, usize)> {
     match *bytes.get(at)? {
-        0xff => Some((cadmpeg_core::decode::index_from_u32(View::u32_le_at(bytes, at + 1)?), at + 5)),
+        0xff => Some((index_from_u32(View::u32_le_at(bytes, at + 1)?), at + 5)),
         value => Some((usize::from(value), at + 1)),
     }
 }

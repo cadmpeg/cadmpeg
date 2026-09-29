@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
+use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::convert::{f32_from_f64};
+
 type StandardProcedureOutputs = Result<
     (
         HashMap<u32, SurfaceGeometry>,
@@ -902,15 +905,15 @@ fn refine_consolidated_analytic_surfaces(
         crate::families::b2::records::b2_tori_from_records(bytes, records),
         "catia_standard_refined_tori",
     )?;
-    let quantized = |value: f64| cadmpeg_core::convert::f32_from_f64(value).map(f64::from);
+    let quantized = |value: f64| f32_from_f64(value).map(f64::from);
     let same_point = |point: Point3, stored: [f64; 3]| {
         quantized(stored[0]).is_some_and(|value| point.x.to_bits() == value.to_bits())
             && quantized(stored[1]).is_some_and(|value| point.y.to_bits() == value.to_bits())
             && quantized(stored[2]).is_some_and(|value| point.z.to_bits() == value.to_bits())
     };
     let same_axis = |axis: Vector3, stored: [f64; 3]| {
-        let Some(x) = cadmpeg_core::convert::f32_from_f64(stored[0]) else { return false; };
-        let Some(y) = cadmpeg_core::convert::f32_from_f64(stored[1]) else { return false; };
+        let Some(x) = f32_from_f64(stored[0]) else { return false; };
+        let Some(y) = f32_from_f64(stored[1]) else { return false; };
         let z = (1.0 - f64::from(x * x + y * y))
             .max(0.0)
             .sqrt()
@@ -1107,6 +1110,33 @@ mod consolidated_analytic_refinement_tests {
                 })
             );
         }
+    }
+
+    fn refinement_refuses_out_of_range_center(center: f64, coarse_center: f64) {
+        let mut bytes = crate::test_support::test_b2::b2_sphere_stream();
+        bytes[5..13].copy_from_slice(&center.to_le_bytes());
+        let coarse = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+            cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
+                Point3::new(coarse_center, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0), 5.0,
+            ).expect("finite sphere fixture"),
+        ));
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let mut surfaces = [Some(coarse.clone())];
+        assert!(refined_analytic_surfaces(&bytes, &records, &mut surfaces).is_empty());
+        assert_eq!(surfaces, [Some(coarse)]);
+    }
+
+    #[test]
+    fn analytic_refinement_refuses_positive_binary32_range_overflow() {
+        let limit = f64::from(f32::MAX);
+        refinement_refuses_out_of_range_center(limit.next_up(), limit);
+    }
+
+    #[test]
+    fn analytic_refinement_refuses_negative_binary32_range_overflow() {
+        let limit = -f64::from(f32::MAX);
+        refinement_refuses_out_of_range_center(limit.next_down(), limit);
     }
 
     #[test]
@@ -1410,7 +1440,7 @@ fn emit_standard_extrusion_definition(
             let owner =
                 directrix_id.try_clone_for_decode(ctx, "catia_extrusion_directrix_owner_id")?;
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(procedure_id.as_str().len()),
+                u64_from_index(procedure_id.as_str().len()),
                 "catia_extrusion_directrix_construction_id",
             )?;
             let procedure = ProceduralCurve::new(
@@ -1530,7 +1560,7 @@ fn emit_standard_extrusion_definition(
                 "catia_extrusion_offset_procedures",
             )?;
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(procedure_id.as_str().len()),
+                u64_from_index(procedure_id.as_str().len()),
                 "catia_extrusion_offset_construction_id",
             )?;
             let owner =
@@ -1752,7 +1782,7 @@ fn copy_standard_procedure(
                     crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(geometry)
                 }
                 crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(extrusion) => {
-                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                    ctx.charge_retained(u64_from_index(std::mem::size_of::<
                         crate::families::b5::transfer::ResolvedExtrusionSurface>()),
                         "catia_standard_offset_extrusion_copy")?;
                     crate::families::b5::transfer::ResolvedOffsetSupport::Extrusion(Box::new(
@@ -1772,7 +1802,7 @@ fn copy_standard_procedure(
         }
         StandardSurfaceProcedure::Extrusion(extrusion) => {
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::families::b5::transfer::ResolvedExtrusionSurface>()),
+                u64_from_index(std::mem::size_of::<crate::families::b5::transfer::ResolvedExtrusionSurface>()),
                 "catia_standard_extrusion_plan_copy",
             )?;
             StandardSurfaceProcedure::Extrusion(Box::new(
@@ -1781,7 +1811,7 @@ fn copy_standard_procedure(
         }
         StandardSurfaceProcedure::Revolution(revolution) => {
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<crate::families::b5::transfer::ResolvedRevolutionSurface>()),
+                u64_from_index(std::mem::size_of::<crate::families::b5::transfer::ResolvedRevolutionSurface>()),
                 "catia_standard_revolution_plan_copy",
             )?;
             StandardSurfaceProcedure::Revolution(Box::new(
@@ -2054,7 +2084,7 @@ impl EntityRewrite for StandardPopulationScope<'_, '_> {
         }
         let mut size = CountBytes(0);
         serde_json::to_writer(&mut size, &entity).map_err(CodecError::malformed)?;
-        let bytes = cadmpeg_core::decode::u64_from_index(size.0);
+        let bytes = u64_from_index(size.0);
         self.ctx
             .charge_collection_items(bytes, "catia_standard_population_rewrite")?;
         let retained = bytes.checked_mul(4).ok_or_else(|| {
@@ -2335,7 +2365,7 @@ fn try_decode_standard_population(
         };
     }
     let mut admission = FamilyEntityAdmission::new(ctx);
-    let work_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS));
+    let work_budget = ctx.work_budget(u64_from_index(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS));
     let brep = scan.brep.as_ref()?;
     let default_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
     let standard_spine = selection.map_or(default_spine, |selection| selection.spine.as_slice());
@@ -3065,7 +3095,7 @@ fn try_decode_standard_population(
         });
     }
     for (id, stream, offset, tag, exactness) in surface_annotations {
-        admitted!(annotate(ctx, &mut annotations, &id, stream, cadmpeg_core::decode::u64_from_index(offset), tag, exactness));
+        admitted!(annotate(ctx, &mut annotations, &id, stream, u64_from_index(offset), tag, exactness));
     }
     let mut topology_ir = std::mem::replace(&mut ir, CadIr::empty());
     let mut topology_annotations = admitted!(annotations.copy_charged(ctx, "catia_standard_topology_annotations"));
@@ -3082,7 +3112,7 @@ fn try_decode_standard_population(
     }
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
-    let topology_budget = ctx.work_budget(cadmpeg_core::decode::u64_from_index(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS));
+    let topology_budget = ctx.work_budget(u64_from_index(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS));
     let topology_result = attach_standard_topology(ctx, crate::families::standard::decode::AttachStandardTopologyInputs { ir: &mut topology_ir, annotations: &mut topology_annotations, bindings: &face_bindings, records: &records, face_bounds: &face_bounds, spine: standard_spine, edge_table_form, brep, support_override: selection.map(|selection| selection.supports.as_slice()), source: &scan.data, use_vertex_roster: selection.is_none_or(|selection| selection.vertex_roster_compatible), native_edge_faces: &object_evidence.edge_owner_faces, native_edge_supports: &object_evidence.edge_supports, limit_curves: &object_evidence.limit_curves, work_budget: &topology_budget, diagnostics: &mut topology_diagnostics, bound_limit_curve_count: &mut bound_standard_limit_curve_count, refusal, admission: &mut admission })
     .and_then(|()| {
         neutral_model_is_admissible(&mut topology_ir, &unknowns)?
@@ -3159,7 +3189,7 @@ fn try_decode_standard_population(
         Err(_) => return None,
     };
     let owner_binding_budget =
-        ctx.work_budget(cadmpeg_core::decode::u64_from_index(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS));
+        ctx.work_budget(u64_from_index(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS));
     consolidated_curve_bindings.standard_face_surfaces += match bind_standard_a5_owner_surfaces(
         ctx,
         &mut ir,
@@ -4445,7 +4475,7 @@ fn attach_standard_faces(
             annotations,
             &face_id,
             "MainDataStream+SurfacicReps",
-            cadmpeg_core::decode::u64_from_index(*offset),
+            u64_from_index(*offset),
             "surfacic_reps_face_sense",
             Exactness::ByteExact,
         )?;
@@ -5301,9 +5331,9 @@ let AttachStandardTopologyInputs { ir, annotations, bindings, records, face_boun
     .map_err(StandardTopologyError::Resource)?;
     for point in &ir.model.points {
         point_coordinates.push([
-            cadmpeg_core::convert::f32_from_f64(point.position().get().x).ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
-            cadmpeg_core::convert::f32_from_f64(point.position().get().y).ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
-            cadmpeg_core::convert::f32_from_f64(point.position().get().z).ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
+            f32_from_f64(point.position().get().x).ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
+            f32_from_f64(point.position().get().y).ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
+            f32_from_f64(point.position().get().z).ok_or(StandardTopologyFailure::ConflictingNativeEndpoints)?,
         ]);
     }
     let visualization_endpoint_pairs =
@@ -7120,7 +7150,7 @@ let EmitStandardTopologyInputs { ir, annotations, bindings, brep, surface_indice
             annotations,
             &id,
             "MainDataStream+SurfacicReps",
-            cadmpeg_core::decode::u64_from_index(support.pos),
+            u64_from_index(support.pos),
             "standard_spine_edge_row",
             Exactness::ByteExact,
         )?;
@@ -7286,7 +7316,7 @@ refusal)?
                         annotations,
                         &id,
                         "MainDataStream+SurfacicReps",
-                        cadmpeg_core::decode::u64_from_index(support.pos),
+                        u64_from_index(support.pos),
                         "derived_surface_parameter_curve",
                         Exactness::Derived)?;
                     crate::resource::derived_annotation(ctx, annotations, &id, "geometry", "catia_annotation_field")?;
@@ -8520,9 +8550,9 @@ fn refine_repeated_face_domains_by_geometry_and_bounds(
                                 right.min(candidate_right) - left.max(candidate_left)
                                     > STANDARD_FACE_BOUNDS_TOLERANCE
                             })
-                            .count() as u8
+                            .count()
                     });
-            (distinct_circle_carrier as u8, overlap_dimension)
+            (usize::from(distinct_circle_carrier), overlap_dimension)
         };
         let mut best = (0, 0);
         let mut best_count = 0usize;

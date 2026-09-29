@@ -5,6 +5,9 @@
 //! loss accounting, neutral-model admissibility, source metadata, generic
 //! vector/range helpers, and the metadata/geometry/container report builders.
 
+use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
+
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::codec::DecodeBody;
@@ -76,7 +79,7 @@ pub(crate) fn annotate(
     let stream_name = cadmpeg_ir::StreamName::try_from(stream_name)
         .map_err(cadmpeg_core::CodecError::malformed)?;
     let stream_bytes =
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
+        u64_from_index(std::mem::size_of::<cadmpeg_ir::StreamName>());
     ctx.charge_retained(stream_bytes, "catia_annotation_stream_handle")?;
     let tag = ctx.format_retained(format_args!("{tag}"), "catia_annotation_tag")?;
     ctx.charge_collection_items(1, "catia_annotation_provenance")?;
@@ -150,7 +153,7 @@ fn unresolved_carrier_ids<'a>(
             .procedural_surfaces
             .len()
             .checked_add(ir.model.procedural_curves.len())
-            .map(cadmpeg_core::decode::u64_from_index)
+            .map(u64_from_index)
             .ok_or_else(|| {
                 ctx.refuse_codec_limit("catia_carrier_resolution_work", u64::MAX, u64::MAX)
             })?;
@@ -941,13 +944,13 @@ pub(crate) fn rational_pcurve_arc(
         return Ok(None);
     }
     let segment_count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil();
-    if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+    if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS {
         return Ok(None);
     }
     // `ceil` answers zero only for an angular span of exactly zero: an arc that
     // sweeps no angle states no span, which this route refuses as it refuses
     // every other degeneracy.
-    let Some(segment_count) = std::num::NonZeroUsize::new(segment_count as usize) else {
+    let Some(segment_count) = truncate_f64_to_usize(segment_count).and_then(std::num::NonZeroUsize::new) else {
         return Ok(None);
     };
     let segment_count = segment_count.get();
@@ -964,10 +967,10 @@ pub(crate) fn rational_pcurve_arc(
         return Ok(None);
     };
     ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(segment_count),
+        u64_from_index(segment_count),
         "catia_rational_arc_segments",
     )?;
-    let step = span / segment_count as f64;
+    let step = span / match f64_from_index(segment_count) { Some(value) => value, None => return Ok(None) };
     let mut control_points = Vec::new();
     ctx.reserve_vec(
         &mut control_points,
@@ -980,7 +983,7 @@ pub(crate) fn rational_pcurve_arc(
     ctx.reserve_vec(&mut knots, knot_count, "catia_rational_arc_knots")?;
     knots.extend([range[0]; 3]);
     for index in 0..segment_count {
-        let start = range[0] + index as f64 * step;
+        let start = range[0] + match f64_from_index(index) { Some(value) => value, None => return Ok(None) } * step;
         let end = start + step;
         let middle = (start + end) * 0.5;
         let middle_weight = (step * 0.5).cos();

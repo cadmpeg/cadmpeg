@@ -8,6 +8,8 @@
 //! Partial paths preserve the reconstructed B-rep stream or complete file as an
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use std::collections::HashSet;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -204,7 +206,7 @@ let FinishDecodeInputs { scan, matched, mut ir, mut report, mut annotations, unk
         ctx.push_vec(&mut report.losses, note, "catia_lane_refusal_loss")?;
     }
     ctx.admit_entities(
-        cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
+        u64_from_index(ir.model.entity_count()),
         &mut admitted_model_entities,
         "admit CATIA route entities",
     )?;

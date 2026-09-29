@@ -5,6 +5,9 @@
 //! B-spline conversion, circular
 //! interval canonicalization, and exact circular-helix fitting.
 
+use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
+
 type QuinticJetOutput<const N: usize> =
     Result<Option<(Vec<f64>, Vec<FiniteVector<N>>)>, cadmpeg_core::CodecError>;
 
@@ -683,17 +686,17 @@ pub(crate) fn circular_helix_cache(
     // finite and positive, so the quotient is positive and ceils to at least
     // one segment. No floor stands here.
     let segment_count = (sweep / max_step).ceil();
-    if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
+    if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS {
         return Ok(None);
     }
-    let segment_count = segment_count as usize;
-    let step = sweep / segment_count as f64;
+    let Some(segment_count) = truncate_f64_to_usize(segment_count) else { return Ok(None); };
+    let step = sweep / match f64_from_index(segment_count) { Some(value) => value, None => return Ok(None) };
     let sample_count = segment_count
         .checked_add(1)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
     let sample_bytes = sample_count
         .checked_mul(std::mem::size_of::<(f64, Point3)>())
-        .map(cadmpeg_core::decode::u64_from_index)
+        .map(u64_from_index)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_samples", u64::MAX, u64::MAX))?;
     let _samples_reservation = ctx.reserve_scoped(sample_bytes, "catia_helix_samples")?;
     let mut samples = Vec::new();
@@ -702,7 +705,7 @@ pub(crate) fn circular_helix_cache(
         let parameter = if index == segment_count {
             angle_range[1]
         } else {
-            angle_range[0] + index as f64 * step
+            angle_range[0] + match f64_from_index(index) { Some(value) => value, None => return Ok(None) } * step
         };
         if !parameter.is_finite() {
             return Ok(None);
@@ -725,7 +728,7 @@ pub(crate) fn circular_helix_cache(
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_knots", u64::MAX, u64::MAX))?;
     let knot_bytes = knot_count
         .checked_mul(std::mem::size_of::<f64>())
-        .map(cadmpeg_core::decode::u64_from_index)
+        .map(u64_from_index)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_knots", u64::MAX, u64::MAX))?;
     ctx.charge_retained(knot_bytes, "catia_helix_knots")?;
     let mut knots = Vec::new();
@@ -735,7 +738,7 @@ pub(crate) fn circular_helix_cache(
     knots.push(angle_range[1]);
     let control_bytes = sample_count
         .checked_mul(std::mem::size_of::<Point3>())
-        .map(cadmpeg_core::decode::u64_from_index)
+        .map(u64_from_index)
         .ok_or_else(|| ctx.refuse_codec_limit("catia_helix_controls", u64::MAX, u64::MAX))?;
     ctx.charge_retained(control_bytes, "catia_helix_controls")?;
     let mut controls = Vec::new();

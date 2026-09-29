@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity framing for the pre-`7C05` design stream.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
@@ -451,7 +453,7 @@ fn charge_scan(
     length: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(length);
+    let work = u64_from_index(length);
     ctx.charge_work(work, operation)
 }
 
@@ -868,7 +870,7 @@ fn parse_scalar_values(
     )?;
     for index in 1..values.len() {
         ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(index),
+            u64_from_index(index),
             "catia_legacy_scalar_sort",
         )?;
         let mut at = index;
@@ -1458,7 +1460,7 @@ fn parse_role_selectors(
     for offset in start..end {
         let Some((name, encoding, selector)) = (|| {
             let inclusive_length = usize::from(*data.get(offset)?);
-            if !(2..=u8::MAX as usize).contains(&inclusive_length) {
+            if inclusive_length < 2 {
                 return None;
             }
             let selector_offset = offset.checked_add(inclusive_length)?;
@@ -1612,7 +1614,7 @@ fn parse_role_selectors(
     roles.extend(field_bound_roles);
     for index in 1..roles.len() {
         ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(index),
+            u64_from_index(index),
             "catia_legacy_role_sort",
         )?;
         let mut at = index;

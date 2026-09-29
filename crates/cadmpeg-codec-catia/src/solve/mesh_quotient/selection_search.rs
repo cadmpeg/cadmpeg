@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Mesh selection search and singleton coordinate topology.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::{
     canonical_mesh_boundary_directions, changed_quotient_edges, common_supported_corner_equations,
     copy_mesh_assignment, copy_mesh_boundary_directions, copy_mesh_edge_rows,
@@ -434,7 +436,7 @@ impl MeshSelectionSearch<'_, '_> {
                                     domain.len().checked_mul(std::mem::size_of::<usize>())?,
                                 )
                         })
-                        .map(cadmpeg_core::decode::u64_from_index)
+                        .map(u64_from_index)
                     else {
                         return Err(self.ctx.refuse_codec_limit(
                             "catia_forced_equation_cache_key",
@@ -628,12 +630,12 @@ impl MeshSelectionSearch<'_, '_> {
                 continue;
             };
             self.ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(assignment.boundaries.len()),
+                u64_from_index(assignment.boundaries.len()),
                 "catia_selection_completion_boundaries",
             )?;
             for boundary in &assignment.boundaries {
                 self.ctx.charge_collection_items(
-                    cadmpeg_core::decode::u64_from_index(boundary.len()),
+                    u64_from_index(boundary.len()),
                     "catia_selection_completion_directions",
                 )?;
             }
@@ -1474,7 +1476,7 @@ impl MeshSelectionSearch<'_, '_> {
                     (0..quotient.union.len())
                         .filter(|&node| quotient.union.root(node) == node)
                         .fold((0usize, 0u128), |(count, freedom), node| {
-                            (count + 1, freedom + quotient.domains[node].len() as u128)
+                            (count + 1, freedom + u128::from(u64_from_index(quotient.domains[node].len())))
                         })
                 };
                 measure(left_quotient)
@@ -2078,7 +2080,7 @@ let ResolveSingletonMeshSelectionInputs { edge_rows, vertex_points, edge_candida
                 .len()
                 .checked_mul(std::mem::size_of::<usize>())
                 .and_then(|bytes| bytes.checked_add(std::mem::size_of::<HashSet<usize>>()))
-                .map(cadmpeg_core::decode::u64_from_index)
+                .map(u64_from_index)
                 .ok_or_else(|| {
                     ctx.refuse_codec_limit("catia_singleton_root_domain_copy", u64::MAX, u64::MAX)
                 })?;

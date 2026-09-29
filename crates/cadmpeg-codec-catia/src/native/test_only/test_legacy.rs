@@ -1,3 +1,5 @@
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::entity_table;
 use crate::legacy_entity;
 use crate::native::entity_record::CatiaEntityRecord;
@@ -46,7 +48,7 @@ fn legacy_schema_identifiers(
         .ok()?
         .into_iter()
         .map(|identifier| CatiaLegacySchemaIdentifier {
-            byte_offset: identifier.offset as u64,
+            byte_offset: u64_from_index(identifier.offset),
             value: identifier.value,
         })
         .collect(),

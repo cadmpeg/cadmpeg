@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native topology records in the E5 `0D 03` stream family.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
 
@@ -1044,7 +1046,7 @@ fn parse_nurbs_pcurve(
     if degree == 0 || knot_count == 0 || [zero0, zero1, zero2] != [0; 3] {
         return Ok(None);
     }
-    let knot_count_u64 = cadmpeg_core::decode::u64_from_index(knot_count);
+    let knot_count_u64 = u64_from_index(knot_count);
     if view.counted(knot_count_u64, 12).is_none() {
         return Ok(None);
     }
@@ -1080,7 +1082,7 @@ fn parse_nurbs_pcurve(
     else {
         return Ok(None);
     };
-    let control_count_u64 = cadmpeg_core::decode::u64_from_index(control_count);
+    let control_count_u64 = u64_from_index(control_count);
     if view.counted(control_count_u64, 16).is_none() {
         return Ok(None);
     }
@@ -1160,7 +1162,7 @@ fn expand_nurbs_knots_limited(
     }
     let Some(bytes) = total
         .checked_mul(size_of::<FiniteReal>())
-        .map(cadmpeg_core::decode::u64_from_index)
+        .map(u64_from_index)
     else {
         return Err(ctx.refuse_codec_limit("catia_e5_pcurve_expanded_knots", u64::MAX, u64::MAX));
     };
@@ -1182,7 +1184,7 @@ fn read_finite_lane(
     count: usize,
     operation: &'static str,
 ) -> Result<Option<Vec<FiniteReal>>, CodecError> {
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    let count_u64 = u64_from_index(count);
     if view.counted(count_u64, 8).is_none() {
         return Ok(None);
     }
@@ -1203,7 +1205,7 @@ fn read_u32_lane(
     count: usize,
     operation: &'static str,
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    let count_u64 = u64_from_index(count);
     if view.counted(count_u64, 4).is_none() {
         return Ok(None);
     }
@@ -1319,7 +1321,7 @@ fn parse_jet_pcurve(
     }
     let Some(bytes) = site_count
         .checked_mul(size_of::<E5PcurveJetSite>())
-        .map(cadmpeg_core::decode::u64_from_index)
+        .map(u64_from_index)
     else {
         return Err(ctx.refuse_codec_limit("catia_e5_jet_sites", u64::MAX, u64::MAX));
     };

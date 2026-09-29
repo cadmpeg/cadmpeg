@@ -3,6 +3,8 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use cadmpeg_test_support::wire;
 
 use std::io::Cursor;
@@ -59,7 +61,7 @@ fn native_namespace_retains_summary_preview_bytes() {
         (preview.width, preview.height, preview.components),
         (640, 288, 1)
     );
-    assert_eq!(preview.data.len() as u64, preview.byte_len);
+    assert_eq!(u64_from_index(preview.data.len()), preview.byte_len);
     assert_eq!(&preview.data[..2], [0xff, 0xd8]);
     assert_eq!(&preview.data[preview.data.len() - 2..], [0xff, 0xd9]);
     assert_eq!(native.finjpl_segments.len(), 1);

@@ -70,8 +70,9 @@ impl InlineBytes {
         &self.0
     }
     /// Inline length code.
-    pub(crate) fn code(&self) -> u8 {
-        0xe7 + self.0.len() as u8
+    pub(crate) fn code(&self) -> Result<u8, &'static str> {
+        let length = u8::try_from(self.0.len()).map_err(|_| "inline length exceeds byte range")?;
+        0xe7_u8.checked_add(length).ok_or("inline code exceeds byte range")
     }
 }
 
@@ -105,7 +106,7 @@ impl Serialize for InlineBytes {
         S: serde::Serializer,
     {
         InlineBytesWireRef {
-            code: self.code(),
+            code: self.code().map_err(serde::ser::Error::custom)?,
             bytes: &self.0,
         }
         .serialize(serializer)
@@ -116,7 +117,7 @@ impl Serialize for InlineBytes {
 impl From<InlineBytes> for InlineBytesWire {
     fn from(value: InlineBytes) -> Self {
         Self {
-            code: value.code(),
+            code: value.code().expect("validated inline bytes"),
             bytes: value.0,
         }
     }
@@ -125,7 +126,7 @@ impl TryFrom<InlineBytesWire> for InlineBytes {
     type Error = &'static str;
     fn try_from(wire: InlineBytesWire) -> Result<Self, Self::Error> {
         let bytes = Self::try_from(wire.bytes)?;
-        if wire.code != bytes.code() {
+        if wire.code != bytes.code()? {
             return Err("code disagrees with inline bytes length");
         }
         Ok(bytes)
