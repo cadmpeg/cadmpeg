@@ -2318,44 +2318,44 @@ pub(crate) fn resolved_edge_candidate_intersection<'a>(
     proofs.all(|proof| proof == edge).then_some(edge)
 }
 
-pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a>(
+pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a, I>(
     selector_contexts: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
-    reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
-) -> Option<i64> {
-    let mut incidence = selector_contexts
+    reference_edge_sets: I,
+) -> Option<i64>
+where
+    I: IntoIterator<Item = &'a [i64]>,
+    I::IntoIter: Clone,
+{
+    let reference_edge_sets = reference_edge_sets.into_iter();
+    let mut candidate = None;
+    for edge in selector_contexts
         .iter()
         .flat_map(|selector| selector.incidence_matching_edge_slots.iter().copied())
-        .collect::<Vec<_>>();
-    incidence.sort_unstable();
-    incidence.dedup();
-    let mut reference_edge_sets = reference_edge_sets
-        .into_iter()
-        .map(|edges| {
-            let mut edges = edges.to_vec();
-            edges.sort_unstable();
-            edges.dedup();
-            edges
-        })
-        .collect::<Vec<_>>();
-    reference_edge_sets.sort();
-    reference_edge_sets.dedup();
-    let mut candidates = incidence
-        .into_iter()
-        .filter(|edge| {
-            reference_edge_sets
-                .iter()
-                .filter(|edges| edges.contains(edge))
-                .take(2)
-                .count()
-                == 2
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_unstable();
-    candidates.dedup();
-    match candidates.as_slice() {
-        [edge] => Some(*edge),
-        _ => None,
+    {
+        if candidate == Some(edge) {
+            continue;
+        }
+        let mut distinct_matches = 0;
+        for (index, edges) in reference_edge_sets.clone().enumerate() {
+            if !edges.contains(&edge) || reference_edge_sets.clone().take(index).any(|prior| {
+                prior.iter().all(|value| edges.contains(value))
+                    && edges.iter().all(|value| prior.contains(value))
+            }) {
+                continue;
+            }
+            distinct_matches += 1;
+            if distinct_matches == 2 {
+                break;
+            }
+        }
+        if distinct_matches == 2 {
+            if candidate.is_some() {
+                return None;
+            }
+            candidate = Some(edge);
+        }
     }
+    candidate
 }
 
 fn corroborated_common_triplet_intersection(
