@@ -9257,8 +9257,11 @@ fn project_extrude(
         ) {
             return Ok(selection);
         }
-        Ok(resolved_face_group(ctx, group, face_operands)?
-            .unwrap_or_else(|| FaceSelection::Native(group.id.clone())))
+        match resolved_face_group(ctx, group, face_operands)? {
+            Some(selection) => Ok(selection),
+            None => Ok(FaceSelection::Native(copy_feature_text(
+                ctx, &group.id, "f3d Extrude selected face group id")?)),
+        }
     };
     let start = match prologue.start() {
         DesignExtrudeStart::ProfilePlane if start_groups.is_empty() => {
@@ -9415,13 +9418,17 @@ fn project_extrude(
                         prologue.direction_reversed(),
                     )
                 }
-                ([], [target]) if effective_side_one_offset.is_none() => (
-                    ExtentShape::OneSided(LinearTermination::ToShape {
-                        target: resolved_body_recipe_shape(scope, target, body_recipe_operands)
-                            .unwrap_or_else(|| FaceSelection::Native(target.id.clone())),
-                    }),
-                    prologue.direction_reversed(),
-                ),
+                ([], [target]) if effective_side_one_offset.is_none() => {
+                    let target = match resolved_body_recipe_shape(scope, target, body_recipe_operands) {
+                        Some(selection) => selection,
+                        None => FaceSelection::Native(copy_feature_text(
+                            ctx, &target.id, "f3d Extrude target shape group id")?),
+                    };
+                    (
+                        ExtentShape::OneSided(LinearTermination::ToShape { target }),
+                        prologue.direction_reversed(),
+                    )
+                }
                 _ => return Ok(None),
             }
         }
