@@ -1178,7 +1178,7 @@ fn offset_plane_frame_pair_stores_result_before_reference() {
     payload.extend(frame(0.0));
 
     assert_eq!(
-        offset_reference_plane_frame_pair(&payload, cadmpeg_ir::scalar::Length::new(37.0).unwrap()),
+        offset_reference_plane_frame_pair(&cadmpeg_test_support::service_decode_context(), &payload, cadmpeg_ir::scalar::Length::new(37.0).unwrap()).unwrap(),
         Some((
             (
                 Point3::new(-37.0, 0.0, 0.0),
@@ -1194,12 +1194,14 @@ fn offset_plane_frame_pair_stores_result_before_reference() {
     );
     payload[65..73].copy_from_slice(&(-1.0_f64).to_le_bytes());
     assert!(offset_reference_plane_frame_pair(
+        &cadmpeg_test_support::service_decode_context(),
         &payload,
         cadmpeg_ir::scalar::Length::new(37.0).unwrap()
     )
+    .unwrap()
     .is_some());
     assert_eq!(
-        offset_reference_plane_frame_pair(&payload, cadmpeg_ir::scalar::Length::new(38.0).unwrap()),
+        offset_reference_plane_frame_pair(&cadmpeg_test_support::service_decode_context(), &payload, cadmpeg_ir::scalar::Length::new(38.0).unwrap()).unwrap(),
         None
     );
 
@@ -1208,9 +1210,11 @@ fn offset_plane_frame_pair_stores_result_before_reference() {
     antiparallel.extend([0; 13]);
     antiparallel.extend(frame(0.0));
     assert!(offset_reference_plane_frame_pair(
+        &cadmpeg_test_support::service_decode_context(),
         &antiparallel,
         cadmpeg_ir::scalar::Length::new(37.0).unwrap()
     )
+    .unwrap()
     .is_some());
 }
 
@@ -1241,7 +1245,7 @@ fn offset_plane_frame_pair_uses_matrix_axes_instead_of_fixed_prefixes() {
     payload.extend(frame(0.0));
 
     assert_eq!(
-        offset_reference_plane_frame_pair(&payload, cadmpeg_ir::scalar::Length::new(37.0).unwrap()),
+        offset_reference_plane_frame_pair(&cadmpeg_test_support::service_decode_context(), &payload, cadmpeg_ir::scalar::Length::new(37.0).unwrap()).unwrap(),
         Some((
             (
                 Point3::new(-37.0, 0.0, 0.0),
@@ -1294,7 +1298,7 @@ fn offset_plane_frame_pair_accepts_ordered_mixed_frame_layouts() {
     payload.extend(reference);
 
     assert_eq!(
-        offset_reference_plane_frame_pair(&payload, cadmpeg_ir::scalar::Length::new(25.0).unwrap()),
+        offset_reference_plane_frame_pair(&cadmpeg_test_support::service_decode_context(), &payload, cadmpeg_ir::scalar::Length::new(25.0).unwrap()).unwrap(),
         Some((
             (
                 Point3::new(0.0, 0.0, 210.0),

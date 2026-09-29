@@ -291,8 +291,11 @@ pub(crate) fn enrich_history_reference_planes(
             let offset_frames = feature
                 .parameters
                 .get("D1")
-                .and_then(|value| crate::history::literals::parse_dimension_length_mm(value))
-                .and_then(|distance| offset_reference_plane_frame_pair(bytes, distance));
+                .and_then(|value| crate::history::literals::parse_dimension_length_mm(value));
+            let offset_frames = match offset_frames {
+                Some(distance) => offset_reference_plane_frame_pair(ctx, bytes, distance)?,
+                None => None,
+            };
             if let Some((offset, reference)) = offset_frames {
                 let index = (history_index, feature_index);
                 push_reference_plane_candidate(ctx, &mut reference_frame_candidates, index, reference,
@@ -2607,9 +2610,10 @@ fn fixed_reference_plane_frame_candidates(
 }
 
 fn offset_reference_plane_frame_pair(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     distance: cadmpeg_ir::scalar::Length,
-) -> Option<(ReferencePlaneFrame, ReferencePlaneFrame)> {
+) -> Result<Option<(ReferencePlaneFrame, ReferencePlaneFrame)>, CodecError> {
     let valid_pair = |result: ReferencePlaneFrame, reference: ReferencePlaneFrame| {
         offset_plane_reference_frame_matches(reference, result, distance.get())
             .then_some((result, reference))
@@ -2617,7 +2621,7 @@ fn offset_reference_plane_frame_pair(
     let matrix_candidates = matrix_reference_plane_frame_candidates(payload);
     let fixed_candidates = fixed_reference_plane_frame_candidates(payload, &matrix_candidates);
     if let [(_, result), (_, reference)] = fixed_candidates.as_slice() {
-        return valid_pair(*result, *reference);
+        return Ok(valid_pair(*result, *reference));
     }
     let mut matrix_unique = [None; 3];
     let mut matrix_count = 0;
@@ -2632,10 +2636,11 @@ fn offset_reference_plane_frame_pair(
         matrix_count += 1;
     }
     if let [Some(result), Some(reference), None] = matrix_unique {
-        return valid_pair(result, reference);
+        return Ok(valid_pair(result, reference));
     }
     let mut frames = Vec::new();
     for offset in 0..payload.len() {
+        ctx.charge_work(1, "scan SLDPRT offset plane frame positions")?;
         let fixed = fixed_candidates
             .iter()
             .find_map(|(fixed_offset, frame)| (*fixed_offset == offset).then_some(*frame));
@@ -2653,36 +2658,31 @@ fn offset_reference_plane_frame_pair(
                 .and_then(compact_reference_plane_frame),
         ];
         for frame in candidates.into_iter().flatten() {
+            ctx.charge_work(u64_from_index(frames.len()), "deduplicate SLDPRT offset plane frames")?;
             if !frames.contains(&(offset, frame)) {
+                ctx.reserve_collection_vec(&mut frames, 1, "collect SLDPRT offset plane frames")?;
                 frames.push((offset, frame));
             }
         }
     }
-    let mut pairs = frames
-        .iter()
-        .enumerate()
-        .flat_map(|(result_index, (result_offset, result))| {
-            frames
-                .iter()
-                .skip(result_index + 1)
-                .filter_map(move |(reference_offset, reference)| {
-                    (result_offset < reference_offset)
-                        .then(|| valid_pair(*result, *reference))
-                        .flatten()
-                })
-        })
-        .collect::<Vec<_>>();
-    pairs.sort_by_key(|(result, reference)| {
-        [
-            reference_plane_frame_key(result),
-            reference_plane_frame_key(reference),
-        ]
-    });
-    pairs.dedup();
-    let [pair] = pairs.as_slice() else {
-        return None;
-    };
-    Some(*pair)
+    let mut unique_pair = None;
+    let mut ambiguous = false;
+    for (result_index, (result_offset, result)) in frames.iter().enumerate() {
+        for (reference_offset, reference) in frames.iter().skip(result_index + 1) {
+            ctx.charge_work(1, "match SLDPRT offset plane frame pairs")?;
+            if result_offset >= reference_offset {
+                continue;
+            }
+            if let Some(pair) = valid_pair(*result, *reference) {
+                match unique_pair {
+                    None => unique_pair = Some(pair),
+                    Some(previous) if previous != pair => ambiguous = true,
+                    Some(_) => {}
+                }
+            }
+        }
+    }
+    Ok(if ambiguous { None } else { unique_pair })
 }
 
 fn constraint_midplane_frame(
