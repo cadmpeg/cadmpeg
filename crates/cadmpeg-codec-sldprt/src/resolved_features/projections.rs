@@ -1591,10 +1591,18 @@ pub(crate) fn project_compact_surface_selections(
                         _ => false,
                     };
                     if unresolved_full_round {
+                        const OPERATION: &str = "project SLDPRT full round fillet faces";
                         let Some([center_faces, side_one_faces, side_two_faces]) =
                             full_round_fillet_selection_triple(ctx, feature_selections)?
                         else {
                             break 'feature_edit;
+                        };
+                        let copy_id = |producer: &cadmpeg_ir::features::FeatureId| {
+                            let text = ctx.format_retained(
+                                format_args!("{}", producer.as_str()), OPERATION,
+                            )?;
+                            cadmpeg_ir::features::FeatureId::mint(text)
+                                .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))
                         };
                         let [center_faces, side_one_faces, side_two_faces] =
                             [center_faces, side_one_faces, side_two_faces].map(|selection| -> Result<FaceSelection, cadmpeg_core::CodecError> {
@@ -1612,19 +1620,22 @@ pub(crate) fn project_compact_surface_selections(
                                         if producer != feature_id
                                             && !dependencies.contains(producer)
                                         {
-                                            dependencies.insert(producer.clone());
+                                            dependencies.try_insert_charged(copy_id(producer)?, ctx, OPERATION)?;
                                         }
-                                        cadmpeg_ir::features::GeneratedFaceRef::new(
-                                            producer.clone(),
-                                            local_id.to_string(),
-                                        )
-                                        .and_then(|face| {
-                                            cadmpeg_ir::features::FaceSelection::generated(
-                                                vec![face],
-                                                native.clone(),
-                                            )
-                                        })
-                                        .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+                                        let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
+                                        match cadmpeg_ir::features::GeneratedFaceRef::new(
+                                            copy_id(producer)?, local_id_text,
+                                        ) {
+                                            Ok(face) => {
+                                                let mut faces = Vec::new();
+                                                ctx.reserve_collection_vec(&mut faces, 1, OPERATION)?;
+                                                faces.push(face);
+                                                let native_copy = ctx.format_retained(format_args!("{native}"), OPERATION)?;
+                                                cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
+                                                    .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+                                            }
+                                            Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
+                                        }
                                     }
                                     None => cadmpeg_ir::features::FaceSelection::Native(native),
                                 };
@@ -1635,7 +1646,7 @@ pub(crate) fn project_compact_surface_selections(
                                     .filter(|producer| *producer != feature_id)
                                 {
                                     if !dependencies.contains(producer) {
-                                        dependencies.insert(producer.clone());
+                                        dependencies.try_insert_charged(copy_id(producer)?, ctx, OPERATION)?;
                                     }
                                 }
                                 Ok(face)
