@@ -23,7 +23,7 @@ use crate::decode::sketch::geometry::section_arc_geometry;
 use crate::decode::sketch::intersect::intersect_incident_section_carriers;
 use crate::decode::sketch::radii::trim_segment_id;
 use crate::decode::sketch_transfer::identity::materialized_saved_section_external_ids;
-use crate::decode::sketch_transfer::profiles::resolved_profile_chains;
+use crate::decode::sketch_transfer::profiles::resolved_profile_chains as resolved_profile_chains_admitted;
 use crate::decode::surfaces::intersection_candidates::{
     axis_containing_plane_torus_circle_candidates, coaxial_cone_torus_circle_candidates,
 };
@@ -63,6 +63,16 @@ use std::collections::{BTreeMap, BTreeSet};
 const EPS_COAXIAL_CIRCLE: f64 = 1.0e-12;
 
 const EPS_CONIC_INTERSECTION: f64 = 1.0e-12;
+
+fn resolved_profile_chains(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    sketch: &SketchId,
+    emitted: &BTreeSet<u32>,
+) -> Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_profile_chains_admitted(ctx, definition, sketch, emitted)
+    }).expect("service profile chains")
+}
 
 fn ordered_face_loops_service<'a>(
     loops: Vec<&'a crate::topology::Loop>,

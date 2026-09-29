@@ -406,7 +406,7 @@ pub(in super::super) fn transfer_sketches(
             .count();
         coverage.record_resolved_geometry(resolved_opaque);
         coverage.record_family_resolution(SketchSegmentFamily::Opaque, resolved_opaque);
-        let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
+        let mut profiles = resolved_profile_chains(ctx, definition, &sketch_id, &emitted)?;
         let mut generated_profile_geometries = Vec::new();
         for segment in &segments {
             if !unique_segment_ids.contains(&segment.external_id)

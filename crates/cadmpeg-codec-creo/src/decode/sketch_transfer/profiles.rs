@@ -4,7 +4,7 @@
 use super::super::feature_history::dimensions::feature_skamp_table_complete;
 use super::super::sketch::radii::trim_segment_id;
 use super::super::sketch::skamp::unique_decoded_section_segment;
-use super::super::sketch_ids::sketch_entity_id;
+use super::super::sketch_ids::sketch_entity_id_admitted;
 use super::super::uniqueness::exactly_one;
 use crate::decode::sketch_transfer::identity::saved_section_entity_fallback_allowed;
 use crate::decode::sketch_transfer::loci::{
@@ -15,41 +15,59 @@ use crate::decode::sketch_transfer::loci::{
 use crate::feature::definitions::FeatureRelationTable;
 use crate::feature::segment_rows::SegmentRow;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchId};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn resolved_profile_chains(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     emitted: &BTreeSet<u32>,
-) -> Vec<Vec<SketchEntityUse>> {
+) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
     let Some(table) = &definition.trim_entities else {
-        return resolved_segment_profile_chains(definition, sketch, emitted);
+        return resolved_segment_profile_chains(ctx, definition, sketch, emitted);
     };
     if !table.has_complete_bucket_frame() || !table.has_unique_external_ids() {
         // A present trim table is authoritative; its failure cannot authorize
         // the point-incidence fallback reserved for an absent table.
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let rows = table
-        .rows
-        .iter()
-        .filter_map(|row| Some((row, trim_segment_id(definition, row)?)))
-        .collect::<Vec<_>>();
+    let mut rows = Vec::new();
+    for row in &table.rows {
+        if let Some(id) = trim_segment_id(definition, row) {
+            ctx.try_reserve_items(&mut rows, 1, "creo trim profile rows")?;
+            rows.push((row, id));
+        }
+    }
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
     for (index, row) in rows.iter().enumerate() {
         for vertex in row.0.vertices {
-            incident.entry(vertex).or_default().push(index);
+            if !incident.contains_key(&vertex) {
+                ctx.charge_collection_items(1, "creo trim profile incidence nodes")?;
+            }
+            let indices = incident.entry(vertex).or_default();
+            ctx.try_reserve_items(indices, 1, "creo trim profile incidence rows")?;
+            indices.push(index);
         }
     }
-    let mut remaining = (0..rows.len()).collect::<BTreeSet<_>>();
+    let mut remaining = BTreeSet::new();
+    for index in 0..rows.len() {
+        ctx.charge_collection_items(1, "creo trim profile remaining nodes")?;
+        remaining.insert(index);
+    }
     let mut profiles = Vec::new();
     while let Some(seed) = remaining.first().copied() {
+        ctx.charge_collection_items(1, "creo trim profile component nodes")?;
         let mut component = BTreeSet::from([seed]);
-        let mut frontier = vec![seed];
+        let mut frontier = ctx.alloc_filled(1, seed, "creo trim profile frontier")?;
         while let Some(index) = frontier.pop() {
             for vertex in rows[index].0.vertices {
                 for adjacent in &incident[&vertex] {
-                    if component.insert(*adjacent) {
+                    if !component.contains(adjacent) {
+                        ctx.charge_collection_items(1, "creo trim profile component nodes")?;
+                        component.insert(*adjacent);
+                        ctx.try_reserve_items(&mut frontier, 1, "creo trim profile frontier")?;
                         frontier.push(*adjacent);
                     }
                 }
@@ -68,12 +86,17 @@ pub(in super::super) fn resolved_profile_chains(
         {
             continue;
         }
-        let endpoints = incident
-            .iter()
-            .filter(|(_, rows)| rows.iter().filter(|row| component.contains(row)).count() == 1)
-            .map(|(vertex, _)| *vertex)
-            .collect::<Vec<_>>();
-        if !matches!(endpoints.len(), 0 | 2) {
+        let mut endpoints = [0u32; 2];
+        let mut endpoint_count = 0usize;
+        for (&vertex, rows) in &incident {
+            if rows.iter().filter(|row| component.contains(row)).count() == 1 {
+                if endpoint_count < endpoints.len() {
+                    endpoints[endpoint_count] = vertex;
+                }
+                endpoint_count += 1;
+            }
+        }
+        if !matches!(endpoint_count, 0 | 2) {
             continue;
         }
         let Some(first_row) = component
@@ -83,28 +106,26 @@ pub(in super::super) fn resolved_profile_chains(
         else {
             continue;
         };
-        let mut vertex = endpoints
-            .iter()
-            .min()
-            .copied()
-            .unwrap_or(rows[first_row].0.vertices[0]);
+        let mut vertex = if endpoint_count == 2 {
+            endpoints[0]
+        } else {
+            rows[first_row].0.vertices[0]
+        };
         let start_vertex = vertex;
         let mut unused = component;
         let mut profile = Vec::new();
         while !unused.is_empty() {
-            let candidates = incident[&vertex]
-                .iter()
-                .filter(|index| unused.contains(index))
-                .copied()
-                .collect::<Vec<_>>();
-            let index = if profile.is_empty() && endpoints.is_empty() {
-                if candidates.contains(&first_row) {
+            let mut candidates = incident[&vertex].iter().filter(|index| unused.contains(index)).copied();
+            let first_candidate = candidates.next();
+            let second_candidate = candidates.next();
+            let index = if profile.is_empty() && endpoint_count == 0 {
+                if incident[&vertex].iter().any(|candidate| *candidate == first_row && unused.contains(candidate)) {
                     first_row
                 } else {
                     break;
                 }
-            } else if candidates.len() == 1 {
-                candidates[0]
+            } else if let (Some(index), None) = (first_candidate, second_candidate) {
+                index
             } else {
                 break;
             };
@@ -123,11 +144,13 @@ pub(in super::super) fn resolved_profile_chains(
                         crate::feature::definitions::FeatureSegmentKind::Arc(_)
                     ) && segment.arc_orientation == Some(0)
                 });
-            profile.push(SketchEntityUse {
-                entity: match sketch_entity_id(sketch, external_id) {
+            let entity = match sketch_entity_id_admitted(ctx, sketch, external_id)? {
                     Some(id) => id,
                     None => continue,
-                },
+                };
+            ctx.try_reserve_items(&mut profile, 1, "creo trim profile entity uses")?;
+            profile.push(SketchEntityUse {
+                entity,
                 reversed: row_reversed ^ arc_orientation_reversed,
             });
             vertex = if row_reversed {
@@ -137,57 +160,72 @@ pub(in super::super) fn resolved_profile_chains(
             };
             unused.remove(&index);
         }
-        let terminal_ok = if endpoints.is_empty() {
+        let terminal_ok = if endpoint_count == 0 {
             vertex == start_vertex
         } else {
             endpoints.contains(&vertex) && vertex != start_vertex
         };
         if unused.is_empty() && terminal_ok {
+            ctx.try_reserve_items(&mut profiles, 1, "creo resolved trim profiles")?;
             profiles.push(profile);
         }
     }
-    profiles
+    Ok(profiles)
 }
 
 fn resolved_segment_profile_chains(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     sketch: &SketchId,
     emitted: &BTreeSet<u32>,
-) -> Vec<Vec<SketchEntityUse>> {
+) -> Result<Vec<Vec<SketchEntityUse>>, CodecError> {
     let Some(table) = definition
         .segments
         .as_ref()
         .filter(|table| table.is_complete())
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let rows = table
-        .rows
-        .ordinary()
-        .filter(|segment| {
+    let mut rows = Vec::new();
+    for segment in table.rows.ordinary().filter(|segment| {
             emitted.contains(&segment.external_id)
                 && matches!(
                     segment.kind,
                     crate::feature::definitions::FeatureSegmentKind::Line(_)
                         | crate::feature::definitions::FeatureSegmentKind::Arc(_)
                 )
-        })
-        .collect::<Vec<_>>();
+        }) {
+        ctx.try_reserve_items(&mut rows, 1, "creo segment profile rows")?;
+        rows.push(segment);
+    }
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
     for (index, segment) in rows.iter().enumerate() {
         for point in segment.point_ids() {
-            incident.entry(point).or_default().push(index);
+            if !incident.contains_key(&point) {
+                ctx.charge_collection_items(1, "creo segment profile incidence nodes")?;
+            }
+            let indices = incident.entry(point).or_default();
+            ctx.try_reserve_items(indices, 1, "creo segment profile incidence rows")?;
+            indices.push(index);
         }
     }
-    let mut remaining = (0..rows.len()).collect::<BTreeSet<_>>();
+    let mut remaining = BTreeSet::new();
+    for index in 0..rows.len() {
+        ctx.charge_collection_items(1, "creo segment profile remaining nodes")?;
+        remaining.insert(index);
+    }
     let mut profiles = Vec::new();
     while let Some(seed) = remaining.first().copied() {
+        ctx.charge_collection_items(1, "creo segment profile component nodes")?;
         let mut component = BTreeSet::from([seed]);
-        let mut frontier = vec![seed];
+        let mut frontier = ctx.alloc_filled(1, seed, "creo segment profile frontier")?;
         while let Some(index) = frontier.pop() {
             for point in rows[index].point_ids() {
                 for adjacent in &incident[&point] {
-                    if component.insert(*adjacent) {
+                    if !component.contains(adjacent) {
+                        ctx.charge_collection_items(1, "creo segment profile component nodes")?;
+                        component.insert(*adjacent);
+                        ctx.try_reserve_items(&mut frontier, 1, "creo segment profile frontier")?;
                         frontier.push(*adjacent);
                     }
                 }
@@ -217,17 +255,12 @@ fn resolved_segment_profile_chains(
         let mut unused = component;
         let mut profile = Vec::new();
         while !unused.is_empty() {
-            let candidates = incident[&point]
-                .iter()
-                .filter(|index| unused.contains(index))
-                .copied()
-                .collect::<BTreeSet<_>>();
-            let index = if profile.is_empty() && candidates.contains(&first) {
+            let mut candidates = incident[&point].iter().filter(|index| unused.contains(index)).copied();
+            let first_candidate = candidates.next();
+            let second_candidate = candidates.next();
+            let index = if profile.is_empty() && incident[&point].iter().any(|candidate| *candidate == first && unused.contains(candidate)) {
                 first
-            } else if candidates.len() == 1 {
-                let Some(index) = candidates.first().copied() else {
-                    break;
-                };
+            } else if let (Some(index), None) = (first_candidate, second_candidate) {
                 index
             } else {
                 break;
@@ -241,11 +274,13 @@ fn resolved_segment_profile_chains(
                 segment.kind,
                 crate::feature::definitions::FeatureSegmentKind::Arc(_)
             ) && segment.arc_orientation == Some(0);
-            profile.push(SketchEntityUse {
-                entity: match sketch_entity_id(sketch, segment.external_id) {
+            let entity = match sketch_entity_id_admitted(ctx, sketch, segment.external_id)? {
                     Some(id) => id,
                     None => continue,
-                },
+                };
+            ctx.try_reserve_items(&mut profile, 1, "creo segment profile entity uses")?;
+            profile.push(SketchEntityUse {
+                entity,
                 reversed: traversal_reversed ^ analytic_reversed,
             });
             point = if traversal_reversed {
@@ -256,10 +291,11 @@ fn resolved_segment_profile_chains(
             unused.remove(&index);
         }
         if unused.is_empty() && point == start {
+            ctx.try_reserve_items(&mut profiles, 1, "creo resolved segment profiles")?;
             profiles.push(profile);
         }
     }
-    profiles
+    Ok(profiles)
 }
 
 pub(in super::super) fn solver_only_section_entities(
@@ -662,11 +698,143 @@ pub(in super::super) fn solver_only_section_entity_family(
 #[cfg(test)]
 mod tests {
     use super::{
-        solver_only_section_entities, solver_only_section_entity_family, unique_section_incidence_curve_family,
+        resolved_profile_chains, solver_only_section_entities, solver_only_section_entity_family, unique_section_incidence_curve_family,
         SectionEntityIncidenceFamily,
     };
     use crate::decode::tests::opaque;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    fn single_trim_profile() -> crate::feature::definitions::FeatureDefinition {
+        let mut definition = definition(201, false);
+        definition.segments = None;
+        definition.trim_entities = Some(crate::feature::definitions::FeatureTrimEntityTable {
+            declared_count: None,
+            entity_ref: None,
+            entry_ref: None,
+            buckets: Vec::new(),
+            rows: vec![crate::feature::definitions::FeatureTrimEntity {
+                external_id: 42,
+                mode: None,
+                vertices: [1, 2],
+                kind: crate::feature::definitions::TrimEntityKind::Line,
+                offset: 42,
+            }],
+            solved_external_ids: vec![42],
+            offset: 0,
+        });
+        definition
+    }
+
+    #[test]
+    fn trim_profile_rows_refuse_before_growth() {
+        let definition = single_trim_profile();
+        let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917")
+            .expect("sketch ID");
+        let emitted = std::collections::BTreeSet::from([42]);
+        let arena = DecodeArena::new();
+        let operations = [
+            "creo trim profile rows",
+            "creo trim profile incidence nodes",
+            "creo trim profile incidence rows",
+            "creo trim profile incidence nodes",
+            "creo trim profile incidence rows",
+            "creo trim profile remaining nodes",
+            "creo trim profile component nodes",
+            "creo trim profile frontier",
+            "creo trim profile entity uses",
+            "creo resolved trim profiles",
+        ];
+        for (cap, operation) in operations.into_iter().enumerate() {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap as u64;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
+                .expect_err("profile needs the next collection item");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::CollectionItems
+                    && resource.operation == operation), "cap {cap}: {error}");
+        }
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = "creo:featdefs:sketch_entity#917:42".len() as u64 - 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+        let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
+            .expect_err("profile entity ID exceeds retained cap");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo sketch entity identity"));
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+        let profiles = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
+            .expect("service trim profile");
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].len(), 1);
+        assert_eq!(profiles[0][0].entity.as_str(), "creo:featdefs:sketch_entity#917:42");
+    }
+
+    #[test]
+    fn segment_profile_rows_refuse_before_growth() {
+        let mut definition = definition(201, false);
+        let segment = |external_id| crate::feature::definitions::FeatureSegment {
+            kind: crate::feature::definitions::FeatureSegmentKind::Line([1, 2]),
+            directions: [None; 3],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            body: Vec::new(),
+            offset: external_id as usize,
+        };
+        definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
+            declared_count: 2,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: [segment(10), segment(11)].into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary).collect(),
+            offset: 0,
+        });
+        let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917")
+            .expect("sketch ID");
+        let emitted = std::collections::BTreeSet::from([10, 11]);
+        let arena = DecodeArena::new();
+        let operations = [
+            "creo segment profile rows",
+            "creo segment profile rows",
+            "creo segment profile incidence nodes",
+            "creo segment profile incidence rows",
+            "creo segment profile incidence nodes",
+            "creo segment profile incidence rows",
+            "creo segment profile incidence rows",
+            "creo segment profile incidence rows",
+            "creo segment profile remaining nodes",
+            "creo segment profile remaining nodes",
+            "creo segment profile component nodes",
+            "creo segment profile frontier",
+            "creo segment profile component nodes",
+            "creo segment profile frontier",
+            "creo segment profile entity uses",
+            "creo segment profile entity uses",
+            "creo resolved segment profiles",
+        ];
+        for (cap, operation) in operations.into_iter().enumerate() {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap as u64;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
+                .expect_err("segment profile needs the next collection item");
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+                if resource.dimension == ResourceDimension::CollectionItems
+                    && resource.operation == operation), "cap {cap}: {error}");
+        }
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+        let profiles = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
+            .expect("service segment profile");
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].len(), 2);
+        assert_eq!(profiles[0][0].entity.as_str(), "creo:featdefs:sketch_entity#917:10");
+    }
 
     #[test]
     fn solver_only_entity_nodes_refuse_before_insertion() {
