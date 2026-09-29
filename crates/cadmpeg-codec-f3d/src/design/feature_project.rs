@@ -112,6 +112,30 @@ fn insert_feature_map<K: Eq + Hash, V>(
     Ok(items.insert(key, value))
 }
 
+fn insert_feature_set<T: Eq + Hash>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut HashSet<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<bool, CodecError> {
+    if items.contains(&item) { return Ok(false); }
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    Ok(items.insert(item))
+}
+
+fn copy_feature_text(
+    ctx: Option<&DecodeContext<'_>>,
+    text: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let Some(ctx) = ctx else { return Ok(text.to_owned()); };
+    String::from_utf8(ctx.copy_retained(text.as_bytes(), operation)?)
+        .map_err(|_| CodecError::malformed("validated feature text is not UTF-8"))
+}
+
 /// Design record slices projected together into the neutral construction
 /// history: the parameter, owner, and scope tables plus the construction
 /// operand, fillet-radius, edge, edge-identity, face, and whole-body recipe
@@ -384,12 +408,13 @@ pub(crate) struct ScopeHistoryGraph<'a> {
 
 impl<'a> ScopeHistoryGraph<'a> {
     pub(crate) fn new(
+        ctx: Option<&DecodeContext<'_>>,
         scopes: &'a [DesignParameterScope],
         body_bindings: &[DesignBodyBinding],
         body_recipe_operands: &[DesignBodyRecipeOperand],
         component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
         histories: &[crate::history_records::AsmHistory],
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
         let binding = if histories.is_empty() {
             ScopeHistoryBinding::Absent
         } else {
@@ -400,13 +425,16 @@ impl<'a> ScopeHistoryGraph<'a> {
                 histories,
             ))
         };
-        let component_namespaces = scopes
-            .iter()
-            .filter_map(|scope| {
-                Self::component_namespace(scope, component_naming_spaces)
-                    .map(|namespace| (scope.id.clone(), namespace))
-            })
-            .collect::<HashMap<_, _>>();
+        let mut component_namespaces = HashMap::new();
+        for scope in scopes {
+            if let Some(namespace) = Self::component_namespace(scope, component_naming_spaces) {
+                let id = copy_feature_text(ctx, &scope.id,
+                    "f3d component history scope id")?;
+                // discarded-value: each scope identity has one namespace.
+                let _ = insert_feature_map(ctx, &mut component_namespaces, id, namespace,
+                    "f3d component history namespace")?;
+            }
+        }
         let mut scopes_by_state = HashMap::new();
         for scope in scopes {
             let (Some(stream), Some(state_id)) =
@@ -420,27 +448,34 @@ impl<'a> ScopeHistoryGraph<'a> {
                     let Some(history_id) = bound.get(&scope.id) else {
                         continue;
                     };
-                    history_id.clone()
+                    copy_feature_text(ctx, history_id,
+                        "f3d history state binding id")?
                 }
             };
             let Some(component_namespace) = component_namespaces.get(&scope.id) else {
                 continue;
             };
-            scopes_by_state
-                .entry((
-                    stream.to_owned(),
-                    *component_namespace,
-                    history_id,
-                    state_id,
-                ))
-                .or_insert_with(Vec::new)
-                .push(scope);
+            let key = (
+                copy_feature_text(ctx, stream, "f3d history state stream")?,
+                *component_namespace,
+                history_id,
+                state_id,
+            );
+            if !scopes_by_state.contains_key(&key) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "f3d history state index")?;
+                    scopes_by_state.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "f3d history state index", 0, 1))?;
+                }
+            }
+            push_feature_item(ctx, scopes_by_state.entry(key).or_default(), scope,
+                "f3d history state scope")?;
         }
-        Self {
+        Ok(Self {
             binding,
             component_namespaces,
             scopes_by_state,
-        }
+        })
     }
 
     fn component_namespace(
@@ -470,15 +505,21 @@ impl<'a> ScopeHistoryGraph<'a> {
 
     fn state_key(
         &self,
+        ctx: Option<&DecodeContext<'_>>,
         scope: &DesignParameterScope,
         state_id: i64,
-    ) -> Option<(String, ComponentHistoryNamespace, String, i64)> {
-        Some((
-            native_stream(&scope.id)?.to_owned(),
-            *self.component_namespaces.get(&scope.id)?,
-            self.history_id(scope)?.to_owned(),
+    ) -> Result<Option<(String, ComponentHistoryNamespace, String, i64)>, CodecError> {
+        let (Some(stream), Some(namespace), Some(history_id)) = (
+            native_stream(&scope.id),
+            self.component_namespaces.get(&scope.id),
+            self.history_id(scope),
+        ) else { return Ok(None); };
+        Ok(Some((
+            copy_feature_text(ctx, stream, "f3d history lookup stream")?,
+            *namespace,
+            copy_feature_text(ctx, history_id, "f3d history lookup id")?,
             state_id,
-        ))
+        )))
     }
 
     /// Follow `scope.previous_history_state_id()` until a scope accepted by
@@ -486,6 +527,7 @@ impl<'a> ScopeHistoryGraph<'a> {
     /// are not themselves authored top-level features.
     pub(crate) fn predecessor<F>(
         &self,
+        ctx: Option<&DecodeContext<'_>>,
         scope: &DesignParameterScope,
         projected: F,
     ) -> Result<ScopeHistoryPredecessor<'a>, CodecError>
@@ -507,9 +549,9 @@ impl<'a> ScopeHistoryGraph<'a> {
                 return Ok(ScopeHistoryPredecessor::Ambiguous);
             };
             let Some(candidates) = self.scopes_by_state.get(&(
-                stream.to_owned(),
+                copy_feature_text(ctx, stream, "f3d predecessor stream")?,
                 *component_namespace,
-                history_id.to_owned(),
+                copy_feature_text(ctx, history_id, "f3d predecessor history id")?,
                 state_id,
             )) else {
                 return Ok(ScopeHistoryPredecessor::None);
@@ -528,7 +570,8 @@ impl<'a> ScopeHistoryGraph<'a> {
             if projected(candidate) {
                 return Ok(ScopeHistoryPredecessor::Scope(candidate));
             }
-            if !visited.insert(candidate.id.as_str()) {
+            if !insert_feature_set(ctx, &mut visited, candidate.id.as_str(),
+                "f3d predecessor visited scope")? {
                 return Err(CodecError::Malformed(
                     "Design scope history-state dependency is cyclic".into(),
                 ));
@@ -1336,12 +1379,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         })
         .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
     let scope_history = ScopeHistoryGraph::new(
+        ctx,
         scopes,
         body_bindings,
         body_recipe_operands,
         component_naming_spaces,
         histories,
-    );
+    )?;
     for feature in &mut features {
         let Some(scope) = feature
             .native_ref
@@ -1351,7 +1395,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             continue;
         };
         let ScopeHistoryPredecessor::Scope(predecessor_scope) =
-            scope_history.predecessor(scope, |candidate| {
+            scope_history.predecessor(ctx, scope, |candidate| {
                 let stream = native_stream(&candidate.id).unwrap_or(ids::DEFAULT_STREAM);
                 scope_ids.contains_key(&(stream, candidate.record_index))
             })?
@@ -1427,7 +1471,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         let Some(state_id) = scope.history_state_id() else {
             continue;
         };
-        let Some(key) = scope_history.state_key(scope, state_id) else {
+        let Some(key) = scope_history.state_key(ctx, scope, state_id)? else {
             continue;
         };
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
@@ -1456,7 +1500,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             .iter()
             .filter_map(|input| work_point_input_history_state_id(scope, input, edge_operands))
         {
-            let Some(key) = scope_history.state_key(scope, state_id) else {
+            let Some(key) = scope_history.state_key(ctx, scope, state_id)? else {
                 continue;
             };
             let Some(Some(dependency)) = history_state_features.get(&key) else {

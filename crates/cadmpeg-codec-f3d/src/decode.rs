@@ -1076,22 +1076,24 @@ fn design_projection_gaps(
     let mut unprojected_history_dependencies = 0;
     let mut ambiguous_history_dependencies = 0;
     let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
+        ctx,
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.design_component_naming_spaces,
         &native.asm_histories,
-    );
+    )?;
     for scope in &native.design_parameter_scopes {
         let Some(feature) = projected_features.get(scope.id.as_str()) else {
             continue;
         };
-        let predecessor_scope = match scope_history.predecessor(scope, |candidate| {
+        let predecessor_scope = match scope_history.predecessor(ctx, scope, |candidate| {
             projected_features.contains_key(candidate.id.as_str())
         }) {
             Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
                 predecessor
             }
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Ok(crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous) | Err(_) => {
                 ambiguous_history_dependencies += 1;
                 continue;

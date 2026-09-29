@@ -1181,17 +1181,27 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
 
     let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
+        None,
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
         &native.design_component_naming_spaces,
         &native.asm_histories,
     );
+    let Ok(scope_history) = scope_history else {
+        findings.push(Finding {
+            check: Check::NativeLinks,
+            severity: Severity::Error,
+            message: "Fusion Design scope history index could not be built".into(),
+            entity: None,
+        });
+        return;
+    };
     for scope in &native.design_parameter_scopes {
         let Some(position) = scope_positions.get(scope.id.as_str()).copied() else {
             continue;
         };
-        match scope_history.predecessor(scope, |candidate| {
+        match scope_history.predecessor(None, scope, |candidate| {
             scope_positions.contains_key(candidate.id.as_str())
         }) {
             Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
