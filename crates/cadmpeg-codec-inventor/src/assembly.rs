@@ -219,21 +219,21 @@ pub(crate) fn project_occurrences(
         ctx.charge_collection_items(1, "project Inventor occurrence")?;
         ctx.charge_entities(1, "project Inventor occurrence")?;
         ctx.charge_retained(
-            ("inventor:assembly:instance#".len()
-                + source.occurrence_id.max(1).ilog10() as usize
-                + 1) as u64,
+            cadmpeg_core::decode::u64_from_index("inventor:assembly:instance#".len()
+                + usize::try_from(source.occurrence_id.max(1).ilog10()).map_err(|_| CodecError::Malformed("Inventor numeric value exceeds target range".into()))?
+                + 1),
             "retain projected Inventor occurrence id",
         )?;
         ctx.charge_retained(
-            reference.document_copy_len() as u64,
+            cadmpeg_core::decode::u64_from_index(reference.document_copy_len()),
             "retain projected Inventor external document",
         )?;
         ctx.charge_retained(
-            source.title.as_ref().map_or(0, String::len) as u64,
+            cadmpeg_core::decode::u64_from_index(source.title.as_ref().map_or(0, String::len)),
             "retain projected Inventor occurrence title",
         )?;
         ctx.charge_retained(
-            source.id.len() as u64,
+            cadmpeg_core::decode::u64_from_index(source.id.len()),
             "retain projected Inventor occurrence native reference",
         )?;
         occurrences.push(Occurrence {
@@ -286,7 +286,7 @@ pub(crate) fn inventory<'a>(
                 parse_occurrence(ctx, record.payload).and_then(|mut occurrence| {
                     ctx.charge_collection_items(1, "admit Inventor assembly occurrence record")?;
                     ctx.charge_retained(
-                        segment.pair.token.as_str().len() as u64,
+                        cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
                         "retain Inventor assembly occurrence token",
                     )?;
                     occurrence.segment_token = segment.pair.token.as_str().into();
@@ -300,7 +300,7 @@ pub(crate) fn inventory<'a>(
                 parse_placement(ctx, record.payload).and_then(|mut placement| {
                     ctx.charge_collection_items(1, "admit Inventor assembly placement record")?;
                     ctx.charge_retained(
-                        segment.pair.token.as_str().len() as u64,
+                        cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
                         "retain Inventor assembly placement token",
                     )?;
                     placement.segment_token = segment.pair.token.as_str().into();
@@ -319,7 +319,7 @@ pub(crate) fn inventory<'a>(
                 ctx.charge_entities(1, "admit Inventor assembly issue")?;
                 admit_issue_detail(ctx, &error, "retain Inventor assembly issue detail")?;
                 ctx.charge_retained(
-                    segment.pair.token.as_str().len() as u64,
+                    cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
                     "retain Inventor assembly issue token",
                 )?;
                 issues.push(RecordIssue {
@@ -371,7 +371,7 @@ fn parse_occurrence<'a>(
     )?;
     let related_count = cursor.count32("occurrence related-list count", 65_536)?;
     ctx.charge_collection_items(
-        related_count as u64,
+        cadmpeg_core::decode::u64_from_index(related_count),
         "admit Inventor occurrence related references",
     )?;
     let mut related_references = DecodeContext::admitted_vec(
@@ -532,7 +532,7 @@ impl<'a> Cursor<'a> {
         let len = count.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor {field} length overflows"))
         })?;
-        ctx.charge_retained(len as u64, "retain Inventor assembly string")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), "retain Inventor assembly string")?;
         self.source
             .utf16_le(count)
             .ok_or_else(|| CodecError::malformed(format_args!("Inventor {field} is not UTF-16")))

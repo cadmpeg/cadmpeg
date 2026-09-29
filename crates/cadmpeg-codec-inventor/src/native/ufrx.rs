@@ -412,16 +412,16 @@ impl UfrxRecordWire {
         occurrences: Vec<UfrxOccurrenceRecord>,
     ) -> Result<UfrxRecord, String> {
         let wire = self;
-        if wire.model_state_count != model_states.len() as u64 {
+        if wire.model_state_count != cadmpeg_core::decode::u64_from_index(model_states.len()) {
             return Err("UFRx model_state_count does not match its arena".into());
         }
-        if wire.reference_count != external_references.len() as u64 {
+        if wire.reference_count != cadmpeg_core::decode::u64_from_index(external_references.len()) {
             return Err("UFRx reference_count does not match its arena".into());
         }
-        if wire.embedded_reference_count != embedded_references.len() as u64 {
+        if wire.embedded_reference_count != cadmpeg_core::decode::u64_from_index(embedded_references.len()) {
             return Err("UFRx embedded_reference_count does not match its arena".into());
         }
-        if wire.occurrence_count != occurrences.len() as u64 {
+        if wire.occurrence_count != cadmpeg_core::decode::u64_from_index(occurrences.len()) {
             return Err("UFRx occurrence_count does not match its arena".into());
         }
         let has_children = !model_states.is_empty()

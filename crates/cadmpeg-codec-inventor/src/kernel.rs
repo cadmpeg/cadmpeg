@@ -371,7 +371,7 @@ fn parse_carrier<'a>(
         header_kind,
         header_value,
         schema,
-        carrier_offset: record_payload_offset + carrier_header::LEN as u64,
+        carrier_offset: record_payload_offset + cadmpeg_core::decode::u64_from_index(carrier_header::LEN),
         bytes: carrier,
         header,
         selected_key,
