@@ -2473,7 +2473,7 @@ pub(crate) fn project_relation_bindings(
             let active = relation_constraint_is_inactive(parameter, &definition, sketch_entities)
                 .then_some(false);
             let has_display_scalar =
-                relation_display_scalar_for_parameter(relation, lane).is_some();
+                relation_display_scalar_for_parameter(ctx, relation, lane)?.is_some();
             let Ok(definition) =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
             else {
@@ -2674,13 +2674,12 @@ pub(crate) fn owned_relation_parameters<'a>(
             let Some(scalar) = relation.parameter_scalar_ref() else {
                 continue;
             };
-            let parameter = parameters_by_scalar
-                .get(scalar)
-                .map(|parameter| &parameter.id)
-                .or_else(|| {
-                    relation_parameter_by_driving_name(relation, lane, features, parameters)
-                        .map(|parameter| &parameter.id)
-                });
+            let parameter = if let Some(parameter) = parameters_by_scalar.get(scalar) {
+                Some(&parameter.id)
+            } else {
+                relation_parameter_by_driving_name(ctx, relation, lane, features, parameters)?
+                    .map(|parameter| &parameter.id)
+            };
             if let Some(parameter) = parameter {
                 claim_relation_parameter(ctx, &mut claimed, parameter)?;
             }
@@ -2703,17 +2702,17 @@ pub(crate) fn owned_relation_parameters<'a>(
                 }
                 continue;
             }
-            let parameter = relation_parameter_by_relation_id(relation, parameters)
-                .or_else(|| {
-                    relation_parameter_by_driving_name(relation, lane, features, parameters)
-                })
-                .or_else(|| {
-                    circle_dimension_handle_driver(relation, lane)
-                        .and_then(|scalar| parameters_by_scalar.get(scalar.id.as_str()).copied())
-                })
-                .or_else(|| {
-                    relation_parameter_by_display_name(relation, lane, features, parameters)
-                });
+            let mut parameter = relation_parameter_by_relation_id(relation, parameters);
+            if parameter.is_none() {
+                parameter = relation_parameter_by_driving_name(ctx, relation, lane, features, parameters)?;
+            }
+            if parameter.is_none() {
+                parameter = circle_dimension_handle_driver(relation, lane)
+                    .and_then(|scalar| parameters_by_scalar.get(scalar.id.as_str()).copied());
+            }
+            if parameter.is_none() {
+                parameter = relation_parameter_by_display_name(ctx, relation, lane, features, parameters)?;
+            }
             let Some(parameter) = parameter else {
                 continue;
             };
@@ -2748,58 +2747,72 @@ fn relation_display_scalar<'a>(
 }
 
 pub(super) fn relation_display_scalar_for_parameter<'a>(
+    ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     lane: &'a FeatureInputLane,
-) -> Option<&'a FeatureInputScalar> {
-    relation_display_scalar(relation, lane).or_else(|| {
-        if relation.family != FeatureInputRelationFamily::CircleDiameter
-            || relation.parameter_scalar_ref().is_some()
-            || relation.display_scalar_ref().is_some()
-            || relation.scalar_refs().len() < 2
-            || relation.operands.len() != 1
-        {
-            return None;
+) -> Result<Option<&'a FeatureInputScalar>, cadmpeg_core::CodecError> {
+    if let Some(scalar) = relation_display_scalar(relation, lane) {
+        return Ok(Some(scalar));
+    }
+    if relation.family != FeatureInputRelationFamily::CircleDiameter
+        || relation.parameter_scalar_ref().is_some()
+        || relation.display_scalar_ref().is_some()
+        || relation.scalar_refs().len() < 2
+        || relation.operands.len() != 1
+    {
+        return Ok(None);
+    }
+    let mut scalars = Vec::new();
+    for scalar_id in relation.scalar_refs() {
+        if let Some(scalar) = lane.scalars.iter().find(|scalar| scalar.id == *scalar_id) {
+            ctx.reserve_collection_vec(&mut scalars, 1, "collect SLDPRT display relation scalars")?;
+            scalars.push(scalar);
         }
-        let scalars = relation
-            .scalar_refs()
-            .iter()
-            .filter_map(|scalar_id| lane.scalars.iter().find(|scalar| scalar.id == *scalar_id))
-            .collect::<Vec<_>>();
-        let first = *scalars.first()?;
-        if scalars
-            .windows(2)
-            .any(|pair| pair[1].ordinal != pair[0].ordinal.saturating_add(1))
-        {
-            return None;
-        }
-        let first_name = lane
+    }
+    let Some(&first) = scalars.first() else {
+        return Ok(None);
+    };
+    if scalars.windows(2).any(|pair| {
+        pair[1].ordinal != pair[0].ordinal.checked_add(1).unwrap_or(u32::MAX)
+    }) {
+        return Ok(None);
+    }
+    let Some(first_name) = lane
+        .names
+        .iter()
+        .find(|name| name.id == first.name)
+        .map(|name| name.value.as_str())
+    else {
+        return Ok(None);
+    };
+    let Some(first_kind) = first.operands.first().map(|operand| operand.kind) else {
+        return Ok(None);
+    };
+    let mut entity_indices = Vec::new();
+    for scalar in &scalars {
+        let [operand] = scalar.operands.as_slice() else {
+            return Ok(None);
+        };
+        let Some(name) = lane
             .names
             .iter()
-            .find(|name| name.id == first.name)
-            .map(|name| name.value.as_str())?;
-        let first_kind = first.operands.first()?.kind;
-        let mut entity_indices = Vec::with_capacity(scalars.len());
-        for scalar in &scalars {
-            let [operand] = scalar.operands.as_slice() else {
-                return None;
-            };
-            let name = lane
-                .names
-                .iter()
-                .find(|name| name.id == scalar.name)
-                .map(|name| name.value.as_str())?;
-            if scalar.role != FeatureInputScalarRole::Display
-                || operand.kind != first_kind
-                || operand.kind != relation.operands[0].kind
-                || name != first_name
-                || entity_indices.contains(&operand.entity_index)
-            {
-                return None;
-            }
-            entity_indices.push(operand.entity_index);
+            .find(|name| name.id == scalar.name)
+            .map(|name| name.value.as_str())
+        else {
+            return Ok(None);
+        };
+        if scalar.role != FeatureInputScalarRole::Display
+            || operand.kind != first_kind
+            || operand.kind != relation.operands[0].kind
+            || name != first_name
+            || entity_indices.contains(&operand.entity_index)
+        {
+            return Ok(None);
         }
-        (scalars.len() == relation.scalar_refs().len()).then_some(first)
-    })
+        ctx.reserve_collection_vec(&mut entity_indices, 1, "collect SLDPRT display relation entities")?;
+        entity_indices.push(operand.entity_index);
+    }
+    Ok((scalars.len() == relation.scalar_refs().len()).then_some(first))
 }
 
 fn relation_parameter_by_relation_id<'a>(
@@ -2860,26 +2873,43 @@ fn relation_parameter_matches_display_scalar(
 }
 
 fn relation_parameter_by_driving_name<'a>(
+    ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     lane: &FeatureInputLane,
     features: &[cadmpeg_ir::features::Feature],
     parameters: &'a [cadmpeg_ir::features::DesignParameter],
-) -> Option<&'a cadmpeg_ir::features::DesignParameter> {
-    let owner = features
+) -> Result<Option<&'a cadmpeg_ir::features::DesignParameter>, cadmpeg_core::CodecError> {
+    let Some(owner) = features
         .iter()
-        .find(|feature| feature.native_ref.as_deref() == Some(relation.feature_ref.as_str()))?
-        .id
-        .clone();
-    let scalars = lane
-        .scalars
-        .iter()
-        .map(|scalar| (scalar.id.as_str(), scalar))
-        .collect::<HashMap<_, _>>();
-    let names = lane
-        .names
-        .iter()
-        .map(|name| (name.id.as_str(), name.value.as_str()))
-        .collect::<HashMap<_, _>>();
+        .find(|feature| feature.native_ref.as_deref() == Some(relation.feature_ref.as_str()))
+    else {
+        return Ok(None);
+    };
+    let owner = &owner.id;
+    let mut scalars = HashMap::new();
+    for scalar in &lane.scalars {
+        let operation = "index SLDPRT relation driving scalars";
+        ctx.charge_work(1, operation)?;
+        if !scalars.contains_key(scalar.id.as_str()) {
+            ctx.charge_collection_items(1, operation)?;
+            scalars.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        scalars.insert(scalar.id.as_str(), scalar);
+    }
+    let mut names = HashMap::new();
+    for name in &lane.names {
+        let operation = "index SLDPRT relation driving names";
+        ctx.charge_work(1, operation)?;
+        if !names.contains_key(name.id.as_str()) {
+            ctx.charge_collection_items(1, operation)?;
+            names.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        names.insert(name.id.as_str(), name.value.as_str());
+    }
     let mut driving_names = relation
         .parameter_scalar_ref()
         .into_iter()
@@ -2887,43 +2917,62 @@ fn relation_parameter_by_driving_name<'a>(
         .filter_map(|scalar| scalars.get(scalar))
         .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
         .filter_map(|scalar| names.get(scalar.name.as_str()).copied());
-    let name = driving_names.next()?;
+    let Some(name) = driving_names.next() else {
+        return Ok(None);
+    };
     if driving_names.any(|candidate| candidate != name) {
-        return None;
+        return Ok(None);
     }
     let mut matches = parameters.iter().filter(|parameter| {
-        parameter.owner.as_ref() == Some(&owner) && parameter.name.as_str() == name
+        parameter.owner.as_ref() == Some(owner) && parameter.name.as_str() == name
     });
-    let parameter = matches.next()?;
-    matches.next().is_none().then_some(parameter)
+    let Some(parameter) = matches.next() else {
+        return Ok(None);
+    };
+    Ok(matches.next().is_none().then_some(parameter))
 }
 
 pub(super) fn relation_parameter_by_display_name<'a>(
+    ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     lane: &FeatureInputLane,
     features: &[cadmpeg_ir::features::Feature],
     parameters: &'a [cadmpeg_ir::features::DesignParameter],
-) -> Option<&'a cadmpeg_ir::features::DesignParameter> {
-    let owner = features
+) -> Result<Option<&'a cadmpeg_ir::features::DesignParameter>, cadmpeg_core::CodecError> {
+    let Some(owner) = features
         .iter()
-        .find(|feature| feature.native_ref.as_deref() == Some(relation.feature_ref.as_str()))?
-        .id
-        .clone();
-    let names = lane
-        .names
-        .iter()
-        .map(|name| (name.id.as_str(), name.value.as_str()))
-        .collect::<HashMap<_, _>>();
-    let owner = &owner;
-    let display_scalar = relation_display_scalar_for_parameter(relation, lane)?;
-    let name = names.get(display_scalar.name.as_str()).copied()?;
+        .find(|feature| feature.native_ref.as_deref() == Some(relation.feature_ref.as_str()))
+    else {
+        return Ok(None);
+    };
+    let owner = &owner.id;
+    let mut names = HashMap::new();
+    for name in &lane.names {
+        let operation = "index SLDPRT relation display names";
+        ctx.charge_work(1, operation)?;
+        if !names.contains_key(name.id.as_str()) {
+            ctx.charge_collection_items(1, operation)?;
+            names.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        names.insert(name.id.as_str(), name.value.as_str());
+    }
+    let Some(display_scalar) = relation_display_scalar_for_parameter(ctx, relation, lane)? else {
+        return Ok(None);
+    };
+    let Some(name) = names.get(display_scalar.name.as_str()).copied() else {
+        return Ok(None);
+    };
     let mut matches = parameters
         .iter()
         .filter(|parameter| parameter.owner.as_ref() == Some(owner) && parameter.name == name);
-    let first = matches.next()?;
-    (matches.all(|parameter| parameter.id == first.id)
+    let Some(first) = matches.next() else {
+        return Ok(None);
+    };
+    Ok((matches.all(|parameter| parameter.id == first.id)
         && relation_parameter_matches_display_scalar(first, relation.family, display_scalar))
-    .then_some(first)
+    .then_some(first))
 }
 
 #[cfg(test)]
