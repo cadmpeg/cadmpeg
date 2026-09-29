@@ -17,10 +17,7 @@ use cadmpeg_ir::{
 };
 use std::collections::BTreeMap;
 
-#[test]
-fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"point projection", &arena, &DecodePolicy::service()).unwrap();
+fn explicit_point_circle_input() -> (Feature, DesignParameter, FeatureInputLane, Vec<SketchEntity>) {
     let feature_id = FeatureId::mint("synthetic:test:id#feature").expect("identity grammar");
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let relation = FeatureInputRelationInstance {
@@ -118,7 +115,7 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
         pmi: None,
         native_ref: Some("scalar".into()),
     };
-    let mut entities = vec![SketchEntity::new(
+    let entities = vec![SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#center").unwrap(),
         sketch_id,
         cadmpeg_ir::sketches::SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -128,6 +125,14 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
     )
     .with_construction(true)
     .with_native_ref(Some("center".into()))];
+    (feature, parameter, lane, entities)
+}
+
+#[test]
+fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"point projection", &arena, &DecodePolicy::service()).unwrap();
+    let (feature, parameter, lane, mut entities) = explicit_point_circle_input();
 
     project_relation_point_dimensioned_circles(
         &ctx,
@@ -187,5 +192,27 @@ fn explicit_point_circle_dimension_projects_with_declared_nonempty_lane() {
             center,
             radius: actual_radius
         }) if (*center == Point2::new(1.0, 2.0)) && actual_radius.get() == 2.0
+    ));
+}
+
+#[test]
+fn point_dimension_projection_refuses_retained_limit() {
+    let (feature, parameter, lane, mut entities) = explicit_point_circle_input();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(b"point projection", &arena, &policy).unwrap();
+    let error = project_relation_point_dimensioned_circles(
+        &ctx,
+        &mut entities,
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&parameter),
+        std::slice::from_ref(&lane),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
     ));
 }
