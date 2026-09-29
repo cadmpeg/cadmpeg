@@ -6516,34 +6516,34 @@ fn historical_face_support_contexts(
 }
 
 fn face_boundary_edges(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     faces: &[cadmpeg_ir::ids::FaceId],
     topology: &AsmHistoricalTopology,
-) -> Vec<i64> {
-    let face_slots = faces
-        .iter()
-        .filter_map(|face| stable_ref(face.as_str()))
-        .collect::<HashSet<_>>();
-    let loops = topology
-        .face_loops
-        .iter()
-        .filter(|relation| face_slots.contains(&relation.owner_ref))
-        .flat_map(|relation| relation.member_refs.iter().copied())
-        .collect::<HashSet<_>>();
-    let coedges = topology
-        .loop_coedges
-        .iter()
-        .filter(|relation| loops.contains(&relation.owner_ref))
-        .flat_map(|relation| relation.member_refs.iter().copied())
-        .collect::<HashSet<_>>();
-    let mut edges = topology
-        .coedge_topology
-        .iter()
-        .filter(|coedge| coedges.contains(&coedge.coedge))
-        .map(|coedge| coedge.edge)
-        .collect::<Vec<_>>();
+) -> Result<Vec<i64>, cadmpeg_core::CodecError> {
+    let mut face_slots = HashSet::new();
+    for face in faces.iter().filter_map(|face| stable_ref(face.as_str())) {
+        history_hash_set_insert(decode, &mut face_slots, face, "index F3D boundary faces")?;
+    }
+    let mut loops = HashSet::new();
+    for relation in topology.face_loops.iter().filter(|relation| face_slots.contains(&relation.owner_ref)) {
+        for loop_slot in &relation.member_refs {
+            history_hash_set_insert(decode, &mut loops, *loop_slot, "index F3D boundary loops")?;
+        }
+    }
+    let mut coedges = HashSet::new();
+    for relation in topology.loop_coedges.iter().filter(|relation| loops.contains(&relation.owner_ref)) {
+        for coedge in &relation.member_refs {
+            history_hash_set_insert(decode, &mut coedges, *coedge, "index F3D boundary coedges")?;
+        }
+    }
+    let mut edges = history_collect(
+        decode,
+        topology.coedge_topology.iter().filter(|coedge| coedges.contains(&coedge.coedge)).map(|coedge| coedge.edge),
+        "collect F3D boundary edges",
+    )?;
     edges.sort_unstable();
     edges.dedup();
-    edges
+    Ok(edges)
 }
 
 fn collect_reference_edge_sets(
@@ -6554,7 +6554,7 @@ fn collect_reference_edge_sets(
     let mut sets = Vec::new();
     for faces in reference_faces {
         let faces = faces_in_topology(decode, faces, topology)?;
-        let edges = face_boundary_edges(&faces, topology);
+        let edges = face_boundary_edges(decode, &faces, topology)?;
         charge_history_item(decode, "collect F3D reference edge sets")?;
         sets.try_reserve(1).map_err(|_| {
             history_reserve_error(decode, "collect F3D reference edge sets")
@@ -6780,44 +6780,42 @@ fn edge_recipe_reference_context(
     };
     let result_faces = faces_in_topology(decode, candidate_faces, result_topology)?;
     let result_face_boundaries = face_boundary_contexts(&result_faces, result_topology);
-    let result_edges = face_boundary_edges(&result_faces, result_topology)
-        .into_iter()
-        .collect::<HashSet<_>>();
-    let result_shared_edge_slots = result_boundary_edges
-        .iter()
-        .copied()
-        .filter(|edge| result_edges.contains(edge))
-        .collect();
+    let result_edges = face_boundary_edges(decode, &result_faces, result_topology)?;
+    let result_shared_edge_slots = history_collect(
+        decode,
+        result_boundary_edges.iter().copied().filter(|edge| result_edges.contains(edge)),
+        "collect F3D result shared edges",
+    )?;
     let preceding_faces = faces_in_topology(decode, candidate_faces, preceding_topology)?;
     let preceding_face_boundaries = face_boundary_contexts(&preceding_faces, preceding_topology);
     let preceding_support_face_slots =
         preceding_support_face_slots(&result_faces, result_topology, preceding_topology);
     let preceding_support_face_boundaries =
         face_boundary_contexts_for_slots(&preceding_support_face_slots, preceding_topology);
-    let preceding_edges = face_boundary_edges(&preceding_faces, preceding_topology)
-        .into_iter()
-        .collect::<HashSet<_>>();
-    let shared_edge_slots = preceding_boundary_edges
-        .iter()
-        .copied()
-        .filter(|edge| preceding_edges.contains(edge))
-        .collect::<Vec<_>>();
-    let changed_shared_edge_slots = shared_edge_slots
-        .iter()
-        .copied()
-        .filter(|edge| changed_edges.contains(edge))
-        .collect::<Vec<_>>();
-    let support_edges = preceding_support_face_boundaries
+    let preceding_edges = face_boundary_edges(decode, &preceding_faces, preceding_topology)?;
+    let shared_edge_slots = history_collect(
+        decode,
+        preceding_boundary_edges.iter().copied().filter(|edge| preceding_edges.contains(edge)),
+        "collect F3D shared edge slots",
+    )?;
+    let changed_shared_edge_slots = history_collect(
+        decode,
+        shared_edge_slots.iter().copied().filter(|edge| changed_edges.contains(edge)),
+        "collect F3D changed shared edges",
+    )?;
+    let mut support_edges = HashSet::new();
+    for edge in preceding_support_face_boundaries
         .iter()
         .flat_map(|face| &face.loops)
         .flat_map(|face_loop| face_loop.boundary.coedges().map(|row| row.edge_slot))
-        .collect::<HashSet<_>>();
-    let mut changed_reference_edge_slots = preceding_edges
-        .iter()
-        .copied()
-        .chain(support_edges.iter().copied())
-        .filter(|edge| changed_edges.contains(edge))
-        .collect::<Vec<_>>();
+    {
+        history_hash_set_insert(decode, &mut support_edges, edge, "index F3D support edges")?;
+    }
+    let mut changed_reference_edge_slots = history_collect(
+        decode,
+        preceding_edges.iter().copied().chain(support_edges.iter().copied()).filter(|edge| changed_edges.contains(edge)),
+        "collect F3D changed reference edges",
+    )?;
     changed_reference_edge_slots.sort_unstable();
     changed_reference_edge_slots.dedup();
     Ok(crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
@@ -6838,31 +6836,45 @@ fn edge_recipe_reference_context(
 /// Resolve the unique candidate edge shared by the non-null face references
 /// in the first side of a standard edge recipe.
 fn side_one_recipe_edge(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
     reference_contexts: &[crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext],
     selectors: &[crate::records::topology::edge_recipe::DesignEdgeRecipeSelectorContext],
     candidate_edges: &[i64],
-) -> Option<i64> {
-    let side = structure?.sides.first()?;
-    let mut ordinals = std::iter::once(side.header_value)
-        .chain(side.scalars.iter().copied())
-        .filter(|value| *value != 0)
-        .map(|value| usize::try_from(value).ok()?.checked_sub(1))
-        .collect::<Option<Vec<_>>>()?;
+) -> Result<Option<i64>, cadmpeg_core::CodecError> {
+    let Some(side) = structure.and_then(|structure| structure.sides.first()) else {
+        return Ok(None);
+    };
+    let mut ordinals = Vec::new();
+    for value in std::iter::once(side.header_value).chain(side.scalars.iter().copied()).filter(|value| *value != 0) {
+        let Some(ordinal) = usize::try_from(value).ok().and_then(|value| value.checked_sub(1)) else {
+            return Ok(None);
+        };
+        charge_history_item(decode, "collect F3D recipe side ordinals")?;
+        ordinals.try_reserve(1).map_err(|_| history_reserve_error(decode, "collect F3D recipe side ordinals"))?;
+        ordinals.push(ordinal);
+    }
     ordinals.sort_unstable();
     ordinals.dedup();
-    let edge_sets = ordinals
-        .into_iter()
-        .map(|ordinal| {
-            let context = reference_contexts.get(ordinal)?;
-            (context.reference_ordinal == u32::try_from(ordinal).ok()?)
-                .then_some(context.shared_edge_slots.as_slice())
-        })
-        .collect::<Option<Vec<_>>>()?;
-    if edge_sets.iter().any(|edges| edges.is_empty()) {
-        return None;
+    let mut edge_sets = Vec::new();
+    for ordinal in ordinals {
+        let Some(context) = reference_contexts.get(ordinal) else {
+            return Ok(None);
+        };
+        if Some(context.reference_ordinal) != u32::try_from(ordinal).ok() {
+            return Ok(None);
+        }
+        charge_history_item(decode, "collect F3D recipe side edge sets")?;
+        edge_sets.try_reserve(1).map_err(|_| history_reserve_error(decode, "collect F3D recipe side edge sets"))?;
+        edge_sets.push(context.shared_edge_slots.as_slice());
     }
-    let mut candidates = edge_sets.first()?.to_vec();
+    if edge_sets.iter().any(|edges| edges.is_empty()) {
+        return Ok(None);
+    }
+    let Some(first) = edge_sets.first() else {
+        return Ok(None);
+    };
+    let mut candidates = history_collect(decode, first.iter().copied(), "copy F3D recipe side edges")?;
     for edges in edge_sets.iter().skip(1) {
         candidates.retain(|candidate| edges.contains(candidate));
     }
@@ -6870,10 +6882,10 @@ fn side_one_recipe_edge(
     candidates.sort_unstable();
     candidates.dedup();
     match candidates.as_slice() {
-        [edge] => Some(*edge),
-        _ => {
+        [edge] => Ok(Some(*edge)),
+        _ => Ok(
             crate::design::edge_resolve::resolved_edge_candidate_intersection(selectors, edge_sets)
-        }
+        ),
     }
 }
 
@@ -6888,29 +6900,36 @@ pub(crate) fn bind_edge_operand_history_candidates(
     if projection_was_finalized(histories) {
         return Ok(());
     }
-    let recipe_record_indices = recipes
-        .iter()
-        .filter_map(|recipe| Some((recipe.id.as_str(), recipe.record_index?.value)))
-        .collect::<HashMap<_, _>>();
-    let terminal_topologies = histories
-        .iter()
-        .filter_map(|history| {
-            let preceding = history
-                .states
-                .iter()
-                .filter_map(|state| state.transition.as_ref()?.previous_state_id)
-                .collect::<HashSet<_>>();
+    let mut recipe_record_indices = HashMap::new();
+    for recipe in recipes {
+        if let Some(index) = recipe.record_index {
+            if !recipe_record_indices.contains_key(recipe.id.as_str()) {
+                charge_history_item(decode, "index F3D edge recipes")?;
+                recipe_record_indices.try_reserve(1).map_err(|_| history_reserve_error(decode, "index F3D edge recipes"))?;
+            }
+            recipe_record_indices.insert(recipe.id.as_str(), index.value);
+        }
+    }
+    let mut terminal_topologies = Vec::new();
+    for history in histories {
+            let mut preceding = HashSet::new();
+            for state in &history.states {
+                if let Some(previous) = state.transition.as_ref().and_then(|transition| transition.previous_state_id) {
+                    history_hash_set_insert(decode, &mut preceding, previous, "index F3D terminal predecessors")?;
+                }
+            }
             let mut terminals = history
                 .states
                 .iter()
                 .filter(|state| !preceding.contains(&state.state_id));
-            let state = terminals.next()?;
-            terminals
-                .next()
-                .is_none()
-                .then_some((state.state_id, state.topology()?))
-        })
-        .collect::<Vec<_>>();
+            if let Some(state) = terminals.next().filter(|_| terminals.next().is_none()) {
+                if let Some(topology) = state.topology() {
+                    charge_history_item(decode, "collect F3D terminal topologies")?;
+                    terminal_topologies.try_reserve(1).map_err(|_| history_reserve_error(decode, "collect F3D terminal topologies"))?;
+                    terminal_topologies.push((state.state_id, topology));
+                }
+            }
+    }
     for operand in operands {
         operand.result_candidate_faces.clear();
         operand.result_boundary_edge_slots.clear();
@@ -6981,60 +7000,35 @@ pub(crate) fn bind_edge_operand_history_candidates(
         else {
             continue;
         };
-        let preceding_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
-        let inserted_faces = result_topology
-            .faces
-            .iter()
-            .copied()
-            .filter(|face| !preceding_faces.contains(face))
-            .collect::<Vec<_>>();
-        let result_edges = result_topology
-            .edges
-            .iter()
-            .copied()
-            .collect::<HashSet<_>>();
-        let deleted_edges = topology
-            .edges
-            .iter()
-            .copied()
-            .filter(|edge| !result_edges.contains(edge) && chain_deleted_edges.contains(edge))
-            .collect::<Vec<_>>();
-        let updated_edges = topology
-            .edges
-            .iter()
-            .copied()
-            .filter(|edge| {
-                result_edges.contains(edge)
-                    && (chain_deleted_edges.contains(edge) || chain_updated_edges.contains(edge))
-            })
-            .collect::<Vec<_>>();
+        let mut preceding_faces = HashSet::new();
+        for face in &topology.faces {
+            history_hash_set_insert(decode, &mut preceding_faces, *face, "index F3D preceding edge faces")?;
+        }
+        let inserted_faces = history_collect(decode, result_topology.faces.iter().copied().filter(|face| !preceding_faces.contains(face)), "collect F3D inserted faces")?;
+        let mut result_edges = HashSet::new();
+        for edge in &result_topology.edges {
+            history_hash_set_insert(decode, &mut result_edges, *edge, "index F3D result edges")?;
+        }
+        let deleted_edges = history_collect(decode, topology.edges.iter().copied().filter(|edge| !result_edges.contains(edge) && chain_deleted_edges.contains(edge)), "collect F3D deleted edge candidates")?;
+        let updated_edges = history_collect(decode, topology.edges.iter().copied().filter(|edge| result_edges.contains(edge) && (chain_deleted_edges.contains(edge) || chain_updated_edges.contains(edge))), "collect F3D updated edge candidates")?;
         operand.recipe_state_id = Some(previous_state_id);
         operand.result_candidate_faces =
             faces_in_topology(decode, &operand.candidate_faces, result_topology)?;
         operand.result_boundary_edge_slots =
-            face_boundary_edges(&operand.result_candidate_faces, result_topology);
+            face_boundary_edges(decode, &operand.result_candidate_faces, result_topology)?;
         operand.preceding_candidate_faces = faces_in_topology(decode, &operand.candidate_faces, topology)?;
-        operand.changed_candidate_faces = operand
-            .preceding_candidate_faces
-            .iter()
-            .filter(|face| {
-                stable_ref(face.as_str()).is_some_and(|slot| changed_faces.contains(&slot))
-            })
-            .cloned()
-            .collect();
+        operand.changed_candidate_faces = collect_historical_face_ids(
+            decode,
+            operand.preceding_candidate_faces.iter().filter(|face| stable_ref(face.as_str()).is_some_and(|slot| changed_faces.contains(&slot))),
+            "collect F3D changed edge faces",
+        )?;
         operand.preceding_boundary_edge_slots =
-            face_boundary_edges(&operand.preceding_candidate_faces, topology);
-        let changed_edges = deleted_edges
-            .iter()
-            .chain(&updated_edges)
-            .copied()
-            .collect::<HashSet<_>>();
-        operand.changed_boundary_edge_slots = operand
-            .preceding_boundary_edge_slots
-            .iter()
-            .copied()
-            .filter(|edge| changed_edges.contains(edge))
-            .collect();
+            face_boundary_edges(decode, &operand.preceding_candidate_faces, topology)?;
+        let mut changed_edges = HashSet::new();
+        for edge in deleted_edges.iter().chain(&updated_edges) {
+            history_hash_set_insert(decode, &mut changed_edges, *edge, "index F3D changed edge candidates")?;
+        }
+        operand.changed_boundary_edge_slots = history_collect(decode, operand.preceding_boundary_edge_slots.iter().copied().filter(|edge| changed_edges.contains(edge)), "collect F3D changed boundary edges")?;
         operand.deleted_boundary_edge_slots =
             boundary_edges_in_changes(&operand.preceding_boundary_edge_slots, &deleted_edges);
         operand.updated_boundary_edge_slots =
@@ -7046,12 +7040,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
             topology,
             &deleted_edges,
         );
-        operand.changed_boundary_edge_contexts = operand
-            .changed_boundary_edge_slots
-            .iter()
-            .copied()
-            .map(|edge| historical_edge_context(edge, topology))
-            .collect();
+        operand.changed_boundary_edge_contexts = history_collect(decode, operand.changed_boundary_edge_slots.iter().copied().map(|edge| historical_edge_context(edge, topology)), "collect F3D changed boundary contexts")?;
         let mut reference_contexts = Vec::new();
         for (ordinal, reference) in operand.recipe_references.iter().enumerate() {
             let Ok(reference_ordinal) = u32::try_from(ordinal) else {
@@ -7156,11 +7145,12 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.recipe_selectors =
             recipe_selector_candidates(operand.recipe_structure.as_ref(), &changed_edge_contexts);
         operand.resolved_edge_slot = side_one_recipe_edge(
+            decode,
             operand.recipe_structure.as_ref(),
             &operand.recipe_reference_contexts,
             &operand.recipe_selectors,
             &operand.preceding_boundary_edge_slots,
-        );
+        )?;
     }
     Ok(())
 }
@@ -7308,7 +7298,7 @@ fn surface_patch_edge_operand_slot(
         &face_reference.candidate_faces
     };
     let faces = faces_in_topology(decode, face_candidates, topology)?;
-    let face_boundary_edges = face_boundary_edges(&faces, topology);
+    let face_boundary_edges = face_boundary_edges(decode, &faces, topology)?;
     let mut candidates = history_collect(
         decode,
         edge_reference
@@ -7356,7 +7346,7 @@ fn bind_active_edge_operand_candidates(
         if topologies.len() != 1 && candidate_faces.is_empty() {
             continue;
         }
-        let boundary_edges = face_boundary_edges(&candidate_faces, topology);
+        let boundary_edges = face_boundary_edges(decode, &candidate_faces, topology)?;
         let contexts = history_collect(
             decode,
             boundary_edges.iter().copied().map(|edge| historical_edge_context(edge, topology)),

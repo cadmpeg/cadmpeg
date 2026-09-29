@@ -7,7 +7,7 @@ use super::{
     AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, HashMap,
 };
 use crate::history::resolve_pattern_face_by_surface_radius;
-use crate::history::{collect_reference_edge_sets, faces_in_topology, terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces};
+use crate::history::{collect_reference_edge_sets, face_boundary_edges, faces_in_topology, terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces};
 use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalSurfaceRadius};
 use std::collections::HashSet;
 
@@ -310,4 +310,21 @@ fn reference_edge_set_groups_refuse_collection_limit() {
     .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D reference edge sets"));
+}
+
+#[test]
+fn boundary_face_index_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = face_boundary_edges(
+        Some(&ctx),
+        &one_face_reference().candidate_faces,
+        &AsmHistoricalTopology::default(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D boundary faces"));
 }
