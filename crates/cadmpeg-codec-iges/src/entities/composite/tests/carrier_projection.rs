@@ -76,7 +76,7 @@ fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
                 .expect("trimmed NURBS evaluates");
             assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
         }
-    })
+    });
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
                 .expect("concatenated NURBS evaluates");
             assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
         }
-    })
+    });
 }
 
 #[test]
@@ -155,7 +155,7 @@ fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
                 assert!(before.distance(after.get()) <= EPS_TRIMMED_NURBS);
             }
         }
-    })
+    });
 }
 
 #[test]
@@ -192,7 +192,7 @@ fn concatenation_preserves_degree_zero_spans() {
                 Some(point)
             );
         }
-    })
+    });
 }
 
 #[test]
@@ -216,7 +216,7 @@ fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
             .expect("valid multi-span linear NURBS evaluates after degree elevation");
         assert_eq!(curve.degree(), 3);
         assert!(before.distance(after.get()) <= 1.0e-12);
-    })
+    });
 }
 
 #[test]
@@ -233,7 +233,7 @@ fn multi_span_degree_zero_elevation_preserves_the_curve() {
             let after = cadmpeg_ir::eval::nurbs_curve_point_at(&elevated, parameter).unwrap();
             assert_eq!(before, after);
         }
-    })
+    });
 }
 
 #[test]
@@ -261,7 +261,7 @@ fn multi_span_rational_degree_elevation_preserves_the_curve() {
             let after = cadmpeg_ir::eval::nurbs_curve_point_at(&elevated, parameter).unwrap();
             assert!(before.distance(after.get()) <= EPS_DEGREE_ELEVATION);
         }
-    })
+    });
 }
 
 #[test]
@@ -313,7 +313,7 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
                 .collect::<Vec<_>>(),
             vec![0.0, 1.0, 3.0, 4.0, 5.0, 7.0, 8.0]
         );
-    })
+    });
 }
 
 #[test]
@@ -345,7 +345,7 @@ fn concatenated_range_is_exactly_the_canonical_knot_domain() {
             Some(&concatenated.segments.end()),
             concatenated.nurbs.knots().last()
         );
-    })
+    });
 }
 
 #[test]
@@ -427,7 +427,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
         .expect("carrier join within the global resolution should project");
         assert_eq!(range, [0.0, 2.0]);
         assert_eq!(carrier.control_points()[0], Point3::new(0.0, 0.0, 0.0));
-    })
+    });
 }
 
 #[test]
@@ -876,7 +876,7 @@ fn a_reversed_child_interval_names_itself_not_the_endpoint_join() {
             !error.contains("endpoints"),
             "the refusal is not the endpoint join: {error}"
         );
-    })
+    });
 }
 
 /// A composite that states no child at all is refused by name.
@@ -890,5 +890,5 @@ fn an_empty_child_list_names_itself() {
             error.contains("no child curve"),
             "the refusal names the empty child list: {error}"
         );
-    })
+    });
 }

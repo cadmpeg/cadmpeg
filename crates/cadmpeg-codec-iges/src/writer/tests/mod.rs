@@ -865,7 +865,7 @@ fn generated_parameter_cards_preserve_field_boundaries() {
             .filter(|byte| *byte != b' ')
             .collect::<Vec<_>>();
         assert_eq!(compact, parameters.as_bytes());
-    })
+    });
 }
 
 #[test]
@@ -875,7 +875,7 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
         let error = crate::parameter::layout_parameter_cards(parameters.as_bytes(), decode_ctx)
             .expect_err("a field wider than the data area must fail");
         assert!(error.to_string().contains("field exceeds one card"));
-    })
+    });
 }
 
 #[test]
@@ -897,7 +897,9 @@ fn generated_file_parameter_layout_obeys_default_decode_limits() {
     .is_ok());
 
     let omitted_fields = usize::try_from(
-        cadmpeg_core::decode::DecodePolicy::default().limits.max_collection_items,
+        cadmpeg_core::decode::DecodePolicy::default()
+            .limits
+            .max_collection_items,
     )
     .expect("test collection limit fits usize");
     let mut parameter_body = vec![b','; omitted_fields];
@@ -918,7 +920,7 @@ fn generated_file_parameter_layout_obeys_default_decode_limits() {
         CodecError::ResourceLimit(refusal)
             if refusal.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && refusal.operation == "iges parameter layout fields"
-                && refusal.used == u64::try_from(omitted_fields).unwrap()
+                && refusal.used == u64::try_from(omitted_fields).expect("default collection limit fits u64")
                 && refusal.additional == 1
     ));
 }

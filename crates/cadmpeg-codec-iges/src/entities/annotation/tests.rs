@@ -851,7 +851,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
             decode_ctx
         )
         .unwrap());
-    })
+    });
 }
 
 #[test]
@@ -964,7 +964,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
             decode_ctx
         )
         .unwrap());
-    })
+    });
 }
 
 #[test]

@@ -4,6 +4,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
+use crate::features::NonEmptyMembers;
 use crate::geometry::analytic::{LineCurve, PlaneSurface};
 use crate::geometry::nurbs::{
     NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis,
@@ -12,10 +13,9 @@ use crate::geometry::pcurve::{
     LinePcurve, PcurveGeometry, PcurveNurbs, PcurveNurbsPoles, PlacedPcurve,
 };
 use crate::geometry::sampled::{PolygonalSurface, PolylineCurve, PolylineSamples};
-use crate::features::NonEmptyMembers;
 use crate::geometry::CompositeCurveSegments;
-use crate::ids::CurveId;
 use crate::geometry::{PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry};
+use crate::ids::CurveId;
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::{Transform, Transform2};
 
@@ -279,8 +279,7 @@ fn solved_nurbs_copy_admits_knots_and_poles() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
         let result = geometry.try_clone_for_decode(&ctx, operation);
         assert!(
             matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == operation)
@@ -290,7 +289,9 @@ fn solved_nurbs_copy_admits_knots_and_poles() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
     assert_eq!(
-        geometry.try_clone_for_decode(&ctx, "iges solved curve copied knots").expect("test setup"),
+        geometry
+            .try_clone_for_decode(&ctx, "iges solved curve copied knots")
+            .expect("test setup"),
         geometry
     );
 }
@@ -317,7 +318,9 @@ fn solved_polyline_copy_admits_sample_lane() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
     assert_eq!(
-        geometry.try_clone_for_decode(&ctx, "iges solved curve copied polyline samples").expect("test setup"),
+        geometry
+            .try_clone_for_decode(&ctx, "iges solved curve copied polyline samples")
+            .expect("test setup"),
         geometry
     );
 }
@@ -361,8 +364,7 @@ fn polygonal_support_copy_admits_vertices_and_triangles() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
         let arena = DecodeArena::new();
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
         assert!(
             matches!(polygon.try_clone_for_decode(&ctx, operation), Err(CodecError::ResourceLimit(limit)) if limit.operation == operation)
         );
@@ -371,7 +373,9 @@ fn polygonal_support_copy_admits_vertices_and_triangles() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
     assert_eq!(
-        polygon.try_clone_for_decode(&ctx, "iges copied support polygon vertices").expect("test setup"),
+        polygon
+            .try_clone_for_decode(&ctx, "iges copied support polygon vertices")
+            .expect("test setup"),
         polygon
     );
 }

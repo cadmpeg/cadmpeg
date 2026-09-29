@@ -3612,7 +3612,9 @@ fn oriented_curve_entity(
             )
             .map_err(|error| match error {
                 crate::entities::curve_conversion::CurveConversionError::Resource(error) => error,
-                other => CodecError::malformed(format_args!("circular: {other}")),
+                other @ crate::entities::curve_conversion::CurveConversionError::Carrier(_) => {
+                    CodecError::malformed(format_args!("circular: {other}"))
+                }
             })?
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
@@ -3647,7 +3649,9 @@ fn oriented_curve_entity(
             )
             .map_err(|error| match error {
                 crate::entities::curve_conversion::CurveConversionError::Resource(error) => error,
-                other => CodecError::malformed(format_args!("elliptical: {other}")),
+                other @ crate::entities::curve_conversion::CurveConversionError::Carrier(_) => {
+                    CodecError::malformed(format_args!("elliptical: {other}"))
+                }
             })?
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(
@@ -3680,7 +3684,9 @@ fn oriented_curve_entity(
             )
             .map_err(|error| match error {
                 crate::entities::curve_conversion::CurveConversionError::Resource(error) => error,
-                other => CodecError::malformed(format_args!("parabolic: {other}")),
+                other @ crate::entities::curve_conversion::CurveConversionError::Carrier(_) => {
+                    CodecError::malformed(format_args!("parabolic: {other}"))
+                }
             })?
             .ok_or_else(|| {
                 CodecError::NotImplemented(format!(

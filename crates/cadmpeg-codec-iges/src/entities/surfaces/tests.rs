@@ -552,7 +552,7 @@ fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
             }
             assert!(found, "aligned-span refusal was not reached: {operation}");
         }
-    })
+    });
 }
 
 #[test]
@@ -612,7 +612,7 @@ fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
             assert_eq!(actual.domain, expected.domain);
             assert_eq!(actual.controls, expected.controls);
         }
-    })
+    });
 }
 
 #[test]
@@ -661,7 +661,7 @@ fn same_basis_ruled_surface_refuses_nested_weight_rows() {
             }
             assert!(found, "same-basis refusal was not reached: {operation}");
         }
-    })
+    });
 }
 
 #[test]
@@ -819,7 +819,7 @@ fn angular_basis_canonicalizes_a_full_sweep_with_decimal_roundoff() {
 
         assert_eq!(basis.controls.len(), 9);
         assert_eq!(basis.knots.last(), Some(&std::f64::consts::TAU));
-    })
+    });
 }
 
 #[test]
@@ -989,7 +989,7 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_we
                 cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).expect("ruled surface point");
             assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
         }
-    })
+    });
 }
 
 #[test]
@@ -1038,7 +1038,7 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
                 cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).expect("ruled surface point");
             assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
         }
-    })
+    });
 }
 
 #[test]

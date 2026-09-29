@@ -177,7 +177,7 @@ fn directed_cycle_detection_handles_long_branching_graphs_iteratively() {
             |sequence| graph.get(&sequence).into_iter().flatten().copied()
         )
         .unwrap());
-    })
+    });
 }
 
 #[test]

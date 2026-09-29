@@ -39,7 +39,7 @@ fn degree_elevation_preserves_nonzero_declared_interval_endpoints() {
         assert_eq!(curve.knots().last(), Some(&interval[1]));
         assert_eq!(&curve.knots()[..4], &[interval[0]; 4]);
         assert_eq!(&curve.knots()[4..], &[interval[1]; 4]);
-    })
+    });
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
         )
         .expect("carrier lanes pair")
         .expect("analytic arcs with source-valid endpoints should concatenate");
-    })
+    });
 }
 
 #[test]
@@ -167,7 +167,7 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
         )
         .expect("carrier lanes pair")
         .is_none());
-    })
+    });
 }
 
 /// A child whose knot vector is not clamped to its declared interval states
@@ -211,7 +211,7 @@ fn a_child_that_does_not_elevate_states_its_own_cause() {
             "the error names the elevation cause: {text}"
         );
         assert!(!text.contains("join"), "{text}");
-    })
+    });
 }
 
 #[test]
@@ -245,5 +245,5 @@ fn audit_regression_join_rescales_weights_without_overflowing_ratio() {
                 Point3::new(2., 0., 0.)
             ]
         );
-    })
+    });
 }

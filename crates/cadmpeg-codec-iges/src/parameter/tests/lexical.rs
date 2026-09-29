@@ -101,7 +101,7 @@ fn numeric_parameter_and_delimiter_must_share_a_card() {
                 4
             ))
         ));
-    })
+    });
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn a_zero_hollerith_count_is_not_a_null_string() {
 
         let error = super::super::layout_parameter_cards(b"116,0H;", decode_ctx).unwrap_err();
         assert!(error.to_string().contains("count must be positive"));
-    })
+    });
 }
 
 #[test]
@@ -151,7 +151,7 @@ fn numeric_fields_may_have_leading_but_not_embedded_or_trailing_blanks() {
                 ))
             ));
         }
-    })
+    });
 }
 
 fn declared_numeric_limits() -> NumericLimits {
@@ -283,7 +283,7 @@ fn a_hollerith_payload_may_cross_a_card_but_its_header_may_not() {
                 63
             ))
         ));
-    })
+    });
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn hollerith_string_bytes_follow_the_declared_dialect() {
                 4
             ))
         ));
-    })
+    });
 }
 
 #[test]
@@ -323,7 +323,7 @@ fn generated_parameter_layout_keeps_headers_and_numeric_delimiters_legal() {
         let cards = super::super::layout_parameter_cards(&numeric, decode_ctx).unwrap();
         assert_eq!(cards.len(), 2);
         assert_eq!(&cards[1][..2], b"2,");
-    })
+    });
 }
 
 #[test]
@@ -337,7 +337,7 @@ fn whitespace_prefixed_hollerith_header_uses_its_absolute_end() {
         let cards = super::super::layout_parameter_cards(&payload, decode_ctx)
             .expect("the whitespace and Hollerith header fit on one card");
         assert_eq!(&cards[0][44..47], b"70H");
-    })
+    });
 }
 
 #[test]

@@ -280,7 +280,7 @@ fn quarantined_parameter_bytes_refuse_retained_limit_before_copy() {
             &ctx,
         )
         .is_ok());
-    })
+    });
 }
 
 #[test]
@@ -330,7 +330,7 @@ fn parameter_ownership_refuses_nested_owner_map_before_insertion() {
             &ctx,
         )
         .is_ok());
-    })
+    });
 }
 
 fn parameter_owner(field: [u8; 8]) -> Option<u32> {

@@ -446,7 +446,7 @@ fn rational_boundary_comparison_accepts_projectively_scaled_curves() {
                 .unwrap(),
             Some(false)
         );
-    })
+    });
 }
 
 #[test]
@@ -527,7 +527,7 @@ fn a_ruled_weight_lane_shorter_than_its_pole_lane_reaches_the_codec_error() {
             message.contains("pole(s) against"),
             "the refusal states both lane counts: {message}"
         );
-    })
+    });
 }
 
 #[test]
@@ -596,7 +596,7 @@ fn numerical_followup_closure_uses_every_span_control_and_weight_scale() {
                 Some(true)
             );
         }
-    })
+    });
 }
 
 #[test]
@@ -642,5 +642,5 @@ fn numerical_followup_ruled_rails_align_across_overflowing_knot_domains() {
                 assert!((pole[0] / pole[3] - expected).abs() < 16. * f64::EPSILON);
             }
         }
-    })
+    });
 }
