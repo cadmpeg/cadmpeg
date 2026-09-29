@@ -230,280 +230,234 @@ fn hole_position_sketch_source(
 }
 
 pub(crate) fn enrich_history_hole_constructions(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "enrich SLDPRT hole profile ownership";
     for history in histories {
-        let additions = history
-            .features
-            .iter()
-            .enumerate()
-            .filter(|(_, feature)| {
-                classify(feature) == Some(FeatureClass::Hole)
-                    && !feature.properties.contains_key("DissectableChildren")
-            })
-            .filter_map(|(feature_index, feature)| {
-                let profile_from_position_source = || {
-                    let mut position_sources = lanes
-                        .iter()
-                        .filter_map(|lane| hole_position_sketch_source(feature, lane))
-                        .collect::<Vec<_>>();
-                    position_sources.sort_unstable();
-                    position_sources.dedup();
-                    let [position_source] = position_sources.as_slice() else {
-                        return None;
-                    };
-                    let unique_position = || {
-                        let mut positions = history.features.iter().filter(|candidate| {
-                            (candidate.source_value() == Some(*position_source)
-                                || candidate.ordinal == *position_source)
-                                && classify(candidate) == Some(FeatureClass::Sketch)
-                        });
-                        let position = positions.next()?;
-                        positions.next().is_none().then_some(position)
-                    };
-                    // Legacy holes serialize the generated axial profile
-                    // immediately after their inline position-sketch object.
-                    let serialized_successor_profile = || {
-                        let position = unique_position()?;
-                        let mut profiles = Vec::new();
-                        for lane in lanes.iter().filter(|lane| {
-                            hole_position_sketch_source(feature, lane) == Some(*position_source)
-                        }) {
-                            let position_offset = feature_object_name(position, lane)?.offset;
-                            let minimum_offset = history
-                                .features
-                                .iter()
-                                .filter_map(|candidate| {
-                                    let offset = feature_object_name(candidate, lane)?.offset;
-                                    (offset > position_offset).then_some(offset)
-                                })
-                                .min()?;
-                            let mut successors = history.features.iter().filter(|candidate| {
-                                feature_object_name(candidate, lane)
-                                    .is_some_and(|name| name.offset == minimum_offset)
-                            });
-                            let successor = successors.next()?;
-                            if successors.next().is_some()
-                                || classify(successor) != Some(FeatureClass::Sketch)
-                                || !crate::history::project::solid::is_hole_profile_construction(
-                                    successor,
-                                )
-                            {
-                                return None;
-                            }
-                            profiles.push(successor);
-                        }
-                        profiles.sort_by_key(|profile| profile.id.as_str());
-                        profiles.dedup_by_key(|profile| profile.id.as_str());
-                        let [profile] = profiles.as_slice() else {
-                            return None;
-                        };
-                        Some((*profile, 4_u8))
-                    };
-                    if let Some(profile) = serialized_successor_profile() {
-                        return Some(profile);
-                    }
-                    let adjacent_sources = [
-                        position_source.checked_sub(1),
-                        position_source.checked_add(1),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .collect::<HashSet<_>>();
-                    let source_profile = || {
-                        let mut profiles = history.features.iter().filter(|candidate| {
-                            candidate
-                                .source_value()
-                                .is_some_and(|source| adjacent_sources.contains(&source))
-                                && classify(candidate) == Some(FeatureClass::Sketch)
-                                && crate::history::project::solid::is_hole_profile_construction(
-                                    candidate,
-                                )
-                        });
-                        let profile = profiles.next()?;
-                        profiles.next().is_none().then_some(profile)
-                    };
-                    if let Some(profile) = source_profile() {
-                        return Some((profile, 3_u8));
-                    }
-                    let hole_source = feature.source_value()?;
-                    let (lower, upper) = if hole_source < *position_source {
-                        (hole_source, *position_source)
-                    } else {
-                        (*position_source, hole_source)
-                    };
-                    let mut bounded_profiles = history.features.iter().filter(|candidate| {
-                        candidate
-                            .source_value()
-                            .is_some_and(|source| lower < source && source < upper)
-                            && classify(candidate) == Some(FeatureClass::Sketch)
-                            && crate::history::project::solid::is_hole_profile_construction(
-                                candidate,
-                            )
-                    });
-                    let bounded_profile = bounded_profiles.next();
-                    if bounded_profiles.next().is_some() {
-                        return None;
-                    }
-                    if let Some(profile) = bounded_profile {
-                        return Some((profile, 2_u8));
-                    }
-                    let position = unique_position()?;
-                    let adjacent_ordinals = [
-                        position.ordinal.checked_sub(1),
-                        position.ordinal.checked_add(1),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    .collect::<HashSet<_>>();
-                    let mut profiles = history.features.iter().filter(|candidate| {
-                        adjacent_ordinals.contains(&candidate.ordinal)
-                            && candidate.id != position.id
-                            && classify(candidate) == Some(FeatureClass::Sketch)
-                            && crate::history::project::solid::is_hole_profile_construction(
-                                candidate,
-                            )
-                    });
-                    let profile = profiles.next()?;
-                    profiles.next().is_none().then_some((profile, 1_u8))
-                };
-                let profile_from_child_order = || {
-                    let child_ordinals = [
-                        feature.ordinal.checked_add(1)?,
-                        feature.ordinal.checked_add(2)?,
-                    ];
-                    let children = child_ordinals
-                        .iter()
-                        .filter_map(|ordinal| {
-                            let mut children = history
-                                .features
-                                .iter()
-                                .filter(|child| child.ordinal == *ordinal);
-                            let child = children.next()?;
-                            children.next().is_none().then_some(child)
-                        })
-                        .collect::<Vec<_>>();
-                    if children.len() != child_ordinals.len()
-                        || children
-                            .iter()
-                            .any(|child| classify(child) != Some(FeatureClass::Sketch))
-                    {
-                        return None;
-                    }
-                    let mut profiles = children.into_iter().filter(|child| {
-                        crate::history::project::solid::is_hole_profile_construction(child)
-                    });
-                    let profile = profiles.next()?;
-                    profiles.next().is_none().then_some((profile, 1_u8))
-                };
-                profile_from_position_source()
-                    .or_else(profile_from_child_order)
-                    .map(|(profile, rank)| {
-                        (
-                            feature_index,
-                            profile
-                                .source_id
-                                .map_or_else(|| profile.id.clone(), String::from),
-                            rank,
-                        )
-                    })
-            })
-            .collect::<Vec<_>>();
-        let claimed_profiles = history
-            .features
-            .iter()
-            .filter_map(|feature| feature.properties.get("DissectableChildren"))
-            .flat_map(|children| children.split(',').map(str::trim))
-            .filter(|child| !child.is_empty())
-            .map(str::to_owned)
-            .collect::<HashSet<_>>();
-        let profile_claim_ranks = additions.iter().fold(
-            HashMap::<String, (u8, usize)>::new(),
-            |mut ranks, (_, profile, rank)| {
-                let entry = ranks.entry(profile.clone()).or_default();
+        let mut additions = Vec::new();
+        for (feature_index, feature) in history.features.iter().enumerate() {
+            ctx.charge_work(1, OPERATION)?;
+            if classify(feature) != Some(FeatureClass::Hole)
+                || feature.properties.contains_key("DissectableChildren") { continue; }
+            let profile = if let Some(profile) = hole_profile_from_position_source(ctx, feature, history, lanes)? {
+                Some(profile)
+            } else {
+                ctx.charge_work(u64_from_index(history.features.len()).checked_mul(2)
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                hole_profile_from_child_order(feature, history)
+            };
+            let Some((profile, rank)) = profile else { continue; };
+            ctx.reserve_collection_vec(&mut additions, 1, OPERATION)?;
+            additions.push((feature_index, copy_hole_profile_source(ctx, profile)?, rank));
+        }
+        let claimed_profiles = claimed_hole_profiles(ctx, &history.features)?;
+        let mut profile_claim_ranks = HashMap::<String, (u8, usize)>::new();
+        for (_, profile, rank) in &additions {
+            ctx.charge_work(u64_from_index(profile.len()), OPERATION)?;
+            if !profile_claim_ranks.contains_key(profile) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                profile_claim_ranks.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                let copy = ctx.format_retained(format_args!("{profile}"), OPERATION)?;
+                profile_claim_ranks.insert(copy, (0, 0));
+            }
+            if let Some(entry) = profile_claim_ranks.get_mut(profile) {
                 match rank.cmp(&entry.0) {
                     std::cmp::Ordering::Greater => *entry = (*rank, 1),
-                    std::cmp::Ordering::Equal => entry.1 += 1,
+                    std::cmp::Ordering::Equal => entry.1 = entry.1.checked_add(1)
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
                     std::cmp::Ordering::Less => {}
                 }
-                ranks
-            },
-        );
-        for (feature_index, profile_source, rank) in additions {
-            if claimed_profiles.contains(profile_source.as_str())
-                || profile_claim_ranks.get(profile_source.as_str()) != Some(&(rank, 1))
-            {
-                continue;
             }
-            history.features[feature_index].properties.insert(
-                cadmpeg_core::nonblank_literal!("DissectableChildren"),
-                profile_source,
-            );
         }
-        let claimed_profiles = history
-            .features
-            .iter()
-            .filter_map(|feature| feature.properties.get("DissectableChildren"))
-            .flat_map(|children| children.split(',').map(str::trim))
-            .filter(|child| !child.is_empty())
-            .collect::<HashSet<_>>();
-        let interval_additions = history
-            .features
-            .iter()
-            .enumerate()
-            .filter(|(_, feature)| {
-                classify(feature) == Some(FeatureClass::Hole)
-                    && !feature.properties.contains_key("DissectableChildren")
-            })
-            .filter_map(|(feature_index, feature)| {
-                let source = feature.source_value()?;
-                let upper = history
-                    .features
-                    .iter()
-                    .filter(|candidate| classify(candidate) == Some(FeatureClass::Hole))
-                    .filter_map(crate::records::Feature::source_value)
-                    .filter(|candidate| *candidate > source)
-                    .min()?;
-                let mut profiles = history.features.iter().filter(|candidate| {
-                    let identity = candidate
-                        .source_id
-                        .map_or_else(|| candidate.id.clone(), String::from);
-                    !claimed_profiles.contains(identity.as_str())
-                        && candidate
-                            .source_value()
-                            .is_some_and(|candidate| source < candidate && candidate < upper)
-                        && classify(candidate) == Some(FeatureClass::Sketch)
-                        && crate::history::project::solid::is_hole_profile_construction(candidate)
-                });
-                let profile = profiles.next()?;
-                profiles.next().is_none().then(|| {
-                    (
-                        feature_index,
-                        profile
-                            .source_id
-                            .map_or_else(|| profile.id.clone(), String::from),
-                    )
-                })
-            })
-            .collect::<Vec<_>>();
-        let interval_claim_counts = interval_additions.iter().fold(
-            HashMap::<String, usize>::new(),
-            |mut counts, (_, profile)| {
-                *counts.entry(profile.clone()).or_default() += 1;
-                counts
-            },
-        );
-        for (feature_index, profile_source) in interval_additions {
-            if interval_claim_counts.get(profile_source.as_str()) != Some(&1) {
-                continue;
+        ctx.charge_work(u64_from_index(additions.len()), OPERATION)?;
+        additions.retain(|(_, profile, rank)| !claimed_profiles.contains(profile.as_str())
+            && profile_claim_ranks.get(profile) == Some(&(*rank, 1)));
+        drop(claimed_profiles);
+        for (feature_index, profile_source, _) in additions {
+            ctx.charge_collection_items(1, OPERATION)?;
+            history.features[feature_index].properties.insert(cadmpeg_core::nonblank_literal!("DissectableChildren"), profile_source);
+        }
+        let claimed_profiles = claimed_hole_profiles(ctx, &history.features)?;
+        let mut interval_additions = Vec::new();
+        for (feature_index, feature) in history.features.iter().enumerate() {
+            ctx.charge_work(1, OPERATION)?;
+            if classify(feature) != Some(FeatureClass::Hole)
+                || feature.properties.contains_key("DissectableChildren") { continue; }
+            let Some(source) = feature.source_value() else { continue; };
+            ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
+            let Some(upper) = history.features.iter()
+                .filter(|candidate| classify(candidate) == Some(FeatureClass::Hole))
+                .filter_map(crate::records::Feature::source_value)
+                .filter(|candidate| *candidate > source).min() else { continue; };
+            ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
+            let mut profiles = history.features.iter().filter(|candidate| {
+                let source_text = candidate.source_id.map(String::from);
+                let identity = source_text.as_deref().unwrap_or(&candidate.id);
+                !claimed_profiles.contains(identity)
+                    && candidate.source_value().is_some_and(|candidate| source < candidate && candidate < upper)
+                    && classify(candidate) == Some(FeatureClass::Sketch)
+                    && crate::history::project::solid::is_hole_profile_construction(candidate)
+            });
+            let Some(profile) = profiles.next() else { continue; };
+            if profiles.next().is_some() { continue; }
+            ctx.reserve_collection_vec(&mut interval_additions, 1, OPERATION)?;
+            interval_additions.push((feature_index, copy_hole_profile_source(ctx, profile)?));
+        }
+        drop(claimed_profiles);
+        let mut interval_claim_counts = HashMap::<String, usize>::new();
+        for (_, profile) in &interval_additions {
+            ctx.charge_work(u64_from_index(profile.len()), OPERATION)?;
+            if !interval_claim_counts.contains_key(profile) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                interval_claim_counts.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                let copy = ctx.format_retained(format_args!("{profile}"), OPERATION)?;
+                interval_claim_counts.insert(copy, 0);
             }
-            history.features[feature_index].properties.insert(
-                cadmpeg_core::nonblank_literal!("DissectableChildren"),
-                profile_source,
-            );
+            if let Some(count) = interval_claim_counts.get_mut(profile) {
+                *count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            }
+        }
+        for (feature_index, profile_source) in interval_additions {
+            ctx.charge_work(1, OPERATION)?;
+            if interval_claim_counts.get(&profile_source) != Some(&1) { continue; }
+            ctx.charge_collection_items(1, OPERATION)?;
+            history.features[feature_index].properties.insert(cadmpeg_core::nonblank_literal!("DissectableChildren"), profile_source);
         }
     }
+    Ok(())
+}
+
+fn copy_hole_profile_source(ctx: &DecodeContext<'_>, profile: &crate::records::Feature) -> Result<String, CodecError> {
+    const OPERATION: &str = "copy SLDPRT hole profile ownership";
+    match profile.source_id {
+        Some(FeatureSource::Reserved) => ctx.format_retained(format_args!("-1"), OPERATION),
+        Some(FeatureSource::Id(source)) => ctx.format_retained(format_args!("{}", source.value()), OPERATION),
+        None => {
+            ctx.charge_work(u64_from_index(profile.id.len()), OPERATION)?;
+            ctx.format_retained(format_args!("{}", profile.id), OPERATION)
+        }
+    }
+}
+
+fn claimed_hole_profiles<'a>(ctx: &DecodeContext<'_>, features: &'a [crate::records::Feature]) -> Result<HashSet<&'a str>, CodecError> {
+    const OPERATION: &str = "index SLDPRT claimed hole profiles";
+    let mut claims = HashSet::new();
+    for feature in features {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(children) = feature.properties.get("DissectableChildren") else { continue; };
+        ctx.charge_work(u64_from_index(children.len()), OPERATION)?;
+        for child in children.split(',').map(str::trim).filter(|child| !child.is_empty()) {
+            if !claims.contains(child) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                claims.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                claims.insert(child);
+            }
+        }
+    }
+    Ok(claims)
+}
+
+fn hole_profile_from_position_source<'a>(
+    ctx: &DecodeContext<'_>,
+    feature: &crate::records::Feature,
+    history: &'a crate::records::FeatureHistory,
+    lanes: &[FeatureInputLane],
+) -> Result<Option<(&'a crate::records::Feature, u8)>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT hole profile ownership";
+    for lane in lanes {
+        ctx.charge_work(u64_from_index(lane.names.len()).checked_add(128)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    }
+    let mut sources = lanes.iter().filter_map(|lane| hole_position_sketch_source(feature, lane));
+    let Some(source) = sources.next() else { return Ok(None); };
+    if sources.any(|candidate| candidate != source) { return Ok(None); }
+    let unique_position = || {
+        let mut positions = history.features.iter().filter(|candidate| {
+            (candidate.source_value() == Some(source) || candidate.ordinal == source)
+                && classify(candidate) == Some(FeatureClass::Sketch)
+        });
+        let position = positions.next()?;
+        positions.next().is_none().then_some(position)
+    };
+    let serialized_successor = || -> Result<Option<(&'a crate::records::Feature, u8)>, CodecError> {
+        ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
+        let Some(position) = unique_position() else { return Ok(None); };
+        let mut profile: Option<&crate::records::Feature> = None;
+        for lane in lanes {
+            ctx.charge_work(u64_from_index(lane.names.len()).checked_add(128)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            if hole_position_sketch_source(feature, lane) != Some(source) { continue; }
+            ctx.charge_work(u64_from_index(lane.names.len()), OPERATION)?;
+            let Some(position_offset) = feature_object_name(position, lane).map(|name| name.offset) else { return Ok(None); };
+            let scan_work = u64_from_index(history.features.len()).checked_mul(u64_from_index(lane.names.len()).checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(scan_work, OPERATION)?;
+            let Some(minimum_offset) = history.features.iter().filter_map(|candidate| {
+                let offset = feature_object_name(candidate, lane)?.offset;
+                (offset > position_offset).then_some(offset)
+            }).min() else { return Ok(None); };
+            ctx.charge_work(scan_work, OPERATION)?;
+            let mut successors = history.features.iter().filter(|candidate| {
+                feature_object_name(candidate, lane).is_some_and(|name| name.offset == minimum_offset)
+            });
+            let Some(successor) = successors.next() else { return Ok(None); };
+            if successors.next().is_some() || classify(successor) != Some(FeatureClass::Sketch)
+                || !crate::history::project::solid::is_hole_profile_construction(successor) { return Ok(None); }
+            if profile.is_some_and(|profile| profile.id != successor.id) { return Ok(None); }
+            if profile.is_none() { profile = Some(successor); }
+        }
+        Ok(profile.map(|profile| (profile, 4)))
+    };
+    if let Some(profile) = serialized_successor()? { return Ok(Some(profile)); }
+    let adjacent_sources = [source.checked_sub(1), source.checked_add(1)];
+    ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
+    let mut profiles = history.features.iter().filter(|candidate| {
+        candidate.source_value().is_some_and(|source| adjacent_sources.contains(&Some(source)))
+            && classify(candidate) == Some(FeatureClass::Sketch)
+            && crate::history::project::solid::is_hole_profile_construction(candidate)
+    });
+    if let Some(profile) = profiles.next() {
+        if profiles.next().is_none() { return Ok(Some((profile, 3))); }
+    }
+    let Some(hole_source) = feature.source_value() else { return Ok(None); };
+    let (lower, upper) = if hole_source < source { (hole_source, source) } else { (source, hole_source) };
+    ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
+    let mut profiles = history.features.iter().filter(|candidate| {
+        candidate.source_value().is_some_and(|source| lower < source && source < upper)
+            && classify(candidate) == Some(FeatureClass::Sketch)
+            && crate::history::project::solid::is_hole_profile_construction(candidate)
+    });
+    let bounded = profiles.next();
+    if profiles.next().is_some() { return Ok(None); }
+    if let Some(profile) = bounded { return Ok(Some((profile, 2))); }
+    ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
+    let Some(position) = unique_position() else { return Ok(None); };
+    let adjacent_ordinals = [position.ordinal.checked_sub(1), position.ordinal.checked_add(1)];
+    ctx.charge_work(u64_from_index(history.features.len()), OPERATION)?;
+    let mut profiles = history.features.iter().filter(|candidate| {
+        adjacent_ordinals.contains(&Some(candidate.ordinal)) && candidate.id != position.id
+            && classify(candidate) == Some(FeatureClass::Sketch)
+            && crate::history::project::solid::is_hole_profile_construction(candidate)
+    });
+    let Some(profile) = profiles.next() else { return Ok(None); };
+    Ok(profiles.next().is_none().then_some((profile, 1)))
+}
+
+fn hole_profile_from_child_order<'a>(feature: &crate::records::Feature, history: &'a crate::records::FeatureHistory) -> Option<(&'a crate::records::Feature, u8)> {
+    let ordinals = [feature.ordinal.checked_add(1)?, feature.ordinal.checked_add(2)?];
+    let unique_child = |ordinal| {
+        let mut children = history.features.iter().filter(|child| child.ordinal == ordinal);
+        let child = children.next()?;
+        children.next().is_none().then_some(child)
+    };
+    let children = [unique_child(ordinals[0])?, unique_child(ordinals[1])?];
+    if children.iter().any(|child| classify(child) != Some(FeatureClass::Sketch)) { return None; }
+    let mut profiles = children.into_iter().filter(|child| crate::history::project::solid::is_hole_profile_construction(child));
+    let profile = profiles.next()?;
+    profiles.next().is_none().then_some((profile, 1))
 }
 
 pub(crate) fn enrich_history_cosmetic_thread_diameters(
@@ -584,7 +538,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
     let mut projection = crate::records::charged_clone::clone_histories_charged(
         ctx, histories, "clone SLDPRT cosmetic thread histories",
     )?;
-    enrich_history_hole_constructions(&mut projection, lanes);
+    enrich_history_hole_constructions(ctx, &mut projection, lanes)?;
     enrich_history_cosmetic_thread_diameters(ctx, &mut projection, lanes)?;
     let mut fallback_parameters = HashMap::new();
     for feature in projection.iter().flat_map(|history| &history.features) {
@@ -1146,7 +1100,7 @@ pub(crate) fn project_profiled_hole_constructions(
     let mut ownership_histories = crate::records::charged_clone::clone_histories_charged(
         ctx, &enriched_histories, "SLDPRT unowned incomplete-hole histories",
     )?;
-    enrich_history_hole_constructions(&mut ownership_histories, lanes);
+    enrich_history_hole_constructions(ctx, &mut ownership_histories, lanes)?;
     let histories = enriched_histories.as_slice();
     let incomplete =
         |diameter: &Option<cadmpeg_ir::scalar::PositiveLength>,
