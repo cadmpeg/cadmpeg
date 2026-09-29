@@ -1027,3 +1027,47 @@ fn metadata_curve_projection_refuses_work_limit() {
     assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
     assert_eq!(refusal.additional, 1);
 }
+
+fn variable_fillet_source() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43,
+        "Contents/Keywords",
+        br#"<Keywords><Fillet Name="Variable" id="10" Edges="edge-a"><Dimension Name="Radius0">2mm</Dimension><Dimension Name="Position0">0</Dimension><Dimension Name="Radius1">3mm</Dimension><Dimension Name="Position1">1</Dimension></Fillet></Keywords>"#,
+    ));
+    source
+}
+
+#[test]
+fn metadata_edit_projection_refuses_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = collection_refusal_with_options(
+        &variable_fillet_source(), options, "collect SLDPRT variable fillet radii",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_edit_projection_refuses_retained_limit() {
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(
+        &variable_fillet_source(), &mut options, "retain SLDPRT edit selection reference",
+    );
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT edit selection reference"
+    ));
+}
+
+#[test]
+fn metadata_edit_projection_refuses_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = work_refusal_with_options(
+        &variable_fillet_source(), options, "scan SLDPRT variable fillet radii",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(refusal.additional, 1);
+}
