@@ -3946,29 +3946,30 @@ fn radial_extension_annotation_group(
 /// Remove generic relation parses whose exact stream position is owned by a
 /// typed dimension frame.
 pub(crate) fn remove_dimension_frame_relations(
+    ctx: &DecodeContext<'_>,
     relations: &mut Vec<SketchRelation>,
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
     null_pairs: &[DesignDimensionLocusPair],
-) {
-    let dimension_frames =
-        pairs
-            .iter()
-            .filter_map(|pair| Some((native_stream(&pair.id)?.to_owned(), pair.byte_offset())))
-            .chain(groups.iter().filter_map(|group| {
-                Some((native_stream(&group.id)?.to_owned(), group.byte_offset))
-            }))
-            .chain(
-                null_pairs.iter().filter_map(|pair| {
-                    Some((native_stream(&pair.id)?.to_owned(), pair.byte_offset()))
-                }),
-            )
-            .collect::<HashSet<_>>();
+) -> Result<(), CodecError> {
+    let mut dimension_frames = HashSet::new();
+    let frames = pairs.iter().filter_map(|pair| {
+        Some((native_stream(&pair.id)?, pair.byte_offset()))
+    }).chain(groups.iter().filter_map(|group| {
+        Some((native_stream(&group.id)?, group.byte_offset))
+    })).chain(null_pairs.iter().filter_map(|pair| {
+        Some((native_stream(&pair.id)?, pair.byte_offset()))
+    }));
+    for frame in frames {
+        insert_dimension_set(Some(ctx), &mut dimension_frames,
+            frame, "f3d dimension frame relation index")?;
+    }
     relations.retain(|relation| {
         native_stream(&relation.id).is_none_or(|scope| {
-            !dimension_frames.contains(&(scope.to_owned(), relation.byte_offset))
+            !dimension_frames.contains(&(scope, relation.byte_offset))
         })
     });
+    Ok(())
 }
 
 /// Bind geometry referenced only by dimensional companions to the sketch

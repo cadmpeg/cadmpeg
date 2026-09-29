@@ -2413,11 +2413,12 @@ impl<'a> F3dDecodeSession<'a> {
             .try_into()
             .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
         crate::design::dimensions::remove_dimension_frame_relations(
+            ctx,
             &mut self.native.sketch_relations,
             &self.native.design_dimension_locus_pairs,
             &self.native.design_dimension_locus_groups,
             &self.native.design_dimension_null_locus_pairs,
-        );
+        )?;
         crate::design::dimensions::bind_dimension_loci(
             ctx,
             &self.native.design_sketch_placements,

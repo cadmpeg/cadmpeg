@@ -1126,7 +1126,12 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     let mut relations = vec![relation_at("native", 0), relation_at("other", 0)];
     let mut group = group;
     group.id = "f3d:native:design-dimension-locus-group#0".into();
-    remove_dimension_frame_relations(&mut relations, &[], &[group], &[]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &policy,
+    ).unwrap();
+    remove_dimension_frame_relations(&ctx, &mut relations, &[], &[group], &[]).unwrap();
     assert_eq!(relations.len(), 1);
     assert!(relations[0].id.starts_with("f3d:other:"));
 
