@@ -1033,18 +1033,12 @@ fn attach_e5_free_vertices(
     annotations: &mut AnnotationBuilder,
     admission: &mut FamilyEntityAdmission<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let body_id = BodyId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "e5", "body"),
-        cadmpeg_ir::identity_key!("unbound-points"),
-    );
-    let region_id = RegionId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "e5", "region"),
-        cadmpeg_ir::identity_key!("unbound-points"),
-    );
-    let shell_id = ShellId::compose(
-        &cadmpeg_ir::identity_namespace!("catia", "e5", "shell"),
-        cadmpeg_ir::identity_key!("unbound-points"),
-    );
+    let body_id = crate::resource::copy_id(ctx, "catia:e5:body#unbound-points",
+        BodyId::mint, "catia_e5_free_body_id")?;
+    let region_id = crate::resource::copy_id(ctx, "catia:e5:region#unbound-points",
+        RegionId::mint, "catia_e5_free_region_id")?;
+    let shell_id = crate::resource::copy_id(ctx, "catia:e5:shell#unbound-points",
+        ShellId::mint, "catia_e5_free_shell_id")?;
     for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotate(
             ctx,
@@ -1056,15 +1050,21 @@ fn attach_e5_free_vertices(
             Exactness::Inferred)?;
     }
     let mut regions = Vec::new();
-    crate::resource::push(ctx, &mut regions, region_id.clone(), "catia_e5_free_body_regions")?;
+    crate::resource::push(ctx, &mut regions,
+        crate::resource::copy_id(ctx, region_id.as_str(), RegionId::mint,
+            "catia_e5_free_body_region_id")?, "catia_e5_free_body_regions")?;
     let mut shells = Vec::new();
-    crate::resource::push(ctx, &mut shells, shell_id.clone(), "catia_e5_free_region_shells")?;
-    let mut free_vertices = Vec::new();
-    crate::resource::reserve_vec(ctx, &mut free_vertices, ir.model.vertices.len(), "catia_e5_free_vertices")?;
-    free_vertices.extend(ir.model.vertices.iter().map(|vertex| vertex.id.clone()));
+    crate::resource::push(ctx, &mut shells,
+        crate::resource::copy_id(ctx, shell_id.as_str(), ShellId::mint,
+            "catia_e5_free_region_shell_id")?, "catia_e5_free_region_shells")?;
+    let free_vertices = crate::resource::try_collect_vec(ctx,
+        ir.model.vertices.iter().map(|vertex| crate::resource::copy_id(ctx,
+            vertex.id.as_str(), VertexId::mint, "catia_e5_free_vertex_id")),
+        "catia_e5_free_vertices")?;
     admission.reserve_entity(&mut ir.model.bodies, "catia_e5_model_bodies")?;
     ir.model.bodies.push(Body {
-        id: body_id.clone(),
+        id: crate::resource::copy_id(ctx, body_id.as_str(), BodyId::mint,
+            "catia_e5_free_body_record_id")?,
         kind: BodyKind::Wire,
         regions,
         transform: None,
@@ -1074,7 +1074,8 @@ fn attach_e5_free_vertices(
     });
     admission.reserve_entity(&mut ir.model.regions, "catia_e5_model_regions")?;
     ir.model.regions.push(Region {
-        id: region_id.clone(),
+        id: crate::resource::copy_id(ctx, region_id.as_str(), RegionId::mint,
+            "catia_e5_free_region_record_id")?,
         body: body_id,
         shells,
     });
