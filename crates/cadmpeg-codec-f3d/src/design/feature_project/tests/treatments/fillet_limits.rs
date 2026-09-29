@@ -217,6 +217,51 @@ fn fillet_fallback_group_id_refuses_retained_limit() {
 }
 
 #[test]
+fn fillet_single_radius_scope_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let scope = localized_fillet_scope();
+    let radius = localized_fillet_parameter(10, 11, "Radius", Some("mm"), 0.5);
+    let controls = [(0, &radius)];
+    let inputs = crate::design::feature_project::ProjectInputs {
+        native: std::slice::from_ref(&radius),
+        owners: &[],
+        scopes: std::slice::from_ref(&scope),
+        timelines: &[],
+        construction_groups: &[],
+        fillet_radius_groups: &[],
+        edge_operands: &[],
+        edge_identity_operands: &[],
+        edge_treatment_vertex_operands: &[],
+        entity_selection_operands: &[],
+        curve_identities: &[],
+        face_operands: &[],
+        body_recipe_operands: &[],
+        legacy_loft_body_carriers: &[],
+        placements: &[],
+        body_bindings: &[],
+        component_naming_spaces: &[],
+        histories: &[],
+    };
+    let native_scope = crate::ids::native_stream(&scope.id).unwrap();
+    for limit in 0..128 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(crate::design::feature_project::project_fillet_arm(
+            Some(&ctx), &inputs, &scope, &controls, native_scope),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d Fillet single radius edge scope ID") {
+            return;
+        }
+    }
+    panic!("no single radius edge scope ID refusal");
+}
+
+#[test]
 fn fillet_radius_group_collections_and_ids_refuse_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
