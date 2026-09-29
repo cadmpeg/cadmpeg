@@ -4674,55 +4674,63 @@ enum CreoMathFunction {
 }
 
 fn creo_math_function(name: &str) -> Option<CreoMathFunction> {
-    match name.to_ascii_lowercase().as_str() {
-        "sin" => Some(CreoMathFunction::Sin),
-        "cos" => Some(CreoMathFunction::Cos),
-        "tan" => Some(CreoMathFunction::Tan),
-        "asin" => Some(CreoMathFunction::Asin),
-        "acos" => Some(CreoMathFunction::Acos),
-        "atan" => Some(CreoMathFunction::Atan),
-        "atan2" => Some(CreoMathFunction::Atan2),
-        "sinh" => Some(CreoMathFunction::Sinh),
-        "cosh" => Some(CreoMathFunction::Cosh),
-        "tanh" => Some(CreoMathFunction::Tanh),
-        "sign" => Some(CreoMathFunction::Sign),
-        "mod" => Some(CreoMathFunction::Mod),
-        "if" => Some(CreoMathFunction::If),
-        "bound" => Some(CreoMathFunction::Bound),
-        "dead" => Some(CreoMathFunction::Dead),
-        "near" => Some(CreoMathFunction::Near),
-        "min" => Some(CreoMathFunction::Min),
-        "max" => Some(CreoMathFunction::Max),
-        "log" => Some(CreoMathFunction::Log),
-        "ln" => Some(CreoMathFunction::Ln),
-        "exp" => Some(CreoMathFunction::Exp),
-        "pow" => Some(CreoMathFunction::Pow),
-        "sqrt" => Some(CreoMathFunction::Sqrt),
-        "abs" => Some(CreoMathFunction::Abs),
-        "ceil" => Some(CreoMathFunction::Ceil),
-        "floor" => Some(CreoMathFunction::Floor),
-        "dbl_in_tol" => Some(CreoMathFunction::DblInTol),
-        "itos" => Some(CreoMathFunction::Itos),
-        "rtos" => Some(CreoMathFunction::Rtos),
-        "rel_model_name" => Some(CreoMathFunction::RelModelName),
-        "rel_model_type" => Some(CreoMathFunction::RelModelType),
-        "exists" => Some(CreoMathFunction::Exists),
-        "search" => Some(CreoMathFunction::Search),
-        "extract" => Some(CreoMathFunction::Extract),
-        "string_length" => Some(CreoMathFunction::StringLength),
-        "string_starts" => Some(CreoMathFunction::StringStarts),
-        "string_ends" => Some(CreoMathFunction::StringEnds),
-        "string_match" => Some(CreoMathFunction::StringMatch),
-        "string_pattern" => Some(CreoMathFunction::StringPattern),
-        "cable_len" | "cable_thick" | "cbl_logical_file" | "eang" | "elen" | "edistk"
-        | "ecoordx" | "ecoordy" | "evalgraph" | "trajpar_of_pnt" | "massprop_param"
-        | "material_param" | "mp_mass" | "mp_assigned_mass" | "mp_surf_area" | "mp_volume"
-        | "mp_cg_x" | "mp_cg_y" | "mp_cg_z" | "has_value" | "match_value" | "average"
-        | "value_by_argument" | "weighted_average" | "value" | "count_rows" => {
-            Some(CreoMathFunction::ContextDependent)
-        }
-        _ => None,
-    }
+    const FUNCTIONS: &[(&str, CreoMathFunction)] = &[
+        ("sin", CreoMathFunction::Sin),
+        ("cos", CreoMathFunction::Cos),
+        ("tan", CreoMathFunction::Tan),
+        ("asin", CreoMathFunction::Asin),
+        ("acos", CreoMathFunction::Acos),
+        ("atan", CreoMathFunction::Atan),
+        ("atan2", CreoMathFunction::Atan2),
+        ("sinh", CreoMathFunction::Sinh),
+        ("cosh", CreoMathFunction::Cosh),
+        ("tanh", CreoMathFunction::Tanh),
+        ("sign", CreoMathFunction::Sign),
+        ("mod", CreoMathFunction::Mod),
+        ("if", CreoMathFunction::If),
+        ("bound", CreoMathFunction::Bound),
+        ("dead", CreoMathFunction::Dead),
+        ("near", CreoMathFunction::Near),
+        ("min", CreoMathFunction::Min),
+        ("max", CreoMathFunction::Max),
+        ("log", CreoMathFunction::Log),
+        ("ln", CreoMathFunction::Ln),
+        ("exp", CreoMathFunction::Exp),
+        ("pow", CreoMathFunction::Pow),
+        ("sqrt", CreoMathFunction::Sqrt),
+        ("abs", CreoMathFunction::Abs),
+        ("ceil", CreoMathFunction::Ceil),
+        ("floor", CreoMathFunction::Floor),
+        ("dbl_in_tol", CreoMathFunction::DblInTol),
+        ("itos", CreoMathFunction::Itos),
+        ("rtos", CreoMathFunction::Rtos),
+        ("rel_model_name", CreoMathFunction::RelModelName),
+        ("rel_model_type", CreoMathFunction::RelModelType),
+        ("exists", CreoMathFunction::Exists),
+        ("search", CreoMathFunction::Search),
+        ("extract", CreoMathFunction::Extract),
+        ("string_length", CreoMathFunction::StringLength),
+        ("string_starts", CreoMathFunction::StringStarts),
+        ("string_ends", CreoMathFunction::StringEnds),
+        ("string_match", CreoMathFunction::StringMatch),
+        ("string_pattern", CreoMathFunction::StringPattern),
+    ];
+    const CONTEXT_DEPENDENT: &[&str] = &[
+        "cable_len", "cable_thick", "cbl_logical_file", "eang", "elen", "edistk",
+        "ecoordx", "ecoordy", "evalgraph", "trajpar_of_pnt", "massprop_param",
+        "material_param", "mp_mass", "mp_assigned_mass", "mp_surf_area", "mp_volume",
+        "mp_cg_x", "mp_cg_y", "mp_cg_z", "has_value", "match_value", "average",
+        "value_by_argument", "weighted_average", "value", "count_rows",
+    ];
+    FUNCTIONS
+        .iter()
+        .find_map(|(spelling, function)| name.eq_ignore_ascii_case(spelling).then_some(*function))
+        .or_else(|| {
+            CONTEXT_DEPENDENT
+                .iter()
+                .any(|spelling| name.eq_ignore_ascii_case(spelling))
+                .then_some(CreoMathFunction::ContextDependent)
+        })
 }
 
 fn creo_relation_function(name: &str) -> Option<(CreoMathFunction, Option<&str>)> {
