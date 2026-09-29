@@ -449,12 +449,11 @@ pub(super) fn linked_coordinate_line_endpoints<'a>(
     marker: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    let links = marker
+    let mut links = marker
         .links()
         .iter()
-        .filter(|link| link.entity_ref != marker.id())
-        .collect::<Vec<_>>();
-    let [first, second] = links.as_slice() else {
+        .filter(|link| link.entity_ref != marker.id());
+    let (Some(first), Some(second), None) = (links.next(), links.next(), links.next()) else {
         return None;
     };
     let endpoints = [first, second].map(|link| {
