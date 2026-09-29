@@ -19,11 +19,50 @@ use crate::records::{
         extrude_selection::DesignOperandRole, face::DesignFaceOperand,
     },
 };
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
 const EPS_FACE_RESOLVE_SKETCH_CURVE_IS_SPATIAL_E9: f64 = 1.0e-9;
+#[cfg(test)]
+const EPS_FACE_TEST_TARGET_LINEAR_E9: f64 = 1.0e-9;
+#[cfg(test)]
+const EPS_FACE_TEST_TARGET_ANGULAR_E9: f64 = 1.0e-9;
+
+fn push_face_item<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut Vec<T>,
+    item: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    items.push(item);
+    Ok(())
+}
+
+fn copy_face_text(
+    ctx: Option<&DecodeContext<'_>>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let Some(ctx) = ctx else { return Ok(value.to_owned()); };
+    String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
+        .map_err(|_| CodecError::malformed("validated face identity is not UTF-8"))
+}
+
+fn copy_face_id(
+    ctx: Option<&DecodeContext<'_>>,
+    face: &cadmpeg_ir::ids::FaceId,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::ids::FaceId, CodecError> {
+    let text = copy_face_text(ctx, face.as_str(), operation)?;
+    cadmpeg_ir::ids::FaceId::try_from(text).map_err(CodecError::malformed)
+}
 
 /// Admit the legacy reference-aware face-target frame that omits its zero
 /// `Side1Offset` owner and parameter.
@@ -1733,6 +1772,17 @@ pub(crate) fn nested_bounded_face_history_candidates(
     (!candidates.is_empty()).then_some(candidates)
 }
 
+fn has_nested_bounded_face_history_candidates(operand: &DesignFaceOperand) -> bool {
+    complete_counted_face_recipe(operand).is_some()
+        && operand.candidate_faces.is_empty()
+        && operand.unreferenced_candidate_faces.is_empty()
+        && operand.alternate_selector_candidate_faces.is_empty()
+        && operand.recipe_references.iter().any(|reference| {
+            !reference.candidate_faces.is_empty()
+                || !reference.alternate_selector_faces.is_empty()
+        })
+}
+
 /// Return active B-rep faces for the legacy `FromFace` envelope whose counted
 /// bounded recipe contains support references but no active face lane.
 ///
@@ -1740,32 +1790,38 @@ pub(crate) fn nested_bounded_face_history_candidates(
 /// must reduce the returned faces to one plane coincident with the profile
 /// sketch before binding it to the operand.
 fn extrude_start_plane_geometry_candidates(
+    ctx: Option<&DecodeContext<'_>>,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
     faces: &[cadmpeg_ir::topology::Face],
-) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
+) -> Result<Option<Vec<cadmpeg_ir::ids::FaceId>>, CodecError> {
     let [crate::records::identity::Located {
         value: record_index,
         ..
     }] = group.members()
     else {
-        return None;
+        return Ok(None);
     };
     let mut matching = operands.iter().filter(|operand| {
         native_stream(&operand.id) == native_stream(&group.id)
             && operand.scope_record_index == group.scope_record_index
             && operand.record_index() == *record_index
     });
-    let operand = matching.next()?;
+    let Some(operand) = matching.next() else { return Ok(None); };
     if matching.next().is_some()
         || !face_operand_candidates(operand).is_empty()
         || !operand.resolved_face_slots.is_empty()
         || operand.resolved_active_face.is_some()
-        || nested_bounded_face_history_candidates(operand).is_none()
+        || !has_nested_bounded_face_history_candidates(operand)
     {
-        return None;
+        return Ok(None);
     }
-    Some(faces.iter().map(|face| face.id.clone()).collect())
+    let mut candidates = Vec::new();
+    for face in faces {
+        let id = copy_face_id(ctx, &face.id, "f3d start plane candidate ID")?;
+        push_face_item(ctx, &mut candidates, id, "f3d start plane candidate")?;
+    }
+    Ok(Some(candidates))
 }
 
 fn extrude_profile_sketch_id(
@@ -1805,17 +1861,20 @@ pub(crate) struct ExtrudeFaceResolution<'a> {
 }
 
 pub(crate) fn bind_extrude_start_planes(
+    ctx: Option<&DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     resolution: &mut ExtrudeFaceResolution<'_>,
-) {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation};
 
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+        edit_result = (|| -> Result<(), CodecError> {
         'feature_edit: {
             let FeatureDefinition::Operation(FeatureOperation::Extrude { profile, start, .. }) =
-                &mut definition
+                definition
             else {
                 break 'feature_edit;
             };
@@ -1860,46 +1919,58 @@ pub(crate) fn bind_extrude_start_planes(
                     candidates.clear();
                     break;
                 }
-                candidates.extend(face_operand_candidates(operand).iter().cloned());
+                for face in face_operand_candidates(operand) {
+                    let id = copy_face_id(ctx, face, "f3d start plane operand face ID")?;
+                    push_face_item(ctx, &mut candidates, id,
+                        "f3d start plane operand candidate")?;
+                }
             }
             candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
             candidates.dedup();
             if candidates.is_empty() {
                 if let Some(geometry_candidates) = extrude_start_plane_geometry_candidates(
+                    ctx,
                     group,
                     resolution.operands,
                     resolution.faces,
-                ) {
+                )? {
                     candidates = geometry_candidates;
                 }
             }
-            let coincident = candidates
-                .into_iter()
-                .filter(|candidate| {
-                    face_coincident_with_sketch(
-                        candidate,
-                        sketch,
-                        resolution.faces,
-                        resolution.surfaces,
-                        resolution.linear_tolerance,
-                        resolution.angular_tolerance,
-                    )
-                })
-                .collect::<Vec<_>>();
+            let mut coincident = Vec::new();
+            for candidate in candidates {
+                if face_coincident_with_sketch(
+                    &candidate,
+                    sketch,
+                    resolution.faces,
+                    resolution.surfaces,
+                    resolution.linear_tolerance,
+                    resolution.angular_tolerance,
+                ) {
+                    push_face_item(ctx, &mut coincident, candidate,
+                        "f3d coincident start plane face")?;
+                }
+            }
             if let [face] = coincident.as_slice() {
-                if retain_face_operand_resolution(group, resolution.operands, face) {
+                let selected = copy_face_id(ctx, face, "f3d selected start plane face ID")?;
+                let native = copy_face_text(ctx, native, "f3d selected start plane native ID")?;
+                if retain_face_operand_resolution(ctx, group, resolution.operands, face)? {
                     *start = ExtrudeStart::FromFace {
                         face: FaceSelection::Resolved {
-                            faces: vec![face.clone()],
-                            native: native.clone(),
+                            faces: vec![selected],
+                            native,
                         },
                         offset: retained_offset,
                     };
                 }
             }
         }
-        feature.evaluation.set_definition(definition);
+        Ok(())
+        })();
+        });
+        edit_result?;
     }
+    Ok(())
 }
 
 /// Resolve a legacy Extrude target face from a unique forward planar face.
@@ -1910,23 +1981,26 @@ pub(crate) fn bind_extrude_start_planes(
 /// the profile plane. Ambiguous, nonplanar, and non-forward candidates remain
 /// native.
 pub(crate) fn bind_extrude_target_faces(
+    ctx: Option<&DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     resolution: &mut ExtrudeFaceResolution<'_>,
-) {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{
         ExtrudeDirection, ExtrudeExtent, FeatureDefinition, FeatureOperation,
     };
 
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+        edit_result = (|| -> Result<(), CodecError> {
         'feature_edit: {
             let FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile,
                 direction,
                 extent,
                 ..
-            }) = &mut definition
+            }) = definition
             else {
                 break 'feature_edit;
             };
@@ -1951,67 +2025,72 @@ pub(crate) fn bind_extrude_target_faces(
             }
             match extent {
                 ExtrudeExtent::OneSided { side } => bind_extrude_target_face(
+                    ctx,
                     &mut side.termination,
                     sketch_origin,
                     sweep_direction,
                     resolution,
-                ),
+                )?,
                 ExtrudeExtent::TwoSided { first, second } => {
                     bind_extrude_target_face(
+                        ctx,
                         &mut first.termination,
                         sketch_origin,
                         sweep_direction,
                         resolution,
-                    );
+                    )?;
                     bind_extrude_target_face(
+                        ctx,
                         &mut second.termination,
                         sketch_origin,
                         sweep_direction.scale(-1.0),
                         resolution,
-                    );
+                    )?;
                 }
                 ExtrudeExtent::Symmetric { .. } => {}
             }
         }
-        feature.evaluation.set_definition(definition);
+        Ok(())
+        })();
+        });
+        edit_result?;
     }
+    Ok(())
 }
 
 fn bind_extrude_target_face(
+    ctx: Option<&DecodeContext<'_>>,
     termination: &mut cadmpeg_ir::features::LinearTermination,
     sketch_origin: Point3,
     sweep_direction: Vector3,
     resolution: &mut ExtrudeFaceResolution<'_>,
-) {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FaceSelection, LinearTermination};
 
     let LinearTermination::ToFace {
         face: FaceSelection::Native(native),
-        ..
+        offset: retained_offset,
     } = termination
     else {
-        return;
+        return Ok(());
     };
-    let native = native.clone();
+    let offset = *retained_offset;
     let mut matching_groups = resolution.groups.iter().filter(|group| {
-        group.id == native && group.extrude_face_role() == Some(DesignExtrudeFaceRole::Termination)
+        group.id == *native && group.extrude_face_role() == Some(DesignExtrudeFaceRole::Termination)
     });
     let Some(group) = matching_groups.next() else {
-        return;
+        return Ok(());
     };
     if matching_groups.next().is_some() {
-        return;
+        return Ok(());
     }
-    let Some(face) =
-        extrude_target_plane_candidate(group, resolution, sketch_origin, sweep_direction)
+    let Some(face) = extrude_target_plane_candidate(
+        ctx, group, resolution, sketch_origin, sweep_direction)?
     else {
-        return;
+        return Ok(());
     };
-    let offset = match termination {
-        LinearTermination::ToFace { offset, .. } => *offset,
-        _ => return,
-    };
-    if retain_face_operand_resolution(group, resolution.operands, &face) {
+    let native = copy_face_text(ctx, native, "f3d target face native ID")?;
+    if retain_face_operand_resolution(ctx, group, resolution.operands, &face)? {
         *termination = LinearTermination::ToFace {
             face: FaceSelection::Resolved {
                 faces: vec![face],
@@ -2020,75 +2099,92 @@ fn bind_extrude_target_face(
             offset,
         };
     }
+    Ok(())
 }
 
 fn extrude_target_plane_candidate(
+    ctx: Option<&DecodeContext<'_>>,
     group: &DesignConstructionOperandGroup,
     resolution: &ExtrudeFaceResolution<'_>,
     sketch_origin: Point3,
     sweep_direction: Vector3,
-) -> Option<cadmpeg_ir::ids::FaceId> {
+) -> Result<Option<cadmpeg_ir::ids::FaceId>, CodecError> {
     let [crate::records::identity::Located {
         value: record_index,
         ..
     }] = group.members()
     else {
-        return None;
+        return Ok(None);
     };
-    let stream = native_stream(&group.id)?;
+    let Some(stream) = native_stream(&group.id) else { return Ok(None); };
     let mut matching_operands = resolution.operands.iter().filter(|operand| {
         native_stream(&operand.id) == Some(stream)
             && operand.scope_record_index == group.scope_record_index
             && operand.record_index() == *record_index
     });
-    let operand = matching_operands.next()?;
+    let Some(operand) = matching_operands.next() else { return Ok(None); };
     if matching_operands.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    let mut candidates = face_operand_candidates(operand).to_vec();
-    if candidates.is_empty() {
-        candidates = nested_bounded_face_history_candidates(operand)?;
-    }
-    candidates.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-    candidates.dedup();
     let direction_length = sweep_direction.norm();
-    let mut matches = candidates
-        .into_iter()
-        .filter_map(|candidate| {
-            let face = resolution.faces.iter().find(|face| face.id == candidate)?;
-            let surface = resolution
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == face.surface)?;
+    let mut found = None;
+    let mut ambiguous = false;
+    let mut consider = |candidate: &cadmpeg_ir::ids::FaceId| {
+            let Some((index, face)) = resolution.faces.iter().enumerate()
+                .find(|(_, face)| face.id == *candidate) else { return; };
+            let Some(surface) = resolution.surfaces.iter()
+                .find(|surface| surface.id == face.surface) else { return; };
             let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved()
             else {
-                return None;
+                return;
             };
             let origin = plane_surface.origin().get();
             let normal = plane_surface.frame().axis().as_raw();
             if !parallel_vectors(*normal, sweep_direction, resolution.angular_tolerance) {
-                return None;
+                return;
             }
             let distance =
                 origin.vector_from(sketch_origin).dot(sweep_direction) / direction_length;
-            (distance > resolution.linear_tolerance).then_some(candidate)
-        })
-        .collect::<Vec<_>>();
-    matches.sort_by(|left, right| left.as_str().cmp(right.as_str()));
-    matches.dedup();
-    let [face] = matches.as_slice() else {
-        return None;
+            if distance > resolution.linear_tolerance {
+                if found.is_some_and(|previous| previous != index) {
+                    ambiguous = true;
+                } else {
+                    found = Some(index);
+                }
+            }
     };
-    Some(face.clone())
+    let direct = face_operand_candidates(operand);
+    if direct.is_empty() {
+        if !has_nested_bounded_face_history_candidates(operand) {
+            return Ok(None);
+        }
+        for reference in &operand.recipe_references {
+            for candidate in reference.candidate_faces.iter()
+                .chain(&reference.alternate_selector_faces) {
+                consider(candidate);
+            }
+        }
+    } else {
+        for candidate in direct {
+            consider(candidate);
+        }
+    }
+    if ambiguous {
+        return Ok(None);
+    }
+    let Some(index) = found else { return Ok(None); };
+    Ok(Some(copy_face_id(ctx, &resolution.faces[index].id,
+        "f3d target plane face ID")?))
 }
 
 pub(super) fn retain_face_operand_resolution(
+    ctx: Option<&DecodeContext<'_>>,
     group: &DesignConstructionOperandGroup,
     operands: &mut [DesignFaceOperand],
     face: &cadmpeg_ir::ids::FaceId,
-) -> bool {
+) -> Result<bool, CodecError> {
     let Some(stream) = native_stream(&group.id) else {
-        return false;
+        return Ok(false);
     };
     let mut matches = operands.iter_mut().filter(|operand| {
         native_stream(&operand.id) == Some(stream)
@@ -2101,34 +2197,35 @@ pub(super) fn retain_face_operand_resolution(
                 || (face_operand_candidates(operand).is_empty()
                     && operand.resolved_face_slots.is_empty()
                     && operand.resolved_active_face.is_none()
-                    && nested_bounded_face_history_candidates(operand).is_some()))
+                    && has_nested_bounded_face_history_candidates(operand)))
     });
     let Some(operand) = matches.next() else {
-        return false;
+        return Ok(false);
     };
     if matches.next().is_some() {
-        return false;
+        return Ok(false);
     }
     let geometry_bound = face_operand_candidates(operand).is_empty()
         && operand.resolved_face_slots.is_empty()
         && operand.resolved_active_face.is_none()
-        && nested_bounded_face_history_candidates(operand).is_some();
+        && has_nested_bounded_face_history_candidates(operand);
     if geometry_bound {
-        operand.resolved_active_face = Some(face.clone());
-        return true;
+        operand.resolved_active_face = Some(copy_face_id(ctx, face,
+            "f3d retained operand active face")?);
+        return Ok(true);
     }
     let Some(slot) = face
         .as_str()
         .rsplit_once('#')
         .and_then(|(_, slot)| slot.parse::<i64>().ok())
     else {
-        return false;
+        return Ok(false);
     };
     if !operand.resolved_face_slots.is_empty() && operand.resolved_face_slots != [slot] {
-        return false;
+        return Ok(false);
     }
     operand.resolved_face_slots = vec![slot];
-    true
+    Ok(true)
 }
 
 fn face_coincident_with_sketch(
@@ -2992,8 +3089,7 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn extrude_start_plane_geometry_fallback_requires_complete_nested_recipe() {
+    fn start_geometry_fixture() -> (DesignFaceOperand, DesignConstructionOperandGroup, Vec<Face>) {
         let operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
             "id": "f3d:test:face-operand#200",
             "scope_record_index": 100,
@@ -3081,22 +3177,346 @@ mod tests {
             color: None,
             tolerance: None,
         }];
+        (operand, group, faces)
+    }
 
+    #[test]
+    fn extrude_start_plane_geometry_fallback_requires_complete_nested_recipe() {
+        let (operand, group, faces) = start_geometry_fixture();
         assert_eq!(
-            extrude_start_plane_geometry_candidates(&group, std::slice::from_ref(&operand), &faces,),
+            extrude_start_plane_geometry_candidates(None, &group, std::slice::from_ref(&operand), &faces,).unwrap(),
             Some(vec![face(10)])
         );
         let mut bound = operand.clone();
         assert!(retain_face_operand_resolution(
+            None,
             &group,
             std::slice::from_mut(&mut bound),
             &face(10)
-        ));
+        ).unwrap());
         assert_eq!(bound.resolved_active_face, Some(face(10)));
 
         let mut incomplete = operand;
         incomplete.recipe_nodes.clear();
-        assert!(extrude_start_plane_geometry_candidates(&group, &[incomplete], &faces).is_none());
+        assert!(extrude_start_plane_geometry_candidates(None, &group, &[incomplete], &faces).unwrap().is_none());
+    }
+
+    #[test]
+    fn start_plane_candidate_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (operand, group, faces) = start_geometry_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            extrude_start_plane_geometry_candidates(
+                Some(&ctx), &group, std::slice::from_ref(&operand), &faces),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d start plane candidate ID"
+                    && failure.dimension == ResourceDimension::RetainedBytes
+        ));
+    }
+
+    #[test]
+    fn start_plane_candidate_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (operand, group, faces) = start_geometry_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            extrude_start_plane_geometry_candidates(
+                Some(&ctx), &group, std::slice::from_ref(&operand), &faces),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d start plane candidate"
+                    && failure.dimension == ResourceDimension::CollectionItems
+        ));
+    }
+
+    #[test]
+    fn retained_start_face_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (mut operand, group, _) = start_geometry_fixture();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            retain_face_operand_resolution(
+                Some(&ctx), &group, std::slice::from_mut(&mut operand), &face(10)),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d retained operand active face"
+                    && failure.dimension == ResourceDimension::RetainedBytes
+        ));
+        assert!(operand.resolved_active_face.is_none());
+    }
+
+    fn start_binder_fixture(
+        nested: bool,
+    ) -> (
+        cadmpeg_ir::features::Feature,
+        Sketch,
+        DesignConstructionOperandGroup,
+        DesignFaceOperand,
+        Vec<Face>,
+        Vec<Surface>,
+    ) {
+        use cadmpeg_ir::features::{
+            BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+            Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation,
+            LinearTermination, PlanarProfileRef, ProfileRef, FaceSelection,
+        };
+        let (nested_operand, mut group, faces) = start_geometry_fixture();
+        group.operand_role = crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeFaces {
+            encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::SelectedStart,
+            usage: crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Start,
+        };
+        let operand = if nested {
+            nested_operand
+        } else {
+            target_plane_operand(&[10])
+        };
+        let surface_id = faces[0].surface.clone();
+        let surfaces = vec![Surface {
+            id: surface_id,
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 2.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                ).unwrap(),
+            )),
+            source_object: None,
+        }];
+        let sketch = Sketch {
+            id: SketchId::mint("synthetic:test:id#start-sketch").unwrap(),
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+                Point3::new(0.0, 0.0, 2.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ).unwrap(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+            native_ref: None,
+        };
+        let feature = Feature {
+            id: cadmpeg_ir::features::FeatureId::mint("test:model:feature#start").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::Extrude {
+                    profile: ProfileRef::Planar(PlanarProfileRef::Sketch(sketch.id.clone())),
+                    direction: ExtrudeDirection::ProfileNormal {},
+                    start: ExtrudeStart::FromFace {
+                        face: FaceSelection::Native(group.id.clone()),
+                        offset: None,
+                    },
+                    extent: ExtrudeExtent::OneSided {
+                        side: ExtrudeSide {
+                            termination: LinearTermination::ThroughAll {},
+                            draft: None,
+                        },
+                    },
+                    op: BooleanOp::NewBody,
+                    solid: None,
+                    face_maker: None,
+                    inner_wire_taper: None,
+                    length_along_profile_normal: None,
+                    allow_multi_profile_faces: None,
+                },
+            )),
+            native_ref: None,
+        };
+        (feature, sketch, group, operand, faces, surfaces)
+    }
+
+    fn assert_start_binder_refusal(
+        operation: &'static str,
+        dimension: cadmpeg_core::decode::ResourceDimension,
+        nested: bool,
+    ) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation};
+
+        let (feature, sketch, group, operand, faces, surfaces) = start_binder_fixture(nested);
+        let run = |ctx: Option<&DecodeContext<'_>>| {
+            let mut features = [feature.clone()];
+            let mut operands = [operand.clone()];
+            let mut resolution = ExtrudeFaceResolution {
+                faces: &faces,
+                surfaces: &surfaces,
+                groups: std::slice::from_ref(&group),
+                operands: &mut operands,
+                linear_tolerance: super::EPS_FACE_TEST_TARGET_LINEAR_E9,
+                angular_tolerance: super::EPS_FACE_TEST_TARGET_ANGULAR_E9,
+            };
+            let result = super::bind_extrude_start_planes(
+                ctx, &mut features, std::slice::from_ref(&sketch), &mut resolution);
+            (result, features)
+        };
+        let (result, features) = run(None);
+        result.unwrap();
+        assert!(matches!(
+            features[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                start: ExtrudeStart::FromFace {
+                    face: FaceSelection::Resolved { .. }, ..
+                }, ..
+            })
+        ));
+        let mut found = false;
+        for limit in 0..256 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            match dimension {
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+                _ => unreachable!(),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            if matches!(run(Some(&ctx)).0,
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.operation == operation && failure.dimension == dimension) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "no resource refusal at {operation}");
+    }
+
+    #[test]
+    fn start_operand_face_id_refuses_retained_limit() {
+        assert_start_binder_refusal(
+            "f3d start plane operand face ID",
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes, false);
+    }
+
+    #[test]
+    fn start_operand_candidate_refuses_collection_limit() {
+        assert_start_binder_refusal(
+            "f3d start plane operand candidate",
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, false);
+    }
+
+    #[test]
+    fn coincident_start_face_refuses_collection_limit() {
+        assert_start_binder_refusal(
+            "f3d coincident start plane face",
+            cadmpeg_core::decode::ResourceDimension::CollectionItems, true);
+    }
+
+    #[test]
+    fn selected_start_face_id_refuses_retained_limit() {
+        assert_start_binder_refusal(
+            "f3d selected start plane face ID",
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes, true);
+    }
+
+    #[test]
+    fn selected_start_native_id_refuses_retained_limit() {
+        assert_start_binder_refusal(
+            "f3d selected start plane native ID",
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes, true);
+    }
+
+    #[test]
+    fn target_native_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::features::{
+            ExtrudeExtent, ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation,
+            LinearTermination,
+        };
+
+        let (mut feature, sketch, mut group, operand, faces, mut surfaces) =
+            start_binder_fixture(false);
+        group.operand_role =
+            crate::records::topology::construction::DesignConstructionOperandRole::ExtrudeFaces {
+                encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::Faces,
+                usage: crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
+            };
+        surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ).unwrap(),
+        ));
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                start,
+                extent: ExtrudeExtent::OneSided { side },
+                ..
+            }) = definition {
+                *start = ExtrudeStart::ProfilePlane {};
+                side.termination = LinearTermination::ToFace {
+                    face: FaceSelection::Native(group.id.clone()),
+                    offset: None,
+                };
+            }
+        });
+        let run = |ctx: Option<&DecodeContext<'_>>| {
+            let mut features = [feature.clone()];
+            let mut operands = [operand.clone()];
+            let mut resolution = ExtrudeFaceResolution {
+                faces: &faces,
+                surfaces: &surfaces,
+                groups: std::slice::from_ref(&group),
+                operands: &mut operands,
+                linear_tolerance: super::EPS_FACE_TEST_TARGET_LINEAR_E9,
+                angular_tolerance: super::EPS_FACE_TEST_TARGET_ANGULAR_E9,
+            };
+            let result = super::bind_extrude_target_faces(
+                ctx, &mut features, std::slice::from_ref(&sketch), &mut resolution);
+            (result, features)
+        };
+        let (result, features) = run(None);
+        result.unwrap();
+        assert!(matches!(
+            features[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                extent: ExtrudeExtent::OneSided {
+                    side: cadmpeg_ir::features::ExtrudeSide {
+                        termination: LinearTermination::ToFace {
+                            face: FaceSelection::Resolved { .. }, ..
+                        },
+                        ..
+                    },
+                }, ..
+            })
+        ));
+        let mut found = false;
+        for limit in 0..256 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            if matches!(run(Some(&ctx)).0,
+                Err(CodecError::ResourceLimit(failure))
+                    if failure.operation == "f3d target face native ID"
+                        && failure.dimension == ResourceDimension::RetainedBytes) {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "no retained-byte refusal at target native ID");
     }
 
     #[test]
@@ -3326,11 +3746,61 @@ mod tests {
                 linear_tolerance: TARGET_LINEAR_TOLERANCE,
                 angular_tolerance: TARGET_ANGULAR_TOLERANCE,
             };
-            extrude_target_plane_candidate(&group, &resolution, origin, sweep_direction)
+            extrude_target_plane_candidate(None, &group, &resolution, origin, sweep_direction).unwrap()
         };
 
         assert_eq!(candidate(&[1, 3, 4]), Some(face(1)));
         assert!(candidate(&[1, 2, 3, 4]).is_none());
         assert!(candidate(&[3, 4]).is_none());
+    }
+
+    #[test]
+    fn target_plane_face_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let surface_id = SurfaceId::mint("test:model:surface#forward").unwrap();
+        let faces = [Face {
+            id: face(1),
+            shell: ShellId::mint("test:model:shell#shell").unwrap(),
+            surface: surface_id.clone(),
+            sense: Sense::Forward,
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+            name: None,
+            color: None,
+            tolerance: None,
+        }];
+        let surfaces = [Surface {
+            id: surface_id,
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(3.0, 0.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                ).unwrap(),
+            )),
+            source_object: None,
+        }];
+        let mut operands = [target_plane_operand(&[1])];
+        let resolution = ExtrudeFaceResolution {
+            faces: &faces,
+            surfaces: &surfaces,
+            groups: &[],
+            operands: &mut operands,
+            linear_tolerance: super::EPS_FACE_TEST_TARGET_LINEAR_E9,
+            angular_tolerance: super::EPS_FACE_TEST_TARGET_ANGULAR_E9,
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(
+            extrude_target_plane_candidate(
+                Some(&ctx), &target_face_group(), &resolution,
+                Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d target plane face ID"
+                    && failure.dimension == ResourceDimension::RetainedBytes
+        ));
     }
 }

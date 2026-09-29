@@ -2735,15 +2735,17 @@ impl<'a> F3dDecodeSession<'a> {
             angular_tolerance: self.ir.tolerances.angular.get(),
         };
         crate::design::face_resolve::bind_extrude_start_planes(
+            Some(self.ctx),
             &mut self.ir.model.features,
             &self.ir.model.sketches,
             &mut extrude_face_resolution,
-        );
+        )?;
         crate::design::face_resolve::bind_extrude_target_faces(
+            Some(self.ctx),
             &mut self.ir.model.features,
             &self.ir.model.sketches,
             &mut extrude_face_resolution,
-        );
+        )?;
         self.ir.model.sketch_constraints = crate::design::constraints::project_sketch_constraints(
             Some(self.ctx),
             &self.native.design_sketch_placements,
