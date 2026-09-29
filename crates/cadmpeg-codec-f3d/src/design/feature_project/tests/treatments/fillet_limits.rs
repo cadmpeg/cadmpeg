@@ -74,18 +74,12 @@ variable_law_limit_test!(variable_fillet_middle_parameters_refuse_collection_lim
 variable_law_limit_test!(variable_fillet_radius_points_refuse_collection_limit,
     "f3d variable Fillet radius point");
 
-fn assert_resolved_assignment_limit(operation: &'static str) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
+fn variable_assignment() -> DesignFilletRadiusGroup {
     use crate::records::topology::fillet::{DesignFilletMidpoint, DesignFilletRadiusLaw};
 
-    let parameters = variable_law_parameters();
-    let controls = parameters.iter().enumerate()
-        .map(|(ordinal, parameter)| (u32::try_from(ordinal).unwrap(), parameter))
-        .collect::<Vec<_>>();
-    let assignment = DesignFilletRadiusGroup {
-        id: "test".to_owned(),
-        scope_record_index: 1,
+    DesignFilletRadiusGroup {
+        id: "f3d:native/BulkStream.dat:fillet-group#1".to_owned(),
+        scope_record_index: 12,
         group_ordinal: 0,
         group_record_index: 2,
         edge_operand_record_indices: Vec::new(),
@@ -98,7 +92,18 @@ fn assert_resolved_assignment_limit(operation: &'static str) {
             }],
         },
         tangency_weight_parameter_record_index: None,
-    };
+    }
+}
+
+fn assert_resolved_assignment_limit(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let parameters = variable_law_parameters();
+    let controls = parameters.iter().enumerate()
+        .map(|(ordinal, parameter)| (u32::try_from(ordinal).unwrap(), parameter))
+        .collect::<Vec<_>>();
+    let assignment = variable_assignment();
     let mut found = false;
     for limit in 0..64 {
         let arena = DecodeArena::new();
@@ -134,6 +139,82 @@ resolved_assignment_limit_test!(fillet_variable_control_refuses_collection_limit
     "f3d Fillet variable control");
 resolved_assignment_limit_test!(fillet_resolved_assignment_refuses_collection_limit,
     "f3d Fillet resolved assignment");
+
+fn assert_projected_fillet_limit(
+    operation: &'static str,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let scope = localized_fillet_scope();
+    let native_scope = crate::ids::native_stream(&scope.id).unwrap();
+    let parameters = variable_law_parameters();
+    let controls = parameters.iter().enumerate()
+        .map(|(ordinal, parameter)| (u32::try_from(ordinal).unwrap(), parameter))
+        .collect::<Vec<_>>();
+    let assignment = variable_assignment();
+    let inputs = crate::design::feature_project::ProjectInputs {
+        native: &parameters,
+        owners: &[],
+        scopes: std::slice::from_ref(&scope),
+        timelines: &[],
+        construction_groups: &[],
+        fillet_radius_groups: std::slice::from_ref(&assignment),
+        edge_operands: &[],
+        edge_identity_operands: &[],
+        edge_treatment_vertex_operands: &[],
+        entity_selection_operands: &[],
+        curve_identities: &[],
+        face_operands: &[],
+        body_recipe_operands: &[],
+        legacy_loft_body_carriers: &[],
+        placements: &[],
+        body_bindings: &[],
+        component_naming_spaces: &[],
+        histories: &[],
+    };
+    let mut found = false;
+    for limit in 0..128 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => unreachable!(),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(crate::design::feature_project::project_fillet_arm(
+            Some(&ctx), &inputs, &scope, &controls, native_scope),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation && failure.dimension == dimension) {
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "no resource refusal at {operation}");
+}
+
+#[test]
+fn fillet_scope_assignment_refuses_collection_limit() {
+    assert_projected_fillet_limit(
+        "f3d Fillet scope assignment",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn fillet_projected_group_refuses_collection_limit() {
+    assert_projected_fillet_limit(
+        "f3d Fillet projected group",
+        cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn fillet_fallback_group_id_refuses_retained_limit() {
+    assert_projected_fillet_limit(
+        "f3d Fillet fallback edge group ID",
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+}
 
 #[test]
 fn fillet_radius_group_collections_and_ids_refuse_limits() {
