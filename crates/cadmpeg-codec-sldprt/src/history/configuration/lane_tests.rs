@@ -868,7 +868,9 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
             terminal_feature_ref: Some("producer-native".into()),
         });
 
-    project_configuration_supplemental_edge_selections(&mut ir, &[lane]).unwrap();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    project_configuration_supplemental_edge_selections(&ctx, &mut ir, &[lane]).unwrap();
 
     let state = &ir.model.configurations[0].feature_states[&consumer_id];
     assert_eq!(state.dependencies.as_slice(), vec![producer_id.clone()]);

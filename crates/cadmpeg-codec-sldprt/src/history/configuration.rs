@@ -143,6 +143,7 @@ pub(crate) fn project_compact_and_generated(
         features, projection, lanes,
     )?;
     crate::resolved_features::projections::project_compact_edge_selections(
+        ctx,
         features, projection, lanes,
     )?;
     crate::resolved_features::projections::project_compact_surface_selections(
@@ -335,6 +336,7 @@ pub(crate) fn project_configuration_design_states(
 /// Project edge operands carried only by supplemental config-object lanes into
 /// the matching configuration-local feature snapshots.
 pub(crate) fn project_configuration_supplemental_edge_selections(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -363,6 +365,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             apply_configuration_state(feature, state);
         }
         crate::resolved_features::projections::project_compact_edge_selections(
+            ctx,
             &mut features,
             &[],
             std::slice::from_ref(lane),

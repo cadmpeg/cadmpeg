@@ -206,7 +206,14 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     };
     let mut features = vec![producer, target];
 
-    project_compact_edge_selections(&mut features, &[], &[lane]).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("edge selection fixture context");
+    project_compact_edge_selections(&ctx, &mut features, &[], &[lane]).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         features[1].evaluation.definition()

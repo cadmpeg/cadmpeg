@@ -24,7 +24,7 @@ use crate::records::{
     FeatureInputBodySelection, FeatureInputEdgeSelection, FeatureInputLane,
     FeatureInputRelationFamily, FeatureInputScalarRole, FeatureInputSurfaceSelection,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -686,24 +686,49 @@ pub(crate) fn project_compact_body_selections(
 }
 
 pub(crate) fn project_compact_edge_selections(
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let feature_ids_by_native = features
-        .iter()
-        .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
-        .collect::<HashMap<_, _>>();
-    let selections = lanes.iter().flat_map(|lane| &lane.edge_selections).fold(
-        HashMap::<&str, Vec<&FeatureInputEdgeSelection>>::new(),
-        |mut by_feature, selection| {
-            by_feature
-                .entry(selection.feature_ref.as_str())
-                .or_default()
-                .push(selection);
-            by_feature
-        },
-    );
+    const INDEX_OPERATION: &str = "index SLDPRT compact edge selections";
+    let mut feature_ids_by_native = HashMap::new();
+    for feature in features.iter() {
+        let Some(native_ref) = feature.native_ref.as_ref() else {
+            continue;
+        };
+        ctx.charge_work(1, INDEX_OPERATION)?;
+        let mut id_text = String::new();
+        ctx.reserve_retained_string(&mut id_text, feature.id.as_str().len(), INDEX_OPERATION)?;
+        id_text.push_str(feature.id.as_str());
+        let id = cadmpeg_ir::features::FeatureId::mint(id_text)
+            .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
+        if let Some(previous) = feature_ids_by_native.get_mut(native_ref) {
+            *previous = id;
+            continue;
+        }
+        ctx.charge_collection_items(1, INDEX_OPERATION)?;
+        feature_ids_by_native.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX)
+        })?;
+        let mut native = String::new();
+        ctx.reserve_retained_string(&mut native, native_ref.len(), INDEX_OPERATION)?;
+        native.push_str(native_ref);
+        feature_ids_by_native.insert(native, id);
+    }
+    let mut selections = HashMap::<&str, Vec<&FeatureInputEdgeSelection>>::new();
+    for selection in lanes.iter().flat_map(|lane| &lane.edge_selections) {
+        ctx.charge_work(1, INDEX_OPERATION)?;
+        if !selections.contains_key(selection.feature_ref.as_str()) {
+            ctx.charge_collection_items(1, INDEX_OPERATION)?;
+            selections.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        let group = selections.entry(selection.feature_ref.as_str()).or_default();
+        ctx.reserve_collection_vec(group, 1, INDEX_OPERATION)?;
+        group.push(selection);
+    }
     for feature in features {
         let feature_id = &feature.id;
         let dependencies = &mut feature.dependencies;
