@@ -49,7 +49,8 @@ fn alias_row_retained_limit_refuses_json_record() {
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
     crate::test_support::with_service_context(|ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace.set_arena(ctx, arena_name, std::slice::from_ref(row))
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(row))
             .expect("service profile admits alias row");
     });
 }
@@ -57,7 +58,10 @@ fn alias_row_retained_limit_refuses_json_record() {
 #[test]
 fn value_schema_selection_borrowed_wire_preserves_json_bytes() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
-    let selection = native.value_blocks[0].schema_selections.first().expect("selection");
+    let selection = native.value_blocks[0]
+        .schema_selections
+        .first()
+        .expect("selection");
     let owned: crate::native::CatiaValueSchemaSelectionWire = selection.clone().into();
     assert_eq!(
         serde_json::to_vec(selection).expect("borrowed selection JSON"),
@@ -68,7 +72,10 @@ fn value_schema_selection_borrowed_wire_preserves_json_bytes() {
 #[test]
 fn value_schema_selection_retained_limit_refuses_json_record() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
-    let selection = native.value_blocks[0].schema_selections.first().expect("selection");
+    let selection = native.value_blocks[0]
+        .schema_selections
+        .first()
+        .expect("selection");
     let arena_name = "value_schema_selections";
     let json_len = serde_json::to_vec(selection).expect("selection JSON").len();
     let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
@@ -80,7 +87,8 @@ fn value_schema_selection_retained_limit_refuses_json_record() {
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
     crate::test_support::with_service_context(|ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace.set_arena(ctx, arena_name, std::slice::from_ref(selection))
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(selection))
             .expect("service profile admits selection");
     });
 }

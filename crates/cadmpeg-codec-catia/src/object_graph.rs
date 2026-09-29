@@ -446,9 +446,19 @@ enum PayloadFieldWire {
 
 #[derive(Serialize)]
 enum PayloadFieldWireRef<'a> {
-    Atom { value: u32, offset: usize },
-    Reference { value: u32, offset: usize },
-    Scalar { tag: u8, value: u32, offset: usize },
+    Atom {
+        value: u32,
+        offset: usize,
+    },
+    Reference {
+        value: u32,
+        offset: usize,
+    },
+    Scalar {
+        tag: u8,
+        value: u32,
+        offset: usize,
+    },
     Blob {
         declared_len: usize,
         #[serde(with = "cadmpeg_ir::bytes")]
@@ -466,7 +476,9 @@ enum PayloadFieldWireRef<'a> {
         items: &'a [ListItem],
         offset: usize,
     },
-    Sentinel { offset: usize },
+    Sentinel {
+        offset: usize,
+    },
     Terminator,
 }
 
@@ -476,21 +488,39 @@ impl Serialize for PayloadField {
         S: serde::Serializer,
     {
         let view = match self {
-            Self::Atom { value, offset } => PayloadFieldWireRef::Atom { value: *value, offset: *offset },
-            Self::Reference { value, offset } => PayloadFieldWireRef::Reference { value: *value, offset: *offset },
-            Self::Scalar { tag, value, offset } => PayloadFieldWireRef::Scalar { tag: *tag, value: *value, offset: *offset },
+            Self::Atom { value, offset } => PayloadFieldWireRef::Atom {
+                value: *value,
+                offset: *offset,
+            },
+            Self::Reference { value, offset } => PayloadFieldWireRef::Reference {
+                value: *value,
+                offset: *offset,
+            },
+            Self::Scalar { tag, value, offset } => PayloadFieldWireRef::Scalar {
+                tag: *tag,
+                value: *value,
+                offset: *offset,
+            },
             Self::Blob { bytes, offset } => PayloadFieldWireRef::Blob {
                 declared_len: bytes.len(),
                 bytes,
                 offset: *offset,
             },
-            Self::BulkTable { count, rows, offset } => PayloadFieldWireRef::BulkTable {
+            Self::BulkTable {
+                count,
+                rows,
+                offset,
+            } => PayloadFieldWireRef::BulkTable {
                 count: *count,
                 table_count: rows.len(),
                 rows,
                 offset: *offset,
             },
-            Self::List { declared_count, items, offset } => PayloadFieldWireRef::List {
+            Self::List {
+                declared_count,
+                items,
+                offset,
+            } => PayloadFieldWireRef::List {
                 declared_count: *declared_count,
                 items,
                 offset: *offset,

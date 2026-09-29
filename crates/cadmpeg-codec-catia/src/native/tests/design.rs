@@ -40,14 +40,18 @@ fn design_parallel_table_borrowed_wire_preserves_json_bytes() {
 
 #[test]
 fn design_parallel_table_retained_limit_refuses_json_record() {
-    let table = parallel_table();
     #[derive(serde::Serialize)]
     struct Record<'a> {
         id: &'static str,
         #[serde(flatten)]
         table: &'a crate::native::CatiaDesignParallelReferenceTable,
     }
-    let record = Record { id: "catia:test:parallel-table#0", table: &table };
+    let table = parallel_table();
+
+    let record = Record {
+        id: "catia:test:parallel-table#0",
+        table: &table,
+    };
     let arena_name = "parallel_tables";
     let json_len = serde_json::to_vec(&record).expect("table JSON").len();
     let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
@@ -59,7 +63,8 @@ fn design_parallel_table_retained_limit_refuses_json_record() {
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
     crate::test_support::with_service_context(|ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(&record))
             .expect("service profile admits table");
     });
 }
@@ -89,14 +94,18 @@ fn design_reference_cell_borrowed_wire_preserves_json_bytes() {
 
 #[test]
 fn design_reference_cell_retained_limit_refuses_json_record() {
-    let cell = design_reference_cell();
     #[derive(serde::Serialize)]
     struct Record<'a> {
         id: &'static str,
         #[serde(flatten)]
         cell: &'a crate::native::CatiaDesignReferenceCell,
     }
-    let record = Record { id: "catia:test:reference-cell#0", cell: &cell };
+    let cell = design_reference_cell();
+
+    let record = Record {
+        id: "catia:test:reference-cell#0",
+        cell: &cell,
+    };
     let arena_name = "design_reference_cells";
     let json_len = serde_json::to_vec(&record).expect("cell JSON").len();
     let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
@@ -108,7 +117,8 @@ fn design_reference_cell_retained_limit_refuses_json_record() {
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
     crate::test_support::with_service_context(|ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(&record))
             .expect("service profile admits cell");
     });
 }

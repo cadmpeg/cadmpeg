@@ -191,7 +191,8 @@ mod tests {
         assert!(error.to_string().contains("RetainedBytes"), "{error}");
         crate::test_support::with_service_context(|ctx| {
             let mut namespace = cadmpeg_ir::NativeNamespace::default();
-            namespace.set_arena(ctx, arena_name, std::slice::from_ref(record))
+            namespace
+                .set_arena(ctx, arena_name, std::slice::from_ref(record))
                 .expect("service profile admits control record");
         });
     }

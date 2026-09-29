@@ -17,14 +17,18 @@ fn inline_bytes_borrowed_wire_preserves_json_bytes() {
 
 #[test]
 fn inline_bytes_retained_limit_refuses_json_record() {
-    let value = InlineBytes::try_from(vec![1, 2, 3]).expect("inline bytes");
     #[derive(serde::Serialize)]
     struct Record<'a> {
         id: &'static str,
         #[serde(flatten)]
         value: &'a InlineBytes,
     }
-    let record = Record { id: "catia:test:inline-bytes#0", value: &value };
+    let value = InlineBytes::try_from(vec![1, 2, 3]).expect("inline bytes");
+
+    let record = Record {
+        id: "catia:test:inline-bytes#0",
+        value: &value,
+    };
     let arena_name = "inline_values";
     let json_len = serde_json::to_vec(&record).expect("inline JSON").len();
     let limit = u64::try_from(json_len + arena_name.len() - 1).expect("small JSON");
@@ -36,7 +40,8 @@ fn inline_bytes_retained_limit_refuses_json_record() {
     assert!(error.to_string().contains("RetainedBytes"), "{error}");
     crate::test_support::with_service_context(|ctx| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        namespace.set_arena(ctx, arena_name, std::slice::from_ref(&record))
+        namespace
+            .set_arena(ctx, arena_name, std::slice::from_ref(&record))
             .expect("service profile admits inline bytes");
     });
 }
