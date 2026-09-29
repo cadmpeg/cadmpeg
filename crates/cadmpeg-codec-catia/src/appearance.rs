@@ -9,8 +9,8 @@ use cadmpeg_ir::CadIr;
 
 use crate::families::standard::fbb::standard_face_colors;
 use crate::native::CatiaNative;
-use cadmpeg_ir::hash::LowerHex;
 use crate::value_block::ValueField;
+use cadmpeg_ir::hash::LowerHex;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct TransferResult {

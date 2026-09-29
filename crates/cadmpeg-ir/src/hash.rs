@@ -370,7 +370,10 @@ mod tests {
         ] {
             let hex = super::LowerHex(bytes);
             assert_eq!(hex.to_string(), expected);
-            assert_eq!(serde_json::to_value(&hex).unwrap(), serde_json::json!(expected));
+            assert_eq!(
+                serde_json::to_value(&hex).unwrap(),
+                serde_json::json!(expected)
+            );
         }
     }
 

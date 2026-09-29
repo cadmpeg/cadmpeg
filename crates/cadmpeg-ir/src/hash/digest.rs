@@ -116,9 +116,11 @@ mod tests {
         policy.limits.max_retained_bytes = 63;
         let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
         let result = Sha256Digest::digest_for_decode(&ctx, b"abc", "digest test");
-        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "digest test" && limit.additional == 64));
+                && limit.operation == "digest test" && limit.additional == 64)
+        );
     }
 
     #[test]
@@ -139,9 +141,11 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(b"abc", &arena, &policy).unwrap();
-        assert!(matches!(Sha256Digest::digest_for_decode(&ctx, b"abc", "digest test"),
+        assert!(
+            matches!(Sha256Digest::digest_for_decode(&ctx, b"abc", "digest test"),
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 3));
+            if limit.dimension == ResourceDimension::WorkUnits && limit.additional == 3)
+        );
     }
 
     #[cfg(feature = "schema")]

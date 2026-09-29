@@ -2463,7 +2463,9 @@ fn admit_assembly_placement(
             .bytes()
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
     {
-        Some("suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters")
+        Some(
+            "suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters",
+        )
     } else {
         None
     };

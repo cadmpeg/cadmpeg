@@ -1681,8 +1681,12 @@ fn uppercase_placement_digest_refuses_before_failure_text_creation() {
     .expect("placement wire");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        u64::try_from("suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters".len() - 1).expect("detail length fits");
+    policy.limits.max_retained_bytes = u64::try_from(
+        "suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters"
+            .len()
+            - 1,
+    )
+    .expect("detail length fits");
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
     let mut issues = Vec::new();
     assert!(matches!(
