@@ -140,7 +140,7 @@ pub(crate) fn project_compact_and_generated(
 ) -> Result<(), cadmpeg_core::CodecError> {
     crate::resolved_features::projections::project_compact_body_selections(ctx, features, lanes)?;
     crate::resolved_features::terminations::project_compact_combine_paths(
-        features, projection, lanes,
+        ctx, features, projection, lanes,
     )?;
     crate::resolved_features::projections::project_compact_edge_selections(
         ctx,

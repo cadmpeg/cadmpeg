@@ -129,30 +129,31 @@ fn charge_component_text_comparison(
 }
 
 pub(super) fn component_path_terminal_feature<'a>(
+    ctx: &DecodeContext<'_>,
     components: &[FeatureInputComponentPathEntry],
     features: impl IntoIterator<Item = &'a crate::records::Feature>,
-) -> Option<String> {
+) -> Result<Option<String>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT component path terminal";
     let mut by_source = HashMap::<u32, Option<&str>>::new();
     for feature in features {
-        let Some(source_id) = feature.source_value() else {
-            continue;
-        };
-        by_source
-            .entry(source_id)
-            .and_modify(|candidate| *candidate = None)
-            .or_insert(Some(feature.id.as_str()));
+        ctx.charge_work(1, OPERATION)?;
+        let Some(source_id) = feature.source_value() else { continue; };
+        if let Some(candidate) = by_source.get_mut(&source_id) { *candidate = None; }
+        else {
+            reserve_component_map(ctx, &mut by_source, OPERATION)?;
+            by_source.insert(source_id, Some(feature.id.as_str()));
+        }
     }
     for component in components.iter().rev() {
-        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else {
-            continue;
-        };
+        ctx.charge_work(1, OPERATION)?;
+        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else { continue; };
         match by_source.get(&source_id) {
-            Some(Some(feature)) => return Some((*feature).to_string()),
-            Some(None) => return None,
+            Some(Some(feature)) => return Ok(Some(copy_component_text(ctx, feature)?)),
+            Some(None) => return Ok(None),
             None => {}
         }
     }
-    None
+    Ok(None)
 }
 
 #[derive(Clone, Copy)]

@@ -2433,9 +2433,9 @@ fn draft_face_selection(
         ctx.charge_work(u64::try_from(history_count)
             .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         let Some((producer, local_id)) = component_path_terminal_feature(
-            path,
+            ctx, path,
             histories.iter().flat_map(|history| &history.features),
-        )
+        )?
             .filter(|producer| producer != consumer_ref)
             .and_then(|producer| {
                 feature_ids_by_native
