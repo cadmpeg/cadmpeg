@@ -889,29 +889,32 @@ fn resolve_rm_face_colors(
     records: &[super::parasolid::ParasolidDeltasRecord],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
 ) -> Result<Vec<(String, Color)>, CodecError> {
-    let definitions_by_id = definitions
-        .iter()
-        .map(|definition| (definition.id.as_str(), definition))
-        .collect::<BTreeMap<_, _>>();
-    resolve_rm_face_color_bindings(ctx, face_ids, assignments, definitions, records, delta_pairs)?
-        .into_iter()
-        .filter_map(|binding| {
-            let definition = definitions_by_id.get(binding.color_definition.as_str())?;
-            Some((
-                binding.face_id,
-                Color::new(
-                    definition.components[0].0.value(),
-                    definition.components[1].0.value(),
-                    definition.components[2].0.value(),
-                    1.0,
-                )
-                .ok_or_else(|| {
-                    CodecError::Malformed("RM color components must be in [0, 1]".into())
-                }),
-            ))
-        })
-        .map(|(id, color)| color.map(|color| (id, color)))
-        .collect()
+    let bindings =
+        resolve_rm_face_color_bindings(ctx, face_ids, assignments, definitions, records, delta_pairs)?;
+    let mut colors = Vec::new();
+    for binding in bindings {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(definitions.len()),
+            "NX RM face color definition lookup",
+        )?;
+        let Some(definition) = definitions.iter().rev().find(|definition| definition.id.as_str() == binding.color_definition.as_str()) else {
+            continue;
+        };
+        let color = Color::new(
+            definition.components[0].0.value(),
+            definition.components[1].0.value(),
+            definition.components[2].0.value(),
+            1.0,
+        ).ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
+        ctx.charge_collection_items(1, "NX resolved RM face colors")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Color)>()),
+            "NX resolved RM face colors",
+        )?;
+        reserve_attach_vec(ctx, &mut colors, 1, "NX resolved RM face colors")?;
+        colors.push((binding.face_id, color));
+    }
+    Ok(colors)
 }
 
 fn resolve_rm_face_color_bindings(

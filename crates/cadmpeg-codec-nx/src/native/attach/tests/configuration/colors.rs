@@ -250,9 +250,15 @@ fn rm_source_color_bindings_refuse_work_limit() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
-fn face_color_binding_result(
+enum FaceColorRoute {
+    Bindings,
+    Colors,
+}
+
+fn face_color_projection_result(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
-) -> Result<Vec<RmFaceColorBinding>, cadmpeg_core::CodecError> {
+    route: FaceColorRoute,
+) -> Result<(), cadmpeg_core::CodecError> {
     let definition = crate::native::om::PartColorDefinition {
         id: "nx:test:color#201".into(),
         color_table: "nx:test:table#0".into(),
@@ -303,26 +309,63 @@ fn face_color_binding_result(
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     configure(&mut policy);
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    resolve_rm_face_color_bindings(&ctx, &face_ids, &[assignment], &[definition], &[record], &pairs)
+    match route {
+        FaceColorRoute::Bindings => resolve_rm_face_color_bindings(
+            &ctx, &face_ids, &[assignment], &[definition], &[record], &pairs,
+        ).map(|_| ()),
+        FaceColorRoute::Colors => resolve_rm_face_colors(
+            &ctx, &face_ids, &[assignment], &[definition], &[record], &pairs,
+        ).map(|_| ()),
+    }
 }
 
 #[test]
 fn rm_face_color_bindings_refuse_collection_limit() {
-    let error = face_color_binding_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    let error = face_color_projection_result(|policy| policy.limits.max_collection_items = 0, FaceColorRoute::Bindings).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
 fn rm_face_color_bindings_refuse_retained_limit() {
-    let error = face_color_binding_result(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    let error = face_color_projection_result(|policy| policy.limits.max_retained_bytes = 0, FaceColorRoute::Bindings).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
 }
 
 #[test]
 fn rm_face_color_bindings_refuse_work_limit() {
-    let error = face_color_binding_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    let error = face_color_projection_result(|policy| policy.limits.max_work_units = 0, FaceColorRoute::Bindings).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
+#[test]
+fn rm_face_colors_refuse_output_collection_limit() {
+    let error = face_color_projection_result(|policy| policy.limits.max_collection_items = 1, FaceColorRoute::Colors).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "NX resolved RM face colors"));
+}
+
+#[test]
+fn rm_face_colors_refuse_output_retained_limit() {
+    let bytes = std::mem::size_of::<RmFaceColorBinding>()
+        + "nx:s0:face#99".len()
+        + "nx:test:color#201".len();
+    let error = face_color_projection_result(
+        |policy| policy.limits.max_retained_bytes = u64::try_from(bytes).unwrap(),
+        FaceColorRoute::Colors,
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "NX resolved RM face colors"));
+}
+
+#[test]
+fn rm_face_colors_refuse_definition_lookup_work_limit() {
+    let error = face_color_projection_result(|policy| policy.limits.max_work_units = 5, FaceColorRoute::Colors).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "NX RM face color definition lookup"));
 }
