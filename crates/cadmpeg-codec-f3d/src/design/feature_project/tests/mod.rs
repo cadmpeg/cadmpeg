@@ -23,6 +23,7 @@ mod split;
 mod surface;
 mod timeline;
 mod treatments;
+mod work_point_binding_limits;
 
 #[test]
 fn audit_regression_near_half_turn_retains_negative_axis() {

@@ -204,12 +204,12 @@ fn extrude_spatial_selection_ref_refuses_retained_limit() {
     policy.limits.max_retained_bytes = expected.len() as u64 - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::design::feature_project::copy_feature_record_ref(
-        Some(&ctx), stream, 42, "f3d extrude spatial selection ref",
+        Some(&ctx), stream, 42, ":design-record-header#", "f3d extrude spatial selection ref",
     ).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == "f3d extrude spatial selection ref"));
     assert_eq!(crate::design::feature_project::copy_feature_record_ref(
-        None, stream, 42, "f3d extrude spatial selection ref",
+        None, stream, 42, ":design-record-header#", "f3d extrude spatial selection ref",
     ).unwrap(), expected);
 }
