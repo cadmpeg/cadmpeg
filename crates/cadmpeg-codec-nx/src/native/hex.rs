@@ -3,30 +3,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// SHA-256 text emitted from a fixed digest without constructing a String.
-pub(super) struct Sha256WireDigest([u8; 32]);
-
-impl Sha256WireDigest {
-    pub(super) fn of(bytes: &[u8]) -> Self {
-        Self(cadmpeg_ir::hash::sha256(bytes))
-    }
-}
-
-impl std::fmt::Display for Sha256WireDigest {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for byte in self.0 {
-            write!(formatter, "{byte:02x}")?;
-        }
-        Ok(())
-    }
-}
-
-impl Serialize for Sha256WireDigest {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
 /// A saved-toggle identity encoded as 32 lowercase hexadecimal digits.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(try_from = "String")]

@@ -3,7 +3,7 @@
 
 use super::{ParasolidDeltasTermUseNumericTail, ParasolidDeltasTerminalNullReferences};
 use crate::deltas::tails::{NullTailForm, NumericTailValues};
-use crate::native::hex::Sha256WireDigest;
+use cadmpeg_ir::hash::{sha256, LowerHex};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -23,7 +23,7 @@ struct NullTailRef<'a> {
     stream_ordinal: u32,
     references: &'static [u32],
     byte_len: u64,
-    sha256: Sha256WireDigest,
+    sha256: LowerHex<'a>,
     inflated_offset: u64,
 }
 
@@ -34,7 +34,7 @@ impl Serialize for ParasolidDeltasTerminalNullReferences {
             stream_ordinal: self.stream_ordinal,
             references: self.form.references(),
             byte_len: self.form.raw().len() as u64,
-            sha256: Sha256WireDigest::of(self.form.raw()),
+            sha256: LowerHex(&sha256(self.form.raw())),
             inflated_offset: self.inflated_offset,
         }
         .serialize(serializer)
@@ -94,7 +94,7 @@ struct NumericTailRef<'a> {
     term_use_count: u32,
     values: &'a [cadmpeg_ir::scalar::FiniteReal],
     byte_len: u64,
-    sha256: Sha256WireDigest,
+    sha256: LowerHex<'a>,
     inflated_offset: u64,
 }
 
@@ -108,7 +108,7 @@ impl Serialize for ParasolidDeltasTermUseNumericTail {
             term_use_count: self.values.term_use_count(),
             values: self.values.values(),
             byte_len: self.values.byte_len() as u64,
-            sha256: Sha256WireDigest::of(&bytes[..len]),
+            sha256: LowerHex(&sha256(&bytes[..len])),
             inflated_offset: self.inflated_offset,
         }
         .serialize(serializer)

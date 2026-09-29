@@ -30,7 +30,7 @@ use cadmpeg_ir::geometry::{
     IntcurveSupportSide, ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceCurveFamily, SurfaceGeometry,
 };
-use cadmpeg_ir::hash::sha256;
+use cadmpeg_ir::hash::{sha256, LowerHex};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
     RegionId, ShellId, SurfaceId, UnknownId, VertexId,
@@ -1782,7 +1782,7 @@ fn unknown_stream_record(
                 "hash NX unknown stream",
             )?;
             let digest = ctx.format_retained(
-                format_args!("{}", HexDigest(sha256(&stream.inflated))),
+                format_args!("{}", LowerHex(&sha256(&stream.inflated))),
                 "nx unknown stream digest",
             )?;
             Ok(UnknownRecord::unavailable(
@@ -1959,7 +1959,7 @@ pub(super) fn source_meta(
             ctx,
             &mut attributes,
             format_args!("jpeg_preview_{preview_count}_sha256"),
-            HexDigest(sha256(payload)),
+            LowerHex(&sha256(payload)),
         )?;
         preview_count += 1;
     }
@@ -2079,17 +2079,6 @@ struct CountBytes(usize);
 impl fmt::Write for CountBytes {
     fn write_str(&mut self, text: &str) -> fmt::Result {
         self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
-        Ok(())
-    }
-}
-
-struct HexDigest([u8; 32]);
-
-impl Display for HexDigest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for byte in self.0 {
-            write!(f, "{byte:02x}")?;
-        }
         Ok(())
     }
 }
