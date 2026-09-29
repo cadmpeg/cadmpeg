@@ -91,9 +91,9 @@ pub(crate) fn surface_selection_producer_features(
     producers
 }
 
-pub(super) fn component_path_terminal_feature(
+pub(super) fn component_path_terminal_feature<'a>(
     components: &[FeatureInputComponentPathEntry],
-    features: &[crate::records::Feature],
+    features: impl IntoIterator<Item = &'a crate::records::Feature>,
 ) -> Option<String> {
     let mut by_source = HashMap::<u32, Option<&str>>::new();
     for feature in features {

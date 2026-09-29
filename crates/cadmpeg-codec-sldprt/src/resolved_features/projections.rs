@@ -1718,11 +1718,6 @@ pub(crate) fn project_draft_operands(
         .iter()
         .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
         .collect::<HashMap<_, _>>();
-    let history_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .cloned()
-        .collect::<Vec<_>>();
     let mut candidates = HashMap::<String, Vec<DraftOperands>>::new();
     for lane in lanes {
         for (feature, operands) in draft_operand_candidates(ctx, histories, lane)? {
@@ -1771,7 +1766,7 @@ pub(crate) fn project_draft_operands(
                     let plane = draft_face_selection(
                         std::slice::from_ref(path),
                         native_ref,
-                        &history_features,
+                        histories,
                         &feature_ids_by_native,
                         &mut feature.dependencies,
                     );
@@ -1788,7 +1783,7 @@ pub(crate) fn project_draft_operands(
                     let tool = draft_face_selection(
                         paths,
                         native_ref,
-                        &history_features,
+                        histories,
                         &feature_ids_by_native,
                         &mut feature.dependencies,
                     );
@@ -1806,7 +1801,7 @@ pub(crate) fn project_draft_operands(
                 *faces = draft_face_selection(
                     &first.faces,
                     native_ref,
-                    &history_features,
+                    histories,
                     &feature_ids_by_native,
                     &mut feature.dependencies,
                 );
@@ -1829,7 +1824,7 @@ pub(crate) fn project_draft_operands(
 fn draft_face_selection(
     paths: &[Vec<crate::records::FeatureInputComponentPathEntry>],
     consumer_ref: &str,
-    history_features: &[crate::records::Feature],
+    histories: &[crate::records::FeatureHistory],
     feature_ids_by_native: &HashMap<String, cadmpeg_ir::features::FeatureId>,
     dependencies: &mut cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
 ) -> cadmpeg_ir::features::FaceSelection {
@@ -1850,7 +1845,10 @@ fn draft_face_selection(
     let mut generated = Vec::new();
     let mut generated_dependencies = Vec::new();
     for path in paths {
-        let Some((producer, local_id)) = component_path_terminal_feature(path, history_features)
+        let Some((producer, local_id)) = component_path_terminal_feature(
+            path,
+            histories.iter().flat_map(|history| &history.features),
+        )
             .filter(|producer| producer != consumer_ref)
             .and_then(|producer| {
                 feature_ids_by_native
