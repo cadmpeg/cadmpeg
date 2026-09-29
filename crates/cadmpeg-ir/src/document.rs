@@ -1050,7 +1050,7 @@ impl Model {
         owner: CurveId,
         procedural: ProceduralCurve,
     ) -> Result<(), ProceduralCarrierError> {
-        match self.attach_procedural_curve(owner, procedural, |id| {
+        match self.attach_procedural_curve(&owner, procedural, |id| {
             Ok::<_, std::convert::Infallible>(id.clone())
         }) {
             Ok(result) => result,
@@ -1062,12 +1062,14 @@ impl Model {
     pub fn add_procedural_curve_charged(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        owner: CurveId,
+        owner: &CurveId,
         procedural: ProceduralCurve,
     ) -> Result<Result<(), ProceduralCarrierError>, cadmpeg_core::CodecError> {
         self.attach_procedural_curve(owner, procedural, |id| {
-            let bytes = ctx.copy_retained(id.as_str().as_bytes(),
-                "ir_procedural_curve_construction_id")?;
+            let bytes = ctx.copy_retained(
+                id.as_str().as_bytes(),
+                "ir_procedural_curve_construction_id",
+            )?;
             let value = String::from_utf8(bytes).map_err(cadmpeg_core::CodecError::malformed)?;
             ProceduralCurveId::mint(value).map_err(cadmpeg_core::CodecError::malformed)
         })
@@ -1075,7 +1077,7 @@ impl Model {
 
     fn attach_procedural_curve<E>(
         &mut self,
-        owner: CurveId,
+        owner: &CurveId,
         procedural: ProceduralCurve,
         copy_construction: impl FnOnce(&ProceduralCurveId) -> Result<ProceduralCurveId, E>,
     ) -> Result<Result<(), ProceduralCarrierError>, E> {
@@ -1090,20 +1092,17 @@ impl Model {
             ))));
         }
         if let Some(existing_owner) = self.curves.iter().find(|curve| {
-            curve.id != owner && curve.geometry.procedural_construction() == Some(&procedural.id)
+            &curve.id != owner && curve.geometry.procedural_construction() == Some(&procedural.id)
         }) {
             return Ok(Err(ProceduralCarrierError::new(format!(
                 "procedural curve construction {} already owns curve {}",
                 procedural.id, existing_owner.id
             ))));
         }
-        let Some(curve) = self
-            .curves
-            .iter_mut()
-            .find(|curve| curve.id == owner)
-        else {
+        let Some(curve) = self.curves.iter_mut().find(|curve| &curve.id == owner) else {
             return Ok(Err(ProceduralCarrierError::new(format!(
-                "procedural curve {} references missing curve {owner}", procedural.id
+                "procedural curve {} references missing curve {owner}",
+                procedural.id
             ))));
         };
         match &mut curve.geometry {
@@ -1124,8 +1123,8 @@ impl Model {
             }
             CurveGeometry::Solved(geometry) => {
                 let construction = copy_construction(&procedural.id)?;
-                let geometry = std::mem::replace(geometry,
-                    SolvedCurveGeometry::Unknown { record: None });
+                let geometry =
+                    std::mem::replace(geometry, SolvedCurveGeometry::Unknown { record: None });
                 curve.geometry = CurveGeometry::Procedural {
                     construction,
                     cache: Some(geometry),

@@ -325,9 +325,16 @@ fn mesh_boundary_domain_face_rows_refuse_collection_limit() {
 fn mesh_boundary_assignment_projection_refuses_before_face_rows() {
     let bytes = standard_quad_topology_stream();
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        crate::solve::missing_edge::standard_mesh_boundary_assignments(ctx, &bytes, &[[0, 0]; 4], None)
+        crate::solve::missing_edge::standard_mesh_boundary_assignments(
+            ctx,
+            &bytes,
+            &[[0, 0]; 4],
+            None,
+        )
     };
-    assert!(crate::test_support::with_service_context(run).expect("service budget").is_some());
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service budget")
+        .is_some());
     let mut operations = std::collections::HashSet::new();
     for limit in 0..=1024 {
         match crate::test_support::with_collection_limit(limit, run) {
@@ -442,9 +449,18 @@ fn boundary_support_backward_marks_propagate_collection_refusal() {
 
 #[test]
 fn boundary_support_layer_state_storage_refuses_before_marks() {
-    assert_eq!(boundary_support_limit_operation(0), "catia_boundary_support_layer_rows");
-    assert_eq!(boundary_support_limit_operation(1), "catia_boundary_support_layer_states");
-    assert_eq!(boundary_support_limit_operation(3), "catia_boundary_first_points");
+    assert_eq!(
+        boundary_support_limit_operation(0),
+        "catia_boundary_support_layer_rows"
+    );
+    assert_eq!(
+        boundary_support_limit_operation(1),
+        "catia_boundary_support_layer_states"
+    );
+    assert_eq!(
+        boundary_support_limit_operation(3),
+        "catia_boundary_first_points"
+    );
 }
 
 #[test]
@@ -459,10 +475,15 @@ fn boundary_support_outer_rows_and_sets_refuse_before_growth() {
     let candidates = [vec![[0, 0]]];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         crate::solve::missing_edge::boundary_endpoint_support(
-            ctx, &boundary, &candidates, &WorkBudget::new(100),
+            ctx,
+            &boundary,
+            &candidates,
+            &WorkBudget::new(100),
         )
     };
-    assert!(crate::test_support::with_service_context(run).expect("service budget").is_some());
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service budget")
+        .is_some());
     let mut operations = std::collections::HashSet::new();
     for limit in 0..=64 {
         match crate::test_support::with_collection_limit(limit, run) {
@@ -998,17 +1019,25 @@ fn unmatched_standard_row_arity_does_not_fix_trim_span() {
 fn unmatched_standard_gap_walk_refuses_before_placement_storage() {
     use cadmpeg_core::decode::ResourceDimension;
     let mut bytes = standard_quad_topology_stream();
-    let header = bytes.windows(3).position(|window| window == [0x01, 0x01, 0x04])
+    let header = bytes
+        .windows(3)
+        .position(|window| window == [0x01, 0x01, 0x04])
         .expect("edge table header");
     let first_row = header + 3;
     bytes[first_row + 1] = 4;
     bytes.splice(first_row + 6..first_row + 6, 0x7ffe_u16.to_be_bytes());
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
-            ctx, &bytes, &[[0, 0]; 4], None, false,
+            ctx,
+            &bytes,
+            &[[0, 0]; 4],
+            None,
+            false,
         )
     };
-    assert!(crate::test_support::with_service_context(run).expect("service budget").is_some());
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service budget")
+        .is_some());
     let mut operations = std::collections::HashSet::new();
     let mut limit = 0;
     let mut completed = false;
@@ -1027,7 +1056,11 @@ fn unmatched_standard_gap_walk_refuses_before_placement_storage() {
         }
     }
     assert!(completed, "adaptive limit reaches the service outcome");
-    for operation in ["catia_gap_placed_edges", "catia_gap_complete_assignments", "catia_missing_assignment_faces"] {
+    for operation in [
+        "catia_gap_placed_edges",
+        "catia_gap_complete_assignments",
+        "catia_missing_assignment_faces",
+    ] {
         assert!(operations.contains(operation), "no refusal at {operation}");
     }
 }
@@ -1096,10 +1129,15 @@ fn endpoint_pruning_refuses_before_complete_pairs_and_assignment_copies() {
     let candidates = [Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         crate::solve::missing_edge::standard_mesh_prune_endpoint_candidates(
-            ctx, &bytes, &[[0, 0]; 4], &candidates,
+            ctx,
+            &bytes,
+            &[[0, 0]; 4],
+            &candidates,
         )
     };
-    assert!(crate::test_support::with_service_context(run).expect("service budget").is_some());
+    assert!(crate::test_support::with_service_context(run)
+        .expect("service budget")
+        .is_some());
     let mut operations = std::collections::HashSet::new();
     let mut limit = 0;
     let mut completed = false;

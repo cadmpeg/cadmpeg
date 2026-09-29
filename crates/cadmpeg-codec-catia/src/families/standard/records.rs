@@ -359,8 +359,8 @@ pub(super) fn standard_surface_record_groups(
         has_predecessor[*successor] = true;
     }
     let mut groups = Vec::new();
-    for start in 0..table.records.len() {
-        if has_predecessor[start] {
+    for (start, has_prior) in has_predecessor.iter().enumerate() {
+        if *has_prior {
             continue;
         }
         let mut current = Some(start);

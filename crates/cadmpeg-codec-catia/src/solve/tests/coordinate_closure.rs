@@ -1041,7 +1041,8 @@ fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
             &candidates,
             Some(&budget),
             |_, _| true,
-        ).expect("service resource budget"),
+        )
+        .expect("service resource budget"),
         Some(true),
     );
     assert!(!budget.exhausted());
@@ -1435,11 +1436,10 @@ fn mesh_endpoint_pair_support_propagates_across_incident_faces() {
         vec![[5, 0]],
     ];
 
-    assert!(prune_mesh_endpoint_pair_support(
-        &ctx,
-        &mut assignments,
-        &mut candidates,
-    ).expect("service resource budget"));
+    assert!(
+        prune_mesh_endpoint_pair_support(&ctx, &mut assignments, &mut candidates,)
+            .expect("service resource budget")
+    );
     assert_eq!(candidates[0], vec![[0, 1]]);
     assert_eq!(assignments[1], vec![assignment(&[0, 3, 4])]);
 }
@@ -1462,7 +1462,8 @@ fn mesh_endpoint_pair_support_does_not_treat_budget_exhaustion_as_a_contradictio
         &mut assignments,
         &mut candidates,
         0,
-    ).expect("service resource budget"));
+    )
+    .expect("service resource budget"));
 }
 
 #[test]
@@ -1471,20 +1472,29 @@ fn mesh_endpoint_pair_support_refuses_before_incident_faces_and_snapshot() {
     use std::collections::BTreeSet;
 
     let assignment = |edges: &[usize]| MeshFaceBoundaryAssignment {
-        boundaries: vec![edges.iter().copied().map(|edge| MeshBoundaryEdgeCandidate {
-            edge,
-            start: 0,
-            end: 0,
-            reversed: None,
-        }).collect()],
+        boundaries: vec![edges
+            .iter()
+            .copied()
+            .map(|edge| MeshBoundaryEdgeCandidate {
+                edge,
+                start: 0,
+                end: 0,
+                reversed: None,
+            })
+            .collect()],
     };
     let assignments = vec![
         vec![assignment(&[0, 1, 2])],
         vec![assignment(&[0, 3, 4]), assignment(&[0, 5, 6])],
     ];
     let candidates = vec![
-        vec![[0, 1], [0, 3]], vec![[1, 2]], vec![[2, 0]],
-        vec![[1, 4]], vec![[4, 0]], vec![[3, 5]], vec![[5, 0]],
+        vec![[0, 1], [0, 3]],
+        vec![[1, 2]],
+        vec![[2, 0]],
+        vec![[1, 4]],
+        vec![[4, 0]],
+        vec![[3, 5]],
+        vec![[5, 0]],
     ];
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         let mut assignments = assignments.clone();
@@ -1494,10 +1504,15 @@ fn mesh_endpoint_pair_support_refuses_before_incident_faces_and_snapshot() {
     crate::test_support::with_service_context(|ctx| assert!(run(ctx).expect("service budget")));
     let mut refusals = BTreeSet::new();
     let mut completed = false;
-    for cap in 0..=512 {
+    let mut cap = 0;
+    for _ in 0..2048 {
         match crate::test_support::with_collection_limit(cap, run) {
             Err(CodecError::ResourceLimit(limit)) => {
                 refusals.insert(limit.operation);
+                cap = limit
+                    .used
+                    .checked_add(limit.additional)
+                    .expect("bounded fixture");
             }
             Ok(true) => {
                 completed = true;
@@ -1507,7 +1522,11 @@ fn mesh_endpoint_pair_support_refuses_before_incident_faces_and_snapshot() {
         }
     }
     assert!(completed, "fixture must fit the final cap");
-    for operation in ["catia_prune_incident_faces", "catia_prune_snapshot_rows", "catia_prune_snapshot_pairs"] {
+    for operation in [
+        "catia_prune_incident_faces",
+        "catia_prune_snapshot_rows",
+        "catia_prune_snapshot_pairs",
+    ] {
         assert!(refusals.contains(operation), "no refusal at {operation}");
     }
 }
@@ -1562,11 +1581,12 @@ fn duplicate_face_assignment_visitor_keeps_alternates_correlated() {
     let allowed = [vec![2, 1, 0], Vec::new(), Vec::new()];
     let mut assignments = Vec::new();
 
-    let outcome = visit_duplicate_face_assignments(&ctx, &serialized, &allowed, 3, 4, |assignment| {
-        assignments.push(assignment.to_vec());
-        Ok(true)
-    })
-    .expect("service resource budget");
+    let outcome =
+        visit_duplicate_face_assignments(&ctx, &serialized, &allowed, 3, 4, |assignment| {
+            assignments.push(assignment.to_vec());
+            Ok(true)
+        })
+        .expect("service resource budget");
 
     assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Complete));
     assert_eq!(
@@ -1603,7 +1623,10 @@ fn duplicate_face_visitor_refuses_before_assignment_and_choice_storage() {
     let run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
         visit_duplicate_face_assignments(ctx, &serialized, &allowed, 2, 4, |_| Ok(true))
     };
-    assert_eq!(crate::test_support::with_service_context(run).expect("service budget"), Some(DuplicateFaceAssignmentVisit::Complete));
+    assert_eq!(
+        crate::test_support::with_service_context(run).expect("service budget"),
+        Some(DuplicateFaceAssignmentVisit::Complete)
+    );
     let mut operations = std::collections::HashSet::new();
     for limit in 0..=32 {
         match crate::test_support::with_collection_limit(limit, run) {
@@ -1625,8 +1648,8 @@ fn duplicate_face_visitor_refuses_before_assignment_and_choice_storage() {
 
 #[test]
 fn one_admitted_alternate_does_not_force_a_second_face() {
-    catia_test_context!(ctx);
     const EDGE_COUNT: usize = 8;
+    catia_test_context!(ctx);
     let serialized = vec![[0, 0]; EDGE_COUNT];
     let allowed = vec![vec![1, 1]; EDGE_COUNT];
 

@@ -26,17 +26,22 @@ fn reversed_nurbs_copies_refuse_low_collection_and_retained_limits() {
         vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
         None,
         false,
-    ).expect("linear model curve");
+    )
+    .expect("linear model curve");
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
         reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
     });
-    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_reverse_curve_poles"));
+    assert!(
+        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reverse_curve_poles")
+    );
     let collection = crate::test_support::with_collection_limit(0, |ctx| {
         reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
     });
-    assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_reverse_curve_poles"));
+    assert!(
+        matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reverse_curve_poles")
+    );
     let pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
             1,
@@ -44,23 +49,48 @@ fn reversed_nurbs_copies_refuse_low_collection_and_retained_limits() {
             vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
             None,
             false,
-        ).expect("linear pcurve"),
+        )
+        .expect("linear pcurve"),
     };
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        reverse_pcurve_geometry(ctx, &pcurve, [0.0, 1.0], &mut LaneRefusals::new(), "test pcurve")
+        reverse_pcurve_geometry(
+            ctx,
+            &pcurve,
+            [0.0, 1.0],
+            &mut LaneRefusals::new(),
+            "test pcurve",
+        )
     });
-    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_reverse_knots"));
+    assert!(
+        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reverse_knots")
+    );
     let collection = crate::test_support::with_collection_limit(0, |ctx| {
-        reverse_pcurve_geometry(ctx, &pcurve, [0.0, 1.0], &mut LaneRefusals::new(), "test pcurve")
+        reverse_pcurve_geometry(
+            ctx,
+            &pcurve,
+            [0.0, 1.0],
+            &mut LaneRefusals::new(),
+            "test pcurve",
+        )
     });
-    assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_reverse_knots"));
+    assert!(
+        matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_reverse_knots")
+    );
     let reversed = crate::test_support::with_service_context(|ctx| {
         reverse_nurbs_curve(ctx, &curve, [0.0, 1.0])
-    }).expect("service profile admits reverse copy").expect("valid reversed curve");
-    assert_eq!(reversed.control_points().first().copied().map(cadmpeg_ir::features::FinitePoint3::get),
-        Some(Point3::new(1.0, 0.0, 0.0)));
+    })
+    .expect("service profile admits reverse copy")
+    .expect("valid reversed curve");
+    assert_eq!(
+        reversed
+            .control_points()
+            .first()
+            .copied()
+            .map(cadmpeg_ir::features::FinitePoint3::get),
+        Some(Point3::new(1.0, 0.0, 0.0))
+    );
 }
 
 #[test]
@@ -76,21 +106,27 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
             false,
         )
         .expect("linear model curve");
-        let reversed = crate::test_support::with_service_context(|ctx| reverse_nurbs_curve(ctx, &source, range))
-            .expect("service profile admits reverse copy")
-            .expect("finite reflected knots");
+        let reversed = crate::test_support::with_service_context(|ctx| {
+            reverse_nurbs_curve(ctx, &source, range)
+        })
+        .expect("service profile admits reverse copy")
+        .expect("finite reflected knots");
         assert_eq!(reversed.knots().as_slice(), knots);
         assert_eq!(
-            crate::test_support::with_service_context(|ctx| reverse_nurbs_curve(ctx, &reversed, range))
-                .expect("service profile admits reverse copy")
-                .expect("double reversal"),
+            crate::test_support::with_service_context(|ctx| reverse_nurbs_curve(
+                ctx, &reversed, range
+            ))
+            .expect("service profile admits reverse copy")
+            .expect("double reversal"),
             source
         );
         let model = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(source));
         let mut refusal = LaneRefusals::new();
-        let (reversed, reversed_range) =
-            crate::test_support::with_service_context(|ctx| reverse_curve_geometry(ctx, &model, range, &mut refusal, "offset curve")).expect("service profile admits range operation")
-                .expect("reversed curve");
+        let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| {
+            reverse_curve_geometry(ctx, &model, range, &mut refusal, "offset curve")
+        })
+        .expect("service profile admits range operation")
+        .expect("reversed curve");
         assert_eq!(reversed_range, range);
         let pcurve = PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::from_lanes(
@@ -102,9 +138,11 @@ fn reversal_preserves_large_parameter_offsets_and_endpoint_values() {
             )
             .expect("linear pcurve"),
         };
-        let reversed_pcurve =
-            crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(ctx, &pcurve, range, &mut refusal, "offset pcurve")).expect("service profile admits range operation")
-                .expect("reversed pcurve");
+        let reversed_pcurve = crate::test_support::with_service_context(|ctx| {
+            reverse_pcurve_geometry(ctx, &pcurve, range, &mut refusal, "offset pcurve")
+        })
+        .expect("service profile admits range operation")
+        .expect("reversed pcurve");
         for (parameter, expected_x) in [(lower, 1.0), (upper, 0.0)] {
             assert_eq!(
                 cadmpeg_ir::eval::curve_point(&reversed, parameter)
@@ -147,15 +185,27 @@ fn wide_finite_nurbs_ranges_reverse_and_normalize_without_a_finite_width() {
     };
     let mut refusal = LaneRefusals::new();
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| crate::nurbs::canonical_model_curve_range(ctx, &curve, range, &mut refusal, "wide curve")).expect("service profile admits range operation"),
+        crate::test_support::with_service_context(|ctx| crate::nurbs::canonical_model_curve_range(
+            ctx,
+            &curve,
+            range,
+            &mut refusal,
+            "wide curve"
+        ))
+        .expect("service profile admits range operation"),
         Some(range)
     );
-    let (reversed, reversed_range) =
-        crate::test_support::with_service_context(|ctx| reverse_curve_geometry(ctx, &curve, range, &mut refusal, "wide curve")).expect("service profile admits range operation")
-            .expect("wide model curve reversal");
+    let (reversed, reversed_range) = crate::test_support::with_service_context(|ctx| {
+        reverse_curve_geometry(ctx, &curve, range, &mut refusal, "wide curve")
+    })
+    .expect("service profile admits range operation")
+    .expect("wide model curve reversal");
     assert_eq!(reversed_range, range);
-    let reversed_pcurve = crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(ctx, &pcurve, range, &mut refusal, "wide pcurve")).expect("service profile admits range operation")
-        .expect("wide pcurve reversal");
+    let reversed_pcurve = crate::test_support::with_service_context(|ctx| {
+        reverse_pcurve_geometry(ctx, &pcurve, range, &mut refusal, "wide pcurve")
+    })
+    .expect("service profile admits range operation")
+    .expect("wide pcurve reversal");
     for (parameter, expected) in [(range[0], 1.0), (range[1], 0.0)] {
         assert_eq!(
             cadmpeg_ir::eval::curve_point(&reversed, parameter).map(|point| point.get().x),
@@ -180,8 +230,11 @@ fn wide_finite_line_pcurve_range_reverses_when_its_origin_is_finite() {
         .expect("finite line pcurve"),
     );
     let mut refusal = LaneRefusals::new();
-    let reversed = crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(ctx, &line, range, &mut refusal, "wide line")).expect("service profile admits range operation")
-        .expect("finite wide line reversal");
+    let reversed = crate::test_support::with_service_context(|ctx| {
+        reverse_pcurve_geometry(ctx, &line, range, &mut refusal, "wide line")
+    })
+    .expect("service profile admits range operation")
+    .expect("finite wide line reversal");
     let PcurveGeometry::Line(reversed) = reversed else {
         panic!("line carrier");
     };
@@ -193,15 +246,22 @@ fn wide_finite_line_pcurve_range_reverses_when_its_origin_is_finite() {
 #[test]
 fn reflected_knots_include_exterior_knots_and_canonical_zero() {
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| reverse_knots(ctx,
+        crate::test_support::with_service_context(|ctx| reverse_knots(
+            ctx,
             &[1e16 - 2.0, 1e16, 1e16 + 2.0, 1e16 + 4.0],
             [1e16, 1e16 + 2.0]
-        )).expect("service profile admits reverse knots"),
+        ))
+        .expect("service profile admits reverse knots"),
         vec![1e16 - 2.0, 1e16, 1e16 + 2.0, 1e16 + 4.0]
     );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| reverse_knots(ctx, &[-0.0, 1.0], [0.0, 1.0]))
-            .expect("service profile admits reverse knots")[0].to_bits(),
+        crate::test_support::with_service_context(|ctx| reverse_knots(
+            ctx,
+            &[-0.0, 1.0],
+            [0.0, 1.0]
+        ))
+        .expect("service profile admits reverse knots")[0]
+            .to_bits(),
         0.0_f64.to_bits()
     );
 }
@@ -216,8 +276,11 @@ fn line_pcurve_reversal_does_not_need_a_finite_endpoint_sum() {
         .expect("line pcurve"),
     );
     let range = [1e308, 1.1e308];
-    let reversed = crate::test_support::with_service_context(|ctx| reverse_pcurve_geometry(ctx, &source, range, &mut LaneRefusals::new(), "large line")).expect("service profile admits range operation")
-        .expect("finite reflected origin");
+    let reversed = crate::test_support::with_service_context(|ctx| {
+        reverse_pcurve_geometry(ctx, &source, range, &mut LaneRefusals::new(), "large line")
+    })
+    .expect("service profile admits range operation")
+    .expect("finite reflected origin");
     for (from, to) in [(range[0], range[1]), (range[1], range[0])] {
         let original = cadmpeg_ir::eval::pcurve_uv(&source, from).expect("source point");
         let reverse = cadmpeg_ir::eval::pcurve_uv(&reversed, to).expect("reversed point");
@@ -316,9 +379,9 @@ fn isocurve_keeps_finite_maximum_coordinates() {
 #[test]
 fn quintic_jet_handles_spans_whose_square_overflows_or_underflows() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("fixture fits input limit");
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
+        .expect("fixture fits input limit");
     let h = 1e160;
     let (_, controls) = quintic_jet_bspline(
         &ctx,

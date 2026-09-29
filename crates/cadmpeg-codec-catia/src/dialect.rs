@@ -156,21 +156,41 @@ fn declared(
 ) -> Result<BTreeMap<cadmpeg_core::text::NonBlankString, String>, cadmpeg_core::CodecError> {
     let mut declared = BTreeMap::new();
     if let Some(version) = &scan.last_save_version {
-        resource::source_attribute(ctx, &mut declared,
-            format_args!("{DECLARED_VERSION}"), format_args!("{}", version.version),
-            "catia_dialect_declared")?;
-        resource::source_attribute(ctx, &mut declared,
-            format_args!("{DECLARED_RELEASE}"), format_args!("{}", version.release),
-            "catia_dialect_declared")?;
-        resource::source_attribute(ctx, &mut declared,
-            format_args!("{DECLARED_SERVICE_PACK}"), format_args!("{}", version.service_pack),
-            "catia_dialect_declared")?;
-        resource::source_attribute(ctx, &mut declared,
-            format_args!("{DECLARED_HOT_FIX}"), format_args!("{}", version.hot_fix),
-            "catia_dialect_declared")?;
-        resource::source_attribute(ctx, &mut declared,
-            format_args!("{DECLARED_BUILD_DATE}"), format_args!("{}", version.build_date),
-            "catia_dialect_declared")?;
+        resource::source_attribute(
+            ctx,
+            &mut declared,
+            format_args!("{DECLARED_VERSION}"),
+            format_args!("{}", version.version),
+            "catia_dialect_declared",
+        )?;
+        resource::source_attribute(
+            ctx,
+            &mut declared,
+            format_args!("{DECLARED_RELEASE}"),
+            format_args!("{}", version.release),
+            "catia_dialect_declared",
+        )?;
+        resource::source_attribute(
+            ctx,
+            &mut declared,
+            format_args!("{DECLARED_SERVICE_PACK}"),
+            format_args!("{}", version.service_pack),
+            "catia_dialect_declared",
+        )?;
+        resource::source_attribute(
+            ctx,
+            &mut declared,
+            format_args!("{DECLARED_HOT_FIX}"),
+            format_args!("{}", version.hot_fix),
+            "catia_dialect_declared",
+        )?;
+        resource::source_attribute(
+            ctx,
+            &mut declared,
+            format_args!("{DECLARED_BUILD_DATE}"),
+            format_args!("{}", version.build_date),
+            "catia_dialect_declared",
+        )?;
     }
     Ok(declared)
 }
@@ -195,9 +215,11 @@ pub(crate) fn copy_match(
     let mut copied = match original.admission() {
         Admission::Admitted => DialectMatch::admitted(original.dialect().clone()),
         Admission::Residual => DialectMatch::residual(original.dialect().clone()),
-        _ => return Err(cadmpeg_core::CodecError::malformed(
-            "CATIA dialect copy received an unsupported admission",
-        )),
+        _ => {
+            return Err(cadmpeg_core::CodecError::malformed(
+                "CATIA dialect copy received an unsupported admission",
+            ))
+        }
     };
     let mut declared = BTreeMap::new();
     for (key, value) in original.declared() {

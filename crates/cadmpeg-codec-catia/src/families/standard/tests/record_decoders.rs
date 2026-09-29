@@ -1343,7 +1343,7 @@ fn plane_bounds_record(
 #[test]
 fn plane_parameter_target_sets_and_rows_refuse_before_growth() {
     let row = plane_bounds_record(
-        0x010203,
+        0x0001_0203,
         [0.0, 0.0, 0.0],
         [1.0, 1.0, 1.0],
         [0.0, 0.0, 0.0],
@@ -1352,7 +1352,7 @@ fn plane_parameter_target_sets_and_rows_refuse_before_growth() {
     let mut bytes = row.clone();
     bytes.extend(row);
     let normals = HashMap::from([(
-        0x010203,
+        0x0001_0203,
         crate::test_support::test_b5::finite_vector([0.0, 0.0, 1.0]),
     )]);
     assert!(crate::test_support::with_service_context(|ctx| {

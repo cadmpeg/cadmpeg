@@ -2,18 +2,16 @@ use crate::families::b5::graph::controls::{B5EdgeTerminalControl, B5VertexIncide
 use crate::families::b5::graph::tests::object_stream_pcurve;
 use crate::families::b5::graph::{
     a8_class21_pcurves, admit_dependency_records, collect_object_stream_frames,
-    edge_support_pcurve_references_from_frames, edge_vertex_references,
-    face_loop_owner_counts, face_surface_references_from_frames, framed_records,
-    implicit_pcurve_bindings, is_referenced_geometry_class, object_stream_frames,
-    object_stream_populations, object_stream_run_ranges, parameter_incidence, parse,
-    parse_a8_class21_pcurve, parse_edge, parse_extrusion_surface,
-    parse_flat, parse_from_frames, parse_from_records,
-    parse_supported_surface, parse_vertex_incidence_link, records,
-    record_from_frame, records_from_frames, records_from_frames_budgeted,
-    select_object_stream_population, topology_surface_references,
+    edge_support_pcurve_references_from_frames, edge_vertex_references, face_loop_owner_counts,
+    face_surface_references_from_frames, framed_records, implicit_pcurve_bindings,
+    is_referenced_geometry_class, object_stream_frames, object_stream_populations,
+    object_stream_run_ranges, parameter_incidence, parse, parse_a8_class21_pcurve, parse_edge,
+    parse_extrusion_surface, parse_flat, parse_from_frames, parse_from_records,
+    parse_supported_surface, parse_vertex_incidence_link, record_from_frame, records,
+    records_from_frames, records_from_frames_budgeted, select_object_stream_population,
     supported_surface_parameters_match_carrier, supported_surface_pcurves_match, surface_node,
-    targeted_geometry_graph, targeted_geometry_graph_from_frames,
-    topology_root_run_ranges, topology_runs, typed_class_21_pcurves,
+    targeted_geometry_graph, targeted_geometry_graph_from_frames, topology_root_run_ranges,
+    topology_runs, topology_surface_references, typed_class_21_pcurves,
     typed_class_21_pcurves_from_records, typed_edge_records, typed_edge_records_from_records,
     typed_face_records, typed_face_records_from_records, typed_loop_records,
     typed_loop_records_from_records, typed_parameter_incidences,
@@ -32,7 +30,8 @@ fn parse_extrusion_directrix(
 ) -> Option<B5ExtrusionDirectrix> {
     crate::test_support::with_service_context(|ctx| {
         super::super::parse_extrusion_directrix(ctx, record, records, pcurves)
-    }).expect("service budget")
+    })
+    .expect("service budget")
 }
 
 fn parse_extrusion_surface_with_context(
@@ -43,9 +42,16 @@ fn parse_extrusion_surface_with_context(
     extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
 ) -> Option<B5ExtrusionSurface> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::parse_extrusion_surface_with_context(ctx, record, records, pcurves,
-            offset_constructions, extrusion_surfaces)
-    }).expect("service budget")
+        super::super::parse_extrusion_surface_with_context(
+            ctx,
+            record,
+            records,
+            pcurves,
+            offset_constructions,
+            extrusion_surfaces,
+        )
+    })
+    .expect("service budget")
 }
 
 fn propagate_vertex_points(
@@ -55,7 +61,8 @@ fn propagate_vertex_points(
 ) -> HashMap<u32, usize> {
     crate::test_support::with_service_context(|ctx| {
         super::super::propagate_vertex_points(ctx, constraints, adjacency, points)
-    }).expect("service budget")
+    })
+    .expect("service budget")
 }
 
 #[test]
@@ -67,45 +74,89 @@ fn retained_object_frames_refuse_the_caller_collection_limit() {
     assert!(matches!(limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(error))
             if error.operation == "catia_b5_object_frames"));
-    let admitted = crate::test_support::with_service_context(|ctx| {
-        collect_object_stream_frames(ctx, &bytes)
-    })
-    .expect("service collection budget");
+    let admitted =
+        crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &bytes))
+            .expect("service collection budget");
     let scanned = object_stream_frames(&bytes).collect::<Vec<_>>();
     assert_eq!(admitted.len(), scanned.len());
     assert!(admitted.iter().zip(scanned).all(|(left, right)| {
-        (left.start, left.end, left.family, left.class, left.object_id)
-            == (right.start, right.end, right.family, right.class, right.object_id)
+        (
+            left.start,
+            left.end,
+            left.family,
+            left.class,
+            left.object_id,
+        ) == (
+            right.start,
+            right.end,
+            right.family,
+            right.class,
+            right.object_id,
+        )
     }));
 }
 
 #[test]
 fn object_population_copy_refuses_the_caller_retained_limit() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let limited = crate::test_support::with_retained_limit(0, |ctx| {
-        object_stream_populations(ctx, &bytes)
-    });
-    assert!(matches!(limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_b5_topology_run_bytes"));
-    let populations = crate::test_support::with_service_context(|ctx| {
-        object_stream_populations(ctx, &bytes)
-    }).expect("service retained budget");
+    let mut cap = 0;
+    let mut reached = false;
+    for _ in 0..128 {
+        match crate::test_support::with_retained_limit(cap, |ctx| {
+            object_stream_populations(ctx, &bytes)
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == "catia_b5_topology_run_bytes" =>
+            {
+                reached = true;
+                break;
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                cap = error
+                    .used
+                    .checked_add(error.additional)
+                    .expect("bounded fixture");
+            }
+            other => panic!("topology copy not reached: {other:?}"),
+        }
+    }
+    assert!(reached, "topology copy limit was not reached");
+    let populations =
+        crate::test_support::with_service_context(|ctx| object_stream_populations(ctx, &bytes))
+            .expect("service retained budget");
     assert_eq!(populations, vec![bytes]);
 }
 
 #[test]
 fn object_population_selection_refuses_before_indexing_runs() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        select_object_stream_population(ctx, &[bytes.clone()], None)
-    });
-    assert!(matches!(limited,
-        Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == "catia_b5_selected_stream_ranges"));
+    let mut cap = 0;
+    let mut reached = false;
+    for _ in 0..128 {
+        match crate::test_support::with_collection_limit(cap, |ctx| {
+            select_object_stream_population(ctx, std::slice::from_ref(&bytes), None)
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.operation == "catia_b5_selected_stream_ranges" =>
+            {
+                reached = true;
+                break;
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                cap = error
+                    .used
+                    .checked_add(error.additional)
+                    .expect("bounded fixture");
+            }
+            Ok(_) => panic!("selection admitted before its index limit"),
+            Err(error) => panic!("unexpected selection refusal: {error}"),
+        }
+    }
+    assert!(reached, "selection index limit was not reached");
     let selected = crate::test_support::with_service_context(|ctx| {
-        select_object_stream_population(ctx, &[bytes.clone()], None)
-    }).expect("service collection budget");
+        select_object_stream_population(ctx, std::slice::from_ref(&bytes), None)
+    })
+    .expect("service collection budget");
     assert!(selected.selected());
     assert_eq!(selected.source(), bytes);
 }
@@ -123,9 +174,9 @@ fn topology_run_ranges_refuse_each_caller_collection_limit() {
         assert!(matches!(result,
             Err(cadmpeg_core::CodecError::ResourceLimit(error)) if error.operation == operation));
     }
-    let ranges = crate::test_support::with_service_context(|ctx| {
-        topology_root_run_ranges(ctx, &bytes)
-    }).expect("service collection budget");
+    let ranges =
+        crate::test_support::with_service_context(|ctx| topology_root_run_ranges(ctx, &bytes))
+            .expect("service collection budget");
     assert_eq!(ranges, vec![0..bytes.len()]);
 }
 
@@ -223,8 +274,12 @@ fn a8_class21_jet_refuses_before_each_admitted_lane() {
     let payload = a8_class21_test_payload();
     let mut refused = std::collections::HashSet::new();
     for cap in 0..64 {
-        match crate::test_support::with_collection_limit(cap, |ctx| parse_a8_class21_pcurve(ctx, 7, &payload)) {
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => { refused.insert(limit.operation); }
+        match crate::test_support::with_collection_limit(cap, |ctx| {
+            parse_a8_class21_pcurve(ctx, 7, &payload)
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                refused.insert(limit.operation);
+            }
             Ok(Some(_)) => break,
             Ok(None) => panic!("class-21 fixture must decode"),
             Err(error) => panic!("unexpected pcurve refusal: {error}"),
@@ -245,8 +300,11 @@ fn a8_class21_jet_refuses_before_each_admitted_lane() {
     ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
-    assert!(crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
-        .expect("service resource budget").is_some());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_a8_class21_pcurve(ctx, 7, &payload))
+            .expect("service resource budget")
+            .is_some()
+    );
 }
 
 #[test]
@@ -451,7 +509,8 @@ fn object_stream_runs_end_at_non_frame_bytes() {
     bytes.extend_from_slice(&second);
 
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes)).expect("service collection budget"),
+        crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes))
+            .expect("service collection budget"),
         vec![0..first.len(), first.len() + 1..bytes.len()]
     );
 }
@@ -461,14 +520,22 @@ fn object_stream_runs_cross_complete_vertex_allocations() {
     let mut bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5e, 900, &[]);
 
-    assert_eq!(crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes)).expect("service collection budget"), vec![0..bytes.len()]);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes))
+            .expect("service collection budget"),
+        vec![0..bytes.len()]
+    );
 }
 
 #[test]
 fn object_stream_runs_cross_support_bound_external_pole_allocations() {
     let bytes = crate::test_support::test_b5::a8_elided_surface_stream_with_native_vertex_chain();
 
-    assert_eq!(crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes)).expect("service collection budget"), vec![0..bytes.len()]);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| object_stream_run_ranges(ctx, &bytes))
+            .expect("service collection budget"),
+        vec![0..bytes.len()]
+    );
 }
 
 #[test]
@@ -540,8 +607,12 @@ fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
         .expect("service resource budget"),
         Some(expected)
     );
-    assert_eq!(crate::test_support::with_service_context(|ctx|
-        object_stream_populations(ctx, &separated)).expect("service collection budget").len(), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| object_stream_populations(ctx, &separated))
+            .expect("service collection budget")
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -572,8 +643,12 @@ fn topology_parse_does_not_borrow_geometry_from_another_population() {
         .expect("service resource budget"),
         Some(expected)
     );
-    assert_eq!(crate::test_support::with_service_context(|ctx|
-        object_stream_populations(ctx, &separated)).expect("service collection budget").len(), 2);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| object_stream_populations(ctx, &separated))
+            .expect("service collection budget")
+            .len(),
+        2
+    );
 }
 
 #[test]
@@ -606,10 +681,15 @@ fn wide_header_loop_is_a_topology_root_for_population_selection() {
     bytes.extend_from_slice(&0u32.to_le_bytes());
     bytes.extend_from_slice(&7u32.to_le_bytes());
 
-    assert_eq!(crate::test_support::with_service_context(|ctx| topology_root_run_ranges(ctx, &bytes)).expect("service collection budget"), vec![0..bytes.len()]);
-    let selection = crate::test_support::with_service_context(|ctx|
-        select_object_stream_population(ctx, &[bytes], None))
-        .expect("service collection budget");
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| topology_root_run_ranges(ctx, &bytes))
+            .expect("service collection budget"),
+        vec![0..bytes.len()]
+    );
+    let selection = crate::test_support::with_service_context(|ctx| {
+        select_object_stream_population(ctx, &[bytes], None)
+    })
+    .expect("service collection budget");
     assert!(selection.selected());
     assert!(!selection.source().is_empty());
 }
@@ -618,9 +698,9 @@ fn wide_header_loop_is_a_topology_root_for_population_selection() {
 fn indexed_frame_parse_matches_one_shot_parse() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
-    let records = crate::test_support::with_service_context(|ctx| {
-        records_from_frames(ctx, &bytes, &frames)
-    }).expect("service budget");
+    let records =
+        crate::test_support::with_service_context(|ctx| records_from_frames(ctx, &bytes, &frames))
+            .expect("service budget");
 
     assert_eq!(
         crate::test_support::with_service_context(|ctx| parse(
@@ -682,7 +762,8 @@ fn indexed_frame_parse_matches_one_shot_parse() {
         typed_class_21_pcurves(&bytes),
         crate::test_support::with_service_context(|ctx| {
             typed_class_21_pcurves_from_records(ctx, &records)
-        }).expect("service budget")
+        })
+        .expect("service budget")
     );
     assert_eq!(
         typed_parameter_incidences(&bytes),
@@ -710,10 +791,14 @@ fn typed_edge_record_index_refuses_collection_limit() {
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         typed_edge_records_from_records(ctx, &records)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
     let edges = crate::test_support::with_service_context(|ctx| {
         typed_edge_records_from_records(ctx, &records)
-    }).expect("service budget");
+    })
+    .expect("service budget");
     assert!(!edges.is_empty());
 }
 
@@ -729,10 +814,14 @@ fn typed_vertex_incidence_link_index_refuses_collection_limit() {
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         typed_vertex_incidence_links_from_records(ctx, &records)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
     let links = crate::test_support::with_service_context(|ctx| {
         typed_vertex_incidence_links_from_records(ctx, &records)
-    }).expect("service budget");
+    })
+    .expect("service budget");
     assert!(!links.is_empty());
 }
 
@@ -740,14 +829,15 @@ fn typed_vertex_incidence_link_index_refuses_collection_limit() {
 fn budgeted_dependency_admission_matches_one_shot_records() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let frames = object_stream_frames(&bytes).collect::<Vec<_>>();
-    let expected = crate::test_support::with_service_context(|ctx| {
-        records_from_frames(ctx, &bytes, &frames)
-    }).expect("service budget");
+    let expected =
+        crate::test_support::with_service_context(|ctx| records_from_frames(ctx, &bytes, &frames))
+            .expect("service budget");
     let budget = cadmpeg_core::decode::WorkBudget::new(10_000);
 
     let actual = crate::test_support::with_service_context(|ctx| {
         records_from_frames_budgeted(ctx, &bytes, &frames, Some(&budget))
-    }).expect("service budget");
+    })
+    .expect("service budget");
 
     assert_eq!(actual, expected);
     assert!(!budget.exhausted());
@@ -763,11 +853,12 @@ fn b5_record_payload_and_dependency_closure_refuse_caller_limits() {
         class: 0x18,
         object_id: 9,
     };
-    let retained = crate::test_support::with_retained_limit(0, |ctx| {
-        record_from_frame(ctx, &bytes, &frame)
-    });
-    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_record_payload"));
+    let retained =
+        crate::test_support::with_retained_limit(0, |ctx| record_from_frame(ctx, &bytes, &frame));
+    assert!(
+        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_record_payload")
+    );
     let record = B5Record {
         offset: 0,
         family: 0xb5,
@@ -787,65 +878,94 @@ fn b5_record_payload_and_dependency_closure_refuse_caller_limits() {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
             admit_dependency_records(ctx, &bytes, &mut vec![record.clone()], &candidates, None)
         });
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation));
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation)
+        );
     }
     let surfaces = crate::test_support::with_collection_limit(0, |ctx| {
         topology_surface_references(ctx, std::slice::from_ref(&record))
     });
-    assert!(matches!(surfaces, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_topology_surface_references"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| {
-        admit_dependency_records(ctx, &bytes, &mut vec![record.clone()], &candidates, None)
-    }).expect("service budget").len(), 2);
-    assert_eq!(crate::test_support::with_service_context(|ctx| {
-        topology_surface_references(ctx, &[record])
-    }).expect("service budget"), std::collections::HashSet::from([9]));
+    assert!(
+        matches!(surfaces, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_topology_surface_references")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            admit_dependency_records(ctx, &bytes, &mut vec![record.clone()], &candidates, None)
+        })
+        .expect("service budget")
+        .len(),
+        2
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            topology_surface_references(ctx, &[record])
+        })
+        .expect("service budget"),
+        std::collections::HashSet::from([9])
+    );
 }
 
 #[test]
 fn targeted_geometry_record_candidates_refuse_each_collection_limit() {
     let mut bytes = Vec::new();
     crate::test_support::test_b5::append_b5_record(&mut bytes, 0x18, 9, &[0x81, 0x89]);
-    let frames = crate::test_support::with_service_context(|ctx| {
-        collect_object_stream_frames(ctx, &bytes)
-    }).expect("service budget");
+    let frames =
+        crate::test_support::with_service_context(|ctx| collect_object_stream_frames(ctx, &bytes))
+            .expect("service budget");
     let retained = crate::test_support::with_retained_limit(0, |ctx| {
         targeted_geometry_graph_from_frames(
-            ctx, &bytes, &frames, &mut crate::nurbs::LaneRefusals::new(),
+            ctx,
+            &bytes,
+            &frames,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     });
-    assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_record_payload"));
+    assert!(
+        matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_record_payload")
+    );
     for (limit, operation) in [
         (2, "catia_b5_targeted_geometry_candidates"),
         (3, "catia_b5_targeted_geometry_records"),
     ] {
         let limited = crate::test_support::with_collection_limit(limit, |ctx| {
             targeted_geometry_graph_from_frames(
-                ctx, &bytes, &frames, &mut crate::nurbs::LaneRefusals::new(),
+                ctx,
+                &bytes,
+                &frames,
+                &mut crate::nurbs::LaneRefusals::new(),
             )
         });
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation));
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation)
+        );
     }
     crate::test_support::with_service_context(|ctx| {
         targeted_geometry_graph_from_frames(
-            ctx, &bytes, &frames, &mut crate::nurbs::LaneRefusals::new(),
+            ctx,
+            &bytes,
+            &frames,
+            &mut crate::nurbs::LaneRefusals::new(),
         )
-    }).expect("service budget");
+    })
+    .expect("service budget");
 }
 
 #[test]
 fn indexed_population_selection_preserves_records_and_census() {
     let topology = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let expected = crate::test_support::with_service_context(|ctx|
-        select_object_stream_population(ctx, std::slice::from_ref(&topology), None))
-        .expect("service collection budget");
+    let expected = crate::test_support::with_service_context(|ctx| {
+        select_object_stream_population(ctx, std::slice::from_ref(&topology), None)
+    })
+    .expect("service collection budget");
     let budget = cadmpeg_core::decode::WorkBudget::new(100_000);
-    let actual = crate::test_support::with_service_context(|ctx|
-        select_object_stream_population(ctx, std::slice::from_ref(&topology), Some(&budget)))
-        .expect("service collection budget");
+    let actual = crate::test_support::with_service_context(|ctx| {
+        select_object_stream_population(ctx, std::slice::from_ref(&topology), Some(&budget))
+    })
+    .expect("service collection budget");
 
     assert!(actual.selected());
     assert!(!actual.exhausted());
@@ -1672,15 +1792,15 @@ fn record_walk_retains_opaque_a8_surface_nodes() {
     assert_eq!(records[0].class, 0x34);
     assert_eq!(records[0].object_id, 7);
     assert_eq!(records[0].payload, [1, 2, 3]);
-    let limited = crate::test_support::with_retained_limit(2, |ctx| {
-        surface_node(ctx, &records[0], None)
-    });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_surface_node_payload"));
+    let limited =
+        crate::test_support::with_retained_limit(2, |ctx| surface_node(ctx, &records[0], None));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_surface_node_payload")
+    );
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            surface_node(ctx, &records[0], None)
-        }).expect("service budget"),
+        crate::test_support::with_service_context(|ctx| { surface_node(ctx, &records[0], None) })
+            .expect("service budget"),
         Some(B5Surface::Unknown {
             family: 0xa8,
             class: 0x34,
@@ -1868,9 +1988,8 @@ fn edge_record_retains_references_and_each_admitted_terminal_control() {
     bytes.extend_from_slice(&standard.object_id.to_le_bytes());
     bytes.extend_from_slice(&standard.payload);
     assert_eq!(
-        crate::test_support::with_service_context(|ctx| {
-            edge_vertex_references(ctx, &bytes)
-        }).expect("service budget"),
+        crate::test_support::with_service_context(|ctx| { edge_vertex_references(ctx, &bytes) })
+            .expect("service budget"),
         BTreeMap::from([(17, [15, 21])])
     );
 }
@@ -1911,14 +2030,19 @@ fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
             graph.referenced_edge_vertex_references(ctx)
-        }).expect("service budget"),
+        })
+        .expect("service budget"),
         Some(BTreeMap::from([(301, [10, 11])]))
     );
 
     graph.complete = false;
-    assert_eq!(crate::test_support::with_service_context(|ctx| {
-        graph.referenced_edge_vertex_references(ctx)
-    }).expect("service budget"), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            graph.referenced_edge_vertex_references(ctx)
+        })
+        .expect("service budget"),
+        None
+    );
 }
 
 #[test]
@@ -1926,63 +2050,94 @@ fn b5_topology_reference_helpers_refuse_caller_limits() {
     let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let mut graph = crate::test_support::with_service_context(|ctx| {
         parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
-    }).expect("service budget").expect("closed graph");
-    graph.edges.insert(301, B5Edge {
-        object_id: 301,
-        support: 600,
-        vertices: [10, 11],
-        parameter_incidences: [20, 21],
-        terminal_control: B5EdgeTerminalControl::Control01,
-    });
+    })
+    .expect("service budget")
+    .expect("closed graph");
+    graph.edges.insert(
+        301,
+        B5Edge {
+            object_id: 301,
+            support: 600,
+            vertices: [10, 11],
+            parameter_incidences: [20, 21],
+            terminal_control: B5EdgeTerminalControl::Control01,
+        },
+    );
     let mut reference_bytes = Vec::new();
     crate::test_support::test_b5::append_b5_record(
-        &mut reference_bytes, 0x5e, 17,
+        &mut reference_bytes,
+        0x5e,
+        17,
         &[0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
     );
     crate::test_support::test_b5::append_b5_record(
-        &mut reference_bytes, 0x23, 18, &[0x82, 0x89, 0x8a],
+        &mut reference_bytes,
+        0x23,
+        18,
+        &[0x82, 0x89, 0x8a],
     );
-    crate::test_support::test_b5::append_b5_record(
-        &mut reference_bytes, 0x5f, 19, &[0x81, 0x89],
-    );
+    crate::test_support::test_b5::append_b5_record(&mut reference_bytes, 0x5f, 19, &[0x81, 0x89]);
     let frames = crate::test_support::with_service_context(|ctx| {
         collect_object_stream_frames(ctx, &reference_bytes)
-    }).expect("service budget");
+    })
+    .expect("service budget");
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         graph.referenced_edge_vertex_references(ctx)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_referenced_edge_vertices"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_referenced_edge_vertices")
+    );
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         face_loop_owner_counts(ctx, &graph.faces)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_face_loop_owners"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_face_loop_owners")
+    );
     let limited = crate::test_support::with_retained_limit(0, |ctx| {
         edge_vertex_references(ctx, &reference_bytes)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_edge_vertex_record_payload"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_edge_vertex_record_payload")
+    );
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         face_surface_references_from_frames(ctx, &reference_bytes, &frames)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_face_surface_references"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_face_surface_references")
+    );
     let edge_ids = std::collections::HashSet::from([17]);
     let limited = crate::test_support::with_retained_limit(0, |ctx| {
         edge_support_pcurve_references_from_frames(ctx, &reference_bytes, &edge_ids, &frames)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_edge_support_record_payload"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| {
-        edge_vertex_references(ctx, &reference_bytes)
-    }).expect("service budget"), BTreeMap::from([(17, [15, 21])]));
-    assert_eq!(crate::test_support::with_service_context(|ctx| {
-        face_surface_references_from_frames(ctx, &reference_bytes, &frames)
-    }).expect("service budget"), [(19, 9)]);
-    assert_eq!(crate::test_support::with_service_context(|ctx| {
-        edge_support_pcurve_references_from_frames(ctx, &reference_bytes, &edge_ids, &frames)
-    }).expect("service budget"), BTreeMap::from([(17, [9, 10])]));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_edge_support_record_payload")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            edge_vertex_references(ctx, &reference_bytes)
+        })
+        .expect("service budget"),
+        BTreeMap::from([(17, [15, 21])])
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            face_surface_references_from_frames(ctx, &reference_bytes, &frames)
+        })
+        .expect("service budget"),
+        [(19, 9)]
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            edge_support_pcurve_references_from_frames(ctx, &reference_bytes, &edge_ids, &frames)
+        })
+        .expect("service budget"),
+        BTreeMap::from([(17, [9, 10])])
+    );
 }
 
 #[test]
@@ -2003,9 +2158,14 @@ fn duplicate_face_loop_ownership_does_not_close_the_graph() {
     assert_eq!(graph.faces.len(), 2);
     assert_eq!(graph.loops.len(), 1);
     assert!(!graph.complete);
-    assert_eq!(crate::test_support::with_service_context(|ctx| {
-        face_loop_owner_counts(ctx, &graph.faces)
-    }).expect("service budget").get(&400), Some(&2));
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            face_loop_owner_counts(ctx, &graph.faces)
+        })
+        .expect("service budget")
+        .get(&400),
+        Some(&2)
+    );
 }
 
 #[test]
@@ -2102,8 +2262,14 @@ fn loop_and_endpoint_incidences_bind_an_unframed_pcurve_occurrence() {
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
             implicit_pcurve_bindings(
-                ctx, &records, &by_id, &BTreeMap::new(), &BTreeMap::new(), &surfaces,
-            ).expect("service budget")
+                ctx,
+                &records,
+                &by_id,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &surfaces,
+            )
+            .expect("service budget")
         }),
         BTreeMap::from([(9, 11)])
     );
@@ -2116,13 +2282,18 @@ fn parameter_incidence_retains_aligned_compact_controls() {
     payload.push(0x15);
     payload.extend_from_slice(&2.5f64.to_le_bytes());
     payload.push(0x2d);
-    let incidence = crate::test_support::with_service_context(|ctx| parameter_incidence(ctx, &B5Record {
-        offset: 0,
-        family: 0xb5,
-        class: 0x06,
-        object_id: 17,
-        payload,
-    }))
+    let incidence = crate::test_support::with_service_context(|ctx| {
+        parameter_incidence(
+            ctx,
+            &B5Record {
+                offset: 0,
+                family: 0xb5,
+                class: 0x06,
+                object_id: 17,
+                payload,
+            },
+        )
+    })
     .expect("service budget")
     .expect("parameter incidence");
 
@@ -2173,8 +2344,10 @@ fn parameter_and_roster_incidence_refuse_each_collection_boundary() {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
             typed_parameter_incidences_from_records(ctx, std::slice::from_ref(&parameter))
         });
-        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation));
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation)
+        );
     }
     for (limit, operation) in [
         (1, "catia_wire_counted_references"),
@@ -2183,15 +2356,27 @@ fn parameter_and_roster_incidence_refuse_each_collection_boundary() {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
             typed_vertex_incidence_rosters_from_records(ctx, std::slice::from_ref(&roster))
         });
-        assert!(matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-            if error.operation == operation));
+        assert!(
+            matches!(result, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation)
+        );
     }
-    assert_eq!(crate::test_support::with_service_context(|ctx| {
-        typed_parameter_incidences_from_records(ctx, std::slice::from_ref(&parameter))
-    }).expect("service budget")[&17].lanes.len(), 2);
-    assert_eq!(crate::test_support::with_service_context(|ctx| {
-        typed_vertex_incidence_rosters_from_records(ctx, std::slice::from_ref(&roster))
-    }).expect("service budget")[&18], [9, 10]);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            typed_parameter_incidences_from_records(ctx, std::slice::from_ref(&parameter))
+        })
+        .expect("service budget")[&17]
+            .lanes
+            .len(),
+        2
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            typed_vertex_incidence_rosters_from_records(ctx, std::slice::from_ref(&roster))
+        })
+        .expect("service budget")[&18],
+        [9, 10]
+    );
 }
 
 #[test]
@@ -2238,8 +2423,14 @@ fn loop_and_edge_curve_wrapper_bind_an_unframed_pcurve_occurrence() {
     assert_eq!(
         crate::test_support::with_service_context(|ctx| {
             implicit_pcurve_bindings(
-                ctx, &records, &by_id, &BTreeMap::new(), &BTreeMap::new(), &surfaces,
-            ).expect("service budget")
+                ctx,
+                &records,
+                &by_id,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &surfaces,
+            )
+            .expect("service budget")
         }),
         BTreeMap::from([(9, 11)])
     );

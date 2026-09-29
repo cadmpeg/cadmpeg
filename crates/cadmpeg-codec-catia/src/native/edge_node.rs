@@ -286,9 +286,17 @@ fn identity_index_charged<'a>(
         } else {
             IdentityKey::Unresolved(
                 identity.source_index,
-                identity.allocation_owner.as_deref().map(|owner| {
-                    crate::resource::copy_retained_str(ctx, owner, "catia_native_edge_wire_index_owner")
-                }).transpose()?,
+                identity
+                    .allocation_owner
+                    .as_deref()
+                    .map(|owner| {
+                        crate::resource::copy_retained_str(
+                            ctx,
+                            owner,
+                            "catia_native_edge_wire_index_owner",
+                        )
+                    })
+                    .transpose()?,
                 identity.identity,
             )
         };
@@ -317,9 +325,16 @@ fn joined_vertex_charged<'a>(
     } else {
         IdentityKey::Unresolved(
             node.source_index,
-            node.allocation.as_ref().map(|(owner, _)| {
-                crate::resource::copy_retained_str(ctx, owner, "catia_native_edge_wire_lookup_owner")
-            }).transpose()?,
+            node.allocation
+                .as_ref()
+                .map(|(owner, _)| {
+                    crate::resource::copy_retained_str(
+                        ctx,
+                        owner,
+                        "catia_native_edge_wire_lookup_owner",
+                    )
+                })
+                .transpose()?,
             node.vertex_refs[endpoint],
         )
     };
@@ -398,12 +413,17 @@ pub(super) fn consolidated_vertex_identities(
             let endpoint_record = node.endpoint_records.map(|records| records[endpoint]);
             let key = node.endpoint_records.map_or_else(
                 || {
-                    node.allocation.as_ref().map(|(owner, _)| {
-                        crate::resource::copy_retained_str(
-                            ctx, owner, "catia_native_vertex_identity_lookup_key")
-                    }).transpose().map(|owner| {
-                        IdentityKey::Unresolved(node.source_index, owner, identity)
-                    })
+                    node.allocation
+                        .as_ref()
+                        .map(|(owner, _)| {
+                            crate::resource::copy_retained_str(
+                                ctx,
+                                owner,
+                                "catia_native_vertex_identity_lookup_key",
+                            )
+                        })
+                        .transpose()
+                        .map(|owner| IdentityKey::Unresolved(node.source_index, owner, identity))
                 },
                 |records| Ok(IdentityKey::EndpointRecord(records[endpoint])),
             )?;
@@ -425,10 +445,17 @@ pub(super) fn consolidated_vertex_identities(
                     identity,
                     "catia_native_vertex_identity_references",
                 )?;
-                let allocation_owner = node.allocation.as_ref().map(|(owner, _)| {
-                    crate::resource::copy_retained_str(
-                        ctx, owner, "catia_native_vertex_identity_owner")
-                }).transpose()?;
+                let allocation_owner = node
+                    .allocation
+                    .as_ref()
+                    .map(|(owner, _)| {
+                        crate::resource::copy_retained_str(
+                            ctx,
+                            owner,
+                            "catia_native_vertex_identity_owner",
+                        )
+                    })
+                    .transpose()?;
                 crate::resource::push(
                     ctx,
                     &mut identities,
@@ -463,7 +490,10 @@ pub(super) fn consolidated_vertex_identities(
             }
             if vertex.incident_edge_nodes.last() != Some(&node.id) {
                 let edge_id = crate::resource::copy_retained_str(
-                    ctx, &node.id, "catia_native_vertex_incident_edge_id")?;
+                    ctx,
+                    &node.id,
+                    "catia_native_vertex_incident_edge_id",
+                )?;
                 crate::resource::push(
                     ctx,
                     &mut vertex.incident_edge_nodes,
@@ -491,7 +521,8 @@ mod tests {
                 native.consolidated_edge_nodes.clone(),
                 &native.consolidated_vertex_identities,
             )
-        }).expect("service edge-wire budget");
+        })
+        .expect("service edge-wire budget");
         let original = super::edge_node_wires(
             native.consolidated_edge_nodes.clone(),
             &native.consolidated_vertex_identities,
@@ -507,8 +538,10 @@ mod tests {
                 &native.consolidated_vertex_identities,
             )
         });
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_native_edge_wire_index"));
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_native_edge_wire_index")
+        );
     }
 
     #[test]
@@ -517,13 +550,16 @@ mod tests {
         assert!(!native.consolidated_edge_nodes.is_empty());
         let service = crate::test_support::with_service_context(|ctx| {
             super::consolidated_vertex_identities(ctx, &native.consolidated_edge_nodes)
-        }).expect("service vertex identity budget");
+        })
+        .expect("service vertex identity budget");
         assert_eq!(service, native.consolidated_vertex_identities);
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
             super::consolidated_vertex_identities(ctx, &native.consolidated_edge_nodes)
         });
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_native_vertex_identity_references"));
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_native_vertex_identity_references")
+        );
     }
 
     #[test]

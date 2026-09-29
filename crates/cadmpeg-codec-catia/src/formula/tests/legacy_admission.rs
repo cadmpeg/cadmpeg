@@ -131,9 +131,13 @@ fn formula_legacy_indexes_refuse_collection_limits_before_growth() {
     let mut refused = std::collections::HashSet::new();
     for cap in 0..=256 {
         let result = crate::test_support::with_collection_limit(cap, |ctx| {
-            crate::formula::transfer_parameters(ctx, &mut CadIr::empty(), &native,
+            crate::formula::transfer_parameters(
+                ctx,
+                &mut CadIr::empty(),
+                &native,
                 &mut cadmpeg_ir::Annotations::default(),
-                &crate::decode::ModelingGraphScope::Unscoped)
+                &crate::decode::ModelingGraphScope::Unscoped,
+            )
         });
         match result {
             Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
@@ -152,7 +156,10 @@ fn formula_legacy_indexes_refuse_collection_limits_before_growth() {
         "catia_legacy_relation_index",
         "catia_legacy_relation_members",
     ] {
-        assert!(refused.contains(operation), "no low-limit refusal at {operation}");
+        assert!(
+            refused.contains(operation),
+            "no low-limit refusal at {operation}"
+        );
     }
 }
 
@@ -160,12 +167,18 @@ fn formula_legacy_indexes_refuse_collection_limits_before_growth() {
 fn formula_legacy_parameter_identity_refuses_retained_limit() {
     let native = legacy_values();
     let refused = crate::test_support::with_retained_limit(0, |ctx| {
-        crate::formula::transfer_parameters(ctx, &mut CadIr::empty(), &native,
+        crate::formula::transfer_parameters(
+            ctx,
+            &mut CadIr::empty(),
+            &native,
             &mut cadmpeg_ir::Annotations::default(),
-            &crate::decode::ModelingGraphScope::Unscoped)
+            &crate::decode::ModelingGraphScope::Unscoped,
+        )
     });
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_legacy_parameter_id"));
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_legacy_parameter_id")
+    );
 }
 
 #[test]
@@ -176,9 +189,15 @@ fn formula_legacy_selector_chain_refuses_work_limit() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root fits input limit");
-    let refused = crate::formula::transfer_parameters(&ctx, &mut CadIr::empty(), &native,
+    let refused = crate::formula::transfer_parameters(
+        &ctx,
+        &mut CadIr::empty(),
+        &native,
         &mut cadmpeg_ir::Annotations::default(),
-        &crate::decode::ModelingGraphScope::Unscoped);
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_legacy_type_selector_chain"));
+        &crate::decode::ModelingGraphScope::Unscoped,
+    );
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_legacy_type_selector_chain")
+    );
 }

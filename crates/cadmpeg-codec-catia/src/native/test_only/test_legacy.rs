@@ -29,7 +29,9 @@ pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
         .map(|signature| &signature.production)
         == crate::test_support::with_service_context(|ctx| {
             entity_table::parse_reference_signature(ctx, record.value_payload())
-        }).expect("service reference signature budget").as_ref()
+        })
+        .expect("service reference signature budget")
+        .as_ref()
         && record.suffix_value() == entity_suffix_value(record.record_suffix()).as_ref()
 }
 
@@ -40,13 +42,14 @@ fn legacy_schema_identifiers(
     Some(
         crate::test_support::with_service_context(|ctx| {
             legacy_entity::parse_schema_identifiers(ctx, &program.data, program_offset)
-        }).ok()?
-            .into_iter()
-            .map(|identifier| CatiaLegacySchemaIdentifier {
-                byte_offset: identifier.offset as u64,
-                value: identifier.value,
-            })
-            .collect(),
+        })
+        .ok()?
+        .into_iter()
+        .map(|identifier| CatiaLegacySchemaIdentifier {
+            byte_offset: identifier.offset as u64,
+            value: identifier.value,
+        })
+        .collect(),
     )
 }
 
@@ -99,7 +102,9 @@ fn legacy_schema_boundary_closes_text(
 fn valid_legacy_relation(run: &CatiaLegacyEntityRun, relation: &CatiaLegacyRelation) -> bool {
     let Some(parsed) = crate::test_support::with_service_context(|ctx| {
         legacy_entity::parse_relation_signature(ctx, &relation.type_signature)
-    }).ok().flatten() else {
+    })
+    .ok()
+    .flatten() else {
         return false;
     };
     let Some(expression_field) = run.text_fields.iter().find(|field| {

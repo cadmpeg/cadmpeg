@@ -5,9 +5,8 @@ use super::super::super::graph::{
     B5PcurveParameterization, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
 };
 use super::super::edges::{
-    b5_edge_support_definition as charged_b5_edge_support_definition,
-    b5_supports_follow_edge, ordered_subrange,
-    orient_b5_supports_to_edge,
+    b5_edge_support_definition as charged_b5_edge_support_definition, b5_supports_follow_edge,
+    ordered_subrange, orient_b5_supports_to_edge,
 };
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::surfaces::{rational_arc as charged_rational_arc, revolve_nurbs};
@@ -38,9 +37,10 @@ fn curve_on_parameter_range(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<CurveGeometry> {
-    crate::test_support::with_service_context(|ctx|
-        charged_curve_on_parameter_range(ctx, curve, source, target, record, refusal))
-        .expect("service resource budget")
+    crate::test_support::with_service_context(|ctx| {
+        charged_curve_on_parameter_range(ctx, curve, source, target, record, refusal)
+    })
+    .expect("service resource budget")
 }
 
 fn rational_arc(
@@ -52,10 +52,18 @@ fn rational_arc(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<NurbsCurve> {
-    crate::test_support::with_service_context(|ctx|
-        charged_rational_arc(ctx, center, direction_x, direction_y, radius,
-            interval, record, refusal))
-        .expect("service resource budget")
+    crate::test_support::with_service_context(|ctx| {
+        charged_rational_arc(
+            ctx,
+            center,
+            (direction_x, direction_y),
+            radius,
+            interval,
+            record,
+            refusal,
+        )
+    })
+    .expect("service resource budget")
 }
 
 fn b5_edge_support_definition(
@@ -63,48 +71,88 @@ fn b5_edge_support_definition(
     surface_ids: &HashMap<u32, SurfaceId>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [cadmpeg_ir::scalar::FiniteReal; 2])>,
     solved_parameter_range: Option<[f64; 2]>,
-) -> Option<(cadmpeg_ir::ids::IdentityNamespace, &'static str, ProceduralCurveDefinition)> {
-    crate::test_support::with_service_context(|ctx|
-        charged_b5_edge_support_definition(ctx, supports, surface_ids,
-            pcurves, solved_parameter_range))
-        .expect("service resource budget")
+) -> Option<(
+    cadmpeg_ir::ids::IdentityNamespace,
+    &'static str,
+    ProceduralCurveDefinition,
+)> {
+    crate::test_support::with_service_context(|ctx| {
+        charged_b5_edge_support_definition(
+            ctx,
+            supports,
+            surface_ids,
+            pcurves,
+            solved_parameter_range,
+        )
+    })
+    .expect("service resource budget")
 }
 
 #[test]
 fn edge_support_pcurve_copy_refuses_collection_limit() {
     let surfaces = HashMap::from([(
-        10, SurfaceId::mint("catia:b5:surface#10".to_string()).expect("identity grammar"),
+        10,
+        SurfaceId::mint("catia:b5:surface#10".to_string()).expect("identity grammar"),
     )]);
     let pcurves = BTreeMap::from([(
         20,
-        (PcurveGeometry::Nurbs {
-            nurbs: PcurveNurbs::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
-                None,
-                false,
-            ).expect("valid pcurve"),
-        }, false, crate::test_support::test_b5::finite_pair([0.0, 1.0])),
+        (
+            PcurveGeometry::Nurbs {
+                nurbs: PcurveNurbs::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("valid pcurve"),
+            },
+            false,
+            crate::test_support::test_b5::finite_pair([0.0, 1.0]),
+        ),
     )]);
-    let supports = [(10, 20, crate::test_support::test_b5::finite_pair([0.0, 1.0]))];
-    let refused = crate::test_support::with_collection_limit(0, |ctx|
-        charged_b5_edge_support_definition(ctx, &supports, &surfaces, &pcurves, None));
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_edge_support_pcurve"));
+    let supports = [(
+        10,
+        20,
+        crate::test_support::test_b5::finite_pair([0.0, 1.0]),
+    )];
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        charged_b5_edge_support_definition(ctx, &supports, &surfaces, &pcurves, None)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_edge_support_pcurve")
+    );
     assert!(b5_edge_support_definition(&supports, &surfaces, &pcurves, None).is_some());
 }
 
 #[test]
 fn rational_arc_refuses_collection_limit_before_control_net() {
-    let refused = crate::test_support::with_collection_limit(4, |ctx|
-        charged_rational_arc(ctx, [0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
-            1.0, [0.0, std::f64::consts::FRAC_PI_2], &"arc",
-            &mut crate::nurbs::LaneRefusals::new()));
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
-    assert!(rational_arc([0.0; 3], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0],
-        1.0, [0.0, std::f64::consts::FRAC_PI_2], &"arc",
-        &mut crate::nurbs::LaneRefusals::new()).is_some());
+    let refused = crate::test_support::with_collection_limit(4, |ctx| {
+        charged_rational_arc(
+            ctx,
+            [0.0; 3],
+            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            1.0,
+            [0.0, std::f64::consts::FRAC_PI_2],
+            &"arc",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    });
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    assert!(rational_arc(
+        [0.0; 3],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        1.0,
+        [0.0, std::f64::consts::FRAC_PI_2],
+        &"arc",
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .is_some());
 }
 
 #[test]
@@ -122,13 +170,26 @@ fn reparameterized_nurbs_knots_refuse_collection_limit_below_need() {
     let target = crate::test_support::test_b5::increasing([0.0, 2.0]);
     let refused = crate::test_support::with_collection_limit(3, |ctx| {
         charged_curve_on_parameter_range(
-            ctx, curve.clone(), [10.0, 20.0], target, &"curve", &mut crate::nurbs::LaneRefusals::new(),
+            ctx,
+            curve.clone(),
+            [10.0, 20.0],
+            target,
+            &"curve",
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     });
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
     let admitted = crate::test_support::with_service_context(|ctx| {
         charged_curve_on_parameter_range(
-            ctx, curve, [10.0, 20.0], target, &"curve", &mut crate::nurbs::LaneRefusals::new(),
+            ctx,
+            curve,
+            [10.0, 20.0],
+            target,
+            &"curve",
+            &mut crate::nurbs::LaneRefusals::new(),
         )
     })
     .expect("service budget");
@@ -142,9 +203,9 @@ fn transfer_vertex_tolerances(
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [cadmpeg_ir::scalar::FiniteReal; 2])>,
 ) -> BTreeMap<usize, cadmpeg_ir::scalar::PositiveReal> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::vertices::transfer_vertex_tolerances(ctx, graph, supports,
-            surfaces, pcurves)
-    }).expect("service budget")
+        super::super::vertices::transfer_vertex_tolerances(ctx, graph, supports, surfaces, pcurves)
+    })
+    .expect("service budget")
 }
 
 fn referenced_surface_ids(
@@ -155,9 +216,9 @@ fn referenced_surface_ids(
     aliases: &BTreeMap<u32, u32>,
 ) -> HashSet<u32> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::referenced_surface_ids(ctx, roots, offsets, supported,
-            extrusions, aliases)
-    }).expect("service budget")
+        super::super::referenced_surface_ids(ctx, roots, offsets, supported, extrusions, aliases)
+    })
+    .expect("service budget")
 }
 
 #[test]
@@ -448,11 +509,19 @@ fn surface_closure_follows_aliases_to_native_constructions() {
     let aliases = BTreeMap::from([(10, 11), (11, 20)]);
 
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::referenced_surface_ids(ctx, [10], &offsets, &BTreeMap::new(),
-            &BTreeMap::new(), &aliases)
+        super::super::referenced_surface_ids(
+            ctx,
+            [10],
+            &offsets,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &aliases,
+        )
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_referenced_surface_ids"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_referenced_surface_ids")
+    );
 
     assert_eq!(
         referenced_surface_ids([10], &offsets, &BTreeMap::new(), &BTreeMap::new(), &aliases,),
@@ -1395,10 +1464,16 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 1]);
     let limited = crate::test_support::with_collection_limit(0, |ctx| ownership.components(ctx));
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_face_component_groups"));
-    assert_eq!(crate::test_support::with_service_context(|ctx| ownership.components(ctx))
-        .expect("service budget").len(), 2);
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_face_component_groups")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| ownership.components(ctx))
+            .expect("service budget")
+            .len(),
+        2
+    );
     assert_eq!(ownership.body_kind, BodyKind::Sheet);
     assert_eq!(ownership.loop_owners.get(&2), Some(&0));
     assert_eq!(ownership.loop_owners.get(&6), Some(&1));
@@ -1432,8 +1507,12 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .expect("service decode")
         .expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 0]);
-    assert_eq!(crate::test_support::with_service_context(|ctx| ownership.components(ctx))
-        .expect("service budget").len(), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| ownership.components(ctx))
+            .expect("service budget")
+            .len(),
+        1
+    );
     assert_eq!(ownership.body_kind, BodyKind::Solid);
 
     graph.faces.pop();

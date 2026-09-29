@@ -1,9 +1,8 @@
 use crate::families::b5::graph::tests::object_stream_pcurve;
 use crate::families::b5::graph::{
-    analytic_offset_magnitude_agrees, counted_cardinality,
-    is_referenced_geometry_class, parse_extrusion_surface, parse_offset_surface,
-    parse_profile, parse_sphere_great_circle_pcurve, parse_surface,
-    surface_alias_target, B5ExtrusionDirectrix, B5ExtrusionSurface, B5OffsetSurface,
+    analytic_offset_magnitude_agrees, counted_cardinality, is_referenced_geometry_class,
+    parse_extrusion_surface, parse_offset_surface, parse_profile, parse_sphere_great_circle_pcurve,
+    parse_surface, surface_alias_target, B5ExtrusionDirectrix, B5ExtrusionSurface, B5OffsetSurface,
     B5OpaquePcurve, B5Pcurve, B5PcurveParameterization, B5Profile, B5Record,
     B5SphereGreatCirclePcurve, B5Surface,
 };
@@ -14,7 +13,8 @@ use std::collections::{BTreeMap, HashMap};
 fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
     crate::test_support::with_service_context(|ctx| {
         super::super::evaluate_pcurve(ctx, pcurve, parameter)
-    }).expect("service budget")
+    })
+    .expect("service budget")
 }
 
 fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
@@ -28,26 +28,42 @@ fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
 }
 
 fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
-    crate::test_support::with_service_context(|ctx| super::super::parse_class_1a_pcurve(ctx, record))
-        .expect("service budget")
+    crate::test_support::with_service_context(|ctx| {
+        super::super::parse_class_1a_pcurve(ctx, record)
+    })
+    .expect("service budget")
 }
 
 #[allow(clippy::too_many_arguments)]
 fn rational_arc_pcurve(
-    record: &B5Record, surface: u32, center: [f64; 2], reference_x: [f64; 2],
-    reference_y: [f64; 2], radius: f64, parameter_range: [f64; 2],
+    record: &B5Record,
+    surface: u32,
+    center: [f64; 2],
+    reference_x: [f64; 2],
+    reference_y: [f64; 2],
+    radius: f64,
+    parameter_range: [f64; 2],
     angle_range: [f64; 2],
 ) -> Option<B5Pcurve> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::rational_arc_pcurve(ctx, record, surface, center, reference_x,
-            reference_y, radius, parameter_range, angle_range)
-    }).expect("service budget")
+        super::super::rational_arc_pcurve(
+            ctx,
+            record,
+            surface,
+            center,
+            reference_x,
+            reference_y,
+            radius,
+            parameter_range,
+            angle_range,
+        )
+    })
+    .expect("service budget")
 }
 
 fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
-    crate::test_support::with_service_context(|ctx| {
-        super::super::parse_opaque_pcurve(ctx, record)
-    }).expect("service budget")
+    crate::test_support::with_service_context(|ctx| super::super::parse_opaque_pcurve(ctx, record))
+        .expect("service budget")
 }
 
 #[test]
@@ -56,13 +72,20 @@ fn opaque_pcurve_payload_refuses_the_caller_retained_limit() {
     payload.extend_from_slice(&[0; 16]);
     payload.extend_from_slice(&[0x05, 0x05]);
     payload.extend_from_slice(&[0; 56]);
-    let record = B5Record { offset: 0, family: 0xb5, class: 0x1a,
-        object_id: 7, payload };
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x1a,
+        object_id: 7,
+        payload,
+    };
     let limited = crate::test_support::with_retained_limit(0, |ctx| {
         super::super::parse_opaque_pcurve(ctx, &record)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_opaque_pcurve_payload"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_opaque_pcurve_payload")
+    );
     assert!(parse_opaque_pcurve(&record).is_some());
 }
 
@@ -72,26 +95,42 @@ fn analytic_pcurve_vectors_refuse_the_caller_collection_limit() {
     for value in [3.0_f64, -2.0, 7.0] {
         line_payload.extend_from_slice(&value.to_le_bytes());
     }
-    let line = B5Record { offset: 0, family: 0xb5, class: 0x18,
-        object_id: 7, payload: line_payload };
+    let line = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x18,
+        object_id: 7,
+        payload: line_payload,
+    };
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         super::super::parse_line_pcurve(ctx, &line)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_line_pcurve_knots"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_line_pcurve_knots")
+    );
 
     let mut circle_payload = vec![0x81, 0x18, 0x34, 0x12];
     for value in [0.0, 0.0, 2.0, 0.0, 2.0 * std::f64::consts::PI, 1.0, 0.0] {
-        if circle_payload.len() == 20 { circle_payload.extend_from_slice(&[0x05, 0x05]); }
+        if circle_payload.len() == 20 {
+            circle_payload.extend_from_slice(&[0x05, 0x05]);
+        }
         circle_payload.extend_from_slice(&value.to_le_bytes());
     }
-    let circle = B5Record { offset: 0, family: 0xb5, class: 0x19,
-        object_id: 8, payload: circle_payload };
+    let circle = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x19,
+        object_id: 8,
+        payload: circle_payload,
+    };
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         super::super::parse_circle_pcurve(ctx, &circle)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_arc_control_points"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_arc_control_points")
+    );
     assert!(parse_line_pcurve(&line).is_some());
     assert!(parse_circle_pcurve(&circle).is_some());
 }

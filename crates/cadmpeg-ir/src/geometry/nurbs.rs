@@ -1009,25 +1009,60 @@ impl NurbsSurface {
         poles: NurbsPoleGrid<FinitePoint3>,
         normal_reversed: bool,
     ) -> Result<Self, NurbsError> {
-        let NurbsSurfaceAxis { degree: u_degree, knots: u_knots, periodic: u_periodic } = u;
-        let NurbsSurfaceAxis { degree: v_degree, knots: v_knots, periodic: v_periodic } = v;
+        let NurbsSurfaceAxis {
+            degree: u_degree,
+            knots: u_knots,
+            periodic: u_periodic,
+        } = u;
+        let NurbsSurfaceAxis {
+            degree: v_degree,
+            knots: v_knots,
+            periodic: v_periodic,
+        } = v;
         let u_count = poles.u_count();
         let v_count = poles.v_count();
-        if u_count <= usize::try_from(u_degree).map_err(|_| NurbsError::Structure("u degree exceeds platform width".into()))? {
-            return Err(NurbsError::Structure(format!("u_count must exceed u_degree {u_degree}, found {u_count}")));
+        if u_count
+            <= usize::try_from(u_degree)
+                .map_err(|_| NurbsError::Structure("u degree exceeds platform width".into()))?
+        {
+            return Err(NurbsError::Structure(format!(
+                "u_count must exceed u_degree {u_degree}, found {u_count}"
+            )));
         }
-        if v_count <= usize::try_from(v_degree).map_err(|_| NurbsError::Structure("v degree exceeds platform width".into()))? {
-            return Err(NurbsError::Structure(format!("v_count must exceed v_degree {v_degree}, found {v_count}")));
+        if v_count
+            <= usize::try_from(v_degree)
+                .map_err(|_| NurbsError::Structure("v degree exceeds platform width".into()))?
+        {
+            return Err(NurbsError::Structure(format!(
+                "v_count must exceed v_degree {v_degree}, found {v_count}"
+            )));
         }
-        require_length("u_knots", u_knots.len(), checked_knot_count("u", u_count, u_degree)?)?;
-        require_length("v_knots", v_knots.len(), checked_knot_count("v", v_count, v_degree)?)?;
+        require_length(
+            "u_knots",
+            u_knots.len(),
+            checked_knot_count("u", u_count, u_degree)?,
+        )?;
+        require_length(
+            "v_knots",
+            v_knots.len(),
+            checked_knot_count("v", v_count, v_degree)?,
+        )?;
         match &poles {
             NurbsPoleGrid::Polynomial { rows } => require_rectangular_grid("control_points", rows)?,
             NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
         }
         let u_knots = KnotVector::new(u_knots)?;
         let v_knots = KnotVector::new(v_knots)?;
-        Ok(Self { u_degree, v_degree, u_knots, v_knots, poles, normal_reversed, u_periodic, v_periodic })
+        Ok(Self {
+            u_degree,
+            v_degree,
+            u_knots,
+            v_knots,
+            poles,
+            normal_reversed,
+            u_periodic,
+            v_periodic,
+        })
     }
 
     /// Copy the admitted surface with fallible reservations for each owned lane.
@@ -1036,7 +1071,9 @@ impl NurbsSurface {
     ///
     /// Returns an allocation error if a lane cannot reserve its storage.
     pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
-        fn copy_rows<T: Clone>(rows: &[Vec<T>]) -> Result<Vec<Vec<T>>, std::collections::TryReserveError> {
+        fn copy_rows<T: Clone>(
+            rows: &[Vec<T>],
+        ) -> Result<Vec<Vec<T>>, std::collections::TryReserveError> {
             let mut copied = Vec::new();
             copied.try_reserve_exact(rows.len())?;
             for row in rows {
@@ -1414,7 +1451,12 @@ impl NurbsCurve {
         periodic: bool,
     ) -> Result<Self, NurbsError> {
         require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
-        Ok(Self { degree, knots, poles, periodic })
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
+        })
     }
 
     /// Build a NURBS curve with consistent knot, pole, and weight cardinalities.

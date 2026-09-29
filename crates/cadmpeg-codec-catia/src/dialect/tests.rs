@@ -80,7 +80,9 @@ fn fixture_bytes(name: &str) -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
 }
 
-fn classify_service(scan: &crate::container::ContainerScan<'_>) -> cadmpeg_core::dialect::DialectMatch {
+fn classify_service(
+    scan: &crate::container::ContainerScan<'_>,
+) -> cadmpeg_core::dialect::DialectMatch {
     crate::test_support::with_service_context(|ctx| classify(ctx, scan))
         .expect("service budget admits CATIA dialect declaration")
 }
@@ -201,8 +203,10 @@ fn declared_version_refuses_retained_identity_limit() {
     })
     .expect("service budget admits version fixture");
     let limited = crate::test_support::with_retained_limit(0, |ctx| classify(ctx, &scan));
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_dialect_declared"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_dialect_declared")
+    );
     let matched = classify_service(&scan);
     assert_eq!(matched.declared()[DECLARED_VERSION], "5");
 }
@@ -211,8 +215,10 @@ fn declared_version_refuses_retained_identity_limit() {
 fn residual_dialect_loss_refuses_retained_message_limit() {
     let matched = matched(Variant::Unknown);
     let limited = crate::test_support::with_retained_limit(0, |ctx| dialect_loss(ctx, &matched));
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_dialect_unverified_message"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_dialect_unverified_message")
+    );
     let loss = crate::test_support::with_service_context(|ctx| dialect_loss(ctx, &matched))
         .expect("service budget admits residual loss");
     assert!(loss.is_some());

@@ -28,7 +28,8 @@ fn standard_attached_circle_axes_refuse_before_vector_growth() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 1.0,
-            ).expect("valid sphere"),
+            )
+            .expect("valid sphere"),
         )),
         source_object: None,
     });
@@ -42,19 +43,30 @@ fn standard_attached_circle_axes_refuse_before_vector_growth() {
     crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         super::super::attach_standard_circles(
-            &mut ir, &mut AnnotationBuilder::new(), &bindings, &[support.clone()], &mut admission,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            std::slice::from_ref(&support),
+            &mut admission,
         )
-    }).expect("service circle budget");
+    })
+    .expect("service circle budget");
     assert_eq!(ir.model.curves.len(), 1);
     let mut limited_ir = ir;
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         super::super::attach_standard_circles(
-            &mut limited_ir, &mut AnnotationBuilder::new(), &bindings, &[support], &mut admission,
+            &mut limited_ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            &[support],
+            &mut admission,
         )
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_attached_circle_axes"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_attached_circle_axes")
+    );
 }
 
 #[test]
@@ -69,12 +81,14 @@ fn standard_edge_circle_axes_refuse_before_vector_growth() {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
                 1.0,
-            ).expect("valid sphere"),
+            )
+            .expect("valid sphere"),
         )),
         source_object: None,
     });
     for (index, position) in [Point3::new(0.8, 0.0, 0.6), Point3::new(0.0, 0.8, 0.6)]
-        .into_iter().enumerate()
+        .into_iter()
+        .enumerate()
     {
         ir.model.points.push(Point::new(
             PointId::mint(format!("catia:test:point#{index}")).expect("identity grammar"),
@@ -94,33 +108,66 @@ fn standard_edge_circle_axes_refuse_before_vector_growth() {
     let (curve, _) = crate::test_support::with_service_context(|ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
-            ctx, &mut service_ir, &mut AnnotationBuilder::new(), &bindings, &indices,
-            &[], &support, [0, 1], None, None,
-            &mut crate::nurbs::LaneRefusals::new(), &mut admission,
+            ctx,
+            &mut service_ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            &indices,
+            &[],
+            &support,
+            [0, 1],
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
         )
-    }).expect("service edge circle budget");
+    })
+    .expect("service edge circle budget");
     assert!(curve.is_some());
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
         build_standard_edge_curve(
-            ctx, &mut ir, &mut AnnotationBuilder::new(), &bindings, &indices,
-            &[], &support, [0, 1], None, None,
-            &mut crate::nurbs::LaneRefusals::new(), &mut admission,
+            ctx,
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bindings,
+            &indices,
+            &[],
+            &support,
+            [0, 1],
+            None,
+            None,
+            &mut crate::nurbs::LaneRefusals::new(),
+            &mut admission,
         )
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-        if limit.operation == "catia_standard_edge_circle_axes"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_edge_circle_axes")
+    );
 }
 
 fn standard_pcurve_geometry(
-    surface: &SurfaceGeometry, support: &StandardCurveSupport,
-    start: Point3, end: Point3, witness: Option<cadmpeg_ir::features::FinitePoint3>,
-    edge_curve: Option<&CurveGeometry>, refusal: &mut crate::nurbs::LaneRefusals,
+    surface: &SurfaceGeometry,
+    support: &StandardCurveSupport,
+    start: Point3,
+    end: Point3,
+    witness: Option<cadmpeg_ir::features::FinitePoint3>,
+    edge_curve: Option<&CurveGeometry>,
+    refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<(cadmpeg_ir::geometry::pcurve::PcurveGeometry, [f64; 2])> {
     crate::test_support::with_service_context(|ctx| {
-        charged_standard_pcurve_geometry(ctx, surface, support, start, end,
-            witness, edge_curve, refusal)
-    }).expect("service budget admits standard pcurve")
+        charged_standard_pcurve_geometry(
+            ctx,
+            surface,
+            support,
+            (start, end),
+            witness,
+            edge_curve,
+            refusal,
+        )
+    })
+    .expect("service budget admits standard pcurve")
 }
 
 #[test]

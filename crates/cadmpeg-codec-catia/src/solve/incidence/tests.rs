@@ -37,7 +37,10 @@ fn incidence_factor_checkpoint_refuses_nested_mask_copies() {
         factors.refine_edges(ctx, &[])
     };
     crate::test_support::with_service_context(|ctx| {
-        assert!(matches!(run(ctx).expect("service budget"), FaceFactorRefinement::Tracked(_)));
+        assert!(matches!(
+            run(ctx).expect("service budget"),
+            FaceFactorRefinement::Tracked(_)
+        ));
     });
     let mut refusals = BTreeSet::new();
     for cap in 0..=4 {
@@ -51,7 +54,10 @@ fn incidence_factor_checkpoint_refuses_nested_mask_copies() {
     }
     assert_eq!(
         refusals,
-        BTreeSet::from(["catia_face_factor_checkpoint_rows", "catia_face_factor_checkpoint_words"])
+        BTreeSet::from([
+            "catia_face_factor_checkpoint_rows",
+            "catia_face_factor_checkpoint_words"
+        ])
     );
 }
 
@@ -542,12 +548,12 @@ fn incidence_implicit_frontier_witness_refuses_map_and_pair_growth() {
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
     let coordinate_domains = crate::test_support::with_service_context(|ctx| {
-        let mut quotient = crate::solve::mesh_quotient::initial_mesh_quotient(
-            ctx, &choices, 2, &[[0, 1], [0, 1]],
-        )
-        .expect("service budget")
-        .expect("initial quotient");
-        quotient.prepare_coordinate_root_domains(ctx, 2, &choices, None)
+        let mut quotient =
+            crate::solve::mesh_quotient::initial_mesh_quotient(ctx, &choices, 2, &[[0, 1], [0, 1]])
+                .expect("service budget")
+                .expect("initial quotient");
+        quotient
+            .prepare_coordinate_root_domains(ctx, 2, &choices, None)
             .expect("service budget")
             .expect("coordinate domains")
     });

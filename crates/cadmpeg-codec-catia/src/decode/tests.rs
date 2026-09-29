@@ -19,19 +19,36 @@ use crate::CatiaCodec;
 #[test]
 fn standard_alias_route_propagates_entity_candidate_limit() {
     let bytes = standard_catpart_with_two_selector_value("Range", "CstAttr_Dimension", &[0xfe]);
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let options = DecodeOptions {
-        policy,
-        ..DecodeOptions::default()
-    };
-    let error = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &options)
-        .expect_err("7C05 identity candidate exceeds zero collection items");
-    assert!(matches!(error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "admit CATIA 7C05 identity candidate"));
+    let mut cap = 0;
+    let mut reached = false;
+    for _ in 0..512 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let options = DecodeOptions {
+            policy,
+            ..DecodeOptions::default()
+        };
+        match CatiaCodec.decode(&mut Cursor::new(bytes.clone()), &options) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "admit CATIA 7C05 identity candidate" =>
+            {
+                reached = true;
+                break;
+            }
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                cap = limit
+                    .used
+                    .checked_add(limit.additional)
+                    .expect("bounded fixture");
+            }
+            other => panic!("7C05 identity candidate limit not reached: {other:?}"),
+        }
+    }
+    assert!(reached, "7C05 identity candidate limit was not reached");
 }
 
 fn graph(id: &str, stream_name: &str, class_name: &str) -> CatiaObjectGraph {
@@ -81,9 +98,8 @@ fn modeling_scope_includes_only_the_declared_part_graph() {
 #[test]
 fn modeling_scope_refuses_retained_graph_identity_limit() {
     let graphs = vec![graph("part-graph", "part", "CATPrtCont")];
-    let limited = crate::test_support::with_retained_limit(0, |ctx| {
-        modeling_graph_scope(ctx, true, &graphs)
-    });
+    let limited =
+        crate::test_support::with_retained_limit(0, |ctx| modeling_graph_scope(ctx, true, &graphs));
     assert!(matches!(
         limited,
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))

@@ -25,7 +25,6 @@ impl ValueBlock {
     pub(crate) fn total_len(&self) -> usize {
         self.declared_len() + 1
     }
-
 }
 
 #[derive(Serialize, Deserialize)]
@@ -195,12 +194,19 @@ pub(crate) fn copy_fields_charged(
     for field in fields {
         let copy = match field {
             ValueField::Inline { bytes, offset } => ValueField::Inline {
-                bytes: InlineBytes(crate::resource::copy_retained_slice(ctx, &bytes.0,
-                    "catia_native_value_inline_bytes")?),
+                bytes: InlineBytes(crate::resource::copy_retained_slice(
+                    ctx,
+                    &bytes.0,
+                    "catia_native_value_inline_bytes",
+                )?),
                 offset: *offset,
             },
             ValueField::ByteString { bytes, offset } => ValueField::ByteString {
-                bytes: crate::resource::copy_retained_slice(ctx, bytes, "catia_native_value_field_bytes")?,
+                bytes: crate::resource::copy_retained_slice(
+                    ctx,
+                    bytes,
+                    "catia_native_value_field_bytes",
+                )?,
                 offset: *offset,
             },
             other => other.clone(),
@@ -247,24 +253,24 @@ fn parse_candidate(
     pos: usize,
 ) -> Result<Option<ValueBlock>, CodecError> {
     let Some(payload) = (|| -> Option<_> {
-    let declared_len =
-        usize::try_from(View::u32_le_at(bytes, pos + value_block::DECLARED_LEN)?).ok()?;
-    if declared_len < value_block::LEN {
-        return None;
-    }
-    let terminator = pos.checked_add(declared_len)?;
-    let next = terminator.checked_add(1)?;
-    if bytes.get(terminator) != Some(&0xfe) || bytes.get(next..next + 2) != Some(&[0x7c, 0x02]) {
-        return None;
-    }
-    Some(&bytes[pos + value_block::LEN..terminator])
+        let declared_len =
+            usize::try_from(View::u32_le_at(bytes, pos + value_block::DECLARED_LEN)?).ok()?;
+        if declared_len < value_block::LEN {
+            return None;
+        }
+        let terminator = pos.checked_add(declared_len)?;
+        let next = terminator.checked_add(1)?;
+        if bytes.get(terminator) != Some(&0xfe) || bytes.get(next..next + 2) != Some(&[0x7c, 0x02])
+        {
+            return None;
+        }
+        Some(&bytes[pos + value_block::LEN..terminator])
     })() else {
         return Ok(None);
     };
     Ok(Some(ValueBlock {
         pos,
-        payload: crate::resource::copy_retained_slice(ctx, payload,
-            "catia_value_block_payload")?,
+        payload: crate::resource::copy_retained_slice(ctx, payload, "catia_value_block_payload")?,
     }))
 }
 
@@ -320,16 +326,26 @@ pub(crate) fn copy_field_charged(
         },
         ValueField::Separator { offset } => ValueField::Separator { offset: *offset },
         ValueField::Inline { bytes, offset } => ValueField::Inline {
-            bytes: InlineBytes(crate::resource::copy_retained_slice(ctx, bytes.as_slice(),
-                "catia_value_selection_inline_bytes")?),
+            bytes: InlineBytes(crate::resource::copy_retained_slice(
+                ctx,
+                bytes.as_slice(),
+                "catia_value_selection_inline_bytes",
+            )?),
             offset: *offset,
         },
         ValueField::ByteString { bytes, offset } => ValueField::ByteString {
-            bytes: crate::resource::copy_retained_slice(ctx, bytes,
-                "catia_value_selection_string_bytes")?,
+            bytes: crate::resource::copy_retained_slice(
+                ctx,
+                bytes,
+                "catia_value_selection_string_bytes",
+            )?,
             offset: *offset,
         },
-        ValueField::Atom { value, width, offset } => ValueField::Atom {
+        ValueField::Atom {
+            value,
+            width,
+            offset,
+        } => ValueField::Atom {
             value: *value,
             width: *width,
             offset: *offset,

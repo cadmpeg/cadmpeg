@@ -35,7 +35,8 @@ fn copy_annotation_id(
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     ctx.charge_retained(
-        u64::try_from(id.len()).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+        u64::try_from(id.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
         operation,
     )?;
     let mut copy = String::new();
@@ -308,7 +309,9 @@ impl AnnotationBuilder {
         for (id, source) in &self.annotations.provenance {
             ctx.charge_collection_items(1, operation)?;
             let id = copy_string(ctx, id, operation)?;
-            annotations.provenance.insert(id, source.copy_charged(ctx, operation)?);
+            annotations
+                .provenance
+                .insert(id, source.copy_charged(ctx, operation)?);
         }
         for (id, note) in &self.annotations.exactness {
             ctx.charge_collection_items(1, operation)?;
@@ -445,8 +448,8 @@ impl AnnotationBuilder {
         field: String,
         exactness: Exactness,
     ) -> Result<&mut Self, &'static str> {
-        let field = FieldName::try_from(field)
-            .map_err(|_| "an exactness field name cannot be empty")?;
+        let field =
+            FieldName::try_from(field).map_err(|_| "an exactness field name cannot be empty")?;
         if exactness == Exactness::ByteExact {
             let Some(note) = self.annotations.exactness.remove(&id) else {
                 return Ok(self);
@@ -568,10 +571,12 @@ impl Annotations {
         let mut targets = std::collections::BTreeSet::new();
         let mut remapping = Vec::new();
         ctx.charge_collection_items(
-            u64::try_from(ids.len()).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+            u64::try_from(ids.len())
+                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
             operation,
         )?;
-        remapping.try_reserve(ids.len())
+        remapping
+            .try_reserve(ids.len())
             .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         for id in ids {
             let target = map(id)?;
@@ -583,17 +588,25 @@ impl Annotations {
             let provenance_target = if self.provenance.contains_key(id) {
                 ctx.charge_collection_items(1, operation)?;
                 Some(copy_annotation_id(ctx, &target, operation)?)
-            } else { None };
+            } else {
+                None
+            };
             if self.exactness.contains_key(id) {
                 ctx.charge_collection_items(1, operation)?;
             }
-            remapping.push((copy_annotation_id(ctx, id, operation)?, target, provenance_target));
+            remapping.push((
+                copy_annotation_id(ctx, id, operation)?,
+                target,
+                provenance_target,
+            ));
         }
         let mut remapped = Self::default();
         for (id, target, provenance_target) in remapping {
             if let Some(provenance) = self.provenance.remove(&id) {
                 let Some(provenance_target) = provenance_target else {
-                    return Err(cadmpeg_core::CodecError::malformed("missing charged annotation key"));
+                    return Err(cadmpeg_core::CodecError::malformed(
+                        "missing charged annotation key",
+                    ));
                 };
                 remapped.provenance.insert(provenance_target, provenance);
             }
@@ -649,7 +662,10 @@ impl Annotations {
                 }));
             }
         }
-        let count = other.provenance.len().checked_add(other.exactness.len())
+        let count = other
+            .provenance
+            .len()
+            .checked_add(other.exactness.len())
             .and_then(|count| u64::try_from(count).ok())
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         ctx.charge_collection_items(count, operation)?;
@@ -685,17 +701,23 @@ mod tests {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = collection_limit;
             policy.limits.max_retained_bytes = retained_limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root");
-            let outcome = annotations.map_ids_charged(&ctx, |_| {
-                Ok(String::from("test:point#mapped"))
-            }, "test_annotation_remap");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let outcome = annotations.map_ids_charged(
+                &ctx,
+                |_| Ok(String::from("test:point#mapped")),
+                "test_annotation_remap",
+            );
             (outcome, annotations)
         };
-        assert!(matches!(run(0, u64::MAX).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "test_annotation_remap"));
-        assert!(matches!(run(u64::MAX, 0).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "test_annotation_remap"));
+        assert!(
+            matches!(run(0, u64::MAX).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test_annotation_remap")
+        );
+        assert!(
+            matches!(run(u64::MAX, 0).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test_annotation_remap")
+        );
         let (outcome, annotations) = run(u64::MAX, u64::MAX);
         assert!(matches!(outcome, Ok(Ok(()))));
         assert!(annotations.provenance.contains_key("test:point#mapped"));
@@ -712,13 +734,15 @@ mod tests {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let result = target.append_charged(&ctx, builder.build(), "test_annotation_append");
             (result, target)
         };
-        assert!(matches!(run(0).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "test_annotation_append"));
+        assert!(
+            matches!(run(0).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test_annotation_append")
+        );
         let (result, target) = run(u64::MAX);
         assert!(matches!(result, Ok(Ok(()))));
         assert!(target.provenance.contains_key("test:point#0"));
@@ -728,24 +752,32 @@ mod tests {
         let mut builder = super::AnnotationBuilder::new();
         let stream = super::StreamHandle::new(crate::stream_name!("test"));
         builder.note("test:point#0", &stream, 7).tag("point");
-        builder.derived("test:point#0", "position").expect("field path");
+        builder
+            .derived("test:point#0", "position")
+            .expect("field path");
 
         let run = |collection_limit: u64, retained_limit: u64| {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_collection_items = collection_limit;
             policy.limits.max_retained_bytes = retained_limit;
-            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &[], &arena, &policy,
-            )
-            .expect("empty root");
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                    .expect("empty root");
             builder.copy_charged(&ctx, "test_annotation_copy")
         };
-        assert!(matches!(run(0, u64::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "test_annotation_copy"));
-        assert!(matches!(run(u64::MAX, 0), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "test_annotation_copy"));
-        assert_eq!(run(u64::MAX, u64::MAX).expect("service copy").build(), builder.clone().build());
+        assert!(
+            matches!(run(0, u64::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test_annotation_copy")
+        );
+        assert!(
+            matches!(run(u64::MAX, 0), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test_annotation_copy")
+        );
+        assert_eq!(
+            run(u64::MAX, u64::MAX).expect("service copy").build(),
+            builder.clone().build()
+        );
     }
 
     mod identity_merges;

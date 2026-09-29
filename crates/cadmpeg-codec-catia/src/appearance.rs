@@ -94,8 +94,12 @@ pub(crate) fn transfer(
             .into_iter()
             .enumerate()
         {
-            let Some(packet) = packet(&field) else { continue };
-            let ValueField::Inline { offset, .. } = field else { continue };
+            let Some(packet) = packet(&field) else {
+                continue;
+            };
+            let ValueField::Inline { offset, .. } = field else {
+                continue;
+            };
             let source_id = resource::format_retained(
                 ctx,
                 format_args!("{}:field#{offset:010}:{ordinal:06}", block.id),
@@ -115,7 +119,12 @@ pub(crate) fn transfer(
     let mut body = Vec::new();
     for packet in &packets {
         match packet.packet {
-            Packet::AllFaces(_) => resource::push(ctx, &mut all_faces, packet.rgba(), "catia_appearance_all_faces")?,
+            Packet::AllFaces(_) => resource::push(
+                ctx,
+                &mut all_faces,
+                packet.rgba(),
+                "catia_appearance_all_faces",
+            )?,
             Packet::Body(rgba) => resource::push(ctx, &mut body, rgba, "catia_appearance_body")?,
         }
     }
@@ -131,9 +140,7 @@ pub(crate) fn transfer(
         None => None,
     };
     let positional_colors = if let Some(colors) = positional_colors {
-        let compatible = if colors.len() != ir.model.faces.len() {
-            false
-        } else {
+        let compatible = if colors.len() == ir.model.faces.len() {
             match all_faces.as_slice() {
                 [] => body.len() > 1 && colors.as_slice() == body.as_slice(),
                 [base] => {
@@ -145,6 +152,8 @@ pub(crate) fn transfer(
                 }
                 _ => false,
             }
+        } else {
+            false
         };
         compatible.then_some(colors)
     } else {
@@ -203,7 +212,12 @@ fn copy_face_ids(
 ) -> Result<Vec<FaceId>, cadmpeg_core::CodecError> {
     let mut faces = Vec::new();
     for face in &ir.model.faces {
-        let id = resource::copy_id(ctx, face.id.as_str(), FaceId::mint, "catia_appearance_face_id")?;
+        let id = resource::copy_id(
+            ctx,
+            face.id.as_str(),
+            FaceId::mint,
+            "catia_appearance_face_id",
+        )?;
         resource::push(ctx, &mut faces, id, "catia_appearance_face_ids")?;
     }
     Ok(faces)
@@ -257,21 +271,32 @@ fn insert_appearance(
         .any(|appearance| appearance.id == id)
     {
         ctx.charge_entities(1, "admit CATIA appearance")?;
-        let retained_id = resource::copy_id(ctx, id.as_str(), AppearanceId::mint, "catia_appearance_asset_id")?;
-        let schema = resource::copy_retained_str(ctx, "CATIA V5 display color", "catia_appearance_schema")?;
-        resource::push(ctx, &mut ir.model.appearances, Appearance {
-            id: retained_id,
-            name: None,
-            library_id: None,
-            asset_guid: None,
-            visual_guid: None,
-            physical_token: None,
-            schema: Some(schema),
-            category: None,
-            base_color: Some(Color::from_rgba8(rgba[0], rgba[1], rgba[2], rgba[3])),
-            properties: BTreeMap::new(),
-            textures: Vec::new(),
-        }, "catia_appearance_assets")?;
+        let retained_id = resource::copy_id(
+            ctx,
+            id.as_str(),
+            AppearanceId::mint,
+            "catia_appearance_asset_id",
+        )?;
+        let schema =
+            resource::copy_retained_str(ctx, "CATIA V5 display color", "catia_appearance_schema")?;
+        resource::push(
+            ctx,
+            &mut ir.model.appearances,
+            Appearance {
+                id: retained_id,
+                name: None,
+                library_id: None,
+                asset_guid: None,
+                visual_guid: None,
+                physical_token: None,
+                schema: Some(schema),
+                category: None,
+                base_color: Some(Color::from_rgba8(rgba[0], rgba[1], rgba[2], rgba[3])),
+                properties: BTreeMap::new(),
+                textures: Vec::new(),
+            },
+            "catia_appearance_assets",
+        )?;
     }
     Ok(id)
 }
@@ -283,20 +308,17 @@ fn insert_binding(
     target: AppearanceTarget,
     index: usize,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let key = appearance.as_str().split_once('#').map_or("", |(_, key)| key);
+    let key = appearance
+        .as_str()
+        .split_once('#')
+        .map_or("", |(_, key)| key);
     let id = resource::format_retained(
         ctx,
         format_args!("catia:appearance:binding#{index}:{key}"),
         "catia_appearance_binding_id",
     )?;
     let id = AppearanceBindingId::mint(id).map_err(cadmpeg_core::CodecError::malformed)?;
-    insert_binding_record(
-        ctx,
-        ir,
-        appearance,
-        target,
-        id,
-    )
+    insert_binding_record(ctx, ir, appearance, target, id)
 }
 
 fn insert_source_binding(
@@ -306,7 +328,10 @@ fn insert_source_binding(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let appearance = insert_appearance(ctx, ir, packet.rgba())?;
     // Hex encoding preserves the source token while excluding key delimiters.
-    let key = appearance.as_str().split_once('#').map_or("", |(_, key)| key);
+    let key = appearance
+        .as_str()
+        .split_once('#')
+        .map_or("", |(_, key)| key);
     let id = resource::format_retained(
         ctx,
         format_args!(
@@ -321,7 +346,11 @@ fn insert_source_binding(
         ir,
         &appearance,
         AppearanceTarget::Source {
-            source_id: resource::copy_retained_str(ctx, &packet.source_id, "catia_appearance_bound_source")?,
+            source_id: resource::copy_retained_str(
+                ctx,
+                &packet.source_id,
+                "catia_appearance_bound_source",
+            )?,
         },
         id,
     )
@@ -336,20 +365,30 @@ fn insert_binding_record(
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_entities(1, "admit CATIA appearance binding")?;
     let retained_appearance = resource::copy_id(
-        ctx, appearance.as_str(), AppearanceId::mint, "catia_appearance_binding_asset_id",
+        ctx,
+        appearance.as_str(),
+        AppearanceId::mint,
+        "catia_appearance_binding_asset_id",
     )?;
     let object_type = resource::copy_retained_str(
-        ctx, "CATIA V5 display property", "catia_appearance_object_type",
+        ctx,
+        "CATIA V5 display property",
+        "catia_appearance_object_type",
     )?;
-    resource::push(ctx, &mut ir.model.appearance_bindings, AppearanceBinding {
-        id,
-        target,
-        appearance: retained_appearance,
-        source_entity_id: None,
-        object_type: Some(object_type),
-        visible: None,
-        channels: BTreeMap::new(),
-    }, "catia_appearance_bindings")?;
+    resource::push(
+        ctx,
+        &mut ir.model.appearance_bindings,
+        AppearanceBinding {
+            id,
+            target,
+            appearance: retained_appearance,
+            source_entity_id: None,
+            object_type: Some(object_type),
+            visible: None,
+            channels: BTreeMap::new(),
+        },
+        "catia_appearance_bindings",
+    )?;
     Ok(())
 }
 
@@ -480,12 +519,15 @@ mod tests {
                     None,
                 )
             });
-            assert!(matches!(
-                refusal,
-                Err(cadmpeg_core::CodecError::ResourceLimit(resource))
-                    if resource.operation == operation
-                        && resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-            ), "limit {limit}");
+            assert!(
+                matches!(
+                    refusal,
+                    Err(cadmpeg_core::CodecError::ResourceLimit(resource))
+                        if resource.operation == operation
+                            && resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                ),
+                "limit {limit}"
+            );
         }
         let retained_refusal = crate::test_support::with_retained_limit(4, |ctx| {
             transfer(

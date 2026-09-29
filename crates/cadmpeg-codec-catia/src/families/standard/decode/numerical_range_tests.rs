@@ -16,14 +16,32 @@ fn bezier_parameter_search_refuses_before_nodes_queue_and_parameters() {
     ] {
         let result = crate::test_support::with_collection_limit(limit, |ctx| {
             let mut parameters = Vec::new();
-            collect_bezier_point_parameters(ctx, [point; 6], [0.0, 1.0], point, 0.01, 1.0, &mut parameters)
+            collect_bezier_point_parameters(
+                ctx,
+                [point; 6],
+                [0.0, 1.0],
+                point,
+                0.01,
+                1.0,
+                &mut parameters,
+            )
         });
-        assert!(matches!(result, Err(CodecError::ResourceLimit(error)) if error.operation == operation));
+        assert!(
+            matches!(result, Err(CodecError::ResourceLimit(error)) if error.operation == operation)
+        );
     }
     crate::test_support::with_service_context(|ctx| {
         let mut parameters = Vec::new();
-        collect_bezier_point_parameters(ctx, [point; 6], [0.0, 1.0], point, 0.01, 1.0, &mut parameters)
-            .expect("service budget");
+        collect_bezier_point_parameters(
+            ctx,
+            [point; 6],
+            [0.0, 1.0],
+            point,
+            0.01,
+            1.0,
+            &mut parameters,
+        )
+        .expect("service budget");
         assert!(!parameters.is_empty());
     });
 }
@@ -39,7 +57,10 @@ fn numerical_0922_quintic_keeps_both_branches() {
         knots.extend(vec![0.5 * d; 6]);
         knots.extend(vec![d; 6]);
         let n = NurbsCurve::from_lanes(5, knots, poles, None, false).expect("valid quintic curve");
-        let result = crate::test_support::with_service_context(|ctx| standard_limit_curve_point_parameter(ctx, &n, Point3::new(0., 0., 0.), 2e-3)).expect("service budget");
+        let result = crate::test_support::with_service_context(|ctx| {
+            standard_limit_curve_point_parameter(ctx, &n, Point3::new(0., 0., 0.), 2e-3)
+        })
+        .expect("service budget");
         println!("CATIA folded quintic locus d{d:e}: {result:?}");
         assert_eq!(result, None);
     }
@@ -53,7 +74,10 @@ fn numerical_0922_finite_bezier_midpoint() {
         let mut knots = vec![0.; 6];
         knots.extend(vec![1.; 6]);
         let n = NurbsCurve::from_lanes(5, knots, poles, None, false).expect("valid quintic curve");
-        let result = crate::test_support::with_service_context(|ctx| standard_limit_curve_point_parameter(ctx, &n, Point3::new(x, 0.5, 0.), 2e-3)).expect("service budget");
+        let result = crate::test_support::with_service_context(|ctx| {
+            standard_limit_curve_point_parameter(ctx, &n, Point3::new(x, 0.5, 0.), 2e-3)
+        })
+        .expect("service budget");
         println!("CATIA straight quintic at x{x:e} midpoint: {result:?}");
         assert_eq!(result, Some(0.5));
     }
@@ -68,9 +92,11 @@ fn standard_limit_curve_finds_interior_point_on_wide_finite_domain() {
     knots.extend(vec![f64::MAX; 6]);
     let curve =
         NurbsCurve::from_lanes(5, knots, poles, None, false).expect("wide finite quintic domain");
-    let parameter = crate::test_support::with_service_context(|ctx| standard_limit_curve_point_parameter(ctx, &curve, Point3::new(0.0, 0.2, 0.0), 2e-3))
-        .expect("service budget")
-        .expect("interior point parameter");
+    let parameter = crate::test_support::with_service_context(|ctx| {
+        standard_limit_curve_point_parameter(ctx, &curve, Point3::new(0.0, 0.2, 0.0), 2e-3)
+    })
+    .expect("service budget")
+    .expect("interior point parameter");
     assert!((parameter / f64::MAX + 0.6).abs() <= 0.01);
 }
 

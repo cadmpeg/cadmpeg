@@ -786,31 +786,46 @@ impl LoopRing {
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         let member_count = vertices.len();
-        let item_count = member_count.checked_mul(2).and_then(|count| u64::try_from(count).ok())
+        let item_count = member_count
+            .checked_mul(2)
+            .and_then(|count| u64::try_from(count).ok())
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         ctx.charge_collection_items(item_count, operation)?;
         let mut coedges = Vec::new();
         let mut vertex_uses = Vec::new();
-        coedges.try_reserve(member_count)
+        coedges
+            .try_reserve(member_count)
             .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        vertex_uses.try_reserve(member_count)
+        vertex_uses
+            .try_reserve(member_count)
             .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-        let namespace_len = namespace.format().len()
+        let namespace_len = namespace
+            .format()
+            .len()
             .checked_add(namespace.scope().len())
             .and_then(|length| length.checked_add(namespace.kind().len()))
             .and_then(|length| length.checked_add(3))
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         for (ordinal, vertex) in vertices.into_iter().enumerate() {
-            let digits = if ordinal == 0 { 1 } else {
+            let digits = if ordinal == 0 {
+                1
+            } else {
                 usize::try_from(ordinal.ilog10())
-                    .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))? + 1
+                    .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?
+                    + 1
             };
-            let key_len = key_prefix.as_str().len().checked_add(1)
+            let key_len = key_prefix
+                .as_str()
+                .len()
+                .checked_add(1)
                 .and_then(|length| length.checked_add(digits))
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-            let id_len = namespace_len.checked_add(key_len)
+            let id_len = namespace_len
+                .checked_add(key_len)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-            let retained = id_len.checked_mul(2).and_then(|length| u64::try_from(length).ok())
+            let retained = id_len
+                .checked_mul(2)
+                .and_then(|length| u64::try_from(length).ok())
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
             ctx.charge_retained(retained, operation)?;
             let temporary = u64::try_from(key_len)
@@ -825,7 +840,10 @@ impl LoopRing {
             coedges.push(coedge);
             vertex_uses.push(vertex_use);
         }
-        Ok(Self { coedges, vertex_uses })
+        Ok(Self {
+            coedges,
+            vertex_uses,
+        })
     }
 
     /// Append a distinct coedge in traversal order.
@@ -1883,12 +1901,9 @@ mod tests {
         let first = super::FaceId::mint("test:model:face#first").unwrap();
         let second = super::FaceId::mint("test:model:face#second").unwrap();
         assert!(super::Shell::with_faces(shell_id.clone(), region_id.clone(), Vec::new()).is_err());
-        let mut shell = super::Shell::with_faces(
-            shell_id,
-            region_id,
-            vec![first.clone(), second.clone()],
-        )
-        .unwrap();
+        let mut shell =
+            super::Shell::with_faces(shell_id, region_id, vec![first.clone(), second.clone()])
+                .unwrap();
         assert_eq!(shell.faces(), &[first.clone(), second.clone()]);
         assert!(shell.replace_faces(Vec::new()).is_err());
         assert_eq!(shell.faces(), &[first, second.clone()]);
@@ -1975,19 +1990,26 @@ mod tests {
             let mut policy = DecodePolicy::service();
             policy.limits.max_collection_items = collection_limit;
             policy.limits.max_retained_bytes = retained_limit;
-            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-                .expect("empty root");
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let namespace = crate::identity_namespace!("catia", "standard", "coedge");
             let vertex = super::VertexId::mint("catia:standard:v#1").expect("identity");
             LoopRing::from_vertices_charged(
-                &ctx, &namespace, &crate::ids::IdentityKey::from(0_usize).colon(0_usize),
-                NonEmptyMembers::one(vertex), "test_generated_loop_ring",
+                &ctx,
+                &namespace,
+                &crate::ids::IdentityKey::from(0_usize).colon(0_usize),
+                NonEmptyMembers::one(vertex),
+                "test_generated_loop_ring",
             )
         };
-        assert!(matches!(run(1, u64::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "test_generated_loop_ring"));
-        assert!(matches!(run(u64::MAX, 0), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "test_generated_loop_ring"));
+        assert!(
+            matches!(run(1, u64::MAX), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test_generated_loop_ring")
+        );
+        assert!(
+            matches!(run(u64::MAX, 0), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test_generated_loop_ring")
+        );
         let ring = run(u64::MAX, u64::MAX).expect("service profile admits generated ring");
         assert_eq!(ring.coedges()[0].as_str(), "catia:standard:coedge#0:0:0");
     }

@@ -8,11 +8,11 @@ use std::hash::Hash;
 use cadmpeg_core::decode::{
     DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, ScopedReservation,
 };
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::report::decode::{Coverage, CoverageKey};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::AnnotationBuilder;
 
 use crate::loss::CatiaLossCode;
 
@@ -244,18 +244,24 @@ mod collection_tests {
         let set = crate::test_support::with_collection_limit(0, |ctx| {
             super::collect_set(ctx, [7u32], "catia_report_set_test")
         });
-        assert!(matches!(set, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_report_set_test"));
+        assert!(
+            matches!(set, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_report_set_test")
+        );
         let map = crate::test_support::with_collection_limit(0, |ctx| {
             super::collect_map(ctx, [(7u32, 9u32)], "catia_report_map_test")
         });
-        assert!(matches!(map, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_report_map_test"));
+        assert!(
+            matches!(map, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_report_map_test")
+        );
         let owned = crate::test_support::with_retained_limit(0, |ctx| {
             super::collect_string_set(ctx, ["entity"], "catia_report_owned_set_test")
         });
-        assert!(matches!(owned, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_report_owned_set_test"));
+        assert!(
+            matches!(owned, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_report_owned_set_test")
+        );
         let service = crate::test_support::with_service_context(|ctx| {
             super::collect_string_set(ctx, ["entity"], "catia_report_owned_set_test")
         })
@@ -275,9 +281,11 @@ mod collection_tests {
                 "catia_coverage_test",
             )
         });
-        assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        assert!(
+            matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_coverage_test"
-                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
         let retained = crate::test_support::with_retained_limit(0, |ctx| {
             super::record_coverage(
                 ctx,
@@ -287,9 +295,11 @@ mod collection_tests {
                 "catia_coverage_test",
             )
         });
-        assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        assert!(
+            matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_coverage_test"
-                && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
         let coverage = crate::test_support::with_service_context(|ctx| {
             let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
             super::record_coverage(ctx, &mut coverage, key, 3, "catia_coverage_test")
@@ -311,9 +321,11 @@ mod collection_tests {
                 "catia_report_loss_test",
             )
         });
-        assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        assert!(
+            matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_report_loss_test"
-                && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
         let collection = crate::test_support::with_collection_limit(0, |ctx| {
             super::push_loss(
                 ctx,
@@ -323,9 +335,11 @@ mod collection_tests {
                 "catia_report_loss_test",
             )
         });
-        assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        assert!(
+            matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "catia_report_loss_test"
-                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
         let notes = crate::test_support::with_service_context(|ctx| {
             let mut notes = Vec::new();
             super::push_loss(
@@ -466,21 +480,41 @@ mod derived_annotation_tests {
     #[test]
     fn derived_field_refuses_retained_and_collection_limits() {
         let retained = crate::test_support::with_retained_limit(0, |ctx| {
-            super::derived_annotation(ctx, &mut cadmpeg_ir::AnnotationBuilder::new(),
-                "catia:test:vertex#0", "point", "catia_annotation_field")
+            super::derived_annotation(
+                ctx,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                "catia:test:vertex#0",
+                "point",
+                "catia_annotation_field",
+            )
         });
-        assert!(matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_annotation_field"));
+        assert!(
+            matches!(retained, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_annotation_field")
+        );
         let collection = crate::test_support::with_collection_limit(0, |ctx| {
-            super::derived_annotation(ctx, &mut cadmpeg_ir::AnnotationBuilder::new(),
-                "catia:test:vertex#0", "point", "catia_annotation_field")
+            super::derived_annotation(
+                ctx,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                "catia:test:vertex#0",
+                "point",
+                "catia_annotation_field",
+            )
         });
-        assert!(matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_annotation_field"));
+        assert!(
+            matches!(collection, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_annotation_field")
+        );
         let annotations = crate::test_support::with_service_context(|ctx| {
             let mut builder = cadmpeg_ir::AnnotationBuilder::new();
-            super::derived_annotation(ctx, &mut builder, "catia:test:vertex#0", "point",
-                "catia_annotation_field").expect("service profile admits derived field");
+            super::derived_annotation(
+                ctx,
+                &mut builder,
+                "catia:test:vertex#0",
+                "point",
+                "catia_annotation_field",
+            )
+            .expect("service profile admits derived field");
             builder.build()
         });
         let fields = annotations.exactness()["catia:test:vertex#0"].fields();
@@ -550,15 +584,19 @@ fn formatted_length(
 mod scoped_format_tests {
     #[test]
     fn scoped_format_refuses_before_temporary_string_growth() {
-        let refused = crate::test_support::with_materialized_limit(0, |ctx|
+        let refused = crate::test_support::with_materialized_limit(0, |ctx| {
             super::format_scoped(ctx, format_args!("edge {}", 42), "catia_test_scoped_format")
-                .map(|(text, _reservation)| text));
-        assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_test_scoped_format"));
-        let text = crate::test_support::with_service_context(|ctx|
+                .map(|(text, _reservation)| text)
+        });
+        assert!(
+            matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_test_scoped_format")
+        );
+        let text = crate::test_support::with_service_context(|ctx| {
             super::format_scoped(ctx, format_args!("edge {}", 42), "catia_test_scoped_format")
-                .map(|(text, _reservation)| text))
-            .expect("service budget admits temporary text");
+                .map(|(text, _reservation)| text)
+        })
+        .expect("service budget admits temporary text");
         assert_eq!(text, "edge 42");
     }
 }
@@ -648,16 +686,15 @@ mod id_format_tests {
 
         let namespace = cadmpeg_ir::identity_namespace!("catia", "b5", "profile");
         let limited = crate::test_support::with_retained_limit(1, |ctx| {
-            super::compose_u32_id(ctx, &namespace, 42, CurveId::mint,
-                "catia_b5_profile_id")
+            super::compose_u32_id(ctx, &namespace, 42, CurveId::mint, "catia_b5_profile_id")
         });
         assert!(matches!(limited,
             Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.operation == "catia_b5_profile_id"));
         let id = crate::test_support::with_service_context(|ctx| {
-            super::compose_u32_id(ctx, &namespace, 42, CurveId::mint,
-                "catia_b5_profile_id")
-        }).expect("service budget admits the identity");
+            super::compose_u32_id(ctx, &namespace, 42, CurveId::mint, "catia_b5_profile_id")
+        })
+        .expect("service budget admits the identity");
         assert_eq!(id.as_str(), "catia:b5:profile#42");
     }
 
@@ -864,20 +901,33 @@ pub(crate) fn copy_intcurve_support_context(
 
     let [left, right] = context.sides().each_ref().map(|side| {
         Ok::<_, CodecError>(IntcurveSupportSide {
-            surface: side.surface.as_ref().map(|id|
-                copy_id(ctx, id.as_str(), SurfaceId::mint, operation)).transpose()?,
-            pcurve: side.pcurve.as_ref().map(|pcurve|
-                Ok::<_, CodecError>(SupportPcurve::new(
-                    copy_pcurve_geometry(ctx, &pcurve.geometry, operation)?,
-                    pcurve.parameter_range,
-                ))).transpose()?,
+            surface: side
+                .surface
+                .as_ref()
+                .map(|id| copy_id(ctx, id.as_str(), SurfaceId::mint, operation))
+                .transpose()?,
+            pcurve: side
+                .pcurve
+                .as_ref()
+                .map(|pcurve| {
+                    Ok::<_, CodecError>(SupportPcurve::new(
+                        copy_pcurve_geometry(ctx, &pcurve.geometry, operation)?,
+                        pcurve.parameter_range,
+                    ))
+                })
+                .transpose()?,
         })
     });
-    let [first, second, third] = context.discontinuities().each_ref().map(|lane|
-        copy_retained_slice(ctx, lane, operation));
+    let [first, second, third] = context
+        .discontinuities()
+        .each_ref()
+        .map(|lane| copy_retained_slice(ctx, lane, operation));
     IntcurveSupportContext::from_parts(
-        [left?, right?], context.parameter_range(), [first?, second?, third?],
-    ).map_err(CodecError::malformed)
+        [left?, right?],
+        context.parameter_range(),
+        [first?, second?, third?],
+    )
+    .map_err(CodecError::malformed)
 }
 
 #[cfg(test)]
@@ -1174,7 +1224,8 @@ pub(crate) fn temporary_vec<'a, T>(
     count: usize,
     operation: &'static str,
 ) -> Result<(Vec<T>, ScopedReservation<'a>), CodecError> {
-    let bytes = count.checked_mul(std::mem::size_of::<T>().max(1))
+    let bytes = count
+        .checked_mul(std::mem::size_of::<T>().max(1))
         .and_then(|bytes| u64::try_from(bytes).ok())
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
     let reservation = ctx.reserve_scoped(bytes, operation)?;

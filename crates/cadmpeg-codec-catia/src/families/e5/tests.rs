@@ -33,7 +33,8 @@ macro_rules! e5_test_context {
 fn e5_circle_parser_reads_framed_carrier() {
     e5_test_context!(ctx);
     let stream = e5_circle_stream();
-    let circles = crate::families::e5::records::e5_circles(&ctx, &stream).expect("service resource budget");
+    let circles =
+        crate::families::e5::records::e5_circles(&ctx, &stream).expect("service resource budget");
     assert_eq!(circles.len(), 1);
     match &circles[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
@@ -46,15 +47,24 @@ fn e5_circle_parser_reads_framed_carrier() {
         }
         other => panic!("expected circle, got {other:?}"),
     }
-    let surfaces =
-        crate::families::e5::records::e5_surfaces(&ctx, &stream, &mut crate::nurbs::LaneRefusals::new()).expect("service resource budget");
+    let surfaces = crate::families::e5::records::e5_surfaces(
+        &ctx,
+        &stream,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("service resource budget");
     assert!(
         matches!(surfaces[0].geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) if { cylinder_surface.radius().get() == 2.5 })
     );
 
     let mut small = e5_circle_stream();
     small[86..94].copy_from_slice(&f64::from_bits(1).to_le_bytes());
-    assert_eq!(crate::families::e5::records::e5_circles(&ctx, &small).expect("service resource budget").len(), 1);
+    assert_eq!(
+        crate::families::e5::records::e5_circles(&ctx, &small)
+            .expect("service resource budget")
+            .len(),
+        1
+    );
     assert!(crate::families::e5::records::e5_surfaces(
         &ctx,
         &small,
@@ -65,7 +75,9 @@ fn e5_circle_parser_reads_framed_carrier() {
 
     let mut zero = e5_circle_stream();
     zero[86..94].copy_from_slice(&0.0_f64.to_le_bytes());
-    assert!(crate::families::e5::records::e5_circles(&ctx, &zero).expect("service resource budget").is_empty());
+    assert!(crate::families::e5::records::e5_circles(&ctx, &zero)
+        .expect("service resource budget")
+        .is_empty());
     assert!(crate::families::e5::records::e5_surfaces(
         &ctx,
         &zero,
@@ -87,7 +99,8 @@ fn e5_edge_parser_reads_u24_reference_tokens() {
     record[5..7].copy_from_slice(&(payload.len() as u16).to_le_bytes());
     record.extend_from_slice(&payload);
 
-    let edges = crate::families::e5::records::e5_edges(&ctx, &record).expect("service resource budget");
+    let edges =
+        crate::families::e5::records::e5_edges(&ctx, &record).expect("service resource budget");
     assert_eq!(edges.len(), 1);
     assert_eq!(edges[0].start_vertex_id, 0x06_0504);
     assert_eq!(edges[0].end_vertex_id, 0x09_0807);
@@ -100,7 +113,9 @@ fn e5_circle_plane_and_edge_results_refuse_before_growth() {
     let mut edge = vec![0u8; 13];
     edge[..3].copy_from_slice(&[0xe5, 0x0d, 0x03]);
     edge[3] = 0xff;
-    let payload = [0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x80];
+    let payload = [
+        0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x80,
+    ];
     edge[5..7].copy_from_slice(&(payload.len() as u16).to_le_bytes());
     edge.extend_from_slice(&payload);
     assert!(matches!(
@@ -124,17 +139,27 @@ fn e5_carrier_id_creation_refuses_retained_limit() {
     for cap in 0..16_384 {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
-        match CatiaCodec.decode(&mut Cursor::new(&file), &DecodeOptions {
-            policy, ..DecodeOptions::default()
-        }) {
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+        match CatiaCodec.decode(
+            &mut Cursor::new(&file),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) => {
                 refused.insert(limit.operation);
             }
             Ok(_) => break,
             Err(error) => panic!("unexpected E5 decode refusal: {error}"),
         }
     }
-    for operation in ["catia_e5_payload_id", "catia_e5_surface_id", "catia_e5_free_vertex_id"] {
+    for operation in [
+        "catia_e5_payload_id",
+        "catia_e5_surface_id",
+        "catia_e5_free_vertex_id",
+    ] {
         assert!(refused.contains(operation), "no refusal at {operation}");
     }
 }
@@ -374,7 +399,8 @@ fn e5_surface_parser_reads_framed_torus() {
         &ctx,
         &e5_torus_stream(),
         &mut crate::nurbs::LaneRefusals::new(),
-    ).expect("service resource budget");
+    )
+    .expect("service resource budget");
     assert_eq!(surfaces.len(), 1);
     match &surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
@@ -420,7 +446,8 @@ fn e5_surface_parser_reads_framed_torus() {
 #[test]
 fn e5_plane_parser_preserves_origin_and_natural_bounds_without_fabricating_axes() {
     e5_test_context!(ctx);
-    let planes = crate::families::e5::records::e5_planes(&ctx, &e5_plane_stream()).expect("service resource budget");
+    let planes = crate::families::e5::records::e5_planes(&ctx, &e5_plane_stream())
+        .expect("service resource budget");
     assert_eq!(planes.len(), 1);
     assert_eq!(planes[0].record_id, 42);
     assert_eq!(coordinates(planes[0].origin), [1.0, 2.0, 3.0]);
@@ -432,7 +459,8 @@ fn e5_plane_parser_preserves_origin_and_natural_bounds_without_fabricating_axes(
 fn e5_plane_parser_reads_terminal_bounds_after_extended_transform_lane() {
     e5_test_context!(ctx);
     let planes =
-        crate::families::e5::records::e5_planes(&ctx, &e5_plane_stream_with_transform_scalars(5)).expect("service resource budget");
+        crate::families::e5::records::e5_planes(&ctx, &e5_plane_stream_with_transform_scalars(5))
+            .expect("service resource budget");
     assert_eq!(planes.len(), 1);
     assert_eq!(coordinates(planes[0].origin), [1.0, 2.0, 3.0]);
     assert_eq!(planes[0].u_range, [-4.0, 7.0]);
@@ -454,7 +482,8 @@ fn e5_vertices_exclude_marker_like_record_payload_bytes() {
     }
     append_e5_record(&mut stream, 0xfe, 2, &[]);
 
-    let vertices = crate::families::e5::records::e5_vertices(&ctx, &stream, 1).expect("service resource budget");
+    let vertices = crate::families::e5::records::e5_vertices(&ctx, &stream, 1)
+        .expect("service resource budget");
     assert_eq!(vertices.len(), 1);
     assert_eq!(vertices[0], cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
 }
@@ -472,7 +501,9 @@ fn e5_vertices_reject_multiple_matching_coordinate_runs() {
     }
     append_e5_record(&mut stream, 0xfe, 3, &[]);
 
-    assert!(crate::families::e5::records::e5_vertices(&ctx, &stream, 1).expect("service resource budget").is_empty());
+    assert!(crate::families::e5::records::e5_vertices(&ctx, &stream, 1)
+        .expect("service resource budget")
+        .is_empty());
 }
 
 #[test]
@@ -490,7 +521,8 @@ fn e5_vertices_concatenate_a_complete_split_roster() {
     }
     append_e5_record(&mut stream, 0xfe, 3, &[]);
 
-    let vertices = crate::families::e5::records::e5_vertices(&ctx, &stream, 4).expect("service resource budget");
+    let vertices = crate::families::e5::records::e5_vertices(&ctx, &stream, 4)
+        .expect("service resource budget");
     assert_eq!(
         vertices.iter().map(|point| point.x).collect::<Vec<_>>(),
         vec![1.0, 2.0, 3.0, 4.0]
@@ -604,9 +636,10 @@ fn e5_decode_route_propagates_orientation_collection_refusal() {
             },
         );
         match result {
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)))
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                    && limit.operation == "catia e5 orientation locations" =>
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "catia e5 orientation locations" =>
             {
                 found = true;
                 break;
@@ -615,7 +648,10 @@ fn e5_decode_route_propagates_orientation_collection_refusal() {
             _ => {}
         }
     }
-    assert!(found, "E5 orientation locations must propagate their collection refusal");
+    assert!(
+        found,
+        "E5 orientation locations must propagate their collection refusal"
+    );
 }
 
 #[test]
@@ -627,9 +663,14 @@ fn e5_topology_transfer_refuses_before_reference_maps() {
         policy.limits.max_collection_items = cap;
         match CatiaCodec.decode(
             &mut Cursor::new(&file),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         ) {
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) => {
                 refused.insert(limit.operation);
             }
             Ok(_) => break,
@@ -654,10 +695,16 @@ fn e5_topology_emission_refuses_retained_identity_copies() {
     for cap in 0..32_768 {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
-        match CatiaCodec.decode(&mut Cursor::new(&file), &DecodeOptions {
-            policy, ..DecodeOptions::default()
-        }) {
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+        match CatiaCodec.decode(
+            &mut Cursor::new(&file),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) => {
                 refused.insert(limit.operation);
             }
             Ok(_) => break,
@@ -682,9 +729,14 @@ fn e5_boundary_plan_refuses_before_face_and_relation_growth() {
         policy.limits.max_collection_items = cap;
         match CatiaCodec.decode(
             &mut Cursor::new(&file),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         ) {
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) => {
                 refused.insert(limit.operation);
             }
             Ok(_) => break,
@@ -712,9 +764,14 @@ fn e5_emitted_rosters_refuse_before_nested_growth() {
         policy.limits.max_collection_items = cap;
         match CatiaCodec.decode(
             &mut Cursor::new(&file),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         ) {
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) => {
                 refused.insert(limit.operation);
             }
             Ok(_) => break,
@@ -747,9 +804,14 @@ fn e5_free_vertex_owner_refuses_before_roster_growth() {
         policy.limits.max_collection_items = cap;
         match CatiaCodec.decode(
             &mut Cursor::new(&file),
-            &DecodeOptions { policy, ..DecodeOptions::default() },
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
         ) {
-            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) => {
                 refused.insert(limit.operation);
             }
             Ok(_) => break,
@@ -772,19 +834,36 @@ fn e5_route_propagates_station_collection_refusal() {
         append_e5_record(&mut stream, 0xfe, id, &[]);
     }
     let file = object_main_catpart(&stream);
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 13;
-    let options = DecodeOptions {
-        policy,
-        ..DecodeOptions::default()
-    };
-    let error = CatiaCodec
-        .decode(&mut Cursor::new(file), &options)
-        .expect_err("two E5 stations need 14 collection items");
-    assert!(matches!(error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "decode CATIA E5 rolling-ball stations"));
+    let mut cap = 13;
+    let mut reached = false;
+    for _ in 0..512 {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let options = DecodeOptions {
+            policy,
+            ..DecodeOptions::default()
+        };
+        match CatiaCodec.decode(&mut Cursor::new(file.clone()), &options) {
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "decode CATIA E5 rolling-ball stations" =>
+            {
+                reached = true;
+                break;
+            }
+            Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            ))) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems => {
+                cap = limit
+                    .used
+                    .checked_add(limit.additional)
+                    .expect("bounded fixture");
+            }
+            other => panic!("E5 station limit not reached: {other:?}"),
+        }
+    }
+    assert!(reached, "E5 station limit was not reached");
 }
 
 #[test]
@@ -925,8 +1004,17 @@ fn decode_e5_stream_binds_file_level_vertex_run() {
 
     let record_range = crate::container::e5_record_stream(&file).expect("coherent E5 walk");
     assert!(!record_range.contains(&vertex_file_start));
-    assert!(crate::families::e5::records::e5_vertices(&ctx, &file[record_range], 4).expect("service resource budget").is_empty());
-    assert_eq!(crate::families::e5::records::e5_vertices(&ctx, &file, 4).expect("service resource budget").len(), 4);
+    assert!(
+        crate::families::e5::records::e5_vertices(&ctx, &file[record_range], 4)
+            .expect("service resource budget")
+            .is_empty()
+    );
+    assert_eq!(
+        crate::families::e5::records::e5_vertices(&ctx, &file, 4)
+            .expect("service resource budget")
+            .len(),
+        4
+    );
     let scan = crate::test_support::with_service_context(|ctx| {
         crate::container::scan_bytes(ctx, file.clone())
     })

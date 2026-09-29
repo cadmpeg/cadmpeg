@@ -129,7 +129,7 @@ impl TrimPacket {
         for &length in &self.strip_lengths {
             let (strip, tail) = remaining.split_at(length);
             remaining = tail;
-            for index in 0..length.checked_sub(2).unwrap_or(0) {
+            for index in 0..length - length.min(2) {
                 ctx.charge_retained(
                     std::mem::size_of::<[u32; 3]>() as u64,
                     "catia_trim_triangles",
@@ -149,7 +149,7 @@ impl TrimPacket {
         for &length in &self.fan_lengths {
             let (fan, tail) = remaining.split_at(length);
             remaining = tail;
-            for index in 1..length.checked_sub(1).unwrap_or(0) {
+            for index in 1..length - length.min(1) {
                 ctx.charge_retained(
                     std::mem::size_of::<[u32; 3]>() as u64,
                     "catia_trim_triangles",

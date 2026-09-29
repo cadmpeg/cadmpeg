@@ -12,8 +12,8 @@ const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::pcurves::{
-    cylinder_point, neutral_pcurve_point, oriented_line_plan,
-    sphere_great_circle_geometry, sphere_great_circle_pcurve,
+    cylinder_point, neutral_pcurve_point, oriented_line_plan, sphere_great_circle_geometry,
+    sphere_great_circle_pcurve,
 };
 use super::super::surfaces::revolution_surface;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
@@ -36,67 +36,85 @@ fn merge_curve_plan(
 ) {
     crate::test_support::with_service_context(|ctx| {
         super::super::edges::merge_curve_plan(ctx, plans, conflicts, edge, candidate)
-    }).expect("service budget");
+    })
+    .expect("service budget");
 }
 
 fn oriented_nurbs_range(
-    geometry: CurveGeometry,
+    geometry: &CurveGeometry,
     parameters: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
 ) -> Option<CurvePlan> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::pcurves::oriented_nurbs_range(ctx, &geometry,
-            parameters, edge_start, edge_end)
-    }).expect("service budget")
+        super::super::pcurves::oriented_nurbs_range(ctx, geometry, parameters, edge_start, edge_end)
+    })
+    .expect("service budget")
 }
 
 fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<CurveGeometry> {
     crate::test_support::with_service_context(|ctx| {
         super::super::pcurves::lifted_curve_geometry(ctx, pcurve, surface)
-    }).expect("service budget")
+    })
+    .expect("service budget")
 }
 
 fn isocurve_endpoint_parameters(pcurve: &B5Pcurve, parameters: [f64; 2]) -> Option<[f64; 2]> {
     crate::test_support::with_service_context(|ctx| {
         super::super::pcurves::isocurve_endpoint_parameters(ctx, pcurve, parameters)
-    }).expect("service budget")
+    })
+    .expect("service budget")
 }
 
 fn oriented_circle_plan(
-    pcurve: &B5Pcurve, surface: &B5Surface, geometry: &CurveGeometry,
-    parameters: [f64; 2], edge_start: [f64; 3], edge_end: [f64; 3],
+    pcurve: &B5Pcurve,
+    surface: &B5Surface,
+    geometry: &CurveGeometry,
+    parameters: [f64; 2],
+    edge_start: [f64; 3],
+    edge_end: [f64; 3],
 ) -> Option<CurvePlan> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::pcurves::oriented_circle_plan(ctx, pcurve, surface, geometry,
-            parameters, edge_start, edge_end)
-    }).expect("service budget")
+        super::super::pcurves::oriented_circle_plan(
+            ctx, pcurve, surface, geometry, parameters, edge_start, edge_end,
+        )
+    })
+    .expect("service budget")
 }
 
 fn cylinder_helix(
-    pcurve: &B5Pcurve, surface: &B5Surface, parameters: [f64; 2],
-    edge_start: [f64; 3], edge_end: [f64; 3],
+    pcurve: &B5Pcurve,
+    surface: &B5Surface,
+    parameters: [f64; 2],
+    edge_start: [f64; 3],
+    edge_end: [f64; 3],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Option<super::super::HelixPlan> {
     crate::test_support::with_service_context(|ctx| {
-        super::super::pcurves::cylinder_helix(ctx, pcurve, surface, parameters,
-            edge_start, edge_end, refusal)
-    }).expect("service budget")
+        super::super::pcurves::cylinder_helix(
+            ctx, pcurve, surface, parameters, edge_start, edge_end, refusal,
+        )
+    })
+    .expect("service budget")
 }
 
 #[test]
 fn lifted_pcurve_refuses_the_caller_collection_limit() {
     let pcurve = B5Pcurve {
-        object_id: 1, surface: 2, degree: 1,
+        object_id: 1,
+        surface: 2,
+        degree: 1,
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
         control_points: vec![
             crate::test_support::test_b5::finite_vector([0.0, 0.0]),
             crate::test_support::test_b5::finite_vector([1.0, 0.0]),
         ],
-        weights: None, parameter_range: None,
+        weights: None,
+        parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
-        class_21_suffix_scalar: None, lifted_endpoints: None,
+        class_21_suffix_scalar: None,
+        lifted_endpoints: None,
     };
     let plane = B5Surface::Plane {
         origin: crate::test_support::test_b5::point([0.0; 3]),
@@ -108,8 +126,10 @@ fn lifted_pcurve_refuses_the_caller_collection_limit() {
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
         super::super::pcurves::lifted_curve_geometry(ctx, &pcurve, &plane)
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_expanded_pcurve_knots"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_expanded_pcurve_knots")
+    );
     assert!(lifted_curve_geometry(&pcurve, &plane).is_some());
 }
 
@@ -117,32 +137,45 @@ fn lifted_pcurve_refuses_the_caller_collection_limit() {
 fn nurbs_isocurve_refuses_collection_limit_before_evaluator_allocates() {
     use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
     let pcurve = B5Pcurve {
-        object_id: 1, surface: 2, degree: 1,
+        object_id: 1,
+        surface: 2,
+        degree: 1,
         distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
         multiplicities: vec![2, 2],
         control_points: vec![
             crate::test_support::test_b5::finite_vector([0.5, 0.0]),
             crate::test_support::test_b5::finite_vector([0.5, 1.0]),
         ],
-        weights: None, parameter_range: None,
+        weights: None,
+        parameter_range: None,
         parameterization: B5PcurveParameterization::Native,
-        class_21_suffix_scalar: None, lifted_endpoints: None,
+        class_21_suffix_scalar: None,
+        lifted_endpoints: None,
     };
     let surface = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
         NurbsSurfaceLanes::new(
-            vec![vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                 vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]],
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
             None,
-        ), false,
-    ).expect("valid bilinear surface");
-    let refused = crate::test_support::with_collection_limit(9, |ctx|
-        super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface));
-    assert!(matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(_))));
-    let admitted = crate::test_support::with_service_context(|ctx|
-        super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface))
-        .expect("service budget");
+        ),
+        false,
+    )
+    .expect("valid bilinear surface");
+    let refused = crate::test_support::with_collection_limit(9, |ctx| {
+        super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface)
+    });
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface)
+    })
+    .expect("service budget");
     assert!(admitted.is_some());
 }
 
@@ -600,29 +633,26 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         .expect("valid affine lift curve"),
     ));
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::pcurves::oriented_nurbs_range(ctx, &geometry,
-            [2.0, 8.0], [2.0, 0.0, 2.0], [8.0, 0.0, 2.0])
+        super::super::pcurves::oriented_nurbs_range(
+            ctx,
+            &geometry,
+            [2.0, 8.0],
+            [2.0, 0.0, 2.0],
+            [8.0, 0.0, 2.0],
+        )
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_oriented_nurbs_curve"));
-    let forward = oriented_nurbs_range(
-        geometry.clone(),
-        [2.0, 8.0],
-        [2.0, 0.0, 2.0],
-        [8.0, 0.0, 2.0],
-    )
-    .expect("forward trimmed range");
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_oriented_nurbs_curve")
+    );
+    let forward = oriented_nurbs_range(&geometry, [2.0, 8.0], [2.0, 0.0, 2.0], [8.0, 0.0, 2.0])
+        .expect("forward trimmed range");
     assert_eq!(forward.geometry, geometry);
     assert_eq!(forward.parameter_range, Some([2.0, 8.0]));
     assert_eq!(forward.edge_tolerance, None);
 
-    let reversed = oriented_nurbs_range(
-        geometry.clone(),
-        [8.0, 2.0],
-        [8.0, 0.0, 2.0],
-        [2.0, 0.0, 2.0],
-    )
-    .expect("reversed trimmed range");
+    let reversed = oriented_nurbs_range(&geometry, [8.0, 2.0], [8.0, 0.0, 2.0], [2.0, 0.0, 2.0])
+        .expect("reversed trimmed range");
     assert_eq!(reversed.parameter_range, Some([2.0, 8.0]));
     let Some(SolvedCurveGeometry::Nurbs(reversed)) = reversed.geometry.solved() else {
         unreachable!();
@@ -631,10 +661,12 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         reversed.control_points(),
         [Point3::new(10.0, 0.0, 2.0), Point3::new(0.0, 0.0, 2.0)]
     );
-    assert!(oriented_nurbs_range(geometry, [2.0, 8.0], [3.0, 0.0, 2.0], [8.0, 0.0, 2.0]).is_none());
+    assert!(
+        oriented_nurbs_range(&geometry, [2.0, 8.0], [3.0, 0.0, 2.0], [8.0, 0.0, 2.0]).is_none()
+    );
 
     let tolerant = oriented_nurbs_range(
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 10.0, 10.0],
@@ -958,14 +990,23 @@ fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
     let mut plans = HashMap::new();
     let mut conflicts = HashSet::new();
     let limited = crate::test_support::with_collection_limit(0, |ctx| {
-        super::super::edges::merge_curve_plan(ctx, &mut HashMap::new(),
-            &mut HashSet::new(), 4, CurvePlan {
-                geometry: geometry.clone(), parameter_range: None,
-                edge_tolerance: None, cache_fit_tolerance: None,
-            })
+        super::super::edges::merge_curve_plan(
+            ctx,
+            &mut HashMap::new(),
+            &mut HashSet::new(),
+            4,
+            CurvePlan {
+                geometry: geometry.clone(),
+                parameter_range: None,
+                edge_tolerance: None,
+                cache_fit_tolerance: None,
+            },
+        )
     });
-    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
-        if error.operation == "catia_b5_edge_curve_plans"));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_edge_curve_plans")
+    );
     merge_curve_plan(
         &mut plans,
         &mut conflicts,

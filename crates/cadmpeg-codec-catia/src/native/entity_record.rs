@@ -3,14 +3,12 @@
 
 use super::{
     entity_suffix_framing, entity_suffix_value, CatiaConstraintRange, CatiaDefinitionChainValue,
-    CatiaDefinitionSchemaSelection, CatiaDefinitionValue, CatiaEntitySuffixFraming,
-    CatiaEntitySuffixSchemaSelection, CatiaEntitySuffixValue, CatiaEntityValueSchemaSelection,
-    CatiaFormulaRelation, CatiaParameterValue, CatiaRangeInterval, CatiaReferenceSignature,
-    CatiaReferenceSignatureWire,
-    CatiaEntityReference, CatiaRelationExpression, CatiaRelationExpressionWire,
-    CatiaRelationProgramInstance, CatiaRelationProgramInstanceWire, CatiaRelationTypeSignature,
-    CatiaSchemaConfigurationRecord,
-    CatiaSchemaConfigurationRowLink,
+    CatiaDefinitionSchemaSelection, CatiaDefinitionValue, CatiaEntityReference,
+    CatiaEntitySuffixFraming, CatiaEntitySuffixSchemaSelection, CatiaEntitySuffixValue,
+    CatiaEntityValueSchemaSelection, CatiaFormulaRelation, CatiaParameterValue, CatiaRangeInterval,
+    CatiaReferenceSignature, CatiaReferenceSignatureWire, CatiaRelationExpression,
+    CatiaRelationExpressionWire, CatiaRelationProgramInstance, CatiaRelationProgramInstanceWire,
+    CatiaRelationTypeSignature, CatiaSchemaConfigurationRecord, CatiaSchemaConfigurationRowLink,
 };
 use crate::{entity_table, value_block};
 use cadmpeg_core::decode::DecodeContext;
@@ -132,8 +130,11 @@ impl CatiaEntityRecord {
         }
     }
 
-    pub(crate) fn value_packets(&self, ctx: &DecodeContext<'_>, fields: &[value_block::ValueField])
-        -> Result<Vec<entity_table::EntityValuePacket>, CodecError> {
+    pub(crate) fn value_packets(
+        &self,
+        ctx: &DecodeContext<'_>,
+        fields: &[value_block::ValueField],
+    ) -> Result<Vec<entity_table::EntityValuePacket>, CodecError> {
         entity_table::value_packets_charged(ctx, self.value_payload(), fields)
     }
 
@@ -502,17 +503,26 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
         let value_fields = value_block::tokenize(payload);
         let value_packets = entity_table::value_packets(payload, &value_fields);
         let signature = match value.value_production.as_ref() {
-            Some(CatiaEntityValueProduction::RelationExpression(expression)) => expression.signature(),
+            Some(CatiaEntityValueProduction::RelationExpression(expression)) => {
+                expression.signature()
+            }
             _ => None,
         };
         let output_entity = match value.object_production.as_ref() {
-            Some(CatiaEntityObjectProduction::RelationProgramInstance(instance)) =>
-                instance.output_entity().cloned(),
+            Some(CatiaEntityObjectProduction::RelationProgramInstance(instance)) => {
+                instance.output_entity().cloned()
+            }
             _ => None,
         };
         let reference_signature = value.reference_signature.take().map(Into::into);
-        Self::from_with_views(value, value_fields, value_packets, signature, output_entity,
-            reference_signature)
+        Self::from_with_views(
+            value,
+            value_fields,
+            value_packets,
+            signature,
+            output_entity,
+            reference_signature,
+        )
     }
 }
 
@@ -528,18 +538,31 @@ impl CatiaEntityRecordWire {
         let value_fields = value_block::tokenize_charged(ctx, payload)?;
         let value_packets = entity_table::value_packets_charged(ctx, payload, &value_fields)?;
         let signature = match value.value_production.as_ref() {
-            Some(CatiaEntityValueProduction::RelationExpression(expression)) => expression.signature_charged(ctx)?,
+            Some(CatiaEntityValueProduction::RelationExpression(expression)) => {
+                expression.signature_charged(ctx)?
+            }
             _ => None,
         };
         let output_entity = match value.object_production.as_ref() {
-            Some(CatiaEntityObjectProduction::RelationProgramInstance(instance)) =>
-                instance.output_entity().map(|entity| entity.copy_charged(ctx)).transpose()?,
+            Some(CatiaEntityObjectProduction::RelationProgramInstance(instance)) => instance
+                .output_entity()
+                .map(|entity| entity.copy_charged(ctx))
+                .transpose()?,
             _ => None,
         };
-        let reference_signature = value.reference_signature.take()
-            .map(|signature| CatiaReferenceSignatureWire::from_charged(ctx, signature)).transpose()?;
-        Ok(Self::from_with_views(value, value_fields, value_packets, signature, output_entity,
-            reference_signature))
+        let reference_signature = value
+            .reference_signature
+            .take()
+            .map(|signature| CatiaReferenceSignatureWire::from_charged(ctx, signature))
+            .transpose()?;
+        Ok(Self::from_with_views(
+            value,
+            value_fields,
+            value_packets,
+            signature,
+            output_entity,
+            reference_signature,
+        ))
     }
 
     fn from_with_views(
@@ -652,15 +675,17 @@ impl CatiaEntityRecordWire {
             value_payload,
             value_fields,
             value_schema_selections: value.value_schema_selections,
-            relation_expression: relation_expression.map(|expression|
-                CatiaRelationExpressionWire::from_with_signature(expression, signature)),
+            relation_expression: relation_expression.map(|expression| {
+                CatiaRelationExpressionWire::from_with_signature(expression, signature)
+            }),
             parameter_value,
             range_interval: value.range_interval,
             constraint_range,
             definition_value,
             definition_chain_value,
-            relation_program_instance: relation_program_instance.map(|instance|
-                CatiaRelationProgramInstanceWire::from_with_output(instance, output_entity)),
+            relation_program_instance: relation_program_instance.map(|instance| {
+                CatiaRelationProgramInstanceWire::from_with_output(instance, output_entity)
+            }),
             schema_configuration_record,
             schema_configuration_row_link,
             formula_relation,
@@ -741,9 +766,9 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             wire.schema_configuration_row_link,
             wire.formula_relation,
         ) {
-            (Some(value), None, None, None) => {
-                Some(CatiaEntityObjectProduction::RelationProgramInstance(value.try_into()?))
-            }
+            (Some(value), None, None, None) => Some(
+                CatiaEntityObjectProduction::RelationProgramInstance(value.try_into()?),
+            ),
             (None, Some(value), None, None) => Some(
                 CatiaEntityObjectProduction::SchemaConfigurationRecord(value),
             ),
@@ -795,7 +820,10 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             object_production,
             value_production,
             range_interval: wire.range_interval,
-            reference_signature: wire.reference_signature.map(TryInto::try_into).transpose()?,
+            reference_signature: wire
+                .reference_signature
+                .map(TryInto::try_into)
+                .transpose()?,
             suffix,
             suffix_schema_selection: wire.suffix_schema_selection,
         })

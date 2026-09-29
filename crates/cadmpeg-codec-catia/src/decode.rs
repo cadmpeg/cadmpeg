@@ -84,7 +84,9 @@ fn decode_over_routes(
 
     let applicable = resource::collect_vec(
         ctx,
-        routes.iter().filter(|route| (route.applicable)(scan.variant)),
+        routes
+            .iter()
+            .filter(|route| (route.applicable)(scan.variant)),
         "catia_applicable_routes",
     )?;
     let mut fell_through = Vec::new();
@@ -729,20 +731,24 @@ fn finish_decode(
         let fields = record.value_fields_charged(ctx)?;
         entity_value_field_count = entity_value_field_count
             .checked_add(fields.len())
-            .ok_or_else(|| ctx.refuse_codec_limit("catia_entity_value_field_count", u64::MAX, u64::MAX))?;
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("catia_entity_value_field_count", u64::MAX, u64::MAX)
+            })?;
         for packet in record.value_packets(ctx, &fields)? {
-        match packet {
-            entity_table::EntityValuePacket::Compact { .. } => {
-                compact_entity_value_packet_count += 1;
+            match packet {
+                entity_table::EntityValuePacket::Compact { .. } => {
+                    compact_entity_value_packet_count += 1;
+                }
+                entity_table::EntityValuePacket::Numeric { .. } => {
+                    numeric_entity_value_packet_count += 1;
+                }
+                entity_table::EntityValuePacket::Layout { .. } => {
+                    layout_entity_value_packet_count += 1;
+                }
+                entity_table::EntityValuePacket::E9Scalar { .. } => {
+                    e9_scalar_entity_value_packet_count += 1;
+                }
             }
-            entity_table::EntityValuePacket::Numeric { .. } => {
-                numeric_entity_value_packet_count += 1;
-            }
-            entity_table::EntityValuePacket::Layout { .. } => layout_entity_value_packet_count += 1,
-            entity_table::EntityValuePacket::E9Scalar { .. } => {
-                e9_scalar_entity_value_packet_count += 1;
-            }
-        }
         }
     }
     let numeric_entity_value_pair_count = native
@@ -1316,10 +1322,16 @@ fn finish_decode(
         .count();
     let mut typed_relation_expression_entities = std::collections::HashSet::new();
     for entity in &native.entity_records {
-        let Some(expression) = entity.relation_expression() else { continue };
+        let Some(expression) = entity.relation_expression() else {
+            continue;
+        };
         if expression.signature_charged(ctx)?.is_some() {
-            resource::insert_set(ctx, &mut typed_relation_expression_entities,
-                entity.id.as_str(), "catia_typed_relation_expressions")?;
+            resource::insert_set(
+                ctx,
+                &mut typed_relation_expression_entities,
+                entity.id.as_str(),
+                "catia_typed_relation_expressions",
+            )?;
         }
     }
     let typed_relation_program_instance_count = native
@@ -1871,8 +1883,13 @@ fn finish_decode(
         ctx,
         transferred_formula_design_records
             .union(&transferred_design_feature_records)
-            .chain(transferred_native_sketch_entity_records.intersection(&structurally_owned_records))
-            .chain(transferred_native_sketch_constraint_records.intersection(&structurally_owned_records))
+            .chain(
+                transferred_native_sketch_entity_records.intersection(&structurally_owned_records),
+            )
+            .chain(
+                transferred_native_sketch_constraint_records
+                    .intersection(&structurally_owned_records),
+            )
             .chain(transferred_constraint_range_records.intersection(&structurally_owned_records))
             .map(String::as_str),
         "catia_transferred_design_records",
@@ -1926,9 +1943,10 @@ fn finish_decode(
         .count();
     let mut native_operation_feature_ids = HashSet::new();
     for feature in ir.model.features.iter().filter(|feature| {
-        feature.source_tag.as_deref().is_some_and(|name| {
-            design_feature::NativeOperationClass::try_from(name).is_ok()
-        })
+        feature
+            .source_tag
+            .as_deref()
+            .is_some_and(|name| design_feature::NativeOperationClass::try_from(name).is_ok())
     }) {
         if !native_operation_feature_ids.contains(&feature.id) {
             let id = resource::copy_id(
@@ -3733,7 +3751,9 @@ fn modeling_graph_scope(
     });
     Ok(match (part_graphs.next(), part_graphs.next()) {
         (Some(graph), None) => ModelingGraphScope::Scoped(resource::copy_retained_str(
-            ctx, &graph.id, "catia_modeling_scope_graph",
+            ctx,
+            &graph.id,
+            "catia_modeling_scope_graph",
         )?),
         _ => ModelingGraphScope::Unresolved,
     })

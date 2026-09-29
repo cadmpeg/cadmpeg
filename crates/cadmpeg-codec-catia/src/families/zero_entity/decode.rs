@@ -108,8 +108,12 @@ fn closed_wire_loop_members<'a>(
             .filter(|parameters| parameters[0] != parameters[1]);
         members.push(ClosedWireMember {
             support,
-            curve: crate::resource::copy_id(ctx, curve.as_str(), CurveId::mint,
-                "catia_zero_wire_member_curve_id")?,
+            curve: crate::resource::copy_id(
+                ctx,
+                curve.as_str(),
+                CurveId::mint,
+                "catia_zero_wire_member_curve_id",
+            )?,
             endpoints: *endpoints,
             forward: *forward,
             parameter_range,
@@ -139,8 +143,11 @@ fn append_oriented_wire_curve(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let geometry = if let Some((definition, cache_fit_tolerance)) = procedural {
         let construction_id = ProceduralCurveId::mint(crate::resource::format_retained(
-            admission.context(), format_args!("{}-construction", curve_id.as_str()),
-            "catia_zero_wire_construction_id")?).map_err(cadmpeg_core::CodecError::malformed)?;
+            admission.context(),
+            format_args!("{}-construction", curve_id.as_str()),
+            "catia_zero_wire_construction_id",
+        )?)
+        .map_err(cadmpeg_core::CodecError::malformed)?;
         annotate(
             admission.context(),
             annotations,
@@ -148,9 +155,22 @@ fn append_oriented_wire_curve(
             "zero_entity_a9_03",
             source_pos as u64,
             "oriented_support_model_curve_construction",
-            Exactness::Derived)?;
-        crate::resource::derived_annotation(admission.context(), annotations, &construction_id, "curve", "catia_annotation_field")?;
-        crate::resource::derived_annotation(admission.context(), annotations, &construction_id, "definition", "catia_annotation_field")?;
+            Exactness::Derived,
+        )?;
+        crate::resource::derived_annotation(
+            admission.context(),
+            annotations,
+            &construction_id,
+            "curve",
+            "catia_annotation_field",
+        )?;
+        crate::resource::derived_annotation(
+            admission.context(),
+            annotations,
+            &construction_id,
+            "definition",
+            "catia_annotation_field",
+        )?;
         let mut definition = definition;
         let cached = match cache_fit_tolerance.map(cadmpeg_ir::geometry::LegacyCache::new) {
             Some(cache) => definition
@@ -162,9 +182,15 @@ fn append_oriented_wire_curve(
             }
         };
         let admitted = match cached {
-            Ok(()) => Ok(ProceduralCurve::new(crate::resource::copy_id(
-                admission.context(), construction_id.as_str(), ProceduralCurveId::mint,
-                "catia_zero_wire_procedural_id")?, definition)),
+            Ok(()) => Ok(ProceduralCurve::new(
+                crate::resource::copy_id(
+                    admission.context(),
+                    construction_id.as_str(),
+                    ProceduralCurveId::mint,
+                    "catia_zero_wire_procedural_id",
+                )?,
+                definition,
+            )),
             Err(error) => Err(error),
         };
         match admitted {
@@ -196,8 +222,15 @@ fn append_oriented_wire_curve(
         "zero_entity_a9_03",
         source_pos as u64,
         "oriented_support_model_curve",
-        Exactness::Derived)?;
-    crate::resource::derived_annotation(admission.context(), annotations, &curve_id, "geometry", "catia_annotation_field")?;
+        Exactness::Derived,
+    )?;
+    crate::resource::derived_annotation(
+        admission.context(),
+        annotations,
+        &curve_id,
+        "geometry",
+        "catia_annotation_field",
+    )?;
     admission.reserve_entity(&mut ir.model.curves, "catia_zero_wire_curves")?;
     ir.model.curves.push(Curve {
         id: curve_id,
@@ -212,20 +245,33 @@ pub(super) fn copy_zero_curve(
     geometry: &CurveGeometry,
 ) -> Result<CurveGeometry, cadmpeg_core::CodecError> {
     Ok(match geometry {
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) =>
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                crate::resource::copy_nurbs_curve(ctx, nurbs, "catia_zero_wire_curve_copy")?)),
-        CurveGeometry::Procedural { construction, cache } => CurveGeometry::Procedural {
-            construction: crate::resource::copy_id(ctx, construction.as_str(),
-                ProceduralCurveId::mint, "catia_zero_wire_curve_construction_copy")?,
+                crate::resource::copy_nurbs_curve(ctx, nurbs, "catia_zero_wire_curve_copy")?,
+            ))
+        }
+        CurveGeometry::Procedural {
+            construction,
+            cache,
+        } => CurveGeometry::Procedural {
+            construction: crate::resource::copy_id(
+                ctx,
+                construction.as_str(),
+                ProceduralCurveId::mint,
+                "catia_zero_wire_curve_construction_copy",
+            )?,
             cache: match cache {
                 Some(SolvedCurveGeometry::Nurbs(nurbs)) => Some(SolvedCurveGeometry::Nurbs(
-                    crate::resource::copy_nurbs_curve(ctx, nurbs,
-                        "catia_zero_wire_curve_cache_copy")?)),
+                    crate::resource::copy_nurbs_curve(
+                        ctx,
+                        nurbs,
+                        "catia_zero_wire_curve_cache_copy",
+                    )?,
+                )),
                 other => other.clone(),
             },
         },
-        other => other.clone(),
+        other @ CurveGeometry::Solved(_) => other.clone(),
     })
 }
 
@@ -236,16 +282,24 @@ fn copy_zero_procedural_definition(
     match definition {
         ProceduralCurveDefinition::Helix(_) => Ok(definition.clone()),
         ProceduralCurveDefinition::SurfaceCurve {
-            family: SurfaceCurveFamily::Parametric { context, tail: None },
+            family:
+                SurfaceCurveFamily::Parametric {
+                    context,
+                    tail: None,
+                },
         } => Ok(ProceduralCurveDefinition::SurfaceCurve {
             family: SurfaceCurveFamily::Parametric {
                 context: crate::resource::copy_intcurve_support_context(
-                    ctx, context, "catia_zero_wire_procedural_context_copy")?,
+                    ctx,
+                    context,
+                    "catia_zero_wire_procedural_context_copy",
+                )?,
                 tail: None,
             },
         }),
         _ => Err(cadmpeg_core::CodecError::malformed(
-            "zero-entity wire source has an unexpected procedural construction")),
+            "zero-entity wire source has an unexpected procedural construction",
+        )),
     }
 }
 
@@ -261,12 +315,18 @@ fn source_wire_procedural(
         .procedural_curves
         .iter()
         .find(|candidate| candidate.id == *construction)
-        .map(|candidate| Ok(WireSourceProcedural {
-            construction_id: crate::resource::copy_id(ctx, candidate.id.as_str(),
-                ProceduralCurveId::mint, "catia_zero_wire_source_procedural_id")?,
-            definition: copy_zero_procedural_definition(ctx, candidate.definition())?,
-            cache_fit_tolerance: candidate.definition().cache_fit_tolerance(),
-        }))
+        .map(|candidate| {
+            Ok(WireSourceProcedural {
+                construction_id: crate::resource::copy_id(
+                    ctx,
+                    candidate.id.as_str(),
+                    ProceduralCurveId::mint,
+                    "catia_zero_wire_source_procedural_id",
+                )?,
+                definition: copy_zero_procedural_definition(ctx, candidate.definition())?,
+                cache_fit_tolerance: candidate.definition().cache_fit_tolerance(),
+            })
+        })
         .transpose()
 }
 
@@ -309,14 +369,29 @@ fn transfer_closed_wire_loops(
             let face_ordinal = face.record_ordinal;
             let loop_ordinal = loop_record.record_ordinal;
             let body_id = BodyId::mint(crate::resource::format_retained(
-                admission.context(), format_args!("catia:zero-entity:wire-body#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}"),
-                "catia_zero_wire_body_id")?).map_err(cadmpeg_core::CodecError::malformed)?;
+                admission.context(),
+                format_args!(
+                    "catia:zero-entity:wire-body#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}"
+                ),
+                "catia_zero_wire_body_id",
+            )?)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
             let region_id = RegionId::mint(crate::resource::format_retained(
-                admission.context(), format_args!("catia:zero-entity:wire-region#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}"),
-                "catia_zero_wire_region_id")?).map_err(cadmpeg_core::CodecError::malformed)?;
+                admission.context(),
+                format_args!(
+                    "catia:zero-entity:wire-region#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}"
+                ),
+                "catia_zero_wire_region_id",
+            )?)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
             let shell_id = ShellId::mint(crate::resource::format_retained(
-                admission.context(), format_args!("catia:zero-entity:wire-shell#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}"),
-                "catia_zero_wire_shell_id")?).map_err(cadmpeg_core::CodecError::malformed)?;
+                admission.context(),
+                format_args!(
+                    "catia:zero-entity:wire-shell#{carrier_ordinal}-{face_ordinal}-{loop_ordinal}"
+                ),
+                "catia_zero_wire_shell_id",
+            )?)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
             if !root_owns_support_runs {
                 annotate(
                     admission.context(),
@@ -325,7 +400,8 @@ fn transfer_closed_wire_loops(
                     "zero_entity_a9_03",
                     loop_record.pos as u64,
                     "standalone_wire_owner",
-                    Exactness::Inferred)?;
+                    Exactness::Inferred,
+                )?;
                 annotate(
                     admission.context(),
                     annotations,
@@ -333,7 +409,8 @@ fn transfer_closed_wire_loops(
                     "zero_entity_a9_03",
                     loop_record.pos as u64,
                     "standalone_wire_region",
-                    Exactness::Inferred)?;
+                    Exactness::Inferred,
+                )?;
                 annotate(
                     admission.context(),
                     annotations,
@@ -341,7 +418,8 @@ fn transfer_closed_wire_loops(
                     "zero_entity_a9_03",
                     loop_record.pos as u64,
                     "standalone_wire_shell",
-                    Exactness::Inferred)?;
+                    Exactness::Inferred,
+                )?;
             }
 
             let mut vertex_ids = Vec::new();
@@ -366,7 +444,8 @@ fn transfer_closed_wire_loops(
                     "zero_entity_a9_03",
                     loop_record.pos as u64,
                     "standalone_wire_point",
-                    Exactness::Derived)?;
+                    Exactness::Derived,
+                )?;
                 annotate(
                     admission.context(),
                     annotations,
@@ -374,18 +453,41 @@ fn transfer_closed_wire_loops(
                     "zero_entity_a9_03",
                     loop_record.pos as u64,
                     "standalone_wire_vertex",
-                    Exactness::Derived)?;
-                crate::resource::derived_annotation(admission.context(), annotations, &point_id, "position", "catia_annotation_field")?;
-                crate::resource::derived_annotation(admission.context(), annotations, &vertex_id, "point", "catia_annotation_field")?;
+                    Exactness::Derived,
+                )?;
+                crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    &point_id,
+                    "position",
+                    "catia_annotation_field",
+                )?;
+                crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    &vertex_id,
+                    "point",
+                    "catia_annotation_field",
+                )?;
                 admission.reserve_entity(&mut ir.model.points, "catia_zero_wire_points")?;
-                ir.model
-                    .points
-                    .push(Point::new(crate::resource::copy_id(admission.context(),
-                        point_id.as_str(), PointId::mint, "catia_zero_wire_point_record_id")?, start, None));
+                ir.model.points.push(Point::new(
+                    crate::resource::copy_id(
+                        admission.context(),
+                        point_id.as_str(),
+                        PointId::mint,
+                        "catia_zero_wire_point_record_id",
+                    )?,
+                    start,
+                    None,
+                ));
                 admission.reserve_entity(&mut ir.model.vertices, "catia_zero_wire_vertices")?;
                 ir.model.vertices.push(Vertex {
-                    id: crate::resource::copy_id(admission.context(), vertex_id.as_str(),
-                        VertexId::mint, "catia_zero_wire_vertex_record_id")?,
+                    id: crate::resource::copy_id(
+                        admission.context(),
+                        vertex_id.as_str(),
+                        VertexId::mint,
+                        "catia_zero_wire_vertex_record_id",
+                    )?,
                     point: point_id,
                     tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
                 });
@@ -425,57 +527,123 @@ fn transfer_closed_wire_loops(
                         oriented_range
                     };
                     if !source_curve_geometries.contains_key(curve) {
-                        let geometry = ir.model.curves.iter()
+                        let geometry = ir
+                            .model
+                            .curves
+                            .iter()
                             .find(|candidate| candidate.id == *curve)
-                            .map(|candidate| copy_zero_curve(admission.context(), &candidate.geometry))
+                            .map(|candidate| {
+                                copy_zero_curve(admission.context(), &candidate.geometry)
+                            })
                             .transpose()?;
-                        crate::resource::insert_map(admission.context(),
+                        crate::resource::insert_map(
+                            admission.context(),
                             &mut source_curve_geometries,
-                            crate::resource::copy_id(admission.context(), curve.as_str(),
-                                CurveId::mint, "catia_zero_wire_geometry_key")?,
-                            geometry, "catia_zero_wire_source_geometries")?;
+                            crate::resource::copy_id(
+                                admission.context(),
+                                curve.as_str(),
+                                CurveId::mint,
+                                "catia_zero_wire_geometry_key",
+                            )?,
+                            geometry,
+                            "catia_zero_wire_source_geometries",
+                        )?;
                     }
-                    let source_geometry = source_curve_geometries.get(curve)
+                    let source_geometry = source_curve_geometries
+                        .get(curve)
                         .and_then(Option::as_ref)
                         .map(|geometry| copy_zero_curve(admission.context(), geometry))
                         .transpose()?;
                     let canonical_source_range = match source_geometry.as_ref() {
                         Some(geometry) => crate::nurbs::canonical_model_curve_range(
-                            admission.context(), geometry, raw_source_range, refusal,
-                            "zero-entity wire edge source parameter range")?,
+                            admission.context(),
+                            geometry,
+                            raw_source_range,
+                            refusal,
+                            "zero-entity wire edge source parameter range",
+                        )?,
                         None => Some(raw_source_range),
                     };
                     let source_range = canonical_source_range.unwrap_or(raw_source_range);
                     let existing = source_curve_orientations.get(curve).copied();
                     if canonical_source_range.is_none() {
-                        (crate::resource::copy_id(admission.context(), curve.as_str(), CurveId::mint, "catia_zero_wire_curve_id")?, None)
+                        (
+                            crate::resource::copy_id(
+                                admission.context(),
+                                curve.as_str(),
+                                CurveId::mint,
+                                "catia_zero_wire_curve_id",
+                            )?,
+                            None,
+                        )
                     } else if let Some(orientation) = existing.filter(|orientation| {
                         orientation.reversed == reversed && orientation.source_range == source_range
                     }) {
-                        (crate::resource::copy_id(admission.context(), curve.as_str(), CurveId::mint, "catia_zero_wire_curve_id")?, Some(orientation.edge_range))
+                        (
+                            crate::resource::copy_id(
+                                admission.context(),
+                                curve.as_str(),
+                                CurveId::mint,
+                                "catia_zero_wire_curve_id",
+                            )?,
+                            Some(orientation.edge_range),
+                        )
                     } else if !reversed && existing.is_some_and(|orientation| !orientation.reversed)
                     {
-                        (crate::resource::copy_id(admission.context(), curve.as_str(), CurveId::mint, "catia_zero_wire_curve_id")?, Some(source_range))
+                        (
+                            crate::resource::copy_id(
+                                admission.context(),
+                                curve.as_str(),
+                                CurveId::mint,
+                                "catia_zero_wire_curve_id",
+                            )?,
+                            Some(source_range),
+                        )
                     } else if existing.is_none() && !reversed {
                         let procedural_available =
                             if matches!(&source_geometry, Some(CurveGeometry::Procedural { .. })) {
                                 if !source_curve_procedurals.contains_key(curve) {
-                                    let procedural = source_geometry.as_ref()
-                                        .map(|geometry| source_wire_procedural(
-                                            admission.context(), ir, geometry))
-                                        .transpose()?.flatten();
-                                    crate::resource::insert_map(admission.context(),
+                                    let procedural = source_geometry
+                                        .as_ref()
+                                        .map(|geometry| {
+                                            source_wire_procedural(
+                                                admission.context(),
+                                                ir,
+                                                geometry,
+                                            )
+                                        })
+                                        .transpose()?
+                                        .flatten();
+                                    crate::resource::insert_map(
+                                        admission.context(),
                                         &mut source_curve_procedurals,
-                                        crate::resource::copy_id(admission.context(), curve.as_str(),
-                                            CurveId::mint, "catia_zero_wire_procedural_key")?,
-                                        procedural, "catia_zero_wire_source_procedurals")?;
+                                        crate::resource::copy_id(
+                                            admission.context(),
+                                            curve.as_str(),
+                                            CurveId::mint,
+                                            "catia_zero_wire_procedural_key",
+                                        )?,
+                                        procedural,
+                                        "catia_zero_wire_source_procedurals",
+                                    )?;
                                 }
-                                source_curve_procedurals.get(curve).and_then(Option::as_ref).is_some()
+                                source_curve_procedurals
+                                    .get(curve)
+                                    .and_then(Option::as_ref)
+                                    .is_some()
                             } else {
                                 true
                             };
                         if source_geometry.is_none() || !procedural_available {
-                            (crate::resource::copy_id(admission.context(), curve.as_str(), CurveId::mint, "catia_zero_wire_curve_id")?, None)
+                            (
+                                crate::resource::copy_id(
+                                    admission.context(),
+                                    curve.as_str(),
+                                    CurveId::mint,
+                                    "catia_zero_wire_curve_id",
+                                )?,
+                                None,
+                            )
                         } else {
                             let orientation = WireCurveOrientation {
                                 reversed,
@@ -485,24 +653,44 @@ fn transfer_closed_wire_loops(
                             crate::resource::insert_map(
                                 admission.context(),
                                 &mut source_curve_orientations,
-                                crate::resource::copy_id(admission.context(), curve.as_str(), CurveId::mint, "catia_zero_wire_curve_id")?,
+                                crate::resource::copy_id(
+                                    admission.context(),
+                                    curve.as_str(),
+                                    CurveId::mint,
+                                    "catia_zero_wire_curve_id",
+                                )?,
                                 orientation,
                                 "catia_zero_wire_source_orientations",
                             )?;
-                            (crate::resource::copy_id(admission.context(), curve.as_str(), CurveId::mint, "catia_zero_wire_curve_id")?, Some(source_range))
+                            (
+                                crate::resource::copy_id(
+                                    admission.context(),
+                                    curve.as_str(),
+                                    CurveId::mint,
+                                    "catia_zero_wire_curve_id",
+                                )?,
+                                Some(source_range),
+                            )
                         }
                     } else if let Some(geometry) = source_geometry {
                         if !source_curve_procedurals.contains_key(curve) {
-                            let procedural = source_wire_procedural(
-                                admission.context(), ir, &geometry)?;
-                            crate::resource::insert_map(admission.context(),
+                            let procedural =
+                                source_wire_procedural(admission.context(), ir, &geometry)?;
+                            crate::resource::insert_map(
+                                admission.context(),
                                 &mut source_curve_procedurals,
-                                crate::resource::copy_id(admission.context(), curve.as_str(),
-                                    CurveId::mint, "catia_zero_wire_procedural_key")?,
-                                procedural, "catia_zero_wire_source_procedurals")?;
+                                crate::resource::copy_id(
+                                    admission.context(),
+                                    curve.as_str(),
+                                    CurveId::mint,
+                                    "catia_zero_wire_procedural_key",
+                                )?,
+                                procedural,
+                                "catia_zero_wire_source_procedurals",
+                            )?;
                         }
-                        let source_procedural = source_curve_procedurals
-                            .get(curve).and_then(Option::as_ref);
+                        let source_procedural =
+                            source_curve_procedurals.get(curve).and_then(Option::as_ref);
                         let oriented = if reversed {
                             match source_procedural {
                                 Some(procedural) => crate::nurbs::reverse_helix_definition(
@@ -512,11 +700,13 @@ fn transfer_closed_wire_loops(
                                     refusal,
                                     "zero-entity helix edge reversed onto its coedge",
                                 )?
-                                .map(|(definition, edge_range)| Ok::<_, cadmpeg_core::CodecError>((
-                                    copy_zero_curve(admission.context(), &geometry)?,
-                                    edge_range,
-                                    Some((definition, procedural.cache_fit_tolerance)),
-                                )))
+                                .map(|(definition, edge_range)| {
+                                    Ok::<_, cadmpeg_core::CodecError>((
+                                        copy_zero_curve(admission.context(), &geometry)?,
+                                        edge_range,
+                                        Some((definition, procedural.cache_fit_tolerance)),
+                                    ))
+                                })
                                 .transpose()?,
                                 None => crate::nurbs::reverse_curve_geometry(
                                     admission.context(),
@@ -531,11 +721,17 @@ fn transfer_closed_wire_loops(
                             Some((
                                 geometry,
                                 source_range,
-                                source_procedural.map(|procedural| Ok::<_, cadmpeg_core::CodecError>((
-                                    copy_zero_procedural_definition(admission.context(),
-                                        &procedural.definition)?,
-                                    procedural.cache_fit_tolerance,
-                                ))).transpose()?,
+                                source_procedural
+                                    .map(|procedural| {
+                                        Ok::<_, cadmpeg_core::CodecError>((
+                                            copy_zero_procedural_definition(
+                                                admission.context(),
+                                                &procedural.definition,
+                                            )?,
+                                            procedural.cache_fit_tolerance,
+                                        ))
+                                    })
+                                    .transpose()?,
                             ))
                         };
                         if let Some((geometry, edge_range, procedural)) = oriented {
@@ -544,19 +740,33 @@ fn transfer_closed_wire_loops(
                                     if let (Some((definition, _)), Some(source_procedural)) =
                                         (procedural.as_ref(), source_procedural.as_ref())
                                     {
-                                        if let Some(candidate) = ir.model.procedural_curves.iter_mut()
-                                            .find(|candidate| candidate.id == source_procedural.construction_id) {
-                                            candidate.replace_definition(copy_zero_procedural_definition(
-                                                admission.context(), definition)?);
+                                        if let Some(candidate) = ir
+                                            .model
+                                            .procedural_curves
+                                            .iter_mut()
+                                            .find(|candidate| {
+                                                candidate.id == source_procedural.construction_id
+                                            })
+                                        {
+                                            candidate.replace_definition(
+                                                copy_zero_procedural_definition(
+                                                    admission.context(),
+                                                    definition,
+                                                )?,
+                                            );
                                             true
                                         } else {
                                             false
                                         }
                                     } else {
-                                        if let Some(candidate) = ir.model.curves.iter_mut()
-                                            .find(|candidate| candidate.id == *curve) {
-                                            candidate.geometry = copy_zero_curve(
-                                                admission.context(), &geometry)?;
+                                        if let Some(candidate) = ir
+                                            .model
+                                            .curves
+                                            .iter_mut()
+                                            .find(|candidate| candidate.id == *curve)
+                                        {
+                                            candidate.geometry =
+                                                copy_zero_curve(admission.context(), &geometry)?;
                                             true
                                         } else {
                                             false
@@ -569,7 +779,12 @@ fn transfer_closed_wire_loops(
                                     crate::resource::insert_map(
                                         admission.context(),
                                         &mut source_curve_orientations,
-                                        crate::resource::copy_id(admission.context(), curve.as_str(), CurveId::mint, "catia_zero_wire_curve_id")?,
+                                        crate::resource::copy_id(
+                                            admission.context(),
+                                            curve.as_str(),
+                                            CurveId::mint,
+                                            "catia_zero_wire_curve_id",
+                                        )?,
                                         WireCurveOrientation {
                                             reversed,
                                             source_range,
@@ -577,9 +792,25 @@ fn transfer_closed_wire_loops(
                                         },
                                         "catia_zero_wire_source_orientations",
                                     )?;
-                                    (crate::resource::copy_id(admission.context(), curve.as_str(), CurveId::mint, "catia_zero_wire_curve_id")?, Some(edge_range))
+                                    (
+                                        crate::resource::copy_id(
+                                            admission.context(),
+                                            curve.as_str(),
+                                            CurveId::mint,
+                                            "catia_zero_wire_curve_id",
+                                        )?,
+                                        Some(edge_range),
+                                    )
                                 } else {
-                                    (crate::resource::copy_id(admission.context(), curve.as_str(), CurveId::mint, "catia_zero_wire_curve_id")?, None)
+                                    (
+                                        crate::resource::copy_id(
+                                            admission.context(),
+                                            curve.as_str(),
+                                            CurveId::mint,
+                                            "catia_zero_wire_curve_id",
+                                        )?,
+                                        None,
+                                    )
                                 }
                             } else {
                                 let oriented_curve_id = CurveId::mint(crate::resource::format_retained(
@@ -591,9 +822,12 @@ fn transfer_closed_wire_loops(
                                     admission,
                                     ir,
                                     annotations,
-                                    crate::resource::copy_id(admission.context(),
-                                        oriented_curve_id.as_str(), CurveId::mint,
-                                        "catia_zero_wire_oriented_curve_record_id")?,
+                                    crate::resource::copy_id(
+                                        admission.context(),
+                                        oriented_curve_id.as_str(),
+                                        CurveId::mint,
+                                        "catia_zero_wire_oriented_curve_record_id",
+                                    )?,
                                     geometry,
                                     support.pos,
                                     procedural,
@@ -601,13 +835,37 @@ fn transfer_closed_wire_loops(
                                 (oriented_curve_id, Some(edge_range))
                             }
                         } else {
-                            (crate::resource::copy_id(admission.context(), curve.as_str(), CurveId::mint, "catia_zero_wire_curve_id")?, None)
+                            (
+                                crate::resource::copy_id(
+                                    admission.context(),
+                                    curve.as_str(),
+                                    CurveId::mint,
+                                    "catia_zero_wire_curve_id",
+                                )?,
+                                None,
+                            )
                         }
                     } else {
-                        (crate::resource::copy_id(admission.context(), curve.as_str(), CurveId::mint, "catia_zero_wire_curve_id")?, None)
+                        (
+                            crate::resource::copy_id(
+                                admission.context(),
+                                curve.as_str(),
+                                CurveId::mint,
+                                "catia_zero_wire_curve_id",
+                            )?,
+                            None,
+                        )
                     }
                 } else {
-                    (crate::resource::copy_id(admission.context(), curve.as_str(), CurveId::mint, "catia_zero_wire_curve_id")?, None)
+                    (
+                        crate::resource::copy_id(
+                            admission.context(),
+                            curve.as_str(),
+                            CurveId::mint,
+                            "catia_zero_wire_curve_id",
+                        )?,
+                        None,
+                    )
                 };
                 let param_range = param_range.and_then(|range| {
                     ir.model
@@ -618,8 +876,12 @@ fn transfer_closed_wire_loops(
                 });
                 let param_range = match param_range {
                     Some((range, geometry)) => crate::nurbs::canonical_model_curve_range(
-                        admission.context(), geometry, range, refusal,
-                        "zero-entity standalone wire edge parameter range")?,
+                        admission.context(),
+                        geometry,
+                        range,
+                        refusal,
+                        "zero-entity standalone wire edge parameter range",
+                    )?,
                     None => None,
                 };
                 annotate(
@@ -629,26 +891,61 @@ fn transfer_closed_wire_loops(
                     "zero_entity_a9_03",
                     support.pos as u64,
                     "standalone_wire_edge",
-                    Exactness::Derived)?;
-                crate::resource::derived_annotation(admission.context(), annotations, &edge_id, "curve", "catia_annotation_field")?;
-                crate::resource::derived_annotation(admission.context(), annotations, &edge_id, "start", "catia_annotation_field")?;
-                crate::resource::derived_annotation(admission.context(), annotations, &edge_id, "end", "catia_annotation_field")?;
+                    Exactness::Derived,
+                )?;
+                crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    &edge_id,
+                    "curve",
+                    "catia_annotation_field",
+                )?;
+                crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    &edge_id,
+                    "start",
+                    "catia_annotation_field",
+                )?;
+                crate::resource::derived_annotation(
+                    admission.context(),
+                    annotations,
+                    &edge_id,
+                    "end",
+                    "catia_annotation_field",
+                )?;
                 admission.reserve_entity(&mut ir.model.edges, "catia_zero_wire_edges")?;
                 ir.model.edges.push(Edge {
-                    id: crate::resource::copy_id(admission.context(), edge_id.as_str(),
-                        EdgeId::mint, "catia_zero_wire_edge_record_id")?,
+                    id: crate::resource::copy_id(
+                        admission.context(),
+                        edge_id.as_str(),
+                        EdgeId::mint,
+                        "catia_zero_wire_edge_record_id",
+                    )?,
                     carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), param_range)
                         .map_err(cadmpeg_core::CodecError::malformed)?,
-                    start: crate::resource::copy_id(admission.context(),
-                        vertex_ids[index].as_str(), VertexId::mint,
-                        "catia_zero_wire_edge_start_id")?,
-                    end: crate::resource::copy_id(admission.context(),
-                        vertex_ids[(index + 1) % member_count].as_str(), VertexId::mint,
-                        "catia_zero_wire_edge_end_id")?,
+                    start: crate::resource::copy_id(
+                        admission.context(),
+                        vertex_ids[index].as_str(),
+                        VertexId::mint,
+                        "catia_zero_wire_edge_start_id",
+                    )?,
+                    end: crate::resource::copy_id(
+                        admission.context(),
+                        vertex_ids[(index + 1) % member_count].as_str(),
+                        VertexId::mint,
+                        "catia_zero_wire_edge_end_id",
+                    )?,
                     tolerance: Some(ZERO_ENTITY_WIRE_TOLERANCE),
                 });
                 if param_range.is_some() {
-                    crate::resource::derived_annotation(admission.context(), annotations, &edge_id, "param_range", "catia_annotation_field")?;
+                    crate::resource::derived_annotation(
+                        admission.context(),
+                        annotations,
+                        &edge_id,
+                        "param_range",
+                        "catia_annotation_field",
+                    )?;
                 }
                 edge_ids.push(edge_id);
                 counts.edges += 1;
@@ -670,10 +967,20 @@ fn transfer_closed_wire_loops(
                     1,
                     "catia_zero_wire_body_regions",
                 )?;
-                regions.push(crate::resource::copy_id(admission.context(), region_id.as_str(), RegionId::mint, "catia_zero_wire_region_id_copy")?);
+                regions.push(crate::resource::copy_id(
+                    admission.context(),
+                    region_id.as_str(),
+                    RegionId::mint,
+                    "catia_zero_wire_region_id_copy",
+                )?);
                 admission.reserve_entity(&mut ir.model.bodies, "catia_zero_wire_bodies")?;
                 ir.model.bodies.push(Body {
-                    id: crate::resource::copy_id(admission.context(), body_id.as_str(), BodyId::mint, "catia_zero_wire_body_id_copy")?,
+                    id: crate::resource::copy_id(
+                        admission.context(),
+                        body_id.as_str(),
+                        BodyId::mint,
+                        "catia_zero_wire_body_id_copy",
+                    )?,
                     kind: BodyKind::Wire,
                     regions,
                     transform: None,
@@ -688,10 +995,20 @@ fn transfer_closed_wire_loops(
                     1,
                     "catia_zero_wire_region_shells",
                 )?;
-                shells.push(crate::resource::copy_id(admission.context(), shell_id.as_str(), ShellId::mint, "catia_zero_wire_shell_id_copy")?);
+                shells.push(crate::resource::copy_id(
+                    admission.context(),
+                    shell_id.as_str(),
+                    ShellId::mint,
+                    "catia_zero_wire_shell_id_copy",
+                )?);
                 admission.reserve_entity(&mut ir.model.regions, "catia_zero_wire_regions")?;
                 ir.model.regions.push(Region {
-                    id: crate::resource::copy_id(admission.context(), region_id.as_str(), RegionId::mint, "catia_zero_wire_region_id_copy")?,
+                    id: crate::resource::copy_id(
+                        admission.context(),
+                        region_id.as_str(),
+                        RegionId::mint,
+                        "catia_zero_wire_region_id_copy",
+                    )?,
                     body: body_id,
                     shells,
                 });
@@ -715,15 +1032,27 @@ fn transfer_closed_wire_loops(
             return Ok(counts);
         };
         let identity = root.body_record_ordinal();
-        let body_id = crate::resource::compose_u32_id(admission.context(),
+        let body_id = crate::resource::compose_u32_id(
+            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "owned-wire-body"),
-            identity, BodyId::mint, "catia_zero_owned_wire_body_id")?;
-        let region_id = crate::resource::compose_u32_id(admission.context(),
+            identity,
+            BodyId::mint,
+            "catia_zero_owned_wire_body_id",
+        )?;
+        let region_id = crate::resource::compose_u32_id(
+            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "owned-wire-region"),
-            identity, RegionId::mint, "catia_zero_owned_wire_region_id")?;
-        let shell_id = crate::resource::compose_u32_id(admission.context(),
+            identity,
+            RegionId::mint,
+            "catia_zero_owned_wire_region_id",
+        )?;
+        let shell_id = crate::resource::compose_u32_id(
+            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "zero-entity", "owned-wire-shell"),
-            identity, ShellId::mint, "catia_zero_owned_wire_shell_id")?;
+            identity,
+            ShellId::mint,
+            "catia_zero_owned_wire_shell_id",
+        )?;
         annotate(
             admission.context(),
             annotations,
@@ -731,7 +1060,8 @@ fn transfer_closed_wire_loops(
             "zero_entity_a9_03",
             root.body_pos as u64,
             "owned_wire_body",
-            Exactness::Derived)?;
+            Exactness::Derived,
+        )?;
         annotate(
             admission.context(),
             annotations,
@@ -739,7 +1069,8 @@ fn transfer_closed_wire_loops(
             "zero_entity_a9_03",
             root.shell_pos as u64,
             "owned_wire_region",
-            Exactness::Derived)?;
+            Exactness::Derived,
+        )?;
         annotate(
             admission.context(),
             annotations,
@@ -747,7 +1078,8 @@ fn transfer_closed_wire_loops(
             "zero_entity_a9_03",
             root.shell_pos as u64,
             "owned_wire_shell",
-            Exactness::Derived)?;
+            Exactness::Derived,
+        )?;
         let mut regions = Vec::new();
         crate::resource::reserve_vec(
             admission.context(),
@@ -755,10 +1087,20 @@ fn transfer_closed_wire_loops(
             1,
             "catia_zero_owned_wire_body_regions",
         )?;
-        regions.push(crate::resource::copy_id(admission.context(), region_id.as_str(), RegionId::mint, "catia_zero_wire_region_id_copy")?);
+        regions.push(crate::resource::copy_id(
+            admission.context(),
+            region_id.as_str(),
+            RegionId::mint,
+            "catia_zero_wire_region_id_copy",
+        )?);
         admission.reserve_entity(&mut ir.model.bodies, "catia_zero_owned_wire_bodies")?;
         ir.model.bodies.push(Body {
-            id: crate::resource::copy_id(admission.context(), body_id.as_str(), BodyId::mint, "catia_zero_wire_body_id_copy")?,
+            id: crate::resource::copy_id(
+                admission.context(),
+                body_id.as_str(),
+                BodyId::mint,
+                "catia_zero_wire_body_id_copy",
+            )?,
             kind: BodyKind::Wire,
             regions,
             transform: None,
@@ -773,10 +1115,20 @@ fn transfer_closed_wire_loops(
             1,
             "catia_zero_owned_wire_region_shells",
         )?;
-        shells.push(crate::resource::copy_id(admission.context(), shell_id.as_str(), ShellId::mint, "catia_zero_wire_shell_id_copy")?);
+        shells.push(crate::resource::copy_id(
+            admission.context(),
+            shell_id.as_str(),
+            ShellId::mint,
+            "catia_zero_wire_shell_id_copy",
+        )?);
         admission.reserve_entity(&mut ir.model.regions, "catia_zero_owned_wire_regions")?;
         ir.model.regions.push(Region {
-            id: crate::resource::copy_id(admission.context(), region_id.as_str(), RegionId::mint, "catia_zero_wire_region_id_copy")?,
+            id: crate::resource::copy_id(
+                admission.context(),
+                region_id.as_str(),
+                RegionId::mint,
+                "catia_zero_wire_region_id_copy",
+            )?,
             body: body_id,
             shells,
         });
@@ -801,7 +1153,9 @@ fn zero_entity_coverage(
     transferred_support_curves: usize,
     transferred_parametric_surface_curves: usize,
     wire_counts: WireTransferCounts,
-    topology_counts: Option<crate::families::zero_entity::topology_transfer::ZeroEntityTopologyCounts>,
+    topology_counts: Option<
+        crate::families::zero_entity::topology_transfer::ZeroEntityTopologyCounts,
+    >,
 ) -> Result<cadmpeg_ir::report::decode::Coverage, cadmpeg_core::CodecError> {
     let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
     for (key, count) in [
@@ -838,7 +1192,13 @@ fn zero_entity_coverage(
             wire_counts.points,
         ),
     ] {
-        crate::resource::record_coverage(ctx, &mut coverage, key, count, "catia_zero_entity_coverage")?;
+        crate::resource::record_coverage(
+            ctx,
+            &mut coverage,
+            key,
+            count,
+            "catia_zero_entity_coverage",
+        )?;
     }
     if let Some(counts) = topology_counts {
         for (key, count) in [
@@ -875,7 +1235,13 @@ fn zero_entity_coverage(
                 counts.pcurves,
             ),
         ] {
-            crate::resource::record_coverage(ctx, &mut coverage, key, count, "catia_zero_entity_coverage")?;
+            crate::resource::record_coverage(
+                ctx,
+                &mut coverage,
+                key,
+                count,
+                "catia_zero_entity_coverage",
+            )?;
         }
     }
     Ok(coverage)
@@ -1300,10 +1666,15 @@ mod tests {
         };
         let service = crate::test_support::with_service_context(build)
             .expect("service profile admits zero-entity coverage");
-        assert_eq!(service.get(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT.as_str()), Some(&1));
+        assert_eq!(
+            service.get(crate::coverage::TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT.as_str()),
+            Some(&1)
+        );
         let limited = crate::test_support::with_collection_limit(0, build);
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_zero_entity_coverage"));
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_zero_entity_coverage")
+        );
     }
 
     #[test]
@@ -1378,12 +1749,17 @@ mod tests {
         let limited = crate::test_support::with_retained_limit(0, |ctx| {
             closed_wire_loop_members(ctx, &run, &loop_record, &curve_ids)
         });
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_zero_wire_member_curve_id"));
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_zero_wire_member_curve_id")
+        );
         let service = crate::test_support::with_service_context(|ctx| {
             closed_wire_loop_members(ctx, &run, &loop_record, &curve_ids)
         });
-        assert_eq!(service.expect("service budget").expect("closed wire").len(), 1);
+        assert_eq!(
+            service.expect("service budget").expect("closed wire").len(),
+            1
+        );
     }
 
     #[test]
@@ -1394,16 +1770,18 @@ mod tests {
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        ).expect("valid linear NURBS");
+        )
+        .expect("valid linear NURBS");
         let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
         let limited = crate::test_support::with_collection_limit(0, |ctx| {
             super::copy_zero_curve(ctx, &geometry)
         });
-        assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "catia_zero_wire_curve_copy"));
-        let service = crate::test_support::with_service_context(|ctx| {
-            super::copy_zero_curve(ctx, &geometry)
-        });
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_zero_wire_curve_copy")
+        );
+        let service =
+            crate::test_support::with_service_context(|ctx| super::copy_zero_curve(ctx, &geometry));
         assert_eq!(service.expect("service budget"), geometry);
     }
 

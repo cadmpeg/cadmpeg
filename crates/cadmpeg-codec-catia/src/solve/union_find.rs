@@ -48,6 +48,7 @@ impl UnionFind {
     }
 
     /// Appends a new singleton node and returns its index.
+    #[cfg(test)]
     pub(crate) fn push(&mut self) -> usize {
         let index = self.parents.len();
         self.parents.push(index);
@@ -139,7 +140,13 @@ mod tests {
             Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_union_clone_bytes"
         ));
         crate::test_support::with_service_context(|ctx| {
-            assert_eq!(union.clone_charged(ctx, "catia_union_clone_bytes").expect("service budget").len(), 1);
+            assert_eq!(
+                union
+                    .clone_charged(ctx, "catia_union_clone_bytes")
+                    .expect("service budget")
+                    .len(),
+                1
+            );
         });
     }
 
