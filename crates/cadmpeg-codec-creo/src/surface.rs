@@ -1271,30 +1271,30 @@ impl SurfaceParameterRecord {
 
     /// Whether the bounded body ends with a complete inline non-plane local
     /// system and its family suffix.
-    pub(crate) fn has_inline_non_plane_local_system_suffix(&self) -> bool {
+    pub(crate) fn has_inline_non_plane_local_system_suffix(&self, ctx: &DecodeContext<'_>) -> Result<bool, CodecError> {
         let kind = self.kind();
         if !matches!(
             kind,
             SurfaceKind::Cylinder | SurfaceKind::Cone | SurfaceKind::TorusOrSphere
         ) {
-            return false;
+            return Ok(false);
         }
         let cache = scalar::ScalarCache::default();
         let local_starts =
             std::iter::once(0).chain(self.body.iter().enumerate().filter_map(|(offset, byte)| {
                 (*byte == psb::token::COMPOUND_CLOSE).then_some(offset + 1)
             }));
-        local_starts
-            .filter_map(|local_start| self.body.get(local_start..))
-            .any(|local| {
-                scalar::decode_inline_non_plane_local_system_prefix(local, &cache)
-                    .into_iter()
-                    .flat_map(|prefix| inline_resolved_frames(local, prefix, &cache))
-                    .any(|frame| {
-                        decode_inline_surface_suffix_at(kind, local, frame.cursor, &cache)
-                            .is_some_and(|(_, end)| end == local.len())
-                    })
-            })
+        for local in local_starts.filter_map(|local_start| self.body.get(local_start..)) {
+            for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, &cache)? {
+                for frame in inline_resolved_frames(ctx, local, prefix, &cache)? {
+                    if decode_inline_surface_suffix_at(kind, local, frame.cursor, &cache)
+                        .is_some_and(|(_, end)| end == local.len()) {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
     }
 
     /// Decode the terminal positive-DICT half-angle of a positional cone body.
@@ -4169,10 +4169,11 @@ const EPS_INLINE_FRAME: f64 = 1.0e-8;
 const MAX_INLINE_FRAME_CANDIDATES: usize = 24;
 
 fn inline_surface_body(
+    ctx: &DecodeContext<'_>,
     kind: SurfaceKind,
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Option<InlineSurfaceBody> {
+) -> Result<Option<InlineSurfaceBody>, CodecError> {
     let standard_envelope = decode_inline_surface_envelope(kind, body, cache);
     let four_bound_envelope = decode_inline_four_bound_cylinder_envelope(kind, body, cache);
     let referenced_envelope = decode_inline_referenced_cylinder_envelope(kind, body, cache);
@@ -4182,15 +4183,15 @@ fn inline_surface_body(
         .or(referenced_envelope)
         .or(selector_envelope)
     else {
-        return inline_surface_suffix_body(kind, body, cache);
+        return inline_surface_suffix_body(ctx, kind, body, cache);
     };
-    let local_start = envelope.close.checked_add(1)?;
+    let local_start = match envelope.close.checked_add(1) { Some(value) => value, None => return Ok(None) };
     let mut sole_layout = None;
     for terminal_close in local_start..body.len() {
         if body.get(terminal_close) != Some(&psb::token::COMPOUND_CLOSE) {
             continue;
         }
-        let local = body.get(local_start..terminal_close)?;
+        let local = match body.get(local_start..terminal_close) { Some(value) => value, None => return Ok(None) };
         let mut structurally_complete = false;
         let mut geometric_interpretation_count = 0;
         let mut first_carrier = None;
@@ -4206,8 +4207,8 @@ fn inline_surface_body(
                 }
             }
         }
-        for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
-            for frame in inline_resolved_frames(local, prefix, cache) {
+        for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, cache)? {
+            for frame in inline_resolved_frames(ctx, local, prefix, cache)? {
                 if inline_surface_suffix(kind, local, frame.cursor, cache).is_none() {
                     continue;
                 }
@@ -4234,36 +4235,37 @@ fn inline_surface_body(
             carrier,
         };
         if sole_layout.replace(layout).is_some() {
-            return None;
+            return Ok(None);
         }
     }
-    sole_layout.or_else(|| inline_surface_suffix_body(kind, body, cache))
+    if sole_layout.is_some() { Ok(sole_layout) } else { inline_surface_suffix_body(ctx, kind, body, cache) }
 }
 
 /// Decode the local-system suffix form used by positional rows that have no
 /// axial envelope. The terminal close is part of the row grammar, so a frame
 /// is admitted only when its exact suffix ends immediately before that close.
 fn inline_surface_suffix_body(
+    ctx: &DecodeContext<'_>,
     kind: SurfaceKind,
     body: &[u8],
     cache: &scalar::ScalarCache,
-) -> Option<InlineSurfaceBody> {
+) -> Result<Option<InlineSurfaceBody>, CodecError> {
     let mut sole_layout = None;
     let local_starts =
         std::iter::once(0).chain(body.iter().enumerate().filter_map(|(offset, byte)| {
             (*byte == psb::token::COMPOUND_CLOSE).then_some(offset + 1)
         }));
     for local_start in local_starts {
-        let local = body.get(local_start..)?;
+        let local = match body.get(local_start..) { Some(value) => value, None => return Ok(None) };
         let mut terminal_closes = [0usize; MAX_INLINE_FRAME_CANDIDATES];
         let mut close_count = 0;
-        for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
-            for frame in inline_resolved_frames(local, prefix, cache) {
+        for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, cache)? {
+            for frame in inline_resolved_frames(ctx, local, prefix, cache)? {
                 if let Some((_, end)) =
                     decode_inline_surface_suffix_at(kind, local, frame.cursor, cache)
                 {
                     if local.get(end) == Some(&psb::token::COMPOUND_CLOSE) {
-                        *terminal_closes.get_mut(close_count)? = end;
+                        *match terminal_closes.get_mut(close_count) { Some(value) => value, None => return Ok(None) } = end;
                         close_count += 1;
                     }
                 }
@@ -4277,13 +4279,13 @@ fn inline_surface_suffix_body(
             }
             previous_close = Some(relative_close);
             let terminal_close = local_start + relative_close;
-            let local = body.get(local_start..terminal_close)?;
+            let local = match body.get(local_start..terminal_close) { Some(value) => value, None => return Ok(None) };
             let mut structurally_complete = false;
             let mut geometric_interpretation_count = 0;
             let mut carriers = [None; MAX_INLINE_FRAME_CANDIDATES];
             let mut carrier_count = 0;
-            for prefix in scalar::decode_inline_non_plane_local_system_prefix(local, cache) {
-                for frame in inline_resolved_frames(local, prefix, cache) {
+            for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, cache)? {
+                for frame in inline_resolved_frames(ctx, local, prefix, cache)? {
                     if inline_surface_suffix(kind, local, frame.cursor, cache).is_none() {
                         continue;
                     }
@@ -4294,7 +4296,7 @@ fn inline_surface_suffix_body(
                     geometric_interpretation_count += 1;
                     if let Some(carrier) = inline_surface_suffix_carrier(kind, local, frame, cache)
                     {
-                        *carriers.get_mut(carrier_count)? = Some(carrier);
+                        *match carriers.get_mut(carrier_count) { Some(value) => value, None => return Ok(None) } = Some(carrier);
                         carrier_count += 1;
                     }
                 }
@@ -4320,11 +4322,11 @@ fn inline_surface_suffix_body(
                 carrier,
             };
             if sole_layout.replace(layout).is_some() {
-                return None;
+                return Ok(None);
             }
         }
     }
-    sole_layout
+    Ok(sole_layout)
 }
 
 /// Recover a complete legacy analytic envelope immediately before an inline
@@ -4667,11 +4669,12 @@ struct ResolvedInlineLocalSystemFrame {
     cursor: usize,
 }
 
-fn inline_resolved_frames<'a>(
-    local: &'a [u8],
+fn inline_resolved_frames(
+    ctx: &DecodeContext<'_>,
+    local: &[u8],
     prefix: scalar::InlineNonPlaneLocalSystemPrefix,
-    cache: &'a scalar::ScalarCache,
-) -> impl Iterator<Item = ResolvedInlineLocalSystemFrame> + 'a {
+    cache: &scalar::ScalarCache,
+) -> Result<impl Iterator<Item = ResolvedInlineLocalSystemFrame>, CodecError> {
     let compact = match prefix {
         scalar::InlineNonPlaneLocalSystemPrefix::Compact(frame) => Some(frame),
         scalar::InlineNonPlaneLocalSystemPrefix::Explicit(_) => None,
@@ -4680,20 +4683,20 @@ fn inline_resolved_frames<'a>(
         scalar::InlineNonPlaneLocalSystemPrefix::Explicit(frame) => Some(frame),
         scalar::InlineNonPlaneLocalSystemPrefix::Compact(_) => None,
     };
-    compact
-        .into_iter()
-        .flat_map(move |frame| {
-            scalar::decode_inline_non_plane_origin_prefix(local, frame.cursor, cache)
-                .map(move |(origin, cursor)| {
-                    let mut values = frame.values.get();
-                    values[9..12].copy_from_slice(&origin);
-                    ResolvedInlineLocalSystemFrame { values, cursor }
-                })
+    let compact_origins = match compact {
+        Some(frame) => Some((frame, scalar::decode_inline_non_plane_origin_prefix(ctx, local, frame.cursor, cache)?)),
+        None => None,
+    };
+    Ok(compact_origins.into_iter().flat_map(|(frame, origins)| {
+        origins.map(move |(origin, cursor)| {
+            let mut values = frame.values.get();
+            values[9..12].copy_from_slice(&origin);
+            ResolvedInlineLocalSystemFrame { values, cursor }
         })
-        .chain(explicit.into_iter().map(|frame| ResolvedInlineLocalSystemFrame {
-            values: frame.values.get(),
-            cursor: frame.cursor,
-        }))
+    }).chain(explicit.into_iter().map(|frame| ResolvedInlineLocalSystemFrame {
+        values: frame.values.get(),
+        cursor: frame.cursor,
+    })))
 }
 
 fn inline_surface_carrier(
@@ -5125,7 +5128,7 @@ fn parameter_records_for_rows(
             None
         };
         let inline = if positional_spline_close.is_none() {
-            inline_surface_body(row.kind, &payload[*body_start..body_end], &cache)
+            inline_surface_body(ctx, row.kind, &payload[*body_start..body_end], &cache)?
         } else {
             None
         };
@@ -5269,7 +5272,7 @@ fn contour_records_for_rows(
         let contour_start = if let Some(close) = positional_spline_close {
             close.checked_add(1)
         } else if let Some(layout) =
-            inline_surface_body(row.kind, &payload[body_start..row_end], &cache)
+            inline_surface_body(ctx, row.kind, &payload[body_start..row_end], &cache)?
         {
             let Some(contour_start) = body_start
                 .checked_add(layout.terminal_close)
@@ -7017,9 +7020,9 @@ fn complete_plane_local_system(
         ctx.try_collection(count, "creo normalized plane frame items", || normalized.try_reserve(count))?;
         normalized.extend_from_slice(prefix);
         normalized.push(0x0f);
-        return Ok(scalar::decode_plane_support_local_system(&normalized, cache));
+        return scalar::decode_plane_support_local_system(ctx, &normalized, cache);
     }
-    Ok(scalar::decode_plane_support_local_system(frame_body, cache))
+    scalar::decode_plane_support_local_system(ctx, frame_body, cache)
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.

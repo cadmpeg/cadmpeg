@@ -413,7 +413,7 @@ pub(in crate::decode) fn placed_carriers(
             .filter(|row| row_counts.get(&row.id) == Some(&1))
         {
             if let Some(carrier) =
-                positional_cylinder_carrier(scan, row, parameters, ir, source_carriers)
+                positional_cylinder_carrier(ctx, scan, row, parameters, ir, source_carriers)?
             {
                 insert_placed_carrier(ctx, &mut carriers, row.id, carrier)?;
                 continue;
@@ -517,22 +517,23 @@ fn insert_placed_carrier(
 }
 
 fn positional_cylinder_carrier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     row: &crate::surface::SurfaceRow,
     parameters: &[crate::surface::SurfaceParameterRecord],
     ir: &CadIr,
     source_carriers: &SourceUnitCarriers,
-) -> Option<CarrierEquation> {
-    (row.kind == crate::surface::SurfaceKind::Cylinder).then_some(())?;
-    let record = crate::surface::unique_surface_parameter(parameters, row.id)?;
+) -> Result<Option<CarrierEquation>, cadmpeg_core::CodecError> {
+    if row.kind != crate::surface::SurfaceKind::Cylinder { return Ok(None); }
+    let record = match crate::surface::unique_surface_parameter(parameters, row.id) { Some(value) => value, None => return Ok(None) };
     let inline = record.has_inline_non_plane_envelope()
-        || record.has_inline_non_plane_local_system_suffix()
+        || record.has_inline_non_plane_local_system_suffix(ctx)?
         || record.selector_corner_interval_cylinder_frame().is_some();
     if crate::decode::sketch_transfer::recipe::feature_schema_class(scan, row.feature_id)
         == Some(SchemaClass::Round)
         && !inline
     {
-        return None;
+        return Ok(None);
     }
     if crate::decode::sketch_transfer::recipe::feature_schema_class(scan, row.feature_id)
         == Some(SchemaClass::Round)
@@ -542,17 +543,17 @@ fn positional_cylinder_carrier(
             matches_native_surface_id(scan, row.id, &surface.id)
         })) {
             if let Some(carrier) = surface_carrier(source_carriers.surface_geometry(surface)) {
-                return Some(carrier);
+                return Ok(Some(carrier));
             }
         }
     }
-    let frame = record.positional_cylinder_frame()?;
-    Some(CarrierEquation::Cylinder(CylinderEquation {
+    let frame = match record.positional_cylinder_frame() { Some(value) => value, None => return Ok(None) };
+    Ok(Some(CarrierEquation::Cylinder(CylinderEquation {
         origin: frame.frame().origin(),
         axis: frame.frame().axis(),
         ref_direction: frame.frame().ref_direction(),
         radius: frame.radius().get(),
-    }))
+    })))
 }
 
 fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {

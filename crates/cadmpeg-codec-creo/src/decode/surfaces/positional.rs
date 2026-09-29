@@ -200,7 +200,7 @@ pub(in super::super) fn transfer_positional_tori(
         // generated round family. A positional torus frame is a neutral
         // carrier only after the complete family proves one constant radius.
         let inline_non_plane = record.has_inline_non_plane_envelope()
-            || record.has_inline_non_plane_local_system_suffix();
+            || record.has_inline_non_plane_local_system_suffix(ctx)?;
         if row.kind == crate::surface::SurfaceKind::TorusOrSphere
             && feature_schema_class(scan, row.feature_id) == Some(SchemaClass::Round)
             && !constant_round_feature_ids.contains(&row.feature_id)
