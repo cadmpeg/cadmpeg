@@ -10,6 +10,7 @@ use super::policy::{
     DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, MATERIALIZED_BASE,
     MATERIALIZED_PER_INPUT_BYTE, RETAINED_BASE, RETAINED_PER_INPUT_BYTE,
 };
+use super::view::u64_from_index;
 
 #[derive(Debug)]
 pub(super) struct DecodeBudget {
@@ -387,10 +388,24 @@ impl WorkBudget<'static> {
 
 impl<'a> WorkBudget<'a> {
     pub(super) fn for_session(limit: u64, session: &'a DecodeBudget) -> Self {
-        let limit = if limit > usize::MAX as u64 {
-            usize::MAX
-        } else {
-            limit as usize
+        let limit = match usize::try_from(limit) {
+            Ok(limit) => limit,
+            Err(_) => {
+                drop(session.refuse(
+                    ResourceDimension::WorkUnits,
+                    ResourceFailure::BudgetExceeded,
+                    u64_from_index(usize::MAX),
+                    0,
+                    limit,
+                    "work_budget",
+                ));
+                return Self {
+                    limit: 0,
+                    remaining: Cell::new(None),
+                    recursion_depth: Cell::new(0),
+                    session: Some(session),
+                };
+            }
         };
         Self {
             limit,
@@ -419,7 +434,7 @@ impl<'a> WorkBudget<'a> {
             false
         } else {
             if let Some(session) = session {
-                if session.charge_work(work as u64, "work_budget").is_err() {
+                if session.charge_work(u64_from_index(work), "work_budget").is_err() {
                     self.remaining.set(None);
                     return false;
                 }
@@ -540,7 +555,7 @@ pub fn alloc_filled<T: Clone>(
 ) -> Result<Vec<T>, CodecError> {
     let mut out = Vec::new();
     out.try_reserve_exact(count)
-        .map_err(|_| refuse_local_limit(operation, count as u64, count as u64))?;
+        .map_err(|_| refuse_local_limit(operation, u64_from_index(count), u64_from_index(count)))?;
     out.resize(count, value);
     Ok(out)
 }

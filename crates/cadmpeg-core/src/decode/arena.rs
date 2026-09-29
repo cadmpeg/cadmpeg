@@ -53,13 +53,13 @@ mod tests {
 
     fn buffer(index: usize) -> Box<[u8]> {
         let len = (index % 7) + 1;
-        vec![index as u8; len].into_boxed_slice()
+        vec![u8::try_from(index).expect("test index fits u8"); len].into_boxed_slice()
     }
 
     fn check(index: usize, slice: &[u8]) {
         assert_eq!(slice.len(), (index % 7) + 1, "length of buffer {index}");
         assert!(
-            slice.iter().all(|&byte| byte == index as u8),
+            slice.iter().all(|&byte| byte == u8::try_from(index).expect("test index fits u8")),
             "contents of buffer {index}",
         );
     }

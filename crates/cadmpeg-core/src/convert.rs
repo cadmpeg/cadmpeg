@@ -1,0 +1,197 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Checked conversions between numeric representations.
+
+const MAX_EXACT_F64_INTEGER: u64 = 9_007_199_254_740_992;
+const MIN_EXACT_F64_INTEGER: i64 = -9_007_199_254_740_992;
+const MAX_EXACT_SIGNED_F64_INTEGER: i64 = 9_007_199_254_740_992;
+
+/// Converts an index when its integer value is exactly representable in `f64`.
+#[expect(clippy::as_conversions, clippy::cast_precision_loss, reason = "the bound admits only exactly representable integers")]
+pub fn f64_from_index(value: usize) -> Option<f64> {
+    (u64::try_from(value).ok()? <= MAX_EXACT_F64_INTEGER).then_some(value as f64)
+}
+
+/// Converts an unsigned integer when its value is exactly representable in `f64`.
+#[expect(clippy::as_conversions, clippy::cast_precision_loss, reason = "the bound admits only exactly representable integers")]
+pub fn f64_from_u64(value: u64) -> Option<f64> {
+    (value <= MAX_EXACT_F64_INTEGER).then_some(value as f64)
+}
+
+/// Converts a signed integer when its value is exactly representable in `f64`.
+#[expect(clippy::as_conversions, clippy::cast_precision_loss, reason = "both bounds admit only exactly representable integers")]
+pub fn f64_from_i64(value: i64) -> Option<f64> {
+    (MIN_EXACT_F64_INTEGER..=MAX_EXACT_SIGNED_F64_INTEGER)
+        .contains(&value)
+        .then_some(value as f64)
+}
+
+/// Rounds a finite `f64` to the nearest representable `f32`.
+#[expect(clippy::as_conversions, clippy::cast_possible_truncation, reason = "finite magnitude is bounded by the target range before rounding")]
+pub fn f32_from_f64(value: f64) -> Option<f32> {
+    (value.is_finite() && value.abs() <= f64::from(f32::MAX)).then_some(value as f32)
+}
+
+/// Truncates a finite `f64` to an `i32` when the result fits.
+#[expect(clippy::as_conversions, clippy::cast_possible_truncation, reason = "the truncated value is checked against both target bounds")]
+pub fn truncate_f64_to_i32(value: f64) -> Option<i32> {
+    let value = value.trunc();
+    (value.is_finite() && value >= f64::from(i32::MIN) && value < 2_147_483_648.0)
+        .then_some(value as i32)
+}
+
+/// Truncates a finite `f64` to an `i64` when the result fits.
+#[expect(clippy::as_conversions, clippy::cast_possible_truncation, reason = "the truncated value is checked against the half-open target range")]
+pub fn truncate_f64_to_i64(value: f64) -> Option<i64> {
+    let value = value.trunc();
+    (value.is_finite()
+        && value >= -9_223_372_036_854_775_808.0
+        && value < 9_223_372_036_854_775_808.0)
+        .then_some(value as i64)
+}
+
+/// Truncates a finite `f64` to a `u8` when the result fits.
+#[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "the truncated value is nonnegative and below the target upper bound")]
+pub fn truncate_f64_to_u8(value: f64) -> Option<u8> {
+    let value = value.trunc();
+    (value.is_finite() && value >= 0.0 && value < 256.0).then_some(value as u8)
+}
+
+/// Truncates a finite `f64` to a `u16` when the result fits.
+#[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "the truncated value is nonnegative and below the target upper bound")]
+pub fn truncate_f64_to_u16(value: f64) -> Option<u16> {
+    let value = value.trunc();
+    (value.is_finite() && value >= 0.0 && value < 65_536.0).then_some(value as u16)
+}
+
+/// Truncates a finite `f64` to a `u32` when the result fits.
+#[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "the truncated value is nonnegative and below the target upper bound")]
+pub fn truncate_f64_to_u32(value: f64) -> Option<u32> {
+    let value = value.trunc();
+    (value.is_finite() && value >= 0.0 && value < 4_294_967_296.0).then_some(value as u32)
+}
+
+/// Truncates a finite `f64` to a `u64` when the result fits.
+#[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "the truncated value is nonnegative and below the target upper bound")]
+pub fn truncate_f64_to_u64(value: f64) -> Option<u64> {
+    let value = value.trunc();
+    (value.is_finite() && value >= 0.0 && value < 18_446_744_073_709_551_616.0)
+        .then_some(value as u64)
+}
+
+/// Truncates a finite `f64` to a `usize` when the result fits.
+#[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "the truncated value is nonnegative and below the target upper bound")]
+pub fn truncate_f64_to_usize(value: f64) -> Option<usize> {
+    let value = value.trunc();
+    let upper = if usize::BITS == 64 {
+        18_446_744_073_709_551_616.0
+    } else {
+        4_294_967_296.0
+    };
+    (value.is_finite() && value >= 0.0 && value < upper).then_some(value as usize)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f64_from_index_checks_exact_boundary() {
+        #[cfg(target_pointer_width = "64")]
+        {
+            assert_eq!(f64_from_index(9_007_199_254_740_992), Some(9_007_199_254_740_992.0));
+            assert_eq!(f64_from_index(9_007_199_254_740_993), None);
+        }
+        #[cfg(target_pointer_width = "32")]
+        assert_eq!(f64_from_index(usize::MAX), Some(4_294_967_295.0));
+    }
+
+    #[test]
+    fn f64_from_u64_checks_exact_boundary() {
+        assert_eq!(f64_from_u64(9_007_199_254_740_992), Some(9_007_199_254_740_992.0));
+        assert_eq!(f64_from_u64(9_007_199_254_740_993), None);
+    }
+
+    #[test]
+    fn f64_from_i64_checks_both_exact_boundaries() {
+        assert_eq!(f64_from_i64(-9_007_199_254_740_992), Some(-9_007_199_254_740_992.0));
+        assert_eq!(f64_from_i64(-9_007_199_254_740_993), None);
+        assert_eq!(f64_from_i64(9_007_199_254_740_992), Some(9_007_199_254_740_992.0));
+        assert_eq!(f64_from_i64(9_007_199_254_740_993), None);
+    }
+
+    #[test]
+    fn f32_from_f64_checks_range_and_finiteness() {
+        assert_eq!(f32_from_f64(f64::from(f32::MAX)), Some(f32::MAX));
+        assert_eq!(f32_from_f64(f64::from(f32::MAX) * 2.0), None);
+        assert_eq!(f32_from_f64(-1.0), Some(-1.0));
+        assert_eq!(f32_from_f64(f64::NAN), None);
+        assert_eq!(f32_from_f64(f64::INFINITY), None);
+        assert_eq!(f32_from_f64(f64::NEG_INFINITY), None);
+    }
+
+    #[test]
+    fn truncate_f64_to_i32_checks_bounds_and_finiteness() {
+        assert_eq!(truncate_f64_to_i32(-2_147_483_648.9), Some(i32::MIN));
+        assert_eq!(truncate_f64_to_i32(-2_147_483_649.0), None);
+        assert_eq!(truncate_f64_to_i32(2_147_483_647.9), Some(i32::MAX));
+        assert_eq!(truncate_f64_to_i32(2_147_483_648.0), None);
+        assert_eq!(truncate_f64_to_i32(f64::NAN), None);
+        assert_eq!(truncate_f64_to_i32(f64::INFINITY), None);
+    }
+
+    #[test]
+    fn truncate_f64_to_i64_checks_bounds_and_finiteness() {
+        assert_eq!(truncate_f64_to_i64(-9_223_372_036_854_775_808.0), Some(i64::MIN));
+        assert_eq!(truncate_f64_to_i64(-9_223_372_036_854_777_856.0), None);
+        assert_eq!(truncate_f64_to_i64(9_223_372_036_854_775_808.0), None);
+        assert_eq!(truncate_f64_to_i64(f64::NAN), None);
+        assert_eq!(truncate_f64_to_i64(f64::NEG_INFINITY), None);
+    }
+
+    #[test]
+    fn truncate_f64_to_u8_checks_bounds_and_finiteness() {
+        assert_eq!(truncate_f64_to_u8(-0.9), Some(0));
+        assert_eq!(truncate_f64_to_u8(-1.0), None);
+        assert_eq!(truncate_f64_to_u8(255.9), Some(u8::MAX));
+        assert_eq!(truncate_f64_to_u8(256.0), None);
+        assert_eq!(truncate_f64_to_u8(f64::NAN), None);
+        assert_eq!(truncate_f64_to_u8(f64::INFINITY), None);
+    }
+
+    #[test]
+    fn truncate_f64_to_u16_checks_bounds_and_finiteness() {
+        assert_eq!(truncate_f64_to_u16(-1.0), None);
+        assert_eq!(truncate_f64_to_u16(65_535.9), Some(u16::MAX));
+        assert_eq!(truncate_f64_to_u16(65_536.0), None);
+        assert_eq!(truncate_f64_to_u16(f64::NAN), None);
+        assert_eq!(truncate_f64_to_u16(f64::NEG_INFINITY), None);
+    }
+
+    #[test]
+    fn truncate_f64_to_u32_checks_bounds_and_finiteness() {
+        assert_eq!(truncate_f64_to_u32(-1.0), None);
+        assert_eq!(truncate_f64_to_u32(4_294_967_295.9), Some(u32::MAX));
+        assert_eq!(truncate_f64_to_u32(4_294_967_296.0), None);
+        assert_eq!(truncate_f64_to_u32(f64::NAN), None);
+        assert_eq!(truncate_f64_to_u32(f64::INFINITY), None);
+    }
+
+    #[test]
+    fn truncate_f64_to_u64_checks_bounds_and_finiteness() {
+        assert_eq!(truncate_f64_to_u64(-1.0), None);
+        assert_eq!(truncate_f64_to_u64(18_446_744_073_709_547_520.0), Some(18_446_744_073_709_547_520));
+        assert_eq!(truncate_f64_to_u64(18_446_744_073_709_551_616.0), None);
+        assert_eq!(truncate_f64_to_u64(f64::NAN), None);
+        assert_eq!(truncate_f64_to_u64(f64::NEG_INFINITY), None);
+    }
+
+    #[test]
+    fn truncate_f64_to_usize_checks_bounds_and_finiteness() {
+        let upper = if usize::BITS == 64 { 18_446_744_073_709_551_616.0 } else { 4_294_967_296.0 };
+        assert_eq!(truncate_f64_to_usize(-1.0), None);
+        assert_eq!(truncate_f64_to_usize(upper), None);
+        assert_eq!(truncate_f64_to_usize(f64::NAN), None);
+        assert_eq!(truncate_f64_to_usize(f64::INFINITY), None);
+        assert_eq!(truncate_f64_to_usize(1.9), Some(1));
+    }
+}
