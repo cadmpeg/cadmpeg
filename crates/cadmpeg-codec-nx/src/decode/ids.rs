@@ -18,21 +18,6 @@ impl Write for CountBytes {
     }
 }
 
-/// Copy one admitted typed identity into retained decode storage.
-pub(crate) fn copy_typed_id<T>(
-    ctx: &DecodeContext<'_>,
-    id: &str,
-    operation: &'static str,
-) -> Result<T, CodecError>
-where
-    T: TryFrom<String>,
-    T::Error: Display,
-{
-    let bytes = ctx.copy_retained(id.as_bytes(), operation)?;
-    let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
-    T::try_from(text).map_err(CodecError::malformed)
-}
-
 /// The format component every NX identity carries.
 fn nx() -> IdentityComponent {
     identity_component!("nx")
