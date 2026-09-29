@@ -12,7 +12,7 @@ use crate::records::feature::scope::{
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-fn joint_origin_collection_context<'a>(arena: &'a DecodeArena) -> DecodeContext<'a> {
+fn joint_origin_collection_context(arena: &DecodeArena) -> DecodeContext<'_> {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     DecodeContext::from_root_bytes(&[], arena, &policy)
@@ -20,7 +20,7 @@ fn joint_origin_collection_context<'a>(arena: &'a DecodeArena) -> DecodeContext<
         .0
 }
 
-fn axial_binding_context<'a>(arena: &'a DecodeArena) -> DecodeContext<'a> {
+fn axial_binding_context(arena: &DecodeArena) -> DecodeContext<'_> {
     DecodeContext::from_root_bytes(&[], arena, &DecodePolicy::default())
         .unwrap()
         .0

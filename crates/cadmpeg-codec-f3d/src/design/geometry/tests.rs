@@ -113,9 +113,8 @@ fn certified_nurbs_tubes_refuse_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = match super::certified_nurbs_tubes(&curve, 0.5, Some(&ctx)) {
-        Err(error) => error,
-        Ok(_) => panic!("one certified span needs a tube"),
+    let Err(error) = super::certified_nurbs_tubes(&curve, 0.5, Some(&ctx)) else {
+        panic!("one certified span needs a tube");
     };
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

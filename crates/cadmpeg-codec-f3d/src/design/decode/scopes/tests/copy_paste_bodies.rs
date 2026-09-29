@@ -279,8 +279,7 @@ fn decoded_parameter_scopes_refuse_identifier_and_output_limits() {
                 scan,
                 &[],
                 &[],
-                &[],
-                &[],
+                (&[], &[]),
                 &[],
                 &[],
             )
@@ -311,7 +310,7 @@ fn decoded_parameter_scopes_refuse_identifier_and_output_limits() {
                         if failure.dimension == dimension && failure.operation == operation
                 )
             };
-            let refused_cap = (0..=cap_max).filter(|&cap| refuses(cap)).last();
+            let refused_cap = (0..=cap_max).rfind(|&cap| refuses(cap));
             let cap = refused_cap.expect("the allocation must refuse at the matching limit");
             assert!(
                 !refuses(cap + 1),

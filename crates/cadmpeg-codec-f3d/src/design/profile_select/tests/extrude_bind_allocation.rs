@@ -72,11 +72,11 @@ fn binder_feature(scope: &DesignParameterScope, profile: ProfileRef) -> Feature 
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Extrude {
                 profile,
@@ -107,7 +107,7 @@ fn binder_sketch(id: SketchId) -> Sketch {
         configuration: None,
         visible: None,
         placement: SketchPlacement::Unresolved {},
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     }
 }
@@ -218,8 +218,8 @@ fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, retained: bo
             spatial_entities: &[],
             histories: &[],
             scope_histories: &scope_histories,
-            linear_tolerance: 0.000001,
-            angular_tolerance: 0.000000001,
+            linear_tolerance: 0.000_001,
+            angular_tolerance: 0.000_000_001,
             arrangement_budget: &arrangement_budget,
             ctx: Some(&ctx),
         };

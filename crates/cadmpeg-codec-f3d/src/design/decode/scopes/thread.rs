@@ -57,7 +57,8 @@ pub(super) fn exact_thread_construction(
             face_group_record_indices.push(*first);
         }
         ThreadPrefix::Compact => {
-            face_group_record_indices.extend(scope.reference_members().values().step_by(2).copied())
+            face_group_record_indices
+                .extend(scope.reference_members().values().step_by(2).copied());
         }
     }
     let Some(construction) = parse_thread_payload(

@@ -276,13 +276,13 @@ pub(super) fn exact_legacy_as_built_421_operands(
         Err(error) => return Some(Err(error)),
     };
     let hole = match exact_hole_construction(
-        ctx,
-        bytes,
-        records,
-        scope,
-        stream_types,
-        crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-    ) {
+ctx,
+bytes,
+records,
+scope,
+stream_types,
+&crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+) {
         Ok(Some(hole)) => hole,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
@@ -322,29 +322,27 @@ pub(super) fn exact_legacy_as_built_421_operands(
         crate::design::assembly::LegacyAsBuilt421Generation::Class457 => "264",
     };
     let first_selection = match exact_legacy_as_built_face_selection(
-        ctx,
-        bytes,
-        records,
-        scope,
-        1,
-        first_selection_record_index,
-        selection_class_tag,
-        recipes,
-    ) {
+ctx,
+bytes,
+records,
+scope,
+1,
+(first_selection_record_index, selection_class_tag),
+recipes,
+) {
         Ok(Some(selection)) => selection,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
     let second_selection = match exact_legacy_as_built_face_selection(
-        ctx,
-        bytes,
-        records,
-        scope,
-        3,
-        second_selection_record_index,
-        selection_class_tag,
-        recipes,
-    ) {
+ctx,
+bytes,
+records,
+scope,
+3,
+(second_selection_record_index, selection_class_tag),
+recipes,
+) {
         Ok(Some(selection)) => selection,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
@@ -382,8 +380,7 @@ fn exact_legacy_as_built_face_selection(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
-    record_index: u32,
-    expected_class_tag: &str,
+    (record_index, expected_class_tag): (u32, &str),
     recipes: &[ConstructionRecipe],
 ) -> Result<Option<DesignAssemblyLegacySelection>, cadmpeg_core::CodecError> {
     let Some(scope_start) = usize::try_from(scope.byte_offset()).ok() else {
@@ -505,8 +502,15 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = scope.id.len() as u64 - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result =
-            exact_legacy_as_built_face_selection(&ctx, &bytes, &records, &scope, 0, 77, "307", &[]);
+        let result = exact_legacy_as_built_face_selection(
+            &ctx,
+            &bytes,
+            &records,
+            &scope,
+            0,
+            (77, "307"),
+            &[],
+        );
         assert!(matches!(
             result,
             Err(cadmpeg_core::CodecError::ResourceLimit(failure))

@@ -37,7 +37,7 @@ impl<'de> DeserializeSeed<'de> for TextSeed<'_, '_> {
     }
 }
 
-impl<'de> Visitor<'de> for TextSeed<'_, '_> {
+impl Visitor<'_> for TextSeed<'_, '_> {
     type Value = String;
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.expected)

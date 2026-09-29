@@ -634,7 +634,7 @@ pub(super) fn stream_types_by_class_tag<'a>(
     Ok(by_class_tag)
 }
 
-/// Compare an encoded native MetaStream scope with the BulkStream's sibling
+/// Compare an encoded native `MetaStream` scope with the `BulkStream`'s sibling
 /// name without materializing either name.
 fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> bool {
     let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
@@ -968,7 +968,7 @@ pub(crate) fn decode_feature_timelines(
                 let timeline = parse_feature_timeline_record(
                     ctx,
                     bytes,
-                    &bulk_name,
+                    bulk_name,
                     start..end,
                     (&expected_class_tag, *entity_id),
                     entity_source_ordinal,

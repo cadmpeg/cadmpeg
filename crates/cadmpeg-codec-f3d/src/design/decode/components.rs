@@ -66,6 +66,8 @@ fn exact_component_occurrence(
     start: usize,
     stream: &str,
 ) -> Result<Option<DesignComponentOccurrence>, CodecError> {
+    const SUFFIX: &str = ":design-component-occurrence#";
+
     let parsed = (|| {
         let (class_tag, after_tag) =
             lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
@@ -168,7 +170,7 @@ fn exact_component_occurrence(
         digits += 1;
         remaining /= 10;
     }
-    const SUFFIX: &str = ":design-component-occurrence#";
+
     let id_bytes = stream
         .len()
         .checked_add(SUFFIX.len())

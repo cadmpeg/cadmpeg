@@ -36,7 +36,7 @@ fn path_bytes() -> Vec<u8> {
     bytes
 }
 
-fn context<'a>(arena: &'a DecodeArena, collection_limit: u64) -> DecodeContext<'a> {
+fn context(arena: &DecodeArena, collection_limit: u64) -> DecodeContext<'_> {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = collection_limit;
     DecodeContext::from_root_bytes(&[], arena, &policy)

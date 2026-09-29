@@ -22,7 +22,7 @@ fn exact_hole_construction(
         records,
         scope,
         stream_types,
-        crate::records::feature::scope::DesignFeatureKind::Hole,
+        &crate::records::feature::scope::DesignFeatureKind::Hole,
     )
     .unwrap()
 }
@@ -43,7 +43,7 @@ fn hole_input_records_refuse_collection_limit() {
         &records,
         &scope,
         &HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]),
-        crate::records::feature::scope::DesignFeatureKind::Hole,
+        &crate::records::feature::scope::DesignFeatureKind::Hole,
     );
     assert!(matches!(
         result,
@@ -72,7 +72,7 @@ fn hole_carrier_reads_borrowed_as_built_scope() {
         &records,
         &scope,
         &types,
-        crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+        &crate::records::feature::scope::DesignFeatureKind::AsBuilt,
     )
     .unwrap();
     assert_eq!(construction.unwrap().point_record_index, 55);
@@ -82,7 +82,7 @@ fn hole_carrier_reads_borrowed_as_built_scope() {
         &records,
         &scope,
         &types,
-        crate::records::feature::scope::DesignFeatureKind::Hole,
+        &crate::records::feature::scope::DesignFeatureKind::Hole,
     )
     .unwrap()
     .is_none());

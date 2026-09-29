@@ -62,8 +62,7 @@ fn recipe_operand_ids_refuse_retained_limit() {
             &bytes,
             &records,
             &scope,
-            0,
-            &header,
+            (0, &header),
             std::slice::from_ref(&recipe),
             None,
         );

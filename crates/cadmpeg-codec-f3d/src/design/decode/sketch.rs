@@ -1732,10 +1732,10 @@ fn wanted_record_indices<'a>(
     Ok(wanted)
 }
 
-fn decode_headers_for_indices<'a>(
+fn decode_headers_for_indices(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
-    wanted: &std::collections::HashSet<(&'a str, u32)>,
+    wanted: &std::collections::HashSet<(&str, u32)>,
 ) -> Result<Vec<DesignRecordHeader>, CodecError> {
     if wanted.is_empty() {
         return Ok(Vec::new());
@@ -2206,6 +2206,11 @@ pub(crate) fn decode_sketch_points(
     decode_sketch_streams(ctx, scan, decode_sketch_points_from_stream)
 }
 
+struct SketchProperty<'a> {
+    name: &'a str,
+    value: u64,
+}
+
 /// Read a class property block: a presence byte, and when it is `01`, a u32
 /// count and that many `(key, type name, value)` triples.
 ///
@@ -2235,7 +2240,7 @@ impl SketchProperties<'_> {
         None
     }
 
-    fn first_two(&self) -> Option<((&str, u64), Option<(&str, u64)>)> {
+    fn first_two(&self) -> Option<(SketchProperty<'_>, Option<SketchProperty<'_>>)> {
         if !matches!(self.count, 1 | 2) {
             return None;
         }
@@ -2250,11 +2255,20 @@ impl SketchProperties<'_> {
                 lp_ascii_filtered_view(self.payload, at, 0..=256, u8::is_ascii_graphic)?;
             let (_, after_type) =
                 lp_ascii_filtered_view(self.payload, after_name, 0..=256, u8::is_ascii_graphic)?;
-            Some((name, View::u64_le_at(self.payload, after_type)?))
+            Some(SketchProperty {
+                name,
+                value: View::u64_le_at(self.payload, after_type)?,
+            })
         } else {
             None
         };
-        Some(((first_name, first_value), second))
+        Some((
+            SketchProperty {
+                name: first_name,
+                value: first_value,
+            },
+            second,
+        ))
     }
 }
 
@@ -3161,12 +3175,23 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     let mut cursor = header_end.checked_add(9)?;
     let properties = read_property_block(payload, &mut cursor)?;
     let (entity_genesis, persistent_id) = match properties.first_two()? {
-        (("pt_tag", persistent_id), None) => (None, persistent_id),
-        (("EntityGenesis", entity_genesis), Some(("pt_tag", persistent_id)))
-            if class_version == 11 =>
-        {
-            (Some(entity_genesis), persistent_id)
-        }
+        (
+            SketchProperty {
+                name: "pt_tag",
+                value: persistent_id,
+            },
+            None,
+        ) => (None, persistent_id),
+        (
+            SketchProperty {
+                name: "EntityGenesis",
+                value: entity_genesis,
+            },
+            Some(SketchProperty {
+                name: "pt_tag",
+                value: persistent_id,
+            }),
+        ) if class_version == 11 => (Some(entity_genesis), persistent_id),
         _ => return None,
     };
     let persistent_id = std::num::NonZeroU64::new(persistent_id)?;

@@ -254,8 +254,7 @@ fn sketch_point_incident_curves_refuse_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = decode_sketch_point_companion(&ctx, &payload, POINT, record_form, &types)
-        .err()
-        .expect("collection limit must refuse incident curves");
+        .expect_err("collection limit must refuse incident curves");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems

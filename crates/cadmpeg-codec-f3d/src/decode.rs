@@ -2760,9 +2760,11 @@ impl<'a> F3dDecodeSession<'a> {
             Some(self.ctx),
             &self.native.design_sketch_placements,
             &self.native.design_parameters,
-            &self.native.sketch_points,
-            &self.native.sketch_curve_identities,
-            &self.native.sketch_texts,
+            (
+                &self.native.sketch_points,
+                &self.native.sketch_curve_identities,
+                &self.native.sketch_texts,
+            ),
             &self.native.sketch_relations,
             &self.ir.model.sketch_entities,
         )?;
@@ -4362,8 +4364,7 @@ fn extend_related_design_records(
             scan,
             &native.design_entity_headers,
             &native.design_types,
-            &native.design_parameters,
-            &native.design_parameter_owners,
+            (&native.design_parameters, &native.design_parameter_owners),
             &native.design_component_occurrences,
             &native.construction_recipes,
         )?;

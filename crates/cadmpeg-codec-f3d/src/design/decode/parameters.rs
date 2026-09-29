@@ -855,7 +855,7 @@ fn parse_legacy_parameter_owner_68(
     frame_start: u64,
 ) -> Option<ParsedParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-    if !is_legacy_parameter_owner_68_class(&class_tag)
+    if !is_legacy_parameter_owner_68_class(class_tag)
         || frame.len() != legacy_owner_68::LEN
         || after_tag != indexed_header::RECORD_INDEX
         || frame.get(legacy_owner_68::ZERO_RUN_8..legacy_owner_68::FIRST_MARKER) != Some(&[0; 8])
@@ -904,7 +904,7 @@ fn parse_legacy_parameter_owner_88(
     frame_start: u64,
 ) -> Option<ParsedParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
-    if !is_legacy_parameter_owner_88_class(&class_tag)
+    if !is_legacy_parameter_owner_88_class(class_tag)
         || frame.len() != legacy_owner_88::LEN
         || after_tag != indexed_header::RECORD_INDEX
         || frame.get(legacy_owner_88::ZERO_RUN_8..legacy_owner_88::FIRST_MARKER) != Some(&[0; 8])

@@ -2183,7 +2183,6 @@ impl DesignParameterScope {
     }
 
     #[cfg(test)]
-
     pub(crate) fn into_draft(self) -> DesignParameterScopeDraft {
         DesignParameterScopeDraft {
             id: self.id,
@@ -2207,7 +2206,6 @@ impl DesignParameterScope {
     }
 
     #[cfg(test)]
-
     pub(crate) fn try_edit(
         &mut self,
         edit: impl FnOnce(&mut DesignParameterScopeDraft),

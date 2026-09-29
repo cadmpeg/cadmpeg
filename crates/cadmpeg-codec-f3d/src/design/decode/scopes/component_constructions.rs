@@ -121,9 +121,7 @@ pub(super) fn exact_derived_instance_construction(
             && occurrence.byte_offset() < relation_at as u64
             && occurrence.transform().map(|frame| frame.value) == Some(transform)
     });
-    let Some(carrier) = candidates.next() else {
-        return None;
-    };
+    let carrier = candidates.next()?;
     if candidates.next().is_some() {
         return None;
     }
@@ -1025,9 +1023,7 @@ pub(super) fn exact_copy_paste_component_operation(
             && occurrence.byte_offset() < relation_at as u64
             && occurrence.transform().map(|frame| frame.value) == Some(copied_transform)
     });
-    let Some(copied) = copied_candidates.next() else {
-        return None;
-    };
+    let copied = copied_candidates.next()?;
     if copied_candidates.next().is_some() {
         return None;
     }
@@ -1040,9 +1036,7 @@ pub(super) fn exact_copy_paste_component_operation(
                 .eq_ignore_ascii_case(copied.component_guid.as_str())
             && occurrence.transform().is_none()
     });
-    let Some(source) = source_candidates.next() else {
-        return None;
-    };
+    let source = source_candidates.next()?;
     if source_candidates.next().is_some() {
         return None;
     }

@@ -78,7 +78,7 @@ fn assert_historical_selection_refusal(operation: &'static str) {
             &sketch,
             &[],
             &histories,
-            0.000001,
+            0.000_001,
             &arrangement_budget,
             Some(&ctx),
         ) {
@@ -157,7 +157,7 @@ fn assert_historical_boundary_refusal(operation: &'static str) {
             &sketch,
             std::slice::from_ref(&entity),
             &[Point3::new(0.5, 0.0, 0.0)],
-            0.000001,
+            0.000_001,
             &arrangement_budget,
             Some(&ctx),
         ) {
@@ -431,7 +431,7 @@ fn assert_fallback_point_refusal(operation: &'static str) {
             &sketch,
             std::slice::from_ref(&entity),
             &histories,
-            0.000001,
+            0.000_001,
             &arrangement_budget,
             Some(&ctx),
         ) {
@@ -497,7 +497,7 @@ fn historical_selected_arrangement_region_refuses_collection_limit() {
             &sketch,
             &entities,
             &[Point3::new(1.0, 1.0, 0.0)],
-            0.000001,
+            0.000_001,
             &arrangement_budget,
             Some(&ctx),
         ) {
@@ -573,8 +573,8 @@ fn assert_extrude_selection_refusal(operation: &'static str, matched: bool, reta
             spatial_entities: &[],
             histories: &[],
             scope_histories: &scope_histories,
-            linear_tolerance: 0.000001,
-            angular_tolerance: 0.000000001,
+            linear_tolerance: 0.000_001,
+            angular_tolerance: 0.000_000_001,
             arrangement_budget: &arrangement_budget,
             ctx: Some(&ctx),
         };
@@ -709,8 +709,8 @@ fn assert_transition_collection_refusal(operation: &'static str, deleted: bool) 
             spatial_entities: &[],
             histories: &histories,
             scope_histories: &scope_histories,
-            linear_tolerance: 0.000001,
-            angular_tolerance: 0.000000001,
+            linear_tolerance: 0.000_001,
+            angular_tolerance: 0.000_000_001,
             arrangement_budget: &arrangement_budget,
             ctx: Some(&ctx),
         };
@@ -815,7 +815,7 @@ fn assert_inserted_selection_refusal(operation: &'static str, region: bool) {
         match super::super::transition_inserted_profile_selection(
             &sketch,
             &[],
-            0.000001,
+            0.000_001,
             selections,
             Some(&ctx),
         ) {
@@ -975,8 +975,8 @@ fn cylindrical_profile_projected_points_refuse_collection_limit() {
             std::slice::from_ref(&circle),
             &topology,
             10,
-            0.000001,
-            0.000000001,
+            0.000_001,
+            0.000_000_001,
             Some(&ctx),
         ) {
             Err(CodecError::ResourceLimit(failure))

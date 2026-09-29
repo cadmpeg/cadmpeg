@@ -705,9 +705,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         None,
         &placements,
         &[],
-        &points,
-        &curves,
-        &[],
+        (&points, &curves, &[]),
         &[
             relation(700, 217),
             horizontal_point,
