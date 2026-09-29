@@ -295,7 +295,7 @@ fn decode_container<'a>(
                             raw_len: cadmpeg_core::decode::u64_from_index(
                                 property.raw.window().len(),
                             ),
-                            raw_sha256: crate::native::digest::Sha256Hex::digest(
+                            raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(
                                 property.raw.window(),
                             ),
                         });
@@ -1375,13 +1375,13 @@ fn retained_native_sha256(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     operation: &'static str,
-) -> Result<crate::native::digest::Sha256Hex, CodecError> {
+) -> Result<cadmpeg_ir::hash::digest::Sha256Digest, CodecError> {
     ctx.charge_retained(64, operation)?;
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(bytes.len()),
         "hash Inventor native bytes",
     )?;
-    Ok(crate::native::digest::Sha256Hex::digest(bytes))
+    Ok(cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes))
 }
 
 fn admit_native_format(
@@ -2461,9 +2461,11 @@ fn admit_assembly_placement(
         || !wire
             .suffix_sha256
             .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
     {
-        Some("suffix_sha256: SHA-256 digest must contain 64 hexadecimal characters")
+        Some(
+            "suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters",
+        )
     } else {
         None
     };

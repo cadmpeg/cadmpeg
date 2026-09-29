@@ -13,17 +13,6 @@ use cadmpeg_ir::AnnotationBuilder;
 
 use crate::loss::CatiaLossCode;
 
-pub(crate) struct HexBytes<'a>(pub(crate) &'a [u8]);
-
-impl std::fmt::Display for HexBytes<'_> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for byte in self.0 {
-            write!(formatter, "{byte:02x}")?;
-        }
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod collection_tests {
     #[test]

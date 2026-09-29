@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use crate::container::Container;
 use cadmpeg_core::CodecError;
 
-use super::hex::Sha256Hex;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use packet_role::{TopologyContext, TopologyPacketRole};
 use version::JtVersionField;
 
@@ -106,13 +106,6 @@ fn display_jt_text_size(
         let len = u64::try_from(part.len()).map_err(|_| invalid())?;
         sum.checked_add(len).ok_or_else(invalid)
     })
-}
-
-fn digest_display_jt(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Sha256Hex, CodecError> {
-    let work = cadmpeg_core::decode::u64_from_index(bytes.len());
-    ctx.charge_work(work, "hash DisplayJT bytes")?;
-    ctx.charge_retained(64, "retain DisplayJT hash")?;
-    Ok(Sha256Hex::digest(bytes))
 }
 
 fn inflate_display_jt(
@@ -446,7 +439,7 @@ pub(super) struct DisplayJtSegment {
     /// Physical segment byte length, including its 24-byte header.
     segment_byte_len: u32,
     /// SHA-256 of the bytes following the segment header.
-    payload_sha256: Sha256Hex,
+    payload_sha256: Sha256Digest,
     /// Complete compressed-data envelope when the payload is compressed.
     compression: Option<DisplayJtCompression>,
     /// Absolute source offset of the segment header.
@@ -459,7 +452,7 @@ pub(super) struct DisplayJtSegment {
 struct DisplayJtCompression {
     envelope: JtCompressionEnvelope,
     /// SHA-256 of the completely inflated payload.
-    inflated_sha256: Sha256Hex,
+    inflated_sha256: Sha256Digest,
 }
 
 #[derive(Serialize)]
@@ -468,7 +461,7 @@ struct DisplayJtCompressionRef<'a> {
     compressed_data_byte_len: u32,
     algorithm: u8,
     compressed_byte_len: u32,
-    inflated_sha256: &'a Sha256Hex,
+    inflated_sha256: &'a Sha256Digest,
 }
 
 impl Serialize for DisplayJtCompression {
@@ -491,7 +484,7 @@ struct DisplayJtCompressionWire {
     compressed_data_byte_len: u32,
     algorithm: u8,
     compressed_byte_len: u32,
-    inflated_sha256: Sha256Hex,
+    inflated_sha256: Sha256Digest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -577,7 +570,7 @@ pub(super) struct DisplayJtShapeLodElement {
     /// Bytes following the common element header.
     body_byte_len: u32,
     /// SHA-256 of the bytes following the common element header.
-    body_sha256: Sha256Hex,
+    body_sha256: Sha256Digest,
     /// Absolute source offset of the element length.
     pub(super) source_offset: u64,
 }
@@ -591,7 +584,7 @@ struct DisplayJtShapeLodElementRef<'a> {
     object_base_type: u8,
     object_id: u32,
     body_byte_len: u32,
-    body_sha256: &'a Sha256Hex,
+    body_sha256: &'a Sha256Digest,
     source_offset: u64,
 }
 
@@ -622,7 +615,7 @@ struct DisplayJtShapeLodElementWire {
     object_base_type: u8,
     object_id: u32,
     body_byte_len: u32,
-    body_sha256: Sha256Hex,
+    body_sha256: Sha256Digest,
     source_offset: u64,
 }
 
@@ -684,7 +677,7 @@ pub(super) struct DisplayJtTriStripLodHeader {
     /// Bytes following the fixed header.
     compressed_representation_byte_len: u32,
     /// SHA-256 of the bytes following the fixed header.
-    compressed_representation_sha256: Sha256Hex,
+    compressed_representation_sha256: Sha256Digest,
     /// Absolute source offset of the fixed header.
     pub(super) source_offset: u64,
 }
@@ -701,7 +694,7 @@ pub(super) struct DisplayJtInitialFaceDegreeSymbols {
     /// Complete compressed-packet byte length.
     packet_byte_len: u32,
     /// SHA-256 of the complete compressed packet.
-    packet_sha256: Sha256Hex,
+    packet_sha256: Sha256Digest,
     /// Absolute source offset of the compressed packet.
     pub(super) source_offset: u64,
 }
@@ -718,7 +711,7 @@ struct DisplayJtTopologyPacket {
     /// Complete packet length in bytes.
     byte_len: u32,
     /// Digest of the complete packet bytes.
-    sha256: Sha256Hex,
+    sha256: Sha256Digest,
     /// Mesh-representation-relative packet offset.
     representation_offset: u32,
     /// Reconstructed primal values when the packet codec is decoded.
@@ -944,7 +937,7 @@ pub(super) struct DisplayJtCompressedVertexRecordsHeader {
     /// Remaining compressed vertex-array length.
     compressed_arrays_byte_len: u32,
     /// Digest of the remaining compressed vertex arrays.
-    compressed_arrays_sha256: Sha256Hex,
+    compressed_arrays_sha256: Sha256Digest,
     /// Absolute source offset of this header.
     pub(super) source_offset: u64,
 }
@@ -967,7 +960,7 @@ pub(super) struct DisplayJtVertexCoordinateArrayHeader {
     /// Remaining compressed component-data length.
     compressed_components_byte_len: u32,
     /// Digest of the remaining compressed component data.
-    compressed_components_sha256: Sha256Hex,
+    compressed_components_sha256: Sha256Digest,
     /// Absolute source offset of this header.
     pub(super) source_offset: u64,
 }
@@ -1508,7 +1501,7 @@ pub(super) struct DisplayJtCompressedElement {
     /// Bytes following the common element header.
     body_byte_len: u32,
     /// SHA-256 of the bytes following the common element header.
-    body_sha256: Sha256Hex,
+    body_sha256: Sha256Digest,
     /// Offset of the element length in the inflated payload.
     inflated_offset: u32,
     /// Absolute source offset of the owning compressed envelope.
@@ -1533,7 +1526,7 @@ struct DisplayJtCompressedElementWire {
     object_base_type: u8,
     object_id: u32,
     body_byte_len: u32,
-    body_sha256: Sha256Hex,
+    body_sha256: Sha256Digest,
     inflated_offset: u32,
     source_offset: u64,
 }
@@ -1599,7 +1592,7 @@ pub(super) struct DisplayJtCompressedElementSequence {
     /// Exact bytes following the end-object marker.
     tail: Vec<u8>,
     /// SHA-256 of the exact post-marker tail.
-    tail_sha256: Sha256Hex,
+    tail_sha256: Sha256Digest,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
 }
@@ -1624,7 +1617,7 @@ struct DisplayJtCompressedElementSequenceRef<'a> {
     elements: &'a [String],
     framed_byte_len: u32,
     tail: &'a [u8],
-    tail_sha256: &'a Sha256Hex,
+    tail_sha256: &'a Sha256Digest,
     source_offset: u64,
 }
 
@@ -1653,14 +1646,14 @@ struct DisplayJtCompressedElementSequenceWire {
     elements: Vec<String>,
     framed_byte_len: u32,
     tail: Vec<u8>,
-    tail_sha256: Sha256Hex,
+    tail_sha256: Sha256Digest,
     source_offset: u64,
 }
 
 impl TryFrom<DisplayJtCompressedElementSequenceWire> for DisplayJtCompressedElementSequence {
     type Error = &'static str;
     fn try_from(wire: DisplayJtCompressedElementSequenceWire) -> Result<Self, Self::Error> {
-        if wire.tail_sha256 != Sha256Hex::digest(&wire.tail) {
+        if wire.tail_sha256 != Sha256Digest::digest(&wire.tail) {
             return Err("DisplayJtCompressedElementSequence.tail_sha256 disagrees with tail");
         }
         let minimum = u64::try_from(wire.elements.len())
@@ -1692,7 +1685,7 @@ std::thread_local! {
 impl From<DisplayJtCompressedElementSequence> for DisplayJtCompressedElementSequenceWire {
     fn from(value: DisplayJtCompressedElementSequence) -> Self {
         JT_COMPRESSED_SEQUENCE_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
-        let tail_sha256 = Sha256Hex::digest(&value.tail);
+        let tail_sha256 = Sha256Digest::digest(&value.tail);
         Self {
             id: value.id,
             segment: value.segment,
@@ -1856,7 +1849,7 @@ pub(super) struct DisplayJtBaseNodeData {
     /// Byte length after the common node-data header.
     family_data_byte_len: u32,
     /// SHA-256 of the bytes after the common node-data header.
-    family_data_sha256: Sha256Hex,
+    family_data_sha256: Sha256Digest,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
 }
@@ -1894,7 +1887,7 @@ pub(super) struct DisplayJtGroupNodeData {
     /// Byte length after the common group-node data.
     family_data_byte_len: u32,
     /// SHA-256 of the bytes after the common group-node data.
-    family_data_sha256: Sha256Hex,
+    family_data_sha256: Sha256Digest,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
 }
@@ -3467,7 +3460,11 @@ pub(super) fn display_jt_segments(
                 };
                 Some(DisplayJtCompression {
                     envelope,
-                    inflated_sha256: digest_display_jt(budget.0, &inflated)?,
+                    inflated_sha256: Sha256Digest::digest_for_decode(
+                        budget.0,
+                        &inflated,
+                        "retain DisplayJT hash",
+                    )?,
                 })
             } else {
                 None
@@ -3496,7 +3493,11 @@ pub(super) fn display_jt_segments(
                 segment_id,
                 segment_type,
                 segment_byte_len: header_byte_len,
-                payload_sha256: digest_display_jt(ctx, payload)?,
+                payload_sha256: Sha256Digest::digest_for_decode(
+                    ctx,
+                    payload,
+                    "retain DisplayJT hash",
+                )?,
                 compression,
                 source_offset: document.source_offset + u64::from(entry.segment_offset),
             });
@@ -3561,7 +3562,11 @@ pub(super) fn display_jt_shape_lod_elements(
                         cadmpeg_core::decode::u64_from_index(element.body.len()),
                     )
                 })?,
-                body_sha256: digest_display_jt(ctx, element.body)?,
+                body_sha256: Sha256Digest::digest_for_decode(
+                    ctx,
+                    element.body,
+                    "retain DisplayJT hash",
+                )?,
                 source_offset: segment.source_offset
                     + 24
                     + cadmpeg_core::decode::u64_from_index(element.offset),
@@ -3626,7 +3631,11 @@ pub(super) fn display_jt_tri_strip_lod_headers(
                         cadmpeg_core::decode::u64_from_index(compressed_representation.len()),
                     )
                 })?,
-            compressed_representation_sha256: digest_display_jt(ctx, compressed_representation)?,
+            compressed_representation_sha256: Sha256Digest::digest_for_decode(
+                ctx,
+                compressed_representation,
+                "retain DisplayJT hash",
+            )?,
             source_offset: element.source_offset + 25,
         });
     }
@@ -3685,7 +3694,7 @@ pub(super) fn display_jt_initial_face_degree_symbols(
                     cadmpeg_core::decode::u64_from_index(packet_byte_len),
                 )
             })?,
-            packet_sha256: digest_display_jt(ctx, packet)?,
+            packet_sha256: Sha256Digest::digest_for_decode(ctx, packet, "retain DisplayJT hash")?,
             source_offset: element.source_offset + 45,
         });
     }
@@ -3798,7 +3807,7 @@ pub(super) fn display_jt_topology_packet_sequences(
                 value_count,
                 codec,
                 byte_len,
-                sha256: digest_display_jt(ctx, packet)?,
+                sha256: Sha256Digest::digest_for_decode(ctx, packet, "retain DisplayJT hash")?,
                 representation_offset,
                 values,
             });
@@ -3903,7 +3912,11 @@ pub(super) fn display_jt_topology_packet_sequences(
                 component_ranges,
                 component_quantization_bits,
                 compressed_components_byte_len,
-                compressed_components_sha256: digest_display_jt(ctx, compressed_components)?,
+                compressed_components_sha256: Sha256Digest::digest_for_decode(
+                    ctx,
+                    compressed_components,
+                    "retain DisplayJT hash",
+                )?,
                 source_offset: representation_source_offset
                     + u64::from(topology_byte_len)
                     + vertex_header_byte_len_u64,
@@ -3938,7 +3951,11 @@ pub(super) fn display_jt_topology_packet_sequences(
             topological_vertex_count,
             vertex_attribute_count,
             compressed_arrays_byte_len,
-            compressed_arrays_sha256: digest_display_jt(ctx, arrays)?,
+            compressed_arrays_sha256: Sha256Digest::digest_for_decode(
+                ctx,
+                arrays,
+                "retain DisplayJT hash",
+            )?,
             source_offset: representation_source_offset + u64::from(topology_byte_len),
         });
     }
@@ -4674,7 +4691,7 @@ pub(super) fn display_jt_compressed_element_sequences(
                     object_base_type: element.object_base_type,
                     body_byte_len: u32::try_from(element.body.len())
                         .map_err(|_| display_jt_framing_error("body_byte_len exceeds u32"))?,
-                    body_sha256: Sha256Hex::digest(element.body),
+                    body_sha256: Sha256Digest::digest(element.body),
                     inflated_offset: u32::try_from(element.offset)
                         .map_err(|_| display_jt_framing_error("inflated_offset exceeds u32"))?,
                     source_offset: segment.source_offset + 24,
@@ -4724,7 +4741,7 @@ pub(super) fn display_jt_compressed_element_sequences(
                 framed_byte_len: u32::try_from(framed_end)
                     .map_err(|_| display_jt_framing_error("framed_byte_len exceeds u32"))?,
                 tail: retained_tail,
-                tail_sha256: Sha256Hex::digest(tail),
+                tail_sha256: Sha256Digest::digest(tail),
                 source_offset: segment.source_offset + 24,
             })
             .map_err(display_jt_framing_error)?,
@@ -5123,7 +5140,11 @@ pub(super) fn display_jt_base_node_data(
                         cadmpeg_core::decode::u64_from_index(family_data.len()),
                     )
                 })?,
-                family_data_sha256: digest_display_jt(budget.0, family_data)?,
+                family_data_sha256: Sha256Digest::digest_for_decode(
+                    budget.0,
+                    family_data,
+                    "retain DisplayJT hash",
+                )?,
                 source_offset: segment.source_offset + 24,
             });
         }
@@ -5216,7 +5237,11 @@ pub(super) fn display_jt_group_node_data(
                         cadmpeg_core::decode::u64_from_index(family_data.len()),
                     )
                 })?,
-                family_data_sha256: digest_display_jt(budget.0, family_data)?,
+                family_data_sha256: Sha256Digest::digest_for_decode(
+                    budget.0,
+                    family_data,
+                    "retain DisplayJT hash",
+                )?,
                 source_offset: segment.source_offset + 24,
             });
         }

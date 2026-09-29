@@ -6,7 +6,7 @@ use std::io::Write;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
-use crate::native::hex::Sha256Hex;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 
 #[test]
 fn display_jt_inflate_propagates_expansion_and_retained_limits() {
@@ -90,7 +90,7 @@ fn compressed_jt_fixture() -> (Vec<u8>, super::super::DisplayJtSegment) {
         segment_id: [0; 16],
         segment_type: 7,
         segment_byte_len: u32::try_from(data.len()).unwrap(),
-        payload_sha256: Sha256Hex::digest(&data[24..]),
+        payload_sha256: Sha256Digest::digest(&data[24..]),
         compression: Some(compression),
         source_offset: 0,
     };

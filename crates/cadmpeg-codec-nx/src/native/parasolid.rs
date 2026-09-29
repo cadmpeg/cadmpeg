@@ -998,7 +998,7 @@ pub(super) struct ParasolidDeltasBodyRevision {
     /// Prefix and state-tail lengths with a representable total.
     lengths: RevisionLengths,
     /// SHA-256 of the exact bounded state-tail bytes.
-    state_tail_sha256: crate::native::hex::Sha256Hex,
+    state_tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// BODY tag offset in the inflated stream.
     pub(super) inflated_offset: u64,
 }
@@ -1015,7 +1015,7 @@ pub(super) struct ParasolidDeltasTransmitHeader {
     /// Exact header byte length.
     byte_len: u64,
     /// SHA-256 of the exact header bytes.
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 /// Null references at the boundary of a Parasolid deltas stream.
@@ -1060,7 +1060,7 @@ pub(super) struct ParasolidDeltasTaggedReferenceLane {
     /// Exact reference-lane byte length.
     byte_len: u64,
     /// SHA-256 of the exact reference-lane bytes.
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// First byte of the first tagged reference.
     pub(super) inflated_offset: u64,
 }
@@ -1080,7 +1080,7 @@ pub(super) struct ParasolidDeltasReferenceTypeMap {
     /// Exact map byte length.
     byte_len: u64,
     /// SHA-256 of the exact map bytes.
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// First map byte offset in the inflated stream.
     pub(super) inflated_offset: u64,
 }
@@ -1114,7 +1114,7 @@ pub(super) struct ParasolidDeltasReferenceStatePacket {
     /// Exact packet byte length.
     byte_len: u64,
     /// SHA-256 of the exact packet bytes.
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// First packet byte offset in the inflated stream.
     pub(super) inflated_offset: u64,
 }
@@ -1131,7 +1131,7 @@ pub(super) struct ParasolidDeltasSchemaReferencePreamble {
     /// Exact preamble byte length.
     byte_len: u64,
     /// SHA-256 of the exact preamble bytes.
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// First preamble byte offset in the inflated stream.
     pub(super) inflated_offset: u64,
 }
@@ -1150,7 +1150,7 @@ pub(super) struct ParasolidDeltasReferenceMarkerPacket {
     /// Exact packet byte length.
     byte_len: u64,
     /// SHA-256 of the exact packet bytes.
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// First packet byte offset in the inflated stream.
     pub(super) inflated_offset: u64,
 }
@@ -1168,7 +1168,7 @@ pub(super) struct ParasolidDeltasType150StatePacket {
     /// Exact packet byte length.
     byte_len: u64,
     /// SHA-256 of the exact packet bytes.
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// First packet byte offset in the inflated stream.
     pub(super) inflated_offset: u64,
 }
@@ -1186,7 +1186,7 @@ pub(super) struct ParasolidDeltasInlineSchemaDeclaration {
     /// Exact declaration byte length.
     byte_len: u64,
     /// SHA-256 of the exact declaration bytes.
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// First declaration byte offset in the inflated stream.
     pub(super) inflated_offset: u64,
 }
@@ -1203,7 +1203,7 @@ pub(super) struct ParasolidDeltasInlineBodyState {
     /// Exact state byte length.
     byte_len: u64,
     /// SHA-256 of the exact state bytes.
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// First state byte offset in the inflated stream.
     pub(super) inflated_offset: u64,
 }
@@ -1218,7 +1218,7 @@ pub(super) struct ParasolidDeltasResidualSpan {
     /// Exact residual byte length.
     byte_len: u64,
     /// SHA-256 of the residual bytes.
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// First residual byte offset in the inflated stream.
     pub(super) inflated_offset: u64,
 }
@@ -1396,7 +1396,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal_u32,
                     state: header.state,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                 },
                 "NX deltas events",
             )?;
@@ -1478,7 +1478,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                         &stream.inflated[revision.offset..revision.prefix_end],
                         state_tail,
                     ),
-                    state_tail_sha256: crate::native::hex::Sha256Hex::digest(state_tail),
+                    state_tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(state_tail),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(revision.offset),
                 },
                 "NX deltas events",
@@ -1518,7 +1518,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal_u32,
                     references: lane.references,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(lane.offset),
                 },
                 "NX deltas events",
@@ -1540,7 +1540,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     entries: map.entries,
                     target_kind: map.target_kind,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(map.offset),
                 },
                 "NX deltas events",
@@ -1562,7 +1562,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     frames: packet.frames,
                     terminal: packet.terminal,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
                 },
                 "NX deltas events",
@@ -1583,7 +1583,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal_u32,
                     state: preamble.state,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(preamble.offset),
                 },
                 "NX deltas events",
@@ -1605,7 +1605,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     reference: packet.reference,
                     marker: packet.marker,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
                 },
                 "NX deltas events",
@@ -1626,7 +1626,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal_u32,
                     state: packet.state,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(packet.offset),
                 },
                 "NX deltas events",
@@ -1647,7 +1647,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal_u32,
                     fields: declaration.fields,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(declaration.offset),
                 },
                 "NX deltas events",
@@ -1668,7 +1668,7 @@ pub(super) fn parasolid_deltas_events_with_censuses(
                     stream_ordinal: stream_ordinal_u32,
                     fields: state.fields,
                     byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-                    sha256: crate::native::hex::Sha256Hex::digest(bytes),
+                    sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
                     inflated_offset: cadmpeg_core::decode::u64_from_index(state.offset),
                 },
                 "NX deltas events",
@@ -1729,7 +1729,7 @@ fn push_deltas_residual_span(
             stream_ordinal: u32::try_from(stream_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX deltas residual stream ordinal", 0, 1))?,
             byte_len: cadmpeg_core::decode::u64_from_index(residual.len()),
-            sha256: crate::native::hex::Sha256Hex::digest(residual),
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(residual),
             inflated_offset: cadmpeg_core::decode::u64_from_index(start),
         },
         "NX deltas events",

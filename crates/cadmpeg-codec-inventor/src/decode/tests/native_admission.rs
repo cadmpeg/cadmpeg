@@ -1668,6 +1668,36 @@ fn placement_conversion_issue_refuses_before_failure_text_creation() {
     assert!(issues.is_empty());
 }
 
+#[test]
+fn uppercase_placement_digest_refuses_before_failure_text_creation() {
+    let wire: AssemblyPlacementRecordWire = serde_json::from_value(serde_json::json!({
+        "id": "inventor:assembly:placement#segment-1", "segment_token": "segment", "record_ordinal": 1,
+        "header_id": 0, "owner_reference": 0, "attribute_reference": 0, "state": 0,
+        "transform_prefix": false, "transform_encoding": [0, 0],
+        "transform": [[1.0,0.0,0.0,0.0],[0.0,1.0,0.0,0.0],[0.0,0.0,1.0,0.0],[0.0,0.0,0.0,1.0]],
+        "branch": 0, "graphics_state": 0, "occurrence_id": 1, "graphics_index": 0,
+        "object_reference": 0, "suffix_len": 48, "suffix_sha256": "A".repeat(64)
+    }))
+    .expect("placement wire");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(
+        "suffix_sha256: sha256 digest must contain exactly 64 lowercase hexadecimal characters"
+            .len()
+            - 1,
+    )
+    .expect("detail length fits");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited context");
+    let mut issues = Vec::new();
+    assert!(matches!(
+        admit_assembly_placement(&ctx, wire, &mut issues),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "retain Inventor placement conversion issue"
+    ));
+    assert!(issues.is_empty());
+}
+
 fn assert_ufrx_issue(ir: &cadmpeg_ir::document::CadIr, scope: &str, field: &str) {
     let namespace = ir.native.namespace("inventor").expect("native namespace");
     let issues = namespace

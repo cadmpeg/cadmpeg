@@ -123,7 +123,7 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
         segment_id: [1; 16],
         segment_type: 7,
         segment_byte_len: 78,
-        payload_sha256: super::Sha256Hex::digest(&[]),
+        payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]),
         compression: None,
         source_offset: 0,
     };

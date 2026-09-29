@@ -26,7 +26,7 @@ pub(in crate::native) struct MaterialTextureAsset {
     pub(super) byte_order: TiffByteOrder,
     first_ifd_offset: u32,
     byte_len: u64,
-    pub(in crate::native) sha256: crate::native::hex::Sha256Hex,
+    pub(in crate::native) sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     source_entry: String,
     pub(in crate::native) source_offset: u64,
 }
@@ -39,7 +39,7 @@ struct TextureRef<'a> {
     version: u16,
     first_ifd_offset: u32,
     byte_len: u64,
-    sha256: &'a crate::native::hex::Sha256Hex,
+    sha256: &'a cadmpeg_ir::hash::digest::Sha256Digest,
     source_entry: &'a str,
     source_offset: u64,
 }
@@ -67,7 +67,7 @@ impl MaterialTextureAsset {
         byte_order: TiffByteOrder,
         first_ifd_offset: u32,
         byte_len: u64,
-        sha256: crate::native::hex::Sha256Hex,
+        sha256: cadmpeg_ir::hash::digest::Sha256Digest,
         source_entry: String,
         source_offset: u64,
     ) -> Result<Self, &'static str> {
@@ -121,7 +121,7 @@ struct TextureWire {
     version: u16,
     first_ifd_offset: u32,
     byte_len: u64,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     source_entry: String,
     source_offset: u64,
 }
@@ -261,7 +261,7 @@ pub(in crate::native) fn material_texture_assets(
             byte_order,
             first_ifd_offset,
             u64_from_index(size),
-            crate::native::hex::Sha256Hex::digest(payload),
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(payload),
             source_entry,
             offset,
         )

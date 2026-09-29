@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{
     pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition,
     SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::hash::sha256;
+use cadmpeg_ir::hash::{sha256, LowerHex};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
@@ -29,7 +29,7 @@ use std::collections::BTreeMap;
 
 use crate::container::ContainerScan;
 use crate::loss::{identity_statement, CatiaLossCode};
-use crate::resource::{self, HexBytes};
+use crate::resource;
 
 pub(crate) fn cgm_source(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -534,7 +534,7 @@ pub(crate) fn source_meta(
             ctx,
             &mut attributes,
             format_args!("brep_stream_sha256"),
-            format_args!("{}", HexBytes(&digest)),
+            format_args!("{}", LowerHex(&digest)),
             "catia_source_meta_attribute",
         )?;
         resource::source_attribute(
