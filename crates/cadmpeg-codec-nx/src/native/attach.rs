@@ -3718,26 +3718,27 @@ fn attach_feature_operations(
             }) {
                 definition
             } else {
+                let mut placements = Vec::new();
+                for source in [
+                    simple_hole_placements.get(label.id.as_str()).map_or([].as_slice(), std::slice::from_ref),
+                    counterbore_hole_placements.get(label.id.as_str()).map_or([].as_slice(), std::slice::from_ref),
+                    blind_hole_placements.get(label.id.as_str()).map_or([].as_slice(), std::slice::from_ref),
+                    hole_packages.placements.get(label.id.as_str()).map_or([].as_slice(), Vec::as_slice),
+                ] {
+                    for placement in source {
+                        ctx.charge_collection_items(1, "NX feature hole placements")?;
+                        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<HolePlacement>()), "NX feature hole placement")?;
+                        placements.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX feature hole placements", 0, 1))?;
+                        placements.push(placement.clone());
+                    }
+                }
                 non_boolean_feature_definition_with_parameters(
                     &label.value,
                     &operation_payload_strings,
                     block_dimension_values,
                     block_placement,
                     HoleProjection {
-                        placements: simple_hole_placements
-                            .get(label.id.as_str())
-                            .cloned()
-                            .into_iter()
-                            .chain(counterbore_hole_placements.get(label.id.as_str()).cloned())
-                            .chain(blind_hole_placements.get(label.id.as_str()).cloned())
-                            .chain(
-                                hole_packages
-                                    .placements
-                                    .get(label.id.as_str())
-                                    .cloned()
-                                    .unwrap_or_default(),
-                            )
-                            .collect(),
+                        placements,
                         diameter: simple_hole_diameters
                             .get(label.id.as_str())
                             .or_else(|| hole_packages.diameters.get(label.id.as_str()))
