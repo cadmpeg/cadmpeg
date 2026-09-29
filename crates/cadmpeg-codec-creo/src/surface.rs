@@ -5287,10 +5287,11 @@ fn contour_records_for_rows(
         let Some(contour_start) = contour_start else {
             continue;
         };
-        let Some(chain) = parse_surface_contour_chain(payload, contour_start, row_end, row, &cache)
+        let Some(chain) = parse_surface_contour_chain(ctx, payload, contour_start, row_end, row, &cache)?
         else {
             continue;
         };
+        ctx.try_reserve_items(&mut records, chain.len(), "creo contour record aggregation")?;
         records.extend(chain);
     }
     records.sort_by_key(|record| record.offset);
@@ -5298,60 +5299,76 @@ fn contour_records_for_rows(
 }
 
 fn parse_surface_contour_chain(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     row: &SurfaceRow,
     cache: &scalar::ScalarCache,
-) -> Option<Vec<SurfaceContourRecord>> {
+) -> Result<Option<Vec<SurfaceContourRecord>>, CodecError> {
     let mut cursor = start;
     let mut chain = Vec::new();
     loop {
         let contour_start = cursor;
         if cursor.checked_add(2).is_none_or(|next| next > end) {
-            return None;
+            return Ok(None);
         }
-        let head = payload.get(cursor..cursor + 2)?;
+        let Some(head) = payload.get(cursor..cursor + 2) else {
+            return Ok(None);
+        };
         if !(0x80..=0xbf).contains(&head[0]) {
-            return None;
+            return Ok(None);
         }
         let (curve_header_id, after_head) = compact_int(payload, cursor);
         if after_head != cursor + 2 || curve_header_id == 0 {
-            return None;
+            return Ok(None);
         }
-        let trv = *payload.get(after_head)?;
+        let Some(&trv) = payload.get(after_head) else {
+            return Ok(None);
+        };
         if !matches!(trv, 0x00..=0x03 | 0xf6) {
-            return None;
+            return Ok(None);
         }
         let envelope_offset = after_head + 1;
         let mut parameter_envelope = [None; 4];
         cursor = envelope_offset;
         for value in &mut parameter_envelope {
-            let (decoded, next) = decode_surface_contour_envelope_scalar(payload, cursor, cache)?;
+            let Some((decoded, next)) = decode_surface_contour_envelope_scalar(payload, cursor, cache) else {
+                return Ok(None);
+            };
             if next > end || decoded.is_some_and(|value| !value.is_finite()) {
-                return None;
+                return Ok(None);
             }
             *value = decoded;
             cursor = next;
         }
-        let close = *payload.get(cursor)?;
+        let Some(&close) = payload.get(cursor) else {
+            return Ok(None);
+        };
         if !matches!(close, psb::token::COMPOUND_CLOSE | 0xe1) {
-            return None;
+            return Ok(None);
         }
         cursor += 1;
         let contour_end = cursor;
         let terminal = close == 0xe1;
         let separator_reference =
             if !terminal && payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
-                let (reference, next) = psb::reference_id(payload, cursor + 1).ok()?;
+                let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
+                    return Ok(None);
+                };
                 if next > end {
-                    return None;
+                    return Ok(None);
                 }
                 cursor = next;
                 Some(reference)
             } else {
                 None
             };
+        ctx.try_reserve_items(&mut chain, 1, "creo contour chain entries")?;
+        let body = ctx.copy_retained(
+            &payload[contour_start..contour_end],
+            "creo contour chain body",
+        )?;
         chain.push(SurfaceContourRecord {
             surface_id: row.id,
             chain_index: chain.len(),
@@ -5359,16 +5376,16 @@ fn parse_surface_contour_chain(
             trv,
             parameter_envelope,
             separator_reference,
-            body: payload[contour_start..contour_end].to_vec(),
+            body,
             offset: contour_start,
             envelope_offset,
             surface_row_offset: row.offset,
         });
         if terminal {
-            return Some(chain);
+            return Ok(Some(chain));
         }
         if cursor >= end {
-            return None;
+            return Ok(None);
         }
     }
 }
