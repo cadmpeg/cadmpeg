@@ -1060,70 +1060,149 @@ pub(in crate::native) fn feature_pattern_construction_payloads(
     references: &[FeaturePatternReference],
 ) -> Result<Vec<FeatureConstructionPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    let kinds = labels
-        .iter()
-        .map(|label| (label.id.as_str(), label.value.as_str()))
-        .collect::<BTreeMap<_, _>>();
-    Ok(references
-        .iter()
-        .map(|reference| reference.operation_label.as_str())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter_map(|operation_label| {
-            let operation_kind = match *kinds.get(operation_label)? {
+    let scan_work = references.len().checked_mul(references.len())
+        .and_then(|work| work.checked_add(labels.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX pattern construction references", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan_work),
+        "join NX pattern construction references",
+    )?;
+    let mut index_reservation = ctx.reserve_scoped(0, "NX pattern construction indexes")?;
+    let mut kinds = BTreeMap::<&str, &str>::new();
+    for label in labels {
+        ctx.charge_collection_items(1, "NX pattern construction labels")?;
+        index_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, &str)>() * 4,
+        ))?;
+        kinds.insert(label.id.as_str(), label.value.as_str());
+    }
+    let mut operations = BTreeSet::<&str>::new();
+    for reference in references {
+        ctx.charge_collection_items(1, "NX pattern construction operations")?;
+        index_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&str>() * 4,
+        ))?;
+        operations.insert(reference.operation_label.as_str());
+    }
+    let mut output = Vec::new();
+    'operations: for operation_label in operations {
+            let Some(kind) = kinds.get(operation_label) else {
+                continue;
+            };
+            let operation_kind = match *kind {
                 "Pattern Feature" => FeaturePatternKind::Feature,
                 "Pattern Geometry" => FeaturePatternKind::Geometry,
-                _ => return None,
+                _ => continue,
             };
-            let mut graph = references
-                .iter()
-                .filter(|reference| reference.operation_label == operation_label)
-                .collect::<Vec<_>>();
+            let mut graph_reservation = ctx.reserve_scoped(0, "NX pattern construction graph")?;
+            let mut graph = Vec::new();
+            for reference in references.iter().filter(|reference| reference.operation_label == operation_label) {
+                ctx.charge_collection_items(1, "NX pattern construction graph")?;
+                graph_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<&FeaturePatternReference>(),
+                ))?;
+                graph.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX pattern construction graph", 0, 1))?;
+                graph.push(reference);
+            }
+            let sort_work = graph.len().checked_mul(graph.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("sort NX pattern construction graph", 0, 1))?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(sort_work),
+                "sort NX pattern construction graph",
+            )?;
+            let _sorting = ctx.reserve_scoped(
+                cadmpeg_core::decode::u64_from_index(
+                    graph.len().checked_mul(std::mem::size_of::<&FeaturePatternReference>())
+                        .ok_or_else(|| ctx.refuse_codec_limit("sort NX pattern construction graph", 0, 1))?
+                ),
+                "sort NX pattern construction graph",
+            )?;
             graph.sort_by_key(|reference| reference.ordinal);
             if !matches!(graph.len(), 9 | 10)
                 || graph
                     .iter()
                     .enumerate()
-                    .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+                    .any(|(ordinal, reference)| u32::try_from(ordinal)
+                        .map_or(true, |expected| reference.ordinal != expected))
                 || graph
                     .iter()
                     .any(|reference| reference.layout != graph[0].layout)
             {
-                return None;
+                continue;
             }
-            let data_blocks = graph
-                .iter()
-                .map(|reference| reference.data_block.clone())
-                .collect::<Option<Vec<_>>>()?;
-            let store = data_blocks.first()?.rsplit_once(":block#")?.0;
+            let mut data_blocks = Vec::new();
+            for reference in &graph {
+                let Some(block) = reference.data_block.as_deref() else {
+                    continue 'operations;
+                };
+                ctx.charge_collection_items(1, "NX pattern construction block IDs")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
+                    "NX pattern construction block ID slots",
+                )?;
+                data_blocks.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX pattern construction block IDs", 0, 1))?;
+                data_blocks.push(copy_operation_text(ctx, block, "NX pattern construction block ID")?);
+            }
+            let Some(store) = data_blocks.first()
+                .and_then(|block| block.rsplit_once(":block#").map(|(prefix, _)| prefix)) else {
+                continue;
+            };
             if data_blocks.iter().any(|block| {
                 block
                     .rsplit_once(":block#")
                     .is_none_or(|(prefix, _)| prefix != store)
             }) {
-                return None;
+                continue;
             }
-            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
-                Ok(Some(content)) => content,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
+            let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)? else {
+                continue;
             };
-            let (_, operation_key) = operation_label.rsplit_once('#')?;
-            Some(Ok(FeatureConstructionPayload {
-                id: format!("nx:feature-history:pattern-construction-payload#{operation_key}"),
-                operation_label: operation_label.to_string(),
+            let Some((_, operation_key)) = operation_label.rsplit_once('#') else {
+                continue;
+            };
+            let prefix = "nx:feature-history:pattern-construction-payload#";
+            let id_len = prefix.len().checked_add(operation_key.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("NX pattern construction payload identity", 0, 1))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(id_len),
+                "NX pattern construction payload identity",
+            )?;
+            let mut id = String::new();
+            id.try_reserve_exact(id_len)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX pattern construction payload identity", 0, 1))?;
+            id.push_str(prefix);
+            id.push_str(operation_key);
+            let mut construction_references = Vec::new();
+            for reference in &graph {
+                ctx.charge_collection_items(1, "NX pattern construction reference IDs")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
+                    "NX pattern construction reference ID slots",
+                )?;
+                construction_references.try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("allocate NX pattern construction reference IDs", 0, 1))?;
+                construction_references.push(copy_operation_text(
+                    ctx, &reference.id, "NX pattern construction reference ID",
+                )?);
+            }
+            let record = FeatureConstructionPayload {
+                id,
+                operation_label: copy_operation_text(
+                    ctx, operation_label, "NX pattern construction operation label",
+                )?,
                 owner: FeatureConstructionOwner::Pattern {
                     operation_kind,
                     reference_layout: graph[0].layout,
-                    construction_references: graph
-                        .iter()
-                        .map(|reference| reference.id.clone())
-                        .collect(),
+                    construction_references,
                 },
                 content,
-            }))
-        })
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
+            };
+            reserve_pattern_output(ctx, &mut output, "NX pattern construction payloads")?;
+            output.push(record);
+    }
+    Ok(output)
 }
 
 /// Decode canonical printable strings from reconstructed pattern payloads.
