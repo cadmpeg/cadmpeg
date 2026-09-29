@@ -1171,7 +1171,7 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         let first_offset = labels.iter()
             .filter(|other| other.section_link == label.section_link)
             .map(|other| other.source_offset)
-            .min().unwrap_or(label.source_offset);
+            .fold(label.source_offset, u64::min);
         ctx.charge_collection_items(1, "NX hole operation chronology")?;
         chronology_reservation.grow(cadmpeg_core::decode::u64_from_index(
             std::mem::size_of::<(usize, &FeatureOperationLabel, u64)>(),

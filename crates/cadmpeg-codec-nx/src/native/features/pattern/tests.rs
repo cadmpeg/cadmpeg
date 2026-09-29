@@ -7,6 +7,103 @@ use super::{
 
 use crate::native::features::test_support::check_lane_wire;
 
+const PATTERN_TRANSFORM_PAYLOAD: &[u8] = b"\xaa\x01\x03\x60\x01\x00\x00\x50\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\xd0\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x9f\xfe\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01";
+const MULTI_INSTANCE_OUTPUT_PAYLOAD: &[u8] = b"\x3a\x00\x00\x01\x00\x00\x00\x00\x25\x01\x02\x26\x27\x01\x02\x65\x01\x02\x07\x28\x02\x02\x00\x3b\x09\x01\x02";
+const IDENTICAL_INSTANCE_OUTPUT_PAYLOAD: &[u8] = b"\xaa\x34\x13\x01\x04\x14\x15\x01\x02\x16\x80\x20\x00\x02\x14\x15\x01\x02\x16\x0f\x00\x03\x14\x15\x01\x02\x16\x81\x23\x00\x04\x00\x05\xe0\x7f\xff\xff\xff\x00\x00\xbb";
+
+fn pattern_output_lane_refusal<T>(
+    label: &'static str,
+    payload: &'static [u8],
+    route: for<'ctx, 'input> fn(
+        &cadmpeg_core::decode::DecodeContext<'ctx>,
+        &crate::container::Container<'input>,
+    ) -> Result<Vec<T>, cadmpeg_core::CodecError>,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let part = crate::test_support::test_om::composed_feature_history_payload(
+        &[(&[0xff; 4], label, payload.to_vec())], &[],
+    );
+    let file = crate::test_support::test_prt::prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", part),
+    ]);
+    let container = crate::test_support::with_decode_context(move |ctx| {
+        crate::container::scan_bytes(ctx, file)
+    }).expect("pattern output lane container");
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx, &container))
+        .expect("admitted pattern output lane");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx, &container).err().expect("pattern output lane resource limit")
+}
+
+macro_rules! pattern_output_lane_limit_tests {
+    ($collection:ident, $retained:ident, $scoped:ident, $work:ident, $label:expr, $payload:expr, $route:path) => {
+        #[test]
+        fn $collection() {
+            let error = pattern_output_lane_refusal($label, $payload, $route,
+                |policy| policy.limits.max_collection_items = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        }
+
+        #[test]
+        fn $retained() {
+            let error = pattern_output_lane_refusal($label, $payload, $route,
+                |policy| policy.limits.max_retained_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        }
+
+        #[test]
+        fn $scoped() {
+            let error = pattern_output_lane_refusal($label, $payload, $route,
+                |policy| policy.limits.max_materialized_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+        }
+
+        #[test]
+        fn $work() {
+            let error = pattern_output_lane_refusal($label, $payload, $route,
+                |policy| policy.limits.max_work_units = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        }
+    };
+}
+
+pattern_output_lane_limit_tests!(
+    pattern_transform_route_refuses_collection_limit,
+    pattern_transform_route_refuses_retained_limit,
+    pattern_transform_route_refuses_scoped_limit,
+    pattern_transform_route_refuses_work_limit,
+    "Pattern Feature",
+    PATTERN_TRANSFORM_PAYLOAD,
+    crate::native::features::pattern::feature_pattern_transform_lanes
+);
+pattern_output_lane_limit_tests!(
+    multi_instance_output_route_refuses_collection_limit,
+    multi_instance_output_route_refuses_retained_limit,
+    multi_instance_output_route_refuses_scoped_limit,
+    multi_instance_output_route_refuses_work_limit,
+    "Multi Instance Output",
+    MULTI_INSTANCE_OUTPUT_PAYLOAD,
+    crate::native::features::pattern::feature_multi_instance_output_lanes
+);
+pattern_output_lane_limit_tests!(
+    identical_instance_output_route_refuses_collection_limit,
+    identical_instance_output_route_refuses_retained_limit,
+    identical_instance_output_route_refuses_scoped_limit,
+    identical_instance_output_route_refuses_work_limit,
+    "IDENTICAL INSTANCE OUTPUT",
+    IDENTICAL_INSTANCE_OUTPUT_PAYLOAD,
+    crate::native::features::pattern::feature_identical_instance_output_lanes
+);
+
 #[test]
 fn pattern_fixed_lane_preserves_parallel_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeaturePatternConstructionFixedLane>(

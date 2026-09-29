@@ -39,9 +39,23 @@ use std::num::NonZeroU8;
 mod borrowed_wires;
 
 use super::offset_data_block_bytes;
+use super::format_feature_history_id;
 
 use super::unique_offset_data_block;
 use super::visit_feature_history_operation_records;
+
+fn reserve_pattern_output<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()), operation,
+    )?;
+    output.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+}
 
 /// Ordered construction reference carried by a bounded pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1181,13 +1195,25 @@ pub(in crate::native) fn feature_pattern_transform_lanes(
                     return;
                 }
             };
+            let id = match format_feature_history_id(
+                ctx, "pattern-transform-lane", section_key, operation_ordinal, None,
+            ) {
+                Ok(id) => id,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let operation_label = match format_feature_history_id(
+                ctx, "operation-label", section_key, operation_ordinal, None,
+            ) {
+                Ok(label) => label,
+                Err(error) => { failure = Some(error); return; }
+            };
+            if let Err(error) = reserve_pattern_output(ctx, &mut lanes, "NX pattern transform lanes") {
+                failure = Some(error);
+                return;
+            }
             lanes.push(FeaturePatternTransformLane {
-                id: format!(
-                    "nx:feature-history:pattern-transform-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
+                id,
+                operation_label,
                 row_schema_index: lane.row_schema_index,
                 rows,
                 source_offset: entry_offset + lane.offset as u64,
@@ -1233,13 +1259,25 @@ pub(in crate::native) fn feature_multi_instance_output_lanes(
                     return;
                 }
             };
+            let id = match format_feature_history_id(
+                ctx, "multi-instance-output-lane", section_key, operation_ordinal, None,
+            ) {
+                Ok(id) => id,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let operation_label = match format_feature_history_id(
+                ctx, "operation-label", section_key, operation_ordinal, None,
+            ) {
+                Ok(label) => label,
+                Err(error) => { failure = Some(error); return; }
+            };
+            if let Err(error) = reserve_pattern_output(ctx, &mut lanes, "NX multi-instance output lanes") {
+                failure = Some(error);
+                return;
+            }
             lanes.push(FeatureMultiInstanceOutputLane {
-                id: format!(
-                    "nx:feature-history:multi-instance-output-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
+                id,
+                operation_label,
                 outputs,
                 source_offset: entry_offset + lane.offset as u64,
             });
@@ -1290,13 +1328,25 @@ pub(in crate::native) fn feature_identical_instance_output_lanes(
                     return;
                 }
             };
+            let id = match format_feature_history_id(
+                ctx, "identical-instance-output-lane", section_key, operation_ordinal, None,
+            ) {
+                Ok(id) => id,
+                Err(error) => { failure = Some(error); return; }
+            };
+            let operation_label = match format_feature_history_id(
+                ctx, "operation-label", section_key, operation_ordinal, None,
+            ) {
+                Ok(label) => label,
+                Err(error) => { failure = Some(error); return; }
+            };
+            if let Err(error) = reserve_pattern_output(ctx, &mut lanes, "NX identical-instance output lanes") {
+                failure = Some(error);
+                return;
+            }
             lanes.push(FeatureIdenticalInstanceOutputLane {
-                id: format!(
-                    "nx:feature-history:identical-instance-output-lane#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
+                id,
+                operation_label,
                 leading_schema_index: lane.leading_schema_index,
                 count_schema_index: lane.count_schema_index,
                 selectors,
