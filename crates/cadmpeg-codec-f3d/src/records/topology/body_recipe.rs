@@ -206,7 +206,7 @@ impl DesignBodyRecipeOperand {
         u64::from(self.frame.index(3))
     }
     fn nested_record_index_offset(&self) -> u64 {
-        self.frame.offset(26 + self.references.len() as u64 * 12)
+        self.frame.offset(26 + cadmpeg_core::decode::u64_from_index(self.references.len()) * 12)
     }
     pub(crate) fn next_record_index(&self) -> u32 {
         self.frame.index(4)

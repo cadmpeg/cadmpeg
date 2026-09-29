@@ -49,7 +49,13 @@ pub(crate) enum DesignParameterDiscriminator {
 
 impl DesignParameterDiscriminator {
     pub(crate) fn code(self) -> u64 {
-        self as u64
+        match self {
+            Self::Code0 => 0,
+            Self::Code3 => 3,
+            Self::Code4 => 4,
+            Self::Code5 => 5,
+            Self::Code6 => 6,
+        }
     }
 }
 
