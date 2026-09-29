@@ -906,25 +906,22 @@ pub(crate) enum InlineNonPlaneLocalSystemPrefix {
 pub(crate) fn decode_inline_non_plane_local_system_prefix(
     body: &[u8],
     cache: &ScalarCache,
-) -> Vec<InlineNonPlaneLocalSystemPrefix> {
-    let mut prefixes = Vec::new();
-    if let Some((axes, reference_sign, axis_sign, cursor)) = decode_inline_compact_image(body) {
-        if let Some(values) =
-            FiniteVector::new(compact_inline_frame(axes, reference_sign, axis_sign))
-        {
-            prefixes.push(InlineNonPlaneLocalSystemPrefix::Compact(
+) -> impl Iterator<Item = InlineNonPlaneLocalSystemPrefix> {
+    let compact = decode_inline_compact_image(body)
+        .and_then(|(axes, reference_sign, axis_sign, cursor)| {
+            let values = FiniteVector::new(compact_inline_frame(axes, reference_sign, axis_sign))?;
+            Some(InlineNonPlaneLocalSystemPrefix::Compact(
                 InlineLocalSystemFrame { values, cursor },
-            ));
-        }
-    }
+            ))
+        });
 
-    let mut explicit = Vec::new();
+    let mut explicit = [None; 16];
+    let mut count = 0;
     let mut values = [0.0; 12];
-    walk_inline_explicit_local_system(body, cache, 0, 0, &mut values, &mut explicit);
-    prefixes.extend(explicit.into_iter().map(|(values, cursor)| {
+    walk_inline_explicit_local_system(body, cache, 0, 0, &mut values, &mut explicit, &mut count);
+    compact.into_iter().chain(explicit.into_iter().flatten().map(|(values, cursor)| {
         InlineNonPlaneLocalSystemPrefix::Explicit(InlineLocalSystemFrame { values, cursor })
-    }));
-    prefixes
+    }))
 }
 
 /// Decode the three origin slots that follow a compact inline local-system
@@ -933,11 +930,12 @@ pub(crate) fn decode_inline_non_plane_origin_prefix(
     body: &[u8],
     cursor: usize,
     cache: &ScalarCache,
-) -> Vec<([f64; 3], usize)> {
+) -> impl Iterator<Item = ([f64; 3], usize)> {
     let mut values = [0.0; 3];
-    let mut results = Vec::new();
-    walk_inline_origin(body, cache, 0, cursor, &mut values, &mut results);
-    results
+    let mut results = [None; 8];
+    let mut count = 0;
+    walk_inline_origin(body, cache, 0, cursor, &mut values, &mut results, &mut count);
+    results.into_iter().flatten()
 }
 
 /// Decode one inline family suffix scalar. The suffix has its own compact
@@ -1065,34 +1063,36 @@ fn walk_inline_explicit_local_system(
     slot: usize,
     cursor: usize,
     values: &mut [f64; 12],
-    results: &mut Vec<(FiniteVector<12>, usize)>,
+    results: &mut [Option<(FiniteVector<12>, usize)>; 16],
+    count: &mut usize,
 ) {
-    if results.len() >= 16 {
+    if *count >= results.len() {
         return;
     }
     if slot == 12 {
         if let Some(values) = finite_local_system_slots(*values) {
-            results.push((values, cursor));
+            results[*count] = Some((values, cursor));
+            *count += 1;
         }
         return;
     }
 
     if slot == 5 && body.get(cursor..cursor + 3) == Some(&[0x18, 0xe5, 0x0f]) {
         values[slot..slot + 4].copy_from_slice(&[0.0, 0.0, 0.0, 1.0]);
-        walk_inline_explicit_local_system(body, cache, slot + 4, cursor + 3, values, results);
+        walk_inline_explicit_local_system(body, cache, slot + 4, cursor + 3, values, results, count);
     }
     if slot == 5 && body.get(cursor..cursor + 3) == Some(&[0x18, 0xe5, 0x10]) {
         values[slot..slot + 4].copy_from_slice(&[0.0, 0.0, 0.0, -1.0]);
-        walk_inline_explicit_local_system(body, cache, slot + 4, cursor + 3, values, results);
+        walk_inline_explicit_local_system(body, cache, slot + 4, cursor + 3, values, results, count);
     }
     if slot <= 9 && body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
         values[slot..slot + 3].copy_from_slice(&[0.0, 1.0, 0.0]);
-        walk_inline_explicit_local_system(body, cache, slot + 3, cursor + 2, values, results);
+        walk_inline_explicit_local_system(body, cache, slot + 3, cursor + 2, values, results, count);
     }
 
     for (value, next) in decode_inline_local_system_coordinates(body, cursor, slot, cache) {
         values[slot] = value;
-        walk_inline_explicit_local_system(body, cache, slot + 1, next, values, results);
+        walk_inline_explicit_local_system(body, cache, slot + 1, next, values, results, count);
     }
 }
 
@@ -1102,18 +1102,20 @@ fn walk_inline_origin(
     slot: usize,
     cursor: usize,
     values: &mut [f64; 3],
-    results: &mut Vec<([f64; 3], usize)>,
+    results: &mut [Option<([f64; 3], usize)>; 8],
+    count: &mut usize,
 ) {
-    if results.len() >= 8 {
+    if *count >= results.len() {
         return;
     }
     if slot == 3 {
-        results.push((*values, cursor));
+        results[*count] = Some((*values, cursor));
+        *count += 1;
         return;
     }
     for (value, next) in decode_inline_local_system_coordinates(body, cursor, slot + 9, cache) {
         values[slot] = value;
-        walk_inline_origin(body, cache, slot + 1, next, values, results);
+        walk_inline_origin(body, cache, slot + 1, next, values, results, count);
     }
 }
 

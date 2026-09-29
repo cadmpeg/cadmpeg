@@ -4652,29 +4652,33 @@ struct ResolvedInlineLocalSystemFrame {
     cursor: usize,
 }
 
-fn inline_resolved_frames(
-    local: &[u8],
+fn inline_resolved_frames<'a>(
+    local: &'a [u8],
     prefix: scalar::InlineNonPlaneLocalSystemPrefix,
-    cache: &scalar::ScalarCache,
-) -> Vec<ResolvedInlineLocalSystemFrame> {
-    match prefix {
-        scalar::InlineNonPlaneLocalSystemPrefix::Compact(compact) => {
-            scalar::decode_inline_non_plane_origin_prefix(local, compact.cursor, cache)
-                .into_iter()
-                .map(|(origin, cursor)| {
-                    let mut values = compact.values.get();
+    cache: &'a scalar::ScalarCache,
+) -> impl Iterator<Item = ResolvedInlineLocalSystemFrame> + 'a {
+    let compact = match prefix {
+        scalar::InlineNonPlaneLocalSystemPrefix::Compact(frame) => Some(frame),
+        scalar::InlineNonPlaneLocalSystemPrefix::Explicit(_) => None,
+    };
+    let explicit = match prefix {
+        scalar::InlineNonPlaneLocalSystemPrefix::Explicit(frame) => Some(frame),
+        scalar::InlineNonPlaneLocalSystemPrefix::Compact(_) => None,
+    };
+    compact
+        .into_iter()
+        .flat_map(move |frame| {
+            scalar::decode_inline_non_plane_origin_prefix(local, frame.cursor, cache)
+                .map(move |(origin, cursor)| {
+                    let mut values = frame.values.get();
                     values[9..12].copy_from_slice(&origin);
                     ResolvedInlineLocalSystemFrame { values, cursor }
                 })
-                .collect()
-        }
-        scalar::InlineNonPlaneLocalSystemPrefix::Explicit(frame) => {
-            vec![ResolvedInlineLocalSystemFrame {
-                values: frame.values.get(),
-                cursor: frame.cursor,
-            }]
-        }
-    }
+        })
+        .chain(explicit.into_iter().map(|frame| ResolvedInlineLocalSystemFrame {
+            values: frame.values.get(),
+            cursor: frame.cursor,
+        }))
 }
 
 fn inline_surface_carrier(
