@@ -566,29 +566,35 @@ fn section_fixed_coordinate_line_carrier(
 }
 
 fn section_proven_axis_line_carrier(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<SketchGeometry> {
+) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
     if let Some(geometry) = section_axis_line_carrier_with_points(variable_points, segment) {
-        Some(geometry)
+        Ok(Some(geometry))
     } else {
-        section_fixed_coordinate_line_carrier(
+        let Some(coordinate) = section_line_entity_fixed_coordinate_with_unique_rows(ctx, definition, segment.external_id)? else {
+            return Ok(None);
+        };
+        Ok(section_fixed_coordinate_line_carrier(
             variable_points,
             segment,
-            section_line_entity_fixed_coordinate_with_unique_rows(definition, segment.external_id)?,
-        )
+            coordinate,
+        ))
     }
 }
 
 pub(in crate::decode) fn section_axis_reference_line_geometry(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
-) -> Option<SketchGeometry> {
+) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
     if !section_degenerate_axis_line(definition, segment) {
-        return section_proven_axis_line_carrier(definition, variable_points, segment);
+        return section_proven_axis_line_carrier(ctx, definition, variable_points, segment);
     }
+    Ok((|| {
     let fixed_coordinate = SectionAxis::from_selector(segment.vertical_horizontal?)?;
     let values = || segment.point_ids().into_iter().filter_map(|point| {
             variable_points
@@ -616,27 +622,30 @@ pub(in crate::decode) fn section_axis_reference_line_geometry(
         (Point2::new(0.0, value), Point2::new(1.0, 0.0))
     };
     SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine { origin, direction }).ok()
+    })())
 }
 
 pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     radii: &BTreeMap<u32, f64>,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
-) -> Option<SketchGeometry> {
+) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
     if let Some(geometry) = resolved_section_segment_geometry_with_missing_line(
         definition,
         points,
         segment,
         missing_line,
     ) {
-        return Some(geometry);
+        return Ok(Some(geometry));
     }
-    if let Some(geometry) = section_proven_axis_line_carrier(definition, variable_points, segment) {
-        return Some(geometry);
+    if let Some(geometry) = section_proven_axis_line_carrier(ctx, definition, variable_points, segment)? {
+        return Ok(Some(geometry));
     }
+    Ok((|| {
     let carrier = section_arc_carrier(radii, points, segment)
         .or_else(|| saved_section_arc_carrier(definition, segment))?;
     SketchGeometry::from_parts(SketchGeometryDefinition::Arc {
@@ -646,6 +655,7 @@ pub(in crate::decode) fn section_segment_intersection_carrier_with_missing_line(
         end_angle: Angle::FULL_TURN,
     })
     .ok()
+    })())
 }
 
 pub(in crate::decode) fn trim_segment_id(
@@ -711,9 +721,18 @@ mod tests {
     }
 
     use super::{
-        append_radius_candidate, link_radii, resolved_section_radii, section_arc_carrier, section_proven_axis_line_carrier,
+        append_radius_candidate, link_radii, resolved_section_radii, section_arc_carrier, section_proven_axis_line_carrier as section_proven_axis_line_carrier_admitted,
         section_skamp_radius_source, trim_segment_id, SectionRadiusSource,
     };
+
+    fn section_proven_axis_line_carrier(
+        definition: &crate::feature::definitions::FeatureDefinition,
+        variable_points: &std::collections::BTreeMap<u32, [Option<f64>; 2]>,
+        segment: &crate::feature::definitions::FeatureSegment,
+    ) -> Option<cadmpeg_ir::sketches::SketchGeometry> {
+        crate::decode::with_test_decode_ctx(|ctx| section_proven_axis_line_carrier_admitted(ctx, definition, variable_points, segment))
+            .expect("test axis line carrier")
+    }
 
     fn with_collection_limit<T>(
         limit: u64,

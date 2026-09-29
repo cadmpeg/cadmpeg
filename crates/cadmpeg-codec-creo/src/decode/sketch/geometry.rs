@@ -4,6 +4,8 @@
 use super::axis::SectionAxis;
 
 use std::collections::{BTreeMap, BTreeSet};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
@@ -181,18 +183,22 @@ pub(in crate::decode) fn section_reference_line_geometry(
 }
 
 pub(in crate::decode) fn resolved_section_reference_line_geometry(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureReferenceLineSegment,
-) -> Option<SketchGeometry> {
+) -> Result<Option<SketchGeometry>, CodecError> {
     if let Some(geometry) = section_reference_line_geometry(points, segment) {
-        return Some(geometry);
+        return Ok(Some(geometry));
     }
     let [Some(start_id), Some(end_id)] = segment.point_ids else {
-        return None;
+        return Ok(None);
     };
-    let fixed_coordinate = section_line_entity_fixed_coordinate(definition, segment.external_id)?;
+    let Some(fixed_coordinate) = section_line_entity_fixed_coordinate(ctx, definition, segment.external_id)? else {
+        return Ok(None);
+    };
+    Ok((|| {
     let [Some(first), Some(second)] =
         [start_id, end_id].map(|point| variable_points.get(&point)?[fixed_coordinate.index()])
     else {
@@ -216,6 +222,7 @@ pub(in crate::decode) fn resolved_section_reference_line_geometry(
             }
         })
         .flatten()
+    })())
 }
 
 pub(in crate::decode) fn section_segment_geometry(

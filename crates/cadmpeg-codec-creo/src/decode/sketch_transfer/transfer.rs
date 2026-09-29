@@ -221,23 +221,25 @@ pub(in super::super) fn transfer_sketches(
                     && solved.contains(&segment.external_id)
                 {
                     trimmed_section_segment_geometry_with_missing_line(
+                        ctx,
                         definition,
                         &points,
                         &radii,
                         &trim_vertex_coordinates,
                         segment,
                         missing_line_geometry.as_ref(),
-                    )
+                    )?
                 } else {
                     resolved_segment_geometries
                         .get(&segment.offset)
                         .and_then(Option::as_ref)
                         .map(|geometry| geometry.copy_admitted(ctx, "creo resolved section geometry copy"))
                         .transpose()?
-                }
-                .or_else(|| {
-                    section_axis_reference_line_geometry(definition, &variable_points, segment)
-                });
+                };
+                let geometry = match geometry {
+                    Some(geometry) => Some(geometry),
+                    None => section_axis_reference_line_geometry(ctx, definition, &variable_points, segment)?,
+                };
                 insert_tree(ctx, &mut segment_geometries, segment.offset, geometry,
                     "creo section geometry nodes")?;
         }
@@ -266,8 +268,8 @@ pub(in super::super) fn transfer_sketches(
             }
             for segment in table.rows.reference_lines() {
                 if let Some(geometry) = resolved_section_reference_line_geometry(
-                    definition, &variable_points, &points, segment,
-                ) {
+                    ctx, definition, &variable_points, &points, segment,
+                )? {
                     insert_tree(ctx, &mut reference_line_geometries, segment.offset, geometry,
                         "creo section reference-line geometry nodes")?;
                 }

@@ -371,13 +371,14 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
     for external_id in unique_carrier_ids {
         let Some(segment) = segments.unique_segment(external_id) else { continue };
         let Some(carrier) = section_segment_intersection_carrier_with_missing_line(
+                ctx,
                 definition,
                 radii,
                 points,
                 segment,
                 missing_line.as_ref(),
                 &variable_points,
-            ) else { continue };
+            )? else { continue };
         ctx.charge_collection_items(1, "creo sketch intersection carrier nodes")?;
         intersection_carriers.insert(external_id, carrier);
     }
@@ -559,21 +560,20 @@ fn reconciled_section_coordinates(
 }
 
 pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
     radii: &BTreeMap<u32, f64>,
     trim_vertices: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::definitions::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
-) -> Option<SketchGeometry> {
-    let trim = definition
-        .trim_entities
-        .as_ref()?
-        .rows
+) -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
+    let Some(trim_entities) = definition.trim_entities.as_ref() else { return Ok(None); };
+    let Some(trim) = trim_entities.rows
         .iter()
-        .find(|row| trim_segment_id(definition, row) == Some(segment.external_id))?;
-    let start = trim_vertices.get(&trim.vertices[0])?;
-    let end = trim_vertices.get(&trim.vertices[1])?;
+        .find(|row| trim_segment_id(definition, row) == Some(segment.external_id)) else { return Ok(None); };
+    let Some(start) = trim_vertices.get(&trim.vertices[0]) else { return Ok(None); };
+    let Some(end) = trim_vertices.get(&trim.vertices[1]) else { return Ok(None); };
     if let Some(SketchGeometryDefinition::Line {
         start: carrier_start,
         end: carrier_end,
@@ -613,7 +613,7 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
                     > EPS_SKETCH_INTERSECTION_GEOMETRY * direction_norm
             })
         {
-            return None;
+            return Ok(None);
         }
     } else if let Some(carrier) = section_arc_carrier(radii, points, segment)
         .or_else(|| saved_section_arc_carrier(definition, segment))
@@ -629,20 +629,22 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
             || (first_radius - radius).abs() / scale > EPS_SKETCH_INTERSECTION_GEOMETRY
             || (second_radius - radius).abs() / scale > EPS_SKETCH_INTERSECTION_GEOMETRY
         {
-            return None;
+            return Ok(None);
         }
         let start_angle = second[1].atan2(second[0]);
         let mut end_angle = first[1].atan2(first[0]);
         while end_angle <= start_angle {
             end_angle += std::f64::consts::TAU;
         }
-        return SketchGeometry::from_parts(SketchGeometryDefinition::Arc {
+        let Some(start_angle) = Angle::new(start_angle) else { return Ok(None); };
+        let Some(end_angle) = Angle::new(end_angle) else { return Ok(None); };
+        return Ok(SketchGeometry::from_parts(SketchGeometryDefinition::Arc {
             center: carrier.center,
             radius: carrier.radius,
-            start_angle: Angle::new(start_angle)?,
-            end_angle: Angle::new(end_angle)?,
+            start_angle,
+            end_angle,
         })
-        .ok();
+        .ok());
     } else {
         let scale = start
             .iter()
@@ -650,9 +652,10 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
             .map(|value| value.abs())
             .fold(1.0, f64::max);
         let orientation_matches = match section_line_entity_fixed_coordinate_with_unique_rows(
+            ctx,
             definition,
             segment.external_id,
-        ) {
+        )? {
             Some(SectionAxis::U) => {
                 (start[0] - end[0]).abs() <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
             }
@@ -661,13 +664,13 @@ pub(in crate::decode) fn trimmed_section_segment_geometry_with_missing_line(
             }
             _ => false,
         };
-        orientation_matches.then_some(())?;
+        if !orientation_matches { return Ok(None); }
     }
-    SketchGeometry::try_from(SketchGeometryDefinition::Line {
+    Ok(SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
         end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
     })
-    .ok()
+    .ok())
 }
 
 pub(in crate::decode) fn section_point_in_model(
@@ -917,13 +920,14 @@ mod tests {
                 let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &definition)?;
                 Ok::<_, cadmpeg_core::CodecError>(
                     trimmed_section_segment_geometry_with_missing_line(
+                        ctx,
                         &definition,
                         &BTreeMap::new(),
                         &radii,
                         &trim_vertices,
                         &segment,
                         None,
-                    ),
+                    )?,
                 )
             })
             .expect("test section geometry"),
@@ -950,6 +954,7 @@ mod tests {
                 let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &duplicate)?;
                 Ok::<_, cadmpeg_core::CodecError>(
                     trimmed_section_segment_geometry_with_missing_line(
+                        ctx,
                         &duplicate,
                         &BTreeMap::new(),
                         &radii,
@@ -963,7 +968,7 @@ mod tests {
                             .cloned()
                             .collect::<Vec<_>>()[0],
                         None,
-                    ),
+                    )?,
                 )
             })
             .expect("test section geometry"),

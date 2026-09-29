@@ -352,14 +352,22 @@ pub(in crate::decode) fn resolved_section_coordinates(
                     SectionPointSource::Value(_) => true,
                 })
         }), "creo section same-coordinate pairs")?;
-    let point_on_line_coordinates = crate::decode::collect_items(ctx, active_complete_section_skamps(definition)
-        .filter_map(|skamp| section_skamp_point_on_line(definition, skamp))
-        .filter(|(first, second, _)| {
-            !ambiguous_point_ids.contains(first) && !ambiguous_point_ids.contains(second)
-        }), "creo section point-on-line coordinates")?;
-    let saved_point_on_line_coordinates = crate::decode::collect_items(ctx, active_complete_section_skamps(definition)
-        .filter_map(|skamp| section_skamp_saved_point_on_line(definition, skamp))
-        .filter(|(point_id, _, _)| !ambiguous_point_ids.contains(point_id)), "creo section saved point-on-line coordinates")?;
+    let mut point_on_line_coordinates = Vec::new();
+    let mut saved_point_on_line_coordinates = Vec::new();
+    for skamp in active_complete_section_skamps(definition) {
+        if let Some((first, second, coordinate)) = section_skamp_point_on_line(ctx, definition, skamp)? {
+            if !ambiguous_point_ids.contains(&first) && !ambiguous_point_ids.contains(&second) {
+                ctx.try_reserve_items(&mut point_on_line_coordinates, 1, "creo section point-on-line coordinates")?;
+                point_on_line_coordinates.push((first, second, coordinate));
+            }
+        }
+        if let Some((point_id, coordinate, value)) = section_skamp_saved_point_on_line(ctx, definition, skamp)? {
+            if !ambiguous_point_ids.contains(&point_id) {
+                ctx.try_reserve_items(&mut saved_point_on_line_coordinates, 1, "creo section saved point-on-line coordinates")?;
+                saved_point_on_line_coordinates.push((point_id, coordinate, value));
+            }
+        }
+    }
     let line_midpoint_constraints = crate::decode::collect_items(ctx, active_complete_section_skamps(definition)
         .filter_map(|skamp| section_skamp_line_midpoint_sources(definition, skamp))
         .filter(|(point_sources, point)| {
@@ -371,21 +379,28 @@ pub(in crate::decode) fn resolved_section_coordinates(
                 SectionPointSource::Value(_) => true,
             }
         }), "creo section line midpoint constraints")?;
-    let symmetric_point_constraints = crate::decode::collect_items(ctx, active_complete_section_skamps(definition)
-        .filter_map(|skamp| section_skamp_axis_symmetry(definition, skamp))
-        .filter(|(axis, first, second, _)| {
+    let mut symmetric_point_constraints = Vec::new();
+    for skamp in active_complete_section_skamps(definition) {
+        let Some((axis, first, second, coordinate)) = section_skamp_axis_symmetry(ctx, definition, skamp)? else {
+            continue;
+        };
+        if
             [first, second]
                 .into_iter()
                 .any(|point| matches!(point, SectionPointSource::Point(_)))
                 && [first, second].into_iter().all(|point| match point {
-                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
                     SectionPointSource::Value(_) => true,
                 })
                 && match axis {
-                    SectionSymmetryAxis::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                    SectionSymmetryAxis::Point(point_id) => !ambiguous_point_ids.contains(&point_id),
                     SectionSymmetryAxis::Value(_) => true,
                 }
-        }), "creo section axis symmetry constraints")?;
+        {
+            ctx.try_reserve_items(&mut symmetric_point_constraints, 1, "creo section axis symmetry constraints")?;
+            symmetric_point_constraints.push((axis, first, second, coordinate));
+        }
+    }
     let point_symmetric_constraints = crate::decode::collect_items(ctx, active_complete_section_skamps(definition)
         .filter_map(|skamp| section_skamp_point_symmetry(definition, skamp))
         .filter(|(center, first, second)| {
@@ -399,12 +414,14 @@ pub(in crate::decode) fn resolved_section_coordinates(
         section_equation_auxiliary_constraints(ctx, definition, &ambiguous_point_ids)?;
     let mut auxiliary_scalar_values = section_equation_scalar_seed_values(ctx, definition)?;
     propagate_section_equation_scalar_equality_values(ctx, definition, &mut auxiliary_scalar_values)?;
-    let linear_dimension_candidates = crate::decode::collect_items(ctx, definition
+    let mut linear_dimension_candidates = Vec::new();
+    for relation in definition
         .relations
         .iter()
         .filter(|table| feature_relation_table_complete(table))
         .flat_map(|table| &table.rows)
-        .filter_map(|relation| {
+    {
+        let Some((first, second)) = (|| {
             if section_solver_relation_is_disabled(definition, relation.relation_id) {
                 return None;
             }
@@ -418,27 +435,33 @@ pub(in crate::decode) fn resolved_section_coordinates(
             let [Some(first), Some(second), _, _] = vectors[0] else {
                 return None;
             };
-            let coordinate = section_linear_distance_coordinate(
-                definition,
+            Some((first, second))
+        })() else { continue; };
+        let Some(coordinate) = section_linear_distance_coordinate(
+                ctx, definition,
                 &segments,
                 first,
                 second,
                 &points,
                 &saved_segment_points,
                 &ambiguous_point_ids,
-            )?;
-            let magnitude = section_relation_length_dimension(definition, relation)?
+            )? else { continue; };
+        let Some(magnitude) = section_relation_length_dimension(definition, relation)
+            .and_then(|dimension| dimension
                 .value
                 .resolved()
-                .filter(|value| value.is_finite() && *value >= 0.0)?;
-            matches!(relation.sign, 0 | 1 | 0xf6).then_some((
+                .filter(|value| value.is_finite() && *value >= 0.0)) else { continue; };
+        if matches!(relation.sign, 0 | 1 | 0xf6) {
+            ctx.try_reserve_items(&mut linear_dimension_candidates, 1, "creo section linear dimension candidates")?;
+            linear_dimension_candidates.push((
                 first,
                 second,
                 coordinate,
                 magnitude,
                 relation.sign,
-            ))
-        }), "creo section linear dimension candidates")?;
+            ));
+        }
+    }
     let signed_dimension_candidates = crate::decode::collect_items(ctx, linear_dimension_candidates
         .iter()
         .filter_map(|&(first, second, coordinate, magnitude, sign)| {
@@ -510,7 +533,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
         }
     }
     for segment in &segments {
-        if let Some(coordinate) = section_line_fixed_coordinate(definition, segment) {
+        if let Some(coordinate) = section_line_fixed_coordinate(ctx, definition, segment)? {
             push_coordinate_equation(ctx, &mut equations, SectionCoordinateEquation::point_difference(ctx,
                 segment.point_ids()[0],
                 segment.point_ids()[1],
@@ -707,6 +730,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
 }
 
 pub(in crate::decode) fn section_linear_distance_coordinate(
+    ctx: &DecodeContext<'_>,
     definition: &crate::feature::definitions::FeatureDefinition,
     segments: &[&crate::feature::definitions::FeatureSegment],
     first: u32,
@@ -714,7 +738,7 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     saved_segment_points: &[(u32, [f64; 2])],
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Option<SectionAxis> {
+) -> Result<Option<SectionAxis>, CodecError> {
     let mut matching_segments = segments
         .iter()
         .copied()
@@ -750,26 +774,27 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
     };
     if let Some(segment) = unique_segment.filter(|_| !duplicate_segment) {
         if let Some(fixed_coordinate) =
-            section_line_entity_fixed_coordinate_with_unique_rows(definition, segment.external_id)
+            section_line_entity_fixed_coordinate_with_unique_rows(ctx, definition, segment.external_id)?
         {
             let Ok(first_coordinate) = point_coordinate(first, fixed_coordinate) else {
-                return None;
+                return Ok(None);
             };
             let Ok(second_coordinate) = point_coordinate(second, fixed_coordinate) else {
-                return None;
+                return Ok(None);
             };
             if let (Some(first), Some(second)) = (first_coordinate, second_coordinate) {
                 let scale = first.abs().max(second.abs()).max(1.0);
                 if (first - second).abs() > EPS_SECTION_COORDINATE * scale {
-                    return None;
+                    return Ok(None);
                 }
             }
-            return Some(fixed_coordinate.other());
+            return Ok(Some(fixed_coordinate.other()));
         }
     }
     if duplicate_segment {
-        return None;
+        return Ok(None);
     }
+    Ok((|| {
     let table = definition.segments.as_ref()?;
     // Only decoded point-bearing families establish that a dimension operand
     // is a section endpoint. Opaque rows retain native identity but do not
@@ -818,6 +843,7 @@ pub(in crate::decode) fn section_linear_distance_coordinate(
         return Some(SectionAxis::U);
     }
     None
+    })())
 }
 
 pub(in crate::decode) fn resolved_section_points(
@@ -849,6 +875,20 @@ mod tests {
         FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
         FeatureVariableRow,
     };
+
+    fn section_linear_distance_coordinate(
+        definition: &FeatureDefinition,
+        segments: &[&FeatureSegment],
+        first: u32,
+        second: u32,
+        coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+        saved_segment_points: &[(u32, [f64; 2])],
+        ambiguous_point_ids: &BTreeSet<u32>,
+    ) -> Option<SectionAxis> {
+        crate::decode::with_test_decode_ctx(|ctx| super::section_linear_distance_coordinate(
+            ctx, definition, segments, first, second, coordinates, saved_segment_points, ambiguous_point_ids,
+        )).expect("test linear distance coordinate")
+    }
 
     fn append_point_on_line_equations(
         constraints: &[(u32, u32, u32)],
@@ -1133,7 +1173,7 @@ mod tests {
             .ordinary()
             .collect::<Vec<_>>();
         assert_eq!(
-            super::section_linear_distance_coordinate(
+            section_linear_distance_coordinate(
                 &definition,
                 &segments,
                 1,
@@ -1169,7 +1209,7 @@ mod tests {
             .ordinary()
             .collect::<Vec<_>>();
         assert_eq!(
-            super::section_linear_distance_coordinate(
+            section_linear_distance_coordinate(
                 &duplicate,
                 &duplicate_segments,
                 1,
@@ -1212,7 +1252,7 @@ mod tests {
             BTreeMap::from([(3, [Some(1.0), Some(4.0)]), (4, [Some(1.0), Some(9.0)])]);
 
         assert_eq!(
-            super::section_linear_distance_coordinate(
+            section_linear_distance_coordinate(
                 &definition,
                 &segments,
                 3,
@@ -1241,7 +1281,7 @@ mod tests {
         let table = circle_definition.segments.as_ref().expect("segments");
         let segments = table.rows.ordinary().collect::<Vec<_>>();
         assert_eq!(
-            super::section_linear_distance_coordinate(
+            section_linear_distance_coordinate(
                 &circle_definition,
                 &segments,
                 3,

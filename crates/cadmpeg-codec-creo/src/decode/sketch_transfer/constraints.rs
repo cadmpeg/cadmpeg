@@ -1971,10 +1971,10 @@ pub(in super::super) fn section_dimension_constraints(
     let resolved_coordinates = resolved_section_coordinates(ctx, definition)?;
     let saved_coordinate_witnesses =
         saved_section_coordinate_witnesses(ctx, definition, &ambiguous_point_ids)?;
-    let constraints = relations
-        .rows
-        .iter()
-        .filter_map(|relation| {
+    let mut constraints = Vec::new();
+    for relation in &relations.rows {
+        let mut coordinate_refusal = None;
+        let candidate = (|| {
             Some({
                 let unique_relation_id = feature_relation_table_complete(relations)
                     && relations
@@ -2105,15 +2105,21 @@ pub(in super::super) fn section_dimension_constraints(
                     if let Some(vectors) = relation.operand_vectors {
                         if section_linear_distance_vectors(vectors) {
                             if let [Some(first_id), Some(second_id), _, _] = vectors[0] {
-                                let coordinate = section_linear_distance_coordinate(
-                                    definition,
+                                let coordinate = match section_linear_distance_coordinate(
+                                    ctx, definition,
                                     &segments,
                                     first_id,
                                     second_id,
                                     &resolved_coordinates,
                                     &saved_coordinate_witnesses,
                                     &ambiguous_point_ids,
-                                );
+                                ) {
+                                    Ok(coordinate) => coordinate,
+                                    Err(error) => {
+                                        coordinate_refusal = Some(error);
+                                        return None;
+                                    }
+                                };
                                 let measured = crate::decode::uniqueness::exactly_one(segments
                                     .iter()
                                     .filter(|segment| {
@@ -2263,8 +2269,15 @@ pub(in super::super) fn section_dimension_constraints(
                     relation.offset,
                 )
             })
-        })
-        .collect();
+        })();
+        if let Some(error) = coordinate_refusal {
+            return Err(error);
+        }
+        if let Some(candidate) = candidate {
+            ctx.try_reserve_items(&mut constraints, 1, "creo section dimension constraints")?;
+            constraints.push(candidate);
+        }
+    }
     Ok(constraints)
 }
 

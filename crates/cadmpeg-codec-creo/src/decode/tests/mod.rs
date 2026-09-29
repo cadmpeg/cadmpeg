@@ -171,14 +171,11 @@ fn section_segment_intersection_carrier(
         .as_ref()
         .map(|variables| crate::decode::with_test_decode_ctx(|ctx| variables.reconciled_points(ctx).expect("test point reconciliation").0))
         .unwrap_or_default();
-    section_segment_intersection_carrier_with_missing_line(
-        definition,
-        radii,
-        points,
-        segment,
-        missing_line.as_ref(),
-        &variable_points,
-    )
+    crate::decode::with_test_decode_ctx(|ctx| {
+        section_segment_intersection_carrier_with_missing_line(
+            ctx, definition, radii, points, segment, missing_line.as_ref(), &variable_points,
+        )
+    }).expect("test section carrier")
 }
 
 #[cfg(test)]
