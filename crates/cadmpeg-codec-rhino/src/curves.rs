@@ -789,17 +789,7 @@ pub(crate) fn exact_nurbs(
     match curve {
         DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                ctx.charge_collection_items(
-                    cadmpeg_core::decode::u64_from_index(nurbs.knots().len()),
-                    "Rhino exact NURBS knots",
-                )?;
-                ctx.charge_collection_items(
-                    cadmpeg_core::decode::u64_from_index(nurbs.pole_count()),
-                    "Rhino exact NURBS poles",
-                )?;
-                nurbs.try_clone().map_err(|_| {
-                    collection_allocation_failed("Rhino exact NURBS copy", nurbs.knots().len())
-                })
+                Ok(nurbs.try_clone_for_decode(ctx, "Rhino exact NURBS copy")?)
             }
             CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
                 let center = circle_curve.center();
@@ -2258,6 +2248,18 @@ mod tests {
         f(&ctx)
     }
 
+    fn with_retained_limit<R>(
+        limit: u64,
+        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+    ) -> R {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = limit;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits service profile");
+        f(&ctx)
+    }
+
     fn rational_line_for_limits() -> NurbsCurve {
         NurbsCurve::from_lanes(
             1,
@@ -2283,7 +2285,7 @@ mod tests {
         assert!(matches!(
             error,
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.operation == "Rhino exact NURBS knots"
+                if refusal.operation == "Rhino exact NURBS copy"
         ));
     }
 
@@ -2294,9 +2296,30 @@ mod tests {
         assert!(matches!(
             error,
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
-                if refusal.operation == "Rhino exact NURBS poles"
+                if refusal.operation == "Rhino exact NURBS copy"
         ));
         assert!(with_test_context(|ctx| exact_nurbs(ctx, &exact_line_for_limits(), 0)).is_ok());
+    }
+
+    #[test]
+    fn exact_nurbs_copy_refuses_retained_limit_one_byte_below_full_copy() {
+        let curve = rational_line_for_limits();
+        let bytes = curve.knots().len() * std::mem::size_of::<f64>()
+            + curve.pole_count()
+                * std::mem::size_of::<
+                    cadmpeg_ir::geometry::nurbs::WeightedPole3<FinitePoint3>,
+                >();
+        let limit = u64::try_from(bytes - 1).expect("copy fits in u64");
+        let error = with_retained_limit(limit, |ctx| {
+            exact_nurbs(ctx, &exact_line_for_limits(), 0)
+        })
+        .expect_err("the full copy exceeds the retained limit by one byte");
+        assert!(matches!(
+            error,
+            GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.operation == "Rhino exact NURBS copy"
+                    && refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+        ));
     }
 
     #[test]
