@@ -346,6 +346,66 @@ fn scalar_body_slots_refuse_before_declared_count_reserve() {
 }
 
 #[test]
+fn scalar_body_invalid_token_refusal_text_obeys_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let body = [0xff];
+    assert!(scalar_slots(
+        &body,
+        1,
+        &scalar::ScalarCache::default(),
+        &mut ScalarBodyRefusal::default(),
+    )
+    .is_none());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy)
+        .expect("invalid scalar body fits the input limit");
+    let error = crate::surface::scalar_slots(
+        &ctx,
+        &body,
+        1,
+        &scalar::ScalarCache::default(),
+        &mut ScalarBodyRefusal::default(),
+    )
+    .expect_err("refusal text exceeds the retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo scalar body refusal text"));
+}
+
+#[test]
+fn scalar_body_trailing_refusal_text_obeys_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let body = [0xe4, 0xff];
+    assert!(scalar_slots(
+        &body,
+        1,
+        &scalar::ScalarCache::default(),
+        &mut ScalarBodyRefusal::default(),
+    )
+    .is_none());
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy)
+        .expect("trailing scalar body fits the input limit");
+    let error = crate::surface::scalar_slots(
+        &ctx,
+        &body,
+        1,
+        &scalar::ScalarCache::default(),
+        &mut ScalarBodyRefusal::default(),
+    )
+    .expect_err("trailing refusal text exceeds the retained limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo trailing scalar body refusal text"));
+}
+
+#[test]
 fn named_spline_slots_refuse_before_declared_count_reserve() {
     assert_eq!(
         named_spline_scalar_slots(
