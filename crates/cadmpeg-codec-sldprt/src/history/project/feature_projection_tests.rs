@@ -2020,3 +2020,27 @@ fn projected_feature_text_refuses_retained_limit() {
     let error = project_feature_model(&ctx, &[history]).err().unwrap();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
+
+#[test]
+fn projected_source_index_refuses_collection_limit() {
+    let history = FeatureHistory {
+        id: "history".to_owned(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![feature("sldprt:history:feature#0:1", None, 0)],
+    };
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"source", &arena, &policy,
+    ).unwrap();
+    let error = project_feature_model(&ctx, &[history]).err().unwrap();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index SLDPRT projected source features"
+    ));
+}

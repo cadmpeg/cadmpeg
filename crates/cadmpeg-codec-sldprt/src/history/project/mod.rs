@@ -100,6 +100,45 @@ fn neutral_feature_id_charged(
     FeatureId::mint(id).map_err(CodecError::malformed)
 }
 
+fn copy_projected_feature_id(
+    ctx: &DecodeContext<'_>,
+    id: &FeatureId,
+) -> Result<FeatureId, CodecError> {
+    FeatureId::mint(copy_projected_feature_text(ctx, id.as_str())?)
+        .map_err(CodecError::malformed)
+}
+
+fn source_lookup_key(
+    ctx: &DecodeContext<'_>,
+    source: FeatureSource,
+) -> Result<String, CodecError> {
+    match source {
+        FeatureSource::Reserved => {
+            ctx.format_retained(format_args!("-1"), "retain SLDPRT source lookup key")
+        }
+        FeatureSource::Id(id) => ctx.format_retained(
+            format_args!("{}", id.value()),
+            "retain SLDPRT source lookup key",
+        ),
+    }
+}
+
+fn insert_projected_map<K: Eq + std::hash::Hash, V>(
+    ctx: &DecodeContext<'_>,
+    map: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !map.contains_key(&key) {
+        ctx.charge_collection_items(1, operation)?;
+        map.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    }
+    map.insert(key, value);
+    Ok(())
+}
+
 fn copy_projected_feature_properties(
     ctx: &DecodeContext<'_>,
     properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
@@ -174,39 +213,58 @@ pub(crate) fn project_feature_model(
         (Vec::new(), Vec::new()),
         |(mut features, mut parents), history| -> Result<_, CodecError> {
             let source_bindings = unique_source_bindings(ctx, history)?;
-            let mut by_source = source_bindings
-                .iter()
-                .filter_map(|(source, binding)| {
-                    binding
-                        .as_ref()
-                        .map(|(_, neutral)| (String::from(*source), neutral.clone()))
-                })
-                .collect::<HashMap<_, _>>();
-            by_source.extend(
-                history
-                    .features
-                    .iter()
-                    .map(|feature| (feature.id.clone(), neutral_feature_id(&feature.id))),
-            );
-            let by_native = history
-                .features
-                .iter()
-                .filter(|feature| !is_history_metadata_record(feature, &history.features))
-                .map(|feature| (feature.id.as_str(), neutral_feature_id(&feature.id)))
-                .collect::<HashMap<_, _>>();
-            let native_by_source = source_bindings
-                .iter()
-                .filter_map(|(source, binding)| {
-                    binding
-                        .as_ref()
-                        .map(|(native, _)| (String::from(*source), *native))
-                })
-                .collect::<HashMap<_, _>>();
-            let features_by_source = history
-                .features
-                .iter()
-                .filter_map(|feature| Some((feature.source_id?, feature)))
-                .collect::<HashMap<_, _>>();
+            let mut by_source = HashMap::new();
+            let mut native_by_source = HashMap::new();
+            for (source, binding) in &source_bindings {
+                let Some((native, neutral)) = binding else {
+                    continue;
+                };
+                insert_projected_map(
+                    ctx,
+                    &mut by_source,
+                    source_lookup_key(ctx, *source)?,
+                    copy_projected_feature_id(ctx, neutral)?,
+                    "index SLDPRT projected source features",
+                )?;
+                insert_projected_map(
+                    ctx,
+                    &mut native_by_source,
+                    source_lookup_key(ctx, *source)?,
+                    *native,
+                    "index SLDPRT native source features",
+                )?;
+            }
+            for feature in &history.features {
+                insert_projected_map(
+                    ctx,
+                    &mut by_source,
+                    copy_projected_feature_text(ctx, &feature.id)?,
+                    neutral_feature_id_charged(ctx, &feature.id)?,
+                    "index SLDPRT projected source features",
+                )?;
+            }
+            let mut by_native = HashMap::new();
+            let mut features_by_source = HashMap::new();
+            for feature in &history.features {
+                if !is_history_metadata_record(feature, &history.features) {
+                    insert_projected_map(
+                        ctx,
+                        &mut by_native,
+                        feature.id.as_str(),
+                        neutral_feature_id_charged(ctx, &feature.id)?,
+                        "index SLDPRT projected native features",
+                    )?;
+                }
+                if let Some(source) = feature.source_id {
+                    insert_projected_map(
+                        ctx,
+                        &mut features_by_source,
+                        source,
+                        feature,
+                        "index SLDPRT native features by source",
+                    )?;
+                }
+            }
             let source_ordered = history.features.iter().any(|feature| {
                 feature.input_class.is_none()
                     && feature.xml_tag.eq_ignore_ascii_case("Extrusion")
