@@ -864,3 +864,33 @@ fn topology_plane_source() -> Vec<u8> {
         br#"<Keywords><Plane Name="Plane" Type="Plane" Origin="0mm,0mm,0mm" Normal="0,0,1" UAxis="1,0,0"><Dimension Name="D1">1mm</Dimension></Plane></Keywords>"#));
     source
 }
+
+#[test]
+fn metadata_thread_enrichment_refuses_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let limit = collection_refusal_with_options(&native_definition_source(), options, "enrich SLDPRT cosmetic thread diameters");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn geometry_thread_enrichment_refuses_collection_limit() {
+    let limit = collection_refusal_with_options(&geometry_parameter_source(), DecodeOptions::default(), "enrich SLDPRT cosmetic thread diameters");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn metadata_thread_enrichment_refuses_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let limit = work_refusal_with_options(&native_definition_source(), options, "enrich SLDPRT cosmetic thread diameters");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
+fn geometry_thread_enrichment_refuses_work_limit() {
+    let limit = work_refusal_with_options(&geometry_parameter_source(), DecodeOptions::default(), "enrich SLDPRT cosmetic thread diameters");
+    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(limit.additional, 1);
+}

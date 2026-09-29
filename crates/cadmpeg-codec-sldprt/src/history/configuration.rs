@@ -109,7 +109,7 @@ pub(crate) fn enrich_history_semantic(
     enrich_history_parameters_semantic(ctx, histories, lanes)?;
     if matches!(mode, HistoryEnrichment::Read) {
         crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);
-        crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(histories, lanes);
+        crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(ctx, histories, lanes)?;
     } else {
         crate::resolved_features::holes::
             enrich_history_cosmetic_thread_diameters_without_hole_constructions(ctx, histories, lanes)?;

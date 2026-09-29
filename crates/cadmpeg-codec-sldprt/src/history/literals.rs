@@ -83,7 +83,7 @@ pub(crate) fn parse_dimension_length_mm(value: &str) -> Option<Length> {
 }
 
 pub(crate) fn format_length_mm(value: Length) -> String {
-    format!("{}mm", finite_literal(value.get()))
+    LengthLiteral(value).to_string()
 }
 
 /// The literal of a length's millimetre number, without a unit.
@@ -129,11 +129,29 @@ pub(super) fn format_f64_literal(value: FiniteReal) -> String {
 /// The literal of a finite value. Every caller passes the value of a checked
 /// scalar.
 fn finite_literal(value: f64) -> String {
-    let magnitude = value.abs();
-    if magnitude != 0.0 && !(EPS_LITERALS_FORMAT_F64_LITERAL_E6..1.0e15).contains(&magnitude) {
-        format!("{value:e}")
-    } else {
-        value.to_string()
+    FiniteLiteral(value).to_string()
+}
+
+/// A millimetre literal written directly into the caller's text sink.
+pub(crate) struct LengthLiteral(pub(crate) Length);
+
+impl std::fmt::Display for LengthLiteral {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}mm", FiniteLiteral(self.0.get()))
+    }
+}
+
+struct FiniteLiteral(f64);
+
+impl std::fmt::Display for FiniteLiteral {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = self.0;
+        let magnitude = value.abs();
+        if magnitude != 0.0 && !(EPS_LITERALS_FORMAT_F64_LITERAL_E6..1.0e15).contains(&magnitude) {
+            write!(formatter, "{value:e}")
+        } else {
+            write!(formatter, "{value}")
+        }
     }
 }
 
@@ -366,5 +384,28 @@ mod direction_tests {
         assert!(parse_valid_direction("NaN,0,0").is_none());
         assert!(parse_valid_direction(&format!("{},0,0", f64::EPSILON)).is_none());
         assert!(parse_valid_direction(&format!("{},0,0", f64::EPSILON * 2.0)).is_some());
+    }
+}
+
+#[cfg(test)]
+mod literal_tests {
+    use super::{format_length_mm, LengthLiteral};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::scalar::Length;
+
+    #[test]
+    fn length_literal_keeps_decimal_and_scientific_boundaries() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        for (value, expected) in [
+            (0.0, "0mm"), (-0.0, "-0mm"), (3.0, "3mm"),
+            (super::EPS_LITERALS_FORMAT_F64_LITERAL_E6, "0.000001mm"),
+            (super::EPS_LITERALS_FORMAT_F64_LITERAL_E6 / 10.0, "1e-7mm"),
+            (1.0e15, "1e15mm"),
+        ] {
+            let length = Length::new(value).unwrap();
+            assert_eq!(format_length_mm(length), expected);
+            assert_eq!(ctx.format_retained(format_args!("{}", LengthLiteral(length)), "test length literal").unwrap(), expected);
+        }
     }
 }
