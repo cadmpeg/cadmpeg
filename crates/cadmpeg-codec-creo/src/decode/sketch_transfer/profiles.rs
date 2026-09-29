@@ -355,6 +355,61 @@ pub(in super::super) enum SectionEntityIncidenceFamily {
     Circular,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(in super::super) struct IncidenceEvidence([bool; 6]);
+
+impl IncidenceEvidence {
+    fn slot(family: SectionEntityIncidenceFamily) -> usize {
+        match family {
+            SectionEntityIncidenceFamily::Point => 0,
+            SectionEntityIncidenceFamily::BoundedCurve => 1,
+            SectionEntityIncidenceFamily::LineOrArc => 2,
+            SectionEntityIncidenceFamily::Line => 3,
+            SectionEntityIncidenceFamily::Arc => 4,
+            SectionEntityIncidenceFamily::Circular => 5,
+        }
+    }
+
+    fn insert(&mut self, family: SectionEntityIncidenceFamily) {
+        self.0[Self::slot(family)] = true;
+    }
+
+    fn remove(&mut self, family: &SectionEntityIncidenceFamily) {
+        self.0[Self::slot(*family)] = false;
+    }
+
+    fn contains(&self, family: &SectionEntityIncidenceFamily) -> bool {
+        self.0[Self::slot(*family)]
+    }
+
+    pub(in super::super) fn len(&self) -> usize {
+        self.0.iter().filter(|present| **present).count()
+    }
+
+    fn iter(self) -> impl Iterator<Item = SectionEntityIncidenceFamily> {
+        [
+            SectionEntityIncidenceFamily::Point,
+            SectionEntityIncidenceFamily::BoundedCurve,
+            SectionEntityIncidenceFamily::LineOrArc,
+            SectionEntityIncidenceFamily::Line,
+            SectionEntityIncidenceFamily::Arc,
+            SectionEntityIncidenceFamily::Circular,
+        ]
+        .into_iter()
+        .filter(move |family| self.contains(family))
+    }
+}
+
+impl FromIterator<SectionEntityIncidenceFamily> for IncidenceEvidence {
+    fn from_iter<T: IntoIterator<Item = SectionEntityIncidenceFamily>>(iter: T) -> Self {
+        let mut evidence = Self::default();
+        for family in iter {
+            evidence.insert(family);
+        }
+        evidence
+    }
+}
+
 fn section_skamp_has_proven_point_locus(
     definition: &crate::feature::definitions::FeatureDefinition,
     item: &crate::feature::definitions::FeatureSkampItem,
@@ -433,7 +488,7 @@ fn section_skamp_has_proven_point_locus(
 fn section_incidence_curve_family_evidence(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
-) -> BTreeSet<SectionEntityIncidenceFamily> {
+) -> IncidenceEvidence {
     section_incidence_curve_family_evidence_with_solver_roles(
         definition,
         entity_id,
@@ -444,7 +499,7 @@ fn section_incidence_curve_family_evidence(
 fn section_incidence_curve_family_evidence_without_type35(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
-) -> BTreeSet<SectionEntityIncidenceFamily> {
+) -> IncidenceEvidence {
     section_incidence_curve_family_evidence_with_solver_roles(
         definition,
         entity_id,
@@ -467,8 +522,8 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
     solver_roles: SolverRoles,
-) -> BTreeSet<SectionEntityIncidenceFamily> {
-    let mut evidence = BTreeSet::new();
+) -> IncidenceEvidence {
+    let mut evidence = IncidenceEvidence::default();
     if complete_section_skamps(definition).any(|skamp| {
         matches!(
             (skamp.kind, skamp.items.as_slice()),
@@ -574,7 +629,7 @@ pub(in super::super) fn unique_section_incidence_curve_family(
     definition: &crate::feature::definitions::FeatureDefinition,
     entity_id: u32,
 ) -> Option<SectionEntityIncidenceFamily> {
-    exactly_one(section_incidence_curve_family_evidence(definition, entity_id).into_iter())
+    exactly_one(section_incidence_curve_family_evidence(definition, entity_id).iter())
 }
 
 /// The unique incidence family of an entity when its sense-zero type-35
@@ -589,7 +644,7 @@ pub(in super::super) fn unique_section_incidence_curve_family_without_type35_tar
             entity_id,
             SolverRoles::WithoutType35Target,
         )
-        .into_iter(),
+        .iter(),
     )
 }
 
@@ -597,7 +652,7 @@ pub(in super::super) fn unique_section_incidence_curve_family_without_type35_tar
 /// curve or a line-or-arc to a line. Circular evidence narrows them to an arc.
 /// A line-or-arc narrows a bounded curve.
 pub(in super::super) fn normalize_section_incidence_curve_family_evidence(
-    evidence: &mut BTreeSet<SectionEntityIncidenceFamily>,
+    evidence: &mut IncidenceEvidence,
 ) {
     if evidence.contains(&SectionEntityIncidenceFamily::Line) {
         evidence.remove(&SectionEntityIncidenceFamily::BoundedCurve);
@@ -690,7 +745,7 @@ pub(in super::super) fn solver_only_section_entity_family(
             evidence.insert(SectionEntityIncidenceFamily::Point);
         }
     }
-    let mut evidence = evidence.into_iter();
+    let mut evidence = evidence.iter();
     let family = evidence.next()?;
     evidence.next().is_none().then_some(family)
 }
