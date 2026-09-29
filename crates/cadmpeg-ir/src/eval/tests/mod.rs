@@ -388,7 +388,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
     });
     ir.model
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#budgeted-sweep-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::LinearSweep(
@@ -1145,7 +1145,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
     ];
     ir.model
         .add_procedural_surface(
-            subset_id.clone(),
+            &subset_id.clone(),
             procedural_surface! {
                 id: subset_construction,
                 definition: ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[0.0, 1.0], [0.0, 1.0]], Some(false), Some(true), None).unwrap()),
@@ -1156,7 +1156,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
         .expect("subset surface exists and has no procedural construction");
     ir.model
         .add_procedural_surface(
-            offset_id.clone(),
+            &offset_id.clone(),
             procedural_surface! {
                 id: offset_construction,
                 definition: ProceduralSurfaceDefinition::Offset(crate::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(subset_id, 2.0, None, None, false, OffsetExtension::Legacy { flags: LegacyExtensionFlags::Absent {}, cache: None }).unwrap()),
@@ -1206,7 +1206,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
     ];
     ir.model
         .add_procedural_surface(
-            bounded_id.clone(),
+            &bounded_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#curve-bounded-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::CurveBounded {
@@ -1268,7 +1268,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     });
     ir.model
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#sweep-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::LinearSweep(
@@ -1413,7 +1413,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     });
     ir.model
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::AxisRevolution(
@@ -1475,7 +1475,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
     });
     ir.model
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::PI], Some([10.0, 14.0]), None, false, crate::geometry::CacheContract::from_form(None)).unwrap()),
@@ -1523,7 +1523,7 @@ fn revolution_over_wide_angular_parameter_interval_maps_interior_angle() {
         source_object: None,
     });
     ir.model.add_procedural_surface(
-        surface_id.clone(),
+        &surface_id.clone(),
         procedural_surface! {
             id: ProceduralSurfaceId::mint("test:model:entity#wide-angle-construction").expect("valid identity"),
             definition: ProceduralSurfaceDefinition::Revolution(
@@ -1618,7 +1618,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
     });
     ir.model
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id.clone(),
             procedural_surface! {
                 id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(directrix_id, (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),

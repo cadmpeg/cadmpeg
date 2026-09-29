@@ -1359,7 +1359,7 @@ pub(super) fn project(
             "iges offset procedural curve slots",
         )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_offsets")?;
-        let _attached = ir.model.add_procedural_curve(curve_id, procedural);
+        let _attached = ir.model.add_procedural_curve(&curve_id, procedural);
         reserve_optional_vec_growth(ctx, &mut wire_edges, 1, "iges offset wire edge slots")?;
         wire_edges.push(edge_id);
         crate::decode_resource::insert_optional_btree_set(

@@ -694,7 +694,7 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
     // support parameter at the far end of the span is 2e308.
     ir.model
         .add_procedural_surface(
-            subset_id.clone(),
+            &subset_id.clone(),
             procedural_surface! {
                 id: subset_construction,
                 definition: crate::geometry::ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[1.0e308, 0.0], [0.0, 1.0]], Some(true), None, None).unwrap()),

@@ -15,7 +15,7 @@ pub(super) fn check_typed_references(
     findings: &mut Vec<Finding>,
 ) {
     macro_rules! check_arenas {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for entity in &ir.model.$field {
                 let owner = entity.identity();
                 let mut unresolved = Vec::new();

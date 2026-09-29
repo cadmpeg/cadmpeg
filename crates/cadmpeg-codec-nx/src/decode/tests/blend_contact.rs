@@ -1109,7 +1109,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         },
     ]);
     let _attached = ir.model.add_procedural_surface(
-        support_offset.clone(),
+        &support_offset.clone(),
         ProceduralSurface::new(
             support_offset_construction.clone(),
             ProceduralSurfaceDefinition::Offset(
@@ -1170,7 +1170,7 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
         None,
     );
     let _attached = ir.model.add_procedural_curve(
-        spine,
+        &spine,
         ProceduralCurve::new(
             spine_procedural,
             ProceduralCurveDefinition::Intersection {
@@ -1475,7 +1475,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         },
     );
     ir.model
-        .add_procedural_curve(spine.clone(), procedural)
+        .add_procedural_curve(&spine.clone(), procedural)
         .unwrap();
     assert_eq!(
         crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
@@ -1702,7 +1702,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
-        boundary_curve.clone(),
+        &boundary_curve.clone(),
         ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:entity#synthetic:blend-boundary")
                 .expect("identity grammar"),

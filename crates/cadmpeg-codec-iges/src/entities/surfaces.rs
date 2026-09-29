@@ -1796,7 +1796,7 @@ pub(super) fn project(
         )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
-            surface_id,
+            &surface_id,
             ProceduralSurface::new(
                 crate::ids::procedural_surface_admitted(
                     &crate::ids::Stem::directory(entry.sequence),
@@ -2111,7 +2111,7 @@ pub(super) fn project(
             )?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
-                surface_id,
+                &surface_id,
                 ProceduralSurface::new(
                     procedural_id,
                     ProceduralSurfaceDefinition::Extrusion(
@@ -2370,7 +2370,7 @@ pub(super) fn project(
         )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
-            surface_id,
+            &surface_id,
             ProceduralSurface::new(
                 crate::ids::procedural_surface_admitted(
                     &crate::ids::Stem::directory(entry.sequence),
@@ -2660,7 +2660,7 @@ pub(super) fn project(
             )?;
             crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
             let _attached = ir.model.add_procedural_surface(
-                surface_id,
+                &surface_id,
                 cadmpeg_ir::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(
                     procedural_directrix,
                     procedural_axis,
@@ -2952,7 +2952,7 @@ pub(super) fn project(
                 ProceduralSurfaceDefinition::Revolution(admitted_payload),
                 Some(bounds),
             );
-            let _attached = ir.model.add_procedural_surface(surface_id, procedural);
+            let _attached = ir.model.add_procedural_surface(&surface_id, procedural);
         }
         crate::decode_resource::insert_optional_btree_set(
             ctx,
@@ -3550,7 +3550,7 @@ pub(super) fn project(
         )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_surfaces")?;
         let _attached = ir.model.add_procedural_surface(
-            surface_id,
+            &surface_id,
             ProceduralSurface::new(
                 crate::ids::procedural_surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
                 ProceduralSurfaceDefinition::Exact(
@@ -3775,7 +3775,7 @@ pub(super) fn project(
             ProceduralSurfaceDefinition::Offset(admitted_payload),
             None,
         );
-        let _attached = ir.model.add_procedural_surface(surface_id, procedural);
+        let _attached = ir.model.add_procedural_surface(&surface_id, procedural);
         crate::decode_resource::insert_optional_btree_set(
             ctx,
             &mut decoded,

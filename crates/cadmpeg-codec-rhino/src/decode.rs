@@ -3445,7 +3445,7 @@ impl<'a> DecodeContext<'a> {
             candidate
                 .model
                 .add_procedural_surface(
-                    surface_id.clone(),
+                    &surface_id.clone(),
                     ProceduralSurface::new(procedural_id.clone(), ir_definition, None),
                 )
                 .map_err(|error| error.to_string())?;
@@ -3546,7 +3546,7 @@ impl<'a> DecodeContext<'a> {
                 candidate
                     .model
                     .add_procedural_surface(
-                        surface_id.clone(),
+                        &surface_id.clone(),
                         cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
                             boundary.directrix.clone(),
                             None,
@@ -5607,7 +5607,7 @@ fn stage_brep_procedural_surface(
         .draft
         .model_mut()
         .add_procedural_surface(
-            surface_id.clone(),
+            &surface_id.clone(),
             ProceduralSurface::new(procedural_id.clone(), definition, None),
         )
         .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
@@ -5738,7 +5738,7 @@ fn stage_curve_tree(
         staged
             .draft
             .model_mut()
-            .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition))
+            .add_procedural_curve(&id.clone(), ProceduralCurve::new(procedure_id, definition))
             .map_err(|error| crate::curves::GeometryError::unpositioned(error.to_string()))?;
     }
     Ok(id)
@@ -6390,7 +6390,7 @@ fn commit_curve_tree(
             curve_key,
         );
         ir.model
-            .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition))
+            .add_procedural_curve(&id.clone(), ProceduralCurve::new(procedure_id, definition))
             .map_err(|error| error.to_string())?;
     }
     Ok(id)

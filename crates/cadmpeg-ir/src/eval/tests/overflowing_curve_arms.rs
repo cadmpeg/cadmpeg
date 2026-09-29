@@ -201,7 +201,7 @@ fn procedural_curve_model(
     });
     ir.model
         .add_procedural_curve(
-            owner.clone(),
+            &owner.clone(),
             ProceduralCurve::new(construction, definition(&ids)),
         )
         .expect("procedural curve fixture");

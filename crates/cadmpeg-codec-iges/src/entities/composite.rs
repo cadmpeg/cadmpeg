@@ -3063,7 +3063,7 @@ fn project_with_type_130_policy(
         )?;
         crate::decode_resource::admit_optional_entities(ctx, 1, "iges_geometry_composites")?;
         let _attached = ir.model.add_procedural_curve(
-            curve_id,
+            &curve_id,
             ProceduralCurve::new(
                 crate::ids::procedural_curve_admitted(&stem, ctx)?,
                 ProceduralCurveDefinition::Compound(

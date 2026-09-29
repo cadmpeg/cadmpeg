@@ -419,15 +419,13 @@ pub enum EmbeddedSpringPcurve {
 }
 
 /// Structurally selected spring layout.
-// Keep typed source payloads inline without an allocation for each admitted record.
-#[allow(clippy::large_enum_variant)]
 pub enum EmbeddedSpringLayout {
     /// Context-first form with inline replacement ranges.
     ContextFirst {
         /// Ordered support slots.
-        supports: [EmbeddedSpringSupport; 2],
+        supports: Box<[EmbeddedSpringSupport; 2]>,
         /// First pcurve slot.
-        first_pcurve: EmbeddedSpringPcurve,
+        first_pcurve: Box<EmbeddedSpringPcurve>,
         /// Nullable second pcurve slot.
         second_pcurve: Option<PcurveNurbs>,
         /// Shared parameter interval.
@@ -440,7 +438,7 @@ pub enum EmbeddedSpringLayout {
     /// Cache-first form with no inline replacement ranges.
     CacheFirst {
         /// Shared embedded support context.
-        context: CacheFirstCurveContext,
+        context: Box<CacheFirstCurveContext>,
     },
 }
 
@@ -855,7 +853,7 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<&Pcu
                 ..
             } => matches!(supports.get(slot), Some(EmbeddedSpringSupport::Surface(_)))
                 .then(|| match slot {
-                    0 => match first_pcurve {
+                    0 => match first_pcurve.as_ref() {
                         EmbeddedSpringPcurve::Pcurve(pcurve) => Some(pcurve),
                         EmbeddedSpringPcurve::Range(_) => None,
                     },
@@ -1428,7 +1426,7 @@ fn embedded_spring(
         };
         let direction = cur.take_enum()?;
         return Some(Ok(EmbeddedSpring {
-            layout: EmbeddedSpringLayout::CacheFirst { context },
+            layout: EmbeddedSpringLayout::CacheFirst { context: Box::new(context) },
             direction,
         }));
     }
@@ -1493,8 +1491,8 @@ fn embedded_spring(
     let direction = cur.take_enum()?;
     Some(Ok(EmbeddedSpring {
         layout: EmbeddedSpringLayout::ContextFirst {
-            supports: [first_support, second_support],
-            first_pcurve,
+            supports: Box::new([first_support, second_support]),
+            first_pcurve: Box::new(first_pcurve),
             second_pcurve,
             parameter_range,
             discontinuities,
@@ -2422,7 +2420,7 @@ fn cache_first_curve_context(
         Ok(present) => present,
         Err(error) => return Some(Err(error)),
     };
-    let (first_surface, first_bounds) =
+    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds { surface: first_surface, bounds: first_bounds } =
         match optional_embedded_surface_with_bounds(ctx, cur, table)? {
             Ok(surface) => surface,
             Err(error) => return Some(Err(error)),
@@ -2432,7 +2430,7 @@ fn cache_first_curve_context(
         Ok(present) => present,
         Err(error) => return Some(Err(error)),
     };
-    let (second_surface, second_bounds) =
+    let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds { surface: second_surface, bounds: second_bounds } =
         match optional_embedded_surface_with_bounds(ctx, cur, table)? {
             Ok(surface) => surface,
             Err(error) => return Some(Err(error)),
@@ -2881,7 +2879,7 @@ fn cache_first_intersection(
         Err(error) => return Some(Err(error)),
     };
     let first_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
-        Ok(surface) => surface.0,
+        Ok(surface) => surface.surface,
         Err(error) => return Some(Err(error)),
     };
     let second_surface_start = cur.pos();
@@ -2890,7 +2888,7 @@ fn cache_first_intersection(
         Err(error) => return Some(Err(error)),
     };
     let second_surface = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
-        Ok(surface) => surface.0,
+        Ok(surface) => surface.surface,
         Err(error) => return Some(Err(error)),
     };
     let surfaces = [
@@ -3064,7 +3062,7 @@ fn support_slot_present(
 
     let mut parsed = *cur;
     if let Some(parsed) = optional_embedded_surface_with_bounds(ctx, &mut parsed, table) {
-        if parsed?.0.is_some() {
+        if parsed?.surface.is_some() {
             return Ok(true);
         }
     }
@@ -3518,17 +3516,22 @@ fn decode_embedded_surface_fields(
 }
 
 /// Optional embedded support surface plus its four optional U/V bound fields.
-#[allow(clippy::type_complexity)]
+pub(super) struct EmbeddedSurfaceWithBounds {
+    pub(super) surface: Option<SurfaceGeometry>,
+    pub(super) bounds: [Option<f64>; 4],
+}
+
+/// Parse an optional embedded support surface and its U/V bounds.
 pub(super) fn optional_embedded_surface_with_bounds(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     cur: &mut Cur<'_>,
     table: &SubtypeTable,
-) -> Option<Result<(Option<SurfaceGeometry>, [Option<f64>; 4]), cadmpeg_core::CodecError>> {
+) -> Option<Result<EmbeddedSurfaceWithBounds, cadmpeg_core::CodecError>> {
     let toks = cur.toks();
     let saved = cur.pos();
     let kind = cur.take_ident();
     if kind == Some("null_surface") {
-        return Some(Ok((None, [None; 4])));
+        return Some(Ok(EmbeddedSurfaceWithBounds { surface: None, bounds: [None; 4] }));
     }
     if kind == Some("spline") {
         if matches!(cur.peek(), Some(Token::True | Token::False)) {
@@ -3559,7 +3562,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
             for bound in &mut bounds {
                 *bound = cur.take_optional_range_value()?.value();
             }
-            return Some(Ok((surface, bounds)));
+            return Some(Ok(EmbeddedSurfaceWithBounds { surface, bounds }));
         }
     }
     cur.set_pos(saved);
@@ -3570,7 +3573,10 @@ pub(super) fn optional_embedded_surface_with_bounds(
                 *bound = cur.take_optional_range_value()?.value();
             }
         }
-        return Some(Ok((Some(propagate_resource!(surface)), bounds)));
+        return Some(Ok(EmbeddedSurfaceWithBounds {
+            surface: Some(propagate_resource!(surface)),
+            bounds,
+        }));
     }
     // Inline `spline { <subtype> }` support scope: resolve a solved surface
     // cache when present, or validate the procedural surface construction when
@@ -3606,7 +3612,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
             for bound in &mut bounds {
                 *bound = cur.take_optional_range_value()?.value();
             }
-            return Some(Ok((surface, bounds)));
+            return Some(Ok(EmbeddedSurfaceWithBounds { surface, bounds }));
         }
     }
     cur.set_pos(saved);

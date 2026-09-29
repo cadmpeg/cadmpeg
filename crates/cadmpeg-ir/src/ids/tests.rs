@@ -295,8 +295,8 @@ fn local_identity_composition_uses_the_admitted_wire_shape() {
 
 #[test]
 // Standard formatting is an independent oracle for the complete byte alphabet.
-#[allow(clippy::format_collect)]
 fn hexadecimal_identity_keys_encode_every_byte_without_collisions() {
+    use std::fmt::Write;
     let bytes = (u8::MIN..=u8::MAX).collect::<Vec<_>>();
     let mut distinct = std::collections::HashSet::new();
     for &byte in &bytes {
@@ -307,10 +307,10 @@ fn hexadecimal_identity_keys_encode_every_byte_without_collisions() {
     let prefix = crate::identity_key!("source-");
     assert_eq!(prefix.clone().with_hex_bytes(&[]), prefix);
     let encoded = prefix.with_hex_bytes(&bytes);
-    let expected = bytes
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let mut expected = String::new();
+    for byte in &bytes {
+        write!(&mut expected, "{byte:02x}").expect("writing to a String succeeds");
+    }
     assert_eq!(encoded.as_str(), format!("source-{expected}"));
     assert_eq!(
         crate::identity_key!("source-")

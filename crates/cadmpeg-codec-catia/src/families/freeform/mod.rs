@@ -1954,7 +1954,7 @@ pub(super) fn append_freeform_surface_pools(
             "catia_family_emit_procedural_surfaces",
         )?;
         let _attached = ir.model.add_procedural_surface(
-            surface_id,
+            &surface_id,
             ProceduralSurface::new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Offset(
@@ -2822,7 +2822,7 @@ fn append_resolved_consolidated_surface_curves(
                             "catia_freeform_offset_procedural_owner_id",
                         )?;
                         let _attached = ir.model.add_procedural_surface(
-                            procedural_owner_id,
+                            &procedural_owner_id,
                             ProceduralSurface::new(
                                 procedural_id,
                                 ProceduralSurfaceDefinition::Offset(
@@ -5480,7 +5480,7 @@ mod tests {
             });
         }
         let _attached = ir.model.add_procedural_curve(
-            curve_id.clone(),
+            &curve_id.clone(),
             ProceduralCurve::new(
                 ProceduralCurveId::mint(
                     "catia:test:proceduralcurve#standard-intersection".to_string(),
@@ -5833,7 +5833,7 @@ mod tests {
             });
         }
         let _attached = ir.model.add_procedural_curve(
-            curve_id,
+            &curve_id,
             ProceduralCurve::new(
                 ProceduralCurveId::mint(
                     "catia:test:proceduralcurve#standard-plane-intersection".to_string(),

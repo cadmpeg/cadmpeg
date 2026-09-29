@@ -4439,7 +4439,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             .procedural_curves
             .try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("nx tolerant procedural curves", 0, 1))?;
-        let _attached = ir.model.add_procedural_curve(curve_id, procedural);
+        let _attached = ir.model.add_procedural_curve(&curve_id, procedural);
     }
     Ok(())
 }
@@ -4824,7 +4824,7 @@ mod tests {
         });
         ir.model
             .add_procedural_curve(
-                curve,
+                &curve,
                 ProceduralCurve::new(
                     procedural_id,
                     ProceduralCurveDefinition::Intersection {

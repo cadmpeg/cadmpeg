@@ -52,7 +52,7 @@ use self::attributes::attribute_owner;
 use self::emit::{
     count_other_records, emit_attributes, emit_carrier_records, emit_coedges, emit_containers,
     emit_edges, emit_faces, emit_loops, emit_passthrough_unknowns, emit_pcurves, emit_points,
-    emit_vertices, CoedgeDecodeInputs, CurveSenseRefs,
+    emit_vertices, CoedgeDecodeInputs, ContainerInputs, CurveSenseRefs,
 };
 use self::geometry::{clamp_edge_ranges_to_carrier_domains, classify_body_kinds};
 use self::records::{
@@ -62,7 +62,7 @@ use self::records::{
 };
 use self::topology::{
     classify_edge_curve_senses, collect_wire_topology, decode_analytic_carriers,
-    keep_faces_and_carriers, walk_reachable_topology,
+    keep_faces_and_carriers, walk_reachable_topology, TopologyContext,
 };
 /// The decoded ASM B-rep graph plus loss accounting. Every field is a fact
 /// of the ASM stream, independent of the format that references the stream.
@@ -260,11 +260,10 @@ impl AsmBrep {
 }
 
 /// Collect every `id` field value in a serialized value tree.
-#[allow(clippy::implicit_hasher)]
 pub fn collect_owned_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &Value,
-    out: &mut HashSet<String>,
+    out: &mut HashSet<String, std::collections::hash_map::RandomState>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let _depth = ctx.enter_nested("collect ASM owned ids")?;
     match value {
@@ -304,12 +303,11 @@ pub fn value_string(value: &Value) -> Option<&str> {
 
 /// Build the undirected id-adjacency of every entity in the top-level
 /// sequences of a serialized value tree.
-#[allow(clippy::implicit_hasher)]
 pub fn collect_entity_adjacency(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &Value,
-    owned: &HashSet<String>,
-    out: &mut HashMap<String, HashSet<String>>,
+    owned: &HashSet<String, std::collections::hash_map::RandomState>,
+    out: &mut HashMap<String, HashSet<String, std::collections::hash_map::RandomState>, std::collections::hash_map::RandomState>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let Value::Map(fields) = value else {
         return Ok(());
@@ -371,12 +369,11 @@ pub fn entity_id(value: &Value) -> Option<&str> {
 }
 
 /// Collect every string in a serialized value tree that names an owned id.
-#[allow(clippy::implicit_hasher)]
 pub fn collect_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &Value,
-    owned: &HashSet<String>,
-    out: &mut HashSet<String>,
+    owned: &HashSet<String, std::collections::hash_map::RandomState>,
+    out: &mut HashSet<String, std::collections::hash_map::RandomState>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let _depth = ctx.enter_nested("collect ASM references")?;
     match value {
@@ -404,8 +401,7 @@ pub fn collect_references(
 
 /// Retain only entities with a reachable `id` in the top-level sequences of a
 /// serialized value tree.
-#[allow(clippy::implicit_hasher)]
-pub fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
+pub fn retain_root_entities(value: &mut Value, reachable: &HashSet<String, std::collections::hash_map::RandomState>) {
     let Value::Map(fields) = value else {
         return;
     };
@@ -417,11 +413,10 @@ pub fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
 }
 
 /// Rewrite every string in a serialized value tree through `replacements`.
-#[allow(clippy::implicit_hasher)]
 pub fn remap_owned_ids(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &mut Value,
-    replacements: &HashMap<String, String>,
+    replacements: &HashMap<String, String, std::collections::hash_map::RandomState>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let _depth = ctx.enter_nested("remap ASM owned ids")?;
     match value {
@@ -658,38 +653,27 @@ pub fn decode_with_header(
     let (mut carriers, inward_normal_surfaces) = decode_analytic_carriers(ctx, records)?;
     let mut reach = Reachable::default();
 
+    let topology_context = TopologyContext { ctx, by_index: &by_index, token_table: &token_table, purpose, format };
     keep_faces_and_carriers(
-        ctx,
+        topology_context,
         &mut out,
         records,
-        &by_index,
-        &token_table,
         &mut carriers,
         &mut reach,
-        purpose,
-        format,
     )?;
     walk_reachable_topology(
-        ctx,
+        topology_context,
         &mut out,
-        &by_index,
-        &token_table,
         &mut carriers,
         &mut reach,
-        purpose,
-        format,
     )?;
     let wire = collect_wire_topology(
-        ctx,
+        topology_context,
         &mut out,
         records,
-        &by_index,
         saved_entity_limit,
-        &token_table,
         &mut carriers,
         &mut reach,
-        purpose,
-        format,
     )?;
 
     let (reversed_curve_refs, forward_curve_refs) =
@@ -747,13 +731,7 @@ pub fn decode_with_header(
     emit_containers(
         ctx,
         &mut out,
-        records,
-        &by_index,
-        &reach,
-        &wire,
-        stream,
-        header_scale,
-        format,
+        ContainerInputs { records, by_index: &by_index, reach: &reach, wire: &wire, stream, header_scale, format },
     )?;
     let emitted_attributes = emit_attributes(ctx, &mut out, records, &by_index, &reach, format)?;
     if purpose == DecodePurpose::Model {
