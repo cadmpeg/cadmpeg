@@ -546,10 +546,11 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
     );
 
     crate::resolved_features::component_paths::project_dissected_sketches(
+        &cadmpeg_test_support::service_decode_context(),
         &mut features,
         &[],
         &[history],
-    );
+    ).unwrap();
     assert!(matches!(
         features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TreeNode {
