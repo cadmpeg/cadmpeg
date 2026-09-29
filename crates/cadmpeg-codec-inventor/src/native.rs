@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Inventor-native structural records.
 
-pub(crate) mod digest;
 pub(crate) mod protein;
 pub(crate) mod ufrx;
 
@@ -285,7 +284,7 @@ pub(crate) struct PropertyRecord {
     pub(crate) value_kind: PropertyValueKind,
     pub(crate) scalar_value: Option<String>,
     pub(crate) raw_len: u64,
-    pub(crate) raw_sha256: digest::Sha256Hex,
+    pub(crate) raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 struct DisplayField<'a, T: Display>(&'a T);
@@ -343,7 +342,7 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
             name: wire.name,
             scalar_value: wire.scalar_value,
             raw_len: wire.raw_len,
-            raw_sha256: digest::Sha256Hex::try_from(wire.raw_sha256)
+            raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest::try_from(wire.raw_sha256)
                 .map_err(|error| format!("raw_sha256: {error}"))?,
         })
     }
@@ -449,7 +448,7 @@ pub(crate) struct AssemblyPlacementRecord {
     graphics_index: u32,
     object_reference: u32,
     suffix_len: std::num::NonZeroU64,
-    suffix_sha256: digest::Sha256Hex,
+    suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -534,7 +533,7 @@ impl TryFrom<AssemblyPlacementRecordWire> for AssemblyPlacementRecord {
             object_reference: wire.object_reference,
             suffix_len: std::num::NonZeroU64::new(wire.suffix_len)
                 .ok_or("suffix_len must not be zero")?,
-            suffix_sha256: digest::Sha256Hex::try_from(wire.suffix_sha256)
+            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::try_from(wire.suffix_sha256)
                 .map_err(|error| format!("suffix_sha256: {error}"))?,
         })
     }
@@ -554,7 +553,7 @@ pub(crate) struct PmAppDefaultStyleRecord {
     pub(crate) state: u8,
     pub(crate) terminal_reference: u32,
     pub(crate) suffix_len: u64,
-    pub(crate) suffix_sha256: digest::Sha256Hex,
+    pub(crate) suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -577,7 +576,7 @@ pub(crate) struct PmAppRenderingStyleRecord {
     long_name: String,
     extension: Option<RenderingStyleExtension>,
     suffix_len: u64,
-    suffix_sha256: digest::Sha256Hex,
+    suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 impl Serialize for PmAppRenderingStyleRecord {
@@ -712,7 +711,7 @@ impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
             long_name: wire.long_name,
             extension,
             suffix_len: wire.suffix_len,
-            suffix_sha256: digest::Sha256Hex::try_from(wire.suffix_sha256)
+            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::try_from(wire.suffix_sha256)
                 .map_err(|error| format!("suffix_sha256: {error}"))?,
         })
     }
