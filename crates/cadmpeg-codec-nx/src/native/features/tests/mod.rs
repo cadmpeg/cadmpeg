@@ -17,4 +17,5 @@ mod sketch_admission;
 mod sketch_record_limits;
 mod sketch_payload_limits;
 mod sketch_point_limits;
+mod sketch_dependency_limits;
 mod source_and_sketch;
