@@ -69,3 +69,25 @@ fn brep_native_loop_ring_preserves_service_order() {
     assert_eq!(ring.coedges().iter().map(cadmpeg_ir::ids::CoedgeId::as_str).collect::<Vec<_>>(),
         ["creo:visibgeom:coedge#10:0", "creo:visibgeom:coedge#11:1"]);
 }
+
+#[test]
+fn brep_loop_ring_error_refuses_retained_text_limit() {
+    let native = crate::topology::Loop {
+        face_id: std::num::NonZeroU32::new(5),
+        half_edges: Vec::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = native_loop_ring(&ctx, &native, 5)
+        .expect_err("loop error text exceeds retained limit");
+    assert_refusal(error, ResourceDimension::RetainedBytes, "creo B-rep loop ring error text");
+    crate::decode::with_test_decode_ctx(|ctx| {
+        let error = native_loop_ring(ctx, &native, 5)
+            .expect_err("empty loop is malformed");
+        assert!(error.to_string().contains("VisibGeom face 5 loop ring"));
+        Ok::<(), CodecError>(())
+    }).expect("service error text admitted");
+}
