@@ -7337,19 +7337,8 @@ pub(super) fn feature_sketch_payload_names(
             .len()
             .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit("NX sketch name source blocks", 0, 1))?;
-        let bytes = count
-            .checked_mul(std::mem::size_of::<&String>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch name source blocks", 0, 1))?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(count),
-            "NX sketch name source blocks",
-        )?;
-        let _ids_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(bytes),
-            "NX sketch name source blocks",
-        )?;
-        let mut ids = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ids, count, "allocate NX sketch name source blocks")?;
+        
+        let (mut ids, _ids_reservation) = ctx.temporary_vec(count, "NX sketch name source blocks")?;
         ids.extend(construction.members.iter().map(|member| &member.data_block));
         ids.push(&construction.terminal_data_block);
         let Some(joined) = JoinedPayload::from_source(ctx, ids.iter().copied(), &blocks)? else {
@@ -7421,16 +7410,8 @@ fn sorted_payload_refs<'ctx, 'a, T>(
     let bytes = count
         .checked_mul(std::mem::size_of::<&T>())
         .ok_or_else(|| ctx.refuse_codec_limit("NX sketch payload record references", 0, 1))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "NX sketch payload record references",
-    )?;
-    let reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX sketch payload record references",
-    )?;
-    let mut references = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut references, count, "allocate NX sketch payload record references")?;
+    
+    let (mut references, reservation) = ctx.temporary_vec(count, "NX sketch payload record references")?;
     references.extend(source.iter().filter(|record| include(record)));
     let sort_work = cadmpeg_core::decode::u64_from_index(count)
         .checked_mul(u64::from(usize::BITS - count.leading_zeros()))
@@ -7712,19 +7693,8 @@ pub(super) fn feature_sketch_point_groups(
         }) {
             continue;
         }
-        let bytes = count
-            .checked_mul(std::mem::size_of::<String>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX sketch point group members", 0, 1))?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(count),
-            "NX sketch point group members",
-        )?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(bytes),
-            "NX sketch point group member slots",
-        )?;
-        let mut members = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut members, count, "allocate NX sketch point group members")?;
+        
+        let mut members = ctx.retained_vec(count, "NX sketch point group members")?;
         for witness in points.iter().filter(&matches) {
             members.push(ctx.copy_retained_text(&witness.id, "NX sketch point group member")?);
         }

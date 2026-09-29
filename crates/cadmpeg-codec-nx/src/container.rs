@@ -1440,12 +1440,7 @@ pub(crate) fn scan_legacy<'a>(
             "legacy NX stream spans",
         )?;
         stream_spans.insert(stream.id(), span);
-        ctx.charge_collection_items(1, "legacy NX stream views")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&view)),
-            "legacy NX stream views",
-        )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut stream_views, 1, "legacy NX stream views")?;
+        ctx.reserve_retained_vec(&mut stream_views, 1, "legacy NX stream views")?;
         stream_views.push(view);
     }
     let logical_data = ctx.concat_views(&stream_views)?;

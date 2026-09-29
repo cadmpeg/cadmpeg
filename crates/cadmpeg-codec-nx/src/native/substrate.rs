@@ -275,20 +275,7 @@ impl StreamView {
             .as_ref()
             .map_or_else(|| Rc::clone(&graph), Rc::clone);
         let intersections = if let Some(delta_indices) = paired_deltas {
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(delta_indices.len()),
-                "nx auxiliary replacement views",
-            )?;
-            let replacement_bytes = delta_indices
-                .len()
-                .checked_mul(std::mem::size_of::<&[u8]>())
-                .ok_or_else(|| ctx.refuse_codec_limit("nx auxiliary replacement views", 0, 1))?;
-            let _replacement_reservation = ctx.reserve_scoped(
-                cadmpeg_core::decode::u64_from_index(replacement_bytes),
-                "nx auxiliary replacement views",
-            )?;
-            let mut replacement_streams = Vec::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut replacement_streams, delta_indices.len(), "nx auxiliary replacement views")?;
+            let (mut replacement_streams, _replacement_reservation) = ctx.temporary_vec(delta_indices.len(), "nx auxiliary replacement views")?;
             for delta in delta_indices {
                 replacement_streams.push(scan.streams[*delta].inflated.as_slice());
             }

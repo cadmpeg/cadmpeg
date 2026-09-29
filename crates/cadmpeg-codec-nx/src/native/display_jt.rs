@@ -5515,15 +5515,7 @@ fn resolve_display_jt_node_paths(
                 return Ok(None);
             };
             let count = paths.len();
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(count),
-                "nx JT parent path states",
-            )?;
-            let bytes = count
-                .checked_mul(std::mem::size_of::<DisplayJtPath>())
-                .ok_or_else(|| ctx.refuse_codec_limit("nx JT parent path states", 0, 1))?;
-            parent_states_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut parent_states, count, "nx JT parent path states")?;
+            ctx.reserve_scoped_vec(&mut parent_states_reservation, &mut parent_states, count, "nx JT parent path states")?;
             parent_states.extend(paths);
         }
     } else {

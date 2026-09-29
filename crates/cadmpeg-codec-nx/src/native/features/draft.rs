@@ -740,26 +740,8 @@ pub(in crate::native) fn feature_draft_construction_index_lanes(
                             4usize.checked_add(lane.indices().count()).ok_or_else(|| {
                                 ctx.refuse_codec_limit("NX draft complete reference indices", 0, 1)
                             })?;
-                        let bytes =
-                            count
-                                .checked_mul(std::mem::size_of::<u32>())
-                                .ok_or_else(|| {
-                                    ctx.refuse_codec_limit(
-                                        "NX draft complete reference indices",
-                                        0,
-                                        1,
-                                    )
-                                })?;
-                        ctx.charge_collection_items(
-                            cadmpeg_core::decode::u64_from_index(count),
-                            "NX draft complete reference indices",
-                        )?;
-                        let _indices_reservation = ctx.reserve_scoped(
-                            cadmpeg_core::decode::u64_from_index(bytes),
-                            "NX draft complete reference indices",
-                        )?;
-                        let mut complete_indices = Vec::new();
-                        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut complete_indices, count, "allocate NX draft complete reference indices")?;
+                        
+                        let (mut complete_indices, _indices_reservation) = ctx.temporary_vec(count, "NX draft complete reference indices")?;
                         complete_indices.extend(
                             graph
                                 .references()
@@ -896,19 +878,8 @@ pub(in crate::native) fn feature_draft_construction_graph_payloads(
             .iter()
             .filter(|reference| reference.operation_label == lane.operation_label)
             .count();
-        let graph_bytes = count
-            .checked_mul(std::mem::size_of::<&FeatureDraftConstructionReference>())
-            .ok_or_else(|| ctx.refuse_codec_limit("NX draft construction graph", 0, 1))?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(count),
-            "NX draft construction graph",
-        )?;
-        let _graph_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(graph_bytes),
-            "NX draft construction graph",
-        )?;
-        let mut graph = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut graph, count, "allocate NX draft construction graph")?;
+        
+        let (mut graph, _graph_reservation) = ctx.temporary_vec(count, "NX draft construction graph")?;
         graph.extend(
             references
                 .iter()

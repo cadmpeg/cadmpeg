@@ -295,12 +295,7 @@ pub(super) fn attach(
         },
     )?;
     for (tessellation, source_offset) in display_jt_tessellations {
-        ctx.charge_collection_items(1, "NX attached display tessellations")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&tessellation)),
-            "NX attached display tessellations",
-        )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.tessellations, 1, "NX attached display tessellations")?;
+        ctx.reserve_retained_vec(&mut ir.model.tessellations, 1, "NX attached display tessellations")?;
         annotations
             .note(tessellation.id.as_str(), &annotation_stream, source_offset)
             .tag("DISPLAY_JT_TESSELLATION");
@@ -536,27 +531,7 @@ fn attach_configurations<'a>(
         })?;
         let bodies = if active_attribute_use.is_some() {
             let mut selected = Vec::new();
-            ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()),
-                "NX active configuration bodies",
-            )?;
-            let slots = ir
-                .model
-                .bodies
-                .len()
-                .checked_mul(std::mem::size_of::<BodyId>())
-                .ok_or_else(|| {
-                    ctx.refuse_codec_limit(
-                        "NX active configuration bodies",
-                        0,
-                        cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()),
-                    )
-                })?;
-            ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(slots),
-                "NX active configuration bodies",
-            )?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut selected, ir.model.bodies.len(), "NX active configuration bodies")?;
+            ctx.reserve_retained_vec(&mut selected, ir.model.bodies.len(), "NX active configuration bodies")?;
             for body in &ir.model.bodies {
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
@@ -1216,12 +1191,7 @@ fn resolve_rm_face_colors(
             1.0,
         )
         .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
-        ctx.charge_collection_items(1, "NX resolved RM face colors")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Color)>()),
-            "NX resolved RM face colors",
-        )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut colors, 1, "NX resolved RM face colors")?;
+        ctx.reserve_retained_vec(&mut colors, 1, "NX resolved RM face colors")?;
         colors.push((binding.face_id, color));
     }
     Ok(colors)
@@ -1462,12 +1432,7 @@ fn attach_jpeg_preview_assets(
         annotations
             .derived(id.as_str(), "native_ref")
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        ctx.charge_collection_items(1, "NX JPEG preview assets")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Asset>()),
-            "NX JPEG preview assets",
-        )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.assets, 1, "NX JPEG preview assets")?;
+        ctx.reserve_retained_vec(&mut ir.model.assets, 1, "NX JPEG preview assets")?;
         ir.model.assets.push(
             Asset::try_new(
                 id,
@@ -1558,12 +1523,7 @@ fn attach_material_texture_assets(
             cadmpeg_core::decode::u64_from_index(text_bytes),
             "NX material asset text",
         )?;
-        ctx.charge_collection_items(1, "NX material asset records")?;
-        ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Asset>()),
-            "NX material asset records",
-        )?;
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut assets, 1, "NX material asset records")?;
+        ctx.reserve_retained_vec(&mut assets, 1, "NX material asset records")?;
         assets.push(
             Asset::try_new(
                 extended_id::<AssetId>(texture.id.as_str(), &cadmpeg_ir::identity_key!("asset"))
@@ -1602,25 +1562,8 @@ fn attach_material_texture_assets(
             .derived(asset.id.as_str(), "native_ref")
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
-    let slots = assets
-        .len()
-        .checked_mul(std::mem::size_of::<Asset>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX attached material assets",
-                0,
-                cadmpeg_core::decode::u64_from_index(assets.len()),
-            )
-        })?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(assets.len()),
-        "NX attached material assets",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(slots),
-        "NX attached material assets",
-    )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.assets, assets.len(), "NX attached material assets")?;
+    
+    ctx.reserve_retained_vec(&mut ir.model.assets, assets.len(), "NX attached material assets")?;
     ir.model.assets.extend(assets);
     Ok(())
 }
@@ -1928,25 +1871,7 @@ fn attach_initial_segment_bodies(
         cadmpeg_core::decode::u64_from_index(sorting_work),
         "NX retained-history body order",
     )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(body_count),
-        "NX retained-history body order",
-    )?;
-    let sorting_bytes = body_count
-        .checked_mul(std::mem::size_of::<&cadmpeg_ir::topology::Body>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX retained-history body order",
-                0,
-                cadmpeg_core::decode::u64_from_index(body_count),
-            )
-        })?;
-    let _sorting = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index(sorting_bytes),
-        "NX retained-history body order",
-    )?;
-    let mut sorted_bodies = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut sorted_bodies, body_count, "NX retained-history body order")?;
+    let (mut sorted_bodies, _sorting) = ctx.temporary_vec(body_count, "NX retained-history body order")?;
     sorted_bodies.extend(&ir.model.bodies);
     sorted_bodies.sort_by(|first, second| first.id.cmp(&second.id));
 
@@ -2065,12 +1990,7 @@ fn attach_initial_segment_bodies(
         cadmpeg_core::decode::u64_from_index(uniqueness_work),
         "NX retained-history output uniqueness",
     )?;
-    ctx.charge_collection_items(1, "NX retained-history input features")?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Feature>()),
-        "NX retained-history input features",
-    )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.features, 1, "NX retained-history input features")?;
+    ctx.reserve_retained_vec(&mut ir.model.features, 1, "NX retained-history input features")?;
     ir.model.features.push(Feature {
         id: id.clone(),
         ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
@@ -4460,26 +4380,8 @@ fn attach_feature_operations(
         let operation_payload_string_records = payload_strings_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
-        let payload_slots = operation_payload_string_records
-            .len()
-            .checked_mul(std::mem::size_of::<&str>())
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit(
-                    "NX operation payload string references",
-                    0,
-                    cadmpeg_core::decode::u64_from_index(operation_payload_string_records.len()),
-                )
-            })?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(operation_payload_string_records.len()),
-            "NX operation payload string references",
-        )?;
-        let _payload_reservation = ctx.reserve_scoped(
-            cadmpeg_core::decode::u64_from_index(payload_slots),
-            "NX operation payload string references",
-        )?;
-        let mut operation_payload_strings = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut operation_payload_strings, operation_payload_string_records.len(), "allocate NX operation payload string references")?;
+        
+        let (mut operation_payload_strings, _payload_reservation) = ctx.temporary_vec(operation_payload_string_records.len(), "NX operation payload string references")?;
         operation_payload_strings.extend(
             operation_payload_string_records
                 .iter()
@@ -6034,25 +5936,8 @@ fn emit_sketch(
     sketch_id: &SketchId,
     entities: Vec<(u64, SketchEntity)>,
 ) -> Result<(), CodecError> {
-    let entity_bytes = entities
-        .len()
-        .checked_mul(std::mem::size_of::<SketchEntity>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX sketch output entities",
-                0,
-                cadmpeg_core::decode::u64_from_index(entities.len()),
-            )
-        })?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(entities.len()),
-        "NX sketch output entities",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(entity_bytes),
-        "NX sketch output entities",
-    )?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut ir.model.sketch_entities, entities.len(), "NX sketch output entities")?;
+    
+    ctx.reserve_retained_vec(&mut ir.model.sketch_entities, entities.len(), "NX sketch output entities")?;
     let sketch_bytes = std::mem::size_of::<Sketch>()
         .checked_add(sketch_id.as_str().len())
         .and_then(|bytes| bytes.checked_add(label.id.len()))
@@ -6165,22 +6050,8 @@ fn append_fixed_sketch_entities(
     else {
         return Ok(false);
     };
-    let bytes = fixed_entities
-        .len()
-        .checked_mul(std::mem::size_of::<(u64, SketchEntity)>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX sketch merged fixed points",
-                0,
-                cadmpeg_core::decode::u64_from_index(fixed_entities.len()),
-            )
-        })?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(fixed_entities.len()),
-        "NX sketch merged fixed points",
-    )?;
-    reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(entities, fixed_entities.len(), "NX sketch merged fixed points")?;
+    
+    ctx.reserve_scoped_vec(reservation, entities, fixed_entities.len(), "NX sketch merged fixed points")?;
     entities.extend(fixed_entities);
     Ok(true)
 }
@@ -6499,60 +6370,6 @@ struct ParasolidStringAttributeSources<'a> {
     strings: &'a [crate::native::parasolid::ParasolidEntity54StringRecord],
 }
 
-fn attribute_record_index<'a, T>(
-    ctx: &DecodeContext<'_>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    records: &'a [T],
-    id: impl Fn(&'a T) -> &'a str,
-) -> Result<BTreeMap<&'a str, &'a T>, CodecError> {
-    let mut index = BTreeMap::new();
-    for record in records {
-        let key = id(record);
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(index.len()),
-            "NX Parasolid attribute record lookup",
-        )?;
-        if !index.contains_key(key) {
-            ctx.charge_collection_items(1, "NX Parasolid attribute record index")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(&str, &T)>() * 4,
-            ))?;
-        }
-        index.insert(key, record);
-    }
-    Ok(index)
-}
-
-fn attribute_uses_by_entity<'a, T>(
-    ctx: &DecodeContext<'_>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    uses: &'a [T],
-    entity: impl Fn(&'a T) -> &'a str,
-) -> Result<BTreeMap<&'a str, Vec<&'a T>>, CodecError> {
-    let mut grouped = BTreeMap::new();
-    for value_use in uses {
-        let key = entity(value_use);
-        ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(grouped.len()),
-            "NX Parasolid attribute entity lookup",
-        )?;
-        if !grouped.contains_key(key) {
-            ctx.charge_collection_items(1, "NX Parasolid attribute use groups")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(&str, Vec<&T>)>() * 4,
-            ))?;
-        }
-        ctx.charge_collection_items(1, "NX Parasolid attribute use")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<&T>(),
-        ))?;
-        let group = grouped.entry(key).or_insert_with(Vec::new);
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(group, 1, "NX Parasolid attribute use")?;
-        group.push(value_use);
-    }
-    Ok(grouped)
-}
-
 fn attach_parasolid_topology_string_attributes(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -6561,13 +6378,8 @@ fn attach_parasolid_topology_string_attributes(
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "NX Parasolid string attribute lookups")?;
-    let strings_by_id = attribute_record_index(ctx, &mut reservation, sources.strings, |record| {
-        record.id.as_str()
-    })?;
-    let mut uses_by_entity =
-        attribute_uses_by_entity(ctx, &mut reservation, sources.string_uses, |value_use| {
-            value_use.entity_51_record.as_str()
-        })?;
+    let (strings_by_id, _strings_by_id_reservation) = ctx.collect_scoped_btree_map(sources.strings.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
+    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(sources.string_uses.iter().map(|value_use| (value_use.entity_51_record.as_str(), value_use)), "NX Parasolid attribute use groups")?;
     for uses in uses_by_entity.values_mut() {
         let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
             ctx.refuse_codec_limit(
@@ -7328,26 +7140,8 @@ fn mapped_attribute_values<T>(
     input: &[T],
     map: impl Fn(&T) -> AttributeValue,
 ) -> Result<Vec<AttributeValue>, CodecError> {
-    let bytes = input
-        .len()
-        .checked_mul(std::mem::size_of::<AttributeValue>())
-        .ok_or_else(|| {
-            ctx.refuse_codec_limit(
-                "NX Parasolid numeric attribute values",
-                0,
-                cadmpeg_core::decode::u64_from_index(input.len()),
-            )
-        })?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(input.len()),
-        "NX Parasolid numeric attribute values",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX Parasolid numeric attribute values",
-    )?;
-    let mut values = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut values, input.len(), "NX Parasolid numeric attribute values")?;
+    
+    let mut values = ctx.retained_vec(input.len(), "NX Parasolid numeric attribute values")?;
     values.extend(input.iter().map(map));
     Ok(values)
 }
@@ -7489,17 +7283,9 @@ fn attach_parasolid_topology_numeric_attributes(
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "NX Parasolid numeric attribute lookups")?;
-    let integers_by_id =
-        attribute_record_index(ctx, &mut reservation, sources.integers, |record| {
-            record.id.as_str()
-        })?;
-    let doubles_by_id = attribute_record_index(ctx, &mut reservation, sources.doubles, |record| {
-        record.id.as_str()
-    })?;
-    let mut uses_by_entity =
-        attribute_uses_by_entity(ctx, &mut reservation, sources.numeric_uses, |value_use| {
-            value_use.entity_51_record.as_str()
-        })?;
+    let (integers_by_id, _integers_by_id_reservation) = ctx.collect_scoped_btree_map(sources.integers.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
+    let (doubles_by_id, _doubles_by_id_reservation) = ctx.collect_scoped_btree_map(sources.doubles.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
+    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(sources.numeric_uses.iter().map(|value_use| (value_use.entity_51_record.as_str(), value_use)), "NX Parasolid attribute use groups")?;
     for uses in uses_by_entity.values_mut() {
         let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
             ctx.refuse_codec_limit(
@@ -7609,24 +7395,11 @@ fn attach_parasolid_topology_structured_attributes(
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut reservation = ctx.reserve_scoped(0, "NX Parasolid structured attribute lookups")?;
-    let vectors_by_id = attribute_record_index(ctx, &mut reservation, sources.vectors, |record| {
-        record.id.as_str()
-    })?;
-    let axes_by_id = attribute_record_index(ctx, &mut reservation, sources.axes, |record| {
-        record.id.as_str()
-    })?;
-    let tags_by_id = attribute_record_index(ctx, &mut reservation, sources.tags, |record| {
-        record.id.as_str()
-    })?;
-    let unicode_by_id = attribute_record_index(ctx, &mut reservation, sources.unicode, |record| {
-        record.id.as_str()
-    })?;
-    let mut uses_by_entity = attribute_uses_by_entity(
-        ctx,
-        &mut reservation,
-        sources.structured_uses,
-        |value_use| value_use.entity_51_record.as_str(),
-    )?;
+    let (vectors_by_id, _vectors_by_id_reservation) = ctx.collect_scoped_btree_map(sources.vectors.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
+    let (axes_by_id, _axes_by_id_reservation) = ctx.collect_scoped_btree_map(sources.axes.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
+    let (tags_by_id, _tags_by_id_reservation) = ctx.collect_scoped_btree_map(sources.tags.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
+    let (unicode_by_id, _unicode_by_id_reservation) = ctx.collect_scoped_btree_map(sources.unicode.iter().map(|record| (record.id.as_str(), record)), "NX Parasolid attribute record index")?;
+    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(sources.structured_uses.iter().map(|value_use| (value_use.entity_51_record.as_str(), value_use)), "NX Parasolid attribute use groups")?;
     for uses in uses_by_entity.values_mut() {
         let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
             ctx.refuse_codec_limit(
@@ -8138,12 +7911,8 @@ fn delete_body_feature_definition(
         )? {
             FeatureBodySelection::Native(native) => {
                 let mut reservation = ctx.reserve_scoped(0, "NX DELETE local body")?;
-                ctx.charge_collection_items(1, "NX DELETE local body")?;
-                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                    String,
-                >()))?;
                 let mut bodies = Vec::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bodies, 1, "NX DELETE local body")?;
+ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX DELETE local body")?;
                 bodies.push(ctx.format_scoped_text_with_work(&mut reservation, format_args!("nx:om-body-object#{body}"), "NX body selection text")?);
                 local_body_selection(ctx, bodies, native)?
             }
@@ -8154,12 +7923,8 @@ fn delete_body_feature_definition(
             data_block,
         } => {
             let mut reservation = ctx.reserve_scoped(0, "NX DELETE offset body")?;
-            ctx.charge_collection_items(1, "NX DELETE offset body")?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                String,
-            >()))?;
             let mut bodies = Vec::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bodies, 1, "NX DELETE offset body")?;
+ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX DELETE offset body")?;
             bodies.push(ctx.format_scoped_text_with_work(&mut reservation, format_args!("{data_block}"), "NX body selection text")?);
             local_body_selection(
                 ctx,
@@ -8195,12 +7960,8 @@ fn extract_body_feature_definition(
         .into_selection(ctx)?
     } else if let [(object_index, data_block)] = offset_store_bodies {
         let mut reservation = ctx.reserve_scoped(0, "NX EXTRACT local body")?;
-        ctx.charge_collection_items(1, "NX EXTRACT local body")?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-            String,
-        >()))?;
         let mut bodies = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut bodies, 1, "NX EXTRACT local body")?;
+ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX EXTRACT local body")?;
         bodies.push(ctx.format_scoped_text_with_work(&mut reservation, format_args!("{data_block}"), "NX body selection text")?);
         local_body_selection(
             ctx,

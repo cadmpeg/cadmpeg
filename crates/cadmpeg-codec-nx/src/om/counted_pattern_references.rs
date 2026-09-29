@@ -91,18 +91,9 @@ impl CountedPatternReferences<()> {
             return Ok(None);
         };
         let count = usize::from(count);
-        let count_u64 = u64_from_index(count);
-        let slot_bytes = count_u64
-            .checked_mul(u64_from_index(
-                std::mem::size_of::<(PayloadIndexToken, ())>(),
-            ))
-            .ok_or_else(|| {
-                ctx.refuse_codec_limit("NX counted pattern references", u64::MAX, u64::MAX)
-            })?;
-        ctx.charge_collection_items(count_u64, "NX counted pattern references")?;
-        ctx.charge_retained(slot_bytes, "NX counted pattern references")?;
-        let mut entries = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut entries, count, "NX counted pattern references")?;
+
+        
+        let mut entries = ctx.retained_vec(count, "NX counted pattern references")?;
         let Some(mut at) = start.checked_add(2) else {
             return Ok(None);
         };

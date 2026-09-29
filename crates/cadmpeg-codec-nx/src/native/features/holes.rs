@@ -684,20 +684,8 @@ fn owned_symbolic_thread(
     )?;
     let id =
         format_feature_history_id(ctx, "symbolic-thread", section_key, operation_ordinal, None)?;
-    let bytes = frames
-        .len()
-        .checked_mul(std::mem::size_of::<FeatureSymbolicThreadTextFrame>())
-        .ok_or_else(|| ctx.refuse_codec_limit("retain NX symbolic thread text frames", 0, 1))?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(frames.len()),
-        "NX symbolic thread text frames",
-    )?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(bytes),
-        "NX symbolic thread text frames",
-    )?;
-    let mut text_frames = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(&mut text_frames, frames.len(), "allocate NX symbolic thread text frames")?;
+    
+    let mut text_frames = ctx.retained_vec(frames.len(), "NX symbolic thread text frames")?;
     for (ordinal, frame) in frames.into_iter().enumerate() {
         let ordinal_u32 = u32::try_from(ordinal)
             .map_err(|_| ctx.refuse_codec_limit("NX symbolic thread text frame ordinal", 0, 1))?;
