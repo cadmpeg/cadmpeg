@@ -295,6 +295,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     };
 
     bind_mirror_surface_planes(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
@@ -330,6 +331,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     let mut nonmirror_history = history.clone();
     nonmirror_history.features[0].input_class = Some("moCirPattern_c".into());
     bind_mirror_surface_planes(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&nonmirror_history),
         std::slice::from_ref(&lane),
@@ -355,6 +357,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
     let mut second_face = face.clone();
     second_face.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     bind_mirror_surface_planes(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
