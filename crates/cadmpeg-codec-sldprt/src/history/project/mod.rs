@@ -38,6 +38,8 @@ pub(crate) mod solid;
 mod spin;
 #[cfg(test)]
 mod split_and_identity_tests;
+#[cfg(test)]
+mod content_tests;
 mod surface;
 
 use self::datum::{
@@ -312,7 +314,7 @@ pub(crate) fn project_feature_model(
                                 .as_deref()
                                 .map(|text| copy_projected_feature_text(ctx, text))
                                 .transpose()?,
-                            source_content: project_feature_content(feature, &by_native)?,
+                            source_content: project_feature_content(ctx, feature, &by_native)?,
 
                             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                                 project_definition(
@@ -1173,36 +1175,67 @@ pub(crate) fn incomplete_history_reference_features(
 }
 
 fn project_feature_content(
+    ctx: &DecodeContext<'_>,
     feature: &Feature,
     by_native: &HashMap<&str, FeatureId>,
-) -> Result<cadmpeg_ir::features::FeatureContent, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::features::FeatureContent, CodecError> {
+    const OPERATION: &str = "project SLDPRT feature content";
     if feature.text.is_some() {
         return Ok(cadmpeg_ir::features::FeatureContent::default());
     }
-    let parameters = projected_parameter_names(feature)
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, name)| (name, neutral_parameter_id(feature, ordinal)))
-        .collect::<HashMap<_, _>>();
-    let mut emitted_parameters = HashSet::new();
-    feature
-        .content
-        .iter()
-        .filter_map(|content| match content {
-            FeatureContent::Text(text) => Some(FeatureSourceContent::Text(text.clone())),
-            FeatureContent::Dimension(name) => parameters
-                .get(name)
-                .filter(|parameter| emitted_parameters.insert((*parameter).clone()))
-                .cloned()
-                .map(FeatureSourceContent::Parameter),
-            FeatureContent::Feature(id) => by_native
-                .get(id.as_str())
-                .cloned()
-                .map(FeatureSourceContent::Feature),
-        })
-        .collect::<Vec<_>>()
-        .try_into()
-        .map_err(|message: &'static str| cadmpeg_core::CodecError::Malformed(message.into()))
+    let mut names = Vec::<&str>::new();
+    for content in &feature.content {
+        ctx.charge_work(1, OPERATION)?;
+        if let FeatureContent::Dimension(name) = content {
+            ctx.charge_work(names.len() as u64, OPERATION)?;
+            if feature.parameters.contains_key(name.as_str()) && !names.contains(&name.as_str()) {
+                ctx.reserve_collection_vec(&mut names, 1, OPERATION)?;
+                names.push(name);
+            }
+        }
+    }
+    for name in feature.parameters.keys() {
+        ctx.charge_work(names.len() as u64, OPERATION)?;
+        if !names.contains(&name.as_str()) {
+            ctx.reserve_collection_vec(&mut names, 1, OPERATION)?;
+            names.push(name.as_str());
+        }
+    }
+    let mut result = cadmpeg_ir::features::FeatureContent::default();
+    for content in &feature.content {
+        ctx.charge_work(1, OPERATION)?;
+        let value = match content {
+            FeatureContent::Text(text) => {
+                FeatureSourceContent::Text(copy_projected_feature_text(ctx, text)?)
+            }
+            FeatureContent::Dimension(name) => {
+                ctx.charge_work(names.len() as u64, OPERATION)?;
+                let Some(ordinal) = names.iter().position(|known| *known == name) else {
+                    continue;
+                };
+                let key = feature.id.strip_prefix("sldprt:history:feature#").unwrap_or(&feature.id);
+                let id = ctx.format_retained(
+                    format_args!("sldprt:model:parameter#{}:{ordinal}", EncodedNativeKey(key)),
+                    OPERATION,
+                )?;
+                let parameter = ParameterId::mint(id).map_err(CodecError::malformed)?;
+                ctx.charge_work(result.len() as u64, OPERATION)?;
+                if result.iter().any(|value| matches!(value, FeatureSourceContent::Parameter(known) if known == &parameter)) {
+                    continue;
+                }
+                FeatureSourceContent::Parameter(parameter)
+            }
+            FeatureContent::Feature(id) => {
+                let Some(target) = by_native.get(id.as_str()) else {
+                    continue;
+                };
+                FeatureSourceContent::Feature(copy_projected_feature_id(ctx, target)?)
+            }
+        };
+        ctx.charge_work(result.len() as u64, OPERATION)?;
+        result.try_push_charged(value, ctx, OPERATION)?;
+    }
+    Ok(result)
 }
 
 fn project_feature_dependencies(
