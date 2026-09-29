@@ -520,8 +520,12 @@ pub(in super::super) fn placed_section_nurbs(
             let mut point = point.get();
             let model = section_xyz_in_model(transform, [point.x, point.y, point.z]);
             point = Point3::from(model);
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
             })
+        })
         .ok()?;
     Some(placed)
 }
@@ -539,8 +543,12 @@ pub(super) fn translated_nurbs_curve(
                 point.y + translation[1],
                 point.z + translation[2],
             );
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
             })
+        })
         .ok()?;
     Some(translated)
 }

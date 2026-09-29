@@ -1435,8 +1435,12 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
                 if index == 1 {
                     point.y += 250.0;
                 }
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
                 })
+            })
             .unwrap();
         let expected_curve = curve.clone();
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
@@ -1451,8 +1455,12 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
                 if index == target {
                     pole.z += 500.0;
                 }
-                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
                 })
+            })
             .unwrap();
         let expected_surface = surface.clone();
         (expected_curve, expected_surface)

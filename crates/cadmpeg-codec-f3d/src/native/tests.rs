@@ -655,8 +655,12 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
             if index == 0 {
                 point.x += 1.0;
             }
-            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
             })
+        })
         .unwrap();
     let expected = nurbs.clone();
     let mut preserved = Vec::new();
