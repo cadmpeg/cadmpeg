@@ -2952,6 +2952,49 @@ pub(crate) struct CatiaReferenceSignature {
     pub(crate) second_entity: CatiaEntityReference,
 }
 
+#[derive(Serialize, Deserialize)]
+pub(super) struct CatiaReferenceSignatureWire {
+    #[serde(flatten)]
+    production: entity_table::ReferenceSignatureWire,
+    first_entity: CatiaEntityReference,
+    second_entity: CatiaEntityReference,
+}
+
+impl From<CatiaReferenceSignature> for CatiaReferenceSignatureWire {
+    fn from(value: CatiaReferenceSignature) -> Self {
+        Self {
+            production: value.production.into(),
+            first_entity: value.first_entity,
+            second_entity: value.second_entity,
+        }
+    }
+}
+
+impl CatiaReferenceSignatureWire {
+    fn from_charged(
+        ctx: &DecodeContext<'_>,
+        value: CatiaReferenceSignature,
+    ) -> Result<Self, CodecError> {
+        Ok(Self {
+            production: entity_table::ReferenceSignatureWire::from_charged(ctx, value.production)?,
+            first_entity: value.first_entity,
+            second_entity: value.second_entity,
+        })
+    }
+}
+
+impl TryFrom<CatiaReferenceSignatureWire> for CatiaReferenceSignature {
+    type Error = String;
+
+    fn try_from(wire: CatiaReferenceSignatureWire) -> Result<Self, Self::Error> {
+        Ok(Self {
+            production: wire.production.try_into().map_err(str::to_owned)?,
+            first_entity: wire.first_entity,
+            second_entity: wire.second_entity,
+        })
+    }
+}
+
 /// Source-ordered descriptor records sharing one exact reference pair.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(

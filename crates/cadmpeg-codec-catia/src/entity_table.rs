@@ -333,7 +333,7 @@ impl ReferenceSignature {
 }
 
 #[derive(Serialize, Deserialize)]
-struct ReferenceSignatureWire {
+pub(crate) struct ReferenceSignatureWire {
     /// First fixed-width reference.
     first_reference: u32,
     /// Variable compact atom preceding the nested signature frame.
@@ -365,6 +365,87 @@ impl From<ReferenceSignature> for ReferenceSignatureWire {
             signature_offset: value.signature_offset,
             second_reference_offset: value.second_reference_offset(),
         }
+    }
+}
+
+impl ReferenceSignatureWire {
+    pub(crate) fn from_charged(
+        ctx: &DecodeContext<'_>,
+        value: ReferenceSignature,
+    ) -> Result<Self, CodecError> {
+        let mut byte_len = 0usize;
+        for token in &value.tokens {
+            let token_len = match token {
+                ReferenceSignatureToken::Decimal(digits) => digits.len(),
+                ReferenceSignatureToken::Qualifier(_) => 2,
+                _ => 1,
+            };
+            byte_len = byte_len.checked_add(token_len).ok_or_else(||
+                ctx.refuse_codec_limit("catia_reference_signature_wire_text", u64::MAX, u64::MAX))?;
+        }
+        let bytes = u64::try_from(byte_len).map_err(|_|
+            ctx.refuse_codec_limit("catia_reference_signature_wire_text", u64::MAX, u64::MAX))?;
+        ctx.charge_retained(bytes, "catia_reference_signature_wire_text")?;
+        let mut signature = String::new();
+        signature.try_reserve(byte_len).map_err(|_|
+            crate::resource::allocation_failed(0, signature.capacity(), byte_len,
+                "catia_reference_signature_wire_text"))?;
+        for token in &value.tokens {
+            match token {
+                ReferenceSignatureToken::Symbol(ReferenceSignatureSymbol::E) => signature.push('E'),
+                ReferenceSignatureToken::Symbol(ReferenceSignatureSymbol::S) => signature.push('S'),
+                ReferenceSignatureToken::Symbol(ReferenceSignatureSymbol::T) => signature.push('T'),
+                ReferenceSignatureToken::Decimal(digits) => signature.push_str(digits),
+                ReferenceSignatureToken::OpenCall => signature.push('('),
+                ReferenceSignatureToken::Comma => signature.push(','),
+                ReferenceSignatureToken::CloseCall => signature.push(')'),
+                ReferenceSignatureToken::Qualifier(selector) => {
+                    signature.push('#');
+                    let digit = char::from_digit(u32::from(*selector), 16).ok_or_else(||
+                        CodecError::malformed("reference signature qualifier exceeds one digit"))?;
+                    signature.push(digit.to_ascii_uppercase());
+                }
+                ReferenceSignatureToken::Difference => signature.push('-'),
+            }
+        }
+        let mut signature_program = Vec::new();
+        let mut offset = value.signature_offset;
+        for token in value.tokens {
+            let token_len = match &token {
+                ReferenceSignatureToken::Decimal(digits) => digits.len(),
+                ReferenceSignatureToken::Qualifier(_) => 2,
+                _ => 1,
+            };
+            let instruction = match token {
+                ReferenceSignatureToken::Symbol(symbol) =>
+                    ReferenceSignatureInstruction::Symbol { symbol, offset },
+                ReferenceSignatureToken::Decimal(digits) =>
+                    ReferenceSignatureInstruction::Decimal { digits, offset },
+                ReferenceSignatureToken::OpenCall => ReferenceSignatureInstruction::OpenCall { offset },
+                ReferenceSignatureToken::Comma => ReferenceSignatureInstruction::Comma { offset },
+                ReferenceSignatureToken::CloseCall => ReferenceSignatureInstruction::CloseCall { offset },
+                ReferenceSignatureToken::Qualifier(selector) =>
+                    ReferenceSignatureInstruction::Qualifier {
+                        selector, hash_offset: offset,
+                        selector_offset: offset.checked_add(1).ok_or_else(||
+                            ctx.refuse_codec_limit("catia_reference_signature_wire_offset", u64::MAX, u64::MAX))?,
+                    },
+                ReferenceSignatureToken::Difference => ReferenceSignatureInstruction::Difference { offset },
+            };
+            crate::resource::push(ctx, &mut signature_program, instruction,
+                "catia_reference_signature_wire_instructions")?;
+            offset = offset.checked_add(token_len).ok_or_else(||
+                ctx.refuse_codec_limit("catia_reference_signature_wire_offset", u64::MAX, u64::MAX))?;
+        }
+        Ok(Self {
+            first_reference: value.references.first(),
+            second_reference: value.references.second(),
+            prefix: value.prefix,
+            signature,
+            signature_program,
+            signature_offset: value.signature_offset,
+            second_reference_offset: value.second_reference_offset,
+        })
     }
 }
 impl TryFrom<ReferenceSignatureWire> for ReferenceSignature {
