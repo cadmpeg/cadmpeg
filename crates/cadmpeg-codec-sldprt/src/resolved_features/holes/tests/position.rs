@@ -111,16 +111,18 @@ fn compact_position_graph_selects_the_unique_bore_loci() {
         (PointPointVerticalDistance, 0, 5, 0.0),
         (PointPointHorizontalDistance, 0, 5, 16.0),
     ];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let placement_loci = [1, 2].into_iter().collect();
     assert_eq!(
-        compact_position_loci(&loci, &placement_loci, &relations),
+        compact_position_loci(&ctx, &loci, &placement_loci, &relations).unwrap(),
         Some(vec![1, 2])
     );
 
     let ambiguous = [loci[0], loci[1], loci[2], Point2::new(0.0, -9.0)];
     let ambiguous_placements = [1, 2, 3].into_iter().collect();
     assert_eq!(
-        compact_position_loci(&ambiguous, &ambiguous_placements, &relations),
+        compact_position_loci(&ctx, &ambiguous, &ambiguous_placements, &relations).unwrap(),
         None
     );
 }

@@ -3285,11 +3285,11 @@ pub(crate) fn project_hole_axes(
                 else {
                     continue;
                 };
-                let relations = compact_position_relations(lane, position_feature.id.as_str());
+                let relations = compact_position_relations(ctx, lane, position_feature.id.as_str())?;
                 if relations.is_empty() {
                     continue;
                 }
-                if let Some(solution) = constrained_bore_axes(frame, radius, surfaces, &relations) {
+                if let Some(solution) = constrained_bore_axes(ctx, frame, radius, surfaces, &relations)? {
                     solutions.push(solution);
                 }
             }
@@ -4575,223 +4575,216 @@ pub(super) fn sketch_feature_frames(
 }
 
 fn compact_position_relations(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     feature: &str,
-) -> Vec<(FeatureInputRelationFamily, u16, u16, f64)> {
-    let scalars = lane
-        .scalars
-        .iter()
-        .map(|scalar| (scalar.id.as_str(), scalar))
-        .collect::<HashMap<_, _>>();
-    lane.relation_instances
-        .iter()
-        .filter(|relation| relation.feature_ref == feature)
-        .filter_map(|relation| {
-            let [first, second] = relation.operands.as_slice() else {
-                return None;
-            };
-            if first.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152)
-                || second.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152)
-            {
-                return None;
-            }
-            let scalar = relation
-                .parameter_scalar_ref()
-                .and_then(|id| scalars.get(id))?;
-            (scalar.role == FeatureInputScalarRole::Driving && scalar.value.get() >= 0.0).then_some(
-                (
-                    relation.family,
-                    first.entity_index,
-                    second.entity_index,
-                    scalar.value.get() * 1000.0,
-                ),
-            )
-        })
-        .collect()
+) -> Result<Vec<(FeatureInputRelationFamily, u16, u16, f64)>, CodecError> {
+    const OPERATION: &str = "collect SLDPRT compact position relations";
+    ctx.charge_work(u64_from_index(lane.scalars.len()), OPERATION)?;
+    ctx.charge_collection_items(u64_from_index(lane.scalars.len()), OPERATION)?;
+    let mut scalars = HashMap::new();
+    scalars.try_reserve(lane.scalars.len()).map_err(|_| {
+        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+    })?;
+    for scalar in &lane.scalars {
+        scalars.insert(scalar.id.as_str(), scalar);
+    }
+    let mut result = Vec::new();
+    for relation in &lane.relation_instances {
+        ctx.charge_work(1, OPERATION)?;
+        if relation.feature_ref != feature { continue; }
+        let [first, second] = relation.operands.as_slice() else { continue; };
+        if first.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152)
+            || second.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_8152)
+        { continue; }
+        let Some(scalar) = relation.parameter_scalar_ref().and_then(|id| scalars.get(id)) else {
+            continue;
+        };
+        if !(scalar.role == FeatureInputScalarRole::Driving && scalar.value.get() >= 0.0) { continue; }
+        ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
+        result.push((relation.family, first.entity_index, second.entity_index, scalar.value.get() * 1000.0));
+    }
+    Ok(result)
 }
 
 fn constrained_bore_axes(
+    ctx: &DecodeContext<'_>,
     (origin, normal, u_axis): (Point3, Vector3, Vector3),
     radius: f64,
     surfaces: &[Surface],
     relations: &[(FeatureInputRelationFamily, u16, u16, f64)],
-) -> Option<Vec<HolePlacement>> {
+) -> Result<Option<Vec<HolePlacement>>, CodecError> {
     const QUANTUM: f64 = EPS_HOLE_POSITION;
+    const OPERATION: &str = "collect SLDPRT constrained bore axes";
     let v_axis = normal.cross(u_axis);
     let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
-    let mut axes = surfaces
-        .iter()
-        .filter_map(|surface| match surface.geometry {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
-                if {
-                    let axis = *cylinder_surface.frame().axis().as_raw();
-                    let candidate_radius = cylinder_surface.radius().get();
-                    (candidate_radius - radius).abs() <= radius_tolerance
-                        && axis.dot(normal).abs() >= 1.0 - EPS_HOLE_GEOMETRY
-                } =>
-            {
-                let candidate = cylinder_surface.origin().get();
-                let delta = Vector3::new(
-                    candidate.x - origin.x,
-                    candidate.y - origin.y,
-                    candidate.z - origin.z,
-                );
-                Some(quantize(
-                    Point2::new(delta.dot(u_axis), delta.dot(v_axis)),
-                    QUANTUM,
-                ))
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
+    let mut axes = Vec::new();
+    for surface in surfaces {
+        ctx.charge_work(1, OPERATION)?;
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry else {
+            continue;
+        };
+        let axis = *cylinder_surface.frame().axis().as_raw();
+        let candidate_radius = cylinder_surface.radius().get();
+        if !((candidate_radius - radius).abs() <= radius_tolerance
+            && axis.dot(normal).abs() >= 1.0 - EPS_HOLE_GEOMETRY)
+        { continue; }
+        let candidate = cylinder_surface.origin().get();
+        let delta = Vector3::new(candidate.x - origin.x, candidate.y - origin.y, candidate.z - origin.z);
+        ctx.reserve_collection_vec(&mut axes, 1, OPERATION)?;
+        axes.push(quantize(Point2::new(delta.dot(u_axis), delta.dot(v_axis)), QUANTUM));
+    }
+    let axis_count = u64_from_index(axes.len());
+    ctx.charge_work(axis_count.checked_mul(u64::from(usize::BITS - axes.len().leading_zeros()))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
     axes.sort_unstable();
     axes.dedup();
-    if axes.is_empty() {
-        return None;
-    }
-    let mut loci = Vec::with_capacity(axes.len() + 1);
+    if axes.is_empty() { return Ok(None); }
+    let mut loci = Vec::new();
+    ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
     loci.push(Point2::new(0.0, 0.0));
     let mut bore_loci = HashSet::new();
     for point in axes {
         let point = point.point(QUANTUM);
-        let index = loci
-            .iter()
-            .position(|candidate| *candidate == point)
-            .unwrap_or_else(|| {
-                loci.push(point);
-                loci.len() - 1
-            });
-        bore_loci.insert(index);
+        ctx.charge_work(u64_from_index(loci.len()), OPERATION)?;
+        let index = if let Some(index) = loci.iter().position(|candidate| *candidate == point) {
+            index
+        } else {
+            ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
+            loci.push(point);
+            loci.len() - 1
+        };
+        if !bore_loci.contains(&index) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            bore_loci.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+            bore_loci.insert(index);
+        }
     }
-    let indices = compact_position_loci(&loci, &bore_loci, relations)?;
-    indices
-        .into_iter()
-        .map(|index| {
-            let point = loci[index];
-            Some(HolePlacement::Axis {
-                origin: FinitePoint3::new(Point3::new(
-                    origin.x + point.u * u_axis.x + point.v * v_axis.x,
-                    origin.y + point.u * u_axis.y + point.v * v_axis.y,
-                    origin.z + point.u * u_axis.z + point.v * v_axis.z,
-                ))?,
-                axis: FeatureDirection3::new(normal)?,
-            })
-        })
-        .collect::<Option<Vec<_>>>()
+    let Some(indices) = compact_position_loci(ctx, &loci, &bore_loci, relations)? else { return Ok(None); };
+    let mut placements = Vec::new();
+    for index in indices {
+        ctx.charge_work(1, OPERATION)?;
+        let point = loci[index];
+        let (Some(origin), Some(axis)) = (FinitePoint3::new(Point3::new(
+            origin.x + point.u * u_axis.x + point.v * v_axis.x,
+            origin.y + point.u * u_axis.y + point.v * v_axis.y,
+            origin.z + point.u * u_axis.z + point.v * v_axis.z,
+        )), FeatureDirection3::new(normal)) else { return Ok(None); };
+        ctx.reserve_collection_vec(&mut placements, 1, OPERATION)?;
+        placements.push(HolePlacement::Axis { origin, axis });
+    }
+    Ok(Some(placements))
 }
 
 fn compact_position_loci(
+    ctx: &DecodeContext<'_>,
     loci: &[Point2],
     placement_loci: &HashSet<usize>,
     relations: &[(FeatureInputRelationFamily, u16, u16, f64)],
-) -> Option<Vec<usize>> {
-    let mut nodes = relations
-        .iter()
-        .flat_map(|(_, first, second, _)| [*first, *second])
-        .collect::<Vec<_>>();
+) -> Result<Option<Vec<usize>>, CodecError> {
+    const OPERATION: &str = "solve SLDPRT compact position loci";
+    let mut nodes = Vec::new();
+    for (_, first, second, _) in relations {
+        ctx.charge_work(1, OPERATION)?;
+        ctx.reserve_collection_vec(&mut nodes, 2, OPERATION)?;
+        nodes.extend([*first, *second]);
+    }
+    let node_count = u64_from_index(nodes.len());
+    ctx.charge_work(node_count.checked_mul(u64::from(usize::BITS - nodes.len().leading_zeros()))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
     nodes.sort_unstable();
     nodes.dedup();
-    if nodes.is_empty() || nodes.len() > loci.len() {
-        return None;
-    }
-    let mut solution_sets = HashSet::<Vec<usize>>::new();
+    if nodes.is_empty() || nodes.len() > loci.len() { return Ok(None); }
+    let mut solutions = HashSet::new();
     for swap_axes in [false, true] {
-        compact_position_assignments(
-            0,
-            &nodes,
-            loci,
-            relations,
-            placement_loci,
-            swap_axes,
-            &mut HashMap::new(),
-            &mut HashSet::new(),
-            &mut solution_sets,
-        );
+        CompactPositionSearch { ctx, nodes: &nodes, loci, relations, placement_loci, swap_axes }
+            .assign(0, &mut HashMap::new(), &mut HashSet::new(), &mut solutions)?;
     }
-    let solution_sets = solution_sets.into_iter().collect::<Vec<_>>();
-    let [solution] = solution_sets.as_slice() else {
-        return None;
-    };
-    Some(solution.clone())
+    let mut solutions = solutions.into_iter();
+    Ok(match (solutions.next(), solutions.next()) {
+        (Some(solution), None) => Some(solution),
+        _ => None,
+    })
 }
 
-#[allow(clippy::too_many_arguments)]
-fn compact_position_assignments(
-    node_index: usize,
-    nodes: &[u16],
-    loci: &[Point2],
-    relations: &[(FeatureInputRelationFamily, u16, u16, f64)],
-    placement_loci: &HashSet<usize>,
+struct CompactPositionSearch<'a, 'root> {
+    ctx: &'a DecodeContext<'root>,
+    nodes: &'a [u16],
+    loci: &'a [Point2],
+    relations: &'a [(FeatureInputRelationFamily, u16, u16, f64)],
+    placement_loci: &'a HashSet<usize>,
     swap_axes: bool,
-    assigned: &mut HashMap<u16, usize>,
-    used: &mut HashSet<usize>,
-    solutions: &mut HashSet<Vec<usize>>,
-) {
-    if solutions.len() > 1 {
-        return;
-    }
-    if node_index == nodes.len() {
-        let mut solution = used
-            .iter()
-            .copied()
-            .filter(|index| placement_loci.contains(index))
-            .collect::<Vec<_>>();
-        if solution.is_empty() {
-            return;
-        }
-        solution.sort_unstable();
-        solutions.insert(solution);
-        return;
-    }
-    let node = nodes[node_index];
-    for locus_index in 0..loci.len() {
-        if !used.insert(locus_index) {
-            continue;
-        }
-        assigned.insert(node, locus_index);
-        let valid = relations.iter().all(|(family, first, second, distance)| {
-            let (Some(&first), Some(&second)) = (assigned.get(first), assigned.get(second)) else {
-                return true;
-            };
-            let first = loci[first];
-            let second = loci[second];
-            let measured = match family {
-                FeatureInputRelationFamily::PointPointDistance => {
-                    (second.u - first.u).hypot(second.v - first.v)
+}
+
+impl CompactPositionSearch<'_, '_> {
+    fn assign(
+        &self,
+        node_index: usize,
+        assigned: &mut HashMap<u16, usize>,
+        used: &mut HashSet<usize>,
+        solutions: &mut HashSet<Vec<usize>>,
+    ) -> Result<(), CodecError> {
+        const OPERATION: &str = "search SLDPRT compact position assignments";
+        let _depth = self.ctx.enter_nested(OPERATION)?;
+        self.ctx.charge_work(1, OPERATION)?;
+        if solutions.len() > 1 { return Ok(()); }
+        if node_index == self.nodes.len() {
+            let mut solution = Vec::new();
+            for index in used.iter().copied() {
+                self.ctx.charge_work(1, OPERATION)?;
+                if self.placement_loci.contains(&index) {
+                    self.ctx.reserve_collection_vec(&mut solution, 1, OPERATION)?;
+                    solution.push(index);
                 }
-                FeatureInputRelationFamily::PointPointHorizontalDistance => {
-                    if swap_axes {
-                        (second.v - first.v).abs()
-                    } else {
-                        (second.u - first.u).abs()
+            }
+            if solution.is_empty() { return Ok(()); }
+            let count = u64_from_index(solution.len());
+            self.ctx.charge_work(count.checked_mul(u64::from(usize::BITS - solution.len().leading_zeros()))
+                .ok_or_else(|| self.ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            solution.sort_unstable();
+            if !solutions.contains(&solution) {
+                self.ctx.charge_collection_items(1, OPERATION)?;
+                solutions.try_reserve(1).map_err(|_| {
+                    self.ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
+                solutions.insert(solution);
+            }
+            return Ok(());
+        }
+        let node = self.nodes[node_index];
+        for locus_index in 0..self.loci.len() {
+            self.ctx.charge_work(1, OPERATION)?;
+            if used.contains(&locus_index) { continue; }
+            self.ctx.charge_collection_items(1, OPERATION)?;
+            used.try_reserve(1).map_err(|_| self.ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            used.insert(locus_index);
+            self.ctx.charge_collection_items(1, OPERATION)?;
+            assigned.try_reserve(1).map_err(|_| self.ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            assigned.insert(node, locus_index);
+            self.ctx.charge_work(u64_from_index(self.relations.len()), OPERATION)?;
+            let valid = self.relations.iter().all(|(family, first, second, distance)| {
+                let (Some(&first), Some(&second)) = (assigned.get(first), assigned.get(second)) else { return true; };
+                let first = self.loci[first];
+                let second = self.loci[second];
+                let measured = match family {
+                    FeatureInputRelationFamily::PointPointDistance => (second.u - first.u).hypot(second.v - first.v),
+                    FeatureInputRelationFamily::PointPointHorizontalDistance => {
+                        if self.swap_axes { (second.v - first.v).abs() } else { (second.u - first.u).abs() }
                     }
-                }
-                FeatureInputRelationFamily::PointPointVerticalDistance => {
-                    if swap_axes {
-                        (second.u - first.u).abs()
-                    } else {
-                        (second.v - first.v).abs()
+                    FeatureInputRelationFamily::PointPointVerticalDistance => {
+                        if self.swap_axes { (second.u - first.u).abs() } else { (second.v - first.v).abs() }
                     }
-                }
-                _ => return false,
-            };
-            same_dimension_length(measured, *distance)
-        });
-        if valid {
-            compact_position_assignments(
-                node_index + 1,
-                nodes,
-                loci,
-                relations,
-                placement_loci,
-                swap_axes,
-                assigned,
-                used,
-                solutions,
-            );
+                    _ => return false,
+                };
+                same_dimension_length(measured, *distance)
+            });
+            if valid { self.assign(node_index + 1, assigned, used, solutions)?; }
+            assigned.remove(&node);
+            used.remove(&locus_index);
         }
-        assigned.remove(&node);
-        used.remove(&locus_index);
+        Ok(())
     }
 }
 
