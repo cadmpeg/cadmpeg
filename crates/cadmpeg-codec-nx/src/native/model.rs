@@ -938,13 +938,14 @@ impl NativeModel {
                 &feature_simple_hole_construction_groups,
             )?;
         let feature_body_segment_uses = feature_body_segment_uses(
+            ctx,
             &feature_body_references,
             &feature_body_data_block_uses,
             &feature_input_blocks,
             &data_blocks,
             &segment_body_bindings,
             &data_block_object_frames,
-        );
+        )?;
         let feature_input_block_identity_groups =
             feature_input_block_identity_groups(&feature_input_blocks);
         let display_jt_indices = display_jt_indices(ctx, container)?;
