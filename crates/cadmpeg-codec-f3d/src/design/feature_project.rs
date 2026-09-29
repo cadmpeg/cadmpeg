@@ -3389,11 +3389,12 @@ fn project_draft(
                 })));
             }
             let neutral_plane = selected_historical_face_selection(
+                ctx,
                 scope,
                 neutral_plane,
                 entity_selection_operands,
                 histories,
-            );
+            )?;
             let neutral_plane = or_none!(neutral_plane);
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: project_draft_face_selection(ctx, scope, faces, face_operands, histories)?,
@@ -3475,18 +3476,19 @@ fn project_draft(
 }
 
 fn selected_historical_face_selection(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     histories: &[crate::history_records::AsmHistory],
-) -> Option<cadmpeg_ir::features::FaceSelection> {
-    let previous_state_id =
-        crate::history::effective_scope_previous_history_state_id(scope, histories)?;
-    let stream = native_stream(&scope.id)?;
+) -> Result<Option<cadmpeg_ir::features::FaceSelection>, CodecError> {
+    let previous_state_id = or_none!(
+        crate::history::effective_scope_previous_history_state_id(scope, histories));
+    let stream = or_none!(native_stream(&scope.id));
     let [crate::records::identity::Located { value: member, .. }] = group.members() else {
-        return None;
+        return Ok(None);
     };
-    let selections = entity_selection_operands
+    let mut selections = entity_selection_operands
         .iter()
         .filter(|operand| {
             native_stream(&operand.id) == Some(stream)
@@ -3494,34 +3496,36 @@ fn selected_historical_face_selection(
                 && operand.group_record_index == group.record_index
                 && operand.group_member_ordinal == 0
                 && operand.record_index() == *member
-        })
-        .collect::<Vec<_>>();
-    let [selection] = selections.as_slice() else {
-        return None;
+        });
+    let Some(selection) = selections.next() else {
+        return Ok(None);
     };
-    if selection.secondary().is_some() {
-        return None;
+    if selections.next().is_some() || selection.secondary().is_some() {
+        return Ok(None);
     }
     let mut face_slots = selection
         .historical_face_candidates
         .iter()
         .filter(|candidate| candidate.historical.state_ids.contains(&previous_state_id))
         .map(|candidate| candidate.face_slot);
-    let face_slot = face_slots.next()?;
+    let face_slot = or_none!(face_slots.next());
     if face_slots.any(|candidate| candidate != face_slot) {
-        return None;
+        return Ok(None);
     }
     let feature = neutral_feature_id(scope);
     let feature_key = feature.key();
     let prefix = ids::history_input_prefix(&feature_key, previous_state_id);
-    Some(
-        cadmpeg_ir::features::FaceSelection::historical(
+    Ok(Some(
+        match cadmpeg_ir::features::FaceSelection::historical(
             feature_input_topology_id(&feature, previous_state_id),
             vec![ids::history_input_face_id(&prefix, face_slot)],
-            group.id.clone(),
-        )
-        .unwrap_or_else(|_| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())),
-    )
+            copy_feature_text(ctx, &group.id, "f3d Draft historical face group id")?,
+        ) {
+            Ok(selection) => selection,
+            Err(_) => cadmpeg_ir::features::FaceSelection::Native(
+                copy_feature_text(ctx, &group.id, "f3d Draft fallback face group id")?),
+        },
+    ))
 }
 
 fn project_face_selection(
