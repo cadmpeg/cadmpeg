@@ -3852,30 +3852,26 @@ fn attach_feature_operations(
                     body_write_group_partition_uses,
                     parasolid_group_members,
                 )?;
-                ir.model.feature_result_topologies.push(
-                    FeatureResultTopology::new(
-                        IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-                            .try_id::<FeatureResultTopologyId>(
-                                &cadmpeg_ir::identity_component!("result-topology"),
-                                format!("{key}-{:010}", write.ordinal),
-                            )
-                            .ok_or_else(|| {
-                                CodecError::malformed(format_args!(
-                                    "NX operation label key is not identity key text"
-                                ))
-                            })?,
-                        id.clone(),
-                        vec![cadmpeg_core::nonblank_literal!(
-                            "nx:feature-history:body-identity#{:010}",
-                            write.frame.body_identity()
-                        )],
-                        result_members.faces,
-                        result_members.edges,
-                        result_members.vertices,
-                        Some(write.id.clone()),
-                    )
-                    .map_err(|error| CodecError::Malformed(error.to_string()))?,
-                );
+                const BODY_PREFIX: &str = "nx:feature-history:body-identity#";
+                let body_len = BODY_PREFIX.len() + 10;
+                ctx.charge_collection_items(1, "NX feature result bodies")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_core::text::NonBlankString>() + body_len), "NX feature result body")?;
+                let mut body_text = String::new();
+                body_text.try_reserve(body_len).map_err(|_| ctx.refuse_codec_limit("allocate NX feature result body identity", 0, cadmpeg_core::decode::u64_from_index(body_len)))?;
+                std::fmt::Write::write_fmt(&mut body_text, format_args!("{BODY_PREFIX}{:010}", write.frame.body_identity()))
+                    .map_err(|_| CodecError::malformed("NX feature result body identity formatting failed"))?;
+                let body = cadmpeg_core::text::NonBlankString::new(body_text)
+                    .ok_or_else(|| CodecError::malformed("NX feature result body identity is blank"))?;
+                let mut bodies = Vec::new();
+                bodies.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX feature result bodies", 0, 1))?;
+                bodies.push(body);
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(write.id.len()), "NX result topology native reference")?;
+                let mut native_ref = String::new();
+                native_ref.try_reserve(write.id.len()).map_err(|_| ctx.refuse_codec_limit("allocate NX result topology native reference", 0, cadmpeg_core::decode::u64_from_index(write.id.len())))?;
+                native_ref.push_str(&write.id);
+                append_feature_result_topology(ctx, ir,
+                    result_topology_id(ctx, key, Some(write.ordinal))?, &id,
+                    bodies, result_members, native_ref)?;
             }
         } else if !deletes_body {
             let result_body = native_result_body_identity(
@@ -3890,27 +3886,14 @@ fn attach_feature_operations(
                     .id
                     .strip_prefix("nx:feature-history:operation-label#")
                     .unwrap_or(label.id.as_str());
-                ir.model.feature_result_topologies.push(
-                    FeatureResultTopology::new(
-                        IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-                            .try_id::<FeatureResultTopologyId>(
-                                &cadmpeg_ir::identity_component!("result-topology"),
-                                key,
-                            )
-                            .ok_or_else(|| {
-                                CodecError::malformed(format_args!(
-                                    "NX operation label key is not identity key text"
-                                ))
-                            })?,
-                        id.clone(),
-                        vec![local_id],
-                        Vec::new(),
-                        Vec::new(),
-                        Vec::new(),
-                        Some(native_ref),
-                    )
-                    .map_err(|error| CodecError::Malformed(error.to_string()))?,
-                );
+                ctx.charge_collection_items(1, "NX feature result bodies")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_core::text::NonBlankString>()), "NX feature result body slot")?;
+                let mut bodies = Vec::new();
+                bodies.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX feature result bodies", 0, 1))?;
+                bodies.push(local_id);
+                append_feature_result_topology(ctx, ir,
+                    result_topology_id(ctx, key, None)?, &id,
+                    bodies, FeatureResultGroupMembers::default(), native_ref)?;
             }
         }
     }
@@ -3974,6 +3957,76 @@ struct FeatureResultGroupMembers {
     faces: Vec<cadmpeg_core::text::NonBlankString>,
     edges: Vec<cadmpeg_core::text::NonBlankString>,
     vertices: Vec<cadmpeg_core::text::NonBlankString>,
+}
+
+fn result_topology_id(
+    ctx: &DecodeContext<'_>,
+    key: &str,
+    ordinal: Option<u32>,
+) -> Result<FeatureResultTopologyId, CodecError> {
+    const PREFIX: &str = "nx:feature-history:result-topology#";
+    let suffix_len = if ordinal.is_some() { 11 } else { 0 };
+    let key_len = key.len().checked_add(suffix_len)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX result topology key", 0, cadmpeg_core::decode::u64_from_index(key.len())))?;
+    let id_len = PREFIX.len().checked_add(key_len)
+        .ok_or_else(|| ctx.refuse_codec_limit("NX result topology identity", 0, cadmpeg_core::decode::u64_from_index(key_len)))?;
+    let _key_reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(key_len), "NX result topology key")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(key_len), "NX result topology key formatting")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_len), "NX result topology identity")?;
+    let mut owned_key = String::new();
+    owned_key.try_reserve(key_len).map_err(|_| ctx.refuse_codec_limit("allocate NX result topology key", 0, cadmpeg_core::decode::u64_from_index(key_len)))?;
+    owned_key.push_str(key);
+    if let Some(ordinal) = ordinal {
+        std::fmt::Write::write_fmt(&mut owned_key, format_args!("-{ordinal:010}"))
+            .map_err(|_| CodecError::malformed("NX result topology key formatting failed"))?;
+    }
+    IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
+        .try_id::<FeatureResultTopologyId>(&cadmpeg_ir::identity_component!("result-topology"), owned_key)
+        .ok_or_else(|| CodecError::malformed("NX operation label key is not identity key text"))
+}
+
+fn append_feature_result_topology(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    result_id: FeatureResultTopologyId,
+    output_of: &FeatureId,
+    bodies: Vec<cadmpeg_core::text::NonBlankString>,
+    members: FeatureResultGroupMembers,
+    native_ref: String,
+) -> Result<(), CodecError> {
+    let member_count = bodies.len()
+        .checked_add(members.faces.len())
+        .and_then(|count| count.checked_add(members.edges.len()))
+        .and_then(|count| count.checked_add(members.vertices.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX result topology members", 0, cadmpeg_core::decode::u64_from_index(bodies.len())))?;
+    let member_storage = member_count.checked_mul(std::mem::size_of::<cadmpeg_core::text::NonBlankString>())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX result topology member storage", 0, cadmpeg_core::decode::u64_from_index(member_count)))?;
+    let transient_storage = member_count.checked_mul(
+        std::mem::size_of::<cadmpeg_ir::features::SelectionMember>() + std::mem::size_of::<&cadmpeg_core::text::NonBlankString>() * 4,
+    ).ok_or_else(|| ctx.refuse_codec_limit("NX result topology temporary members", 0, cadmpeg_core::decode::u64_from_index(member_count)))?;
+    let retained_bytes = std::mem::size_of::<FeatureResultTopology>()
+        .checked_add(member_storage)
+        .and_then(|bytes| bytes.checked_add(output_of.as_str().len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX result topology record", 0, cadmpeg_core::decode::u64_from_index(member_storage)))?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(member_count.checked_mul(2)
+        .and_then(|count| count.checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX result topology collection", 0, cadmpeg_core::decode::u64_from_index(member_count)))?), "NX result topology collection")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(retained_bytes), "NX result topology record")?;
+    let _member_reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(transient_storage), "NX result topology temporary members")?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(member_count), "NX result topology member validation")?;
+    ir.model.feature_result_topologies.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("allocate NX result topology records", 0, 1))?;
+    let result = FeatureResultTopology::new(
+        result_id,
+        output_of.clone(),
+        bodies,
+        members.faces,
+        members.edges,
+        members.vertices,
+        Some(native_ref),
+    ).map_err(|error| CodecError::Malformed(error.to_string()))?;
+    ir.model.feature_result_topologies.push(result);
+    Ok(())
 }
 
 fn operation_body_write_result_group_members(
