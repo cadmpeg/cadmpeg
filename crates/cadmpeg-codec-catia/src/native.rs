@@ -8517,7 +8517,8 @@ fn zero_entity_support_runs(
                         typed_records.clear();
                         break;
                     };
-                    typed_records.push(record.id.clone());
+                    typed_records.push(crate::resource::copy_retained_str(ctx, &record.id,
+                        "catia_native_zero_typed_record_id")?);
                 }
                 let mut member_ids = Vec::new();
                 crate::resource::reserve_vec(
@@ -8577,7 +8578,9 @@ fn zero_entity_support_runs(
             });
         }
         output.push(CatiaZeroEntitySupportRun {
-            id: format!("catia:zero-entity:support-run#{index}"),
+            id: crate::resource::format_retained(ctx,
+                format_args!("catia:zero-entity:support-run#{index}"),
+                "catia_native_zero_support_run_id")?,
             carrier_byte_offset: run.carrier_pos as u64,
             carrier_record_ordinal: run.carrier_record_ordinal,
             face,
@@ -8587,8 +8590,12 @@ fn zero_entity_support_runs(
     Ok(output)
 }
 
-fn zero_entity_endpoint_pair_id(index: usize) -> String {
-    format!("catia:zero-entity:endpoint-pair-candidate#{index}")
+fn zero_entity_endpoint_pair_id(
+    ctx: &DecodeContext<'_>, index: usize,
+) -> Result<String, CodecError> {
+    crate::resource::format_retained(ctx,
+        format_args!("catia:zero-entity:endpoint-pair-candidate#{index}"),
+        "catia_native_zero_endpoint_pair_id")
 }
 
 fn zero_entity_endpoint_pair_candidates(
@@ -8603,14 +8610,18 @@ fn zero_entity_endpoint_pair_candidates(
         "catia_native_zero_endpoint_pairs",
     )?;
     for (index, candidate) in candidates.into_iter().enumerate() {
+        let [face_first, face_second] = candidate.face_record_ordinals.map(|ordinal|
+            crate::resource::format_retained(ctx,
+                format_args!("catia:zero-entity:record#{ordinal}"),
+                "catia_native_zero_face_record_id"));
+        let [support_first, support_second] = candidate.support_record_ordinals.map(|ordinal|
+            crate::resource::format_retained(ctx,
+                format_args!("catia:zero-entity:record#{ordinal}"),
+                "catia_native_zero_support_record_id"));
         output.push(CatiaZeroEntityEndpointPairCandidate {
-            id: zero_entity_endpoint_pair_id(index),
-            face_records: candidate
-                .face_record_ordinals
-                .map(|ordinal| format!("catia:zero-entity:record#{ordinal}")),
-            support_records: candidate
-                .support_record_ordinals
-                .map(|ordinal| format!("catia:zero-entity:record#{ordinal}")),
+            id: zero_entity_endpoint_pair_id(ctx, index)?,
+            face_records: [face_first?, face_second?],
+            support_records: [support_first?, support_second?],
             model_endpoints: candidate.model_endpoints,
             model_midpoint: candidate.model_midpoint,
         });
@@ -8639,12 +8650,14 @@ fn zero_entity_endpoint_locus_candidates(
         )?;
         for (pair, endpoint_index) in candidate.incident_endpoint_pair_endpoints {
             endpoints.push(CatiaZeroEntityEndpointPairEndpoint {
-                endpoint_pair: zero_entity_endpoint_pair_id(pair.ordinal()),
+                endpoint_pair: zero_entity_endpoint_pair_id(ctx, pair.ordinal())?,
                 endpoint_index,
             });
         }
         output.push(CatiaZeroEntityEndpointLocusCandidate {
-            id: format!("catia:zero-entity:endpoint-locus-candidate#{index}"),
+            id: crate::resource::format_retained(ctx,
+                format_args!("catia:zero-entity:endpoint-locus-candidate#{index}"),
+                "catia_native_zero_endpoint_locus_id")?,
             incident_endpoint_pair_endpoints: endpoints,
             representative_point: candidate.representative_point,
             maximum_deviation: candidate.maximum_deviation,
@@ -8670,7 +8683,9 @@ fn zero_entity_edge_strides(
     )?;
     for (index, record) in records.into_iter().enumerate() {
         output.push(CatiaZeroEntityEdgeStride {
-            id: format!("catia:zero-entity:edge-stride#{index}"),
+            id: crate::resource::format_retained(ctx,
+                format_args!("catia:zero-entity:edge-stride#{index}"),
+                "catia_native_zero_edge_stride_id")?,
             byte_offset: record.pos as u64,
             record_ordinal: record.record_ordinal,
             allocations: record.allocations,
@@ -8700,7 +8715,9 @@ fn zero_entity_oriented_use_pairs(
     )?;
     for (index, pair) in pairs.into_iter().enumerate() {
         output.push(CatiaZeroEntityOrientedUsePair {
-            id: format!("catia:zero-entity:oriented-use-pair#{index}"),
+            id: crate::resource::format_retained(ctx,
+                format_args!("catia:zero-entity:oriented-use-pair#{index}"),
+                "catia_native_zero_oriented_pair_id")?,
             header_byte_offset: pair.header_pos as u64,
             header_record_ordinal: pair.header_record_ordinal,
             base_columns: pair.base_columns(),
@@ -8738,7 +8755,9 @@ fn zero_entity_ownership_roots(
         let shell_record_ordinal = root.shell_record_ordinal();
         let body_record_ordinal = root.body_record_ordinal();
         output.push(CatiaZeroEntityOwnershipRoot {
-            id: format!("catia:zero-entity:ownership-root#{index}"),
+            id: crate::resource::format_retained(ctx,
+                format_args!("catia:zero-entity:ownership-root#{index}"),
+                "catia_native_zero_ownership_root_id")?,
             face_roster_byte_offset: root.face_roster_pos as u64,
             face_roster_record_ordinal: root.face_roster_record_ordinal,
             face_slots: root.face_slots,
@@ -8768,10 +8787,13 @@ fn zero_entity_vertex_incidences(
         "catia_native_zero_vertex_incidences",
     )?;
     for (index, record) in incidences.into_iter().enumerate() {
-        let vertex_record =
-            zero_entity_vertex_owner(records, record.record_ordinal).map(|owner| owner.id.clone());
+        let vertex_record = zero_entity_vertex_owner(records, record.record_ordinal)
+            .map(|owner| crate::resource::copy_retained_str(ctx, &owner.id,
+                "catia_native_zero_vertex_owner_id")).transpose()?;
         output.push(CatiaZeroEntityVertexIncidence {
-            id: format!("catia:zero-entity:vertex-incidence#{index}"),
+            id: crate::resource::format_retained(ctx,
+                format_args!("catia:zero-entity:vertex-incidence#{index}"),
+                "catia_native_zero_vertex_incidence_id")?,
             byte_offset: record.pos as u64,
             record_ordinal: record.record_ordinal,
             tag: record.tag(),
@@ -8798,7 +8820,9 @@ fn zero_entity_records(
     crate::resource::reserve_vec(ctx, &mut output, records.len(), "catia_native_zero_records")?;
     for record in records {
         output.push(CatiaZeroEntityRecord {
-            id: format!("catia:zero-entity:record#{}", record.record_ordinal),
+            id: crate::resource::format_retained(ctx,
+                format_args!("catia:zero-entity:record#{}", record.record_ordinal),
+                "catia_native_zero_record_id")?,
             byte_offset: record.pos as u64,
             logical_end: record.end as u64,
             tag: record.tag,
