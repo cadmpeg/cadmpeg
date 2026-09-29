@@ -30,7 +30,7 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     ops::Range,
 };
 
@@ -1254,15 +1254,12 @@ fn cosmetic_thread_diameter_child_tail(
 ) -> Option<std::ops::Range<usize>> {
     let source_id = feature.source_value()?;
     let diameter_id = source_id.checked_sub(1)?;
-    let names = lane
-        .names
-        .iter()
-        .map(|name| (name.id.as_str(), name))
-        .collect::<HashMap<_, _>>();
     let mut diameters = lane.scalars.iter().filter(|scalar| {
         scalar.object_id == diameter_id
-            && names
-                .get(scalar.name.as_str())
+            && lane.names
+                .iter()
+                .rev()
+                .find(|name| name.id == scalar.name)
                 .is_some_and(|name| name.value == "D2")
     });
     let diameter = diameters.next()?;
