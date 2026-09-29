@@ -40,10 +40,7 @@ impl StateFrames {
         ctx: &DecodeContext<'_>,
         frame: ReferenceStateFrame,
     ) -> Result<(), CodecError> {
-        ctx.charge_collection_items(1, "NX reference state frames")?;
-        self.0
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("NX reference state frames", 0, 1))?;
+        ctx.reserve_vec(&mut self.0, 1, "NX reference state frames")?;
         self.0.push(frame);
         Ok(())
     }

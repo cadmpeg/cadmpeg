@@ -515,14 +515,7 @@ fn apply_group_state_events(
         cadmpeg_core::decode::u64_from_index(bytes),
         "NX GROUP state events",
     )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "NX GROUP state events",
-    )?;
-    let mut events = Vec::new();
-    events
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP state events", 0, 1))?;
+    let mut events = ctx.collection_vec(count, "NX GROUP state events")?;
     for record in census.records {
         events.push((record.offset, Event::Record(record)));
     }
@@ -597,14 +590,7 @@ pub(super) fn parasolid_group_members(
             cadmpeg_core::decode::u64_from_index(bytes),
             "NX GROUP current records",
         )?;
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(count),
-            "NX GROUP current records",
-        )?;
-        let mut records = Vec::new();
-        records
-            .try_reserve_exact(count)
-            .map_err(|_| ctx.refuse_codec_limit("allocate NX GROUP current records", 0, 1))?;
+        let mut records = ctx.collection_vec(count, "NX GROUP current records")?;
         records.extend(current.into_values());
         group_members_from_records(ctx, stream_ordinal_u32, &records, &mut members)?;
     }

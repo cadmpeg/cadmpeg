@@ -1059,9 +1059,7 @@ impl Graph {
                     ctx.charge_collection_items(1, "NX topology kind indices")?;
                 }
                 let keys = self.by_kind.entry(key.0).or_default();
-                ctx.charge_collection_items(1, "NX topology kind entries")?;
-                keys.try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("NX topology kind entries", 0, 1))?;
+                ctx.reserve_vec(keys, 1, "NX topology kind entries")?;
                 keys.push(key);
             }
         }
@@ -1144,9 +1142,7 @@ impl Graph {
                 ctx.charge_collection_items(1, "NX topology kind indices")?;
             }
             let keys = graph.by_kind.entry(key.0).or_default();
-            ctx.charge_collection_items(1, "NX topology kind entries")?;
-            keys.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("NX topology kind entries", 0, 1))?;
+            ctx.reserve_vec(keys, 1, "NX topology kind entries")?;
             keys.push(key);
         }
         Ok((graph, node_reservation))

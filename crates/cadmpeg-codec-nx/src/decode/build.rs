@@ -141,14 +141,7 @@ fn ordered_fixed_candidates<'a, T>(
             candidates.insert(node.pos, (value, node));
         }
     }
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(candidates.len()),
-        "nx ordered analytic candidates",
-    )?;
-    let mut ordered = Vec::new();
-    ordered
-        .try_reserve_exact(candidates.len())
-        .map_err(|_| ctx.refuse_codec_limit("nx ordered analytic candidates", 0, 1))?;
+    let mut ordered = ctx.collection_vec(candidates.len(), "nx ordered analytic candidates")?;
     ordered.extend(candidates.into_values());
     Ok(ordered)
 }
@@ -351,10 +344,7 @@ pub(super) fn try_decode_geometry(
             refusals: nurbs_refusals,
         } = parsed.parse_nurbs(si);
         for refusal in nurbs_refusals {
-            ctx.charge_collection_items(1, "nx carrier refusal losses")?;
-            carrier_refusals
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx carrier refusal losses", 0, 1))?;
+            ctx.reserve_vec(&mut carrier_refusals, 1, "nx carrier refusal losses")?;
             super::charge_loss_code(ctx, NxLossCode::CarrierLanesUnpaired)?;
             carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(ctx.format_retained(format_args!(
                     "parasolid#{si} {} at byte {} states no carrier: {}",
@@ -368,10 +358,7 @@ pub(super) fn try_decode_geometry(
         let source_stream = StreamHandle::new(
             cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?,
         );
-        ctx.charge_collection_items(1, "nx completion streams")?;
-        completion_streams
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx completion streams", 0, 1))?;
+        ctx.reserve_vec(&mut completion_streams, 1, "nx completion streams")?;
         completion_streams.push((si, source_stream.clone()));
         let graph = &view.graph;
         let mut points_by_xmt = BTreeMap::new();
@@ -407,21 +394,13 @@ pub(super) fn try_decode_geometry(
                 "POINT",
             )?;
             super::annotations::derived(ctx, &mut annotations, pid.as_str(), "position")?;
-            ctx.charge_collection_items(1, "nx geometry points")?;
-            ir.model
-                .points
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx geometry points", 0, 1))?;
+            ctx.reserve_vec(&mut ir.model.points, 1, "nx geometry points")?;
             ir.model.points.push(Point::new(
                 pid.try_clone_for_decode(ctx, "nx geometry point identity")?,
                 position,
                 None,
             ));
-            ctx.charge_collection_items(1, "nx geometry point vertices")?;
-            ir.model
-                .vertices
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx geometry point vertices", 0, 1))?;
+            ctx.reserve_vec(&mut ir.model.vertices, 1, "nx geometry point vertices")?;
             ir.model.vertices.push(Vertex {
                 id: vid.try_clone_for_decode(ctx, "nx point vertex identity")?,
                 point: pid.try_clone_for_decode(ctx, "nx vertex point identity")?,
@@ -466,11 +445,7 @@ pub(super) fn try_decode_geometry(
                 })?),
             )?;
             super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
-            ctx.charge_collection_items(1, "nx geometry surfaces")?;
-            ir.model
-                .surfaces
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx geometry surfaces", 0, 1))?;
+            ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx geometry surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: id.try_clone_for_decode(ctx, "nx geometry surface identity")?,
                 geometry,
@@ -492,11 +467,7 @@ pub(super) fn try_decode_geometry(
                 "B_SPLINE_SURFACE",
             )?;
             super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
-            ctx.charge_collection_items(1, "nx geometry surfaces")?;
-            ir.model
-                .surfaces
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx geometry surfaces", 0, 1))?;
+            ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx geometry surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: id.try_clone_for_decode(ctx, "nx NURBS surface identity")?,
                 geometry: surf.geometry,
@@ -547,11 +518,7 @@ pub(super) fn try_decode_geometry(
                     surface_id.as_str(),
                     "geometry",
                 )?;
-                ctx.charge_collection_items(1, "nx offset surfaces")?;
-                ir.model
-                    .surfaces
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx offset surfaces", 0, 1))?;
+                ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx offset surfaces")?;
                 ir.model.surfaces.push(Surface {
                     id: surface_id.try_clone_for_decode(ctx, "nx offset surface identity")?,
                     geometry: SurfaceGeometry::Procedural {
@@ -609,11 +576,7 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralSurface::new(procedural_id, definition, None);
 
-            ctx.charge_collection_items(1, "nx offset constructions")?;
-            ir.model
-                .procedural_surfaces
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx offset constructions", 0, 1))?;
+            ctx.reserve_vec(&mut ir.model.procedural_surfaces, 1, "nx offset constructions")?;
             let _attached = ir.model.add_procedural_surface(
                 &surface_id.try_clone_for_decode(ctx, "nx offset construction owner")?,
                 procedural,
@@ -638,11 +601,7 @@ pub(super) fn try_decode_geometry(
                 "BLEND_SURF",
             )?;
             super::annotations::derived(ctx, &mut annotations, surface_id.as_str(), "geometry")?;
-            ctx.charge_collection_items(1, "nx blend surfaces")?;
-            ir.model
-                .surfaces
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx blend surfaces", 0, 1))?;
+            ctx.reserve_vec(&mut ir.model.surfaces, 1, "nx blend surfaces")?;
             ir.model.surfaces.push(Surface {
                 id: surface_id.try_clone_for_decode(ctx, "nx blend surface identity")?,
                 geometry: SurfaceGeometry::Procedural {
@@ -677,11 +636,7 @@ pub(super) fn try_decode_geometry(
                 "definition",
             )?;
             let procedural_index = ir.model.procedural_surfaces.len();
-            ctx.charge_collection_items(1, "nx blend constructions")?;
-            ir.model
-                .procedural_surfaces
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx blend constructions", 0, 1))?;
+            ctx.reserve_vec(&mut ir.model.procedural_surfaces, 1, "nx blend constructions")?;
             let attached = ir.model.add_procedural_surface(
                 &surface_id.try_clone_for_decode(ctx, "nx blend construction owner")?,
                 ProceduralSurface::new(
@@ -704,20 +659,14 @@ pub(super) fn try_decode_geometry(
                 ),
             );
             if attached.is_ok() {
-                ctx.charge_collection_items(1, "nx pending blend supports")?;
-                pending_blend_supports
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx pending blend supports", 0, 1))?;
+                ctx.reserve_vec(&mut pending_blend_supports, 1, "nx pending blend supports")?;
                 pending_blend_supports.push((
                     procedural_index,
                     blend.state.support_xmts(),
                     blend.state.offsets(),
                 ));
                 if blend.state.spine_xmt() > 1 {
-                    ctx.charge_collection_items(1, "nx pending blend spines")?;
-                    pending_blend_spines
-                        .try_reserve(1)
-                        .map_err(|_| ctx.refuse_codec_limit("nx pending blend spines", 0, 1))?;
+                    ctx.reserve_vec(&mut pending_blend_spines, 1, "nx pending blend spines")?;
                     pending_blend_spines.push((procedural_index, blend.state.spine_xmt()));
                 }
             }
@@ -783,11 +732,7 @@ pub(super) fn try_decode_geometry(
                 })?),
             )?;
             super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
-            ctx.charge_collection_items(1, "nx geometry curves")?;
-            ir.model
-                .curves
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx geometry curves", 0, 1))?;
+            ctx.reserve_vec(&mut ir.model.curves, 1, "nx geometry curves")?;
             ir.model.curves.push(Curve {
                 id: id.try_clone_for_decode(ctx, "nx geometry curve identity")?,
                 geometry,
@@ -809,11 +754,7 @@ pub(super) fn try_decode_geometry(
                 "B_SPLINE_CURVE",
             )?;
             super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
-            ctx.charge_collection_items(1, "nx NURBS curves")?;
-            ir.model
-                .curves
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx NURBS curves", 0, 1))?;
+            ctx.reserve_vec(&mut ir.model.curves, 1, "nx NURBS curves")?;
             ir.model.curves.push(Curve {
                 id: id.try_clone_for_decode(ctx, "nx NURBS curve identity")?,
                 geometry: crv.geometry,
@@ -837,11 +778,7 @@ pub(super) fn try_decode_geometry(
                 "B_CURVE_2D",
             )?;
             super::annotations::derived(ctx, &mut annotations, id.as_str(), "geometry")?;
-            ctx.charge_collection_items(1, "nx NURBS pcurves")?;
-            ir.model
-                .pcurves
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx NURBS pcurves", 0, 1))?;
+            ctx.reserve_vec(&mut ir.model.pcurves, 1, "nx NURBS pcurves")?;
             ir.model.pcurves.push(Pcurve {
                 id: id.try_clone_for_decode(ctx, "nx NURBS pcurve identity")?,
                 geometry: pcurve.geometry,
@@ -977,10 +914,7 @@ pub(super) fn try_decode_geometry(
                         .map(|lane| lane.clone_charged(ctx))
                         .transpose()
                 });
-                ctx.charge_collection_items(1, "nx pending EXT11 support UV")?;
-                pending_ext11_support_uv
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx pending EXT11 support UV", 0, 1))?;
+                ctx.reserve_vec(&mut pending_ext11_support_uv, 1, "nx pending EXT11 support UV")?;
                 pending_ext11_support_uv.push((
                     procedural_id.try_clone_for_decode(ctx, "nx pending EXT11 construction")?,
                     charted.samples.clone_charged(ctx)?,
@@ -1009,11 +943,7 @@ pub(super) fn try_decode_geometry(
                     Exactness::Unknown,
                 )?;
             }
-            ctx.charge_collection_items(1, "nx intersection curves")?;
-            ir.model
-                .curves
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx intersection curves", 0, 1))?;
+            ctx.reserve_vec(&mut ir.model.curves, 1, "nx intersection curves")?;
             ir.model.curves.push(Curve {
                 id: curve_id.try_clone_for_decode(ctx, "nx intersection curve identity")?,
                 geometry: if let Some(charted) = charted {
@@ -1143,11 +1073,7 @@ pub(super) fn try_decode_geometry(
             }
             let procedural = ProceduralCurve::new(procedural_id, definition);
 
-            ctx.charge_collection_items(1, "nx intersection constructions")?;
-            ir.model
-                .procedural_curves
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx intersection constructions", 0, 1))?;
+            ctx.reserve_vec(&mut ir.model.procedural_curves, 1, "nx intersection constructions")?;
             let _attached = ir.model.add_procedural_curve(
                 &curve_id.try_clone_for_decode(ctx, "nx intersection owner identity")?,
                 procedural,
@@ -1480,20 +1406,7 @@ pub(super) fn try_decode_geometry(
     }
 
     intersection_index.complete_from_model(ctx, &mut ir)?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(completion_streams.len()),
-        "nx completion sources",
-    )?;
-    let mut completion_sources = Vec::new();
-    completion_sources
-        .try_reserve_exact(completion_streams.len())
-        .map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx completion sources",
-                0,
-                cadmpeg_core::decode::u64_from_index(completion_streams.len()),
-            )
-        })?;
+    let mut completion_sources = ctx.collection_vec(completion_streams.len(), "nx completion sources")?;
     for (si, source_stream) in &completion_streams {
         completion_sources.push(IntersectionCompletionSource {
             scope: IdScope::stream_charged(ctx, *si)?,
@@ -1620,17 +1533,7 @@ pub(super) fn try_decode_geometry(
         notes,
     )?;
     for losses in [carrier_refusals, topology_losses, native_losses] {
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(losses.len()),
-            "nx geometry report losses",
-        )?;
-        report.losses.try_reserve(losses.len()).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "nx geometry report losses",
-                0,
-                cadmpeg_core::decode::u64_from_index(losses.len()),
-            )
-        })?;
+        ctx.reserve_vec(&mut report.losses, losses.len(), "nx geometry report losses")?;
         report.losses.extend(losses);
     }
     report_untransferred_streams(
@@ -1960,10 +1863,7 @@ pub(super) fn topology_body_node_ids(
                     .shell
                     .is_some_and(|target| shells.contains(&u32::from(target)))
             }) {
-                ctx.charge_collection_items(1, "nx topology body faces")?;
-                faces
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx topology body faces", 0, 1))?;
+                ctx.reserve_vec(&mut faces, 1, "nx topology body faces")?;
                 faces.push(face);
                 ctx.charge_collection_items(1, "nx topology body face nodes")?;
                 face_xmts.insert(face.xmt);
@@ -1987,9 +1887,7 @@ pub(super) fn topology_body_node_ids(
                     .loop_xmt
                     .is_some_and(|target| loops.contains(&u32::from(target)))
             }) {
-                ctx.charge_collection_items(1, "nx topology body fins")?;
-                fins.try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx topology body fins", 0, 1))?;
+                ctx.reserve_vec(&mut fins, 1, "nx topology body fins")?;
                 fins.push(fin);
             }
         }
@@ -2486,18 +2384,7 @@ fn finalize_point_topology(
         cadmpeg_core::decode::u64_from_index(point_count),
         "nx point topology free vertices",
     )?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(point_count),
-        "nx point topology vertices",
-    )?;
-    let mut free_vertices = Vec::new();
-    free_vertices.try_reserve_exact(point_count).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "nx point topology free vertices",
-            0,
-            cadmpeg_core::decode::u64_from_index(point_count),
-        )
-    })?;
+    let mut free_vertices = ctx.collection_vec(point_count, "nx point topology vertices")?;
     ir.model.vertices.try_reserve(point_count).map_err(|_| {
         ctx.refuse_codec_limit(
             "nx point topology vertices",
@@ -2524,11 +2411,7 @@ fn finalize_point_topology(
         });
         free_vertices.push(vertex_id);
     }
-    ctx.charge_collection_items(1, "nx point topology shells")?;
-    ir.model
-        .shells
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx point topology shells", 0, 1))?;
+    ctx.reserve_vec(&mut ir.model.shells, 1, "nx point topology shells")?;
     ir.model.shells.push(
         match Shell::new(
             shell_id.try_clone_for_decode(ctx, "nx point shell identity copy")?,
@@ -2543,32 +2426,18 @@ fn finalize_point_topology(
             }
         },
     );
-    ctx.charge_collection_items(1, "nx point topology regions")?;
-    ir.model
-        .regions
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx point topology regions", 0, 1))?;
+    ctx.reserve_vec(&mut ir.model.regions, 1, "nx point topology regions")?;
     let mut region_shells = Vec::new();
-    ctx.charge_collection_items(1, "nx point region shells")?;
-    region_shells
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx point region shells", 0, 1))?;
+    ctx.reserve_vec(&mut region_shells, 1, "nx point region shells")?;
     region_shells.push(shell_id);
     ir.model.regions.push(Region {
         id: region_id.try_clone_for_decode(ctx, "nx point region identity copy")?,
         body: body_id.try_clone_for_decode(ctx, "nx point region body identity")?,
         shells: region_shells,
     });
-    ctx.charge_collection_items(1, "nx point topology bodies")?;
-    ir.model
-        .bodies
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx point topology bodies", 0, 1))?;
+    ctx.reserve_vec(&mut ir.model.bodies, 1, "nx point topology bodies")?;
     let mut body_regions = Vec::new();
-    ctx.charge_collection_items(1, "nx point body regions")?;
-    body_regions
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("nx point body regions", 0, 1))?;
+    ctx.reserve_vec(&mut body_regions, 1, "nx point body regions")?;
     body_regions.push(region_id);
     ir.model.bodies.push(Body {
         id: body_id,

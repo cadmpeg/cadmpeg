@@ -484,10 +484,7 @@ pub(crate) fn active_feature_closure_for_decode(
     }
     let mut pending = Vec::new();
     for &resolved in active_features.values() {
-        ctx.charge_collection_items(1, "NX pending active features")?;
-        pending
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("NX pending active features", 0, 1))?;
+        ctx.reserve_vec(&mut pending, 1, "NX pending active features")?;
         pending.push(resolved);
     }
     while let Some((_, feature)) = pending.pop() {
@@ -519,10 +516,7 @@ pub(crate) fn active_feature_closure_for_decode(
             if !active_features.contains_key(dependency_id) {
                 ctx.charge_collection_items(1, "NX active feature dependencies")?;
                 active_features.insert(dependency_id, (index, dependency_feature));
-                ctx.charge_collection_items(1, "NX pending active features")?;
-                pending
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("NX pending active features", 0, 1))?;
+                ctx.reserve_vec(&mut pending, 1, "NX pending active features")?;
                 pending.push((index, dependency_feature));
             }
         }

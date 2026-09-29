@@ -274,14 +274,7 @@ fn build_metadata_ir(
         .iter()
         .filter(|stream| stream.kind().is_parasolid())
         .count();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(unknown_count),
-        "nx metadata unknown streams",
-    )?;
-    let mut unknowns = Vec::new();
-    unknowns
-        .try_reserve_exact(unknown_count)
-        .map_err(|_| ctx.refuse_codec_limit("nx metadata unknown streams", 0, 1))?;
+    let mut unknowns = ctx.collection_vec(unknown_count, "nx metadata unknown streams")?;
     let mut ir = CadIr::decoded(source_meta(ctx, scan, dialects)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();

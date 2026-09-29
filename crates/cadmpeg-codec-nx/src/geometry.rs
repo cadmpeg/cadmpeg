@@ -137,9 +137,7 @@ fn analytic_records<T>(
         }
         if let Some((record, end)) = select_analytic_candidate(stream, candidates) {
             if let Some(record) = project(record) {
-                ctx.charge_collection_items(1, "nx analytic records")?;
-                out.try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("nx analytic records", 0, 1))?;
+                ctx.reserve_vec(&mut out, 1, "nx analytic records")?;
                 out.push(record);
             }
             p = end;

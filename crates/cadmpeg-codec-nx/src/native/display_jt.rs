@@ -5655,16 +5655,10 @@ fn resolve_display_jt_node_paths(
             }
         }
         if let Some(instance_id) = lookup.instance_ids.get(&object_id) {
-            ctx.charge_collection_items(1, "nx JT instance path nodes")?;
-            path.instance_path
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("nx JT instance path nodes", 0, 1))?;
+            ctx.reserve_vec(&mut path.instance_path, 1, "nx JT instance path nodes")?;
             path.instance_path.push(ctx.join_retained(&[instance_id], "", "nx JT instance path identity")?);
         }
-        ctx.charge_collection_items(1, "nx JT node path nodes")?;
-        path.node_path
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("nx JT node path nodes", 0, 1))?;
+        ctx.reserve_vec(&mut path.node_path, 1, "nx JT node path nodes")?;
         path.node_path.push(object_id);
         ctx.reserve_retained_vec(&mut results, 1, "nx JT resolved paths")?;
         results.push(path);
