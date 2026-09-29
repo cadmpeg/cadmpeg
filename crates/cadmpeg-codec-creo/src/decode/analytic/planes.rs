@@ -573,25 +573,25 @@ fn stored_parameter_normal_candidate(
     })
 }
 
-fn stored_parameter_origin_sign_candidates(base: PlaneCandidate) -> Vec<PlaneCandidate> {
-    let nonzero_axes = base
-        .equation
-        .origin
-        .into_iter()
-        .enumerate()
-        .filter_map(|(axis, value)| {
-            (value.abs() > EPS_STORED_FRAME_NONZERO
-                && base.equation.normal[axis].abs() > EPS_STORED_FRAME_NONZERO)
-                .then_some(axis)
-        })
-        .collect::<Vec<_>>();
-    if nonzero_axes.is_empty() {
-        return vec![base];
+fn stored_parameter_origin_sign_candidates(base: PlaneCandidate) -> ([PlaneCandidate; 8], usize) {
+    let mut nonzero_axes = [0; 3];
+    let mut axis_count = 0;
+    for (axis, value) in base.equation.origin.into_iter().enumerate() {
+        if value.abs() > EPS_STORED_FRAME_NONZERO
+            && base.equation.normal[axis].abs() > EPS_STORED_FRAME_NONZERO
+        {
+            nonzero_axes[axis_count] = axis;
+            axis_count += 1;
+        }
     }
-    let mut candidates = Vec::with_capacity(1usize << nonzero_axes.len());
-    for mask in 0..(1usize << nonzero_axes.len()) {
+    let mut candidates = [base; 8];
+    if axis_count == 0 {
+        return (candidates, 1);
+    }
+    let mut count = 0;
+    for mask in 0..(1usize << axis_count) {
         let mut candidate = base;
-        for (bit, axis) in nonzero_axes.iter().copied().enumerate() {
+        for (bit, axis) in nonzero_axes[..axis_count].iter().copied().enumerate() {
             if mask & (1usize << bit) == 0 {
                 continue;
             }
@@ -606,10 +606,11 @@ fn stored_parameter_origin_sign_candidates(base: PlaneCandidate) -> Vec<PlaneCan
             .iter()
             .all(|value| value.is_finite())
         {
-            candidates.push(candidate);
+            candidates[count] = candidate;
+            count += 1;
         }
     }
-    candidates
+    (candidates, count)
 }
 
 fn stored_parameter_normal_candidates_with_origin_branches(
@@ -824,17 +825,15 @@ fn fc05_cylinder_branch_witnesses(
         .collect::<BTreeMap<_, _>>();
 
     for circle in &scan.curves.fc05_circles {
-        let topologies = scan
+        let Some(topology) = scan
             .curves
             .topology_rows
             .iter()
             .find(|row| row.id == circle.curve_id)
-            .into_iter()
-            .collect::<Vec<_>>();
-        let [topology] = topologies.as_slice() else {
+        else {
             continue;
         };
-        let planes = topology
+        let mut planes = topology
             .bounded_face_ids()
             .filter(|face| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
@@ -843,16 +842,15 @@ fn fc05_cylinder_branch_witnesses(
             .filter_map(|face| {
                 crate::surface::unique_outline_plane(&scan.planes.outlines, face)
                     .map(|plane| (face, plane))
-            })
-            .collect::<Vec<_>>();
-        let cylinders = topology
+            });
+        let mut cylinders = topology
             .bounded_face_ids()
             .filter(|face| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
-            })
-            .collect::<Vec<_>>();
-        let ([(_, cap)], [cylinder_id]) = (planes.as_slice(), cylinders.as_slice()) else {
+            });
+        let (Some((_, cap)), None, Some(cylinder_id), None) =
+            (planes.next(), planes.next(), cylinders.next(), cylinders.next()) else {
             continue;
         };
         let Some(axis_index) = Axis::ALL
@@ -878,7 +876,7 @@ fn fc05_cylinder_branch_witnesses(
             reference,
             axis_sign,
         );
-        if cylinder_frames.contains_key(cylinder_id) {
+        if cylinder_frames.contains_key(&cylinder_id) {
             continue;
         }
         let legacy = super::equations::CylinderEquation {
@@ -887,8 +885,8 @@ fn fc05_cylinder_branch_witnesses(
             ref_direction,
             radius: circle.radius_mm,
         };
-        let witness = fc05_cylinder_model_witness(scan, *cylinder_id, legacy);
-        cylinder_frames.insert(*cylinder_id, witness);
+        let witness = fc05_cylinder_model_witness(scan, cylinder_id, legacy);
+        cylinder_frames.insert(cylinder_id, witness);
     }
 
     let mut witnesses = BTreeMap::<u32, Vec<super::equations::CylinderEquation>>::new();
@@ -1449,8 +1447,8 @@ fn select_round_edge_origin_branches(
             continue;
         }
         let envelopes = round_edge_envelopes_for_plane(scan, frame.surface_id);
-        let options = stored_parameter_origin_sign_candidates(base);
-        let Some(selected) = unique_round_edge_origin_candidate(&options, &envelopes) else {
+        let (options, count) = stored_parameter_origin_sign_candidates(base);
+        let Some(selected) = unique_round_edge_origin_candidate(&options[..count], &envelopes) else {
             continue;
         };
         if let Some(existing) = candidates.get_mut(&frame.surface_id) {
