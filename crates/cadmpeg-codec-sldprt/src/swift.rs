@@ -191,22 +191,28 @@ fn unique_id_for_attribute<'a, T: 'a>(
     prefix: &str,
     as_str: impl Fn(&T) -> &str,
 ) -> Option<&'a T> {
-    let ids = ids
-        .into_iter()
-        .filter(|id| {
-            as_str(id) == prefix
-                || as_str(id)
-                    .strip_prefix(prefix)
-                    .is_some_and(|suffix| suffix.starts_with('@'))
-        })
-        .map(|id| (as_str(id), id))
-        .collect::<BTreeMap<_, _>>();
-    if let Some(id) = ids.get(prefix) {
-        return Some(*id);
+    let mut exact = None;
+    let mut alternate = None;
+    let mut ambiguous = false;
+    for id in ids {
+        let name = as_str(id);
+        if name == prefix {
+            exact = Some(id);
+        } else if name
+            .strip_prefix(prefix)
+            .is_some_and(|suffix| suffix.starts_with('@'))
+        {
+            match alternate {
+                Some((first_name, _)) if first_name != name => ambiguous = true,
+                _ => alternate = Some((name, id)),
+            }
+        }
     }
-    let mut ids = ids.into_values();
-    let first = ids.next()?;
-    ids.next().is_none().then_some(first)
+    if ambiguous {
+        exact
+    } else {
+        exact.or_else(|| alternate.map(|(_, id)| id))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
