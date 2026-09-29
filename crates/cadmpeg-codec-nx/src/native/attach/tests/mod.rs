@@ -32,7 +32,11 @@ fn simple_hole_diameters(
         .enumerate()
         .map(|(position, template)| (template.operation_label.as_str(), position))
         .collect::<BTreeMap<_, _>>();
-    let Some(operations) = simple_hole_operations(templates, groups, &operation_positions) else {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Some(operations) = simple_hole_operations(&ctx, templates, groups, &operation_positions)
+        .expect("simple hole operation resource budget") else {
         return BTreeMap::new();
     };
     hole_diameters_for_operations(ir, &operations, outputs)

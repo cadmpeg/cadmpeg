@@ -237,7 +237,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let operation_positions = BTreeMap::from([("blind", 0usize)]);
     assert_eq!(
-        blind_hole_operations(std::slice::from_ref(&template), &operation_positions),
+        blind_hole_operations(&ctx, std::slice::from_ref(&template), &operation_positions).unwrap(),
         Some(vec![operation.clone()]),
     );
     let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
@@ -401,9 +401,10 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
     };
     assert_eq!(
         counterbore_operations(
+            &default_ctx,
             std::slice::from_ref(&template),
             &BTreeMap::from([("counterbore", 0usize)]),
-        ),
+        ).unwrap(),
         Some(vec![operation.clone()]),
     );
     let competing_template = FeatureSimpleHoleTemplate {
@@ -411,9 +412,11 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
         ..template.clone()
     };
     assert!(counterbore_operations(
+        &default_ctx,
         &[template.clone(), competing_template],
         &BTreeMap::from([("counterbore", 0usize)]),
     )
+    .unwrap()
     .is_none());
     let mut model = Model::default();
     let mut add_circle_loop =
