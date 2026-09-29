@@ -6,7 +6,7 @@ use super::shared_frames::rigid_transform_at;
 use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::text::lp_utf16_bounded_scoped;
 use crate::design::decode::text::{fixed_guid_end, fixed_utf16_ascii_eq};
-use crate::bytes::lp_utf16_bounded;
+use crate::design::decode::text::{fixed_relaxed_guid_text, relaxed_guid_end, lp_utf16_bounded_charged};
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::native_stream;
@@ -279,11 +279,10 @@ pub(super) fn exact_component_insert_construction(
             .filter(|at| **at < relation_at)
         {
             for at in carrier_at + 11..relation_at {
-                let Some((role, after_role)) = lp_utf16_bounded(bytes, at, 36..=36) else {
+                let Some((role, after_role)) = fixed_relaxed_guid_text(bytes, at).map(|(guid, end)| (String::from(guid), end)) else {
                     continue;
                 };
-                if !crate::bytes::is_guid_relaxed(&role)
-                    || bytes.get(after_role..after_role + 12)
+                if bytes.get(after_role..after_role + 12)
                         != Some(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0])
                 {
                     continue;
@@ -376,16 +375,20 @@ pub(super) fn exact_component_insert_construction(
         } else {
             let mut placements = Vec::new();
             for at in carrier_at + 11..relation_at {
-                let Some((role, after_role)) = lp_utf16_bounded(bytes, at, 36..=38) else {
+                let Some(after_role) = relaxed_guid_end(bytes, at) else {
                     continue;
                 };
-                if !crate::bytes::is_guid_relaxed(&role)
-                    || bytes.get(after_role..after_role + 2) != Some(&[0, 0])
+                if bytes.get(after_role..after_role + 2) != Some(&[0, 0])
                 {
                     continue;
                 }
                 let transform_at = after_role.checked_add(2)?;
                 if rigid_transform_at(bytes, transform_at) == Some(transform) {
+                    let role = match lp_utf16_bounded_charged(ctx, bytes, at, 36..=38) {
+                        Ok(Some((role, _))) => role,
+                        Ok(None) => return None,
+                        Err(error) => return Some(Err(error)),
+                    };
                     if let Err(error) = ctx.charge_collection_items(1, "f3d component insert placements") {
                         return Some(Err(error));
                     }
@@ -880,21 +883,18 @@ fn legacy_component_insert_placements(
     }
     let mut placements = Vec::new();
     for first_at in carrier_at + 11..relation_at {
-        let Some((first_guid, role_at)) = lp_utf16_bounded(bytes, first_at, 36..=36) else {
+        let Some(role_at) = fixed_guid_end(bytes, first_at) else {
             continue;
         };
-        let Some((role, after_role)) = lp_utf16_bounded(bytes, role_at, 36..=36) else {
+        let Some((role, after_role)) = fixed_relaxed_guid_text(bytes, role_at).map(|(guid, end)| (String::from(guid), end)) else {
             continue;
         };
-        if !crate::bytes::is_guid_relaxed(&first_guid)
-            || !crate::bytes::is_guid_relaxed(&role)
-            || bytes.get(after_role..after_role + 14)
+        if bytes.get(after_role..after_role + 14)
                 != Some(&[1, 2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0])
         {
             continue;
         }
-        let Some((asset_guid, after_asset_guid)) =
-            lp_utf16_bounded(bytes, after_role + 14, 36..=36)
+        let Some(after_asset_guid) = fixed_guid_end(bytes, after_role + 14)
         else {
             continue;
         };
@@ -903,8 +903,7 @@ fn legacy_component_insert_placements(
         else {
             continue;
         };
-        if !crate::bytes::is_guid_relaxed(&asset_guid)
-            || !asset_identity
+        if !asset_identity
                 .split_once('_')
                 .is_some_and(|(guid, locator)| {
                     crate::bytes::is_guid_relaxed(guid) && locator.starts_with("urn:")
