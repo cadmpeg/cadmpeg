@@ -591,15 +591,15 @@ pub(in crate::decode) fn counterbore_directed_placement(
         return Ok(None);
     };
     let boundary = |ids: &[u32], radius: f64| {
-        counterbore_source_boundary_circle(scan, ir, source_carriers, feature_id, ids, radius)
+        counterbore_source_boundary_circle(ctx, scan, ir, source_carriers, feature_id, ids, radius)
     };
     let bore_radius = 0.5 * bore_diameter;
     let counterbore_radius = 0.5 * counterbore_diameter;
     let boundaries = (
-        boundary(first, counterbore_radius),
-        boundary(first, bore_radius),
-        boundary(second, counterbore_radius),
-        boundary(second, bore_radius),
+        boundary(first, counterbore_radius)?,
+        boundary(first, bore_radius)?,
+        boundary(second, counterbore_radius)?,
+        boundary(second, bore_radius)?,
     );
     let boundary_placement = match boundaries {
         (Some(counterbore), None, None, Some(bore))
@@ -867,17 +867,23 @@ pub(in crate::decode) fn counterbore_directed_span(
 }
 
 fn counterbore_source_boundary_circle(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
     cylinder_ids: &[u32],
     radius: f64,
-) -> Option<(u32, Point3, [f64; 3])> {
-    let local_planes = placed_planes(scan);
+) -> Result<Option<(u32, Point3, [f64; 3])>, CodecError> {
+    let local_planes = placed_planes(ctx, scan)?;
+    let unique_edges = crate::identity::uniquely_identified_rows_checked(
+        ctx,
+        &scan.curves.topology_rows,
+        |row| row.id,
+    )?;
+    Ok((|| {
     let boundary_for = |cylinder_id| {
-        exactly_one(crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
-            .into_iter()
+        exactly_one(unique_edges.iter().copied()
             .filter_map(|edge| {
                 (edge.feature_id == feature_id && edge.type_byte == 0).then_some(())?;
                 let cylinder = std::num::NonZeroU32::new(cylinder_id)?;
@@ -956,6 +962,7 @@ fn counterbore_source_boundary_circle(
         }
     }
     Some(first)
+    })())
 }
 
 pub(in crate::decode) fn counterbore_source_patch_geometries(

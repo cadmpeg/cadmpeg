@@ -8,6 +8,22 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
+fn service_boundary_circle(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &cadmpeg_ir::document::CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+    cylinder_ids: &[u32],
+    radius: f64,
+) -> Option<(u32, Point3, [f64; 3])> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::counterbore_source_boundary_circle(
+            ctx, scan, ir, source_carriers, feature_id, cylinder_ids, radius,
+        )
+    })
+    .expect("service boundary circle admitted")
+}
+
 fn service_source_patch_geometries(
     sources: &[Vec<u32>],
     existing: &BTreeMap<u32, SurfaceGeometry>,
@@ -300,7 +316,7 @@ fn boundary_circle_uses_native_plane_carrier_when_model_plane_is_absent() {
     ir.model.curves.push(boundary_circle());
 
     assert_eq!(
-        super::counterbore_source_boundary_circle(
+        service_boundary_circle(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -321,7 +337,7 @@ fn boundary_circle_uses_model_plane_carrier_when_native_plane_is_absent() {
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.0]));
 
     assert_eq!(
-        super::counterbore_source_boundary_circle(
+        service_boundary_circle(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -341,7 +357,7 @@ fn boundary_circle_rejects_conflicting_model_plane_carrier() {
     ir.model.surfaces.push(model_plane([0.0, 0.0, 0.5]));
 
     assert_eq!(
-        super::counterbore_source_boundary_circle(
+        service_boundary_circle(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -362,7 +378,7 @@ fn boundary_circle_rejects_duplicate_model_curves() {
         .extend([boundary_circle(), boundary_circle()]);
 
     assert_eq!(
-        super::counterbore_source_boundary_circle(
+        service_boundary_circle(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -383,7 +399,7 @@ fn boundary_circle_rejects_duplicate_surface_rows() {
     ir.model.curves.push(boundary_circle());
 
     assert_eq!(
-        super::counterbore_source_boundary_circle(
+        service_boundary_circle(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),

@@ -464,7 +464,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
         Plane,
         Carrier,
     }
-    let local_planes = placed_planes(scan);
+    let local_planes = placed_planes(ctx, scan)?;
     let mut frames = Vec::new();
     let mut planes = Vec::new();
     let mut saw_row = false;
@@ -711,7 +711,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     }
     let mut carriers = Vec::new();
     let mut planes = Vec::new();
-    let local_planes = placed_planes(scan);
+    let local_planes = placed_planes(ctx, scan)?;
     let mut saw_row = false;
     for row in scan.surfaces.rows.iter().filter(|row| row.feature_id == feature_id) {
         saw_row = true;
@@ -963,7 +963,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         return Ok(None);
     }
 
-    let local_planes = placed_planes(scan);
+    let local_planes = placed_planes(ctx, scan)?;
     let mut planes = Vec::new();
     for row in rows() {
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
@@ -1166,7 +1166,7 @@ pub(in super::super) fn resolved_feature_extrusion_span(
             .and_then(|planes| extrusion_span(transform.origin(), transform.normal(), planes));
     }
     if span.is_none() {
-        span = generated_cap_plane_extent(scan, ir, source_carriers, feature_id).and_then(
+        span = generated_cap_plane_extent(ctx, scan, ir, source_carriers, feature_id)?.and_then(
             |(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction),
         );
     }

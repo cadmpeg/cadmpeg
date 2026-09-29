@@ -592,7 +592,7 @@ fn transfer_placed_plane_surfaces_into_ir(
             )));
         }
     }
-    for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(scan) {
+    for (surface_id, (plane, u_axis, offset)) in placed_plane_surfaces(ctx, scan)? {
         let id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, surface_id);
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;

@@ -343,11 +343,13 @@ pub(super) fn ordered_parallel_cap_extent(
 }
 
 pub(in super::super) fn generated_cap_plane_extent(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Option<(ExtrudeExtent, [f64; 3])> {
+) -> Result<Option<(ExtrudeExtent, [f64; 3])>, CodecError> {
+    let Some((start_id, end_id)) = (|| {
     let table = exactly_one(scan
         .features
         .entity_tables
@@ -368,14 +370,20 @@ pub(in super::super) fn generated_cap_plane_extent(
         && table.contains_surface_id(start_id?)
         && table.contains_surface_id(end_id?))
     .then_some(())?;
-    let local_planes = placed_planes(scan);
+    Some((start_id?, end_id?))
+    })() else {
+        return Ok(None);
+    };
+    let local_planes = placed_planes(ctx, scan)?;
     let plane = |surface_id: u32| {
         let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
         (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
             .then_some(())?;
         reconciled_model_plane(&local_planes, ir, source_carriers, surface_id)
     };
-    ordered_parallel_cap_extent(plane(start_id?)?, plane(end_id?)?)
+    Ok(plane(start_id)
+        .zip(plane(end_id))
+        .and_then(|(start, end)| ordered_parallel_cap_extent(start, end)))
 }
 
 pub(in super::super) fn unique_available_positional_cylinder_frame_records(

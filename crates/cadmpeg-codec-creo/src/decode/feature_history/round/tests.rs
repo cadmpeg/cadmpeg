@@ -4,6 +4,33 @@ use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::scalar::PositiveLength;
 // SPDX-License-Identifier: Apache-2.0
 
+fn service_round_support_radius(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &cadmpeg_ir::document::CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+) -> Option<f64> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::round_support_radius(ctx, scan, ir, source_carriers, feature_id)
+    })
+    .expect("service round support admitted")
+}
+
+fn service_round_support_envelope_cylinder(
+    scan: &crate::container::ContainerScan<'_>,
+    ir: &cadmpeg_ir::document::CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+    feature_id: u32,
+    envelope: crate::surface::Type24RoundEnvelope,
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        super::round_support_envelope_cylinder(
+            ctx, scan, ir, source_carriers, feature_id, envelope,
+        )
+    })
+    .expect("service round envelope admitted")
+}
+
 fn chamfer_distance_with_service_ctx(
     scan: &crate::container::ContainerScan<'_>,
     ir: &cadmpeg_ir::document::CadIr,
@@ -745,7 +772,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
     ]);
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
-        super::round_support_radius(
+        service_round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -770,7 +797,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         });
     }
     assert_eq!(
-        super::round_support_radius(
+        service_round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -795,7 +822,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         _ => panic!("transferred support plane"),
     }
     assert_eq!(
-        super::round_support_radius(
+        service_round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -821,7 +848,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
     }
     scan.features.affected_ids[0].ids.insert(3, 99);
     assert_eq!(
-        super::round_support_radius(
+        service_round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -829,7 +856,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
         ),
         None
     );
-    let frame = super::round_support_envelope_cylinder(
+    let frame = service_round_support_envelope_cylinder(
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -845,7 +872,7 @@ fn round_support_radius_reconciles_placed_and_transferred_planes() {
     assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
     assert_eq!(frame.radius().get(), 0.5);
     assert_eq!(frame.length().map(PositiveLength::get), Some(2.0));
-    assert!(super::round_support_envelope_cylinder(
+    assert!(service_round_support_envelope_cylinder(
         &scan,
         &ir,
         &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -902,7 +929,7 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
     let ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(
-        super::round_support_radius(
+        service_round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -914,7 +941,7 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
     scan.planes.positional_frames[2].normal = cadmpeg_ir::units::UnitVector3::Y_AXIS;
     scan.planes.positional_frames[3].normal = cadmpeg_ir::units::UnitVector3::Y_AXIS;
     assert_eq!(
-        super::round_support_radius(
+        service_round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -925,7 +952,7 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
 
     scan.features.affected_ids[0].ids[0] = 3;
     assert_eq!(
-        super::round_support_radius(
+        service_round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
@@ -936,7 +963,7 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
 
     scan.features.affected_ids[0].ids = vec![1, 1, 3, 4];
     assert_eq!(
-        super::round_support_radius(
+        service_round_support_radius(
             &scan,
             &ir,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),

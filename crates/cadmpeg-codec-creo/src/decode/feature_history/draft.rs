@@ -156,7 +156,7 @@ pub(super) fn thicken_feature_definition(
         Some(transitions) => thicken_plane_offset(
             ctx,
             transitions,
-            &placed_planes(scan),
+            &placed_planes(ctx, scan)?,
             &scan.surfaces.rows,
         )?,
         None => None,
@@ -276,7 +276,7 @@ pub(super) fn linear_extrusion_extent_and_direction(
             return Ok(Some(extent));
         }
     }
-    let mut extent = generated_cap_plane_extent(scan, ir, source_carriers, feature_id);
+    let mut extent = generated_cap_plane_extent(ctx, scan, ir, source_carriers, feature_id)?;
     if extent.is_none() {
         if let Some(transform) = unique_transform {
             extent = generated_bounded_cylinder_extent(
@@ -843,7 +843,7 @@ pub(in super::super) fn schema_feature_definition(
                 ));
             }
             if let Some(definition) =
-                reconciled_datum_plane_definition(scan, ir, source_carriers, surface_id)
+                reconciled_datum_plane_definition(ctx, scan, ir, source_carriers, surface_id)?
             {
                 return Ok(definition);
             }
@@ -970,7 +970,7 @@ pub(in super::super) fn schema_feature_definition(
             return Ok(definition);
         }
         if let Some(definition) =
-            unbounded_feature_plane_definition(scan, ir, source_carriers, feature_id)
+            unbounded_feature_plane_definition(ctx, scan, ir, source_carriers, feature_id)?
         {
             return Ok(definition);
         }
@@ -1008,14 +1008,19 @@ pub(in super::super) fn datum_plane_feature_definition(
 }
 
 fn reconciled_datum_plane_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     surface_id: u32,
-) -> Option<IrFeatureDefinition> {
-    let plane = reconciled_model_plane(&placed_planes(scan), ir, source_carriers, surface_id)?;
+) -> Result<Option<IrFeatureDefinition>, cadmpeg_core::CodecError> {
+    let local_planes = placed_planes(ctx, scan)?;
+    let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, surface_id) else {
+        return Ok(None);
+    };
     let normal = Vector3::from(plane.normal);
-    let u_axis = placed_plane_surfaces(scan)
+    let local_surfaces = placed_plane_surfaces(ctx, scan)?;
+    let u_axis = local_surfaces
         .get(&surface_id)
         .map(|(_, u_axis, _)| Vector3::from(*u_axis))
         .or_else(|| {
@@ -1035,31 +1040,31 @@ fn reconciled_datum_plane_definition(
             }
         })
         .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
-    Some(IrFeatureDefinition::Operation(
-        IrFeatureOperation::DatumPlane {
-            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
-                Point3::from(plane.origin),
-                normal,
-                u_axis,
-            )?,
-        },
-    ))
+    Ok(cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+        Point3::from(plane.origin), normal, u_axis,
+    )
+    .map(|frame| IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane { frame })))
 }
 
 pub(in super::super) fn unbounded_feature_plane_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
-) -> Option<IrFeatureDefinition> {
-    let row = exactly_one(scan.surfaces.rows.iter().filter(|row| {
+) -> Result<Option<IrFeatureDefinition>, cadmpeg_core::CodecError> {
+    let Some(row) = exactly_one(scan.surfaces.rows.iter().filter(|row| {
         row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
-    }))?;
-    (row.boundary_type == crate::surface::BoundaryType::Code01
+    })) else {
+        return Ok(None);
+    };
+    if !(row.boundary_type == crate::surface::BoundaryType::Code01
         && row.next_surface == 0
         && crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
-    .then_some(())?;
-    reconciled_datum_plane_definition(scan, ir, source_carriers, row.id)
+    {
+        return Ok(None);
+    }
+    reconciled_datum_plane_definition(ctx, scan, ir, source_carriers, row.id)
 }
 
 pub(in super::super) fn numbered_feature_name_has_family(name: &str, family: &str) -> bool {
