@@ -2034,6 +2034,23 @@ impl FeatureContent {
         Ok(())
     }
 
+    /// Append decoded source content after charging and reserving its slot.
+    pub fn try_push_charged(
+        &mut self,
+        value: FeatureSourceContent,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if !matches!(value, FeatureSourceContent::Text(_)) && self.0.contains(&value) {
+            return Err(cadmpeg_core::CodecError::malformed(
+                "source_content repeats a parameter or child-feature reference",
+            ));
+        }
+        ctx.reserve_collection_vec(&mut self.0, 1, operation)?;
+        self.0.push(value);
+        Ok(())
+    }
+
     /// Whether the sequence has no content.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
