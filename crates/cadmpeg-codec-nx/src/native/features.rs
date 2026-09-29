@@ -5515,28 +5515,31 @@ fn construction_payload_frames<P, S, R>(
     payloads: &[P],
     data_blocks: impl Fn(&P) -> &[FeaturePayloadBlock],
     scan: impl Fn(&[u8]) -> Result<Vec<S>, CodecError>,
-    mut build: impl FnMut(&P, usize, S, &dyn Fn(usize) -> Option<u64>) -> Option<R>,
+    mut build: impl FnMut(&P, usize, S, &dyn Fn(usize) -> Option<u64>) -> Result<Option<R>, CodecError>,
 ) -> Result<Vec<R>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    let projected = payloads
-        .iter()
-        .map(|payload| -> Result<Vec<R>, CodecError> {
-            let Some(joined) = JoinedPayload::from_source(
-                ctx,
-                data_blocks(payload).iter().map(|block| &block.id),
-                &blocks,
-            )? else {
-                return Ok(Vec::new());
+    let mut output = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(
+            ctx,
+            data_blocks(payload).iter().map(|block| &block.id),
+            &blocks,
+        )? else {
+            continue;
+        };
+        let source_offset = |relative: usize| joined.source_offset(relative as u64);
+        for (ordinal, row) in scan(joined.bytes())?.into_iter().enumerate() {
+            let Some(record) = build(payload, ordinal, row, &source_offset)? else {
+                continue;
             };
-            let source_offset = |relative: usize| joined.source_offset(relative as u64);
-            Ok(scan(joined.bytes())?
-                .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, row)| build(payload, ordinal, row, &source_offset))
-                .collect::<Vec<_>>())
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(projected.into_iter().flatten().collect())
+            ctx.charge_collection_items(1, "NX construction payload frames")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<R>()), "NX construction payload frames")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX construction payload frames", 0, 1))?;
+            output.push(record);
+        }
+    }
+    Ok(output)
 }
 
 /// Decode exact scalar-pair frames from reconstructed datum-CSYS payloads.
@@ -5552,20 +5555,26 @@ pub(super) fn feature_datum_csys_payload_scalar_pairs(
         |payload| payload.content.blocks(),
         |bytes| crate::om::binary64_pair::object_pairs(ctx, bytes),
         |payload, ordinal, pair, source_offset| {
-            Some(FeaturePayloadScalarPair {
-                id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
+            let Some((frame, first, second, source)) = (|| Some((
+                pair.into_wire_frame()?,
+                source_offset(pair.value_offsets()[0])?,
+                source_offset(pair.value_offsets()[1])?,
+                source_offset(pair.offset())?,
+            )))() else { return Ok(None); };
+            let id = format_feature_child_id(ctx, &payload.id, "-scalar-pair-", ordinal)?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar pair ordinal", 0, 1))?;
+            Ok(Some(FeaturePayloadScalarPair {
+                id,
+                operation_label: copy_operation_text(ctx, &payload.operation_label, "NX datum CSYS scalar pair label")?,
                 payload: FeatureScalarPairPayload::DatumCsys {
-                    datum_csys_payload: payload.id.clone(),
-                    frame: pair.into_wire_frame()?,
+                    datum_csys_payload: copy_operation_text(ctx, &payload.id, "NX datum CSYS scalar pair payload")?,
+                    frame,
                 },
-                ordinal: ordinal as u32,
-                value_source_offsets: [
-                    source_offset(pair.value_offsets()[0])?,
-                    source_offset(pair.value_offsets()[1])?,
-                ],
-                source_offset: source_offset(pair.offset())?,
-            })
+                ordinal,
+                value_source_offsets: [first, second],
+                source_offset: source,
+            }))
         },
     )
 }
@@ -5583,19 +5592,25 @@ pub(super) fn feature_datum_csys_payload_fixed_pairs(
         |payload| payload.content.blocks(),
         |bytes| crate::om::datum_csys_payload_fixed_pairs(ctx, bytes),
         |payload, ordinal, pair, source_offset| {
-            Some(FeatureDatumCsysPayloadFixedPair {
-                id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
-                datum_csys_payload: payload.id.clone(),
-                ordinal: ordinal as u32,
+            let Some((position, source, first, second)) = (|| Some((
+                PairPosition::new(pair.form, pair.offset as u64)?,
+                source_offset(pair.offset)?,
+                source_offset(pair.value_offsets()[0])?,
+                source_offset(pair.value_offsets()[1])?,
+            )))() else { return Ok(None); };
+            let id = format_feature_child_id(ctx, &payload.id, "-fixed-pair-", ordinal)?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS fixed pair ordinal", 0, 1))?;
+            Ok(Some(FeatureDatumCsysPayloadFixedPair {
+                id,
+                operation_label: copy_operation_text(ctx, &payload.operation_label, "NX datum CSYS fixed pair label")?,
+                datum_csys_payload: copy_operation_text(ctx, &payload.id, "NX datum CSYS fixed pair payload")?,
+                ordinal,
                 values: pair.values,
-                position: PairPosition::new(pair.form, pair.offset as u64)?,
-                source_offset: source_offset(pair.offset)?,
-                value_source_offsets: [
-                    source_offset(pair.value_offsets()[0])?,
-                    source_offset(pair.value_offsets()[1])?,
-                ],
-            })
+                position,
+                source_offset: source,
+                value_source_offsets: [first, second],
+            }))
         },
     )
 }
@@ -5613,18 +5628,22 @@ pub(super) fn feature_datum_csys_payload_scalars(
         |payload| payload.content.blocks(),
         |bytes| crate::om::construction_payload_scalar_fields(ctx, bytes),
         |payload, ordinal, scalar, source_offset| {
-            Some(FeaturePayloadScalar {
-                id: format!("{}-scalar-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
+            let Some(source) = source_offset(scalar.offset) else { return Ok(None); };
+            let id = format_feature_child_id(ctx, &payload.id, "-scalar-", ordinal)?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar ordinal", 0, 1))?;
+            Ok(Some(FeaturePayloadScalar {
+                id,
+                operation_label: copy_operation_text(ctx, &payload.operation_label, "NX datum CSYS scalar label")?,
                 payload: FeatureScalarPayload::DatumCsys {
-                    datum_csys_payload: payload.id.clone(),
+                    datum_csys_payload: copy_operation_text(ctx, &payload.id, "NX datum CSYS scalar payload")?,
                 },
-                ordinal: ordinal as u32,
+                ordinal,
                 field_code: scalar.field_code,
                 scalar: scalar.scalar,
                 payload_offset: scalar.offset as u64,
-                source_offset: source_offset(scalar.offset)?,
-            })
+                source_offset: source,
+            }))
         },
     )
 }
@@ -5712,20 +5731,26 @@ pub(super) fn feature_datum_plane_payload_scalar_pairs(
         |payload| payload.content.blocks(),
         |bytes| crate::om::binary64_pair::datum_plane_pairs(ctx, bytes),
         |payload, ordinal, pair, source_offset| {
-            Some(FeaturePayloadScalarPair {
-                id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
+            let Some((frame, first, second, source)) = (|| Some((
+                pair.into_wire_frame()?,
+                source_offset(pair.value_offsets()[0])?,
+                source_offset(pair.value_offsets()[1])?,
+                source_offset(pair.offset())?,
+            )))() else { return Ok(None); };
+            let id = format_feature_child_id(ctx, &payload.id, "-scalar-pair-", ordinal)?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX datum plane scalar pair ordinal", 0, 1))?;
+            Ok(Some(FeaturePayloadScalarPair {
+                id,
+                operation_label: copy_operation_text(ctx, &payload.operation_label, "NX datum plane scalar pair label")?,
                 payload: FeatureScalarPairPayload::DatumPlane {
-                    datum_plane_payload: payload.id.clone(),
-                    frame: pair.into_wire_frame()?,
+                    datum_plane_payload: copy_operation_text(ctx, &payload.id, "NX datum plane scalar pair payload")?,
+                    frame,
                 },
-                ordinal: ordinal as u32,
-                value_source_offsets: [
-                    source_offset(pair.value_offsets()[0])?,
-                    source_offset(pair.value_offsets()[1])?,
-                ],
-                source_offset: source_offset(pair.offset())?,
-            })
+                ordinal,
+                value_source_offsets: [first, second],
+                source_offset: source,
+            }))
         },
     )
 }
@@ -6004,20 +6029,26 @@ pub(super) fn feature_sketch_payload_coordinate_pairs(
         |payload| payload.content.blocks(),
         |bytes| crate::om::binary64_pair::sketch_pairs(ctx, bytes),
         |payload, ordinal, pair, source_offset| {
-            Some(FeaturePayloadScalarPair {
-                id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
+            let Some((frame, first, second, source)) = (|| Some((
+                pair.into_wire_frame()?,
+                source_offset(pair.value_offsets()[0])?,
+                source_offset(pair.value_offsets()[1])?,
+                source_offset(pair.offset())?,
+            )))() else { return Ok(None); };
+            let id = format_feature_child_id(ctx, &payload.id, "-coordinate-pair-", ordinal)?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX sketch coordinate pair ordinal", 0, 1))?;
+            Ok(Some(FeaturePayloadScalarPair {
+                id,
+                operation_label: copy_operation_text(ctx, &payload.operation_label, "NX sketch coordinate pair label")?,
                 payload: FeatureScalarPairPayload::Construction {
-                    construction_payload: payload.id.clone(),
-                    frame: pair.into_wire_frame()?,
+                    construction_payload: copy_operation_text(ctx, &payload.id, "NX sketch coordinate pair payload")?,
+                    frame,
                 },
-                ordinal: ordinal as u32,
-                value_source_offsets: [
-                    source_offset(pair.value_offsets()[0])?,
-                    source_offset(pair.value_offsets()[1])?,
-                ],
-                source_offset: source_offset(pair.offset())?,
-            })
+                ordinal,
+                value_source_offsets: [first, second],
+                source_offset: source,
+            }))
         },
     )
 }
@@ -6035,19 +6066,25 @@ pub(super) fn feature_sketch_payload_fixed_pairs(
         |payload| payload.content.blocks(),
         |bytes| crate::om::sketch_payload_fixed_pairs(ctx, bytes),
         |payload, ordinal, pair, source_offset| {
-            Some(FeatureSketchPayloadFixedPair {
-                id: format!("{}-fixed-pair-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
-                construction_payload: payload.id.clone(),
-                ordinal: ordinal as u32,
+            let Some((position, source, first, second)) = (|| Some((
+                PairPosition::new(pair.form, pair.offset as u64)?,
+                source_offset(pair.offset)?,
+                source_offset(pair.value_offsets()[0])?,
+                source_offset(pair.value_offsets()[1])?,
+            )))() else { return Ok(None); };
+            let id = format_feature_child_id(ctx, &payload.id, "-fixed-pair-", ordinal)?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX sketch fixed pair ordinal", 0, 1))?;
+            Ok(Some(FeatureSketchPayloadFixedPair {
+                id,
+                operation_label: copy_operation_text(ctx, &payload.operation_label, "NX sketch fixed pair label")?,
+                construction_payload: copy_operation_text(ctx, &payload.id, "NX sketch fixed pair payload")?,
+                ordinal,
                 values: pair.values,
-                position: PairPosition::new(pair.form, pair.offset as u64)?,
-                source_offset: source_offset(pair.offset)?,
-                value_source_offsets: [
-                    source_offset(pair.value_offsets()[0])?,
-                    source_offset(pair.value_offsets()[1])?,
-                ],
-            })
+                position,
+                source_offset: source,
+                value_source_offsets: [first, second],
+            }))
         },
     )
 }
@@ -6065,19 +6102,25 @@ pub(super) fn feature_sketch_payload_mixed_pairs(
         |payload| payload.content.blocks(),
         |bytes| crate::om::sketch_payload_mixed_pairs(ctx, bytes),
         |payload, ordinal, pair, source_offset| {
-            Some(FeatureSketchPayloadMixedPair {
-                id: format!("{}-mixed-pair-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
-                construction_payload: payload.id.clone(),
-                ordinal: ordinal as u32,
+            let Some((position, source, first, second)) = (|| Some((
+                PairPosition::new(MixedPairForm, pair.offset as u64)?,
+                source_offset(pair.offset)?,
+                source_offset(pair.value_offsets()[0])?,
+                source_offset(pair.value_offsets()[1])?,
+            )))() else { return Ok(None); };
+            let id = format_feature_child_id(ctx, &payload.id, "-mixed-pair-", ordinal)?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX sketch mixed pair ordinal", 0, 1))?;
+            Ok(Some(FeatureSketchPayloadMixedPair {
+                id,
+                operation_label: copy_operation_text(ctx, &payload.operation_label, "NX sketch mixed pair label")?,
+                construction_payload: copy_operation_text(ctx, &payload.id, "NX sketch mixed pair payload")?,
+                ordinal,
                 scalars: pair.scalars,
-                position: PairPosition::new(MixedPairForm, pair.offset as u64)?,
-                source_offset: source_offset(pair.offset)?,
-                value_source_offsets: [
-                    source_offset(pair.value_offsets()[0])?,
-                    source_offset(pair.value_offsets()[1])?,
-                ],
-            })
+                position,
+                source_offset: source,
+                value_source_offsets: [first, second],
+            }))
         },
     )
 }
@@ -6234,41 +6277,32 @@ pub(super) fn feature_sketch_payload_scalar_lanes(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeatureSketchPayloadScalarLane>, CodecError> {
-    let mut failure = None;
-    let rows = construction_payload_frames(
+    construction_payload_frames(
         ctx,
         container,
         payloads,
         |payload| payload.content.blocks(),
         |bytes| crate::om::sketch_payload_scalar_lanes(ctx, bytes),
         |payload, ordinal, lane, source_offset| {
-            let header_source = source_offset(lane.offset() as usize)?;
-            let terminator_source = source_offset(lane.end() as usize)?;
-            let lane =
-                match lane.try_map_locations(ctx, |offset, ()| source_offset(offset as usize)) {
-                    Ok(Some(lane)) => lane,
-                    Ok(None) => return None,
-                    Err(error) => {
-                        failure = Some(error);
-                        return None;
-                    }
-                };
-            Some(FeatureSketchPayloadScalarLane {
-                id: format!("{}-scalar-lane-{ordinal:010}", payload.id),
-                operation_label: payload.operation_label.clone(),
-                construction_payload: payload.id.clone(),
-                ordinal: ordinal as u32,
+            let Some(header_source) = source_offset(lane.offset() as usize) else { return Ok(None); };
+            let Some(terminator_source) = source_offset(lane.end() as usize) else { return Ok(None); };
+            let Some(lane) = lane.try_map_locations(ctx, |offset, ()| source_offset(offset as usize))? else {
+                return Ok(None);
+            };
+            let id = format_feature_child_id(ctx, &payload.id, "-scalar-lane-", ordinal)?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX sketch scalar lane ordinal", 0, 1))?;
+            Ok(Some(FeatureSketchPayloadScalarLane {
+                id,
+                operation_label: copy_operation_text(ctx, &payload.operation_label, "NX sketch scalar lane label")?,
+                construction_payload: copy_operation_text(ctx, &payload.id, "NX sketch scalar lane payload")?,
+                ordinal,
                 lane,
                 source_offset: header_source,
                 terminator_source_offset: terminator_source,
-            })
+            }))
         },
-    )?;
-    if let Some(error) = failure {
-        Err(error)
-    } else {
-        Ok(rows)
-    }
+    )
 }
 
 /// Decode exact compact-code name fields across reconstructed sketch payloads.
@@ -7603,39 +7637,35 @@ pub(super) fn feature_surface_construction_scalar_pairs(
     container: &Container,
     payloads: &[FeatureSurfaceConstructionPayload],
 ) -> Result<Vec<FeaturePayloadScalarPair>, cadmpeg_core::CodecError> {
-    let blocks = offset_data_block_bytes(ctx, container)?;
-    let projected = payloads
-        .iter()
-        .map(
-            |payload| -> Result<Vec<FeaturePayloadScalarPair>, CodecError> {
-                let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
-                else {
-                    return Ok(Vec::new());
-                };
-                Ok(crate::om::binary64_pair::object_pairs(ctx, joined.bytes())?
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(ordinal, pair)| {
-                        Some(FeaturePayloadScalarPair {
-                            id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
-                            operation_label: payload.operation_label.clone(),
-                            payload: FeatureScalarPairPayload::SurfaceConstruction {
-                                surface_construction_payload: payload.id.clone(),
-                                frame: pair.into_wire_frame()?,
-                            },
-                            ordinal: ordinal as u32,
-                            value_source_offsets: [
-                                joined.source_offset(pair.value_offsets()[0] as u64)?,
-                                joined.source_offset(pair.value_offsets()[1] as u64)?,
-                            ],
-                            source_offset: joined.source_offset(pair.offset() as u64)?,
-                        })
-                    })
-                    .collect())
-            },
-        )
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(projected.into_iter().flatten().collect())
+    construction_payload_frames(
+        ctx,
+        container,
+        payloads,
+        |payload| payload.content.blocks(),
+        |bytes| crate::om::binary64_pair::object_pairs(ctx, bytes),
+        |payload, ordinal, pair, source_offset| {
+            let Some((frame, first, second, source)) = (|| Some((
+                pair.into_wire_frame()?,
+                source_offset(pair.value_offsets()[0])?,
+                source_offset(pair.value_offsets()[1])?,
+                source_offset(pair.offset())?,
+            )))() else { return Ok(None); };
+            let id = format_feature_child_id(ctx, &payload.id, "-scalar-pair-", ordinal)?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX surface scalar pair ordinal", 0, 1))?;
+            Ok(Some(FeaturePayloadScalarPair {
+                id,
+                operation_label: copy_operation_text(ctx, &payload.operation_label, "NX surface scalar pair label")?,
+                payload: FeatureScalarPairPayload::SurfaceConstruction {
+                    surface_construction_payload: copy_operation_text(ctx, &payload.id, "NX surface scalar pair payload")?,
+                    frame,
+                },
+                ordinal,
+                value_source_offsets: [first, second],
+                source_offset: source,
+            }))
+        },
+    )
 }
 
 /// Decode exact printable string frames from reconstructed surface payloads.
