@@ -372,25 +372,7 @@ pub(crate) fn transfer_parameters(
                             let mut output_dependencies =
                                 cadmpeg_ir::features::DistinctMembers::default();
                             for dependency in dependencies {
-                                if !output_dependencies.contains(&dependency) {
-                                    ctx.charge_collection_items(
-                                        1,
-                                        "catia_formula_output_dependencies",
-                                    )?;
-                                    output_dependencies.try_reserve(1).map_err(|_| {
-                                        cadmpeg_core::CodecError::ResourceLimit(
-                                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                                                cadmpeg_core::decode::ResourceDimension::Codec(
-                                                    "catia_formula_output_dependencies",
-                                                ),
-                                                u64_from_index(0),
-                                                u64_from_index(1),
-                                                "catia_formula_output_dependencies",
-                                            ),
-                                        )
-                                    })?;
-                                    output_dependencies.insert(dependency);
-                                }
+                                output_dependencies.insert_for_decode(ctx, dependency, "catia_formula_output_dependencies")?;
                             }
                             let output_name = ctx.copy_retained_text(
                                 &output_value.name.value,
@@ -1200,22 +1182,7 @@ fn collect_legacy_parameters(
                 ctx.copy_retained_text(evaluation.expression, "catia_legacy_formula_expression")?;
             let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
             for id in evaluation.dependencies {
-                if !dependencies.contains(&id) {
-                    ctx.charge_collection_items(1, "catia_legacy_formula_dependencies")?;
-                    dependencies.try_reserve(1).map_err(|_| {
-                        cadmpeg_core::CodecError::ResourceLimit(
-                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                                cadmpeg_core::decode::ResourceDimension::Codec(
-                                    "catia_legacy_formula_dependencies",
-                                ),
-                                u64_from_index(0),
-                                u64_from_index(1),
-                                "catia_legacy_formula_dependencies",
-                            ),
-                        )
-                    })?;
-                    dependencies.insert(id);
-                }
+                dependencies.insert_for_decode(ctx, id, "catia_legacy_formula_dependencies")?;
             }
             candidate.parameter.expression = expression;
             candidate.parameter.dependencies = dependencies;
@@ -1804,23 +1771,12 @@ fn relation_program_output_candidate(
     let mut output_dependencies = cadmpeg_ir::features::DistinctMembers::default();
     for dependency in &dependencies {
         if !output_dependencies.contains(dependency) {
-            ctx.charge_collection_items(1, "catia_relation_program_output_dependencies")?;
-            output_dependencies.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec(
-                            "catia_relation_program_output_dependencies",
-                        ),
-                        u64_from_index(0),
-                        u64_from_index(1),
-                        "catia_relation_program_output_dependencies",
-                    ),
-                )
-            })?;
-            output_dependencies.insert(
+            output_dependencies.insert_for_decode(
+                ctx,
                 dependency
                     .try_clone_for_decode(ctx, "catia_relation_program_output_dependency_id")?,
-            );
+                "catia_relation_program_output_dependencies",
+            )?;
         }
     }
     let candidate = FormulaParameterCandidate {
@@ -1985,19 +1941,7 @@ fn copy_design_parameter(
         .transpose()?;
     let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
     if !source.dependencies.is_empty() {
-        ctx.charge_collection_items(u64_from_index(source.dependencies.len()), operation)?;
-        dependencies
-            .try_reserve(source.dependencies.len())
-            .map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                        u64_from_index(0),
-                        u64_from_index(source.dependencies.len()),
-                        operation,
-                    ),
-                )
-            })?;
+        dependencies.reserve_for_decode(ctx, source.dependencies.len(), operation)?;
         for dependency in &source.dependencies {
             dependencies.insert(dependency.try_clone_for_decode(ctx, operation)?);
         }
