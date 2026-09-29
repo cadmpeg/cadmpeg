@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 use super::{
-    push_unknown_link, retain_live_annotations, unknown_stream_metadata,
+    retain_live_annotations, unknown_stream_metadata,
 };
 
 fn geometry_route_limit_error(policy: &DecodePolicy) -> cadmpeg_core::CodecError {
@@ -119,7 +119,7 @@ fn unknown_entity_links_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
-    let error = push_unknown_link(&ctx, &mut unknown, "test:model:entity#surface")
+    let error = ctx.copy_retained_text("test:model:entity#surface", "nx unknown entity link text").and_then(|link| ctx.push_vec(unknown.links_mut(), link, "nx unknown entity links"))
         .expect_err("one related entity needs one slot");
     assert!(matches!(
         error,
@@ -137,7 +137,7 @@ fn unknown_entity_links_refuse_retained_text_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
-    let error = push_unknown_link(&ctx, &mut unknown, "test:model:entity#surface")
+    let error = ctx.copy_retained_text("test:model:entity#surface", "nx unknown entity link text").and_then(|link| ctx.push_vec(unknown.links_mut(), link, "nx unknown entity links"))
         .expect_err("related entity identity needs retained bytes");
     assert!(matches!(
         error,
@@ -151,7 +151,7 @@ fn unknown_entity_links_refuse_retained_text_limit() {
 fn unknown_entity_links_keep_identity_under_service_profile() {
     let mut unknown = preview_unknown();
     crate::test_support::with_decode_context(|ctx| {
-        push_unknown_link(ctx, &mut unknown, "test:model:entity#surface")
+        ctx.copy_retained_text("test:model:entity#surface", "nx unknown entity link text").and_then(|link| ctx.push_vec(unknown.links_mut(), link, "nx unknown entity links"))
             .expect("related entity fits the service profile");
     });
     assert_eq!(unknown.links(), ["test:model:entity#surface"]);

@@ -637,30 +637,15 @@ fn scan_with_auxiliaries(
     for construction in constructions.iter().copied() {
         match enrich(ctx, construction, charts, terms, uv, bridges, graph) {
             Ok(curve) => {
-                push_scan_record(
-                    ctx,
-                    &mut result.constructions,
-                    construction,
-                    "NX intersection constructions",
-                )?;
-                push_scan_record(
-                    ctx,
-                    &mut result.curves,
-                    curve,
-                    "NX intersection solved curves",
-                )?;
+                ctx.push_retained_vec(&mut result.constructions, construction, "NX intersection constructions")?;
+                ctx.push_retained_vec(&mut result.curves, curve, "NX intersection solved curves")?;
             }
             Err(EnrichError::Rejected(rejection))
                 if referenced_curves.contains(&construction.xmt)
                     && construction_supports(construction, uv, bridges, graph).is_some()
                     && construction_has_endpoint_witnesses(construction, terms, graph) =>
             {
-                push_scan_record(
-                    ctx,
-                    &mut result.constructions,
-                    construction,
-                    "NX intersection constructions",
-                )?;
+                ctx.push_retained_vec(&mut result.constructions, construction, "NX intersection constructions")?;
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some((endpoints, tolerance))) = (
                         construction_supports(construction, uv, bridges, graph).and_then(
@@ -675,17 +660,12 @@ fn scan_with_auxiliaries(
                                 ))
                             }),
                     ) {
-                        push_scan_record(
-                            ctx,
-                            &mut result.uncharted,
-                            UnchartedIntersection {
+                        ctx.push_retained_vec(&mut result.uncharted, UnchartedIntersection {
                                 xmt: construction.xmt,
                                 supports,
                                 endpoints,
                                 tolerance,
-                            },
-                            "NX uncharted intersections",
-                        )?;
+                            }, "NX uncharted intersections")?;
                     }
                 }
                 result.rejected.add(rejection);
@@ -701,17 +681,6 @@ fn scan_with_auxiliaries(
     }
     result.source_constructions = constructions;
     Ok(result)
-}
-
-fn push_scan_record<T>(
-    ctx: &DecodeContext<'_>,
-    records: &mut Vec<T>,
-    record: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.reserve_retained_vec(records, 1, operation)?;
-    records.push(record);
-    Ok(())
 }
 
 fn enrich(

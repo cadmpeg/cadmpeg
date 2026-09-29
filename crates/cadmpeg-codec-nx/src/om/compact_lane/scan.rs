@@ -6,17 +6,6 @@ use crate::om::compact::{CountedIndexMembers, LocatedCompactIndex, NullableCompa
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 
-fn push_lane<T>(
-    ctx: &DecodeContext<'_>,
-    lanes: &mut Vec<T>,
-    lane: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.reserve_retained_vec(lanes, 1, operation)?;
-    lanes.push(lane);
-    Ok(())
-}
-
 /// Decode fixed-width `ABR` block-reference lanes from contiguous column storage.
 pub(crate) fn abr_lanes(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<AbrLane>, CodecError> {
     let mut lanes = Vec::new();
@@ -47,7 +36,7 @@ pub(crate) fn abr_lanes(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<Abr
         };
         if bytes.get(at..end) == Some(&ABR_TERMINATOR) {
             if let Some(lane) = AbrLane::<(), usize>::new(tokens, start) {
-                push_lane(ctx, &mut lanes, lane, "NX ABR lanes")?;
+                ctx.push_retained_vec(&mut lanes, lane, "NX ABR lanes")?;
             }
             start = end;
         } else {
@@ -103,7 +92,7 @@ pub(crate) fn counted_lanes(
     let mut start = 0;
     while start + 4 <= bytes.len() {
         if let Some((lane, end)) = decode(start)? {
-            push_lane(ctx, &mut lanes, lane, "NX counted index lanes")?;
+            ctx.push_retained_vec(&mut lanes, lane, "NX counted index lanes")?;
             start = end;
         } else {
             start += 1;
