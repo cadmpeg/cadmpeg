@@ -2941,15 +2941,6 @@ impl TryFrom<FeatureOperationBodyOperandWire> for FeatureOperationBodyOperand {
     }
 }
 
-impl FeatureOperationBodyOperand {
-    pub(super) fn source_property_key(&self) -> String {
-        format!(
-            "operation_body_operand.{}.{}",
-            self.body_reference_ordinal, self.ordinal
-        )
-    }
-}
-
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "reference::Body11ContinuationWire")]

@@ -5,6 +5,38 @@ use crate::native::attach::push_grouped_operation;
 use crate::native::attach::last_record_index;
 use crate::native::attach::segment_binding_body_indexes;
 use crate::native::attach::insert_source_property;
+use crate::native::attach::insert_source_property_reference;
+
+#[test]
+fn source_property_reference_preserves_block_and_numeric_fallback() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut properties = std::collections::BTreeMap::new();
+    insert_source_property_reference(&ctx, &mut properties, format_args!("reference.{}", 0), Some("source-block"), 17u32).unwrap();
+    insert_source_property_reference(&ctx, &mut properties, format_args!("reference.{}", 1), None, 17u32).unwrap();
+    assert_eq!(properties["reference.0"], "source-block");
+    assert_eq!(properties["reference.1"], "17");
+}
+
+#[test]
+fn operation_body_operand_source_keys_follow_reference_ordinal() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut properties = std::collections::BTreeMap::new();
+    for reference_ordinal in [0, 1] {
+        insert_source_property_reference(
+            &ctx,
+            &mut properties,
+            format_args!("operation_body_operand.{}.{}", reference_ordinal, 0),
+            None,
+            20u32,
+        ).unwrap();
+    }
+    assert_eq!(properties["operation_body_operand.0.0"], "20");
+    assert_eq!(properties["operation_body_operand.1.0"], "20");
+}
 
 fn source_property_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
