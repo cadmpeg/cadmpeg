@@ -1057,38 +1057,43 @@ pub(in crate::native) fn feature_draft_construction_identity_frames(
     payloads: &[FeatureConstructionPayload],
 ) -> Result<Vec<FeatureDraftConstructionIdentityFrame>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    let projected = payloads
-        .iter()
-        .map(
-            |payload| -> Result<Vec<FeatureDraftConstructionIdentityFrame>, CodecError> {
-                let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)?
-                else {
-                    return Ok(Vec::new());
-                };
-                Ok(
-                    crate::om::draft_construction_identity_frames(ctx, joined.bytes())?
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(ordinal, frame)| {
-                            let payload_offset = frame.offset();
-                            let identity_payload_offset = frame.identity_offset();
-                            Some(FeatureDraftConstructionIdentityFrame {
-                                id: format!("{}-identity-frame-{ordinal:010}", payload.id),
-                                operation_label: payload.operation_label.clone(),
-                                draft_construction_payload: payload.id.clone(),
-                                ordinal: ordinal as u32,
-                                frame,
-                                source_offset: joined.source_offset(payload_offset)?,
-                                identity_source_offset: joined
-                                    .source_offset(identity_payload_offset)?,
-                            })
-                        })
-                        .collect::<Vec<_>>(),
-                )
-            },
-        )
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(projected.into_iter().flatten().collect())
+    let mut output = Vec::new();
+    for payload in payloads {
+        let Some(joined) = JoinedPayload::from_source(ctx, payload.content.block_ids(), &blocks)? else {
+            continue;
+        };
+        for (ordinal, frame) in crate::om::draft_construction_identity_frames(ctx, joined.bytes())?
+            .into_iter().enumerate()
+        {
+            let payload_offset = frame.offset();
+            let identity_payload_offset = frame.identity_offset();
+            let (Some(source_offset), Some(identity_source_offset)) = (
+                joined.source_offset(payload_offset),
+                joined.source_offset(identity_payload_offset),
+            ) else {
+                continue;
+            };
+            let id = format_feature_child_id(ctx, &payload.id, "-identity-frame-", ordinal)?;
+            let operation_label = copy_operation_text(ctx, &payload.operation_label, "NX draft identity operation")?;
+            let draft_construction_payload = copy_operation_text(ctx, &payload.id, "NX draft identity payload")?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| ctx.refuse_codec_limit("NX draft identity ordinal", 0, 1))?;
+            ctx.charge_collection_items(1, "NX draft construction identity frames")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureDraftConstructionIdentityFrame>()), "NX draft construction identity frame")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX draft construction identity frames", 0, 1))?;
+            output.push(FeatureDraftConstructionIdentityFrame {
+                id,
+                operation_label,
+                draft_construction_payload,
+                ordinal,
+                frame,
+                source_offset,
+                identity_source_offset,
+            });
+        }
+    }
+    Ok(output)
 }
 
 /// Decode complete end-anchored terminal lanes from draft construction payloads.
