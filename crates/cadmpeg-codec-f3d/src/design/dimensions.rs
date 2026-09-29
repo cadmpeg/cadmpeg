@@ -1495,33 +1495,42 @@ fn project_all_dimension_constraints(
             Ok(sketch) => sketch,
             Err(error) => return Some(Err(error)),
         };
-        let parallel_axis_angles = groups
-            .iter()
-            .filter(|group| {
-                native_stream(&group.id) == Some(scope)
-                    && group.companion_record_index == companion.record_index()
-            })
-            .filter_map(|group| {
-                let (first, second) = match exact_group_definition(scope, group, parameter, parameter_id.clone()) {
-                    Some(Ok(Definition::Parallel { first, second })) => (first, second),
-                    Some(Err(error)) => return Some(Err(error)),
-                    _ => return None,
-                };
-                let members = [
-                    entities.iter().find(|entity| entity.id() == &first)?,
-                    entities.iter().find(|entity| entity.id() == &second)?,
-                ];
-                parallel_group_axis_angle_definition(&members, parameter, &parameter_id).map(Ok)
-            })
-            .collect::<Result<Vec<_>, _>>();
-        let parallel_axis_angles = match parallel_axis_angles {
-            Ok(angles) => angles,
-            Err(error) => return Some(Err(error)),
-        };
-        let parallel_axis_angle = match parallel_axis_angles.as_slice() {
-            [definition] => Some(definition.clone()),
-            _ => None,
-        };
+        let mut parallel_axis_angle = None;
+        let mut saw_parallel_axis_angle = false;
+        let mut multiple_parallel_axis_angles = false;
+        for group in groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(scope)
+                && group.companion_record_index == companion.record_index()
+        }) {
+            let copied = match copy_dimension_parameter_id(ctx, &parameter_id,
+                "f3d parallel group parameter id") {
+                Ok(copied) => copied,
+                Err(error) => return Some(Err(error)),
+            };
+            let (first, second) = match exact_group_definition(scope, group, parameter, copied) {
+                Some(Ok(Definition::Parallel { first, second })) => (first, second),
+                Some(Err(error)) => return Some(Err(error)),
+                _ => continue,
+            };
+            let members = [
+                entities.iter().find(|entity| entity.id() == &first),
+                entities.iter().find(|entity| entity.id() == &second),
+            ];
+            let [Some(first), Some(second)] = members else { continue; };
+            let Some(definition) = parallel_group_axis_angle_definition(
+                &[first, second], parameter, &parameter_id,
+            ) else { continue; };
+            if saw_parallel_axis_angle {
+                multiple_parallel_axis_angles = true;
+                parallel_axis_angle = None;
+            } else {
+                saw_parallel_axis_angle = true;
+                parallel_axis_angle = Some(definition);
+            }
+        }
+        if multiple_parallel_axis_angles {
+            parallel_axis_angle = None;
+        }
         let owner_scoped_definition = owner_scoped_radial_dimension_definition(
             entities,
             &sketch,
