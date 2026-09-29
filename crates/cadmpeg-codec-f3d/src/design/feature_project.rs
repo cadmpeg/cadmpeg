@@ -772,7 +772,7 @@ fn ensure_feature_dependencies_precede(
                     .map(|ordinal| (dependency, ordinal))
             })
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(ctx, format_args!(
                     "Design feature dependency does not precede its authored timeline position: {dependency} at ordinal {dependency_ordinal} -> {} at ordinal {}",
                     feature.id, feature.ordinal,
                 )));

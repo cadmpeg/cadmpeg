@@ -30,3 +30,17 @@ pub(super) fn format_design_text(
         .map_err(|_| CodecError::malformed("Design text formatting failed"))?;
     Ok(text)
 }
+
+/// Preserve a malformed diagnostic or return its resource refusal.
+pub(super) fn malformed_design(
+    ctx: Option<&DecodeContext<'_>>,
+    arguments: fmt::Arguments<'_>,
+) -> CodecError {
+    match format_design_text(ctx, arguments, "f3d Design diagnostic") {
+        Ok(text) => CodecError::Malformed(text),
+        Err(error) => error,
+    }
+}
+
+#[cfg(test)]
+mod tests;

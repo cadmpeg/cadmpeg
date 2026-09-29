@@ -322,7 +322,7 @@ pub(crate) fn decode_sketch_placements(
         };
         for (entity_suffix, visibility) in decode_sketch_visibilities_in_stream(ctx, bytes, &metadata)? {
             if visibilities.contains_key(&(key.as_str(), entity_suffix)) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                     "F3D Design stream {} repeats sketch visibility for entity {entity_suffix}",
                     entry.name
                 )));
@@ -515,7 +515,7 @@ fn decode_sketch_visibilities_in_stream(
                 .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID))
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D sketch container {} has incompatible registration metadata",
                 frame.entity_id
             )));
@@ -529,27 +529,27 @@ fn decode_sketch_visibilities_in_stream(
             None => parse_genesis_entity_header(ctx, &bytes[..frame.end], frame.start)?,
         })
         else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D sketch container {} has an invalid entity header",
                 frame.entity_id
             )));
         };
         let entity_suffix = entity_id.suffix();
         if entity_suffix != frame.entity_id {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D sketch container {} disagrees with its entity header {entity_suffix}",
                 frame.entity_id
             )));
         }
         let Some(member_at) = next_indexed_record_offset(&bytes[..frame.end], header_end) else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D sketch container {entity_suffix} has no typed Geometry member"
             )));
         };
         let Some((class_tag, after_tag)) =
             lp_ascii_filtered_view(bytes, member_at, 3..=3, u8::is_ascii_digit)
         else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D sketch container {entity_suffix} has an invalid Geometry-member class tag"
             )));
         };
@@ -575,14 +575,14 @@ fn decode_sketch_visibilities_in_stream(
                         })
             })
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D sketch container {entity_suffix} has an incompatible Geometry member"
             )));
         }
         let Some(visibility) =
             decode_sketch_visibility_member(&bytes[..frame.end], member_at, entity_suffix)
         else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D sketch container {entity_suffix} has an invalid visibility member"
             )));
         };
@@ -1942,7 +1942,7 @@ fn decode_sketch_points_from_stream(
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
         let decoded =
             decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::design::text::malformed_design(Some(ctx), format_args!(
                     "F3D sketch point {record_index} has an invalid version-{} member sequence",
                     frame.design_type.version
                 ))
@@ -1953,7 +1953,7 @@ fn decode_sketch_points_from_stream(
             decoded.trailing_reference(),
             SKETCH_CONTAINER_TYPE_GUID,
         ) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D sketch point {record_index} has an invalid trailing container reference"
             )));
         }
@@ -1980,7 +1980,7 @@ fn decode_sketch_points_from_stream(
             .transpose()?
             .flatten()
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::design::text::malformed_design(Some(ctx), format_args!(
                     "F3D sketch point {record_index} has no valid inverse companion"
                 ))
             })?;
@@ -3523,7 +3523,7 @@ fn parse_sketch_surface(
             return Ok(None);
         };
         let point = scaled_sketch_point(source).ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D sketch surface at byte {record_at} control point {ordinal} overflows millimetres"
             ))
         })?;
@@ -3639,7 +3639,7 @@ pub(crate) fn bind_sketch_graph(
     })?;
     for relation in relations.iter_mut() {
         let scope = native_stream(&relation.id).ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            crate::design::text::malformed_design(Some(ctx), format_args!(
                 "Fusion sketch relation {} has no Design stream identity",
                 relation.record_index
             ))
@@ -3647,7 +3647,7 @@ pub(crate) fn bind_sketch_graph(
         let owner = sketch_owners
             .get(&(scope, relation.owner_reference))
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::design::text::malformed_design(Some(ctx), format_args!(
                     "Fusion sketch relation {} in {scope} has no owning Design entity {}",
                     relation.record_index, relation.owner_reference,
                 ))
@@ -3660,7 +3660,7 @@ pub(crate) fn bind_sketch_graph(
         owner_text.push_str(owner);
         relation.owner_entity_id = Some(
             cadmpeg_core::text::NonBlankString::new(owner_text).ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                crate::design::text::malformed_design(Some(ctx), format_args!(
                     "Fusion sketch relation {} has an empty owner_entity_id",
                     relation.record_index,
                 ))
@@ -3743,7 +3743,7 @@ pub(crate) fn bind_sketch_graph(
             if insert_sketch_owner(ctx, &mut owners, scope, record_index, owner_reference)?
                 .is_some_and(|owner| owner != owner_reference)
             {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                     "Fusion sketch record {record_index} in {scope} belongs to multiple sketches"
                 )));
             }
@@ -3767,7 +3767,7 @@ pub(crate) fn bind_sketch_graph(
             if insert_sketch_owner(ctx, &mut owners, scope, *record_index, suffix)?
                 .is_some_and(|owner| owner != suffix)
             {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                     "Fusion sketch record {record_index} in {scope} belongs to multiple sketches"
                 )));
             }
@@ -3831,7 +3831,7 @@ pub(crate) fn bind_sketch_graph(
     }
     for relation in relations {
         let scope = native_stream(&relation.id).ok_or_else(|| {
-            CodecError::malformed(format_args!("invalid sketch relation id {}", relation.id))
+            crate::design::text::malformed_design(Some(ctx), format_args!("invalid sketch relation id {}", relation.id))
         })?;
         let _scope_reservation =
             ctx.reserve_scoped(scope.len() as u64, "f3d sketch relation scope text")?;
@@ -3925,19 +3925,19 @@ fn decode_sketch_curve_geometry(
     };
     let decoded = match class {
         SketchCurveClass::Line => {
-            if let Some((geometry, _)) = decode_line_family(geometry_payload, record_at)? {
+            if let Some((geometry, _)) = decode_line_family(ctx, geometry_payload, record_at)? {
                 Some((geometry, 133))
             } else if let Some(referenced) = referenced_analytic_payload(geometry_payload) {
-                decode_line_family(referenced, record_at)?.map(|(geometry, _)| (geometry, 11 + 133))
+                decode_line_family(ctx, referenced, record_at)?.map(|(geometry, _)| (geometry, 11 + 133))
             } else {
                 None
             }
         }
         SketchCurveClass::Circular => {
-            if let Some(geometry) = decode_circular_arc(geometry_payload, record_at)? {
+            if let Some(geometry) = decode_circular_arc(ctx, geometry_payload, record_at)? {
                 Some((geometry, 133))
             } else if let Some(referenced) = referenced_analytic_payload(geometry_payload) {
-                decode_circular_arc(referenced, record_at)?.map(|geometry| (geometry, 11 + 133))
+                decode_circular_arc(ctx, referenced, record_at)?.map(|geometry| (geometry, 11 + 133))
             } else {
                 None
             }
@@ -3951,7 +3951,7 @@ fn decode_sketch_curve_geometry(
             geometry.map(|(geometry, _)| (geometry, 133))
         }
         SketchCurveClass::TextFrameLine => {
-            decode_text_frame_line(payload, geometry_shift, record_index, record_at)?.and_then(
+            decode_text_frame_line(ctx, payload, geometry_shift, record_index, record_at)?.and_then(
                 |(geometry, end)| {
                     end.checked_sub(geometry_shift + 12 * 8)
                         .map(|offset| (geometry, offset))
@@ -3968,15 +3968,17 @@ fn decode_sketch_curve_geometry(
 }
 
 fn decode_circular_arc(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     record_at: usize,
 ) -> Result<Option<SketchCurveGeometry>, CodecError> {
-    let Some(values) = (0..12)
-        .map(|ordinal| View::f64_le_at(payload, 133 + ordinal * 8))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
+    let mut values = [0.0; 12];
+    for (ordinal, value) in values.iter_mut().enumerate() {
+        let Some(parsed) = View::f64_le_at(payload, 133 + ordinal * 8) else {
+            return Ok(None);
+        };
+        *value = parsed;
+    }
     let (Some(center_cm), Some(normal), Some(reference_direction), Some(radius_cm)) = (
         FinitePoint3::new(Point3::new(values[0], values[1], values[2])),
         UnitVector3::new(Vector3::new(values[3], values[4], values[5])),
@@ -3989,10 +3991,10 @@ fn decode_circular_arc(
     else {
         return Ok(None);
     };
-    let center = scale_sketch_point(center_cm, record_at, "arc")?;
+    let center = scale_sketch_point(ctx, center_cm, record_at, "arc")?;
     let radius = PositiveLength::new(radius_cm.get() * 10.0);
     let Some(radius) = radius else {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
             "F3D sketch arc at byte {record_at} overflows millimetres"
         )));
     };
@@ -4008,12 +4010,13 @@ fn decode_circular_arc(
 }
 
 fn scale_sketch_point(
+    ctx: &DecodeContext<'_>,
     point_centimetres: FinitePoint3,
     record_at: usize,
     kind: &str,
 ) -> Result<FinitePoint3, CodecError> {
     scaled_sketch_point(point_centimetres).ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        crate::design::text::malformed_design(Some(ctx), format_args!(
             "F3D sketch {kind} at byte {record_at} overflows millimetres"
         ))
     })
@@ -4037,6 +4040,7 @@ fn referenced_analytic_payload(payload: &[u8]) -> Option<&[u8]> {
 /// record repeats the enclosing record index and carries eight zero bytes
 /// before the line values.
 fn decode_text_frame_line(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     geometry_shift: usize,
     record_index: u32,
@@ -4072,7 +4076,7 @@ fn decode_text_frame_line(
     let Some(end) = values_at.checked_add(12 * 8) else {
         return Ok(None);
     };
-    Ok(decode_line_values(payload, values_at, record_at)?.map(|geometry| (geometry, end)))
+    Ok(decode_line_values(ctx, payload, values_at, record_at)?.map(|geometry| (geometry, end)))
 }
 
 fn decode_sketch_nurbs(
@@ -4275,7 +4279,7 @@ fn admit_source_sketch_nurbs(
     };
     let fit_tolerance_mm = fit_tolerance_cm.get() * 10.0;
     let Some(fit_tolerance_mm) = NonNegativeLength::new(fit_tolerance_mm) else {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
             "F3D sketch NURBS at byte {record_at} fit tolerance overflows millimetres"
         )));
     };
@@ -4289,7 +4293,7 @@ fn admit_source_sketch_nurbs(
         let Some(source) = FinitePoint3::new(Point3::new(point[0], point[1], point[2])) else {
             return Ok(None);
         };
-        control_points.push(scale_sketch_point(source, record_at, "NURBS")?);
+        control_points.push(scale_sketch_point(ctx, source, record_at, "NURBS")?);
     }
     let Ok(poles) = crate::records::sketch_geometry::SketchNurbsPoles::from_checked_points(
         control_points,
@@ -4309,23 +4313,26 @@ fn admit_source_sketch_nurbs(
 }
 
 fn decode_line(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     record_at: usize,
 ) -> Result<Option<SketchCurveGeometry>, CodecError> {
-    decode_line_values(payload, 133, record_at)
+    decode_line_values(ctx, payload, 133, record_at)
 }
 
 fn decode_compact_planar_line(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     record_at: usize,
 ) -> Result<Option<SketchCurveGeometry>, CodecError> {
     let values_at = 133;
-    let Some(values) = (0..9)
-        .map(|ordinal| View::f64_le_at(payload, values_at + ordinal * 8))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
+    let mut values = [0.0; 9];
+    for (ordinal, value) in values.iter_mut().enumerate() {
+        let Some(parsed) = View::f64_le_at(payload, values_at + ordinal * 8) else {
+            return Ok(None);
+        };
+        *value = parsed;
+    }
     if values[2] != 0.0 || values[5] != 0.0 || values[8] != 0.0 {
         return Ok(None);
     }
@@ -4335,35 +4342,39 @@ fn decode_compact_planar_line(
     if payload.get(reference_end..reference_end + 6) != Some(&[0; 6]) {
         return Ok(None);
     }
-    decode_line_components(&values, Vector3::new(0.0, 0.0, 1.0), record_at)
+    decode_line_components(ctx, &values, Vector3::new(0.0, 0.0, 1.0), record_at)
 }
 
 fn decode_line_family(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     record_at: usize,
 ) -> Result<Option<(SketchCurveGeometry, usize)>, CodecError> {
-    if let Some(geometry) = decode_line(payload, record_at)? {
+    if let Some(geometry) = decode_line(ctx, payload, record_at)? {
         return Ok(Some((geometry, 12)));
     }
-    Ok(decode_compact_planar_line(payload, record_at)?.map(|geometry| (geometry, 9)))
+    Ok(decode_compact_planar_line(ctx, payload, record_at)?.map(|geometry| (geometry, 9)))
 }
 
 fn decode_line_values(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     values_at: usize,
     record_at: usize,
 ) -> Result<Option<SketchCurveGeometry>, CodecError> {
-    let Some(values) = (0..12)
-        .map(|ordinal| View::f64_le_at(payload, values_at + ordinal * 8))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(None);
-    };
+    let mut values = [0.0; 12];
+    for (ordinal, value) in values.iter_mut().enumerate() {
+        let Some(parsed) = View::f64_le_at(payload, values_at + ordinal * 8) else {
+            return Ok(None);
+        };
+        *value = parsed;
+    }
     let stored_normal = Vector3::new(values[9], values[10], values[11]);
-    decode_line_components(&values, stored_normal, record_at)
+    decode_line_components(ctx, &values, stored_normal, record_at)
 }
 
 fn decode_line_components(
+    ctx: &DecodeContext<'_>,
     values: &[f64],
     stored_normal: Vector3,
     record_at: usize,
@@ -4383,9 +4394,9 @@ fn decode_line_components(
     let Some(start_cm) = FinitePoint3::new(Point3::new(values[0], values[1], values[2])) else {
         return Ok(None);
     };
-    let start = scale_sketch_point(start_cm, record_at, "line")?;
+    let start = scale_sketch_point(ctx, start_cm, record_at, "line")?;
     let end = FinitePoint3::new(start.get().translated(displacement, 10.0)).ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        crate::design::text::malformed_design(Some(ctx), format_args!(
             "F3D sketch line at byte {record_at} overflows millimetres"
         ))
     })?;
@@ -4397,7 +4408,7 @@ fn decode_line_components(
         end_raw.z - start_raw.z,
     ))
     .ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        crate::design::text::malformed_design(Some(ctx), format_args!(
             "F3D sketch line at byte {record_at} has an overflowing displacement"
         ))
     })?;

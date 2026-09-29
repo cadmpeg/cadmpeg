@@ -572,10 +572,10 @@ fn snapshot_body_map_records(
         if !crate::design::body::SNAPSHOT_BODY_MAP_CARRIER_TYPE_VERSIONS
             .contains(&design_type.version)
         {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::NotImplemented(crate::design::text::format_design_text(Some(ctx), format_args!(
                 "unsupported F3D Design snapshot body-map carrier version {}",
                 design_type.version
-            )));
+            ), "f3d Design unsupported diagnostic")?));
         }
         if design_type.module != DESIGN_MODULE_BODY
             || !design_type
@@ -602,7 +602,7 @@ fn snapshot_body_map_records(
             .to_string();
         for &entity in design_type.entities.values() {
             let Some(&frame_ordinal) = primary_by_entity.get(&entity) else {
-                return Err(crate::error::malformed(format!(
+                return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                     "F3D Design snapshot body-map entity {entity} has no primary record"
                 )));
             };
@@ -612,7 +612,7 @@ fn snapshot_body_map_records(
                 || View::u64_le_at(bytes, frame.start + 7) != Some(entity)
                 || bytes.get(frame.start + 15..frame.start + 21) != Some(&[0; 6])
             {
-                return Err(crate::error::malformed(format!(
+                return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                     "F3D Design snapshot body-map entity {entity} has an invalid entity header"
                 )));
             }
@@ -789,10 +789,10 @@ fn body_map_records(
             continue;
         }
         if design_type.version != crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION {
-            return Err(CodecError::NotImplemented(format!(
+            return Err(CodecError::NotImplemented(crate::design::text::format_design_text(Some(ctx), format_args!(
                 "unsupported F3D Design body-map carrier version {}",
                 design_type.version
-            )));
+            ), "f3d Design unsupported diagnostic")?));
         }
         if design_type.module != DESIGN_MODULE_BODY
             || !design_type
@@ -820,7 +820,7 @@ fn body_map_records(
 
         for &entity_id in design_type.entities.values() {
             if typed_entities.contains(&entity_id) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                     "F3D Design body-map carrier entity {entity_id} is registered more than once"
                 )));
             }
@@ -832,12 +832,12 @@ fn body_map_records(
             let record_ordinal = match primary_by_entity.get(&entity_id) {
                 Some(Some(record_ordinal)) => *record_ordinal,
                 Some(None) => {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                         "F3D Design body-map carrier entity {entity_id} has multiple primary records"
                     )));
                 }
                 None => {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                         "F3D Design body-map carrier entity {entity_id} has no primary record"
                     )));
                 }
@@ -846,7 +846,7 @@ fn body_map_records(
             let start = frame.start;
             let end = frame.end;
             let record_index = u32::try_from(entity_id).map_err(|_| {
-                CodecError::malformed(format_args!(
+                crate::design::text::malformed_design(Some(ctx), format_args!(
                     "F3D Design body-map carrier entity {entity_id} exceeds u32"
                 ))
             })?;
@@ -858,7 +858,7 @@ fn body_map_records(
                 || View::u32_le_at(bytes, start + indexed_design_record_header::RECORD_INDEX)
                     != Some(record_index)
             {
-                return Err(CodecError::malformed(format_args!(
+                return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                     "F3D Design body-map carrier entity {entity_id} has an invalid indexed header"
                 )));
             }
@@ -870,7 +870,7 @@ fn body_map_records(
                     continue;
                 };
                 if matched.replace(bindings).is_some() {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                         "F3D Design body-map carrier entity {entity_id} has an ambiguous frame"
                     )));
                 }
@@ -1048,7 +1048,7 @@ fn parse_body_map_frame(
         return Ok(None);
     };
     let count = usize::try_from(pair_count).map_err(|_| {
-        CodecError::malformed(format_args!(
+        crate::design::text::malformed_design(Some(ctx), format_args!(
             "F3D Design body map at byte {start} pair count does not fit this platform"
         ))
     })?;
@@ -1122,7 +1122,7 @@ fn parse_body_map_frame(
         let (Some(key), Some(suffix)) =
             (View::u64_le_at(bytes, at), View::u64_le_at(bytes, at + 8))
         else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "F3D Design body map at byte {start} has a truncated pair run"
             )));
         };

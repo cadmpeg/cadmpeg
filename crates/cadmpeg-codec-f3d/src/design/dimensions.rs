@@ -4464,7 +4464,7 @@ pub(crate) fn bind_dimension_loci<'a>(
             .replace(owner)
             .is_some_and(|existing| existing != owner)
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "Fusion sketch point {} has conflicting relation and dimension owners",
                 point.record_index
             )));
@@ -4486,7 +4486,7 @@ pub(crate) fn bind_dimension_loci<'a>(
             .replace(owner)
             .is_some_and(|existing| existing != owner)
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
                 "Fusion sketch curve {} has conflicting relation and dimension owners",
                 curve.record_index
             )));
@@ -4516,7 +4516,7 @@ fn insert_dimension_binding<'a>(
     if records.insert(record_index, owner)
         .is_some_and(|existing| existing != owner)
     {
-        return Err(CodecError::malformed(format_args!(
+        return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
             "Fusion dimensional geometry record {record_index} belongs to multiple sketches"
         )));
     }

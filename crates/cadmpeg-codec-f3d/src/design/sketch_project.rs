@@ -916,7 +916,7 @@ pub(crate) fn project_spatial_sketch_design(
                         control_points,
                     )
                     .map_err(|error| {
-                        cadmpeg_core::CodecError::malformed(format_args!(
+                        crate::design::text::malformed_design(ctx, format_args!(
                             "F3D spatial sketch surface {} is invalid: {error}",
                             surface.id
                         ))
