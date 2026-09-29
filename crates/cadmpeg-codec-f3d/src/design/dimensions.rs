@@ -88,6 +88,30 @@ fn copy_dimension_entity_id(
     cadmpeg_ir::sketches::SketchEntityId::try_from(text).map_err(CodecError::malformed)
 }
 
+fn copy_spatial_sketch_id(
+    ctx: Option<&DecodeContext<'_>>,
+    id: &cadmpeg_ir::sketches::SpatialSketchId,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::sketches::SpatialSketchId, CodecError> {
+    let Some(ctx) = ctx else { return Ok(id.clone()); };
+    let bytes = ctx.copy_retained(id.as_str().as_bytes(), operation)?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| CodecError::malformed("validated spatial sketch ID is not UTF-8"))?;
+    cadmpeg_ir::sketches::SpatialSketchId::try_from(text).map_err(CodecError::malformed)
+}
+
+fn copy_dimension_parameter_id(
+    ctx: Option<&DecodeContext<'_>>,
+    id: &cadmpeg_ir::features::ParameterId,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::features::ParameterId, CodecError> {
+    let Some(ctx) = ctx else { return Ok(id.clone()); };
+    let bytes = ctx.copy_retained(id.as_str().as_bytes(), operation)?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| CodecError::malformed("validated parameter ID is not UTF-8"))?;
+    cadmpeg_ir::features::ParameterId::try_from(text).map_err(CodecError::malformed)
+}
+
 fn copy_dimension_locus(
     ctx: Option<&DecodeContext<'_>>,
     locus: &cadmpeg_ir::sketches::SketchLocus,
@@ -2622,27 +2646,27 @@ pub(crate) fn project_spatial_dimension_constraints(
         ..
     } = inputs;
 
-    let spatial_by_planar_id = placements
-        .iter()
-        .filter_map(|placement| {
-            let spatial_id = neutral_spatial_sketch_id(placement);
-            spatial_sketches
-                .iter()
-                .any(|sketch| sketch.id == spatial_id)
-                .then(|| (neutral_sketch_id(placement), spatial_id))
-        })
-        .collect::<HashMap<_, _>>();
-    let spatial_by_scope = placements
-        .iter()
-        .filter_map(|placement| {
-            let scope = native_stream(&placement.id)?;
-            let scope_record_index = placement.scope_record_index?;
-            spatial_by_planar_id
-                .get(&neutral_sketch_id(placement))
-                .map(|sketch| ((scope, scope_record_index), sketch.clone()))
-        })
-        .collect::<HashMap<_, _>>();
-    let native_record_indices = points
+    let mut spatial_by_planar_id = HashMap::new();
+    for placement in placements {
+        let spatial_id = neutral_spatial_sketch_id(placement);
+        if spatial_sketches.iter().any(|sketch| sketch.id == spatial_id) {
+            insert_dimension_index(ctx, &mut spatial_by_planar_id,
+                neutral_sketch_id(placement), spatial_id,
+                "f3d spatial planar sketch index")?;
+        }
+    }
+    let mut spatial_by_scope = HashMap::new();
+    for placement in placements {
+        let (Some(scope), Some(scope_record_index)) =
+            (native_stream(&placement.id), placement.scope_record_index) else { continue; };
+        if let Some(sketch) = spatial_by_planar_id.get(&neutral_sketch_id(placement)) {
+            let sketch = copy_spatial_sketch_id(ctx, sketch, "f3d spatial scope sketch id")?;
+            insert_dimension_index(ctx, &mut spatial_by_scope,
+                (scope, scope_record_index), sketch,
+                "f3d spatial scope sketch index")?;
+        }
+    }
+    let native_records = points
         .iter()
         .filter_map(|point| {
             Some((
@@ -2655,38 +2679,45 @@ pub(crate) fn project_spatial_dimension_constraints(
                 curve.id.as_str(),
                 (native_stream(&curve.id)?, curve.record_index),
             ))
-        }))
-        .collect::<HashMap<_, _>>();
-    let spatial_by_record = spatial_entities
-        .iter()
-        .filter_map(|entity| {
-            let native_ref = entity.native_ref.as_deref()?;
-            native_record_indices
-                .get(native_ref)
-                .map(|key| (*key, entity))
-        })
-        .collect::<HashMap<_, _>>();
-    let parameter_lengths = parameters
-        .iter()
-        .filter_map(|parameter| {
-            Some((
-                neutral_parameter_id(parameter),
-                design_length(parameter)?.get().abs(),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let parameters_by_id = parameters
-        .iter()
-        .map(|parameter| (neutral_parameter_id(parameter), parameter))
-        .collect::<HashMap<_, _>>();
+        }));
+    let mut native_record_indices = HashMap::new();
+    for (native_ref, record) in native_records {
+        insert_dimension_index(ctx, &mut native_record_indices, native_ref, record,
+            "f3d spatial native record index")?;
+    }
+    let mut spatial_by_record = HashMap::new();
+    for entity in spatial_entities {
+        let Some(native_ref) = entity.native_ref.as_deref() else { continue; };
+        if let Some(key) = native_record_indices.get(native_ref) {
+            insert_dimension_index(ctx, &mut spatial_by_record, *key, entity,
+                "f3d spatial projected record index")?;
+        }
+    }
+    let mut parameter_lengths = HashMap::new();
+    let mut parameters_by_id = HashMap::new();
+    for parameter in parameters {
+        if let Some(length) = design_length(parameter) {
+            insert_dimension_index(ctx, &mut parameter_lengths,
+                neutral_parameter_id(parameter), length.get().abs(),
+                "f3d spatial parameter length index")?;
+        }
+        insert_dimension_index(ctx, &mut parameters_by_id,
+            neutral_parameter_id(parameter), parameter,
+            "f3d spatial parameter index")?;
+    }
     let source_constraints = project_all_dimension_constraints(ctx, inputs, &[], linear_tolerance)?;
-    let parameter_constraint_counts = source_constraints
-        .iter()
-        .flat_map(|constraint| constraint_parameters(constraint.definition.kind()))
-        .fold(HashMap::new(), |mut counts, parameter| {
-            *counts.entry(parameter.clone()).or_insert(0usize) += 1;
-            counts
-        });
+    let mut parameter_constraint_counts = HashMap::new();
+    for parameter in source_constraints.iter()
+        .flat_map(|constraint| constraint_parameters(constraint.definition.kind())) {
+        if let Some(count) = parameter_constraint_counts.get_mut(parameter) {
+            *count += 1;
+        } else {
+            let id = copy_dimension_parameter_id(ctx, parameter,
+                "f3d spatial parameter count id")?;
+            insert_dimension_index(ctx, &mut parameter_constraint_counts, id, 1usize,
+                "f3d spatial parameter count index")?;
+        }
+    }
     let mut source_parameters = HashSet::new();
     let mut projected = source_constraints
         .into_iter()
