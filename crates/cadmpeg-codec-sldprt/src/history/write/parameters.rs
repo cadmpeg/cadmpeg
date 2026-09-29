@@ -121,11 +121,11 @@ fn sync_neutral_parameters(
             .map(|feature| (neutral_feature_id(&feature.id), feature.name.clone()))
             .collect::<HashMap<_, _>>();
         rewrite_renamed_parameter_references(
-            &mut parameters,
+            &ctx, &mut parameters,
             &original,
             &original_feature_names,
             &feature_names,
-        );
+        )?;
     }
     if parameters_with_incoherent_dependencies(&ctx, &parameters, &feature_names, &global_owners)? > 0 {
         return Err(CodecError::Malformed(
@@ -308,11 +308,11 @@ fn sync_neutral_parameters(
 }
 
 fn rewrite_renamed_parameter_references(
-    parameters: &mut [DesignParameter],
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, parameters: &mut [DesignParameter],
     original: &[DesignParameter],
     original_feature_names: &HashMap<FeatureId, String>,
     feature_names: &HashMap<FeatureId, String>,
-) {
+) -> Result<(), CodecError> {
     let original = original
         .iter()
         .map(|parameter| (&parameter.id, parameter))
@@ -386,17 +386,18 @@ fn rewrite_renamed_parameter_references(
         if aliases.is_empty() {
             continue;
         }
-        if let Some(rewritten) = rewrite_parameter_expression(&parameter.expression, &aliases) {
+        if let Some(rewritten) = rewrite_parameter_expression(ctx, &parameter.expression, &aliases)? {
             parameter.expression = rewritten;
         }
     }
+    Ok(())
 }
 
 pub(in crate::history) fn rewrite_parameter_expression(
-    expression: &str,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, expression: &str,
     aliases: &HashMap<String, String>,
-) -> Option<String> {
-    let tokens = expression_identifier_tokens(expression).ok()?;
+) -> Result<Option<String>, CodecError> {
+    let Some(tokens) = expression_identifier_tokens(ctx, expression)? else { return Ok(None); };
     let mut rewritten = String::with_capacity(expression.len());
     let mut tail = expression;
     let mut replaced = false;
@@ -422,10 +423,10 @@ pub(in crate::history) fn rewrite_parameter_expression(
         replaced = true;
     }
     if !replaced {
-        return None;
+        return Ok(None);
     }
     rewritten.push_str(tail);
-    Some(rewritten)
+    Ok(Some(rewritten))
 }
 
 pub(in crate::history) fn unquoted_expression_identifier(value: &str) -> bool {

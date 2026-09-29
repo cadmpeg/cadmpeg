@@ -1,30 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter-expression parser and arithmetic.
 
-use cadmpeg_core::{decode::{DecodeContext, ScopedReservation}, CodecError};
+use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{
     features::{ParameterId, ParameterValue},
     scalar::{Angle, FiniteReal, Length},
 };
 use std::collections::HashMap;
 
-use super::{copy_parameter_value, ParameterAliasView};
+use super::{copy_parameter_value, ParameterAliasView, ParameterTokenText};
 use crate::history::literals::parse_parameter_literal;
 
-enum TokenText<'a, 'ctx> {
-    Borrowed(&'a str),
-    Owned { value: String, _reservation: ScopedReservation<'ctx> },
-}
-
-impl TokenText<'_, '_> {
-    fn as_str(&self) -> &str {
-        match self { Self::Borrowed(value) => value, Self::Owned { value, .. } => value }
-    }
-}
-
 enum Token<'a, 'ctx> {
-    Quoted(TokenText<'a, 'ctx>),
-    Bare(TokenText<'a, 'ctx>),
+    Quoted(ParameterTokenText<'a, 'ctx>),
+    Bare(ParameterTokenText<'a, 'ctx>),
 }
 
 enum ExpressionFailure {
@@ -198,10 +187,11 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let bytes = prefix.len().checked_add(value.as_str().len()).ok_or_else(|| self.ctx.refuse_codec_limit(
                 "normalize SLDPRT parameter token", u64::MAX - 1, u64::MAX,
             ))?;
+            self.ctx.charge_work(bytes as u64, "normalize SLDPRT parameter token")?;
             let (mut text, reservation) = self.ctx.reserve_scoped_string(bytes, "normalize SLDPRT parameter token")?;
             text.push_str(prefix);
             text.push_str(value.as_str());
-            return Ok(Token::Bare(TokenText::Owned { value: text, _reservation: reservation }));
+            return Ok(Token::Bare(ParameterTokenText::Owned { value: text, _reservation: reservation }));
         }
         if rest.starts_with('"') {
             self.offset += 1;
@@ -228,7 +218,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 }
             }
             self.offset = end + 1;
-            return Ok(Token::Quoted(TokenText::Owned { value, _reservation: reservation }));
+            return Ok(Token::Quoted(ParameterTokenText::Owned { value, _reservation: reservation }));
         }
         let start = self.offset;
         let numeric = self.input[start..].chars().next()
@@ -242,7 +232,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             self.offset += character.len_utf8();
         }
         if self.offset == start { return Err(ExpressionFailure::NoValue); }
-        Ok(Token::Bare(TokenText::Borrowed(&self.input[start..self.offset])))
+        Ok(Token::Bare(ParameterTokenText::Borrowed(&self.input[start..self.offset])))
     }
 
     fn skip_space(&mut self) -> Result<(), ExpressionFailure> {
