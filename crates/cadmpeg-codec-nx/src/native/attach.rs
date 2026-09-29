@@ -7554,13 +7554,26 @@ struct HoleBodyProjection {
     counterbores: BTreeMap<String, CounterboreDimensions>,
 }
 
+fn hole_operations_are_unique(
+    ctx: &DecodeContext<'_>,
+    operations: &[String],
+) -> Result<bool, CodecError> {
+    for (index, operation) in operations.iter().enumerate() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(index), "NX hole operation uniqueness")?;
+        if operations[..index].contains(operation) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 fn hole_body_projection(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<Option<HoleBodyProjection>, CodecError> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    if operations.is_empty() || !hole_operations_are_unique(ctx, operations)?
     {
         return Ok(None);
     }
@@ -7609,7 +7622,7 @@ fn counterbore_body_projection(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<Option<HoleBodyProjection>, CodecError> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    if operations.is_empty() || !hole_operations_are_unique(ctx, operations)?
     {
         return Ok(None);
     }
@@ -7662,7 +7675,7 @@ fn blind_hole_body_projection(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<Option<HoleBodyProjection>, CodecError> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    if operations.is_empty() || !hole_operations_are_unique(ctx, operations)?
     {
         return Ok(None);
     }
@@ -7716,7 +7729,7 @@ fn hole_axis_placements_for_operations(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<BTreeMap<String, HolePlacement>, CodecError> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    if operations.is_empty() || !hole_operations_are_unique(ctx, operations)?
     {
         return Ok(BTreeMap::new());
     }
@@ -7744,7 +7757,7 @@ fn counterbore_axis_placements_for_operations(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<BTreeMap<String, HolePlacement>, CodecError> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    if operations.is_empty() || !hole_operations_are_unique(ctx, operations)?
     {
         return Ok(BTreeMap::new());
     }
@@ -7788,7 +7801,7 @@ fn blind_hole_axis_placements_for_operations(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> Result<BTreeMap<String, HolePlacement>, CodecError> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    if operations.is_empty() || !hole_operations_are_unique(ctx, operations)?
     {
         return Ok(BTreeMap::new());
     }

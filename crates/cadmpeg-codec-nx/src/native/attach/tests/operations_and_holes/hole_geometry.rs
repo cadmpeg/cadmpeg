@@ -1,12 +1,24 @@
 use crate::native::attach::hole_axis_placements_for_operations;
 use crate::native::attach::hole_body_projection;
 use crate::native::attach::hole_operations_by_body;
+use crate::native::attach::hole_operations_are_unique;
 use crate::native::attach::simple_hole_chamfers;
 use crate::native::attach::simple_hole_native_properties;
 use crate::native::attach::tests::hole_diameters_for_operations;
 use crate::native::attach::tests::simple_hole_diameters;
 use crate::native::attach::SolvedSurfaceGeometry;
 use crate::native::attach::SurfaceGeometry;
+
+#[test]
+fn hole_operation_uniqueness_refuses_work_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = hole_operations_are_unique(&ctx, &["first".into(), "second".into()]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
 
 fn hole_body_group_result(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
