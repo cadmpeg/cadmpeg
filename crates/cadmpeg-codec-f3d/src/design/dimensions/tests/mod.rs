@@ -39,6 +39,7 @@ fn project_spatial_dimension_constraints(
 }
 
 mod numerical_ranges;
+mod parameter_iteration;
 
 fn assert_dimension_refusal(
     operation: &'static str,

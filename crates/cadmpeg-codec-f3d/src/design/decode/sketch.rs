@@ -1818,11 +1818,10 @@ fn decode_pattern_definition(
                 return None;
             }
             let [first_count, first_distance, second_count, second_distance] = (*clauses)?;
-            let mut directions = Vec::with_capacity(2);
-            for (count, distance) in [
+            let directions = [
                 (first_count, first_distance),
                 (second_count, second_distance),
-            ] {
+            ].map(|(count, distance)| {
                 let count_at = count.offset.checked_sub(5)?;
                 let evaluated_count =
                     crate::records::sketch_relations::SketchPatternCount::try_from(
@@ -1835,7 +1834,7 @@ fn decode_pattern_definition(
                     View::f64_le_at(payload, direction_at + 8)?,
                     View::f64_le_at(payload, direction_at + 16)?,
                 ];
-                directions.push(SketchPatternDirection {
+                Some(SketchPatternDirection {
                     evaluated_count,
                     count_parameter: count.value,
                     direction: direction.try_into().ok()?,
@@ -1844,10 +1843,11 @@ fn decode_pattern_definition(
                         direction_at + 24,
                     )?)?,
                     distance_parameter: distance.value,
-                });
-            }
+                })
+            });
+            let [first, second] = directions;
             return Some(SketchPatternDefinition::Rectangular {
-                directions: directions.try_into().ok()?,
+                directions: [first?, second?],
             });
         }
         RelationClassMembers::TextFrame => {

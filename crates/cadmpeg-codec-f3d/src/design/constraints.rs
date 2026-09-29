@@ -804,12 +804,11 @@ fn exact_circular_pattern(
         if seed.is_empty() {
             continue;
         }
-        let mut divisors = vec![f64::from(evaluated_count.get())];
-        if evaluated_count.get() > 1 {
-            divisors.push(f64::from(evaluated_count.get() - 1));
-        }
-        divisors.dedup_by(|left, right| scalar_close(*left, *right));
-        for divisor in divisors {
+        let first_divisor = f64::from(evaluated_count.get());
+        let second_divisor = (evaluated_count.get() > 1)
+            .then(|| f64::from(evaluated_count.get() - 1))
+            .filter(|second| !scalar_close(first_divisor, *second));
+        for divisor in [Some(first_divisor), second_divisor].into_iter().flatten() {
             // The seed is the first chunk; it is not an instance, and the
             // instances carry only their nonzero rotations.
             let mut instances = Vec::new();
