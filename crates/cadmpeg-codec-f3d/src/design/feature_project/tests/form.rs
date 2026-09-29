@@ -3,8 +3,16 @@
 use crate::design::feature_project::{
     distinct_form_cage_ids, form_cage_lists, form_cage_objects, form_cage_serializers, form_cage_surface, form_cage_surfaces, form_class_325_cage_objects,
     form_class_325_cage_surface, form_class_328_envelope, legacy_form_cage_count,
-    project_parameter_design, push_form_cage_id,
+    project_parameter_design, push_form_cage_id, FormCageSerializers,
 };
+
+fn parsed_serializers(bytes: &[u8], records: &crate::design::decode::sketch::IndexedRecordOffsets) -> FormCageSerializers {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+    ).unwrap();
+    form_cage_serializers(&ctx, bytes, records).unwrap()
+}
 
 #[test]
 fn form_resolved_cage_id_refuses_retained_limit() {
@@ -298,7 +306,7 @@ fn serializer_joins_surface_to_exact_cage_entry_name() {
         let following = indexed_frame(b"457", 8306, 15);
         let bytes = [serializer, following].concat();
         assert_eq!(
-            form_cage_serializers(
+            parsed_serializers(
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             )
@@ -306,6 +314,76 @@ fn serializer_joins_surface_to_exact_cage_entry_name() {
             Some(entry_name)
         );
     }
+}
+
+fn assert_form_serializer_refusal(
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    limit: u64,
+    operation: &'static str,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
+    let mut serializer = indexed_frame(b"315", 8305, 132);
+    serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
+    for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
+        let at = 25 + ordinal * 2;
+        serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+    }
+    serializer[121] = 1;
+    serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
+    let following = indexed_frame(b"457", 8306, 15);
+    let bytes = [serializer, following].concat();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    match dimension {
+        ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+        ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = limit,
+        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+        _ => panic!("test dimension must be a serializer allocation dimension"),
+    }
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(form_cage_serializers(&ctx, &bytes, &records),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == operation && failure.dimension == dimension));
+}
+
+#[test]
+fn form_serializer_offset_refuses_collection_limit() {
+    assert_form_serializer_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        0, "f3d form serializer offset");
+}
+
+#[test]
+fn form_serializer_name_refuses_materialized_limit() {
+    assert_form_serializer_refusal(cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+        239, "f3d form serializer name materialization");
+}
+
+#[test]
+fn form_serializer_units_refuses_collection_limit() {
+    assert_form_serializer_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        2, "f3d form serializer name units");
+}
+
+#[test]
+fn form_serializer_entry_name_refuses_retained_limit() {
+    assert_form_serializer_refusal(cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+        47, "f3d form serializer entry name");
+}
+
+#[test]
+fn form_serializer_entry_index_refuses_collection_limit() {
+    assert_form_serializer_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        50, "f3d form serializer entry index");
+}
+
+#[test]
+fn form_serializer_order_refuses_collection_limit() {
+    assert_form_serializer_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        51, "f3d form serializer order");
 }
 
 #[test]
@@ -323,7 +401,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
     let surface = indexed_frame(b"358", 8304, 15);
     let bytes = [serializer, following, surface].concat();
     assert_eq!(
-        form_cage_serializers(
+        parsed_serializers(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         )
@@ -333,7 +411,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
 
     let mut wrong_pair = bytes.clone();
     wrong_pair[132 + 4..132 + 7].copy_from_slice(b"457");
-    assert!(!form_cage_serializers(
+    assert!(!parsed_serializers(
         &wrong_pair,
         &crate::design::test_support::indexed_record_offsets_for_test(&wrong_pair),
     )
@@ -342,7 +420,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
 
     let mut nonzero_tail = bytes;
     nonzero_tail[131] = 1;
-    assert!(!form_cage_serializers(
+    assert!(!parsed_serializers(
         &nonzero_tail,
         &crate::design::test_support::indexed_record_offsets_for_test(&nonzero_tail),
     )
@@ -371,7 +449,7 @@ fn serializers_preserve_primary_frame_order() {
         chunks.push(indexed_frame(b"457", record + 1, 15));
     }
     let bytes = chunks.concat();
-    let serializers = form_cage_serializers(
+    let serializers = parsed_serializers(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
     );
@@ -759,7 +837,7 @@ fn duplicate_surface_serializers_stay_ambiguous() {
         chunks.push(indexed_frame(b"457", record + 1, 15));
     }
     let bytes = chunks.concat();
-    let serializers = form_cage_serializers(
+    let serializers = parsed_serializers(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
     );
