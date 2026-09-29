@@ -88,6 +88,18 @@ fn copy_dimension_entity_id(
     cadmpeg_ir::sketches::SketchEntityId::try_from(text).map_err(CodecError::malformed)
 }
 
+fn copy_dimension_sketch_id(
+    ctx: Option<&DecodeContext<'_>>,
+    id: &cadmpeg_ir::sketches::SketchId,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::sketches::SketchId, CodecError> {
+    let Some(ctx) = ctx else { return Ok(id.clone()); };
+    let bytes = ctx.copy_retained(id.as_str().as_bytes(), operation)?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| CodecError::malformed("validated sketch ID is not UTF-8"))?;
+    cadmpeg_ir::sketches::SketchId::try_from(text).map_err(CodecError::malformed)
+}
+
 fn copy_spatial_sketch_id(
     ctx: Option<&DecodeContext<'_>>,
     id: &cadmpeg_ir::sketches::SpatialSketchId,
@@ -467,7 +479,7 @@ fn project_all_dimension_constraints(
         let frame = matches.next()?;
         matches.next().is_none().then_some(frame)
     };
-    let sketch_for_geometry = |scope: &str, indices: &[u32]| {
+    let sketch_for_geometry = |scope: &str, indices: &[u32], operation| -> Result<Option<cadmpeg_ir::sketches::SketchId>, CodecError> {
         let projected_sketch = indices
             .iter()
             .filter_map(|record_index| projected.get(&(scope, *record_index)))
@@ -479,18 +491,30 @@ fn project_all_dimension_constraints(
                     .is_some_and(|entity| &entity.sketch == *sketch)
             })
         }) {
-            return Some(sketch.clone());
+            return copy_dimension_sketch_id(ctx, sketch, operation).map(Some);
         }
         let owner = indices
             .iter()
             .filter_map(|record_index| native_geometry.get(&(scope, *record_index))?.1)
-            .next()?;
-        indices
+            .next();
+        let Some(owner) = owner else { return Ok(None); };
+        if indices
             .iter()
             .filter_map(|record_index| native_geometry.get(&(scope, *record_index))?.1)
             .all(|candidate| candidate == owner)
-            .then(|| sketches.get(&(scope, owner)).cloned())
-            .flatten()
+        {
+            sketches.get(&(scope, owner))
+                .map(|sketch| copy_dimension_sketch_id(ctx, sketch, operation))
+                .transpose()
+        } else {
+            Ok(None)
+        }
+    };
+    let sketch_for_owner_or_geometry = |scope: &str, owner: u32, indices: &[u32], operation| -> Result<Option<cadmpeg_ir::sketches::SketchId>, CodecError> {
+        if let Some(sketch) = sketches.get(&(scope, owner)) {
+            return copy_dimension_sketch_id(ctx, sketch, operation).map(Some);
+        }
+        sketch_for_geometry(scope, indices, operation)
     };
     let native_operand = |scope: &str,
                           field: cadmpeg_core::text::NonBlankString,
@@ -764,7 +788,7 @@ fn project_all_dimension_constraints(
             let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
             match exact_group_definition(scope, group, parameter, parameter_id.clone()) {
                 Some(Ok(_)) => return None,
-                Some(Err(error)) => return Some(Err(error)),
+                Some(Err(error)) => return Some(Err(CodecError::ResourceLimit(error))),
                 None => {}
             }
             let locus_entities = group
@@ -784,10 +808,12 @@ fn project_all_dimension_constraints(
                 .iter()
                 .map(|locus| locus.geometry_record_index)
                 .collect::<Vec<_>>();
-            let sketch = sketches
-                .get(&(scope, group.owner_reference))
-                .cloned()
-                .or_else(|| sketch_for_geometry(scope, &locus_indices))?;
+            let sketch = match sketch_for_owner_or_geometry(scope, group.owner_reference,
+                &locus_indices, "f3d dimension radial sketch id") {
+                Ok(Some(sketch)) => sketch,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             owner_scoped_radial_dimension_definition(
                 entities,
                 &sketch,
@@ -882,10 +908,12 @@ fn project_all_dimension_constraints(
                 .iter()
                 .map(|locus| locus.geometry_record_index)
                 .collect::<Vec<_>>();
-            let sketch = sketches
-                .get(&(scope, group.owner_reference))
-                .cloned()
-                .or_else(|| sketch_for_geometry(scope, &locus_indices))?;
+            let sketch = match sketch_for_owner_or_geometry(scope, group.owner_reference,
+                &locus_indices, "f3d dimension group sketch id") {
+                Ok(Some(sketch)) => sketch,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let exact = match exact_group_definition(scope, group, parameter, parameter_id.clone()).transpose() {
                 Ok(definition) => definition,
                 Err(error) => return Some(Err(CodecError::ResourceLimit(error))),
@@ -953,7 +981,8 @@ fn project_all_dimension_constraints(
                 pair.loci()[0].geometry_index(),
                 pair.loci()[1].geometry_index(),
             ];
-            let Some(sketch) = sketch_for_geometry(scope, &indices) else { continue; };
+            let Some(sketch) = sketch_for_geometry(scope, &indices,
+                "f3d dimension pair sketch id")? else { continue; };
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair");
             let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
                 .or_else(|| {
@@ -1023,7 +1052,12 @@ fn project_all_dimension_constraints(
                 .iter()
                 .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
                 .collect::<Vec<_>>();
-            let sketch = sketches.get(&(scope, frame.owner_reference))?.clone();
+            let sketch = match copy_dimension_sketch_id(ctx,
+                sketches.get(&(scope, frame.owner_reference))?,
+                "f3d dimension annotation sketch id") {
+                Ok(sketch) => sketch,
+                Err(error) => return Some(Err(error)),
+            };
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "annotation");
             let exact = exact_definition(scope, parameter, &indices, parameter_id.clone())
                 .or_else(|| {
@@ -1116,7 +1150,12 @@ fn project_all_dimension_constraints(
             let (parameter, parameter_id) =
                 parameter_for(scope, pair.governing_companion_record_index)?;
             let indices = [pair.loci()[1].geometry_index()];
-            let sketch = sketch_for_geometry(scope, &indices)?;
+            let sketch = match sketch_for_geometry(scope, &indices,
+                "f3d dimension null pair sketch id") {
+                Ok(Some(sketch)) => sketch,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "null-pair");
             if design_dimension_unit(parameter) {
                 if let Some(entity) = projected.get(&(scope, pair.loci()[1].geometry_index())) {

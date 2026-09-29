@@ -323,6 +323,30 @@ fn native_pair_output_refuses_collection_limit() {
 }
 
 #[test]
+fn native_pair_sketch_id_refuses_retained_limit() {
+    assert_native_fallback_refusal(false, "f3d dimension pair sketch id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn native_group_sketch_id_refuses_retained_limit() {
+    assert_native_fallback_refusal(true, "f3d dimension group sketch id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn annotation_sketch_id_refuses_retained_limit() {
+    assert_native_auxiliary_refusal(true, "f3d dimension annotation sketch id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn null_pair_sketch_id_refuses_retained_limit() {
+    assert_native_auxiliary_refusal(false, "f3d dimension null pair sketch id",
+        ResourceDimension::RetainedBytes);
+}
+
+#[test]
 fn native_group_locus_operand_refuses_collection_limit() {
     assert_native_fallback_refusal(true, "f3d native group locus operand",
         ResourceDimension::CollectionItems);
