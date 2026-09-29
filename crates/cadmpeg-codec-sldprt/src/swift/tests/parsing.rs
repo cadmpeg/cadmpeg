@@ -116,18 +116,31 @@ fn encoded_root() -> Vec<u8> {
     bytes
 }
 
+fn parse_root_with_service(payload: &[u8]) -> Option<Entity> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service())
+        .expect("payload fits service policy");
+    parse_unique_root(&ctx, payload).expect("SWIFT root fits service budget")
+}
+
 #[test]
 fn swift_annotations_refuse_retained_stream_limit() {
+    let root = Entity {
+        class: crate::swift::ROOT_CLASS.into(),
+        ..Entity::default()
+    };
+    let mut payload = Vec::new();
+    encode_entity(&root, &mut payload);
     let mut source = crate::test_support::container::synthetic_sldprt();
     source.extend(crate::test_support::container::make_block(
         0x40,
         "SWIFT/Schema",
-        &encoded_root(),
+        &payload,
     ));
     let scan = crate::container::scan_bytes(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
+    policy.limits.max_retained_bytes = u64::try_from(root.class.len()).expect("fixture length");
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
         .expect("source fits policy");
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
@@ -189,8 +202,16 @@ fn swift_annotations_refuse_collection_limit() {
 }
 
 #[test]
+fn swift_annotations_refuse_nesting_limit() {
+    let CodecError::ResourceLimit(limit) =
+        swift_rendered_annotation_limit_error(|limits| limits.max_recursion_depth = 0)
+    else { panic!("expected nesting refusal") };
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+}
+
+#[test]
 fn parses_and_projects_semantic_graph() {
-    let parsed = parse_unique_root(&encoded_root()).expect("synthetic SWIFT root");
+    let parsed = parse_root_with_service(&encoded_root()).expect("synthetic SWIFT root");
     let annotations = project(&parsed);
     assert_eq!(
         annotations
@@ -279,7 +300,7 @@ fn rejects_ambiguous_root_and_impossible_count() {
     let encoded = encoded_root();
     let mut duplicate = encoded.clone();
     duplicate.extend_from_slice(&encoded);
-    assert_eq!(parse_unique_root(&duplicate), None);
+    assert_eq!(parse_root_with_service(&duplicate), None);
 
     let mut malformed = encoded;
     let marker = b"\x0bAnnotations";
@@ -292,7 +313,7 @@ fn rejects_ambiguous_root_and_impossible_count() {
         .get_mut(offset..offset + 4)
         .expect("count field")
         .copy_from_slice(&u32::MAX.to_le_bytes());
-    assert_eq!(parse_unique_root(&malformed), None);
+    assert_eq!(parse_root_with_service(&malformed), None);
 }
 
 #[test]
@@ -303,7 +324,7 @@ fn malformed_reference_identity_returns_decode_loss() {
         root.annotations.references.first_mut().unwrap().id = id.into();
         let mut payload = Vec::new();
         encode_entity(&root, &mut payload);
-        let parsed = parse_unique_root(&payload).unwrap();
+        let parsed = parse_root_with_service(&payload).unwrap();
         assert_eq!(parsed.annotations.references.first().unwrap().id, id);
         let mut bytes = crate::test_support::container::synthetic_sldprt();
         bytes.extend(crate::test_support::container::make_block(

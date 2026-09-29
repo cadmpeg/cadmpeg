@@ -515,7 +515,7 @@ fn scan_root(
             .is_some_and(|name| name.starts_with("SWIFT/") && name.contains("Schema"))
     }) {
         ctx.charge_work(1, "scan SWIFT schema sections")?;
-        let Some(entity) = parse_unique_root(section.payload()) else {
+        let Some(entity) = parse_unique_root(ctx, section.payload())? else {
             continue;
         };
         let source_name = ctx.format_retained(
@@ -532,35 +532,51 @@ fn scan_root(
     Ok(root)
 }
 
-fn parse_unique_root(payload: &[u8]) -> Option<Entity> {
+fn parse_unique_root(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<Option<Entity>, CodecError> {
+    ctx.charge_work(u64_from_index(payload.len()), "scan SWIFT entity roots")?;
     let mut parsed = None;
     for offset in payload
         .windows(ENTITY_TOKEN.len())
         .enumerate()
         .filter_map(|(offset, window)| (window == ENTITY_TOKEN).then_some(offset))
     {
-        let mut cursor = View::over_retained(payload).child(offset, payload.len())?;
-        let Some(entity) = parse_entity(&mut cursor, 0) else {
+        let Some(mut cursor) = View::over_retained(payload).child(offset, payload.len()) else {
+            continue;
+        };
+        let Some(entity) = parse_entity(ctx, &mut cursor, 0)? else {
             continue;
         };
         if entity.class != ROOT_CLASS {
             continue;
         }
         if parsed.replace(entity).is_some() {
-            return None;
+            return Ok(None);
         }
     }
-    parsed
+    Ok(parsed)
 }
 
-fn parse_entity(cursor: &mut View<'_>, depth: usize) -> Option<Entity> {
+fn parse_entity(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut View<'_>,
+    depth: usize,
+) -> Result<Option<Entity>, CodecError> {
     let offset = cursor.position();
-    if depth >= MAX_DEPTH || pstr(cursor)? != "Entity" {
-        return None;
+    if depth >= MAX_DEPTH || pstr(cursor) != Some("Entity") {
+        return Ok(None);
     }
-    let class = pstr(cursor)?.to_string();
-    let _assembly = pstr(cursor)?;
-    let _version = cursor.u32_le()?;
+    let _depth_guard = ctx.enter_nested("parse SWIFT entity")?;
+    ctx.charge_work(1, "parse SWIFT entity")?;
+    let Some(class) = pstr(cursor) else {
+        return Ok(None);
+    };
+    let class = ctx.format_retained(format_args!("{class}"), "copy SWIFT entity class")?;
+    if pstr(cursor).is_none() || cursor.u32_le().is_none() {
+        return Ok(None);
+    }
     let mut entity = Entity {
         offset,
         class,
@@ -573,136 +589,249 @@ fn parse_entity(cursor: &mut View<'_>, depth: usize) -> Option<Entity> {
     let mut seen_annotations = false;
     let mut seen_related = false;
     loop {
-        match pstr(cursor)? {
+        let Some(section) = pstr(cursor) else {
+            return Ok(None);
+        };
+        match section {
             "Strings" if !seen_strings => {
                 seen_strings = true;
-                entity.strings = read_strings(cursor)?;
+                let Some(values) = read_strings(ctx, cursor)? else {
+                    return Ok(None);
+                };
+                entity.strings = values;
             }
             "Integers" if !seen_integers => {
                 seen_integers = true;
-                entity.integers = read_integers(cursor)?;
+                let Some(values) = read_integers(ctx, cursor)? else {
+                    return Ok(None);
+                };
+                entity.integers = values;
             }
             "Doubles" if !seen_doubles => {
                 seen_doubles = true;
-                entity.doubles = read_doubles(cursor)?;
+                let Some(values) = read_doubles(ctx, cursor)? else {
+                    return Ok(None);
+                };
+                entity.doubles = values;
             }
             "Features" if !seen_features => {
                 seen_features = true;
-                entity.features = read_objects(cursor, "EndFeatures", depth)?;
+                let Some(values) = read_objects(ctx, cursor, "EndFeatures", depth)? else {
+                    return Ok(None);
+                };
+                entity.features = values;
             }
             "Annotations" if !seen_annotations => {
                 seen_annotations = true;
-                entity.annotations = read_objects(cursor, "EndAnnotations", depth)?;
+                let Some(values) = read_objects(ctx, cursor, "EndAnnotations", depth)? else {
+                    return Ok(None);
+                };
+                entity.annotations = values;
             }
             "RelatedObjects" if !seen_related => {
                 seen_related = true;
-                entity.related = read_related(cursor, depth)?;
+                let Some(values) = read_related(ctx, cursor, depth)? else {
+                    return Ok(None);
+                };
+                entity.related = values;
             }
-            "EndEntity" => return Some(entity),
-            _ => return None,
+            "EndEntity" => return Ok(Some(entity)),
+            _ => return Ok(None),
         }
     }
 }
 
-fn read_strings(cursor: &mut View<'_>) -> Option<BTreeMap<String, String>> {
-    let count = cursor.u32_le()?;
-    let pairs = cursor.read_counted(u64::from(count), 2, |cursor| {
-        Some((pstr(cursor)?.to_string(), pstr(cursor)?.to_string()))
-    })?;
-    if pstr(cursor)? != "EndStrings" {
-        return None;
-    }
-    unique_map(pairs)
-}
-
-fn read_integers(cursor: &mut View<'_>) -> Option<BTreeMap<String, i32>> {
-    let count = cursor.u32_le()?;
-    let pairs = cursor.read_counted(u64::from(count), 5, |cursor| {
-        Some((pstr(cursor)?.to_string(), cursor.i32_le()?))
-    })?;
-    if pstr(cursor)? != "EndIntegers" {
-        return None;
-    }
-    unique_map(pairs)
-}
-
-fn read_doubles(cursor: &mut View<'_>) -> Option<BTreeMap<String, f64>> {
-    let count = cursor.u32_le()?;
-    let pairs = cursor.read_counted(u64::from(count), 9, |cursor| {
-        Some((pstr(cursor)?.to_string(), cursor.f64_le()?))
-    })?;
-    if pstr(cursor)? != "EndDoubles" {
-        return None;
-    }
-    unique_map(pairs)
-}
-
-fn unique_map<T>(pairs: Vec<(String, T)>) -> Option<BTreeMap<String, T>> {
+fn read_strings(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut View<'_>,
+) -> Result<Option<BTreeMap<String, String>>, CodecError> {
+    let Some(count) = cursor.u32_le() else {
+        return Ok(None);
+    };
+    let Some(count) = cursor.counted(u64::from(count), 2).map(|count| count.get()) else {
+        return Ok(None);
+    };
     let mut values = BTreeMap::new();
-    for (name, value) in pairs {
-        if values.insert(name, value).is_some() {
-            return None;
+    for _ in 0..count {
+        ctx.charge_work(1, "parse SWIFT string properties")?;
+        let (Some(name), Some(value)) = (pstr(cursor), pstr(cursor)) else {
+            return Ok(None);
+        };
+        let name = ctx.format_retained(format_args!("{name}"), "copy SWIFT string key")?;
+        let value = ctx.format_retained(format_args!("{value}"), "copy SWIFT string value")?;
+        if values.contains_key(&name) {
+            return Ok(None);
         }
+        ctx.charge_collection_items(1, "collect SWIFT string properties")?;
+        values.insert(name, value);
     }
-    Some(values)
+    Ok((pstr(cursor) == Some("EndStrings")).then_some(values))
 }
 
-fn read_objects(cursor: &mut View<'_>, end: &str, depth: usize) -> Option<ObjectSection> {
-    let count = cursor.u32_le()?;
-    let references = cursor.read_counted(u64::from(count), 2, |cursor| {
-        Some(Reference {
-            id: pstr(cursor)?.to_string(),
-            class: pstr(cursor)?.to_string(),
-        })
-    })?;
-    let mut entities = Vec::new();
-    while peek_pstr(cursor)? == "Entity" {
-        if entities.len() >= references.len() {
-            return None;
+fn read_integers(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut View<'_>,
+) -> Result<Option<BTreeMap<String, i32>>, CodecError> {
+    let Some(count) = cursor.u32_le() else {
+        return Ok(None);
+    };
+    let Some(count) = cursor.counted(u64::from(count), 5).map(|count| count.get()) else {
+        return Ok(None);
+    };
+    let mut values = BTreeMap::new();
+    for _ in 0..count {
+        ctx.charge_work(1, "parse SWIFT integer properties")?;
+        let (Some(name), Some(value)) = (pstr(cursor), cursor.i32_le()) else {
+            return Ok(None);
+        };
+        let name = ctx.format_retained(format_args!("{name}"), "copy SWIFT integer key")?;
+        if values.contains_key(&name) {
+            return Ok(None);
         }
-        entities.push(parse_entity(cursor, depth.checked_add(1)?)?);
+        ctx.charge_collection_items(1, "collect SWIFT integer properties")?;
+        values.insert(name, value);
+    }
+    Ok((pstr(cursor) == Some("EndIntegers")).then_some(values))
+}
+
+fn read_doubles(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut View<'_>,
+) -> Result<Option<BTreeMap<String, f64>>, CodecError> {
+    let Some(count) = cursor.u32_le() else {
+        return Ok(None);
+    };
+    let Some(count) = cursor.counted(u64::from(count), 9).map(|count| count.get()) else {
+        return Ok(None);
+    };
+    let mut values = BTreeMap::new();
+    for _ in 0..count {
+        ctx.charge_work(1, "parse SWIFT double properties")?;
+        let (Some(name), Some(value)) = (pstr(cursor), cursor.f64_le()) else {
+            return Ok(None);
+        };
+        let name = ctx.format_retained(format_args!("{name}"), "copy SWIFT double key")?;
+        if values.contains_key(&name) {
+            return Ok(None);
+        }
+        ctx.charge_collection_items(1, "collect SWIFT double properties")?;
+        values.insert(name, value);
+    }
+    Ok((pstr(cursor) == Some("EndDoubles")).then_some(values))
+}
+
+fn read_objects(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut View<'_>,
+    end: &str,
+    depth: usize,
+) -> Result<Option<ObjectSection>, CodecError> {
+    let Some(count) = cursor.u32_le() else {
+        return Ok(None);
+    };
+    let Some(count) = cursor.counted(u64::from(count), 2).map(|count| count.get()) else {
+        return Ok(None);
+    };
+    let mut references = Vec::new();
+    ctx.reserve_collection_vec(&mut references, count, "collect SWIFT object references")?;
+    for _ in 0..count {
+        ctx.charge_work(1, "parse SWIFT object references")?;
+        let (Some(id), Some(class)) = (pstr(cursor), pstr(cursor)) else {
+            return Ok(None);
+        };
+        references.push(Reference {
+            id: ctx.format_retained(format_args!("{id}"), "copy SWIFT object reference ID")?,
+            class: ctx.format_retained(
+                format_args!("{class}"),
+                "copy SWIFT object reference class",
+            )?,
+        });
+    }
+    let mut entities = Vec::new();
+    loop {
+        let Some(next) = peek_pstr(cursor) else {
+            return Ok(None);
+        };
+        if next != "Entity" {
+            break;
+        }
+        if entities.len() >= references.len() {
+            return Ok(None);
+        }
+        let Some(next_depth) = depth.checked_add(1) else {
+            return Ok(None);
+        };
+        let Some(entity) = parse_entity(ctx, cursor, next_depth)? else {
+            return Ok(None);
+        };
+        ctx.reserve_collection_vec(&mut entities, 1, "collect SWIFT object entities")?;
+        entities.push(entity);
     }
     if !references
         .iter()
         .zip(&entities)
         .all(|(reference, entity)| reference_matches_entity(reference, entity))
     {
-        return None;
+        return Ok(None);
     }
-    if pstr(cursor)? != end {
-        return None;
+    if pstr(cursor) != Some(end) {
+        return Ok(None);
     }
-    Some(ObjectSection {
+    Ok(Some(ObjectSection {
         references,
         entities,
-    })
+    }))
 }
 
-fn read_related(cursor: &mut View<'_>, depth: usize) -> Option<Vec<RelatedObject>> {
-    let count = cursor.u32_le()?;
-    let descriptors = cursor.read_counted(u64::from(count), 2, |cursor| {
-        Some((pstr(cursor)?.to_string(), pstr(cursor)?.to_string()))
-    })?;
-    let mut related = Vec::with_capacity(descriptors.len());
+fn read_related(
+    ctx: &DecodeContext<'_>,
+    cursor: &mut View<'_>,
+    depth: usize,
+) -> Result<Option<Vec<RelatedObject>>, CodecError> {
+    let Some(count) = cursor.u32_le() else {
+        return Ok(None);
+    };
+    let Some(count) = cursor.counted(u64::from(count), 2).map(|count| count.get()) else {
+        return Ok(None);
+    };
+    let mut descriptors = Vec::new();
+    ctx.reserve_collection_vec(&mut descriptors, count, "collect SWIFT related descriptors")?;
+    for _ in 0..count {
+        ctx.charge_work(1, "parse SWIFT related descriptors")?;
+        let (Some(name), Some(class)) = (pstr(cursor), pstr(cursor)) else {
+            return Ok(None);
+        };
+        descriptors.push((
+            ctx.format_retained(format_args!("{name}"), "copy SWIFT related name")?,
+            ctx.format_retained(format_args!("{class}"), "copy SWIFT related class")?,
+        ));
+    }
+    let mut related = Vec::new();
     for (name, class) in descriptors {
-        let entity = parse_entity(cursor, depth.checked_add(1)?)?;
+        let Some(next_depth) = depth.checked_add(1) else {
+            return Ok(None);
+        };
+        let Some(entity) = parse_entity(ctx, cursor, next_depth)? else {
+            return Ok(None);
+        };
         if class
             .split_once(',')
             .map_or(class.as_str(), |(name, _)| name)
             != entity.class
         {
-            return None;
+            return Ok(None);
         }
+        ctx.reserve_collection_vec(&mut related, 1, "collect SWIFT related objects")?;
         related.push(RelatedObject {
             name,
             class,
             entity,
         });
     }
-    if pstr(cursor)? != "EndRelatedObjects" {
-        return None;
+    if pstr(cursor) != Some("EndRelatedObjects") {
+        return Ok(None);
     }
-    Some(related)
+    Ok(Some(related))
 }
 
 fn reference_matches_entity(reference: &Reference, entity: &Entity) -> bool {
