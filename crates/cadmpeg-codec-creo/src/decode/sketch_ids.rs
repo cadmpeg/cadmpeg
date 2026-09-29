@@ -374,10 +374,6 @@ pub(super) fn typed_sketch_section_curve_id_admitted(
     Ok(CurveId::try_from(text).ok())
 }
 
-pub(super) fn sketch_point_ref(sketch: &SketchId, point: u32) -> String {
-    format!("{}:point#{point}", sketch_native_ref(sketch))
-}
-
 pub(super) fn sketch_point_ref_admitted(
     ctx: &DecodeContext<'_>,
     sketch: &SketchId,
