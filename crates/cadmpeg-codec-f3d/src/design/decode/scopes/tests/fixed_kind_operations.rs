@@ -940,6 +940,7 @@ fn fixed_kind_edge_and_revolve_operations(
         );
     assert_eq!(
         crate::design::feature_project::project_fixed_revolve_with_entities(
+            None,
             &revolve_scope,
             &[revolve_profile, revolve_axis],
             &[],
@@ -947,7 +948,7 @@ fn fixed_kind_edge_and_revolve_operations(
             &[],
             &[],
             &[],
-        ),
+        ).unwrap(),
         None
     );
 
@@ -1069,6 +1070,7 @@ fn fixed_kind_edge_and_revolve_operations(
         ),
     };
     let projected = crate::design::feature_project::project_fixed_revolve_with_entities(
+        None,
         &indexed_revolve_scope,
         &[
             indexed_profile.clone(),
@@ -1080,7 +1082,7 @@ fn fixed_kind_edge_and_revolve_operations(
         &[],
         &[axis_placement],
         &[axis_curve],
-    );
+    ).unwrap();
     assert!(matches!(
         projected,
         Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -1110,6 +1112,7 @@ fn fixed_kind_edge_and_revolve_operations(
     ];
     let historical_definition =
         crate::design::feature_project::project_fixed_revolve_with_entities(
+            None,
             &indexed_revolve_scope,
             &[
                 indexed_profile.clone(),
@@ -1122,7 +1125,7 @@ fn fixed_kind_edge_and_revolve_operations(
             &[],
             &[],
         )
-        .unwrap();
+        .unwrap().unwrap();
     assert!(matches!(
         historical_definition,
         FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -1230,6 +1233,7 @@ fn fixed_kind_edge_and_revolve_operations(
         })
         .unwrap();
     let face_axis_definition = crate::design::feature_project::project_fixed_revolve_with_entities(
+        None,
         &indexed_revolve_scope,
         &[
             indexed_profile.clone(),
@@ -1242,7 +1246,7 @@ fn fixed_kind_edge_and_revolve_operations(
         &[],
         &[],
     )
-    .expect("face-recipe axis retains a neutral Revolve before geometry binding");
+    .unwrap().expect("face-recipe axis retains a neutral Revolve before geometry binding");
     let mut face_axis_feature = cadmpeg_ir::features::Feature {
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             face_axis_definition.clone(),

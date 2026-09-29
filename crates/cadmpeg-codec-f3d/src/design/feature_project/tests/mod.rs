@@ -24,6 +24,7 @@ mod parameters;
 mod pattern;
 mod pipe;
 mod replace_face;
+mod revolve_limits;
 mod sheet_metal;
 mod simple_native_limits;
 mod scope_properties_limits;
