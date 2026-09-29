@@ -507,33 +507,37 @@ fn visit_extrude_profile_group(
 /// operand. This preserves the parent member cardinality used by historical
 /// selection proofs.
 pub(crate) fn extrude_profile_group_operand_indices(
+    ctx: Option<&DecodeContext<'_>>,
     root: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignFaceOperand],
-) -> Option<Vec<usize>> {
+) -> Result<Option<Vec<usize>>, CodecError> {
     use crate::records::topology::extrude_selection::DesignExtrudeOperandRole;
 
-    let stream = native_stream(&root.id)?;
-    let profile_groups = groups
-        .iter()
-        .filter(|group| {
+    let Some(stream) = native_stream(&root.id) else { return Ok(None); };
+    let mut profile_groups = Vec::new();
+    for group in groups.iter().filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == root.scope_record_index
                 && group.extrude_role() == Some(DesignExtrudeOperandRole::Profile)
-        })
-        .collect::<Vec<_>>();
-    let groups_by_record = profile_groups
-        .iter()
-        .map(|group| (group.record_index, *group))
-        .collect::<HashMap<_, _>>();
+        }) {
+        push_face_item(ctx, &mut profile_groups, group, "f3d Extrude leaf profile group")?;
+    }
+    let mut groups_by_record = HashMap::new();
+    for group in &profile_groups {
+        // discarded-value: duplicate record indices are rejected by the length check below.
+        let _ = insert_face_map(ctx, &mut groups_by_record, group.record_index, *group,
+            "f3d Extrude leaf group index")?;
+    }
     if groups_by_record.len() != profile_groups.len()
         || groups_by_record.get(&root.record_index).copied() != Some(root)
     {
-        return None;
+        return Ok(None);
     }
 
     let mut visited_groups = HashSet::new();
     collect_extrude_profile_group_operands(
+        ctx,
         root,
         stream,
         &groups_by_record,
@@ -543,24 +547,29 @@ pub(crate) fn extrude_profile_group_operand_indices(
 }
 
 fn collect_extrude_profile_group_operands(
+    ctx: Option<&DecodeContext<'_>>,
     group: &DesignConstructionOperandGroup,
     stream: &str,
     groups_by_record: &HashMap<u32, &DesignConstructionOperandGroup>,
     operands: &[DesignFaceOperand],
     visited_groups: &mut HashSet<u32>,
-) -> Option<Vec<usize>> {
-    if group.members().is_empty() || !visited_groups.insert(group.record_index) {
-        return None;
+) -> Result<Option<Vec<usize>>, CodecError> {
+    let _depth = ctx.map(|ctx| ctx.enter_nested("f3d Extrude leaf hierarchy"))
+        .transpose()?;
+    if let Some(ctx) = ctx { ctx.charge_work(1, "f3d Extrude leaf hierarchy")?; }
+    if group.members().is_empty() || !insert_face_set(ctx, visited_groups,
+        group.record_index, "f3d Extrude leaf visited group")? {
+        return Ok(None);
     }
-    let mut indices = Vec::with_capacity(group.members().len());
+    let mut indices = Vec::new();
     for (ordinal, record_index) in group
         .members()
         .iter()
         .map(|member| &member.value)
         .enumerate()
     {
-        let ordinal = u32::try_from(ordinal).ok()?;
-        let direct = operands
+        let Some(ordinal) = u32::try_from(ordinal).ok() else { return Ok(None); };
+        let mut direct = operands
             .iter()
             .enumerate()
             .filter(|(_, operand)| {
@@ -570,32 +579,35 @@ fn collect_extrude_profile_group_operands(
                     && operand.group_member_ordinal() == Some(ordinal)
                     && operand.record_index() == *record_index
             })
-            .map(|(index, _)| index)
-            .collect::<Vec<_>>();
+            .map(|(index, _)| index);
+        let first = direct.next();
+        let second = direct.next();
         let child = groups_by_record.get(record_index).copied();
-        let index = match (direct.as_slice(), child) {
-            ([index], None) => *index,
-            ([], Some(child)) if child.scope_reference_ordinal > group.scope_reference_ordinal => {
+        let index = match ((first, second), child) {
+            ((Some(index), None), None) => index,
+            ((None, None), Some(child)) if child.scope_reference_ordinal > group.scope_reference_ordinal => {
                 let child_indices = collect_extrude_profile_group_operands(
+                    ctx,
                     child,
                     stream,
                     groups_by_record,
                     operands,
                     visited_groups,
                 )?;
+                let Some(child_indices) = child_indices else { return Ok(None); };
                 let [index] = child_indices.as_slice() else {
-                    return None;
+                    return Ok(None);
                 };
                 *index
             }
-            _ => return None,
+            _ => return Ok(None),
         };
         if indices.contains(&index) {
-            return None;
+            return Ok(None);
         }
-        indices.push(index);
+        push_face_item(ctx, &mut indices, index, "f3d Extrude leaf index")?;
     }
-    Some(indices)
+    Ok(Some(indices))
 }
 
 /// Whether every root member is one exact paired-reference face subgroup.
@@ -659,56 +671,62 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
 /// operand has no historical lane. Otherwise the selected faces must be
 /// proven in the consuming feature's preceding topology.
 pub(crate) fn resolved_extrude_profile_face_group(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     root: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignFaceOperand],
-) -> Option<cadmpeg_ir::features::ProfileRef> {
+) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
     use cadmpeg_ir::features::ProfileRef;
 
-    let indices = extrude_profile_group_operand_indices(root, groups, operands)?;
-    if let Some(faces) = resolved_extrude_profile_active_faces(&indices, operands) {
-        return Some(ProfileRef::Planar(
+    let Some(indices) = extrude_profile_group_operand_indices(ctx, root, groups, operands)? else {
+        return Ok(None);
+    };
+    if let Some(faces) = resolved_extrude_profile_active_faces(ctx, &indices, operands)? {
+        return Ok(Some(ProfileRef::Planar(
             cadmpeg_ir::features::PlanarProfileRef::Faces(faces),
-        ));
+        )));
     }
     let mut faces = Vec::new();
     for index in indices {
-        let slots = &operands.get(index)?.resolved_face_slots;
+        let Some(operand) = operands.get(index) else { return Ok(None); };
+        let slots = &operand.resolved_face_slots;
         if slots.is_empty() {
-            return None;
+            return Ok(None);
         }
         for slot in slots {
             if !faces.contains(slot) {
-                faces.push(*slot);
+                push_face_item(ctx, &mut faces, *slot, "f3d Extrude historical face slot")?;
             }
         }
     }
-    let selection = historical_face_selection(scope, root, faces)?;
+    let Some(selection) = historical_face_selection(scope, root, faces) else { return Ok(None); };
     let cadmpeg_ir::features::FaceSelection::Historical {
         state,
         faces,
         native,
     } = selection
     else {
-        return None;
+        return Ok(None);
     };
-    Some(cadmpeg_ir::features::ProfileRef::Planar(
+    Ok(Some(cadmpeg_ir::features::ProfileRef::Planar(
         cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
             state,
             faces,
-            native: vec![native.as_str().to_owned()].try_into().ok()?,
+            native: vec![copy_face_text(ctx, native.as_str(), "f3d Extrude historical group id")?]
+                .try_into().map_err(CodecError::malformed)?,
         },
-    ))
+    )))
 }
 
 fn resolved_extrude_profile_active_faces(
+    ctx: Option<&DecodeContext<'_>>,
     indices: &[usize],
     operands: &[DesignFaceOperand],
-) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
+) -> Result<Option<Vec<cadmpeg_ir::ids::FaceId>>, CodecError> {
     let mut faces = Vec::new();
     for index in indices {
-        let operand = operands.get(*index)?;
+        let Some(operand) = operands.get(*index) else { return Ok(None); };
         if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace
             || operand.candidate_faces.is_empty()
             || !operand.unreferenced_candidate_faces.is_empty()
@@ -719,23 +737,24 @@ fn resolved_extrude_profile_active_faces(
             || !operand.resolved_face_slots.is_empty()
             || operand.resolved_active_face.is_some()
         {
-            return None;
+            return Ok(None);
         }
         let Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { header_value }) =
             crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program)
         else {
-            return None;
+            return Ok(None);
         };
         if operand.recipe_nodes.len() != header_value {
-            return None;
+            return Ok(None);
         }
         for face in &operand.candidate_faces {
             if !faces.contains(face) {
-                faces.push(face.clone());
+                let face = copy_face_id(ctx, face, "f3d Extrude active face id")?;
+                push_face_item(ctx, &mut faces, face, "f3d Extrude active face")?;
             }
         }
     }
-    (!faces.is_empty()).then_some(faces)
+    Ok((!faces.is_empty()).then_some(faces))
 }
 
 /// Resolve a Loft section whose members use the edge-recipe envelope.
@@ -2590,11 +2609,12 @@ mod tests {
         .expect("Extrude scope");
         assert_eq!(
             resolved_extrude_profile_face_group(
+                None,
                 &scope,
                 &group,
                 std::slice::from_ref(&group),
                 &[operand.clone()],
-            ),
+            ).unwrap(),
             Some(cadmpeg_ir::features::ProfileRef::Planar(
                 cadmpeg_ir::features::PlanarProfileRef::Faces(vec![face(10), face(20),])
             ))
@@ -4225,5 +4245,161 @@ mod tests {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::WorkUnits
                     && failure.operation == "f3d Extrude profile hierarchy"));
+    }
+
+    fn extrude_leaf_fixture() -> (
+        DesignConstructionOperandGroup,
+        Vec<DesignConstructionOperandGroup>,
+        Vec<DesignFaceOperand>,
+    ) {
+        let (_, groups) = extrude_root_fixture();
+        let operand = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:face-operand#200",
+            "scope_record_index": 12,
+            "scope_reference_ordinal": 1,
+            "group_record_index": 101,
+            "group_member_ordinal": 0,
+            "record_index": 200,
+            "byte_offset": 0,
+            "class_tag": "297",
+            "paired_byte_offset": 16,
+            "paired_class_tag": "259",
+            "recipe_record_index": 203,
+            "recipe_record_byte_offset": 32,
+            "recipe_id": "f3d:test:recipe#203",
+            "recipe_prefix_offset": 43,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "bounded_face",
+            "recipe_program_offset": 0,
+            "recipe_program": [0, -1, 1],
+            "recipe_node_offsets": [0],
+            "recipe_nodes": [{
+                "byte_offset": 0,
+                "end_byte_offset": 12,
+                "program": [0, -1, 1],
+                "recipe_structure": {
+                    "root": 0,
+                    "prelude": [0, 0],
+                    "sides": [
+                        {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []},
+                        {"field_count": 1, "header_value": 0, "payload_entry_count": 0, "payload_prefix": [], "scalars": [], "entries": []}
+                    ],
+                    "postlude": []
+                }
+            }],
+            "candidate_faces": ["f3d:brep:entity#10"],
+            "next_record_index": 204,
+            "next_byte_offset": 160
+        })).unwrap();
+        (groups[0].clone(), groups.to_vec(), vec![operand])
+    }
+
+    fn assert_extrude_leaf_collection_limit(operation: &'static str) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (root, groups, operands) = extrude_leaf_fixture();
+        assert_eq!(super::extrude_profile_group_operand_indices(None, &root, &groups, &operands)
+            .unwrap().unwrap(), [0]);
+        for limit in 0..24 {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            if matches!(super::extrude_profile_group_operand_indices(Some(&ctx), &root,
+                &groups, &operands), Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation) {
+                return;
+            }
+        }
+        panic!("no Extrude leaf refusal at {operation}");
+    }
+
+    #[test]
+    fn extrude_leaf_profile_group_refuses_collection_limit() {
+        assert_extrude_leaf_collection_limit("f3d Extrude leaf profile group");
+    }
+
+    #[test]
+    fn extrude_leaf_group_index_refuses_collection_limit() {
+        assert_extrude_leaf_collection_limit("f3d Extrude leaf group index");
+    }
+
+    #[test]
+    fn extrude_leaf_visited_group_refuses_collection_limit() {
+        assert_extrude_leaf_collection_limit("f3d Extrude leaf visited group");
+    }
+
+    #[test]
+    fn extrude_leaf_index_refuses_collection_limit() {
+        assert_extrude_leaf_collection_limit("f3d Extrude leaf index");
+    }
+
+    #[test]
+    fn extrude_leaf_hierarchy_refuses_depth_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (root, groups, operands) = extrude_leaf_fixture();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_recursion_depth = 1;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::extrude_profile_group_operand_indices(Some(&ctx), &root,
+            &groups, &operands), Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RecursionDepth
+                    && failure.operation == "f3d Extrude leaf hierarchy"));
+    }
+
+    #[test]
+    fn extrude_leaf_hierarchy_refuses_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (root, groups, operands) = extrude_leaf_fixture();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 1;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::extrude_profile_group_operand_indices(Some(&ctx), &root,
+            &groups, &operands), Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::WorkUnits
+                    && failure.operation == "f3d Extrude leaf hierarchy"));
+    }
+
+    #[test]
+    fn extrude_active_face_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (_, _, operands) = extrude_leaf_fixture();
+        assert_eq!(super::resolved_extrude_profile_active_faces(None, &[0], &operands)
+            .unwrap().unwrap(), [face(10)]);
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::resolved_extrude_profile_active_faces(Some(&ctx), &[0], &operands),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d Extrude active face id"));
+    }
+
+    #[test]
+    fn extrude_active_face_refuses_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let (_, _, operands) = extrude_leaf_fixture();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(super::resolved_extrude_profile_active_faces(Some(&ctx), &[0], &operands),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == "f3d Extrude active face"));
     }
 }
