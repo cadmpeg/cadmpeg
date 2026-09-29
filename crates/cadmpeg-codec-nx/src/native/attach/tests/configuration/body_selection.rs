@@ -17,6 +17,9 @@ use cadmpeg_ir::annotations::StreamHandle;
 
 #[test]
 fn feature_body_selection_retains_complete_input_local_identities_atomically() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     use cadmpeg_ir::features::BodySelection;
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
@@ -25,12 +28,13 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
     let roots = BTreeMap::from([(94, 94), (122, 122)]);
     assert_eq!(
         feature_body_selection(
+            &ctx,
             &[94, 122],
             &roots,
             &BTreeMap::new(),
             "nx:om-object-indices#94,122".to_string(),
         )
-        .into_selection(),
+        .expect("resource admission").into_selection(&ctx).expect("resource admission"),
         BodySelection::local(
             vec![
                 "nx:om-body-object#94".to_string(),
@@ -42,23 +46,25 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
     );
     assert!(matches!(
         feature_body_selection(
+            &ctx,
             &[94, 123],
             &roots,
             &BTreeMap::new(),
             "nx:om-object-indices#94,123".to_string(),
         )
-        .into_selection(),
+        .expect("resource admission").into_selection(&ctx).expect("resource admission"),
         BodySelection::Native(_)
     ));
     let aliases = BTreeMap::from([(94, 94), (150, 94)]);
     assert_eq!(
         feature_body_selection(
+            &ctx,
             &[94, 150],
             &aliases,
             &BTreeMap::new(),
             "nx:om-object-indices#94,150".to_string(),
         )
-        .into_selection(),
+        .expect("resource admission").into_selection(&ctx).expect("resource admission"),
         BodySelection::local(
             vec!["nx:om-body-object#94".to_string()],
             "nx:om-object-indices#94,150".to_string()
@@ -79,17 +85,15 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
         }
     };
     let segment_bindings = [segment_binding("binding#0", 0, 94, 150)];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
         feature_body_selection(
+            &ctx,
             &[94],
             &roots,
             &bindings,
             "nx:om-object-index#94".to_string(),
         )
-        .into_selection(),
+        .expect("resource admission").into_selection(&ctx).expect("resource admission"),
         BodySelection::Resolved {
             bodies: vec![first.clone()].try_into().expect("distinct bodies"),
             native: "nx:om-object-index#94".to_string(),
@@ -156,10 +160,14 @@ fn feature_body_output_refuses_retained_limit() {
 
 #[test]
 fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     use cadmpeg_ir::features::BodySelection;
     use std::collections::BTreeMap;
 
     let selection = feature_body_selection_with_offset_blocks(
+        &ctx,
         &[94],
         &BTreeMap::from([(94, 94)]),
         &BTreeMap::from([(94, "nx:om-data-blocks-3:block#94".to_string())]),
@@ -167,7 +175,7 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
         "nx:om-object-index#94".to_string(),
     );
     assert_eq!(
-        selection.into_selection(),
+        selection.expect("resource admission").into_selection(&ctx).expect("resource admission"),
         BodySelection::local(
             vec!["nx:om-data-blocks-3:block#94".to_string()],
             "nx:om-object-index#94".to_string()
@@ -470,6 +478,9 @@ fn retained_history_input_refuses_work_limit() {
 
 #[test]
 fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     use cadmpeg_ir::features::{
         BodySelection, BooleanKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
@@ -488,6 +499,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
     };
     let body = BodyId::mint("nx:s18:body#3".to_string()).expect("identity grammar");
     let definition = boolean_feature_definition(
+            &ctx,
         &operation,
         &BTreeMap::from([(94, 94), (122, 122)]),
         &BooleanOffsetStoreResolution::None,
@@ -537,6 +549,9 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
 
 #[test]
 fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
     use std::collections::BTreeMap;
 
@@ -559,6 +574,7 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
 
     assert_eq!(
         boolean_feature_definition(
+            &ctx,
             &operation,
             &BTreeMap::new(),
             &BooleanOffsetStoreResolution::Complete(blocks.clone()),
@@ -616,6 +632,7 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         (402, "nx:om-data-blocks-3:block#402".to_string()),
     ]);
     let definition = boolean_feature_definition(
+            &ctx,
         &operation,
         &BTreeMap::new(),
         &BooleanOffsetStoreResolution::Complete(blocks.clone()),

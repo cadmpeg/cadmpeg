@@ -1,18 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::native::attach::block_placement;
-use crate::native::attach::boolean_feature_definition;
-use crate::native::attach::delete_body_feature_definition;
-use crate::native::attach::extract_body_feature_definition;
 use crate::native::attach::new_body_boolean_op;
 use crate::native::attach::non_boolean_feature_definition;
 use crate::native::attach::non_modeling_history_definition;
-use crate::native::attach::offset_store_trim_body_feature_definition;
 use crate::native::attach::projects_neutral_feature;
-use crate::native::attach::sew_body_feature_definition;
 use crate::native::attach::sphere_body_projection;
 use crate::native::attach::text_semantic_annotation;
-use crate::native::attach::trim_body_feature_definition;
 use crate::native::attach::BodyId;
 use crate::native::attach::BooleanOp;
 use crate::native::attach::CadIr;
@@ -29,6 +23,65 @@ use crate::native::segments::BooleanOffsetStoreResolution;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeMap;
+
+fn with_selection_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+    f(&ctx)
+}
+
+fn boolean_feature_definition(
+    operation: &crate::native::features::FeatureBooleanOperation,
+    roots: &BTreeMap<u32, u32>,
+    resolution: &BooleanOffsetStoreResolution,
+    bodies: &BTreeMap<u32, Vec<BodyId>>,
+) -> Result<FeatureDefinition, cadmpeg_core::CodecError> {
+    with_selection_context(|ctx| crate::native::attach::boolean_feature_definition(ctx, operation, roots, resolution, bodies))
+}
+
+fn delete_body_feature_definition(
+    field: DeleteBodyField<'_>,
+    roots: &BTreeMap<u32, u32>,
+    bodies: &BTreeMap<u32, Vec<BodyId>>,
+) -> FeatureDefinition {
+    with_selection_context(|ctx| crate::native::attach::delete_body_feature_definition(ctx, field, roots, bodies).expect("resource admission"))
+}
+
+fn extract_body_feature_definition(
+    body: Option<u32>,
+    offset_bodies: &[(u32, String)],
+    roots: &BTreeMap<u32, u32>,
+    bodies: &BTreeMap<u32, Vec<BodyId>>,
+) -> FeatureDefinition {
+    with_selection_context(|ctx| crate::native::attach::extract_body_feature_definition(ctx, body, offset_bodies, roots, bodies).expect("resource admission"))
+}
+
+fn offset_store_trim_body_feature_definition(
+    offset_bodies: &[(u32, String)],
+    operands: &[&crate::native::features::FeatureOperationBodyOperand],
+) -> Option<FeatureDefinition> {
+    with_selection_context(|ctx| crate::native::attach::offset_store_trim_body_feature_definition(ctx, offset_bodies, operands).expect("resource admission"))
+}
+
+fn sew_body_feature_definition(
+    primary: Option<u32>,
+    offset_bodies: &[(u32, String)],
+    operands: &[&crate::native::features::FeatureOperationBodyOperand],
+    roots: &BTreeMap<u32, u32>,
+    bodies: &BTreeMap<u32, Vec<BodyId>>,
+) -> Option<FeatureDefinition> {
+    with_selection_context(|ctx| crate::native::attach::sew_body_feature_definition(ctx, primary, offset_bodies, operands, roots, bodies).expect("resource admission"))
+}
+
+fn trim_body_feature_definition(
+    target: u32,
+    operands: &[&crate::native::features::FeatureOperationBodyOperand],
+    roots: &BTreeMap<u32, u32>,
+    bodies: &BTreeMap<u32, Vec<BodyId>>,
+) -> Result<FeatureDefinition, cadmpeg_core::CodecError> {
+    with_selection_context(|ctx| crate::native::attach::trim_body_feature_definition(ctx, target, operands, roots, bodies))
+}
 
 #[test]
 fn nx_boolean_keeps_body_namespace_proofs_atomic() {
