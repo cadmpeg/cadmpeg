@@ -6867,54 +6867,40 @@ pub(super) fn feature_sketch_payload_scalars(
     constructions: &[FeatureSketchConstructionInputs],
 ) -> Result<Vec<FeaturePayloadScalar>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    let projected = constructions
-        .iter()
-        .map(
-            |construction| -> Result<Vec<FeaturePayloadScalar>, CodecError> {
-                let mut data_blocks = construction
-                    .members
-                    .iter()
-                    .map(|member| member.data_block.clone())
-                    .collect::<Vec<_>>();
-                data_blocks.push(construction.terminal_data_block.clone());
-                let Some(joined) = JoinedPayload::from_source(ctx, data_blocks.iter(), &blocks)? else {
-                    return Ok(Vec::new());
-                };
-                let construction_payload = construction.id.replacen(
-                    "sketch-construction-inputs",
-                    "sketch-construction-payload",
-                    1,
-                );
-                Ok(
-                    crate::om::construction_payload_scalar_fields(ctx, joined.bytes())?
-                        .into_iter()
-                        .enumerate()
-                        .filter_map(|(ordinal, field)| {
-                            let source_offset = joined.source_offset(field.offset as u64)?;
-                            Some(FeaturePayloadScalar {
-                                id: format!(
-                                    "nx:feature-history:sketch-payload-scalar#{}-{ordinal:010}",
-                                    construction_payload
-                                        .rsplit_once('#')
-                                        .map_or("unknown", |(_, key)| key)
-                                ),
-                                operation_label: construction.operation_label.clone(),
-                                payload: FeatureScalarPayload::Construction {
-                                    construction_payload: construction_payload.clone(),
-                                },
-                                ordinal: ordinal as u32,
-                                field_code: field.field_code,
-                                scalar: field.scalar,
-                                payload_offset: field.offset as u64,
-                                source_offset,
-                            })
-                        })
-                        .collect::<Vec<_>>(),
-                )
-            },
-        )
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(projected.into_iter().flatten().collect())
+    let mut output = Vec::new();
+    for construction in constructions {
+        let ids = construction.members.iter().map(|member| &member.data_block)
+            .chain(std::iter::once(&construction.terminal_data_block));
+        let Some(joined) = JoinedPayload::from_source(ctx, ids, &blocks)? else { continue; };
+        for (ordinal, field) in crate::om::construction_payload_scalar_fields(ctx,
+            joined.bytes())?.into_iter().enumerate() {
+            let payload_offset = cadmpeg_core::decode::u64_from_index(field.offset);
+            let Some(source_offset) = joined.source_offset(payload_offset) else { continue; };
+            let ordinal = u32::try_from(ordinal).map_err(|_|
+                ctx.refuse_codec_limit("NX sketch payload scalar ordinal", 0, 1))?;
+            let construction_payload = replace_operation_text(ctx, &construction.id,
+                "sketch-construction-inputs", "sketch-construction-payload",
+                "NX sketch scalar construction payload")?;
+            let key = construction_payload.rsplit_once('#').map_or("unknown", |(_, key)| key);
+            let id = format_charged_text(ctx, format_args!(
+                "nx:feature-history:sketch-payload-scalar#{key}-{ordinal:010}"),
+                "NX sketch payload scalar identity")?;
+            let operation_label = copy_operation_text(ctx, &construction.operation_label,
+                "NX sketch payload scalar operation label")?;
+            ctx.charge_collection_items(1, "NX sketch payload scalars")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeaturePayloadScalar>()), "NX sketch payload scalars")?;
+            output.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX sketch payload scalars", 0, 1))?;
+            output.push(FeaturePayloadScalar {
+                id, operation_label,
+                payload: FeatureScalarPayload::Construction { construction_payload },
+                ordinal, field_code: field.field_code, scalar: field.scalar,
+                payload_offset, source_offset,
+            });
+        }
+    }
+    Ok(output)
 }
 
 /// Decode exact scalar-vector frames across reconstructed sketch payloads.

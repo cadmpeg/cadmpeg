@@ -19,9 +19,11 @@ pub(super) struct JoinedPayload<'ctx> {
 impl<'ctx> JoinedPayload<'ctx> {
     pub(super) fn from_source<'a>(
         ctx: &'ctx DecodeContext<'_>,
-        ids: impl ExactSizeIterator<Item = &'a String> + Clone,
+        ids: impl Iterator<Item = &'a String> + Clone,
         blocks: &BTreeMap<String, (&[u8], u64)>,
     ) -> Result<Option<Self>, CodecError> {
+        let count = ids.clone().try_fold(0usize, |count, _| count.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit("count NX feature payload blocks", 0, 1))?;
         let mut byte_len = 0usize;
         for id in ids.clone() {
             let Some((fragment, _)) = blocks.get(id).copied() else {
@@ -31,23 +33,23 @@ impl<'ctx> JoinedPayload<'ctx> {
                 ctx.refuse_codec_limit("join NX feature payload bytes", 0, 1)
             })?;
         }
-        let span_bytes = ids.len().checked_mul(std::mem::size_of::<SourceSpan>()).ok_or_else(|| {
+        let span_bytes = count.checked_mul(std::mem::size_of::<SourceSpan>()).ok_or_else(|| {
             ctx.refuse_codec_limit("reserve NX feature payload spans", 0, 1)
         })?;
         let reserved = byte_len.checked_add(span_bytes).ok_or_else(|| {
             ctx.refuse_codec_limit("reserve NX joined feature payload", 0, 1)
         })?;
-        ctx.charge_work(u64_from_index(ids.len()), "scan NX feature payload blocks")?;
+        ctx.charge_work(u64_from_index(count), "scan NX feature payload blocks")?;
         ctx.charge_work(u64_from_index(byte_len), "copy NX feature payload bytes")?;
-        ctx.charge_collection_items(u64_from_index(ids.len()), "NX feature payload spans")?;
+        ctx.charge_collection_items(u64_from_index(count), "NX feature payload spans")?;
         let reservation = ctx.reserve_scoped(u64_from_index(reserved), "join NX feature payload")?;
         let mut bytes = Vec::new();
         bytes.try_reserve_exact(byte_len).map_err(|_| {
             ctx.refuse_codec_limit("allocate NX feature payload bytes", 0, u64_from_index(byte_len))
         })?;
         let mut sources = Vec::new();
-        sources.try_reserve_exact(ids.len()).map_err(|_| {
-            ctx.refuse_codec_limit("allocate NX feature payload spans", 0, u64_from_index(ids.len()))
+        sources.try_reserve_exact(count).map_err(|_| {
+            ctx.refuse_codec_limit("allocate NX feature payload spans", 0, u64_from_index(count))
         })?;
         for id in ids {
             let Some((fragment, source_offset)) = blocks.get(id).copied() else {
