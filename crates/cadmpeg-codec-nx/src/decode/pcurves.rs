@@ -730,16 +730,11 @@ pub(super) fn complete_tolerant_intersection_pcurves_from_serialized_branches_fo
             let mut pcurves: [Option<PcurveGeometry>; 2] = [None, None];
             for (side, slot) in pcurves.iter_mut().enumerate() {
                 *slot = orient_tolerant_intersection_pcurve_with_index_and_budget(
-                    ctx,
-                    &model_index,
-                    owner,
-                    &supports[side],
-                    &carriers[side].geometry,
-                    first_range,
-                    (*endpoints).map(cadmpeg_ir::features::FinitePoint3::get),
-                    endpoint_tolerance,
-                    geometry_budget,
-                )?;
+ctx,
+&model_index,
+TolerantPcurveFit { curve: owner, support: &supports[side], pcurve: &carriers[side].geometry, range: first_range, endpoints: (*endpoints).map(cadmpeg_ir::features::FinitePoint3::get), tolerance: endpoint_tolerance },
+geometry_budget,
+)?;
             }
             if let [Some(first), Some(second)] = pcurves {
                 let Ok(parameterization) =
@@ -819,30 +814,31 @@ pub(super) fn orient_tolerant_intersection_pcurve(
         cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
     );
     orient_tolerant_intersection_pcurve_with_index_and_budget(
-        ctx,
-        &index,
-        curve,
-        support,
-        pcurve,
-        range,
-        endpoints,
-        tolerance,
-        &geometry_budget,
-    )
+ctx,
+&index,
+TolerantPcurveFit { curve, support, pcurve, range, endpoints, tolerance },
+&geometry_budget,
+)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn orient_tolerant_intersection_pcurve_with_index_and_budget(
-    ctx: &DecodeContext<'_>,
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    curve: &CurveId,
-    support: &SurfaceId,
-    pcurve: &PcurveGeometry,
+
+struct TolerantPcurveFit<'inputs> {
+    curve: &'inputs CurveId,
+    support: &'inputs SurfaceId,
+    pcurve: &'inputs PcurveGeometry,
     range: [f64; 2],
     endpoints: [Point3; 2],
     tolerance: f64,
-    geometry_budget: &GeometryWorkBudget<'_>,
+}
+
+fn orient_tolerant_intersection_pcurve_with_index_and_budget(
+ctx: &DecodeContext<'_>,
+index: &cadmpeg_ir::index::ModelIndex<'_>,
+tolerant_pcurve_fit: TolerantPcurveFit<'_>,
+geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    let TolerantPcurveFit { curve, support, pcurve, range, endpoints, tolerance } = tolerant_pcurve_fit;
+
     let evaluate = |parameter| -> Result<Option<Point3>, cadmpeg_core::CodecError> {
         let Some(uv) = finite_or_refusal(pcurve_uv(pcurve, parameter))? else {
             return Ok(None);
@@ -1454,18 +1450,13 @@ pub(super) fn complete_intersection_pcurves_from_opposite_charts_with_budget(
                     .as_ref()
                     .copied();
                 let Some(pcurve) = transfer_intersection_pcurve_with_contact_and_budget(
-                    &model_index,
-                    owner,
-                    source_surface,
-                    &source_pcurve.geometry,
-                    target_surface,
-                    context.parameter_range().endpoints(),
-                    tolerance,
-                    blend_contact,
-                    transfer_budget,
-                    &candidate_geometry_budget,
-                    &mut blend_parameter_grids,
-                )?
+&model_index,
+PcurveTransfer { curve: owner, source_surface, source_pcurve: &source_pcurve.geometry, target_surface, parameter_range: context.parameter_range().endpoints(), tolerance },
+blend_contact,
+transfer_budget,
+&candidate_geometry_budget,
+&mut blend_parameter_grids,
+)?
                 else {
                     return Ok(None);
                 };
@@ -1745,17 +1736,12 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                 } else {
                     let transferred = [
                         transfer_intersection_pcurve(
-                            &model_index,
-                            owner,
-                            first_surface,
-                            &first,
-                            second_surface,
-                            range,
-                            tolerance,
-                            transfer_budget,
-                            geometry_budget,
-                            &mut blend_parameter_grids,
-                        )?
+&model_index,
+PcurveTransfer { curve: owner, source_surface: first_surface, source_pcurve: &first, target_surface: second_surface, parameter_range: range, tolerance },
+transfer_budget,
+geometry_budget,
+&mut blend_parameter_grids,
+)?
                         .map(|transferred| {
                             first
                                 .try_clone_for_decode(ctx, "nx exact boundary first pcurve")
@@ -1763,17 +1749,12 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
                         })
                         .transpose()?,
                         transfer_intersection_pcurve(
-                            &model_index,
-                            owner,
-                            second_surface,
-                            &second,
-                            first_surface,
-                            range,
-                            tolerance,
-                            transfer_budget,
-                            geometry_budget,
-                            &mut blend_parameter_grids,
-                        )?
+&model_index,
+PcurveTransfer { curve: owner, source_surface: second_surface, source_pcurve: &second, target_surface: first_surface, parameter_range: range, tolerance },
+transfer_budget,
+geometry_budget,
+&mut blend_parameter_grids,
+)?
                         .map(|transferred| {
                             second
                                 .try_clone_for_decode(ctx, "nx exact boundary second pcurve")
@@ -1789,17 +1770,12 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             }
             [Some(first), None] => {
                 let Some(transferred) = transfer_intersection_pcurve(
-                    &model_index,
-                    owner,
-                    first_surface,
-                    &first,
-                    second_surface,
-                    range,
-                    tolerance,
-                    transfer_budget,
-                    geometry_budget,
-                    &mut blend_parameter_grids,
-                )?
+&model_index,
+PcurveTransfer { curve: owner, source_surface: first_surface, source_pcurve: &first, target_surface: second_surface, parameter_range: range, tolerance },
+transfer_budget,
+geometry_budget,
+&mut blend_parameter_grids,
+)?
                 else {
                     continue;
                 };
@@ -1807,17 +1783,12 @@ pub(super) fn complete_exact_boundary_intersection_pcurves_with_budget(
             }
             [None, Some(second)] => {
                 let Some(transferred) = transfer_intersection_pcurve(
-                    &model_index,
-                    owner,
-                    second_surface,
-                    &second,
-                    first_surface,
-                    range,
-                    tolerance,
-                    transfer_budget,
-                    geometry_budget,
-                    &mut blend_parameter_grids,
-                )?
+&model_index,
+PcurveTransfer { curve: owner, source_surface: second_surface, source_pcurve: &second, target_surface: first_surface, parameter_range: range, tolerance },
+transfer_budget,
+geometry_budget,
+&mut blend_parameter_grids,
+)?
                 else {
                     continue;
                 };
@@ -1975,7 +1946,6 @@ fn finite_parameter_sample(range: [f64; 2], ordinal: usize, count: usize) -> Opt
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn exact_boundary_pcurve_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     curve: &CurveId,
@@ -2074,15 +2044,10 @@ fn exact_boundary_pcurve_with_index(
             }
         };
         return Ok(exact_boundary_pcurve_matches_carrier_with_index(
-            index,
-            curve,
-            surface,
-            &candidate,
-            &curve_breaks,
-            range,
-            tolerance,
-            geometry_budget,
-        )?
+index,
+BoundaryCarrierFit { curve, surface, pcurve: &candidate, curve_breaks: &curve_breaks, range, tolerance },
+geometry_budget,
+)?
         .then_some(candidate));
     }
     if matches!(
@@ -2158,15 +2123,10 @@ fn exact_boundary_pcurve_with_index(
             }
         }
         return Ok(exact_boundary_pcurve_matches_carrier_with_index(
-            index,
-            curve,
-            surface,
-            &candidate,
-            &curve_breaks,
-            range,
-            tolerance,
-            geometry_budget,
-        )?
+index,
+BoundaryCarrierFit { curve, surface, pcurve: &candidate, curve_breaks: &curve_breaks, range, tolerance },
+geometry_budget,
+)?
         .then_some(candidate));
     }
     let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = carrier.geometry.solved() else {
@@ -2278,15 +2238,10 @@ fn exact_boundary_pcurve_with_index(
                     }
                 };
             if exact_boundary_pcurve_matches_carrier_with_index(
-                index,
-                curve,
-                surface,
-                &candidate,
-                &curve_breaks,
-                range,
-                tolerance,
-                geometry_budget,
-            )? {
+index,
+BoundaryCarrierFit { curve, surface, pcurve: &candidate, curve_breaks: &curve_breaks, range, tolerance },
+geometry_budget,
+)? {
                 match_count += 1;
                 if match_count == 1 {
                     matched = Some(candidate);
@@ -2297,17 +2252,23 @@ fn exact_boundary_pcurve_with_index(
     Ok(if match_count == 1 { matched } else { None })
 }
 
-#[allow(clippy::too_many_arguments)]
-fn exact_boundary_pcurve_matches_carrier_with_index(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    curve: &CurveId,
-    surface: &SurfaceId,
-    pcurve: &PcurveGeometry,
-    curve_breaks: &[f64],
+
+struct BoundaryCarrierFit<'inputs> {
+    curve: &'inputs CurveId,
+    surface: &'inputs SurfaceId,
+    pcurve: &'inputs PcurveGeometry,
+    curve_breaks: &'inputs [f64],
     range: [f64; 2],
     tolerance: f64,
-    geometry_budget: &GeometryWorkBudget<'_>,
+}
+
+fn exact_boundary_pcurve_matches_carrier_with_index(
+index: &cadmpeg_ir::index::ModelIndex<'_>,
+boundary_carrier_fit: BoundaryCarrierFit<'_>,
+geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+    let BoundaryCarrierFit { curve, surface, pcurve, curve_breaks, range, tolerance } = boundary_carrier_fit;
+
     let Some(surface_breaks) =
         boundary_curve_affine_breaks_with_index(index, surface, pcurve, range, geometry_budget)?
     else {
@@ -2645,7 +2606,6 @@ pub(super) fn coincident_pcurve_pair(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn coincident_pcurve_pair_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces: [&SurfaceId; 2],
@@ -3191,49 +3151,46 @@ fn opposite_chart_geometry_work_limit(ctx: &DecodeContext<'_>, candidates_remain
     Ok(rounded / candidates_remaining)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn transfer_intersection_pcurve<'a>(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    curve: &CurveId,
-    source_surface: &SurfaceId,
-    source_pcurve: &PcurveGeometry,
+
+struct PcurveTransfer<'inputs, 'a> {
+    curve: &'inputs CurveId,
+    source_surface: &'inputs SurfaceId,
+    source_pcurve: &'inputs PcurveGeometry,
     target_surface: &'a SurfaceId,
     parameter_range: [f64; 2],
     tolerance: f64,
-    budget: &TransferBudget<'_>,
-    geometry_budget: &GeometryWorkBudget<'_>,
-    blend_parameter_grids: &mut BlendParameterGridCache<'a>,
-) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    let blend_contact = blend_transfer_contact(index, source_surface, target_surface);
-    transfer_intersection_pcurve_with_contact_and_budget(
-        index,
-        curve,
-        source_surface,
-        source_pcurve,
-        target_surface,
-        parameter_range,
-        tolerance,
-        blend_contact,
-        budget,
-        geometry_budget,
-        blend_parameter_grids,
-    )
 }
 
-#[allow(clippy::too_many_arguments)]
-fn transfer_intersection_pcurve_with_contact_and_budget<'a>(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    curve: &CurveId,
-    source_surface: &SurfaceId,
-    source_pcurve: &PcurveGeometry,
-    target_surface: &'a SurfaceId,
-    parameter_range: [f64; 2],
-    tolerance: f64,
-    blend_contact: Option<BlendTransferContact<'_>>,
-    budget: &TransferBudget<'_>,
-    geometry_budget: &GeometryWorkBudget<'_>,
-    blend_parameter_grids: &mut BlendParameterGridCache<'a>,
+fn transfer_intersection_pcurve<'a>(
+index: &cadmpeg_ir::index::ModelIndex<'_>,
+pcurve_transfer: PcurveTransfer<'_, 'a>,
+budget: &TransferBudget<'_>,
+geometry_budget: &GeometryWorkBudget<'_>,
+blend_parameter_grids: &mut BlendParameterGridCache<'a>,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    let PcurveTransfer { curve, source_surface, source_pcurve, target_surface, parameter_range, tolerance } = pcurve_transfer;
+
+    let blend_contact = blend_transfer_contact(index, source_surface, target_surface);
+    transfer_intersection_pcurve_with_contact_and_budget(
+index,
+PcurveTransfer { curve, source_surface, source_pcurve, target_surface, parameter_range, tolerance },
+blend_contact,
+budget,
+geometry_budget,
+blend_parameter_grids,
+)
+}
+
+fn transfer_intersection_pcurve_with_contact_and_budget<'a>(
+index: &cadmpeg_ir::index::ModelIndex<'_>,
+pcurve_transfer: PcurveTransfer<'_, 'a>,
+blend_contact: Option<BlendTransferContact<'_>>,
+budget: &TransferBudget<'_>,
+geometry_budget: &GeometryWorkBudget<'_>,
+blend_parameter_grids: &mut BlendParameterGridCache<'a>,
+) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    let PcurveTransfer { curve, source_surface, source_pcurve, target_surface, parameter_range, tolerance } = pcurve_transfer;
+
     let source_geometry = index
         .surfaces(source_surface.as_str())
         .and_then(|surface| surface.geometry.solved());
@@ -3241,38 +3198,34 @@ fn transfer_intersection_pcurve_with_contact_and_budget<'a>(
         .surfaces(target_surface.as_str())
         .and_then(|surface| surface.geometry.solved());
     transfer_intersection_pcurve_with_budget(
-        index,
-        curve,
-        source_surface,
-        source_pcurve,
-        target_surface,
-        source_geometry,
-        target_geometry,
-        parameter_range,
-        tolerance,
-        blend_contact,
-        budget,
-        geometry_budget,
-        blend_parameter_grids,
-    )
+index,
+PcurveTransfer { curve, source_surface, source_pcurve, target_surface, parameter_range, tolerance },
+TransferCarriers { source_geometry, target_geometry, blend_contact },
+budget,
+geometry_budget,
+blend_parameter_grids,
+)
 }
 
-#[allow(clippy::too_many_arguments)]
+
+struct TransferCarriers<'inputs> {
+    source_geometry: Option<&'inputs SolvedSurfaceGeometry>,
+    target_geometry: Option<&'inputs SolvedSurfaceGeometry>,
+    blend_contact: Option<BlendTransferContact<'inputs>>,
+}
+
 fn transfer_intersection_pcurve_with_budget<'a>(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    curve: &CurveId,
-    source_surface: &SurfaceId,
-    source_pcurve: &PcurveGeometry,
-    target_surface: &'a SurfaceId,
-    source_geometry: Option<&SolvedSurfaceGeometry>,
-    target_geometry: Option<&SolvedSurfaceGeometry>,
-    parameter_range: [f64; 2],
-    tolerance: f64,
-    blend_contact: Option<BlendTransferContact<'_>>,
-    budget: &TransferBudget<'_>,
-    geometry_budget: &GeometryWorkBudget<'_>,
-    blend_parameter_grids: &mut BlendParameterGridCache<'a>,
+index: &cadmpeg_ir::index::ModelIndex<'_>,
+pcurve_transfer: PcurveTransfer<'_, 'a>,
+transfer_carriers: TransferCarriers<'_>,
+budget: &TransferBudget<'_>,
+geometry_budget: &GeometryWorkBudget<'_>,
+blend_parameter_grids: &mut BlendParameterGridCache<'a>,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
+    let TransferCarriers { source_geometry, target_geometry, blend_contact } = transfer_carriers;
+
+    let PcurveTransfer { curve, source_surface, source_pcurve, target_surface, parameter_range, tolerance } = pcurve_transfer;
+
     const GENERAL_CONTINUATION_STEPS: usize = 16;
     // A complete blend boundary is one continuous image even when its
     // serialized contact chart is absent. Its endpoints and one midpoint
@@ -3299,22 +3252,14 @@ fn transfer_intersection_pcurve_with_budget<'a>(
         return Ok(None);
     }
     let Some(first) = transferred_pcurve_sample_with_budget(
-        index,
-        curve,
-        source_surface,
-        source_pcurve,
-        target_surface,
-        source_geometry,
-        target_geometry,
-        parameter_range[0],
-        None,
-        tolerance,
-        blend_contact,
-        budget,
-        geometry_budget,
-        &mut contact_seeds,
-        blend_parameter_grids,
-    )?
+index,
+TransferredPcurveFit { curve, source_surface, source_pcurve, target_surface, source_geometry, target_geometry, tolerance, blend_contact },
+PcurveSampleSeed { parameter: parameter_range[0], seed: None },
+budget,
+geometry_budget,
+&mut contact_seeds,
+blend_parameter_grids,
+)?
     else {
         return Ok(None);
     };
@@ -3332,22 +3277,14 @@ fn transfer_intersection_pcurve_with_budget<'a>(
             return Ok(None);
         };
         let Some(sample) = transferred_pcurve_sample_with_budget(
-            index,
-            curve,
-            source_surface,
-            source_pcurve,
-            target_surface,
-            source_geometry,
-            target_geometry,
-            parameter,
-            coarse.last().map(|sample| sample.1),
-            tolerance,
-            blend_contact,
-            budget,
-            geometry_budget,
-            &mut contact_seeds,
-            blend_parameter_grids,
-        )?
+index,
+TransferredPcurveFit { curve, source_surface, source_pcurve, target_surface, source_geometry, target_geometry, tolerance, blend_contact },
+PcurveSampleSeed { parameter, seed: coarse.last().map(|sample| sample.1) },
+budget,
+geometry_budget,
+&mut contact_seeds,
+blend_parameter_grids,
+)?
         else {
             return Ok(None);
         };
@@ -3356,24 +3293,13 @@ fn transfer_intersection_pcurve_with_budget<'a>(
     let mut samples = vec![first];
     for pair in coarse.windows(2) {
         let Some(()) = append_transferred_pcurve_segment_with_budget(
-            index,
-            curve,
-            source_surface,
-            source_pcurve,
-            target_surface,
-            source_geometry,
-            target_geometry,
-            pair[0],
-            pair[1],
-            tolerance,
-            0,
-            &mut samples,
-            blend_contact,
-            budget,
-            geometry_budget,
-            &mut contact_seeds,
-            blend_parameter_grids,
-        )?
+index,
+TransferredPcurveFit { curve, source_surface, source_pcurve, target_surface, source_geometry, target_geometry, tolerance, blend_contact },
+TransferSegment { first: pair[0], last: pair[1], depth: 0 },
+TransferOutput { samples: &mut samples, contact_seeds: &mut contact_seeds, blend_parameter_grids },
+budget,
+geometry_budget,
+)?
         else {
             return Ok(None);
         };
@@ -3439,24 +3365,37 @@ fn decoded_solved_surface_point_with_budget(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn transferred_pcurve_sample_with_budget<'a>(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    curve: &CurveId,
-    source_surface: &SurfaceId,
-    source_pcurve: &PcurveGeometry,
+
+struct TransferredPcurveFit<'inputs, 'a> {
+    curve: &'inputs CurveId,
+    source_surface: &'inputs SurfaceId,
+    source_pcurve: &'inputs PcurveGeometry,
     target_surface: &'a SurfaceId,
-    source_geometry: Option<&SolvedSurfaceGeometry>,
-    target_geometry: Option<&SolvedSurfaceGeometry>,
+    source_geometry: Option<&'inputs SolvedSurfaceGeometry>,
+    target_geometry: Option<&'inputs SolvedSurfaceGeometry>,
+    tolerance: f64,
+    blend_contact: Option<BlendTransferContact<'inputs>>,
+}
+
+
+struct PcurveSampleSeed {
     parameter: f64,
     seed: Option<Point2>,
-    tolerance: f64,
-    blend_contact: Option<BlendTransferContact<'_>>,
-    budget: &TransferBudget<'_>,
-    geometry_budget: &GeometryWorkBudget<'_>,
-    contact_seeds: &mut BlendContactSeedCache,
-    blend_parameter_grids: &mut BlendParameterGridCache<'a>,
+}
+
+fn transferred_pcurve_sample_with_budget<'a>(
+index: &cadmpeg_ir::index::ModelIndex<'_>,
+transferred_pcurve_fit: TransferredPcurveFit<'_, 'a>,
+pcurve_sample_seed: PcurveSampleSeed,
+budget: &TransferBudget<'_>,
+geometry_budget: &GeometryWorkBudget<'_>,
+contact_seeds: &mut BlendContactSeedCache,
+blend_parameter_grids: &mut BlendParameterGridCache<'a>,
 ) -> Result<Option<TransferredPcurveSample>, cadmpeg_core::CodecError> {
+    let PcurveSampleSeed { parameter, seed } = pcurve_sample_seed;
+
+    let TransferredPcurveFit { curve, source_surface, source_pcurve, target_surface, source_geometry, target_geometry, tolerance, blend_contact } = transferred_pcurve_fit;
+
     if !budget.charge() {
         return Ok(None);
     }
@@ -3508,30 +3447,22 @@ fn transferred_pcurve_sample_with_budget<'a>(
     // fallback cannot accidentally inherit that certification.
     let contact_target_uv = if let Some(contact) = blend_contact {
         blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
-            index,
-            contact.support,
-            contact.support_geometry,
-            contact.pcurve,
-            contact.boundary,
-            source_pcurve,
-            parameter,
-            target,
-            geometry_budget,
-        )?
+index,
+crate::decode::blend::ContactCurveSample { support: contact.support, support_geometry: contact.support_geometry, contact_pcurve: contact.pcurve, boundary: contact.boundary, support_pcurve: source_pcurve, curve_parameter: parameter },
+target,
+geometry_budget,
+)?
     } else {
         None
     };
     let reverse_contact_target_uv =
         blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
-            index,
-            source_surface,
-            target_surface,
-            source_pcurve,
-            parameter,
-            target,
-            contact_seeds,
-            geometry_budget,
-        )?;
+index,
+crate::decode::blend::SourcePcurveSample { blend: source_surface, support: target_surface, source_pcurve, curve_parameter: parameter },
+target,
+contact_seeds,
+geometry_budget,
+)?;
     let (target_uv, target_certified) = if reverse_contact_target_uv.is_some() {
         (reverse_contact_target_uv, true)
     } else if contact_target_uv.is_some() {
@@ -3795,48 +3726,48 @@ fn blend_boundary_spine_geometry_matches_with_index_and_budget(
     Ok(radial.dot(tangent).abs() <= angular_tolerance)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn append_transferred_pcurve_segment_with_budget<'a>(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    curve: &CurveId,
-    source_surface: &SurfaceId,
-    source_pcurve: &PcurveGeometry,
-    target_surface: &'a SurfaceId,
-    source_geometry: Option<&SolvedSurfaceGeometry>,
-    target_geometry: Option<&SolvedSurfaceGeometry>,
+
+struct TransferSegment {
     first: TransferredPcurveSample,
     last: TransferredPcurveSample,
-    tolerance: f64,
     depth: usize,
-    samples: &mut Vec<TransferredPcurveSample>,
-    blend_contact: Option<BlendTransferContact<'_>>,
-    budget: &TransferBudget<'_>,
-    geometry_budget: &GeometryWorkBudget<'_>,
-    contact_seeds: &mut BlendContactSeedCache,
-    blend_parameter_grids: &mut BlendParameterGridCache<'a>,
+}
+
+
+struct TransferOutput<'inputs, 'a> {
+    samples: &'inputs mut Vec<TransferredPcurveSample>,
+    contact_seeds: &'inputs mut BlendContactSeedCache,
+    blend_parameter_grids: &'inputs mut BlendParameterGridCache<'a>,
+}
+
+fn append_transferred_pcurve_segment_with_budget<'a>(
+index: &cadmpeg_ir::index::ModelIndex<'_>,
+transferred_pcurve_fit: TransferredPcurveFit<'_, 'a>,
+transfer_segment: TransferSegment,
+transfer_output: TransferOutput<'_, 'a>,
+budget: &TransferBudget<'_>,
+geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<()>, cadmpeg_core::CodecError> {
+    let TransferOutput { samples, contact_seeds, blend_parameter_grids } = transfer_output;
+
+    let TransferSegment { first, last, depth } = transfer_segment;
+
+    let TransferredPcurveFit { curve, source_surface, source_pcurve, target_surface, source_geometry, target_geometry, tolerance, blend_contact } = transferred_pcurve_fit;
+
     let midpoint_parameter = f64::midpoint(first.0, last.0);
     let midpoint_seed = Point2::new(
         f64::midpoint(first.1.u, last.1.u),
         f64::midpoint(first.1.v, last.1.v),
     );
     let Some(midpoint) = transferred_pcurve_sample_with_budget(
-        index,
-        curve,
-        source_surface,
-        source_pcurve,
-        target_surface,
-        source_geometry,
-        target_geometry,
-        midpoint_parameter,
-        Some(midpoint_seed),
-        tolerance,
-        blend_contact,
-        budget,
-        geometry_budget,
-        contact_seeds,
-        blend_parameter_grids,
-    )?
+index,
+TransferredPcurveFit { curve, source_surface, source_pcurve, target_surface, source_geometry, target_geometry, tolerance, blend_contact },
+PcurveSampleSeed { parameter: midpoint_parameter, seed: Some(midpoint_seed) },
+budget,
+geometry_budget,
+contact_seeds,
+blend_parameter_grids,
+)?
     else {
         return Ok(None);
     };
@@ -3967,46 +3898,24 @@ fn append_transferred_pcurve_segment_with_budget<'a>(
         return Ok(None);
     }
     let Some(()) = append_transferred_pcurve_segment_with_budget(
-        index,
-        curve,
-        source_surface,
-        source_pcurve,
-        target_surface,
-        source_geometry,
-        target_geometry,
-        first,
-        midpoint,
-        tolerance,
-        depth + 1,
-        samples,
-        blend_contact,
-        budget,
-        geometry_budget,
-        contact_seeds,
-        blend_parameter_grids,
-    )?
+index,
+TransferredPcurveFit { curve, source_surface, source_pcurve, target_surface, source_geometry, target_geometry, tolerance, blend_contact },
+TransferSegment { first, last: midpoint, depth: depth + 1 },
+TransferOutput { samples, contact_seeds, blend_parameter_grids },
+budget,
+geometry_budget,
+)?
     else {
         return Ok(None);
     };
     append_transferred_pcurve_segment_with_budget(
-        index,
-        curve,
-        source_surface,
-        source_pcurve,
-        target_surface,
-        source_geometry,
-        target_geometry,
-        midpoint,
-        last,
-        tolerance,
-        depth + 1,
-        samples,
-        blend_contact,
-        budget,
-        geometry_budget,
-        contact_seeds,
-        blend_parameter_grids,
-    )
+index,
+TransferredPcurveFit { curve, source_surface, source_pcurve, target_surface, source_geometry, target_geometry, tolerance, blend_contact },
+TransferSegment { first: midpoint, last, depth: depth + 1 },
+TransferOutput { samples, contact_seeds, blend_parameter_grids },
+budget,
+geometry_budget,
+)
 }
 
 pub(super) fn surface_parameters_for_fit_with_index_and_budget(

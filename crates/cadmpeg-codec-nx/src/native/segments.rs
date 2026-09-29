@@ -329,18 +329,24 @@ pub(super) struct SegmentOmLink {
 /// body ordinals or duplicate primary-body fields. The label arena is
 /// source/newest-first; all history positions below use oldest-first order
 /// within each section.
-#[allow(clippy::too_many_arguments)]
+
+pub(super) struct BodyLineageInputs<'inputs> {
+    pub(super) labels: &'inputs [FeatureOperationLabel],
+    pub(super) references: &'inputs [FeatureBodyReference],
+    pub(super) data_block_uses: &'inputs [FeatureBodyDataBlockUse],
+    pub(super) data_blocks: &'inputs [DataBlock],
+    pub(super) booleans: &'inputs [FeatureBooleanOperation],
+    pub(super) operands: &'inputs [FeatureOperationBodyOperand],
+    pub(super) bindings: &'inputs [SegmentBodyBinding],
+    pub(super) inputs: &'inputs [FeatureInputBlock],
+}
+
 fn terminal_feature_body_indices(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    labels: &[FeatureOperationLabel],
-    references: &[FeatureBodyReference],
-    data_block_uses: &[FeatureBodyDataBlockUse],
-    data_blocks: &[DataBlock],
-    booleans: &[FeatureBooleanOperation],
-    operands: &[FeatureOperationBodyOperand],
-    bindings: &[SegmentBodyBinding],
-    inputs: &[FeatureInputBlock],
+ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+body_lineage_inputs: BodyLineageInputs<'_>,
 ) -> Result<Option<BTreeSet<u32>>, cadmpeg_core::CodecError> {
+    let BodyLineageInputs { labels, references, data_block_uses, data_blocks, booleans, operands, bindings, inputs } = body_lineage_inputs;
+
     let scan_work = references
         .len()
         .checked_mul(references.len())
@@ -541,29 +547,16 @@ fn terminal_feature_body_indices(
 }
 
 /// Resolve one atomic terminal status for every segment-bound body image.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn segment_body_lineage_statuses(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    labels: &[FeatureOperationLabel],
-    references: &[FeatureBodyReference],
-    data_block_uses: &[FeatureBodyDataBlockUse],
-    data_blocks: &[DataBlock],
-    booleans: &[FeatureBooleanOperation],
-    operands: &[FeatureOperationBodyOperand],
-    bindings: &[SegmentBodyBinding],
-    inputs: &[FeatureInputBlock],
+ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+body_lineage_inputs: BodyLineageInputs<'_>,
 ) -> Result<Option<Vec<SegmentBodyLineageStatus>>, cadmpeg_core::CodecError> {
+    let BodyLineageInputs { labels, references, data_block_uses, data_blocks, booleans, operands, bindings, inputs } = body_lineage_inputs;
+
     let terminal = terminal_feature_body_indices(
-        ctx,
-        labels,
-        references,
-        data_block_uses,
-        data_blocks,
-        booleans,
-        operands,
-        bindings,
-        inputs,
-    )?;
+ctx,
+BodyLineageInputs { labels, references, data_block_uses, data_blocks, booleans, operands, bindings, inputs },
+)?;
     let Some(terminal) = terminal else {
         return Ok(None);
     };
@@ -1116,7 +1109,10 @@ mod tests {
             source_offset: 0,
         }];
         let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-            super::segment_body_lineage_statuses(ctx, &[], &[], &[], &[], &[], &[], &bindings, &[])
+            super::segment_body_lineage_statuses(
+ctx,
+super::BodyLineageInputs { labels: &[], references: &[], data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
+)
         };
         let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
             .expect("admitted segment alias lineage")
@@ -1166,20 +1162,8 @@ mod tests {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
         );
     }
-    macro_rules! terminal_feature_body_indices {
-        ($($argument:expr),* $(,)?) => {{
-            crate::test_support::with_decode_context(|ctx| {
-                super::terminal_feature_body_indices(ctx, $($argument),*)
-            }).expect("admitted terminal body lineage")
-        }};
-    }
-    macro_rules! segment_body_lineage_statuses {
-        ($($argument:expr),* $(,)?) => {{
-            crate::test_support::with_decode_context(|ctx| {
-                super::segment_body_lineage_statuses(ctx, $($argument),*)
-            }).expect("admitted segment lineage statuses")
-        }};
-    }
+
+
     use crate::test_support::test_om::segment_body_binding_payload;
     use crate::test_support::test_om::segment_body_binding_repeated_link_payload;
     use crate::test_support::test_om::segment_extended_wrapper_payload;
@@ -1726,16 +1710,10 @@ mod tests {
         }];
 
         assert_eq!(
-            terminal_feature_body_indices!(
-                &labels,
-                &references,
-                &[],
-                &[],
-                &booleans,
-                &[],
-                &[],
-                &[],
-            ),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &booleans, operands: &[], bindings: &[], inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some([10].into_iter().collect())
         );
     }
@@ -1796,7 +1774,10 @@ mod tests {
         ];
 
         assert_eq!(
-            terminal_feature_body_indices!(&labels, &[], &[], &[], &booleans, &[], &bindings, &[],),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[], data_blocks: &[], booleans: &booleans, operands: &[], bindings: &bindings, inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some([10, 11].into_iter().collect())
         );
     }
@@ -1865,16 +1846,10 @@ mod tests {
         ];
 
         assert_eq!(
-            terminal_feature_body_indices!(
-                &labels,
-                &references,
-                &[],
-                &[],
-                &booleans,
-                &[],
-                &bindings,
-                &[],
-            ),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &booleans, operands: &[], bindings: &bindings, inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some([10, 11, 20, 21].into_iter().collect())
         );
     }
@@ -1912,16 +1887,10 @@ mod tests {
         }];
 
         assert_eq!(
-            terminal_feature_body_indices!(
-                &labels,
-                &references,
-                &[],
-                &[],
-                &[],
-                &[],
-                &bindings,
-                &[],
-            ),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -1982,16 +1951,10 @@ mod tests {
         ];
 
         assert_eq!(
-            terminal_feature_body_indices!(
-                &labels,
-                &references,
-                &[],
-                &[],
-                &[],
-                &[],
-                &bindings,
-                &[],
-            ),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some([10, 11, 20, 21].into_iter().collect())
         );
     }
@@ -2029,16 +1992,10 @@ mod tests {
         };
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
-        let statuses = segment_body_lineage_statuses!(
-            &labels,
-            &references,
-            &[],
-            &[],
-            &[],
-            &[],
-            &bindings,
-            &[],
-        )
+        let statuses = crate::test_support::with_decode_context(|ctx| super::segment_body_lineage_statuses(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
+)).expect("admitted segment lineage statuses")
         .expect("complete delete-only lineage");
         assert_eq!(statuses.len(), 2);
         assert!(!statuses[0].terminal);
@@ -2084,16 +2041,10 @@ mod tests {
             source_offset: 0,
         }];
 
-        let statuses = segment_body_lineage_statuses!(
-            &labels,
-            &references,
-            &data_block_uses,
-            &[],
-            &[],
-            &[],
-            &bindings,
-            &[],
-        )
+        let statuses = crate::test_support::with_decode_context(|ctx| super::segment_body_lineage_statuses(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &data_block_uses, data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
+)).expect("admitted segment lineage statuses")
         .expect("segment binding establishes lineage");
         assert_eq!(statuses.len(), 1);
         assert!(statuses[0].terminal);
@@ -2154,16 +2105,10 @@ mod tests {
             source_offset: 0,
         }];
 
-        let statuses = segment_body_lineage_statuses!(
-            &labels,
-            &references,
-            &[],
-            &blocks,
-            &[],
-            &[],
-            &bindings,
-            &inputs,
-        )
+        let statuses = crate::test_support::with_decode_context(|ctx| super::segment_body_lineage_statuses(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &blocks, booleans: &[], operands: &[], bindings: &bindings, inputs: &inputs },
+)).expect("admitted segment lineage statuses")
         .expect("segment binding establishes lineage");
         assert_eq!(statuses.len(), 1);
         assert!(statuses[0].terminal);
@@ -2223,16 +2168,10 @@ mod tests {
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
         assert_eq!(
-            terminal_feature_body_indices!(
-                &labels,
-                &[],
-                &[],
-                &blocks,
-                &booleans,
-                &[],
-                &bindings,
-                &[],
-            ),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[], data_blocks: &blocks, booleans: &booleans, operands: &[], bindings: &bindings, inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some([10, 11, 20, 21].into_iter().collect())
         );
     }
@@ -2290,16 +2229,10 @@ mod tests {
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
         assert_eq!(
-            terminal_feature_body_indices!(
-                &labels,
-                &[],
-                &[],
-                &blocks,
-                &booleans,
-                &[],
-                &bindings,
-                &[],
-            ),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[], data_blocks: &blocks, booleans: &booleans, operands: &[], bindings: &bindings, inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some([10, 11, 20, 21].into_iter().collect())
         );
     }
@@ -2341,16 +2274,10 @@ mod tests {
         }];
 
         assert_eq!(
-            terminal_feature_body_indices!(
-                &labels,
-                &references,
-                &[],
-                &[],
-                &[],
-                &[],
-                &bindings,
-                &[],
-            ),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some([10, 11].into_iter().collect())
         );
     }
@@ -2392,16 +2319,10 @@ mod tests {
         }];
 
         assert_eq!(
-            terminal_feature_body_indices!(
-                &labels,
-                &references,
-                &[],
-                &[],
-                &[],
-                &[],
-                &bindings,
-                &[],
-            ),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &[], bindings: &bindings, inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2445,16 +2366,10 @@ mod tests {
         }];
 
         assert_eq!(
-            terminal_feature_body_indices!(
-                &labels,
-                &references,
-                &[],
-                &[],
-                &booleans,
-                &[],
-                &[],
-                &[],
-            ),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &booleans, operands: &[], bindings: &[], inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2507,16 +2422,10 @@ mod tests {
         }];
 
         assert_eq!(
-            terminal_feature_body_indices!(
-                &labels,
-                &references,
-                &[],
-                &[],
-                &booleans,
-                &[],
-                &bindings,
-                &[],
-            ),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &references, data_block_uses: &[], data_blocks: &[], booleans: &booleans, operands: &[], bindings: &bindings, inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2558,7 +2467,10 @@ mod tests {
             segment_body_bindings: vec!["binding#0".to_string()],
         }];
         assert_eq!(
-            terminal_feature_body_indices!(&labels, &[], &[], &[], &[], &operands, &bindings, &[],),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &operands, bindings: &bindings, inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -2600,7 +2512,10 @@ mod tests {
             segment_body_bindings: Vec::new(),
         }];
         assert_eq!(
-            terminal_feature_body_indices!(&labels, &[], &[], &[], &[], &operands, &bindings, &[],),
+            crate::test_support::with_decode_context(|ctx| super::terminal_feature_body_indices(
+ctx,
+super::BodyLineageInputs { labels: &labels, references: &[], data_block_uses: &[], data_blocks: &[], booleans: &[], operands: &operands, bindings: &bindings, inputs: &[] },
+)).expect("admitted terminal body lineage"),
             Some([20, 30].into_iter().collect())
         );
     }

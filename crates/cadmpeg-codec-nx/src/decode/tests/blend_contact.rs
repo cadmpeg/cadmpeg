@@ -1309,19 +1309,16 @@ fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
     let mut contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
     let actual =
         crate::decode::blend::blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
-            &index,
-            &blend,
-            &support,
-            &source_pcurve,
-            parameter,
-            crate::decode::blend::BoundaryInverseTarget {
+&index,
+crate::decode::blend::SourcePcurveSample { blend: &blend, support: &support, source_pcurve: &source_pcurve, curve_parameter: parameter },
+crate::decode::blend::BoundaryInverseTarget {
                 point,
                 seed: None,
                 tolerance: FIT_TOLERANCE,
             },
-            &mut contact_seeds,
-            &geometry_budget,
-        )
+&mut contact_seeds,
+&geometry_budget,
+)
         .expect("evaluator allocation succeeds")
         .expect("reverse contact relation transfers the certified boundary");
     assert!((actual.u - expected.u).abs() <= FIT_TOLERANCE);

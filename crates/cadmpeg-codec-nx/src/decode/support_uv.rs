@@ -174,17 +174,23 @@ fn linear_pcurve_geometry(
 
 // Keep the object-map, serialized lanes, and shared geometry budget explicit:
 // this function decides which native lane can be admitted to which support.
-#[allow(clippy::too_many_arguments)]
+
+pub(super) struct SerializedSupportUvFit<'inputs> {
+    pub(super) surfaces_by_xmt: &'inputs BTreeMap<u32, SurfaceId>,
+    pub(super) supports: [Option<NonNullXmt>; 2],
+    pub(super) points: &'inputs [Point3],
+    pub(super) fit_tolerance: f64,
+    pub(super) lanes: &'inputs SupportUv,
+}
+
 pub(super) fn assign_ext11_support_uv_with_index(
-    ctx: &DecodeContext<'_>,
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    supports: [Option<NonNullXmt>; 2],
-    points: &[Point3],
-    fit_tolerance: f64,
-    lanes: &SupportUv,
-    geometry_budget: &GeometryWorkBudget<'_>,
+ctx: &DecodeContext<'_>,
+index: &cadmpeg_ir::index::ModelIndex<'_>,
+serialized_support_uv: SerializedSupportUvFit<'_>,
+geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<SupportUv>, cadmpeg_core::CodecError> {
+    let SerializedSupportUvFit { surfaces_by_xmt, supports, points, fit_tolerance, lanes } = serialized_support_uv;
+
     let [first, second] = supports.map(|support| {
         support
             .and_then(|support| surfaces_by_xmt.get(&u32::from(support)))
@@ -208,17 +214,14 @@ pub(super) fn assign_ext11_support_uv_with_index(
 
 // Keep the object-map, serialized lanes, and shared geometry budget explicit:
 // validation must preserve the same support identity proof as assignment.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn validate_serialized_support_uv_with_index(
-    ctx: &DecodeContext<'_>,
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    supports: [Option<NonNullXmt>; 2],
-    points: &[Point3],
-    fit_tolerance: f64,
-    lanes: &SupportUv,
-    geometry_budget: &GeometryWorkBudget<'_>,
+ctx: &DecodeContext<'_>,
+index: &cadmpeg_ir::index::ModelIndex<'_>,
+serialized_support_uv: SerializedSupportUvFit<'_>,
+geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<SupportUv, cadmpeg_core::CodecError> {
+    let SerializedSupportUvFit { surfaces_by_xmt, supports, points, fit_tolerance, lanes } = serialized_support_uv;
+
     let mut admitted = [None, None];
     for side in 0..2 {
         let Some(surface) =
@@ -871,17 +874,14 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
         geometry_budget.clear_blend_frame_cache();
         coupled_geometry_budget.clear_blend_frame_cache();
         lane_geometry_exhausted |= complete_support_uv_wave(
-            ctx,
-            ir,
-            pending,
-            support_budget,
-            geometry_budget,
-            coupled_support_budget,
-            coupled_geometry_budget,
-            &mut failed_attempts,
-            &mut failed_coupled_attempts,
-            endpoint_witnesses,
-        )?;
+ctx,
+ir,
+SupportUvAttempts { pending, failed_attempts: &mut failed_attempts, failed_coupled_attempts: &mut failed_coupled_attempts, endpoint_witnesses },
+support_budget,
+geometry_budget,
+coupled_support_budget,
+coupled_geometry_budget,
+)?;
         let after = pending_support_lanes_requiring_completion(ctx, ir, pending)?;
         if after >= before || support_uv_budget_exhausted(support_budget) {
             break;
@@ -1133,22 +1133,28 @@ fn pending_support_lanes_requiring_completion(
 
 // Keep independent work budgets, retry state, and the witness sink explicit at
 // this completion boundary.
-#[allow(clippy::too_many_arguments)]
-fn complete_support_uv_wave(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    pending: &[PendingExt11SupportUv],
-    support_budget: &SupportUvBudget<'_>,
-    geometry_budget: &GeometryWorkBudget<'_>,
-    coupled_support_budget: &SupportUvBudget<'_>,
-    coupled_geometry_budget: &GeometryWorkBudget<'_>,
-    failed_attempts: &mut BTreeMap<(ProceduralCurveId, usize), Option<PcurveGeometry>>,
-    failed_coupled_attempts: &mut BTreeMap<
+
+struct SupportUvAttempts<'inputs> {
+    pending: &'inputs [PendingExt11SupportUv],
+    failed_attempts: &'inputs mut BTreeMap<(ProceduralCurveId, usize), Option<PcurveGeometry>>,
+    failed_coupled_attempts: &'inputs mut BTreeMap<
         ProceduralCurveId,
         [Option<cadmpeg_ir::geometry::SupportPcurve>; 2],
     >,
-    endpoint_witnesses: &mut EndpointWitnesses,
+    endpoint_witnesses: &'inputs mut EndpointWitnesses,
+}
+
+fn complete_support_uv_wave(
+ctx: &DecodeContext<'_>,
+ir: &mut CadIr,
+support_uv_attempts: SupportUvAttempts<'_>,
+support_budget: &SupportUvBudget<'_>,
+geometry_budget: &GeometryWorkBudget<'_>,
+coupled_support_budget: &SupportUvBudget<'_>,
+coupled_geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    let SupportUvAttempts { pending, failed_attempts, failed_coupled_attempts, endpoint_witnesses } = support_uv_attempts;
+
     let mut lane_geometry_exhausted = false;
     let geometry_exhausted = geometry_budget.exhausted();
     refuse_geometry_work(geometry_budget)?;
@@ -1356,15 +1362,16 @@ fn complete_support_uv_wave(
                                             source_pcurve.zip(other_surface_id)
                                         {
                                             parameters = blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
-                                                &model_index, source_surface, surface_id,
-                                                &source_pcurve.geometry, sample_parameter,
-                                                BoundaryInverseTarget {
+&model_index,
+crate::decode::blend::SourcePcurveSample { blend: source_surface, support: surface_id, source_pcurve: &source_pcurve.geometry, curve_parameter: sample_parameter },
+BoundaryInverseTarget {
                                                     point: *point,
                                                     seed,
                                                     tolerance: effective_fit_tolerance,
                                                 },
-                                                &mut contact_seeds, geometry_budget,
-                                            )?;
+&mut contact_seeds,
+geometry_budget,
+)?;
                                         }
                                     }
                                     if parameters.is_none() {
@@ -1377,16 +1384,15 @@ fn complete_support_uv_wave(
                                         )) = other_contact
                                         {
                                             parameters = blend_boundary_parameter_from_contact_pcurve_with_geometry_and_budget(
-                                                &model_index, other_surface, other_geometry,
-                                                contact_pcurve, boundary, other_pcurve,
-                                                sample_parameter,
-                                                BoundaryInverseTarget {
+&model_index,
+crate::decode::blend::ContactCurveSample { support: other_surface, support_geometry: other_geometry, contact_pcurve, boundary, support_pcurve: other_pcurve, curve_parameter: sample_parameter },
+BoundaryInverseTarget {
                                                     point: *point,
                                                     seed,
                                                     tolerance: effective_fit_tolerance,
                                                 },
-                                                geometry_budget,
-                                            )?;
+geometry_budget,
+)?;
                                         }
                                     }
                                     if parameters.is_none() {
@@ -2282,19 +2288,25 @@ fn stream_owns_id(id: &str, prefix: &str) -> bool {
 
 /// Attach charts for one stream without rescanning coedges emitted by an earlier
 /// phase.
-#[allow(clippy::too_many_arguments)]
+
+pub(super) struct IntersectionStream<'inputs> {
+    pub(super) graph: &'inputs Graph,
+    pub(super) scope: &'inputs crate::decode::ids::IdScope,
+    pub(super) coedge_start: usize,
+    pub(super) procedural_start: usize,
+    pub(super) source_stream: cadmpeg_ir::annotations::StreamHandle,
+    pub(super) validated_endpoint_witnesses: &'inputs EndpointWitnesses,
+}
+
 pub(super) fn attach_completed_intersection_pcurves_for_stream_with_budget(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    graph: &Graph,
-    scope: &crate::decode::ids::IdScope,
-    coedge_start: usize,
-    procedural_start: usize,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
-    annotations: &mut AnnotationBuilder,
-    validated_endpoint_witnesses: &EndpointWitnesses,
-    geometry_budget: &GeometryWorkBudget<'_>,
+ctx: &DecodeContext<'_>,
+ir: &mut CadIr,
+intersection_stream: IntersectionStream<'_>,
+annotations: &mut AnnotationBuilder,
+geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let IntersectionStream { graph, scope, coedge_start, procedural_start, source_stream, validated_endpoint_witnesses } = intersection_stream;
+
     let source = IntersectionCompletionSource {
         scope: scope.try_clone_for_decode(ctx)?,
         graph,
@@ -2792,17 +2804,12 @@ mod tests {
         let mut ir = CadIr::empty();
         let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
         attach_completed_intersection_pcurves_for_stream_with_budget(
-            &ctx,
-            &mut ir,
-            &graph,
-            &crate::decode::ids::IdScope::stream(0),
-            0,
-            0,
-            cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("nx:test")),
-            &mut annotations,
-            &BTreeMap::new(),
-            &geometry_budget,
-        )
+&ctx,
+&mut ir,
+super::IntersectionStream { graph: &graph, scope: &crate::decode::ids::IdScope::stream(0), coedge_start: 0, procedural_start: 0, source_stream: cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("nx:test")), validated_endpoint_witnesses: &BTreeMap::new() },
+&mut annotations,
+&geometry_budget,
+)
     }
 
     #[test]
