@@ -314,24 +314,18 @@ fn joined_relation_incidence_link(
     {
         return None;
     }
-    let joins = relations
+    let (join, incidence_id) = crate::decode::uniqueness::exactly_one(relations
         .triples()
         .iter()
         .filter(|triple| triple.relation_id == Some(relation_id))
         .filter_map(|triple| triple.skamp_id.map(|incidence_id| (triple, incidence_id)))
-        .collect::<Vec<_>>();
-    let [(join, incidence_id)] = joins.as_slice() else {
-        return None;
-    };
-    let incidences = relations
+    )?;
+    let incidence = crate::decode::uniqueness::exactly_one(relations
         .skamps()
         .iter()
-        .filter(|skamp| skamp.id == *incidence_id)
-        .collect::<Vec<_>>();
-    let [incidence] = incidences.as_slice() else {
-        return None;
-    };
-    Some((*join, *incidence))
+        .filter(|skamp| skamp.id == incidence_id)
+    )?;
+    Some((join, incidence))
 }
 
 pub(in super::super) fn section_solver_relation_is_disabled(
@@ -376,21 +370,21 @@ pub(in super::super) fn section_solver_equation_is_disabled(
     {
         return false;
     }
-    let incidence_ids = relations
+    let incidence_id = crate::decode::uniqueness::exactly_one(relations
         .triples()
         .iter()
         .filter(|triple| triple.equation_id == Some(equation_id))
         .filter_map(|triple| triple.skamp_id)
-        .collect::<Vec<_>>();
-    let [incidence_id] = incidence_ids.as_slice() else {
+    );
+    let Some(incidence_id) = incidence_id else {
         return false;
     };
-    let incidences = relations
+    let incidence = crate::decode::uniqueness::exactly_one(relations
         .skamps()
         .iter()
-        .filter(|skamp| skamp.id == *incidence_id)
-        .collect::<Vec<_>>();
-    let [incidence] = incidences.as_slice() else {
+        .filter(|skamp| skamp.id == incidence_id)
+    );
+    let Some(incidence) = incidence else {
         return false;
     };
     !section_skamp_active(incidence.status)
@@ -471,8 +465,8 @@ fn section_angular_entities(
                         crate::feature::definitions::FeatureSegmentKind::Line(_)
                     )
             })
-            .collect::<Vec<_>>();
-        (known_entities.contains(&external_id) && matching_segments.len() == 1)
+            .count();
+        (known_entities.contains(&external_id) && matching_segments == 1)
             .then_some(external_id)
     };
     let [first, second] = [first_internal, second_internal].map(external_id);
@@ -1522,7 +1516,7 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
         .into_iter()
         .filter_map(|equation| {
             let point = section_point_locus(definition, sketch, equation.target)?;
-            let matching_line_ids = segments
+            let line_external_id = crate::decode::uniqueness::exactly_one(segments
                 .iter()
                 .filter(|segment| {
                     matches!(
@@ -1558,11 +1552,8 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                         })
                         .map(|segment| segment.external_id),
                 )
-                .collect::<Vec<_>>();
-            let [line_external_id] = matching_line_ids.as_slice() else {
-                return None;
-            };
-            let entity = sketch_entity_id(sketch, *line_external_id)?;
+            )?;
+            let entity = sketch_entity_id(sketch, line_external_id)?;
             Some((
                 SketchConstraint {
                     id: sketch_constraint_id(
@@ -2023,7 +2014,7 @@ pub(in super::super) fn section_dimension_constraints(
                         let [Some(radius_id), Some(0), Some(0), Some(0)] = vectors[0] else {
                             return None;
                         };
-                        let matching = segments
+                        let (external_id, _) = crate::decode::uniqueness::exactly_one(segments
                             .iter()
                             .filter(|segment| {
                                 matches!(segment.kind, crate::feature::definitions::FeatureSegmentKind::Arc(_))
@@ -2036,14 +2027,10 @@ pub(in super::super) fn section_dimension_constraints(
                                     .flat_map(|table| table.rows.circles())
                                     .map(|segment| (segment.external_id, Some(segment.radius_ref))),
                             )
-                            .filter(|(_, radius_ref)| *radius_ref == Some(radius_id))
-                            .collect::<Vec<_>>();
-                        let [(external_id, _)] = matching.as_slice() else {
-                            return None;
-                        };
-                        known_entities.contains(external_id).then_some(())?;
+                            .filter(|(_, radius_ref)| *radius_ref == Some(radius_id)))?;
+                        known_entities.contains(&external_id).then_some(())?;
                         return Some(circular_dimension_constraint(
-                            sketch_entity_id(sketch, *external_id)?,
+                            sketch_entity_id(sketch, external_id)?,
                             parameter,
                             dimension.dimension_type,
                         ));
@@ -2063,14 +2050,14 @@ pub(in super::super) fn section_dimension_constraints(
                                     &saved_coordinate_witnesses,
                                     &ambiguous_point_ids,
                                 );
-                                let matching = segments
+                                let measured = crate::decode::uniqueness::exactly_one(segments
                                     .iter()
                                     .filter(|segment| {
                                         segment.point_ids() == [first_id, second_id]
                                             || segment.point_ids() == [second_id, first_id]
                                     })
-                                    .collect::<Vec<_>>();
-                                if let [measured] = matching.as_slice() {
+                                );
+                                if let Some(measured) = measured {
                                     if matches!(
                                         measured.kind,
                                         crate::feature::definitions::FeatureSegmentKind::Line(_)
