@@ -173,7 +173,7 @@ fn law_surface_layout_decodes_at_both_integer_widths() {
             &[][..],
             &[][..],
         ] {
-            push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+            push_int(&mut bytes, 0x04, i64::try_from(values.len()).expect("test value fits"), int_width);
             for value in values {
                 push_f64(&mut bytes, *value);
             }
@@ -267,7 +267,7 @@ fn cacheless_law_surface_tails_decode_at_both_integer_widths() {
             match selector {
                 1 => {
                     for values in [&[0.0, 1.0][..], &[-1.0, 2.0][..]] {
-                        push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                        push_int(&mut bytes, 0x04, i64::try_from(values.len()).expect("test value fits"), int_width);
                         for value in values {
                             push_f64(&mut bytes, *value);
                         }

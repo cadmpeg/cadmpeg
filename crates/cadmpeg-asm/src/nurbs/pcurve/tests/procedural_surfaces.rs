@@ -1143,7 +1143,7 @@ fn spring_layout_walks_both_integer_widths() {
         push_f64(&mut bytes, -2.0);
         push_f64(&mut bytes, 2.0);
         for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-            push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+            push_int(&mut bytes, 0x04, i64::try_from(values.len()).expect("test value fits"), int_width);
             for value in values {
                 push_f64(&mut bytes, *value);
             }
@@ -1178,7 +1178,7 @@ fn three_surface_layout_walks_both_integer_widths() {
         push_f64(&mut bytes, -2.0);
         push_f64(&mut bytes, 3.0);
         for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-            push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+            push_int(&mut bytes, 0x04, i64::try_from(values.len()).expect("test value fits"), int_width);
             for value in values {
                 push_f64(&mut bytes, *value);
             }
@@ -1210,7 +1210,7 @@ fn surface_curve_layout_walks_each_family_at_both_widths() {
             ("par_int_cur", SurfaceCurveFamilyKind::Parametric),
             ("skin_int_cur", SurfaceCurveFamilyKind::Skin),
         ] {
-            let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
+            let mut bytes = vec![0x0f, 0x0d, u8::try_from(name.len()).expect("test value fits")];
             bytes.extend_from_slice(name.as_bytes());
             for _ in 0..2 {
                 bytes.extend_from_slice(&[0x0d, 0x06]);
@@ -1222,7 +1222,7 @@ fn surface_curve_layout_walks_each_family_at_both_widths() {
             push_f64(&mut bytes, -2.0);
             push_f64(&mut bytes, 3.0);
             for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-                push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                push_int(&mut bytes, 0x04, i64::try_from(values.len()).expect("test value fits"), int_width);
                 for value in values {
                     push_f64(&mut bytes, *value);
                 }
@@ -1242,7 +1242,7 @@ fn surface_curve_layout_walks_each_family_at_both_widths() {
 fn intersection_layout_walks_modern_and_legacy_names_at_both_widths() {
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         for name in ["int_int_cur", "surf_surf_int_cur", "surfintcur"] {
-            let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
+            let mut bytes = vec![0x0f, 0x0d, u8::try_from(name.len()).expect("test value fits")];
             bytes.extend_from_slice(name.as_bytes());
             for _ in 0..2 {
                 bytes.extend_from_slice(&[0x0d, 0x06]);
@@ -1254,7 +1254,7 @@ fn intersection_layout_walks_modern_and_legacy_names_at_both_widths() {
             push_f64(&mut bytes, -2.0);
             push_f64(&mut bytes, 3.0);
             for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-                push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                push_int(&mut bytes, 0x04, i64::try_from(values.len()).expect("test value fits"), int_width);
                 for value in values {
                     push_f64(&mut bytes, *value);
                 }
@@ -1634,7 +1634,7 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
             push_f64(&mut bytes, -2.0);
             push_f64(&mut bytes, 3.0);
             for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-                push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                push_int(&mut bytes, 0x04, i64::try_from(values.len()).expect("test value fits"), int_width);
                 for value in values {
                     push_f64(&mut bytes, *value);
                 }
@@ -1668,7 +1668,7 @@ fn projection_layout_walks_both_tail_forms_at_both_widths() {
                     assert_eq!(&bytes[role.clone()], b"surf1");
                     for word in [b"surf".as_slice(), b"surf12", b"wrong"] {
                         let mut malformed = bytes[..role.start - 1].to_vec();
-                        malformed.push(word.len() as u8);
+                        malformed.push(u8::try_from(word.len()).expect("test value fits"));
                         malformed.extend_from_slice(word);
                         assert!(projection_patch_layout(&malformed, int_width).is_none());
                         let record = crate::sab::Record {
@@ -1731,7 +1731,7 @@ fn silhouette_layout_walks_each_family_at_both_widths() {
                 },
             ),
         ] {
-            let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
+            let mut bytes = vec![0x0f, 0x0d, u8::try_from(name.len()).expect("test value fits")];
             bytes.extend_from_slice(name.as_bytes());
             for _ in 0..2 {
                 bytes.extend_from_slice(&[0x0d, 0x06]);
@@ -1743,7 +1743,7 @@ fn silhouette_layout_walks_each_family_at_both_widths() {
             push_f64(&mut bytes, -2.0);
             push_f64(&mut bytes, 3.0);
             for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-                push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                push_int(&mut bytes, 0x04, i64::try_from(values.len()).expect("test value fits"), int_width);
                 for value in values {
                     push_f64(&mut bytes, *value);
                 }
@@ -1772,7 +1772,7 @@ fn silhouette_layout_walks_each_family_at_both_widths() {
 fn surface_offset_layout_walks_both_integer_widths() {
     for int_width in [RefWidth::Four, RefWidth::Eight] {
         let name = "off_surf_int_cur";
-        let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
+        let mut bytes = vec![0x0f, 0x0d, u8::try_from(name.len()).expect("test value fits")];
         bytes.extend_from_slice(name.as_bytes());
         for _ in 0..2 {
             bytes.extend_from_slice(&[0x0d, 0x06]);
@@ -1784,7 +1784,7 @@ fn surface_offset_layout_walks_both_integer_widths() {
         push_f64(&mut bytes, -2.0);
         push_f64(&mut bytes, 3.0);
         for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
-            push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+            push_int(&mut bytes, 0x04, i64::try_from(values.len()).expect("test value fits"), int_width);
             for value in values {
                 push_f64(&mut bytes, *value);
             }

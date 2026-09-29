@@ -552,7 +552,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 _ => {}
             }
             ctx.charge_collection_items(1, "frame SAT primitive")?;
-            scratch.grow(std::mem::size_of::<Prim>() as u64)?;
+            scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Prim>()))?;
             ctx.charge_work(1, "lex SAT primitive")?;
             prims.try_reserve(1).map_err(|_| {
                 cadmpeg_core::CodecError::ResourceLimit(
@@ -572,11 +572,11 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             .len()
             .checked_mul(candidates)
             .ok_or_else(|| ctx.refuse_codec_limit("SAT typed token count", u64::MAX, u64::MAX))?;
-        ctx.charge_work(possible_tokens as u64, "type SAT tokens")?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(possible_tokens), "type SAT tokens")?;
         let token_bytes = possible_tokens
             .checked_mul(std::mem::size_of::<Token>())
             .ok_or_else(|| ctx.refuse_codec_limit("SAT token bytes", u64::MAX, u64::MAX))?;
-        scratch.grow(token_bytes as u64)?;
+        scratch.grow(cadmpeg_core::decode::u64_from_index(token_bytes))?;
         let string_bytes = prims
             .iter()
             .try_fold(0usize, |used, prim| {
@@ -587,7 +587,7 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 used.checked_add(extra)
             })
             .ok_or_else(|| ctx.refuse_codec_limit("SAT token strings", u64::MAX, u64::MAX))?;
-        ctx.charge_retained(string_bytes as u64, "retain SAT typed strings")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(string_bytes), "retain SAT typed strings")?;
         let tokens = type_record(ctx, head, &prims, scale).map_err(|failure| match failure {
             TypedRecordFailure::Resource(error) => StreamFailure::Resource(error),
             TypedRecordFailure::Type(failure) => {
@@ -603,12 +603,12 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             }
         })?;
         ctx.charge_retained(
-            (tokens.len() * std::mem::size_of::<Token>()) as u64,
+            cadmpeg_core::decode::u64_from_index(tokens.len() * std::mem::size_of::<Token>()),
             "retain SAT typed tokens",
         )?;
         ctx.charge_collection_items(1, "frame SAT record")?;
         ctx.admit_entities(
-            (records.len() + 1) as u64,
+            cadmpeg_core::decode::u64_from_index(records.len() + 1),
             &mut admitted_entities,
             "admit SAT native records",
         )?;
@@ -929,7 +929,7 @@ impl<'a> Cur<'a, '_, '_> {
             }
             Prim::Integer(value) => {
                 self.pos += 1;
-                Some(*value as f64)
+                cadmpeg_core::convert::f64_from_i64(*value)
             }
             _ => None,
         }
@@ -1041,7 +1041,7 @@ impl<'a> Cur<'a, '_, '_> {
             self.resource = Some(error);
             return None;
         }
-        out.push(Token::Long(count as i64));
+        out.push(Token::Long(i64::try_from(count).ok()?));
         out.extend(values.into_iter().map(Token::Double));
         Some(())
     }
@@ -2100,7 +2100,7 @@ mod tests {
             let reason = format!("record `mystery` {description}");
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = 16 + 21 + 24 + 7 + reason.len() as u64 - 1;
+            policy.limits.max_retained_bytes = 16 + 21 + 24 + 7 + cadmpeg_core::decode::u64_from_index(reason.len()) - 1;
             let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                 .expect("source fits input limit");
             let error = super::parse(&ctx, &source).expect_err("error text exceeds retained limit");
@@ -2440,6 +2440,12 @@ mod tests {
 
         let error = parse(&stream).expect_err("record after stream terminator must fail");
         assert_eq!(error.offset, trailing_offset);
+    }
+
+    #[test]
+    fn numeric_slots_refuse_inexact_integer_coordinates() {
+        let source = asm_stream("point $-1 -1 $-1 9007199254740993 0 0 #");
+        assert!(parse(&source).is_err());
     }
 
     #[test]

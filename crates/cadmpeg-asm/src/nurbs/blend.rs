@@ -808,7 +808,7 @@ fn variable_blend_value(
                 return None;
             }
             if let Err(error) = ctx
-                .charge_collection_items(count as u64, "decode variable blend interpolation points")
+                .charge_collection_items(cadmpeg_core::decode::u64_from_index(count), "decode variable blend interpolation points")
             {
                 return Some(Err(error));
             }

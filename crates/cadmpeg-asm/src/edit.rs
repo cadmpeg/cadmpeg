@@ -338,9 +338,9 @@ impl AsmEditSet {
         value: &str,
     ) -> Result<(), CodecError> {
         let offset = self.required_payload_field(bytes, record, index, 0x07)?;
-        let encoded_length = bytes.get(offset + 1).copied().ok_or_else(|| {
+        let encoded_length = usize::from(bytes.get(offset + 1).copied().ok_or_else(|| {
             CodecError::malformed(format_args!("{} record string is truncated", record.head()))
-        })? as usize;
+        })?);
         if value.len() != encoded_length || !value.is_ascii() {
             return Err(CodecError::NotImplemented(format!(
                 "{} record {} string edit must retain its encoded ASCII length",
@@ -462,7 +462,7 @@ impl AsmEditSet {
         width: RefWidth,
         value: i64,
     ) -> Result<(), CodecError> {
-        if width == RefWidth::Four && i64::from(value as i32) != value {
+        if width == RefWidth::Four && i32::try_from(value).is_err() {
             return Err(CodecError::NotImplemented(
                 "F3D NURBS integer edit exceeds BinaryFile4 range".into(),
             ));
@@ -2071,7 +2071,7 @@ mod tests {
         double(&mut bytes, -2.0);
         double(&mut bytes, 3.0);
         for values in [vec![0.25], vec![], vec![0.5, 0.75]] {
-            integer(&mut bytes, 0x04, values.len() as i64, width);
+            integer(&mut bytes, 0x04, i64::try_from(values.len()).expect("test value fits"), width);
             for value in values {
                 double(&mut bytes, value);
             }
