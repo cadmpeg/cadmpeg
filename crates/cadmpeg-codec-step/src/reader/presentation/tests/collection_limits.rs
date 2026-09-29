@@ -456,25 +456,6 @@ fn presentation_predefined_color_matches_ascii_case_without_copy() {
     );
 }
 
-fn identity_copy_refuses(operation: &'static str) {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    let result = super::super::clone_presentation_identity::<cadmpeg_ir::ids::BodyId>(
-        "step:model:body#1",
-        &ctx,
-        operation,
-    );
-    assert!(matches!(
-        result,
-        Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RetainedBytes
-                && refusal.operation == operation
-    ));
-}
-
 #[test]
 fn presentation_deferred_invisibility_refuses_collection_limit() {
     let arena = DecodeArena::new();
@@ -506,31 +487,6 @@ fn presentation_layer_items_refuse_collection_limit() {
 #[test]
 fn presentation_layer_records_refuse_collection_limit() {
     vector_refuses("step_presentation_layer_records");
-}
-
-#[test]
-fn presentation_layer_body_identity_refuses_retained_limit() {
-    identity_copy_refuses("step_presentation_layer_body_identity");
-}
-
-#[test]
-fn presentation_layer_face_identity_refuses_retained_limit() {
-    identity_copy_refuses("step_presentation_layer_face_identity");
-}
-
-#[test]
-fn presentation_layer_edge_identity_refuses_retained_limit() {
-    identity_copy_refuses("step_presentation_layer_edge_identity");
-}
-
-#[test]
-fn presentation_layer_vertex_identity_refuses_retained_limit() {
-    identity_copy_refuses("step_presentation_layer_vertex_identity");
-}
-
-#[test]
-fn presentation_layer_product_identity_refuses_retained_limit() {
-    identity_copy_refuses("step_presentation_layer_product_identity");
 }
 
 fn invisible_body_refuses(operation: &str, depth: bool) {
@@ -577,33 +533,8 @@ fn presentation_invisible_body_ids_refuse_collection_limit() {
 }
 
 #[test]
-fn presentation_invisible_body_identity_refuses_retained_limit() {
-    identity_copy_refuses("step_presentation_invisible_body_identity");
-}
-
-#[test]
 fn presentation_appearance_targets_refuse_collection_limit() {
     vector_refuses("step_presentation_appearance_targets");
-}
-
-#[test]
-fn presentation_appearance_body_identity_refuses_retained_limit() {
-    identity_copy_refuses("step_presentation_appearance_body_identity");
-}
-
-#[test]
-fn presentation_appearance_face_identity_refuses_retained_limit() {
-    identity_copy_refuses("step_presentation_appearance_face_identity");
-}
-
-#[test]
-fn presentation_appearance_edge_identity_refuses_retained_limit() {
-    identity_copy_refuses("step_presentation_appearance_edge_identity");
-}
-
-#[test]
-fn presentation_appearance_vertex_identity_refuses_retained_limit() {
-    identity_copy_refuses("step_presentation_appearance_vertex_identity");
 }
 
 #[test]

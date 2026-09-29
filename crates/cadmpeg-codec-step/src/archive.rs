@@ -7,7 +7,7 @@ use std::fmt::Write;
 use std::path::Path;
 
 use cadmpeg_container::{ArchiveSnapshot, ZipCompression};
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 /// The required root member name from Part 21 Annex A.4.
@@ -114,19 +114,7 @@ fn resolve_uri<'a>(
         }
     }
     if path.is_empty() {
-        member_bytes.grow(u64_from_index(base_member.len()))?;
-        let mut member = String::new();
-        member.try_reserve_exact(base_member.len()).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("step_zip_uri_member"),
-                    0,
-                    1,
-                    "step_zip_uri_member",
-                ),
-            )
-        })?;
-        member.push_str(base_member);
+        let member = ctx.copy_scoped_text(base_member, member_bytes, "step_zip_uri_member")?;
         return Ok(ReferenceTarget::Internal {
             member,
             query,
@@ -163,18 +151,9 @@ fn resolve_uri<'a>(
         })
         .and_then(|total| total.checked_add(components.len() - 1))
         .ok_or_else(|| ctx.refuse_codec_limit("step_zip_uri_member", 0, 1))?;
-    member_bytes.grow(u64_from_index(member_len))?;
     let mut member = String::new();
-    member.try_reserve_exact(member_len).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_zip_uri_member"),
-                0,
-                1,
-                "step_zip_uri_member",
-            ),
-        )
-    })?;
+
+    ctx.reserve_scoped_string(member_bytes, &mut member, member_len, "step_zip_uri_member")?;
     for (index, component) in components.iter().enumerate() {
         if index != 0 {
             member.push('/');
@@ -194,18 +173,7 @@ fn push_component<'a>(
     components: &mut Vec<&'a str>,
     component: &'a str,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "step_zip_uri_components")?;
-    bytes.grow(u64_from_index(std::mem::size_of::<&str>()))?;
-    components.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_zip_uri_components"),
-                0,
-                1,
-                "step_zip_uri_components",
-            ),
-        )
-    })?;
+    ctx.reserve_scoped_vec(bytes, components, 1, "step_zip_uri_components")?;
     components.push(component);
     Ok(())
 }
@@ -283,29 +251,12 @@ fn push_reference_note(
         .and_then(|len| len.checked_add(query_len))
         .and_then(|len| len.checked_add(fragment_len))
         .ok_or_else(|| ctx.refuse_codec_limit("step_zip_reference_note", 0, 1))?;
-    ctx.charge_collection_items(1, "step_zip_reference_notes")?;
-    ctx.charge_retained(u64_from_index(len), "step_zip_reference_note")?;
-    notes.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_zip_reference_notes"),
-                0,
-                1,
-                "step_zip_reference_notes",
-            ),
-        )
-    })?;
-    let mut note = String::new();
-    note.try_reserve_exact(len).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_zip_reference_note"),
-                0,
-                1,
-                "step_zip_reference_note",
-            ),
-        )
-    })?;
+    ctx.reserve_vec(notes, 1, "step_zip_reference_notes")?;
+
+
+    let mut note = ctx.retained_string(len, "step_zip_reference_note")?;
+
+
     note.push_str(prefix);
     note.push(marker);
     let id = match name {

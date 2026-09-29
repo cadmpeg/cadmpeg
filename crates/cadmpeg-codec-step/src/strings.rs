@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ISO 10303-21 string escape decoding and canonical encoding.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{DecodeContext};
 use cadmpeg_core::CodecError;
 
 use crate::parse::implementation_level::ImplementationLevel;
@@ -30,19 +30,9 @@ pub(crate) fn decode_with_context(
 ) -> Result<String, StringDecodeFailure> {
     let len = decoded_len(input, level).map_err(StringDecodeFailure::Invalid)?;
     let operation = "step_string_text";
-    ctx.charge_retained(u64_from_index(len), operation)
-        .map_err(StringDecodeFailure::Resource)?;
-    let mut output = String::new();
-    output.try_reserve_exact(len).map_err(|_| {
-        StringDecodeFailure::Resource(cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                u64_from_index(len),
-                operation,
-            ),
-        ))
-    })?;
+    let mut output = ctx.retained_string(len, operation).map_err(StringDecodeFailure::Resource)?;
+
+
     decode_chars(input, level, |character| output.push(character))
         .map_err(StringDecodeFailure::Invalid)?;
     Ok(output)

@@ -42,12 +42,10 @@ impl Annotations {
         id: u64,
         draft: AnnotationDraft,
     ) -> Result<AnnotationIndex, CodecError> {
-        ctx.charge_collection_items(1, "step_pmi_annotation_arena")?;
+
         ctx.charge_collection_items(1, "step_pmi_annotation_index")?;
-        ir.model
-            .pmi
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_pmi_annotation_arena", 0, 1))?;
+
+        ctx.reserve_vec(&mut ir.model.pmi, 1, "step_pmi_annotation_arena")?;
         let index = AnnotationIndex(ir.model.pmi.len());
         ir.model.pmi.push(PmiAnnotation {
             id: super::pmi_id(id),
