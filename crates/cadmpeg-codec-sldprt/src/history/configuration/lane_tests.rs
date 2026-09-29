@@ -1611,7 +1611,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         native_ref: None,
     });
 
-    align_configuration_parameter_kinds(&mut ir);
+    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
 
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
@@ -1625,7 +1625,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         count_id.clone(),
         ParameterValue::Length(Length::new(7.0).unwrap()),
     );
-    align_configuration_parameter_kinds(&mut ir);
+    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
     assert_eq!(
         ir.model.configurations[0].parameter_values[&count_id],
         ParameterValue::Integer(7)
@@ -1635,7 +1635,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         count_id.clone(),
         ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(7.0).unwrap()),
     );
-    align_configuration_parameter_kinds(&mut ir);
+    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
     assert_eq!(
         ir.model.configurations[0].parameter_values[&count_id],
         ParameterValue::Integer(7)
@@ -1645,7 +1645,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         count_id.clone(),
         ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(7.5).unwrap()),
     );
-    align_configuration_parameter_kinds(&mut ir);
+    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
     assert!(!ir.model.configurations[0]
         .parameter_values
         .contains_key(&count_id));
@@ -1661,7 +1661,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
             count_id.clone(),
             ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(real).unwrap()),
         );
-        align_configuration_parameter_kinds(&mut ir);
+        align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
         assert_eq!(
             ir.model.configurations[0].parameter_values.get(&count_id),
             expected.map(ParameterValue::Integer).as_ref()
@@ -1706,7 +1706,7 @@ fn integer_parameter_refuses_real_override_outside_i64_or_fractional() {
             count_id.clone(),
             ParameterValue::Real(FiniteReal::new(real).unwrap()),
         );
-        align_configuration_parameter_kinds(&mut ir);
+        align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
         assert_eq!(
             ir.model.configurations[0].parameter_values.get(&count_id),
             expected.map(ParameterValue::Integer).as_ref(),

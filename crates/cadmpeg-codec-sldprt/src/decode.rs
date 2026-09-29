@@ -2732,7 +2732,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &lanes,
     )?;
-    crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
+    crate::history::configuration::align_configuration_parameter_kinds(ctx, &mut ir)?;
     complete_resolved_configuration_parameter_snapshots(ctx, &mut ir)?;
     stamp_parameter_baseline(&mut ir)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
@@ -4090,7 +4090,7 @@ fn build_metadata_ir(
         &ir.model.features,
         &lanes,
     )?;
-    crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
+    crate::history::configuration::align_configuration_parameter_kinds(ctx, &mut ir)?;
     complete_resolved_configuration_parameter_snapshots(ctx, &mut ir)?;
     stamp_parameter_baseline(&mut ir)?;
     crate::resolved_features::profiles::bind_sketch_profiles(

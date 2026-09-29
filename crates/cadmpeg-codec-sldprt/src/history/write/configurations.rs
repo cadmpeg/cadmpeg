@@ -171,7 +171,7 @@ fn sync_configuration_design_state(
         &native.pmi_dimensions,
         form_padding,
     )?;
-    align_configuration_parameter_kinds(&mut current_projection);
+    align_configuration_parameter_kinds(&design_ctx, &mut current_projection)?;
     let mut current_annotations = annotations.clone();
     let projection_bytes = native
         .feature_input_lanes
@@ -269,7 +269,7 @@ fn sync_configuration_design_state(
         &native.pmi_dimensions,
         form_padding,
     )?;
-    align_configuration_parameter_kinds(&mut projected);
+    align_configuration_parameter_kinds(&design_ctx, &mut projected)?;
     let mut projected_annotations = annotations.clone();
     let projection_bytes = native
         .feature_input_lanes

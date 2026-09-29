@@ -1228,19 +1228,26 @@ fn configuration_surface_carriers(
 
 /// Give configuration-local numeric overrides the kind established by their
 /// neutral parameter definition and discard incompatible native candidates.
-pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
-    let parameter_kinds = ir
-        .model
-        .parameters
-        .iter()
-        .filter_map(|parameter| Some((&parameter.id, parameter.value.as_ref()?)))
-        .collect::<HashMap<_, _>>();
+pub(crate) fn align_configuration_parameter_kinds(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let mut parameter_kinds = HashMap::new();
+    for parameter in &ir.model.parameters {
+        ctx.charge_work(1, "scan SLDPRT configuration parameter kinds")?;
+        if let Some(value) = &parameter.value {
+            ctx.charge_collection_items(1, "index SLDPRT configuration parameter kinds")?;
+            parameter_kinds.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT configuration parameter kinds", u64::MAX - 1, u64::MAX))?;
+            parameter_kinds.insert(&parameter.id, value);
+        }
+    }
     for value in ir
         .model
         .configurations
         .iter_mut()
         .flat_map(|configuration| &mut configuration.parameter_values)
     {
+        ctx.charge_work(1, "align SLDPRT configuration parameter kinds")?;
         let (parameter, value) = value;
         let Some(canonical) = parameter_kinds.get(parameter) else {
             continue;
@@ -1298,6 +1305,7 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
         }
     }
     for configuration in &mut ir.model.configurations {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(configuration.parameter_values.len()), "retain SLDPRT configuration parameter kinds")?;
         configuration.parameter_values.retain(|parameter, value| {
             let Some(canonical) = parameter_kinds.get(parameter) else {
                 return true;
@@ -1305,6 +1313,7 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
             std::mem::discriminant(&**canonical) == std::mem::discriminant(value)
         });
     }
+    Ok(())
 }
 
 pub(super) fn configuration_lane_assignments(
