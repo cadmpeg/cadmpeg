@@ -1298,55 +1298,168 @@ fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> 
 
 /// Materialize the exact body set present when retained feature replay begins.
 fn attach_initial_segment_bodies(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
     stream: &cadmpeg_ir::annotations::StreamHandle,
-) -> Option<FeatureId> {
-    let bindings_by_body = ir
-        .model
-        .bodies
-        .iter()
-        .filter_map(|body| {
-            let bindings = body_bindings
-                .iter()
-                .filter(|binding| {
-                    body.id
-                        .as_str()
-                        .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
-                })
-                .map(|binding| binding.id.clone())
-                .collect::<Vec<_>>();
-            (!bindings.is_empty()).then_some((body.id.clone(), bindings))
+) -> Result<Option<FeatureId>, CodecError> {
+    let body_count = ir.model.bodies.len();
+    let scan_work = body_count
+        .checked_mul(body_bindings.len())
+        .ok_or_else(|| ctx.refuse_codec_limit(
+            "NX retained-history body binding scan",
+            0,
+            cadmpeg_core::decode::u64_from_index(body_count),
+        ))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan_work),
+        "NX retained-history body binding scan",
+    )?;
+    let has_binding = ir.model.bodies.iter().any(|body| {
+        body_bindings.iter().any(|binding| {
+            body.id.as_str().starts_with(&format!("nx:s{}:", binding.stream_ordinal))
         })
-        .collect::<BTreeMap<_, _>>();
-    if bindings_by_body.is_empty() {
-        return None;
+    });
+    if !has_binding {
+        return Ok(None);
     }
+
+    let sorting_work = body_count.checked_mul(body_count).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX retained-history body order",
+            0,
+            cadmpeg_core::decode::u64_from_index(body_count),
+        )
+    })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(sorting_work),
+        "NX retained-history body order",
+    )?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(body_count),
+        "NX retained-history body order",
+    )?;
+    let sorting_bytes = body_count
+        .checked_mul(std::mem::size_of::<&cadmpeg_ir::topology::Body>())
+        .ok_or_else(|| ctx.refuse_codec_limit(
+            "NX retained-history body order",
+            0,
+            cadmpeg_core::decode::u64_from_index(body_count),
+        ))?;
+    let _sorting = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(sorting_bytes),
+        "NX retained-history body order",
+    )?;
+    let mut sorted_bodies = Vec::new();
+    reserve_attach_vec(ctx, &mut sorted_bodies, body_count, "NX retained-history body order")?;
+    sorted_bodies.extend(&ir.model.bodies);
+    sorted_bodies.sort_by(|first, second| first.id.cmp(&second.id));
 
     let id: FeatureId = IdScope::native(cadmpeg_ir::identity_component!("feature-history")).id(
         &cadmpeg_ir::identity_component!("feature"),
         cadmpeg_ir::identity_key!("initial-bodies"),
     );
-    let outputs = bindings_by_body.keys().cloned().collect::<Vec<_>>();
-    let source_properties = bindings_by_body
-        .values()
-        .flatten()
-        .enumerate()
-        .map(|(ordinal, binding)| {
-            (
-                cadmpeg_core::nonblank_literal!("segment_body_binding.{ordinal}"),
-                binding.clone(),
-            )
-        })
-        .collect();
-    annotations
-        .note(&id, stream, 0)
-        .tag("FEATURE_HISTORY_INPUT");
-    annotations.derived(&id, "definition").ok()?;
+    let mut selection_bodies = Vec::new();
+    let mut feature_outputs = Vec::new();
+    let mut source_properties = BTreeMap::new();
+    let mut binding_ordinal = 0usize;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan_work),
+        "NX retained-history body binding scan",
+    )?;
+    for (position, body) in sorted_bodies.iter().enumerate() {
+        if sorted_bodies.get(position + 1).is_some_and(|next| next.id == body.id) {
+            continue;
+        }
+        let mut matched = false;
+        for binding in body_bindings {
+            if !body.id.as_str().starts_with(&format!("nx:s{}:", binding.stream_ordinal)) {
+                continue;
+            }
+            matched = true;
+            let mut digits = 1usize;
+            let mut value = binding_ordinal;
+            while value >= 10 {
+                value /= 10;
+                digits += 1;
+            }
+            let key_bytes = "segment_body_binding.".len().checked_add(digits)
+                .ok_or_else(|| ctx.refuse_codec_limit(
+                    "NX retained-history binding property",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(binding_ordinal),
+                ))?;
+            let bytes = std::mem::size_of::<(String, String)>()
+                .checked_add(key_bytes)
+                .and_then(|bytes| bytes.checked_add(binding.id.len()))
+                .ok_or_else(|| ctx.refuse_codec_limit(
+                    "NX retained-history binding property",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(binding.id.len()),
+                ))?;
+            ctx.charge_collection_items(1, "NX retained-history binding properties")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(bytes),
+                "NX retained-history binding properties",
+            )?;
+            source_properties.insert(
+                cadmpeg_core::nonblank_literal!("segment_body_binding.{binding_ordinal}"),
+                binding.id.clone(),
+            );
+            binding_ordinal = binding_ordinal.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("NX retained-history binding ordinal", 0, 1)
+            })?;
+        }
+        if matched {
+            ctx.charge_collection_items(2, "NX retained-history output bodies")?;
+            let body_bytes = std::mem::size_of::<BodyId>()
+                .checked_add(body.id.as_str().len())
+                .ok_or_else(|| ctx.refuse_codec_limit(
+                    "NX retained-history output body",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
+                ))?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(body_bytes),
+                "NX retained-history output bodies",
+            )?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(body_bytes),
+                "NX retained-history output bodies",
+            )?;
+            reserve_attach_vec(ctx, &mut selection_bodies, 1, "NX retained-history output bodies")?;
+            reserve_attach_vec(ctx, &mut feature_outputs, 1, "NX retained-history output bodies")?;
+            selection_bodies.push(body.id.clone());
+            feature_outputs.push(body.id.clone());
+        }
+    }
+
+    annotations.note(&id, stream, 0).tag("FEATURE_HISTORY_INPUT");
+    if annotations.derived(&id, "definition").is_err() {
+        return Ok(None);
+    }
+    let uniqueness_work = feature_outputs.len()
+        .checked_mul(feature_outputs.len())
+        .and_then(|work| work.checked_mul(2))
+        .ok_or_else(|| ctx.refuse_codec_limit(
+            "NX retained-history output uniqueness",
+            0,
+            cadmpeg_core::decode::u64_from_index(feature_outputs.len()),
+        ))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(uniqueness_work),
+        "NX retained-history output uniqueness",
+    )?;
+    ctx.charge_collection_items(1, "NX retained-history input features")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Feature>()),
+        "NX retained-history input features",
+    )?;
+    reserve_attach_vec(ctx, &mut ir.model.features, 1, "NX retained-history input features")?;
     ir.model.features.push(Feature {
         id: id.clone(),
-        ordinal: ir.model.features.len() as u64,
+        ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
         name: Some("Retained history input".to_string()),
         suppressed: Some(false),
         dependencies: DistinctMembers::default(),
@@ -1354,19 +1467,20 @@ fn attach_initial_segment_bodies(
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved {
-                    bodies: outputs.iter().cloned().collect(),
+                    bodies: DistinctMembers::try_from_unique_vec(selection_bodies)
+                        .map_err(CodecError::malformed)?,
                     native: "nx:segment-body-bindings".to_string(),
                 },
             }),
-            outputs.iter().cloned().collect(),
+            DistinctMembers::try_from_unique_vec(feature_outputs)
+                .map_err(CodecError::malformed)?,
         ),
         native_ref: None,
     });
-    Some(id)
+    Ok(Some(id))
 }
 
 fn attach_feature_operations(
@@ -1535,7 +1649,7 @@ fn attach_feature_operations(
         data_blocks,
     )?;
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, &stream);
+    let initial_body_id = attach_initial_segment_bodies(ctx, ir, body_bindings, annotations, &stream)?;
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
         .iter()

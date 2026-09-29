@@ -312,7 +312,8 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
-    let id = attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream)
+    let id = crate::test_support::with_decode_context(|ctx| attach_initial_segment_bodies(ctx, &mut ir, &[binding], &mut annotations, &stream))
+        .expect("admitted retained-history input")
         .expect("one emitted body has an exact segment binding");
 
     assert_eq!(
@@ -358,10 +359,71 @@ fn body_write_does_not_materialize_missing_neutral_geometry() {
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
 
     assert!(
-        attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, &stream,).is_none()
+        crate::test_support::with_decode_context(|ctx| attach_initial_segment_bodies(ctx, &mut ir, &[binding], &mut annotations, &stream))
+            .expect("admitted retained-history input").is_none()
     );
     assert!(ir.model.bodies.is_empty());
     assert!(ir.model.features.is_empty());
+}
+
+fn retained_history_input_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<Option<FeatureId>, cadmpeg_core::CodecError> {
+    let mut ir = CadIr::empty();
+    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        id: cadmpeg_ir::ids::BodyId::mint("nx:s2:body#3").unwrap(),
+        kind: cadmpeg_ir::topology::BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    let binding = crate::native::segments::SegmentBodyBinding {
+        id: "nx:segment-body-bindings:binding#0".to_string(),
+        stream_link: "nx:segment-stream-links:link#0".to_string(),
+        stream_ordinal: 2,
+        stream_kind: crate::parasolid::StreamKind::Partition,
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 19,
+        source_offset: 100,
+    };
+    let mut annotations = AnnotationBuilder::new();
+    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    attach_initial_segment_bodies(&ctx, &mut ir, &[binding], &mut annotations, &stream)
+}
+
+#[test]
+fn retained_history_input_refuses_collection_limit() {
+    let error = retained_history_input_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn retained_history_input_refuses_retained_limit() {
+    let error = retained_history_input_result(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn retained_history_input_refuses_scoped_limit() {
+    let error = retained_history_input_result(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn retained_history_input_refuses_work_limit() {
+    let error = retained_history_input_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
 
 #[test]
