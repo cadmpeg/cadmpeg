@@ -4283,33 +4283,46 @@ pub(super) fn feature_operation_body_writes(
 /// A missing image block, no plain alias, or duplicate plain alias leaves the
 /// write unresolved.
 pub(super) fn feature_operation_body_image_segment_uses(
+    ctx: &DecodeContext<'_>,
     writes: &[FeatureOperationBodyWrite],
     bindings: &[SegmentBodyBinding],
-) -> Vec<FeatureOperationBodyImageSegmentUse> {
-    writes
-        .iter()
-        .filter_map(|write| {
-            let body_image_data_block = write.body_image_data_block.as_ref()?;
+) -> Result<Vec<FeatureOperationBodyImageSegmentUse>, CodecError> {
+    let work = writes.len().checked_mul(bindings.len())
+        .and_then(|count| count.checked_mul(2))
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX body-image segment uses", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "join NX body-image segment uses")?;
+    let mut output = Vec::new();
+    for write in writes {
+            let Some(body_image_data_block) = write.body_image_data_block.as_ref() else { continue; };
             let mut matches = bindings.iter().filter(|binding| {
                 binding.stream_kind == crate::parasolid::StreamKind::Plain
                     && binding.body_alias_object_index == u32::from(write.frame.body_identity())
             });
-            let binding = matches.next()?;
+            let Some(binding) = matches.next() else { continue; };
             if matches.next().is_some() {
-                return None;
+                continue;
             }
-            Some(FeatureOperationBodyImageSegmentUse {
-                id: write.id.replacen(
+            let item = FeatureOperationBodyImageSegmentUse {
+                id: replace_operation_text(ctx, &write.id,
                     "operation-body-write",
                     "operation-body-image-segment-use",
-                    1,
-                ),
-                operation_body_write: write.id.clone(),
-                body_image_data_block: body_image_data_block.clone(),
-                segment_body_binding: binding.id.clone(),
-            })
-        })
-        .collect()
+                    "NX body-image segment use identity")?,
+                operation_body_write: copy_operation_text(ctx, &write.id,
+                    "NX body-image write identity")?,
+                body_image_data_block: copy_operation_text(ctx, body_image_data_block,
+                    "NX body-image data block identity")?,
+                segment_body_binding: copy_operation_text(ctx, &binding.id,
+                    "NX body-image segment binding identity")?,
+            };
+            ctx.charge_collection_items(1, "NX body-image segment uses")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureOperationBodyImageSegmentUse>(),
+            ), "NX body-image segment uses")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX body-image segment uses", 0, 1))?;
+            output.push(item);
+    }
+    Ok(output)
 }
 
 /// Join persistent body identities to unique plain cached-body aliases.
@@ -4317,30 +4330,42 @@ pub(super) fn feature_operation_body_image_segment_uses(
 /// This cross-store relation is independent of body-image block resolution.
 /// Partition-stream aliases use another identity namespace and do not match.
 pub(super) fn feature_operation_body_identity_segment_uses(
+    ctx: &DecodeContext<'_>,
     writes: &[FeatureOperationBodyWrite],
     bindings: &[SegmentBodyBinding],
-) -> Vec<FeatureOperationBodyIdentitySegmentUse> {
-    writes
-        .iter()
-        .filter_map(|write| {
+) -> Result<Vec<FeatureOperationBodyIdentitySegmentUse>, CodecError> {
+    let work = writes.len().checked_mul(bindings.len())
+        .and_then(|count| count.checked_mul(2))
+        .ok_or_else(|| ctx.refuse_codec_limit("join NX body-identity segment uses", 0, 1))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "join NX body-identity segment uses")?;
+    let mut output = Vec::new();
+    for write in writes {
             let mut matches = bindings.iter().filter(|binding| {
                 binding.stream_kind == crate::parasolid::StreamKind::Plain
                     && binding.body_alias_object_index == u32::from(write.frame.body_identity())
             });
-            let binding = matches.next()?;
-            matches.next().is_none().then_some(())?;
-            Some(FeatureOperationBodyIdentitySegmentUse {
-                id: write.id.replacen(
+            let Some(binding) = matches.next() else { continue; };
+            if matches.next().is_some() { continue; }
+            let item = FeatureOperationBodyIdentitySegmentUse {
+                id: replace_operation_text(ctx, &write.id,
                     "operation-body-write",
                     "operation-body-identity-segment-use",
-                    1,
-                ),
-                operation_body_write: write.id.clone(),
+                    "NX body-identity segment use identity")?,
+                operation_body_write: copy_operation_text(ctx, &write.id,
+                    "NX body-identity write identity")?,
                 body_identity: write.frame.body_identity(),
-                segment_body_binding: binding.id.clone(),
-            })
-        })
-        .collect()
+                segment_body_binding: copy_operation_text(ctx, &binding.id,
+                    "NX body-identity segment binding identity")?,
+            };
+            ctx.charge_collection_items(1, "NX body-identity segment uses")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureOperationBodyIdentitySegmentUse>(),
+            ), "NX body-identity segment uses")?;
+            output.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX body-identity segment uses", 0, 1))?;
+            output.push(item);
+    }
+    Ok(output)
 }
 
 const BODY_HISTORY_TERMINAL_STREAM_ROLE: u32 = 16;
