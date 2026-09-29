@@ -109,7 +109,7 @@ pub(crate) fn scan<'a>(
             });
         }
     }
-    for start in 0..bytes.len().saturating_sub(5) {
+    for start in bytes.len().checked_sub(5).into_iter().flat_map(|last| 0..last) {
         if bytes[start] != 0x66 {
             continue;
         }

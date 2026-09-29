@@ -134,7 +134,7 @@ impl StateCounterMap {
         let mut run_start = 0;
         let mut run_end = 0;
         let mut run_len = 0;
-        for at in 0..bytes.len().saturating_sub(2) {
+        for at in bytes.len().checked_sub(2).into_iter().flat_map(|last| 0..last) {
             if bytes.get(at) != Some(&0x05) || !matches!(bytes.get(at + 1), Some(0x01 | 0x02)) {
                 continue;
             }
@@ -153,7 +153,7 @@ impl StateCounterMap {
                 run_len = 1;
             }
             if run_len >= 2
-                && bytes.len().saturating_sub(run_end) <= MAX_COUNTER_TAIL_BYTES
+                && bytes.len().checked_sub(run_end).is_some_and(|tail| tail <= MAX_COUNTER_TAIL_BYTES)
                 && best.is_none_or(|(_, _, current_len)| run_len > current_len)
             {
                 best = Some((run_start, run_end, run_len));

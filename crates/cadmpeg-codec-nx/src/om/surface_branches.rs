@@ -344,7 +344,7 @@ pub(crate) fn surface_feature_payload_branches(
         "scan NX surface branch groups",
     )?;
     let mut candidate = None;
-    for start in 0..record.payload().len().saturating_sub(6) {
+    for start in record.payload().len().checked_sub(6).into_iter().flat_map(|last| 0..last) {
         if record.payload().get(start..start + 2) != Some(&[0xa0, 0x5a]) {
             continue;
         }

@@ -704,8 +704,8 @@ pub(crate) fn intersection_data_curves(
 
 /// Return whether the complete type-38 schema header starts at `offset`.
 pub(crate) fn intersection_data_schema_header_at(stream: &[u8], offset: usize) -> bool {
-    stream.get(offset..offset.saturating_add(TYPE_38_SCHEMA_HEADER.len()))
-        == Some(TYPE_38_SCHEMA_HEADER)
+    offset.checked_add(TYPE_38_SCHEMA_HEADER.len())
+        .and_then(|end| stream.get(offset..end)) == Some(TYPE_38_SCHEMA_HEADER)
 }
 
 pub(crate) fn intersection_data_curve_at(
@@ -1030,7 +1030,7 @@ impl Graph {
         let mut candidate_reservation = ctx.reserve_scoped(0, "NX topology candidates")?;
         let mut ownership_reservation =
             ctx.reserve_scoped(0, "NX topology ownership candidates")?;
-        for pos in 0..stream.len().saturating_sub(3) {
+        for pos in stream.len().checked_sub(3).into_iter().flat_map(|last| 0..last) {
             ctx.charge_work(1, "scan NX topology candidates")?;
             if stream[pos] != 0 {
                 continue;

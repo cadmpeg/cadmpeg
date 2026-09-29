@@ -19,7 +19,7 @@ impl<'a> DescendingU32Edges<'a> {
         bytes: &'a [u8],
     ) -> Result<Self, CodecError> {
         let mut offsets_by_alignment = <[Vec<usize>; 4]>::default();
-        for offset in 0..bytes.len().saturating_sub(7) {
+        for offset in bytes.len().checked_sub(7).into_iter().flat_map(|last| 0..last) {
             if View::u32_le_at(bytes, offset)
                 .zip(View::u32_le_at(bytes, offset + 4))
                 .is_some_and(|(current, next)| current > next)
@@ -42,11 +42,14 @@ impl<'a> DescendingU32Edges<'a> {
         if end - start < 8 {
             return true;
         }
+        let Some(last_word) = end.checked_sub(4) else {
+            return false;
+        };
         let offsets = &self.offsets_by_alignment[start % 4];
         let first = offsets.partition_point(|offset| *offset < start);
         offsets
             .get(first)
-            .is_none_or(|offset| *offset >= end.saturating_sub(4))
+            .is_none_or(|offset| *offset >= last_word)
     }
 
     fn records(&self, start: usize, count: usize, base: usize) -> Option<IndexRecords<'a>> {

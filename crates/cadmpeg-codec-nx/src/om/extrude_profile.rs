@@ -66,7 +66,7 @@ pub(crate) fn extrude_profile_references(
         u64_from_index(record.payload().len()),
         "scan NX extrude profile references",
     )?;
-    let shape = unique_candidate((0..record.payload().len().saturating_sub(6)).filter_map(
+    let shape = unique_candidate(record.payload().len().checked_sub(6).into_iter().flat_map(|last| 0..last).filter_map(
         |start| {
             if record.payload().get(start..start + 2) != Some(&[0x01, 0x02])
                 || record.payload().get(start + 3) != Some(&0x01)
