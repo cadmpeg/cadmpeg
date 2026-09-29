@@ -776,7 +776,7 @@ fn native_face_offset_reference_uses_identity_without_a_duplicate_frame() {
             offset.properties.insert(name, value.into());
         }
 
-        let definition = project_offset_plane(&offset, &HashMap::new()).unwrap();
+        let definition = project_offset_plane(&cadmpeg_test_support::service_decode_context(), &offset, &HashMap::new()).unwrap().unwrap();
         let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Face { face }),
             distance,
