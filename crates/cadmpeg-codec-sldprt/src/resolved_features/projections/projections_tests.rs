@@ -98,40 +98,45 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
         tolerance: None,
     };
     assert_eq!(
-        unique_cylindrical_face(
+        with_projection_context(|ctx| unique_cylindrical_face(
+            ctx,
             4.0,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        ),
+        )).expect("cylindrical face search"),
         Some(face.id.clone())
     );
     assert_eq!(
-        unique_cylindrical_face(
+        with_projection_context(|ctx| unique_cylindrical_face(
+            ctx,
             3.0,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        ),
+        )).expect("cylindrical face search"),
         None
     );
     assert_eq!(
-        unique_topological_cylindrical_face(
+        with_projection_context(|ctx| unique_topological_cylindrical_face(
+            ctx,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        ),
+        )).expect("topological cylinder search"),
         Some(face.id.clone())
     );
     let mut duplicate = face.clone();
     duplicate.id = FaceId::mint("test:model:entity#other-face").expect("identity grammar");
     assert_eq!(
-        unique_cylindrical_face(
+        with_projection_context(|ctx| unique_cylindrical_face(
+            ctx,
             4.0,
             &[face.clone(), duplicate.clone()],
             std::slice::from_ref(&surface),
-        ),
+        )).expect("cylindrical face search"),
         None
     );
     assert_eq!(
-        unique_topological_cylindrical_face(&[face, duplicate], &[surface]),
+        with_projection_context(|ctx| unique_topological_cylindrical_face(ctx, &[face, duplicate], &[surface]))
+            .expect("topological cylinder search"),
         None
     );
 }
@@ -443,13 +448,14 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         sketch_entities: Vec::new(),
     };
 
-    project_unbound_cosmetic_thread_faces(
+    with_projection_context(|ctx| project_unbound_cosmetic_thread_faces(
+        ctx,
         &mut features,
         std::slice::from_ref(&history),
         &[lane("lane-a", 40), lane("lane-b", 60)],
         &[],
         &[],
-    );
+    )).expect("cosmetic thread face projection");
 
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::CosmeticThread { face, .. },
@@ -501,13 +507,14 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         *face = cadmpeg_ir::features::FaceSelection::Unresolved;
         *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
     });
-    project_unbound_cosmetic_thread_faces(
+    with_projection_context(|ctx| project_unbound_cosmetic_thread_faces(
+        ctx,
         &mut features,
         std::slice::from_ref(&history),
         &[],
         std::slice::from_ref(&topology_face),
         std::slice::from_ref(&surface),
-    );
+    )).expect("cosmetic thread face projection");
     assert!(matches!(
         features[1].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::CosmeticThread {
