@@ -2164,7 +2164,7 @@ pub(super) fn feature_section_transform_records<'a>(
             source_section: source_section_ref(scan, record.offset),
         });
     }
-    records.sort_by(|left, right| left.id.cmp(&right.id));
+    crate::sort::stable_sort_by(ctx, records.as_mut_slice(), |left, right| left.id.cmp(&right.id), "creo feature section transform records records ordering")?;
     records.dedup_by(|left, right| left.id == right.id);
     Ok(records)
 }
@@ -3561,7 +3561,7 @@ pub(super) fn pcurve_endpoint_records(
             pcurve.offset,
         ));
     }
-    records.sort_by_key(|(_, offset)| *offset);
+    crate::sort::stable_sort_by_key(ctx, records.as_mut_slice(), |(_, offset)| *offset, "creo pcurve endpoint records records ordering")?;
     Ok(records)
 }
 

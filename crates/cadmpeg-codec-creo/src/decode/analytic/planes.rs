@@ -1905,7 +1905,7 @@ pub(super) fn topology_bound_plane(
         ctx.try_reserve_items(&mut points, 1, "creo topology plane candidate points")?;
         points.push(point);
     }
-    points.sort_by(|left, right| {
+    crate::sort::stable_sort_by(ctx, points.as_mut_slice(), |left, right| {
         left.iter()
             .zip(right)
             .find_map(|(left, right)| {
@@ -1913,7 +1913,7 @@ pub(super) fn topology_bound_plane(
                 (ordering != std::cmp::Ordering::Equal).then_some(ordering)
             })
             .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    }, "creo topology bound plane points ordering")?;
     // A point outside the finite range agrees with no point.
     points.dedup_by(|left, right| {
         finite_model_point(*left)

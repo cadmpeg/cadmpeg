@@ -1280,7 +1280,7 @@ pub(crate) fn resolve(
             result.push(transform);
         }
     }
-    result.sort_by_key(|transform| transform.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |transform| transform.offset, "creo resolve result ordering")?;
     Ok(result)
 }
 

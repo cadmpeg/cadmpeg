@@ -704,7 +704,7 @@ pub(crate) fn operation_states(
             state_offset: binding.offset,
         });
     }
-    result.sort_by_key(|operation| operation.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |operation| operation.offset, "creo operation states result ordering")?;
     let mut display_counts = BTreeMap::<u32, usize>::new();
     for operation in result
         .iter()
@@ -849,7 +849,7 @@ pub(crate) fn operations(
             operation.kind = OperationKind::Native;
         }
     }
-    current.sort_by_key(|operation| operation.offset);
+    crate::sort::stable_sort_by_key(ctx, current.as_mut_slice(), |operation| operation.offset, "creo operations current ordering")?;
     Ok(current)
 }
 

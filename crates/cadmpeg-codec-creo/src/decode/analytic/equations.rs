@@ -779,7 +779,7 @@ fn real_polynomial_roots(
             multiple: false,
         });
     }
-    roots.sort_by(|left, right| left.value.total_cmp(&right.value));
+    crate::sort::stable_sort_by(ctx, roots.as_mut_slice(), |left, right| left.value.total_cmp(&right.value), "creo real polynomial roots roots ordering")?;
     Ok(roots)
 }
 

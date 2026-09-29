@@ -2535,7 +2535,7 @@ fn outline_planes(
             offset: record.offset,
         });
     }
-    result.sort_by_key(|plane| plane.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |plane| plane.offset, "creo outline planes result ordering")?;
     Ok(result)
 }
 
@@ -2719,7 +2719,7 @@ pub(crate) fn positional_frame_planes(
             result.push(candidate.clone());
         }
     }
-    result.sort_by_key(|plane| plane.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |plane| plane.offset, "creo positional frame planes result ordering")?;
     Ok(result)
 }
 
@@ -2801,7 +2801,7 @@ pub(crate) fn placed_outline_planes(
             frame_bound.push(plane);
         }
     }
-    frame_bound.sort_by_key(|plane| plane.offset);
+    crate::sort::stable_sort_by_key(ctx, frame_bound.as_mut_slice(), |plane| plane.offset, "creo placed outline planes frame bound ordering")?;
     let mut frame_bound_ids = BTreeSet::new();
     for plane in &frame_bound {
         if !frame_bound_ids.contains(&plane.surface_id) {
@@ -2825,7 +2825,7 @@ pub(crate) fn placed_outline_planes(
         ctx.try_reserve_items(&mut result, 1, "creo placed outline planes")?;
         result.push(plane);
     }
-    result.sort_by_key(|plane| plane.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |plane| plane.offset, "creo placed outline planes result ordering")?;
     Ok(result)
 }
 
@@ -2919,7 +2919,7 @@ pub(crate) fn counted_row_bounds(
             }
         }
     }
-    result.sort_by_key(|(row, _)| row.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |(row, _)| row.offset, "creo counted row bounds result ordering")?;
     Ok(result)
 }
 
@@ -3057,7 +3057,7 @@ fn rows_with_boundaries(
             offset: id_start,
         });
     }
-    result.sort_by_key(|row| row.offset);
+    crate::sort::stable_sort_by_key(ctx, result.as_mut_slice(), |row| row.offset, "creo rows with boundaries result ordering")?;
     result.dedup_by_key(|row| row.offset);
     let mut id_counts = std::collections::BTreeMap::<u32, usize>::new();
     for row in &result {
@@ -3626,7 +3626,7 @@ fn named_prototype_frames<'a>(
         });
         search = close + 2;
     }
-    frames.sort_by_key(|frame| frame.offset);
+    crate::sort::stable_sort_by_key(ctx, frames.as_mut_slice(), |frame| frame.offset, "creo named prototype frames frames ordering")?;
     Ok(frames)
 }
 
@@ -5311,7 +5311,7 @@ fn contour_records_for_rows(
         ctx.try_reserve_items(&mut records, chain.len(), "creo contour record aggregation")?;
         records.extend(chain);
     }
-    records.sort_by_key(|record| record.offset);
+    crate::sort::stable_sort_by_key(ctx, records.as_mut_slice(), |record| record.offset, "creo contour records for rows records ordering")?;
     Ok(records)
 }
 
@@ -5900,7 +5900,7 @@ pub(crate) fn tabulated_cylinder_curve_replays(
             surface_row_offset: owner.offset,
         });
     }
-    replays.sort_by_key(|replay| replay.offset);
+    crate::sort::stable_sort_by_key(ctx, replays.as_mut_slice(), |replay| replay.offset, "creo tabulated cylinder curve replays replays ordering")?;
     Ok(replays)
 }
 
@@ -7365,7 +7365,7 @@ fn plane_envelopes_for_rows(
             offset: scalar_start,
         });
     }
-    envelopes.sort_by_key(|envelope| envelope.offset);
+    crate::sort::stable_sort_by_key(ctx, envelopes.as_mut_slice(), |envelope| envelope.offset, "creo plane envelopes for rows envelopes ordering")?;
     Ok(envelopes)
 }
 

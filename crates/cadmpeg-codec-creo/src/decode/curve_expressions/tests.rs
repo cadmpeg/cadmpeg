@@ -865,7 +865,7 @@ fn curve_expression_dependency_validation_charges_comparisons() {
         3
     );
     let mut limited = DecodePolicy::service();
-    limited.limits.max_work_units = 2;
+    limited.limits.max_work_units = 4;
     let error = transfer_with_limits(&["a=1", "b=2", "c=a+b"], &dimensions, limited)
         .expect_err("validating two dependencies needs one comparison");
     assert!(

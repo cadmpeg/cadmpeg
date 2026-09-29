@@ -177,7 +177,7 @@ pub(super) fn sketch_table_headers(
             table.offset,
         )?;
     }
-    headers.sort_by_key(|header| header.offset);
+    crate::sort::stable_sort_by_key(ctx, headers.as_mut_slice(), |header| header.offset, "creo sketch table headers headers ordering")?;
     Ok(headers)
 }
 
