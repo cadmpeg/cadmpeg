@@ -1917,32 +1917,34 @@ fn resolve_face_operand_support_candidate(operand: &DesignFaceOperand) -> Option
     } else {
         &reference.candidate_faces
     };
-    let active_slots = active_faces
-        .iter()
-        .filter_map(|face| face.as_str().rsplit_once('#')?.1.parse::<i64>().ok())
-        .collect::<HashSet<_>>();
-    if active_slots.is_empty() {
+    if !active_faces.iter().any(|face| {
+        face.as_str().rsplit_once('#')
+            .and_then(|(_, slot)| slot.parse::<i64>().ok()).is_some()
+    }) {
         return None;
     }
-    let mut candidates = operand
-        .historical_support_contexts
-        .iter()
-        .filter(|context| active_slots.contains(&context.active_face_slot))
-        .flat_map(|context| {
-            if context.changed_preceding_face_slots.is_empty() {
-                context.preceding_face_slots.iter()
-            } else {
-                context.changed_preceding_face_slots.iter()
+    let mut candidate = None;
+    for context in &operand.historical_support_contexts {
+        if !active_faces.iter().any(|face| {
+            face.as_str().rsplit_once('#')
+                .and_then(|(_, slot)| slot.parse::<i64>().ok())
+                == Some(context.active_face_slot)
+        }) {
+            continue;
+        }
+        let slots = if context.changed_preceding_face_slots.is_empty() {
+            &context.preceding_face_slots
+        } else {
+            &context.changed_preceding_face_slots
+        };
+        for slot in slots {
+            if candidate.is_some_and(|first| first != *slot) {
+                return None;
             }
-        })
-        .copied()
-        .collect::<Vec<_>>();
-    candidates.sort_unstable();
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+            candidate = Some(*slot);
+        }
+    }
+    candidate
 }
 
 pub(crate) fn face_operand_candidates(operand: &DesignFaceOperand) -> &[cadmpeg_ir::ids::FaceId] {
@@ -3542,6 +3544,18 @@ mod tests {
             },
         );
         operand
+    }
+
+    #[test]
+    fn face_support_candidate_requires_one_matching_predecessor() {
+        let mut operand = stable_bounded_face_operand();
+        operand.recipe_references = vec![reference(10, "selected", 1)];
+        assert_eq!(super::resolve_face_operand_support_candidate(&operand), Some(10));
+        operand.recipe_references[0].candidate_faces.push(face(11));
+        assert_eq!(super::resolve_face_operand_support_candidate(&operand), None);
+        operand.recipe_references[0].candidate_faces.truncate(1);
+        operand.historical_support_contexts[0].changed_preceding_face_slots = vec![12];
+        assert_eq!(super::resolve_face_operand_support_candidate(&operand), Some(12));
     }
 
     fn assert_historical_face_group_collection_refusal(limit: u64, operation: &'static str) {
