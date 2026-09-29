@@ -7398,15 +7398,20 @@ pub(super) fn offset_store_named_points(
 
 /// Join sketch references to named points through exact shared block identity.
 pub(super) fn feature_sketch_named_point_block_uses(
+    ctx: &DecodeContext<'_>,
     references: &[FeatureSketchReference],
     points: &[OffsetStoreNamedPoint],
-) -> Vec<FeatureSketchNamedPointBlockUse> {
+) -> Result<Vec<FeatureSketchNamedPointBlockUse>, CodecError> {
     let mut uses = Vec::new();
     for reference in references {
         let Some(data_block) = reference.data_block.as_deref() else {
             continue;
         };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(points.len()),
+            "join NX sketch named points")?;
         for point in points {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(point.data_blocks.len()),
+                "match NX named point block")?;
             let Some(point_block_ordinal) = point
                 .data_blocks
                 .iter()
@@ -7422,22 +7427,38 @@ pub(super) fn feature_sketch_named_point_block_uses(
                 .id
                 .rsplit_once('#')
                 .map_or(point.id.as_str(), |(_, key)| key);
+            let id = format_charged_text(ctx, format_args!(
+                "nx:feature-history:sketch-named-point-block-use#{operation_key}-{}-{point_key}-{point_block_ordinal}",
+                reference.position.ordinal()), "NX sketch named point block use identity")?;
+            let operation_label = copy_operation_text(ctx, &reference.operation_label,
+                "NX sketch named point block use label")?;
+            let sketch_reference = copy_operation_text(ctx, &reference.id,
+                "NX sketch named point block use reference")?;
+            let named_point = copy_operation_text(ctx, &point.id,
+                "NX sketch named point block use point")?;
+            let data_block = copy_operation_text(ctx, data_block,
+                "NX sketch named point block use data block")?;
+            let point_block_ordinal = u32::try_from(point_block_ordinal).map_err(|_|
+                ctx.refuse_codec_limit("NX named point block ordinal", 0, 1))?;
+            ctx.charge_collection_items(1, "NX sketch named point block uses")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureSketchNamedPointBlockUse>()),
+                "NX sketch named point block uses")?;
+            uses.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX sketch named point block uses", 0, 1))?;
             uses.push(FeatureSketchNamedPointBlockUse {
-                id: format!(
-                    "nx:feature-history:sketch-named-point-block-use#{operation_key}-{}-{point_key}-{point_block_ordinal}",
-                    reference.position.ordinal()
-                ),
-                operation_label: reference.operation_label.clone(),
-                sketch_reference: reference.id.clone(),
+                id,
+                operation_label,
+                sketch_reference,
                 reference_ordinal: reference.position.ordinal(),
-                named_point: point.id.clone(),
-                data_block: data_block.to_string(),
-                point_block_ordinal: point_block_ordinal as u32,
+                named_point,
+                data_block,
+                point_block_ordinal,
                 source_offset: reference.source_offset,
             });
         }
     }
-    uses
+    Ok(uses)
 }
 
 /// Split a data-block id into its offset-store id and block ordinal.
