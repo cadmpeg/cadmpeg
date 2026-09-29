@@ -158,7 +158,18 @@ pub(crate) fn prepare_features_for_write(
                 .as_ref()
                 .map(project_feature_model_with_native_inputs)
                 .transpose()?
-                .map(|projection| projection.into_model().0)
+                .map(|projection| {
+                    let projection_bytes = native.as_ref().into_iter()
+                        .flat_map(|native| &native.feature_input_lanes)
+                        .flat_map(|lane| lane.native_payload.iter().copied())
+                        .collect::<Vec<_>>();
+                    let arena = DecodeArena::new();
+                    let (ctx, _) = DecodeContext::from_root_bytes(
+                        &projection_bytes, &arena, &DecodePolicy::service(),
+                    )?;
+                    Ok::<_, CodecError>(projection.into_model(&ctx)?.0)
+                })
+                .transpose()?
                 .unwrap_or_default();
             if feature_hash(&projected_model)? == neutral_hash {
                 Ok(Vec::new())

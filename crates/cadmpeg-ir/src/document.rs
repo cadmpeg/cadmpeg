@@ -838,6 +838,21 @@ pub(crate) fn validate_feature_parents(models: &[&Model]) -> Result<(), FeatureP
     Ok(())
 }
 
+#[derive(Debug, thiserror::Error)]
+enum RegenerationParentError<'a> {
+    #[error("tree child `{0}` already has a structural parent")]
+    TreeChild(&'a crate::features::FeatureId),
+    #[error("missing child feature `{0}`")]
+    MissingChild(&'a crate::features::FeatureId),
+    #[error("missing parent feature `{0}`")]
+    MissingParent(&'a crate::features::FeatureId),
+    #[error("parent feature `{parent}` does not precede child `{child}`")]
+    NotPreceding {
+        child: &'a crate::features::FeatureId,
+        parent: &'a crate::features::FeatureId,
+    },
+}
+
 impl Model {
     /// Structural tree owner of `child`, derived from tree-node child lists.
     pub fn feature_tree_parent(
@@ -876,37 +891,71 @@ impl Model {
             .or_else(|| self.feature_regeneration_parents.0.get(child))
     }
 
+    fn validate_regeneration_parent<'a>(
+        &self,
+        child: &'a crate::features::FeatureId,
+        parent: &'a crate::features::FeatureId,
+    ) -> Result<(), RegenerationParentError<'a>> {
+        if self.feature_tree_parent(child).is_some() {
+            return Err(RegenerationParentError::TreeChild(child));
+        }
+        let child_ordinal = self.features.iter()
+            .find(|feature| feature.id == *child)
+            .map(|feature| feature.ordinal)
+            .ok_or(RegenerationParentError::MissingChild(child))?;
+        let parent_ordinal = self.features.iter()
+            .find(|feature| feature.id == *parent)
+            .map(|feature| feature.ordinal)
+            .ok_or(RegenerationParentError::MissingParent(parent))?;
+        if parent_ordinal >= child_ordinal {
+            return Err(RegenerationParentError::NotPreceding { child, parent });
+        }
+        Ok(())
+    }
+
     /// Set a regeneration predecessor without asserting structural tree membership.
     pub fn set_feature_regeneration_parent(
         &mut self,
         child: crate::features::FeatureId,
         parent: crate::features::FeatureId,
     ) -> Result<(), String> {
-        if self.feature_tree_parent(&child).is_some() {
-            return Err(format!(
-                "tree child `{child}` already has a structural parent"
-            ));
-        }
-        let child_ordinal = self
-            .features
-            .iter()
-            .find(|feature| feature.id == child)
-            .map(|feature| feature.ordinal)
-            .ok_or_else(|| format!("missing child feature `{child}`"))?;
-        let parent_ordinal = self
-            .features
-            .iter()
-            .find(|feature| feature.id == parent)
-            .map(|feature| feature.ordinal)
-            .ok_or_else(|| format!("missing parent feature `{parent}`"))?;
-        if parent_ordinal >= child_ordinal {
-            return Err(format!(
-                "parent feature `{parent}` does not precede child `{child}`"
-            ));
-        }
+        self.validate_regeneration_parent(&child, &parent).map_err(|error| error.to_string())?;
         self.feature_regeneration_parents.0.insert(child, parent);
         Ok(())
     }
+
+    /// Set a decoded regeneration predecessor with charged text and map admission.
+    pub fn set_feature_regeneration_parent_charged(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        child: &crate::features::FeatureId,
+        parent: &crate::features::FeatureId,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        const OPERATION: &str = "install decoded feature regeneration parent";
+        for feature in &self.features {
+            ctx.charge_work(3, OPERATION)?;
+            if let crate::features::FeatureDefinition::Operation(
+                crate::features::FeatureOperation::TreeNode { children, .. }
+            ) = feature.evaluation.definition() {
+                ctx.charge_work(children.len() as u64, OPERATION)?;
+            }
+        }
+        if let Err(error) = self.validate_regeneration_parent(child, parent) {
+            return Err(cadmpeg_core::CodecError::malformed(
+                ctx.format_retained(format_args!("{error}"), OPERATION)?,
+            ));
+        }
+        ctx.charge_collection_items(1, OPERATION)?;
+        let child = crate::features::FeatureId::mint(
+            ctx.format_retained(format_args!("{child}"), OPERATION)?,
+        ).map_err(cadmpeg_core::CodecError::malformed)?;
+        let parent = crate::features::FeatureId::mint(
+            ctx.format_retained(format_args!("{parent}"), OPERATION)?,
+        ).map_err(cadmpeg_core::CodecError::malformed)?;
+        self.feature_regeneration_parents.0.insert(child, parent);
+        Ok(())
+    }
+
 }
 
 /// Failure to attach a procedural construction to its sole carrier.
