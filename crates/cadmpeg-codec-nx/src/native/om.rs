@@ -84,7 +84,7 @@ pub(super) struct OmRecordArea {
     /// Exact record-area byte length.
     pub(super) byte_len: u64,
     /// SHA-256 of the complete pointed record area.
-    pub(super) sha256: crate::native::hex::Sha256Hex,
+    pub(super) sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// Absolute file offset of the first control word.
     pub(super) source_offset: u64,
 }
@@ -231,7 +231,7 @@ pub(super) fn om_record_areas(
             control_words: header.control_words,
             product_version: header.product.value.try_into_owned_for_decode(ctx)?,
             byte_len: cadmpeg_core::decode::u64_from_index(bytes.len()),
-            sha256: crate::native::hex::Sha256Hex::digest(bytes),
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes),
             source_offset,
         });
     }
@@ -1472,7 +1472,7 @@ pub(super) struct ObjectRecord {
     /// Exact serialized record length.
     byte_len: u64,
     /// SHA-256 of the exact serialized record bytes.
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// Content-backed identity when the scoped exact bytes are unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stable_identity: Option<String>,
@@ -1498,7 +1498,7 @@ struct ObjectRecordRef<'a> {
     record_ordinal: u32,
     section_offset: u64,
     byte_len: u64,
-    sha256: &'a crate::native::hex::Sha256Hex,
+    sha256: &'a cadmpeg_ir::hash::digest::Sha256Digest,
     #[serde(skip_serializing_if = "Option::is_none")]
     stable_identity: Option<&'a str>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -1552,7 +1552,7 @@ struct ObjectRecordWire {
     record_ordinal: u32,
     section_offset: u64,
     byte_len: u64,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1996,7 +1996,7 @@ pub(super) struct DataBlock {
     /// Exact serialized block length.
     pub(super) byte_len: u64,
     /// SHA-256 of the exact serialized block bytes.
-    pub(super) sha256: crate::native::hex::Sha256Hex,
+    pub(super) sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// Content-backed identity when the scoped exact bytes are unique.
     #[serde(
         default,
@@ -2917,7 +2917,7 @@ pub(super) struct ExternalReferenceIndexedRecord {
     /// Exact serialized record length.
     byte_len: u64,
     /// SHA-256 of the exact serialized record bytes.
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// Specialized handle-set record when that complete grammar resolves.
     #[serde(
         default,
@@ -3405,7 +3405,7 @@ pub(super) fn external_reference_indexed_records(
             id,
             record_id: record.record_id,
             byte_len,
-            sha256: crate::native::hex::Sha256Hex::digest_charged(
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest_for_decode(
                 ctx,
                 bytes,
                 "nx external reference indexed digest",
@@ -4339,7 +4339,7 @@ pub(super) fn object_records(
                 record_ordinal: record_ordinal_u32,
                 section_offset,
                 byte_len: cadmpeg_core::decode::u64_from_index(record.bytes.len()),
-                sha256: crate::native::hex::Sha256Hex::digest(record.bytes),
+                sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.bytes),
                 stable_identity,
                 dependencies: object_record_relation_ids(
                     ctx,
@@ -4636,13 +4636,13 @@ pub(super) fn data_blocks(
                 "hash NX data block",
             )?;
             let digest = cadmpeg_ir::hash::sha256(block.bytes);
-            let sha256 = crate::native::hex::Sha256Hex::try_from(data_block_hex(
+            let sha256 = cadmpeg_ir::hash::digest::Sha256Digest::try_from(data_block_hex(
                 ctx,
                 &digest,
                 "",
                 "retain NX data block digest",
             )?)
-            .map_err(|message| CodecError::Malformed(message.into()))?;
+            .map_err(|message| CodecError::Malformed(message.to_string()))?;
 
             let id_length = "nx:om-data-blocks-"
                 .len()

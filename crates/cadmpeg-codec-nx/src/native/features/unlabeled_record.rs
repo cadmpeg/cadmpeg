@@ -13,9 +13,9 @@ pub(in crate::native) struct FeatureUnlabeledOperationRecord {
     pub(in crate::native) id: String,
     ordinal: u32,
     header: OperationHeader<u64>,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     payload_byte_len: u64,
-    payload_sha256: crate::native::hex::Sha256Hex,
+    payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 #[derive(serde::Serialize)]
@@ -25,9 +25,9 @@ struct UnlabeledRecordRef<'a> {
     object_indices: [Option<u32>; 4],
     object_index_source_offsets: [u64; 4],
     byte_len: u64,
-    sha256: &'a crate::native::hex::Sha256Hex,
+    sha256: &'a cadmpeg_ir::hash::digest::Sha256Digest,
     payload_byte_len: u64,
-    payload_sha256: &'a crate::native::hex::Sha256Hex,
+    payload_sha256: &'a cadmpeg_ir::hash::digest::Sha256Digest,
     payload_source_offset: u64,
     source_offset: u64,
 }
@@ -80,9 +80,9 @@ impl FeatureUnlabeledOperationRecord {
             id,
             ordinal,
             header,
-            sha256: crate::native::hex::Sha256Hex::digest(record.bytes()),
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.bytes()),
             payload_byte_len,
-            payload_sha256: crate::native::hex::Sha256Hex::digest(record.payload()),
+            payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(record.payload()),
         }))
     }
 
@@ -98,9 +98,9 @@ struct UnlabeledRecordWire {
     object_indices: [Option<u32>; 4],
     object_index_source_offsets: [u64; 4],
     byte_len: u64,
-    sha256: crate::native::hex::Sha256Hex,
+    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     payload_byte_len: u64,
-    payload_sha256: crate::native::hex::Sha256Hex,
+    payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     payload_source_offset: u64,
     source_offset: u64,
 }

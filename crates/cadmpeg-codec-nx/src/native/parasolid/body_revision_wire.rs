@@ -42,7 +42,7 @@ pub(super) struct RevisionWire {
     byte_len: u64,
     prefix_byte_len: u64,
     state_tail_byte_len: u64,
-    state_tail_sha256: crate::native::hex::Sha256Hex,
+    state_tail_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     inflated_offset: u64,
 }
 
@@ -56,7 +56,7 @@ struct RevisionRef<'a> {
     byte_len: u64,
     prefix_byte_len: u64,
     state_tail_byte_len: u64,
-    state_tail_sha256: &'a crate::native::hex::Sha256Hex,
+    state_tail_sha256: &'a cadmpeg_ir::hash::digest::Sha256Digest,
     inflated_offset: u64,
 }
 

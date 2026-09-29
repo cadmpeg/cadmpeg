@@ -1630,8 +1630,8 @@ fn operation_record(id: &str, operation_label: &str) -> FeatureOperationRecord {
         id: id.to_string(),
         operation_label: operation_label.to_string(),
         ordinal: 0,
-        sha256: crate::native::hex::Sha256Hex::digest(b"record-sha256"),
-        payload_sha256: crate::native::hex::Sha256Hex::digest(b"payload-sha256"),
+        sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"record-sha256"),
+        payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"payload-sha256"),
         stable_identity: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(400, 404, 8)
             .unwrap(),

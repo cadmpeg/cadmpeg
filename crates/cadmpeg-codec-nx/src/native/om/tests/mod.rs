@@ -197,7 +197,7 @@ fn data_block_reference_route_refusal(
         record_ordinal: 0,
         section_offset: 0,
         byte_len: 0,
-        sha256: crate::native::hex::Sha256Hex::digest(&[]),
+        sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]),
         stable_identity: None,
         dependencies: Vec::new(),
         dependents: Vec::new(),

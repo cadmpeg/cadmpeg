@@ -1521,7 +1521,7 @@ fn attach_material_texture_assets(
             cadmpeg_core::decode::u64_from_index(bytes.len()),
             "NX material texture hash",
         )?;
-        if crate::native::hex::Sha256Hex::digest(bytes) != texture.sha256 {
+        if cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes) != texture.sha256 {
             return Ok(());
         }
         ctx.reserve_scoped_vec(
