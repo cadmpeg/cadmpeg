@@ -1,6 +1,6 @@
 use super::ownership_tests::relation_lane;
-use super::project_relation_bindings;
-use crate::records::{FeatureInputOperand, FeatureInputOperandKind};
+use super::{project_relation_bindings, project_relation_solved_point_geometry};
+use crate::records::{FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
@@ -10,9 +10,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement, SketchProfiles};
 use std::collections::BTreeMap;
 
-fn project_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"planar relation", &arena, &policy)?;
+fn planar_fixture() -> (Sketch, Feature, FeatureInputLane) {
     let sketch = Sketch {
         id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
@@ -47,6 +45,13 @@ fn project_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
         entity_index: 0,
         entity_ref: None,
     }];
+    (sketch, feature, lane)
+}
+
+fn project_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"planar relation", &arena, &policy)?;
+    let (sketch, feature, lane) = planar_fixture();
     let mut constraints = Vec::new();
     project_relation_bindings(
         &ctx,
@@ -58,6 +63,23 @@ fn project_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
         &[lane],
     )?;
     assert_eq!(constraints.len(), 1);
+    Ok(())
+}
+
+fn project_solved_point_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"solved point", &arena, &policy)?;
+    let (sketch, feature, lane) = planar_fixture();
+    let mut entities = Vec::new();
+    project_relation_solved_point_geometry(
+        &ctx,
+        &mut entities,
+        &[sketch],
+        &[feature],
+        &[],
+        &[lane],
+    )?;
+    assert!(entities.is_empty());
     Ok(())
 }
 
@@ -89,4 +111,34 @@ fn planar_relation_projection_refuses_work_limit() {
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "index SLDPRT planar relation sketches"));
+}
+
+#[test]
+fn solved_point_projection_refuses_collection_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let error = project_solved_point_with_policy(policy).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "index SLDPRT solved-point sketches"));
+}
+
+#[test]
+fn solved_point_projection_refuses_retained_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let error = project_solved_point_with_policy(policy).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "copy SLDPRT relation identity"));
+}
+
+#[test]
+fn solved_point_projection_refuses_work_limit() {
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let error = project_solved_point_with_policy(policy).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::WorkUnits
+            && limit.operation == "index SLDPRT solved-point sketches"));
 }
