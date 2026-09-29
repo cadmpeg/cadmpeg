@@ -43,7 +43,13 @@ impl DiffRun {
     /// Grows the run so that it covers the byte at `offset`, and does nothing
     /// for an offset the run already covers.
     fn extend_to(&mut self, offset: u64) {
-        let covered = NonZeroU64::MIN.saturating_add(offset.saturating_sub(self.start));
+        let Some(covered) = offset
+            .checked_sub(self.start)
+            .and_then(|distance| distance.checked_add(1))
+            .and_then(NonZeroU64::new)
+        else {
+            return;
+        };
         self.len = self.len.max(covered);
     }
 }
@@ -114,8 +120,12 @@ pub(super) fn compare(a: &[u8], b: &[u8], gap: u64) -> DiffSummary {
         differing += 1;
         let offset = offset as u64;
         match runs.last_mut() {
-            Some(last) if offset <= last.end().saturating_add(gap) => last.extend_to(offset),
-            _ => runs.push(DiffRun::single(offset)),
+            Some(last) => match last.end().checked_add(gap) {
+                Some(end) if offset <= end => last.extend_to(offset),
+                None => last.extend_to(offset),
+                Some(_) => runs.push(DiffRun::single(offset)),
+            },
+            None => runs.push(DiffRun::single(offset)),
         }
     }
     DiffSummary {
@@ -134,6 +144,13 @@ mod tests {
         let mut run = DiffRun::single(start);
         run.extend_to(start + len - 1);
         run
+    }
+
+    #[test]
+    fn unrepresentable_diff_span_does_not_extend_a_run() {
+        let mut run = DiffRun::single(0);
+        run.extend_to(u64::MAX);
+        assert_eq!(run.len().get(), 1);
     }
 
     #[test]

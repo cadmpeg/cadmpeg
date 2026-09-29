@@ -153,12 +153,16 @@ pub(crate) fn read_detection_input(
 
 /// Read a UTF-8 text file, refusing payloads above `max_bytes`.
 pub(crate) fn read_bounded_text(path: &Path, max_bytes: u64) -> Result<String> {
-    let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let mut limited = file.take(max_bytes.saturating_add(1));
+    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut text = String::new();
-    limited
-        .read_to_string(&mut text)
-        .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
+    if let Some(cap) = max_bytes.checked_add(1) {
+        file.take(cap)
+            .read_to_string(&mut text)
+            .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
+    } else {
+        file.read_to_string(&mut text)
+            .with_context(|| format!("reading UTF-8 text from {}", path.display()))?;
+    }
     if text.len() as u64 > max_bytes {
         return Err(anyhow!(
             "{} exceeds the configured {}-byte input limit",
