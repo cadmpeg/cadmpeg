@@ -40,6 +40,19 @@ fn line_entity(id: &SketchEntityId, sketch: &SketchId, end: [f64; 2]) -> SketchE
 }
 
 #[test]
+fn borrowed_nurbs_profile_sampler_keeps_line_endpoints() {
+    let nurbs = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0), cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    )
+    .expect("linear NURBS fixture");
+    assert_eq!(super::nurbs_profile_polyline(&nurbs, 0.01), Some(vec![[0.0, 0.0], [1.0, 0.0]]));
+}
+
+#[test]
 fn connected_profile_vertices_refuse_each_collection_boundary() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 

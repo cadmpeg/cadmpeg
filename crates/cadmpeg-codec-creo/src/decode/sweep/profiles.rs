@@ -858,13 +858,22 @@ const NURBS_AREA_GAUSS_WEIGHTS: [f64; 8] = [
 ];
 
 struct NurbsProfileSpan<'a> {
-    carrier: &'a CurveGeometry,
+    nurbs: &'a NurbsCurve,
     start: f64,
     end: f64,
     start_point: [f64; 2],
     end_point: [f64; 2],
     tolerance: f64,
     depth: usize,
+}
+
+fn nurbs_profile_point(nurbs: &NurbsCurve, parameter: f64) -> Option<[f64; 2]> {
+    let parameter = cadmpeg_ir::eval::map_nurbs_curve_parameter(
+        nurbs,
+        cadmpeg_ir::scalar::FiniteReal::new(parameter)?,
+    )?;
+    let point = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, parameter.get()).ok()?;
+    Some([point.x, point.y])
 }
 
 fn append_nurbs_profile_span(
@@ -882,12 +891,9 @@ fn append_nurbs_profile_span(
     }
     let first_quarter = span.start + (span.end - span.start) * 0.25;
     let third_quarter = span.start + (span.end - span.start) * 0.75;
-    let middle_point = cadmpeg_ir::eval::curve_point(span.carrier, middle).ok()?;
-    let first_quarter_point = cadmpeg_ir::eval::curve_point(span.carrier, first_quarter).ok()?;
-    let third_quarter_point = cadmpeg_ir::eval::curve_point(span.carrier, third_quarter).ok()?;
-    let middle_point = [middle_point.x, middle_point.y];
-    let first_quarter_point = [first_quarter_point.x, first_quarter_point.y];
-    let third_quarter_point = [third_quarter_point.x, third_quarter_point.y];
+    let middle_point = nurbs_profile_point(span.nurbs, middle)?;
+    let first_quarter_point = nurbs_profile_point(span.nurbs, first_quarter)?;
+    let third_quarter_point = nurbs_profile_point(span.nurbs, third_quarter)?;
     let chord = [span.start_point, span.end_point];
     let flatness = planar_point_segment_distance(first_quarter_point, chord)
         .max(planar_point_segment_distance(middle_point, chord))
@@ -901,7 +907,7 @@ fn append_nurbs_profile_span(
     (span.depth < MAX_DEPTH).then_some(())?;
     append_nurbs_profile_span(
         &NurbsProfileSpan {
-            carrier: span.carrier,
+            nurbs: span.nurbs,
             start: span.start,
             end: middle,
             start_point: span.start_point,
@@ -913,7 +919,7 @@ fn append_nurbs_profile_span(
     )?;
     append_nurbs_profile_span(
         &NurbsProfileSpan {
-            carrier: span.carrier,
+            nurbs: span.nurbs,
             start: middle,
             end: span.end,
             start_point: middle_point,
@@ -928,9 +934,7 @@ fn append_nurbs_profile_span(
 fn nurbs_profile_polyline(nurbs: &NurbsCurve, tolerance: f64) -> Option<Vec<[f64; 2]>> {
     let [lower, upper] =
         cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(nurbs)?);
-    let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
-    let first = cadmpeg_ir::eval::curve_point(&carrier, lower).ok()?;
-    let first = [first.x, first.y];
+    let first = nurbs_profile_point(nurbs, lower)?;
     let mut points = vec![first];
     for pair in nurbs.knots().windows(2) {
         let start = pair[0].max(lower);
@@ -938,16 +942,14 @@ fn nurbs_profile_polyline(nurbs: &NurbsCurve, tolerance: f64) -> Option<Vec<[f64
         if start >= end {
             continue;
         }
-        let start_point = cadmpeg_ir::eval::curve_point(&carrier, start).ok()?;
-        let end_point = cadmpeg_ir::eval::curve_point(&carrier, end).ok()?;
-        let start_point = [start_point.x, start_point.y];
-        let end_point = [end_point.x, end_point.y];
+        let start_point = nurbs_profile_point(nurbs, start)?;
+        let end_point = nurbs_profile_point(nurbs, end)?;
         if points.last().copied() != Some(start_point) {
             points.push(start_point);
         }
         append_nurbs_profile_span(
             &NurbsProfileSpan {
-                carrier: &carrier,
+                nurbs,
                 start,
                 end,
                 start_point,
@@ -970,7 +972,10 @@ fn nurbs_profile_signed_area_twice(geometry: &SketchGeometry, reversed: bool) ->
     let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
     let [lower, upper] =
         cadmpeg_ir::scalar::FiniteReal::raw_array(nurbs_intrinsic_parameter_range(&nurbs)?);
-    let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.clone()));
+    let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &carrier else {
+        return None;
+    };
     let mut area_twice = 0.0;
     for pair in nurbs.knots().windows(2) {
         let start = pair[0].max(lower);
