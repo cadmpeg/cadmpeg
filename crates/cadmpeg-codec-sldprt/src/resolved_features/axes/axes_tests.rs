@@ -8,7 +8,8 @@ use super::super::{
 use super::{
     bounded_profile_axis_endpoints, common_generated_surface_axis,
     compact_line_reference_directions, enrich_history_revolution_inputs,
-    profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
+    profile_roster_construction_axis,
+    profile_roster_origin_axis_endpoints,
     profile_roster_principal_axis_endpoints,
     revolution_line_reference_inputs as typed_revolution_line_reference_inputs,
     temporary_axis_reference as typed_temporary_axis_reference,
@@ -190,6 +191,68 @@ fn revolution_line_reference_inputs(
     typed_revolution_line_reference_inputs(&ctx, payload, object_start, object_end, profile_sources)
         .expect("revolution line reference scan fits service policy")
         .map(|(source, origin, direction)| (source, origin.get(), *direction.as_raw()))
+}
+
+fn profile_roster_construction_axis_test(
+    lane: &FeatureInputLane,
+    profile_native: &str,
+    sketch: &Sketch,
+    surfaces: &[Surface],
+) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload, &arena, &policy,
+    )
+    .expect("profile roster input fits root policy");
+    profile_roster_construction_axis(&ctx, lane, profile_native, sketch, surfaces)
+        .expect("profile roster scan fits service policy")
+}
+
+#[test]
+fn revolution_profile_roster_refuses_collection_limit() {
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![SketchInputEntity::new(
+            "marker", "lane", 1, 0, SketchInputKind::Point,
+        )],
+    };
+    let sketch = Sketch {
+        id: SketchId::mint("synthetic:test:id#sketch").expect("valid sketch id"),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid sketch frame"),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: None,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload, &arena, &policy,
+    )
+    .expect("empty payload fits root policy");
+    let error = profile_roster_construction_axis(&ctx, &lane, "profile-native", &sketch, &[])
+        .expect_err("one roster marker requires a collection slot");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
 fn revolution_line_reference_limit_input() -> Vec<u8> {
@@ -725,7 +788,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     };
 
     assert_eq!(
-        profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
+        profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
@@ -759,7 +822,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     lane.native_payload[292..297].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     lane.sketch_entities[3].reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     assert_eq!(
-        profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
+        profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
@@ -784,7 +847,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     lane.native_payload[284..289].copy_from_slice(SKETCH_MARKER);
     lane.sketch_entities[3].reclassify(SketchInputKind::Relation(SketchRelationKind::Vertical));
     assert_eq!(
-        profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
+        profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
@@ -815,7 +878,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     lane.native_payload[312..317].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     lane.sketch_entities[3].reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     assert_eq!(
-        profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
+        profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
@@ -898,7 +961,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
     };
 
     assert_eq!(
-        profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
+        profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 19.5)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
@@ -907,7 +970,7 @@ fn compact_profile_construction_role_places_a_revolution_axis() {
         })
     );
     lane.sketch_entities[0].reclassify(SketchInputKind::Arc);
-    assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
+    assert!(profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]).is_some());
 }
 
 #[test]
@@ -983,7 +1046,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     };
 
     assert_eq!(
-        profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
+        profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
@@ -1017,7 +1080,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     lane.sketch_entities.pop();
 
     lane.sketch_entities[2].reclassify(SketchInputKind::LineOrCircle);
-    assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
+    assert!(profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]).is_some());
 
     lane.sketch_entities[2].reclassify(SketchInputKind::Point);
     lane.sketch_entities[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([-0.01, 0.01]);
@@ -1030,7 +1093,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     lane.native_payload[curve + 84..curve + 92].fill(0);
     lane.native_payload[curve + 92..curve + 92 + SKETCH_MARKER.len()]
         .copy_from_slice(SKETCH_MARKER);
-    assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
+    assert!(profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]).is_some());
 
     lane.native_payload[curve..curve + LEGACY_EXTENDED_SKETCH_MARKER.len()]
         .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -1056,18 +1119,18 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
         compact_bounded_curve_tangent(&lane.native_payload, curve),
         Some([-1.0, 0.0])
     );
-    assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
+    assert!(profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]).is_some());
 
     lane.native_payload[curve..curve + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     lane.native_payload[detail..detail + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
-    assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
+    assert!(profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]).is_some());
 
     lane.native_payload[curve..curve + LEGACY_EXTENDED_SKETCH_MARKER.len()]
         .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     lane.native_payload[detail..detail + LEGACY_EXTENDED_SKETCH_MARKER.len()]
         .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     lane.native_payload[curve + 17..curve + 21].copy_from_slice(&2u32.to_le_bytes());
-    assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]).is_some());
+    assert!(profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]).is_some());
 
     lane.native_payload[curve + 17..curve + 21].copy_from_slice(&1u32.to_le_bytes());
     lane.sketch_entities[0].coordinates_m = cadmpeg_ir::units::FiniteVector::new([-0.01, 0.0]);
@@ -1078,7 +1141,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     lane.sketch_entities
         .push(marker("axis-end", 460, None, Some([0.0, 0.02])));
     assert_eq!(
-        profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
+        profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
@@ -1095,7 +1158,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     lane.native_payload[126..130].copy_from_slice(&1u32.to_le_bytes());
     lane.native_payload[curve + 58..curve + 60].copy_from_slice(&2u16.to_le_bytes());
     assert_eq!(
-        profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
+        profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
@@ -1108,7 +1171,7 @@ fn bounded_profile_chords_place_implicit_revolution_axes() {
     lane.native_payload[curve + 56..curve + 58].copy_from_slice(&2u16.to_le_bytes());
     lane.native_payload[curve + 58..curve + 60].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        profile_roster_construction_axis(&lane, "profile-native", &sketch, &[]),
+        profile_roster_construction_axis_test(&lane, "profile-native", &sketch, &[]),
         Some(cadmpeg_ir::features::RevolutionAxis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))

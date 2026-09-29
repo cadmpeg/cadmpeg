@@ -1222,8 +1222,8 @@ pub(crate) fn bind_profile_revolution_axes(
         for lane in lanes {
             ctx.charge_work(1, "scan SLDPRT revolution axis lanes")?;
             if let Some(axis) = profile_roster_construction_axis(
-                lane, profile_native, sketch, generated_axis_surfaces,
-            ) {
+                ctx, lane, profile_native, sketch, generated_axis_surfaces,
+            )? {
                 ctx.reserve_collection_vec(&mut candidates, 1, "collect SLDPRT revolution axis candidates")?;
                 candidates.push(axis);
             }
@@ -1258,16 +1258,23 @@ pub(crate) fn bind_profile_revolution_axes(
 }
 
 fn profile_roster_construction_axis(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     profile_native: &str,
     sketch: &Sketch,
     surfaces: &[Surface],
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Result<Option<cadmpeg_ir::features::RevolutionAxis>, CodecError> {
     const QUANTUM: f64 = 1e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
-    let (origin, normal, u_axis) = sketch.resolved_placement()?;
+    let Some((origin, normal, u_axis)) = sketch.resolved_placement() else {
+        return Ok(None);
+    };
 
-    let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
+    let mut markers = Vec::new();
+    for marker in &lane.sketch_entities {
+        ctx.reserve_collection_vec(&mut markers, 1, "collect SLDPRT revolution profile markers")?;
+        markers.push(marker);
+    }
     let mut axes = lane
         .sketch_entities
         .iter()
@@ -1284,30 +1291,38 @@ fn profile_roster_construction_axis(
             Some([*start, *end])
         });
     let native_endpoints = match (axes.next(), axes.next()) {
-        (Some(endpoints), None) => Some([
-            endpoints[0].coordinates_m?.get(),
-            endpoints[1].coordinates_m?.get(),
-        ]),
+        (Some(endpoints), None) => {
+            let (Some(start), Some(end)) =
+                (endpoints[0].coordinates_m, endpoints[1].coordinates_m)
+            else {
+                return Ok(None);
+            };
+            Some([start.get(), end.get()])
+        }
         (None, None) => {
             if let Some(endpoints) =
                 profile_roster_implicit_axis_endpoints(lane, profile_native, &markers)
             {
-                Some([
-                    endpoints[0].coordinates_m?.get(),
-                    endpoints[1].coordinates_m?.get(),
-                ])
+                let (Some(start), Some(end)) =
+                    (endpoints[0].coordinates_m, endpoints[1].coordinates_m)
+                else {
+                    return Ok(None);
+                };
+                Some([start.get(), end.get()])
             } else {
                 profile_roster_origin_axis_endpoints(lane, profile_native, &markers).or_else(|| {
                     profile_roster_principal_axis_endpoints(lane, profile_native, &markers)
                 })
             }
         }
-        _ => return None,
+        _ => return Ok(None),
     };
-    let transform = sketch_frame_marker_transform(sketch, QUANTUM)?;
+    let Some(transform) = sketch_frame_marker_transform(sketch, QUANTUM) else {
+        return Ok(None);
+    };
     let Some([native_start, native_end]) = native_endpoints else {
         return profile_generated_surface_axis(
-            lane,
+            ctx, lane,
             profile_native,
             &markers,
             sketch,
@@ -1325,8 +1340,9 @@ fn profile_roster_construction_axis(
             point.1 as f64 * QUANTUM,
         ))
     };
-    let start = project(native_start)?;
-    let end = project(native_end)?;
+    let (Some(start), Some(end)) = (project(native_start), project(native_end)) else {
+        return Ok(None);
+    };
     let v_axis = normal.cross(u_axis.get());
     let point = |point: Point2| {
         Point3::new(
@@ -1339,31 +1355,41 @@ fn profile_roster_construction_axis(
     let end = point(end);
     let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
     let length = (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z).sqrt();
-    (length.is_finite() && length > EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9).then_some(
-        cadmpeg_ir::features::RevolutionAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(start)?,
-            direction: cadmpeg_ir::features::FeatureDirection3::from(
-                UnitVector3::normalized_by_square_sum_division(delta)?,
-            ),
-            reference: None,
-        },
-    )
+    if !length.is_finite() || length <= EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9 {
+        return Ok(None);
+    }
+    let (Some(origin), Some(direction)) = (
+        cadmpeg_ir::features::FinitePoint3::new(start),
+        UnitVector3::normalized_by_square_sum_division(delta),
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(cadmpeg_ir::features::RevolutionAxis {
+        origin,
+        direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
+        reference: None,
+    }))
 }
 
 fn profile_generated_surface_axis(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     profile_native: &str,
     markers: &[&SketchInputEntity],
     sketch: &Sketch,
     transform: &MarkerTransform,
     surfaces: &[Surface],
-) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+) -> Result<Option<cadmpeg_ir::features::RevolutionAxis>, CodecError> {
     const QUANTUM: f64 = 1e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
     const LINE_TOLERANCE: f64 = 1e-6;
-    let (origin, normal, u_axis) = sketch.resolved_placement()?;
+    let Some((origin, normal, u_axis)) = sketch.resolved_placement() else {
+        return Ok(None);
+    };
 
-    let mut axis = common_generated_surface_axis(surfaces)?;
+    let Some(mut axis) = common_generated_surface_axis(surfaces) else {
+        return Ok(None);
+    };
     let relative_origin = Vector3::new(
         axis.origin.x - origin.x,
         axis.origin.y - origin.y,
@@ -1372,7 +1398,7 @@ fn profile_generated_surface_axis(
     if axis.direction.dot(normal.get()).abs() > EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9
         || relative_origin.dot(normal.get()).abs() > LINE_TOLERANCE
     {
-        return None;
+        return Ok(None);
     }
     let origin_offset = Vector3::new(
         origin.x - axis.origin.x,
@@ -1384,31 +1410,49 @@ fn profile_generated_surface_axis(
         axis.origin = origin;
     } else {
         let projection = origin_offset.dot(axis.direction.get());
-        axis.origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+        let Some(projected_origin) = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
             axis.origin.x + projection * axis.direction.x,
             axis.origin.y + projection * axis.direction.y,
             axis.origin.z + projection * axis.direction.z,
-        ))?;
+        )) else {
+            return Ok(None);
+        };
+        axis.origin = projected_origin;
     }
     let curve_endpoints = markers
         .iter()
         .copied()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
-        .filter(|endpoint| endpoint.object_index().is_some())
-        .collect::<Vec<_>>();
+        .filter(|endpoint| endpoint.object_index().is_some());
     let mut endpoint_ids = HashSet::new();
     let v_axis = normal.cross(u_axis.get());
-    let mut sides = Vec::new();
+    let mut observed_one = false;
+    let mut observed_two = false;
+    let mut off_axis = false;
+    let mut positive = false;
+    let mut negative = false;
     for endpoint in curve_endpoints {
-        if !endpoint_ids.insert(endpoint.id()) {
+        ctx.charge_work(1, "scan SLDPRT generated revolution axis endpoints")?;
+        if endpoint_ids.contains(endpoint.id()) {
             continue;
         }
-        let [u, v] = endpoint.coordinates_m?.get();
-        let point = transform.apply(quantize(
+        let operation = "index SLDPRT generated revolution axis endpoints";
+        ctx.charge_collection_items(1, operation)?;
+        endpoint_ids.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+        })?;
+        endpoint_ids.insert(endpoint.id());
+        let Some(coordinates) = endpoint.coordinates_m else {
+            return Ok(None);
+        };
+        let [u, v] = coordinates.get();
+        let Some(point) = transform.apply(quantize(
             Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
             QUANTUM,
-        ))?;
+        )) else {
+            return Ok(None);
+        };
         let point = Point3::new(
             origin.x + point.0 as f64 * QUANTUM * u_axis.x + point.1 as f64 * QUANTUM * v_axis.x,
             origin.y + point.0 as f64 * QUANTUM * u_axis.y + point.1 as f64 * QUANTUM * v_axis.y,
@@ -1419,16 +1463,17 @@ fn profile_generated_surface_axis(
             point.y - axis.origin.y,
             point.z - axis.origin.z,
         );
-        sides.push(axis.direction.cross(relative).dot(normal.get()));
+        let side = axis.direction.cross(relative).dot(normal.get());
+        observed_two |= observed_one;
+        observed_one = true;
+        off_axis |= side.abs() > LINE_TOLERANCE;
+        positive |= side > LINE_TOLERANCE;
+        negative |= side < -LINE_TOLERANCE;
     }
-    if sides.len() < 2
-        || !sides.iter().any(|side| side.abs() > LINE_TOLERANCE)
-        || (sides.iter().any(|side| *side > LINE_TOLERANCE)
-            && sides.iter().any(|side| *side < -LINE_TOLERANCE))
-    {
-        return None;
+    if !observed_two || !off_axis || (positive && negative) {
+        return Ok(None);
     }
-    Some(axis)
+    Ok(Some(axis))
 }
 
 fn common_generated_surface_axis(
