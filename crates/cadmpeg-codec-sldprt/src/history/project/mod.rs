@@ -86,6 +86,20 @@ fn copy_projected_feature_text(
     ctx.format_retained(format_args!("{text}"), "copy SLDPRT projected feature text")
 }
 
+fn neutral_feature_id_charged(
+    ctx: &DecodeContext<'_>,
+    native_id: &str,
+) -> Result<FeatureId, CodecError> {
+    let key = native_id
+        .strip_prefix("sldprt:history:feature#")
+        .unwrap_or(native_id);
+    let id = ctx.format_retained(
+        format_args!("sldprt:model:feature#{}", EncodedNativeKey(key)),
+        "retain SLDPRT projected feature ID",
+    )?;
+    FeatureId::mint(id).map_err(CodecError::malformed)
+}
+
 fn copy_projected_feature_properties(
     ctx: &DecodeContext<'_>,
     properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
@@ -214,7 +228,7 @@ pub(crate) fn project_feature_model(
                         });
                     Ok((
                         cadmpeg_ir::features::Feature {
-                            id: neutral_feature_id(&feature.id),
+                            id: neutral_feature_id_charged(ctx, &feature.id)?,
                             ordinal: source_ordered
                                 .then(|| feature.source_value().map(u64::from))
                                 .flatten()
