@@ -6656,17 +6656,14 @@ fn unresolved_historical_face_axis_selection(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) -> bool {
     let stream = native_stream(&scope.id);
-    let selections = entity_selection_operands
-        .iter()
-        .filter(|operand| {
+    let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
             native_stream(&operand.id) == stream
                 && operand.scope_record_index == scope.record_index
                 && operand.group_record_index == axis_group.record_index
                 && operand.group_member_ordinal == 0
                 && operand.record_index() == axis_member
-        })
-        .collect::<Vec<_>>();
-    matches!(selections.as_slice(), [selection] if !selection.historical_face_candidates.is_empty())
+        }));
+    selection.is_some_and(|selection| !selection.historical_face_candidates.is_empty())
 }
 
 fn revolve_face_axis_operand<'a>(
@@ -6676,21 +6673,15 @@ fn revolve_face_axis_operand<'a>(
     face_operands: &'a [crate::records::topology::face::DesignFaceOperand],
 ) -> Option<&'a crate::records::topology::face::DesignFaceOperand> {
     let stream = native_stream(&scope.id);
-    let operands = face_operands
-        .iter()
-        .filter(|operand| {
+    let operand = unique_feature_match(face_operands.iter().filter(|operand| {
             native_stream(&operand.id) == stream
                 && operand.scope_record_index == scope.record_index
                 && operand.group_record_index() == Some(axis_group.record_index)
                 && operand.group_member_ordinal() == Some(0)
                 && operand.record_index() == axis_member
-        })
-        .collect::<Vec<_>>();
-    let [operand] = operands.as_slice() else {
-        return None;
-    };
+        }))?;
     (!crate::design::face_resolve::historical_face_operand_candidates(operand).is_empty())
-        .then_some(*operand)
+        .then_some(operand)
 }
 
 /// Resolve Revolve axes selected through history-qualified analytic faces.
@@ -6706,19 +6697,18 @@ pub(crate) fn bind_revolve_face_axes(
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
+        let native_ref = feature.native_ref.as_deref();
+        feature.evaluation.edit(|definition, _| {
+            'feature_edit: {
             let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
-                &mut definition
+                definition
             else {
                 break 'feature_edit;
             };
             if construction.axis().is_some() {
                 break 'feature_edit;
             }
-            let Some(scope) = feature
-                .native_ref
-                .as_deref()
+            let Some(scope) = native_ref
                 .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
             else {
                 break 'feature_edit;
@@ -6726,32 +6716,25 @@ pub(crate) fn bind_revolve_face_axes(
             let Some(stream) = native_stream(&scope.id) else {
                 break 'feature_edit;
             };
-            let groups = construction_groups
-                .iter()
-                .filter(|group| {
+            let Some(group) = unique_feature_match(construction_groups.iter().filter(|group| {
                     native_stream(&group.id) == Some(stream)
                         && group.scope_record_index == scope.record_index
                         && group.role() == DesignOperandRole::ROLE_0X21
-                })
-                .collect::<Vec<_>>();
-            let [group] = groups.as_slice() else {
+                })) else {
                 break 'feature_edit;
             };
             let [crate::records::identity::Located { value: member, .. }] = group.members() else {
                 break 'feature_edit;
             };
-            let selections = entity_selection_operands
-                .iter()
-                .filter(|operand| {
+            let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
                     native_stream(&operand.id) == Some(stream)
                         && operand.scope_record_index == scope.record_index
                         && operand.group_record_index == group.record_index
                         && operand.group_member_ordinal == 0
                         && operand.record_index() == *member
-                })
-                .collect::<Vec<_>>();
-            let entity_face_slot = match selections.as_slice() {
-                [selection] => selection
+                }));
+            let entity_face_slot = match selection {
+                Some(selection) => selection
                     .historical_face_candidates
                     .first()
                     .map(|candidate| candidate.face_slot)
@@ -6796,8 +6779,8 @@ pub(crate) fn bind_revolve_face_axes(
                 (Some(axis), None) | (None, Some(axis)) => Some(axis),
                 _ => None,
             });
-        }
-        feature.evaluation.set_definition(definition);
+            }
+        });
     }
 }
 
@@ -6806,20 +6789,8 @@ fn analytic_axis_for_face(
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
-    let faces = faces
-        .iter()
-        .filter(|face| &face.id == face_id)
-        .collect::<Vec<_>>();
-    let [face] = faces.as_slice() else {
-        return None;
-    };
-    let surfaces = surfaces
-        .iter()
-        .filter(|surface| surface.id == face.surface)
-        .collect::<Vec<_>>();
-    let [surface] = surfaces.as_slice() else {
-        return None;
-    };
+    let face = unique_feature_match(faces.iter().filter(|face| &face.id == face_id))?;
+    let surface = unique_feature_match(surfaces.iter().filter(|surface| surface.id == face.surface))?;
     analytic_surface_axis(&surface.geometry)
 }
 
@@ -6859,41 +6830,23 @@ fn resolve_sketch_axis_selection(
     curve_identities: &[SketchCurveIdentity],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
     let stream = native_stream(&scope.id)?;
-    let selections = entity_selection_operands
-        .iter()
-        .filter(|operand| {
+    let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
                 && operand.scope_record_index == scope.record_index
                 && operand.group_record_index == axis_group.record_index
                 && operand.group_member_ordinal == 0
                 && operand.record_index() == axis_member
-        })
-        .collect::<Vec<_>>();
-    let [selection] = selections.as_slice() else {
-        return None;
-    };
+        }))?;
     let owner_reference = u32::try_from(selection.primary_identity).ok()?;
-    let placements = placements
-        .iter()
-        .filter(|placement| {
+    let placement = unique_feature_match(placements.iter().filter(|placement| {
             native_stream(&placement.id) == Some(stream)
                 && placement.entity_id.suffix() == selection.primary_identity
-        })
-        .collect::<Vec<_>>();
-    let [placement] = placements.as_slice() else {
-        return None;
-    };
-    let curves = curve_identities
-        .iter()
-        .filter(|curve| {
+        }))?;
+    let curve = unique_feature_match(curve_identities.iter().filter(|curve| {
             native_stream(&curve.id) == Some(stream)
                 && curve.owner_reference == Some(owner_reference)
                 && entity_selection_matches_curve(selection, curve)
-        })
-        .collect::<Vec<_>>();
-    let [curve] = curves.as_slice() else {
-        return None;
-    };
+        }))?;
     let SketchCurveGeometry::Line {
         start, direction, ..
     } = curve.geometry.as_ref()?
