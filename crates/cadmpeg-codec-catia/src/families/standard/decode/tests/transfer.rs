@@ -50,11 +50,11 @@ fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
         color: None,
         visible: None,
     };
-    let scoped = StandardPopulationScope {
-        scope: "population-1",
-    }
-    .rewrite(body)
-    .unwrap();
+    let scoped = crate::test_support::with_service_context(|ctx| {
+        StandardPopulationScope {
+            scope: "population-1", ctx,
+        }.rewrite(body)
+    }).unwrap();
     assert_eq!(
         scoped.id.as_str(),
         "catia:standard:population-1/body#source"
@@ -64,6 +64,28 @@ fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
         "catia:standard:population-1/region#source"
     );
     assert_eq!(scoped.name.as_deref(), Some(source_id));
+}
+
+#[test]
+fn standard_population_entity_rewrite_refuses_collection_limit() {
+    use super::super::StandardPopulationScope;
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind};
+    let body = Body {
+        id: BodyId::mint("catia:standard:body#0").expect("identity"),
+        kind: BodyKind::Solid,
+        regions: Vec::new(), transform: None, name: None, color: None, visible: None,
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        StandardPopulationScope { scope: "population-1", ctx }.rewrite(body.clone())
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_population_rewrite"));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        StandardPopulationScope { scope: "population-1", ctx }.rewrite(body)
+    }).expect("service profile admits rewrite");
+    assert_eq!(admitted.id.as_str(), "catia:standard:population-1/body#0");
 }
 
 #[test]

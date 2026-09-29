@@ -29,6 +29,22 @@ pub struct Annotations {
     exactness: BTreeMap<String, ExactnessNote>,
 }
 
+fn copy_annotation_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    id: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    ctx.charge_retained(
+        u64::try_from(id.len()).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+        operation,
+    )?;
+    let mut copy = String::new();
+    copy.try_reserve(id.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+    copy.push_str(id);
+    Ok(copy)
+}
+
 /// Two source annotation identities would become one identity.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("annotation identity collision at {id}")]
@@ -535,6 +551,60 @@ impl Annotations {
         Ok(())
     }
 
+    /// Remap identities after charging each index entry and retained key copy.
+    pub fn map_ids_charged(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut map: impl FnMut(&str) -> Result<String, cadmpeg_core::CodecError>,
+        operation: &'static str,
+    ) -> Result<Result<(), AnnotationIdentityCollision>, cadmpeg_core::CodecError> {
+        let mut ids = std::collections::BTreeSet::new();
+        for id in self.provenance.keys().chain(self.exactness.keys()) {
+            if !ids.contains(id) {
+                ctx.charge_collection_items(1, operation)?;
+                ids.insert(id);
+            }
+        }
+        let mut targets = std::collections::BTreeSet::new();
+        let mut remapping = Vec::new();
+        ctx.charge_collection_items(
+            u64::try_from(ids.len()).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+            operation,
+        )?;
+        remapping.try_reserve(ids.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        for id in ids {
+            let target = map(id)?;
+            if targets.contains(&target) {
+                return Ok(Err(AnnotationIdentityCollision { id: target }));
+            }
+            ctx.charge_collection_items(1, operation)?;
+            targets.insert(copy_annotation_id(ctx, &target, operation)?);
+            let provenance_target = if self.provenance.contains_key(id) {
+                ctx.charge_collection_items(1, operation)?;
+                Some(copy_annotation_id(ctx, &target, operation)?)
+            } else { None };
+            if self.exactness.contains_key(id) {
+                ctx.charge_collection_items(1, operation)?;
+            }
+            remapping.push((copy_annotation_id(ctx, id, operation)?, target, provenance_target));
+        }
+        let mut remapped = Self::default();
+        for (id, target, provenance_target) in remapping {
+            if let Some(provenance) = self.provenance.remove(&id) {
+                let Some(provenance_target) = provenance_target else {
+                    return Err(cadmpeg_core::CodecError::malformed("missing charged annotation key"));
+                };
+                remapped.provenance.insert(provenance_target, provenance);
+            }
+            if let Some(exactness) = self.exactness.remove(&id) {
+                remapped.exactness.insert(target, exactness);
+            }
+        }
+        *self = remapped;
+        Ok(Ok(()))
+    }
+
     /// Sparse non-byte-exact annotations keyed by entity identity.
     pub fn exactness(&self) -> &BTreeMap<String, ExactnessNote> {
         &self.exactness
@@ -564,6 +634,29 @@ impl Annotations {
         self.exactness.append(&mut other.exactness);
         Ok(())
     }
+
+    /// Append disjoint tables after charging their destination nodes.
+    pub fn append_charged(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut other: Self,
+        operation: &'static str,
+    ) -> Result<Result<(), AnnotationIdentityCollision>, cadmpeg_core::CodecError> {
+        for id in other.provenance.keys().chain(other.exactness.keys()) {
+            if self.provenance.contains_key(id) || self.exactness.contains_key(id) {
+                return Ok(Err(AnnotationIdentityCollision {
+                    id: copy_annotation_id(ctx, id, operation)?,
+                }));
+            }
+        }
+        let count = other.provenance.len().checked_add(other.exactness.len())
+            .and_then(|count| u64::try_from(count).ok())
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        ctx.charge_collection_items(count, operation)?;
+        self.provenance.append(&mut other.provenance);
+        self.exactness.append(&mut other.exactness);
+        Ok(Ok(()))
+    }
 }
 
 /// In-progress provenance annotation returned by [`AnnotationBuilder::note`].
@@ -580,6 +673,56 @@ impl ProvenanceNote<'_> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn annotation_remap_refuses_nested_collection_and_retained_limits() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let run = |collection_limit, retained_limit| {
+            let mut builder = super::AnnotationBuilder::new();
+            let stream = super::StreamHandle::new(crate::stream_name!("test"));
+            builder.note("test:point#0", &stream, 0);
+            let mut annotations = builder.build();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = collection_limit;
+            policy.limits.max_retained_bytes = retained_limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root");
+            let outcome = annotations.map_ids_charged(&ctx, |_| {
+                Ok(String::from("test:point#mapped"))
+            }, "test_annotation_remap");
+            (outcome, annotations)
+        };
+        assert!(matches!(run(0, u64::MAX).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test_annotation_remap"));
+        assert!(matches!(run(u64::MAX, 0).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test_annotation_remap"));
+        let (outcome, annotations) = run(u64::MAX, u64::MAX);
+        assert!(matches!(outcome, Ok(Ok(()))));
+        assert!(annotations.provenance.contains_key("test:point#mapped"));
+    }
+
+    #[test]
+    fn annotation_append_refuses_destination_node_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let run = |limit| {
+            let mut builder = super::AnnotationBuilder::new();
+            let stream = super::StreamHandle::new(crate::stream_name!("test"));
+            builder.note("test:point#0", &stream, 0);
+            let mut target = super::Annotations::default();
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+                .expect("empty root");
+            let result = target.append_charged(&ctx, builder.build(), "test_annotation_append");
+            (result, target)
+        };
+        assert!(matches!(run(0).0, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "test_annotation_append"));
+        let (result, target) = run(u64::MAX);
+        assert!(matches!(result, Ok(Ok(()))));
+        assert!(target.provenance.contains_key("test:point#0"));
+    }
     #[test]
     fn annotation_copy_charges_nested_entries_and_retained_text() {
         let mut builder = super::AnnotationBuilder::new();

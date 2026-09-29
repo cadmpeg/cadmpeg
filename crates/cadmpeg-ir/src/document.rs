@@ -485,6 +485,34 @@ macro_rules! declare_model {
                 }
                 Ok(())
             }
+
+            /// Append rewritten arenas after charging every destination entry.
+            pub fn extend_rewritten_charged<R: EntityRewrite<Error = cadmpeg_core::CodecError>>(
+                &mut self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                other: Self,
+                rewrite: &mut R,
+                operation: &'static str,
+            ) -> Result<(), cadmpeg_core::CodecError> {
+                $(
+                    ctx.charge_collection_items(
+                        u64::try_from(other.$field.len())
+                            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?,
+                        operation,
+                    )?;
+                    self.$field.try_reserve(other.$field.len())
+                        .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+                    for entity in other.$field {
+                        self.$field.push(rewrite.rewrite(entity)?);
+                    }
+                )*
+                for (child, parent) in other.feature_regeneration_parents.0 {
+                    ctx.charge_collection_items(1, operation)?;
+                    let edge = rewrite.rewrite(FeatureRegenerationEdge { child, parent })?;
+                    self.feature_regeneration_parents.0.insert(edge.child, edge.parent);
+                }
+                Ok(())
+            }
         }
     };
 }
