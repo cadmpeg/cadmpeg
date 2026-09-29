@@ -874,15 +874,14 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate)) = &mut candidate else {
         unreachable!();
     };
-    let mut pole_index = 0usize;
     candidate
-        .edit_control_points(|pole| {
-            if pole_index == 2 {
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if index == 2 {
                 pole.z += 0.000_5;
             }
-            pole_index += 1;
-            Ok(())
-        })
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            })
         .unwrap();
 
     let fit = certified_offset_cache_fit(
@@ -1194,15 +1193,14 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
     let replacement = (0..3)
         .map(|v| surface.control_grid()[1][v])
         .collect::<Vec<_>>();
-    let mut pole_index = 0usize;
     surface
-        .edit_control_points(|pole| {
-            if let Some(source) = pole_index.checked_sub(6).and_then(|v| replacement.get(v)) {
-                *pole = source.get();
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if let Some(source) = index.checked_sub(6).and_then(|v| replacement.get(v)) {
+                pole = source.get();
             }
-            pole_index += 1;
-            Ok(())
-        })
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            })
         .unwrap();
     assert!(certified_offset_cache_fit(
         &support,
@@ -1219,15 +1217,14 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
         unreachable!();
     };
-    let mut pole_index = 0usize;
     surface
-        .edit_control_points(|pole| {
-            if (6..9).contains(&pole_index) {
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if (6..9).contains(&index) {
                 pole.x = 0.0;
             }
-            pole_index += 1;
-            Ok(())
-        })
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            })
         .unwrap();
     assert_eq!(
         certified_offset_cache_fit(&support, &support, 0.0, NonNegativeLength::ZERO),
@@ -1346,12 +1343,13 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
         unreachable!();
     };
     surface
-        .edit_control_points(|point| {
+        .try_map_control_points(|_, point| {
+            let mut point = point.get();
             point.x += 1.0e12;
             point.y -= 2.0e12;
             point.z += 3.0e12;
-            Ok(())
-        })
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            })
         .unwrap();
     let axis_weights = [1.0, 1.01, 1.02];
     let weight_grid = (0..3)
@@ -1692,15 +1690,14 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
     else {
         unreachable!()
     };
-    let mut pole_index = 0usize;
     second
-        .edit_control_points(|pole| {
-            if pole_index == 1 {
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if index == 1 {
                 pole.z = 1.0;
             }
-            pole_index += 1;
-            Ok(())
-        })
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+            })
         .unwrap();
     assert!(!coincident_pcurve_pair(
         &ir,

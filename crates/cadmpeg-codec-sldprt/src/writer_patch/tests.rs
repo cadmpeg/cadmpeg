@@ -45,14 +45,13 @@ fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     };
     let mut new = old.clone();
     let target = new.v_count() + 1;
-    let mut pole_index = 0usize;
-    new.edit_control_points(|pole| {
-        if pole_index == target {
+    new.try_map_control_points(|index, pole| {
+        let mut pole = pole.get();
+        if index == target {
             pole.z = 750.0;
         }
-        pole_index += 1;
-        Ok(())
-    })
+        cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+        })
     .unwrap();
     edit::replace(&mut new, |previous| {
         let mut knots = previous.u_knots().to_vec();
@@ -171,15 +170,14 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
                 _ => None,
             })
             .unwrap();
-        let mut pole_index = 0usize;
         curve
-            .edit_control_points(|point| {
-                if pole_index == 1 {
+            .try_map_control_points(|index, point| {
+                let mut point = point.get();
+                if index == 1 {
                     point.y = 1_500.0;
                 }
-                pole_index += 1;
-                Ok(())
-            })
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+                })
             .unwrap();
         curve.edit_knots(|knots| knots[3..].fill(2.0)).unwrap();
         let expected_curve = curve.clone();
@@ -193,15 +191,14 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
             })
             .unwrap();
         let target = surface.v_count() + 1;
-        let mut pole_index = 0usize;
         surface
-            .edit_control_points(|pole| {
-                if pole_index == target {
+            .try_map_control_points(|index, pole| {
+                let mut pole = pole.get();
+                if index == target {
                     pole.z = 750.0;
                 }
-                pole_index += 1;
-                Ok(())
-            })
+                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| cadmpeg_ir::geometry::nurbs::NurbsError::Structure("control_points contains a non-finite point".into()))
+                })
             .unwrap();
         edit::replace(surface, |previous| {
             let mut knots = previous.u_knots().to_vec();
