@@ -2219,31 +2219,8 @@ fn attach_feature_operations(
     for lane in operation_body_reference_lanes {
         push_grouped_operation(ctx, &mut group_reservation, &mut operation_body_reference_lanes_by_operation, lane.operation_label.as_str(), || lane, 0)?;
     }
-    let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
-    let mut bodies_by_segment_binding = BTreeMap::<&str, Vec<BodyId>>::new();
-    for binding in body_bindings {
-        let prefix = format!("nx:s{}:", binding.stream_ordinal);
-        let mut stream_bodies = Vec::new();
-        for body in ir
-            .model
-            .bodies
-            .iter()
-            .filter(|body| body.id.as_str().starts_with(&prefix))
-        {
-            if !stream_bodies.contains(&body.id) {
-                stream_bodies.push(body.id.clone());
-            }
-        }
-        for identity in [binding.body_object_index, binding.body_alias_object_index] {
-            let bodies = bodies_by_object_index.entry(identity).or_default();
-            for body in &stream_bodies {
-                if !bodies.contains(body) {
-                    bodies.push(body.clone());
-                }
-            }
-        }
-        bodies_by_segment_binding.insert(binding.id.as_str(), stream_bodies);
-    }
+    let (bodies_by_object_index, bodies_by_segment_binding, _body_index_reservation) =
+        segment_binding_body_indexes(ctx, ir, body_bindings)?;
     let mut body_image_outputs_by_write = operation_body_image_outputs_by_write(
         operation_body_image_segment_uses,
         &bodies_by_segment_binding,
@@ -4811,6 +4788,71 @@ fn last_record_index<'ctx, K: Ord + Copy, V: Copy>(
         entries.insert(key, value);
     }
     Ok(ScopedIndex { entries, _reservation: reservation })
+}
+
+fn segment_binding_body_indexes<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    ir: &CadIr,
+    bindings: &'a [crate::native::segments::SegmentBodyBinding],
+) -> Result<(
+    BTreeMap<u32, Vec<BodyId>>,
+    BTreeMap<&'a str, Vec<BodyId>>,
+    cadmpeg_core::decode::ScopedReservation<'ctx>,
+), CodecError> {
+    let mut by_object = BTreeMap::<u32, Vec<BodyId>>::new();
+    let mut by_binding = BTreeMap::<&str, Vec<BodyId>>::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX segment binding body indexes")?;
+    for binding in bindings {
+        let mut decimal = [0u8; 10];
+        let mut digit_count = 0;
+        let mut ordinal = binding.stream_ordinal;
+        loop {
+            decimal[digit_count] = b'0' + (ordinal % 10) as u8;
+            digit_count += 1;
+            ordinal /= 10;
+            if ordinal == 0 {
+                break;
+            }
+        }
+        let mut prefix = [0u8; 15];
+        prefix[..4].copy_from_slice(b"nx:s");
+        for (index, digit) in decimal[..digit_count].iter().rev().enumerate() {
+            prefix[4 + index] = *digit;
+        }
+        let prefix_len = 4 + digit_count + 1;
+        prefix[prefix_len - 1] = b':';
+        let mut stream_bodies = Vec::new();
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()), "NX segment body prefix scan")?;
+        for body in ir.model.bodies.iter().filter(|body| body.id.as_str().as_bytes().starts_with(&prefix[..prefix_len])) {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(stream_bodies.len()), "NX segment body uniqueness")?;
+            if stream_bodies.contains(&body.id) {
+                continue;
+            }
+            let bytes = std::mem::size_of::<BodyId>().checked_add(body.id.as_str().len())
+                .ok_or_else(|| ctx.refuse_codec_limit("NX segment body identity", 0, cadmpeg_core::decode::u64_from_index(body.id.as_str().len())))?;
+            ctx.charge_collection_items(1, "NX segment body identity")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+            reserve_attach_vec(ctx, &mut stream_bodies, 1, "NX segment body identity")?;
+            stream_bodies.push(body.id.clone());
+        }
+        for identity in [binding.body_object_index, binding.body_alias_object_index] {
+            for body in &stream_bodies {
+                let existing = by_object.get(&identity).map_or(0, Vec::len);
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(existing), "NX segment body alias uniqueness")?;
+                if by_object.get(&identity).is_some_and(|bodies| bodies.contains(body)) {
+                    continue;
+                }
+                push_grouped_operation(ctx, &mut reservation, &mut by_object, identity, || body.clone(), body.as_str().len())?;
+            }
+        }
+        ctx.charge_work(1, "NX segment binding identity index")?;
+        if !by_binding.contains_key(binding.id.as_str()) {
+            ctx.charge_collection_items(1, "NX segment binding identity index")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, Vec<BodyId>)>()))?;
+        }
+        by_binding.insert(binding.id.as_str(), stream_bodies);
+    }
+    Ok((by_object, by_binding, reservation))
 }
 
 fn push_grouped_operation<K: Ord, V>(
