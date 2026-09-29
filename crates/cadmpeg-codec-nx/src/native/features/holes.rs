@@ -2,7 +2,6 @@
 //! Holes construction records and extraction.
 
 use super::feature_input_blocks;
-use super::feature_operation_chronological_labels;
 use super::format_feature_history_id;
 use super::copy_operation_text;
 
@@ -397,10 +396,12 @@ impl SimpleHoleConstructionMembers {
         if members.len() < 2 {
             return Err("operation_labels must contain at least two members");
         }
-        let mut labels = BTreeSet::new();
         if members
             .iter()
-            .any(|member| !labels.insert(member.operation_label.as_str()))
+            .enumerate()
+            .any(|(index, member)| members[..index].iter().any(|other| {
+                other.operation_label == member.operation_label
+            }))
         {
             return Err("operation_labels must contain distinct members");
         }
@@ -1154,103 +1155,187 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lane_block_referenc
 
 /// Group distinct simple-hole operations that address the same four construction blocks.
 pub(in crate::native) fn feature_simple_hole_construction_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     lanes: &[FeatureSimpleHoleRepeatedScalarLane],
     references: &[FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
-) -> Vec<FeatureSimpleHoleConstructionGroup> {
-    let chronological_positions = feature_operation_chronological_labels(labels)
-        .into_iter()
-        .enumerate()
-        .map(|(position, label)| (label.id.as_str(), position))
-        .collect::<BTreeMap<_, _>>();
-    let mut lanes_by_operation = BTreeMap::<&str, Vec<_>>::new();
-    for lane in lanes {
-        lanes_by_operation
-            .entry(lane.operation_label.as_str())
-            .or_default()
-            .push(lane);
+) -> Result<Vec<FeatureSimpleHoleConstructionGroup>, cadmpeg_core::CodecError> {
+    let chronology_work = labels.len().checked_mul(labels.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("order NX hole operations", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(chronology_work), "order NX hole operations",
+    )?;
+    let mut chronology_reservation = ctx.reserve_scoped(0, "NX hole operation chronology")?;
+    let mut chronology = Vec::new();
+    for (index, label) in labels.iter().enumerate() {
+        let first_offset = labels.iter()
+            .filter(|other| other.section_link == label.section_link)
+            .map(|other| other.source_offset)
+            .min().unwrap_or(label.source_offset);
+        ctx.charge_collection_items(1, "NX hole operation chronology")?;
+        chronology_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(usize, &FeatureOperationLabel, u64)>(),
+        ))?;
+        chronology.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX hole operation chronology", 0, 1))?;
+        chronology.push((index, label, first_offset));
     }
-    let mut grouped = BTreeMap::<([String; 2], [String; 2]), Vec<_>>::new();
-    let mut ambiguous_groups = BTreeSet::new();
+    chronology.sort_unstable_by(|(left_index, left, left_first), (right_index, right, right_first)| {
+        left_first.cmp(right_first)
+            .then_with(|| left.section_link.cmp(&right.section_link))
+            .then_with(|| right.source_offset.cmp(&left.source_offset))
+            .then_with(|| left_index.cmp(right_index))
+    });
+    let group_work = references.len().checked_add(lanes.len())
+        .and_then(|count| count.checked_add(labels.len()))
+        .and_then(|count| count.checked_add(1))
+        .and_then(|count| count.checked_mul(references.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("group NX simple holes", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(group_work), "group NX simple holes",
+    )?;
+    let mut grouped_reservation = ctx.reserve_scoped(0, "NX simple hole group index")?;
+    let mut grouped = BTreeMap::<
+        ([&str; 2], [&str; 2]),
+        Vec<(&FeatureSimpleHoleRepeatedScalarLaneBlockReferences, &FeatureSimpleHoleRepeatedScalarLane)>,
+    >::new();
+    let mut ambiguous_groups = BTreeSet::<([&str; 2], [&str; 2])>::new();
     for reference in references {
         let key = (
-            reference
-                .first
-                .references
-                .each_ref()
-                .map(|reference| reference.data_block.clone()),
-            reference
-                .second
-                .references
-                .each_ref()
-                .map(|reference| reference.data_block.clone()),
+            reference.first.references.each_ref().map(|reference| reference.data_block.as_str()),
+            reference.second.references.each_ref().map(|reference| reference.data_block.as_str()),
         );
-        let lane = match lanes_by_operation
-            .get(reference.operation_label.as_str())
-            .map(Vec::as_slice)
-        {
-            Some([lane]) => *lane,
-            Some(_) => {
+        let mut matching_lanes = lanes.iter()
+            .filter(|lane| lane.operation_label == reference.operation_label);
+        let lane = match (matching_lanes.next(), matching_lanes.next()) {
+            (Some(lane), None) => lane,
+            (Some(_), Some(_)) => {
+                ctx.charge_collection_items(1, "NX ambiguous simple hole groups")?;
+                grouped_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<([&str; 2], [&str; 2])>() * 4,
+                ))?;
                 ambiguous_groups.insert(key);
                 continue;
             }
-            None => continue,
+            _ => continue,
         };
-        grouped.entry(key).or_default().push((reference, lane));
+        if !grouped.contains_key(&key) {
+            ctx.charge_collection_items(1, "NX simple hole group keys")?;
+            grouped_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(([&str; 2], [&str; 2]), Vec<(&FeatureSimpleHoleRepeatedScalarLaneBlockReferences, &FeatureSimpleHoleRepeatedScalarLane)>)>() * 4,
+            ))?;
+        }
+        let bucket = grouped.entry(key).or_default();
+        ctx.charge_collection_items(1, "NX simple hole group candidates")?;
+        grouped_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&FeatureSimpleHoleRepeatedScalarLaneBlockReferences, &FeatureSimpleHoleRepeatedScalarLane)>(),
+        ))?;
+        bucket.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX simple hole group candidates", 0, 1))?;
+        bucket.push((reference, lane));
     }
-    grouped
-        .into_iter()
-        .filter_map(|(key, mut members)| {
-            if ambiguous_groups.contains(&key) {
-                return None;
-            }
-            let operation_position =
-                |reference: &FeatureSimpleHoleRepeatedScalarLaneBlockReferences| {
-                    chronological_positions
-                        .get(reference.operation_label.as_str())
-                        .copied()
-                };
-            if members
-                .iter()
-                .any(|(reference, _)| operation_position(reference).is_none())
-            {
-                return None;
-            }
-            members.sort_by(|(first, _), (second, _)| {
-                operation_position(first)
-                    .cmp(&operation_position(second))
-                    .then_with(|| first.operation_label.cmp(&second.operation_label))
-            });
-            let members = SimpleHoleConstructionMembers::new(
-                members
-                    .into_iter()
-                    .map(|(reference, lane)| FeatureSimpleHoleConstructionMember {
-                        operation_label: reference.operation_label.clone(),
-                        scalar_lane: lane.id.clone(),
-                        block_reference: reference.id.clone(),
-                    })
-                    .collect(),
-            )
-            .ok()?;
-            let id_anchor = members.iter().fold(&members[0], |first, second| {
-                if first.operation_label <= second.operation_label {
-                    first
-                } else {
-                    second
-                }
-            });
-            let id_key = id_anchor
-                .operation_label
-                .rsplit_once('#')
-                .map_or("unknown", |(_, key)| key);
-            Some(FeatureSimpleHoleConstructionGroup {
-                id: format!("nx:feature-history:simple-hole-construction-group#{id_key}"),
-                first_data_blocks: key.0,
-                second_data_blocks: key.1,
-                members,
+    let mut groups = Vec::new();
+    for (key, candidates) in grouped {
+        if ambiguous_groups.contains(&key) {
+            continue;
+        }
+        let mut positions_reservation = ctx.reserve_scoped(0, "NX simple hole group positions")?;
+        let mut positioned = Vec::new();
+        let mut missing = false;
+        for (index, (reference, lane)) in candidates.into_iter().enumerate() {
+            let Some(position) = chronology.iter().rposition(|(_, label, _)| {
+                label.id == reference.operation_label
+            }) else {
+                missing = true;
+                break;
+            };
+            ctx.charge_collection_items(1, "NX simple hole group positions")?;
+            positions_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(usize, usize, &FeatureSimpleHoleRepeatedScalarLaneBlockReferences, &FeatureSimpleHoleRepeatedScalarLane)>(),
+            ))?;
+            positioned.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX simple hole group positions", 0, 1))?;
+            positioned.push((position, index, reference, lane));
+        }
+        if missing {
+            continue;
+        }
+        let member_work = positioned.len().checked_mul(positioned.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("sort NX simple hole group members", 0, 1))?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(member_work),
+            "sort NX simple hole group members",
+        )?;
+        positioned.sort_unstable_by(|(left_pos, left_index, left, _), (right_pos, right_index, right, _)| {
+            left_pos.cmp(right_pos)
+                .then_with(|| left.operation_label.cmp(&right.operation_label))
+                .then_with(|| left_index.cmp(right_index))
+        });
+        if positioned.len() < 2 || positioned.iter().enumerate().any(|(index, (_, _, reference, _))| {
+            positioned[..index].iter().any(|(_, _, other, _)| {
+                other.operation_label == reference.operation_label
             })
-        })
-        .collect()
+        }) {
+            continue;
+        }
+        let mut members = Vec::new();
+        for (_, _, reference, lane) in positioned {
+            let operation_label = copy_operation_text(
+                ctx, &reference.operation_label, "NX simple hole group operation",
+            )?;
+            let scalar_lane = copy_operation_text(ctx, &lane.id, "NX simple hole group scalar lane")?;
+            let block_reference = copy_operation_text(
+                ctx, &reference.id, "NX simple hole group block reference",
+            )?;
+            ctx.charge_collection_items(1, "NX simple hole group members")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSimpleHoleConstructionMember>()),
+                "NX simple hole group members",
+            )?;
+            members.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("allocate NX simple hole group members", 0, 1))?;
+            members.push(FeatureSimpleHoleConstructionMember {
+                operation_label, scalar_lane, block_reference,
+            });
+        }
+        let id_anchor = members.iter().fold(&members[0], |first, second| {
+            if first.operation_label <= second.operation_label { first } else { second }
+        });
+        let id_key = id_anchor.operation_label.rsplit_once('#')
+            .map_or("unknown", |(_, key)| key);
+        let prefix = "nx:feature-history:simple-hole-construction-group#";
+        let length = prefix.len().checked_add(id_key.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX simple hole group identity", 0, 1))?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(length), "NX simple hole group identity",
+        )?;
+        let mut id = String::new();
+        id.try_reserve_exact(length)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX simple hole group identity", 0, 1))?;
+        id.push_str(prefix);
+        id.push_str(id_key);
+        let members = SimpleHoleConstructionMembers::new(members)
+            .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?;
+        let first_data_blocks = [
+            copy_operation_text(ctx, key.0[0], "NX simple hole first block")?,
+            copy_operation_text(ctx, key.0[1], "NX simple hole first block")?,
+        ];
+        let second_data_blocks = [
+            copy_operation_text(ctx, key.1[0], "NX simple hole second block")?,
+            copy_operation_text(ctx, key.1[1], "NX simple hole second block")?,
+        ];
+        ctx.charge_collection_items(1, "NX simple hole construction groups")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSimpleHoleConstructionGroup>()),
+            "NX simple hole construction groups",
+        )?;
+        groups.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("allocate NX simple hole construction groups", 0, 1))?;
+        groups.push(FeatureSimpleHoleConstructionGroup {
+            id, first_data_blocks, second_data_blocks, members,
+        });
+    }
+    Ok(groups)
 }
 
 /// Decode and resolve exact four-block lanes from `HOLE PACKAGE` operations.

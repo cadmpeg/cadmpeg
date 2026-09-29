@@ -8,6 +8,18 @@ use crate::native::features::operation_record::FeatureOperationRecord;
 
 use crate::native::features::test_support::check_lane_wire;
 
+fn simple_hole_construction_groups(
+    labels: &[crate::native::features::FeatureOperationLabel],
+    lanes: &[FeatureSimpleHoleRepeatedScalarLane],
+    references: &[FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
+) -> Vec<FeatureSimpleHoleConstructionGroup> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::features::holes::feature_simple_hole_construction_groups(
+            ctx, labels, lanes, references,
+        )
+    }).expect("simple hole construction groups")
+}
+
 fn hole_package_group_uses(
     lanes: &[crate::native::features::holes::FeatureHolePackageConstructionGroupLane],
     groups: &[FeatureSimpleHoleConstructionGroup],
@@ -834,9 +846,98 @@ fn repeated_scalar_lane_rejects_empty_and_inconsistent_atoms() {
     );
 }
 
+fn simple_group_inputs() -> (
+    Vec<crate::native::features::FeatureOperationLabel>,
+    Vec<FeatureSimpleHoleRepeatedScalarLane>,
+    Vec<FeatureSimpleHoleRepeatedScalarLaneBlockReferences>,
+) {
+    use crate::native::features::holes::{SimpleHoleBlockReference, SimpleHoleReferencePair};
+    let scalar = {
+        let mut raw = 25.4_f64.to_be_bytes();
+        raw[0] -= 0x10;
+        crate::om::scalar::ShiftedBinary64::read(&raw).unwrap()
+    };
+    let labels = (0..2).map(|index| crate::native::features::FeatureOperationLabel {
+        id: format!("operation#1-{index}"),
+        section_link: "section#1".to_string(),
+        ordinal: index,
+        value: "SIMPLE HOLE".to_string(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
+        stable_identity: None,
+        source_offset: u64::from(index),
+    }).collect::<Vec<_>>();
+    let lanes = labels.iter().map(|label| FeatureSimpleHoleRepeatedScalarLane {
+        id: format!("lane-{}", label.id),
+        operation_label: label.id.clone(),
+        values: crate::om::nonempty::NonEmpty::new([crate::om::scalar::RepeatedScalar {
+            scalar, witness_offsets: [1, 2],
+        }]).unwrap(),
+    }).collect::<Vec<_>>();
+    let references = labels.iter().map(|label| FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
+        id: format!("references-{}", label.id),
+        operation_label: label.id.clone(),
+        first: SimpleHoleReferencePair {
+            references: ["a", "b"].map(|data_block| SimpleHoleBlockReference {
+                data_block: data_block.to_string(), source_offset: 3,
+            }),
+            wrapped: false,
+        },
+        second: SimpleHoleReferencePair {
+            references: ["c", "d"].map(|data_block| SimpleHoleBlockReference {
+                data_block: data_block.to_string(), source_offset: 4,
+            }),
+            wrapped: false,
+        },
+    }).collect::<Vec<_>>();
+    (labels, lanes, references)
+}
+
+fn simple_group_route_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let (labels, lanes, references) = simple_group_inputs();
+    let admitted = simple_hole_construction_groups(&labels, &lanes, &references);
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    crate::native::features::holes::feature_simple_hole_construction_groups(
+        &ctx, &labels, &lanes, &references,
+    ).expect_err("simple hole group resource limit")
+}
+
+#[test]
+fn simple_group_route_refuses_collection_limit() {
+    let error = simple_group_route_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn simple_group_route_refuses_retained_limit() {
+    let error = simple_group_route_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn simple_group_route_refuses_scoped_limit() {
+    let error = simple_group_route_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn simple_group_route_refuses_work_limit() {
+    let error = simple_group_route_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 #[test]
 fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
-    use crate::native::features::holes::feature_simple_hole_construction_groups;
     use crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane;
     use crate::native::features::holes::{
         FeatureSimpleHoleRepeatedScalarLaneBlockReferences, SimpleHoleBlockReference,
@@ -913,7 +1014,7 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         label("operation#1-3", 1),
         label("operation#1-4", 2),
     ];
-    let groups = feature_simple_hole_construction_groups(&labels, &lanes, &references);
+    let groups = simple_hole_construction_groups(&labels, &lanes, &references);
     assert_eq!(groups.len(), 1);
     assert_eq!(
         groups[0]
@@ -945,7 +1046,7 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         reference("operation#1-2", "block-4"),
     ];
     assert!(
-        feature_simple_hole_construction_groups(&labels, &lanes, &duplicate_references).is_empty()
+        simple_hole_construction_groups(&labels, &lanes, &duplicate_references).is_empty()
     );
 
     let duplicate_lanes = [
@@ -960,7 +1061,7 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         reference("operation#1-4", "block-4"),
     ];
     assert!(
-        feature_simple_hole_construction_groups(&labels, &duplicate_lanes, &shared_references)
+        simple_hole_construction_groups(&labels, &duplicate_lanes, &shared_references)
             .is_empty()
     );
 
@@ -970,7 +1071,7 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         reference("operation#1-9", "block-4"),
     ];
     assert!(
-        feature_simple_hole_construction_groups(&labels, &unknown_lanes, &unknown_references)
+        simple_hole_construction_groups(&labels, &unknown_lanes, &unknown_references)
             .is_empty()
     );
 }
