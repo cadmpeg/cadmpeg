@@ -835,3 +835,32 @@ fn geometry_parameter_source() -> Vec<u8> {
         br#"<Keywords><Feature Name="Custom" Type="Custom" id="10"><Dimension Name="Length">1mm</Dimension></Feature></Keywords>"#));
     source
 }
+
+#[test]
+fn geometry_topology_selections_refuse_collection_limit() {
+    let refusal = collection_refusal_with_options(&geometry_parameter_source(), DecodeOptions::default(), "index SLDPRT topology selections");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn geometry_topology_selections_refuse_work_limit() {
+    let refusal = work_refusal_with_options(&geometry_parameter_source(), DecodeOptions::default(), "index SLDPRT topology selections");
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
+#[test]
+fn geometry_topology_selections_refuse_retained_limit() {
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&topology_plane_source(), &mut options, "retain SLDPRT topology selection identity");
+    assert!(matches!(error, cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "retain SLDPRT topology selection identity"));
+}
+
+fn topology_plane_source() -> Vec<u8> {
+    let mut source = crate::test_support::container::sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x43, "Contents/Keywords",
+        br#"<Keywords><Plane Name="Plane" Type="Plane" Origin="0mm,0mm,0mm" Normal="0,0,1" UAxis="1,0,0"><Dimension Name="D1">1mm</Dimension></Plane></Keywords>"#));
+    source
+}

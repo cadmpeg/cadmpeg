@@ -640,22 +640,24 @@ fn planar_face_reference_requires_one_coincident_face() {
     let surfaces = HashMap::from([(&surface.id, &surface)]);
     let mut selection = FaceSelection::Unresolved;
     resolve_planar_face_selection(
+        &cadmpeg_test_support::service_decode_context(),
         &mut selection,
         Point3::new(5.0, -3.0, 12.0),
         Vector3::new(0.0, 0.0, -1.0),
         std::slice::from_ref(&face),
         &surfaces,
-    );
+    ).unwrap();
     assert_eq!(selection, FaceSelection::Faces(vec![face.id.clone()]));
 
     let mut native = FaceSelection::Native("component-path".into());
     resolve_planar_face_selection(
+        &cadmpeg_test_support::service_decode_context(),
         &mut native,
         Point3::new(5.0, -3.0, 12.0),
         Vector3::new(0.0, 0.0, -1.0),
         std::slice::from_ref(&face),
         &surfaces,
-    );
+    ).unwrap();
     assert_eq!(
         native,
         FaceSelection::Resolved {
@@ -669,22 +671,24 @@ fn planar_face_reference_requires_one_coincident_face() {
         cadmpeg_ir::ids::FaceId::mint("test:model:entity#duplicate").expect("identity grammar");
     let mut ambiguous = FaceSelection::Unresolved;
     resolve_planar_face_selection(
+        &cadmpeg_test_support::service_decode_context(),
         &mut ambiguous,
         Point3::new(0.0, 0.0, 12.0),
         Vector3::new(0.0, 0.0, 1.0),
         &[face.clone(), duplicate.clone()],
         &surfaces,
-    );
+    ).unwrap();
     assert_eq!(ambiguous, FaceSelection::Unresolved);
 
     let mut split = FaceSelection::Native("historical-face".into());
     resolve_planar_face_selection(
+        &cadmpeg_test_support::service_decode_context(),
         &mut split,
         Point3::new(0.0, 0.0, 12.0),
         Vector3::new(0.0, 0.0, 1.0),
         &[face.clone(), duplicate.clone()],
         &surfaces,
-    );
+    ).unwrap();
     assert_eq!(
         split,
         FaceSelection::Resolved {
@@ -731,13 +735,14 @@ fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
     };
 
     resolve_offset_plane_face_selection(
+        &cadmpeg_test_support::service_decode_context(),
         &mut selection,
         origin,
         Vector3::new(0.0, 0.0, 1.0),
         &face_selection_context,
         std::slice::from_ref(&face),
         &surfaces,
-    );
+    ).unwrap();
 
     assert_eq!(origin, Point3::new(0.0, 0.0, 5.0));
     assert_eq!(selection, FaceSelection::Native("component-path".into()));

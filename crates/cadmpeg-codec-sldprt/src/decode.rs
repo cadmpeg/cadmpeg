@@ -3013,6 +3013,7 @@ fn build_geometry_ir(
         face_identities: &face_identities,
     };
     crate::history::selections::bind_topology_selections(
+        ctx,
         &mut ir.model.features,
         &histories,
         &topology_selection_inputs,
