@@ -334,7 +334,7 @@ pub(crate) fn bind_sweep_sketch_selections(
                     })();
                     if let Some((sketch, selected)) = resolved {
                         let profile = PlanarProfileRef::sketch_entities(sketch, vec![selected])
-                            .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone()));
+                            .map_err(CodecError::malformed)?;
                         section.set_referenced_profile(profile);
                     }
                 }
