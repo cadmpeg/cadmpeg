@@ -1426,11 +1426,12 @@ fn resolved_scalar_operand_markers<'a>(
     )?;
     Ok(
         crate::resolved_features::operands::resolve_scalar_operand_markers(
+            ctx,
             lane.sketch_entities
                 .iter()
                 .filter(|candidate| candidate.feature_ref == scalar.feature_ref),
             &scalar.operands,
-        ),
+        )?,
     )
 }
 

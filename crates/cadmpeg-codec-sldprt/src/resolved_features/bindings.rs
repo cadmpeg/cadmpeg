@@ -1180,7 +1180,7 @@ pub(crate) fn finalize_lane_bindings(
         else {
             continue;
         };
-        let resolved = resolve_scalar_operand_markers(entities.iter().copied(), &scalar.operands);
+        let resolved = resolve_scalar_operand_markers(ctx, entities.iter().copied(), &scalar.operands)?;
         for (operand, resolved) in scalar.operands.iter_mut().zip(resolved) {
             operand.entity_ref = resolved.map(|entity| copy_binding_text(ctx, entity.id())).transpose()?;
         }
