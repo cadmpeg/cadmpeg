@@ -72,3 +72,25 @@ fn scope_profile_property_refuses_collection_limit() {
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d scope profile property"));
 }
+
+#[test]
+fn scope_reference_property_key_refuses_retained_limit() {
+    assert_reference_text_refusal("f3d scope reference property key", "reference:0".len() - 1);
+}
+
+#[test]
+fn scope_reference_property_value_refuses_retained_limit() {
+    assert_reference_text_refusal("f3d scope reference property value", "reference:0".len() + "10".len() - 1);
+}
+
+fn assert_reference_text_refusal(operation: &'static str, limit: usize) {
+    let scope = DesignParameterScope::empty(
+        "f3d:test:design-parameter-scope#10", DesignFeatureKind::Combine, 10);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = u64::try_from(limit).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(scope_properties(Some(&ctx), &scope, "f3d:test", &[]),
+        Err(CodecError::ResourceLimit(failure)) if failure.operation == operation
+            && failure.dimension == ResourceDimension::RetainedBytes));
+}

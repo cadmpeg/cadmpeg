@@ -7,6 +7,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::operands::entity_selection_matches_curve;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::dimensions::expression_identifiers;
+use crate::design::text::format_design_text;
 use crate::design::edge_resolve::{
     project_fixed_fillet_with_corners, resolved_edge_flange_group,
     resolved_edge_group, resolved_edge_treatment_group_with_corners,
@@ -1495,7 +1496,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 id: copy_feature_id(ctx, &scope_ids[&(native_scope, scope.record_index)],
                     "f3d projected feature id")?,
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
-                name: Some(format!("{} {}", scope.kind(), scope.feature_ordinal)),
+                name: Some(format_design_text(ctx, format_args!("{} {}", scope.kind_name(), scope.feature_ordinal),
+                    "f3d projected feature name")?),
                 suppressed: Some(
                     matches!(
                         family,
@@ -1513,7 +1515,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 } else {
                     BTreeMap::new()
                 },
-                source_tag: Some(scope.kind_name().to_owned()),
+                source_tag: Some(copy_feature_text(ctx, scope.kind_name(),
+                    "f3d projected feature source tag")?),
                 source_text: None,
                 source_content: cadmpeg_ir::features::FeatureContent::default(),
 
@@ -1719,7 +1722,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             if let (Some(owner_record_index), None) = (parameter.owner_record_index(), owner) {
                 insert_feature_tree(ctx, &mut properties,
                     cadmpeg_core::nonblank_literal!("owner_record_index"),
-                    owner_record_index.to_string(),
+                    format_design_text(ctx, format_args!("{owner_record_index}"),
+                        "f3d projected parameter owner record text")?,
                     "f3d projected parameter property")?;
             }
             let value = match parameter.unit().map(|field| field.value.as_str()) {
@@ -1738,7 +1742,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         "f3d projected parameter property")?;
                     insert_feature_tree(ctx, &mut properties,
                         cadmpeg_core::nonblank_literal!("evaluated_scalar"),
-                        parameter.evaluated_value().get().to_string(),
+                        format_design_text(ctx, format_args!("{}", parameter.evaluated_value().get()),
+                            "f3d projected parameter evaluated scalar text")?,
                         "f3d projected parameter property")?;
                     None
                 }
@@ -2339,9 +2344,11 @@ fn scope_properties(
     let mut properties = std::collections::BTreeMap::new();
     for (ordinal, record_index) in scope.reference_members().values().enumerate() {
         insert_feature_tree(ctx, &mut properties,
-            cadmpeg_core::text::NonBlankString::new(format!("reference:{ordinal}"))
+            cadmpeg_core::text::NonBlankString::new(format_design_text(ctx, format_args!("reference:{ordinal}"),
+                "f3d scope reference property key")?)
                 .ok_or_else(|| CodecError::malformed("reference property key is blank"))?,
-            record_index.to_string(), "f3d scope reference property")?;
+            format_design_text(ctx, format_args!("{record_index}"),
+                "f3d scope reference property value")?, "f3d scope reference property")?;
     }
     if let Some(profile) = scope.extrude_profile().or(scope.base_flange_profile()) {
         if let Some(placement) = placements.iter().find(|placement| {
@@ -2394,7 +2401,7 @@ fn native_scope_definition(
     }
 
     Ok(FeatureDefinition::Operation(FeatureOperation::Native {
-        kind: scope.kind_name().into(),
+        kind: copy_feature_text(ctx, scope.kind_name(), "f3d native feature kind")?.into(),
         parameters: properties,
     }))
 }

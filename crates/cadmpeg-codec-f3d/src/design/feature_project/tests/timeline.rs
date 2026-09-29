@@ -1766,3 +1766,13 @@ fn feature_dependency_refuses_collection_limit() {
 fn feature_dependency_id_refuses_retained_limit() {
     assert_history_dependency_refusal("f3d feature dependency id", true);
 }
+
+#[test]
+fn projected_feature_name_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected feature name", true);
+}
+
+#[test]
+fn projected_feature_source_tag_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected feature source tag", true);
+}
