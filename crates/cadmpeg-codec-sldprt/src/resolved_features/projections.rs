@@ -705,16 +705,20 @@ pub(crate) fn project_compact_edge_selections(
         },
     );
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let Some(native_ref) = feature.native_ref.as_deref() else {
-                break 'feature_edit;
+        let feature_id = &feature.id;
+        let dependencies = &mut feature.dependencies;
+        let native_ref = feature.native_ref.as_deref();
+        let mut edit_result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            edit_result = (|| -> Result<(), cadmpeg_core::CodecError> {
+            let Some(native_ref) = native_ref else {
+                return Ok(());
             };
             let Some(edge_selections) = selections
                 .get(native_ref)
                 .filter(|selections| !selections.is_empty())
             else {
-                break 'feature_edit;
+                return Ok(());
             };
             let projected_edges = |selections: &[&FeatureInputEdgeSelection]| {
                 let native = compact_edge_selection_set_value(selections);
@@ -739,14 +743,14 @@ pub(crate) fn project_compact_edge_selections(
                 }
             };
             if let Some((existing_edges, tangency_weight)) =
-                sole_unresolved_fillet_group(&definition)
+                sole_unresolved_fillet_group(definition)
             {
                 if let Some(radius_groups) =
                     variable_fillet_radius_groups(native_ref, histories, lanes, edge_selections)
                 {
                     let unresolved_edges = matches!(existing_edges, EdgeSelection::Unresolved);
                     if unresolved_edges || radius_groups.len() == 1 {
-                        let mut carried_edges = match &mut definition {
+                        let mut carried_edges = match &mut *definition {
                             FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
                                 if !unresolved_edges => groups
                                     .iter_mut()
@@ -754,7 +758,7 @@ pub(crate) fn project_compact_edge_selections(
                                     .map(|group| std::mem::replace(&mut group.edges, EdgeSelection::Unresolved)),
                             _ => None,
                         };
-                        definition = FeatureDefinition::Operation(FeatureOperation::Fillet {
+                        *definition = FeatureDefinition::Operation(FeatureOperation::Fillet {
                             groups: radius_groups
                                 .into_iter()
                                 .map(|(radius, selections)| {
@@ -776,7 +780,7 @@ pub(crate) fn project_compact_edge_selections(
                     }
                 }
             }
-            let groups = match &mut definition {
+            let groups = match &mut *definition {
                 FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => groups
                     .iter_mut()
                     .filter(|group| matches!(group.edges, EdgeSelection::Unresolved))
@@ -786,7 +790,7 @@ pub(crate) fn project_compact_edge_selections(
                     .iter_mut()
                     .map(|group| &mut group.edges)
                     .collect::<Vec<_>>(),
-                _ => break 'feature_edit,
+                _ => return Ok(()),
             };
             for edges in groups {
                 *edges = projected_edges(edge_selections);
@@ -796,12 +800,14 @@ pub(crate) fn project_compact_edge_selections(
                 .flat_map(|selection| &selection.producer_feature_refs)
                 .filter_map(|native| feature_ids_by_native.get(native))
             {
-                if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                    feature.dependencies.insert(dependency.clone());
+                if dependency != feature_id && !dependencies.contains(dependency) {
+                    dependencies.insert(dependency.clone());
                 }
             }
-        }
-        feature.evaluation.set_definition(definition);
+            Ok(())
+            })();
+        });
+        edit_result?;
     }
 
     Ok(())
