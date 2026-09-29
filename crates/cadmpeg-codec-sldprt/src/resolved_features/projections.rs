@@ -41,6 +41,7 @@ use cadmpeg_ir::{
     scalar::{Angle, Length, PositiveLength},
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write;
 
 const EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9: f64 = 1.0e-9;
 const EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E8: f64 = 1.0e-8;
@@ -1474,6 +1475,7 @@ pub(crate) fn project_compact_surface_selections(
                         ..
                     }) = definition
                     {
+                        const OPERATION: &str = "project SLDPRT surface cut operands";
                         let Some((target, tool)) = cut_with_surface_selection_pair(ctx, feature_selections)?
                         else {
                             break 'feature_edit;
@@ -1484,22 +1486,58 @@ pub(crate) fn project_compact_surface_selections(
                             .as_ref()
                             .and_then(|producer| feature_ids_by_native.get(producer));
                         if let Some(producer) = target_producer {
-                            let local_id = target
-                                .components
-                                .iter()
-                                .filter_map(|component| component.local_id)
-                                .map(|local_id| local_id.to_string())
-                                .collect::<Vec<_>>()
-                                .join(",");
+                            let mut local_id_bytes = 0usize;
+                            let mut local_id_count = 0usize;
+                            for component in &target.components {
+                                ctx.charge_work(1, OPERATION)?;
+                                let Some(id) = component.local_id else {
+                                    continue;
+                                };
+                                let digits = if id == 0 { 1 } else {
+                                    usize::try_from(id.ilog10()).ok()
+                                        .and_then(|log| log.checked_add(1))
+                                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?
+                                };
+                                local_id_bytes = local_id_bytes
+                                    .checked_add(usize::from(local_id_count != 0))
+                                    .and_then(|sum| sum.checked_add(digits))
+                                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                                local_id_count = local_id_count.checked_add(1)
+                                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                            }
+                            let mut local_id = String::new();
+                            ctx.reserve_retained_string(&mut local_id, local_id_bytes, OPERATION)?;
+                            for id in target.components.iter().filter_map(|component| component.local_id) {
+                                if !local_id.is_empty() {
+                                    local_id.push(',');
+                                }
+                                write!(local_id, "{id}").map_err(|_| {
+                                    cadmpeg_core::CodecError::malformed("cannot format SLDPRT surface cut body id")
+                                })?;
+                            }
+                            let producer_text = ctx.format_retained(
+                                format_args!("{}", producer.as_str()), OPERATION,
+                            )?;
+                            let producer_id = cadmpeg_ir::features::FeatureId::mint(producer_text)
+                                .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
                             let Ok(body) =
-                                cadmpeg_ir::features::GeneratedBodyRef::new((*producer).clone(), local_id)
+                                cadmpeg_ir::features::GeneratedBodyRef::new(producer_id, local_id)
                             else {
                                 break 'feature_edit;
                             };
-                            *targets = BodySelection::generated(vec![body], target_native.clone())
+                            let mut bodies = Vec::new();
+                            ctx.reserve_collection_vec(&mut bodies, 1, OPERATION)?;
+                            bodies.push(body);
+                            let native_copy = ctx.format_retained(format_args!("{target_native}"), OPERATION)?;
+                            *targets = BodySelection::generated(bodies, native_copy)
                                 .unwrap_or(BodySelection::Native(target_native));
                             if !dependencies.contains(producer) {
-                                dependencies.insert((*producer).clone());
+                                let dependency_text = ctx.format_retained(
+                                    format_args!("{}", producer.as_str()), OPERATION,
+                                )?;
+                                let dependency = cadmpeg_ir::features::FeatureId::mint(dependency_text)
+                                    .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
+                                dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
                             }
                         }
                         let tool_native = compact_surface_selection_value_charged(ctx, &tool.components)?;
@@ -1512,14 +1550,33 @@ pub(crate) fn project_compact_surface_selections(
                                 component.local_id.map(|local_id| (producer, local_id))
                             });
                         if let Some((producer, local_id)) = tool_generated {
-                            *tools = cadmpeg_ir::features::GeneratedFaceRef::new(
-                                (*producer).clone(),
-                                local_id.to_string(),
-                            )
-                            .and_then(|face| FaceSelection::generated(vec![face], tool_native.clone()))
-                            .unwrap_or(FaceSelection::Native(tool_native));
+                            let producer_text = ctx.format_retained(
+                                format_args!("{}", producer.as_str()), OPERATION,
+                            )?;
+                            let producer_id = cadmpeg_ir::features::FeatureId::mint(producer_text)
+                                .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
+                            let local_id_text = ctx.format_retained(format_args!("{local_id}"), OPERATION)?;
+                            let generated_face = cadmpeg_ir::features::GeneratedFaceRef::new(
+                                producer_id,
+                                local_id_text,
+                            );
+                            *tools = if let Ok(face) = generated_face {
+                                let mut faces = Vec::new();
+                                ctx.reserve_collection_vec(&mut faces, 1, OPERATION)?;
+                                faces.push(face);
+                                let native_copy = ctx.format_retained(format_args!("{tool_native}"), OPERATION)?;
+                                FaceSelection::generated(faces, native_copy)
+                                    .unwrap_or(FaceSelection::Native(tool_native))
+                            } else {
+                                FaceSelection::Native(tool_native)
+                            };
                             if !dependencies.contains(producer) {
-                                dependencies.insert((*producer).clone());
+                                let dependency_text = ctx.format_retained(
+                                    format_args!("{}", producer.as_str()), OPERATION,
+                                )?;
+                                let dependency = cadmpeg_ir::features::FeatureId::mint(dependency_text)
+                                    .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
+                                dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
                             }
                         }
                         break 'feature_edit;
