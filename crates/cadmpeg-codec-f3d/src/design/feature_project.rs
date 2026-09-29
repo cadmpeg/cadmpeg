@@ -2494,7 +2494,8 @@ fn project_fillet_arm(
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
-            edges: EdgeSelection::Native(scope.id.clone()),
+            edges: EdgeSelection::Native(copy_feature_text(ctx, &scope.id,
+                "f3d Fillet single radius edge scope ID")?),
             radius: RadiusSpec::Constant { radius },
             tangency_weight: None,
         }),
