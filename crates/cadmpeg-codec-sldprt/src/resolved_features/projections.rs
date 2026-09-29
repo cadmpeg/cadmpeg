@@ -20,7 +20,7 @@ use super::selections::{
     cosmetic_thread_cylinder_marker_reference, variable_fillet_control_references,
     variable_fillet_dimension_index_for_feature,
 };
-use super::terminations::compact_surface_selection_value;
+use super::terminations::{compact_surface_selection_value, compact_surface_selection_value_charged};
 use crate::records::{
     FeatureInputEdgeSelection, FeatureInputLane,
     FeatureInputRelationFamily, FeatureInputScalarRole, FeatureInputSurfaceSelection,
@@ -1339,7 +1339,7 @@ pub(crate) fn project_compact_surface_selections(
                             break 'feature_edit;
                         }
                         for selection in feature_selections {
-                            let native = compact_surface_selection_value(&selection.components);
+                            let native = compact_surface_selection_value_charged(ctx, &selection.components)?;
                             let generated = component_path_feature(
                                 &selection.components,
                                 &history_features,
@@ -1478,7 +1478,7 @@ pub(crate) fn project_compact_surface_selections(
                         else {
                             break 'feature_edit;
                         };
-                        let target_native = compact_surface_selection_value(&target.components);
+                        let target_native = compact_surface_selection_value_charged(ctx, &target.components)?;
                         let target_producer = target
                             .terminal_feature_ref
                             .as_ref()
@@ -1502,7 +1502,7 @@ pub(crate) fn project_compact_surface_selections(
                                 dependencies.insert((*producer).clone());
                             }
                         }
-                        let tool_native = compact_surface_selection_value(&tool.components);
+                        let tool_native = compact_surface_selection_value_charged(ctx, &tool.components)?;
                         let tool_generated = tool
                             .terminal_feature_ref
                             .as_ref()
@@ -1540,8 +1540,8 @@ pub(crate) fn project_compact_surface_selections(
                             break 'feature_edit;
                         };
                         let [center_faces, side_one_faces, side_two_faces] =
-                            [center_faces, side_one_faces, side_two_faces].map(|selection| {
-                                let native = compact_surface_selection_value(&selection.components);
+                            [center_faces, side_one_faces, side_two_faces].map(|selection| -> Result<FaceSelection, cadmpeg_core::CodecError> {
+                                let native = compact_surface_selection_value_charged(ctx, &selection.components)?;
                                 let generated = selection
                                     .terminal_feature_ref
                                     .as_ref()
@@ -1581,8 +1581,10 @@ pub(crate) fn project_compact_surface_selections(
                                         dependencies.insert(producer.clone());
                                     }
                                 }
-                                face
+                                Ok(face)
                             });
+                        let [center_faces, side_one_faces, side_two_faces] =
+                            [center_faces?, side_one_faces?, side_two_faces?];
                         *definition = FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
                             groups: cadmpeg_ir::features::NonEmptyMembers::one(
                                 cadmpeg_ir::features::edge_treatments::FullRoundFilletGroup::new(
@@ -1636,7 +1638,7 @@ pub(crate) fn project_compact_surface_selections(
                         ..
                     }) = definition
                     {
-                        let native = compact_surface_selection_value(&selection.components);
+                        let native = compact_surface_selection_value_charged(ctx, &selection.components)?;
                         let generated = selection
                             .terminal_feature_ref
                             .as_ref()
@@ -1730,7 +1732,7 @@ pub(crate) fn project_compact_surface_selections(
                         }) => SelectionSlot::Vertex(vertex),
                         _ => break 'feature_edit,
                     };
-                    let native = compact_surface_selection_value(&selection.components);
+                    let native = compact_surface_selection_value_charged(ctx, &selection.components)?;
                     let producer = if first_component {
                         selection.producer_feature_refs.first()
                     } else {

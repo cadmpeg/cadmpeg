@@ -1915,5 +1915,44 @@ pub(crate) fn compact_surface_selection_value(
     value
 }
 
+pub(crate) fn compact_surface_selection_value_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    components: &[FeatureInputComponentPathEntry],
+) -> Result<String, cadmpeg_core::CodecError> {
+    use std::fmt::Write;
+
+    const OPERATION: &str = "format SLDPRT surface component selection";
+    const PREFIX: &str = "sldprt:feature-input:surface-component-ids:";
+    let mut size = PREFIX.len();
+    for (index, component) in components.iter().enumerate() {
+        ctx.charge_work(1, OPERATION)?;
+        let digits = match component.local_id {
+            Some(0) | None => 1,
+            Some(local_id) => usize::try_from(local_id.ilog10())
+                .ok()
+                .and_then(|log| log.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+        };
+        size = size
+            .checked_add(usize::from(index != 0))
+            .and_then(|value| value.checked_add(digits))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    }
+    let mut value = String::new();
+    ctx.reserve_retained_string(&mut value, size, OPERATION)?;
+    value.push_str(PREFIX);
+    for (index, component) in components.iter().enumerate() {
+        if index != 0 {
+            value.push(',');
+        }
+        match component.local_id {
+            Some(local_id) => write!(value, "{local_id}")
+                .map_err(|_| cadmpeg_core::CodecError::malformed("cannot format SLDPRT surface component"))?,
+            None => value.push('_'),
+        }
+    }
+    Ok(value)
+}
+
 #[cfg(test)]
 mod terminations_tests;
