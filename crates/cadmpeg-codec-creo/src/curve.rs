@@ -5613,6 +5613,12 @@ impl ExpressionValue for CurveExpressionValue {
                 relation_string_pattern_admitted(ctx, value, pattern)?
                     .map(|matched| Number(f64::from(matched))),
             ),
+            (CreoMathFunction::Pow, [base, Number(exponent)]) => {
+                let Some((value, dimension)) = quantity_parts_ref(base) else {
+                    return Ok(None);
+                };
+                Ok(quantity_value(value, dimension).power(Number(*exponent)))
+            }
             _ => Ok(Self::function(name, scope, arguments, context)),
         }
     }

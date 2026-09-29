@@ -122,3 +122,23 @@ fn relation_regex_preserves_service_match_and_invalid_pattern() {
     }).expect("service invalid pattern");
     assert_eq!(invalid, None);
 }
+
+#[test]
+fn relation_power_rejects_text_without_copying_the_invalid_operand() {
+    use crate::curve::CreoMathFunction;
+    let arguments = [CurveExpressionValue::String("abc".to_owned()), CurveExpressionValue::Number(2.0)];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    assert_eq!(CurveExpressionValue::function_checked(
+        CreoMathFunction::Pow, None, &arguments, RelationEvaluationContext::default(), &ctx,
+    ).expect("invalid text needs no retained copy"), None);
+    assert_eq!(crate::decode::with_test_decode_ctx(|ctx| crate::curve::parse_relation_expression::<CurveExpressionValue>(
+        ctx, "pow('abc',2)", &BTreeMap::new(), RelationEvaluationContext::default(),
+    )).expect("service text expression admission"), None);
+    assert_eq!(CurveExpressionValue::function_checked(
+        CreoMathFunction::Pow, None, &[CurveExpressionValue::Number(2.0), CurveExpressionValue::Number(3.0)],
+        RelationEvaluationContext::default(), &ctx,
+    ).expect("numeric power needs no retained copy"), Some(CurveExpressionValue::Number(8.0)));
+}
