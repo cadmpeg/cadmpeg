@@ -1134,6 +1134,7 @@ pub(crate) fn project_configurations_charged(
             let mut properties = BTreeMap::new();
             ctx.charge_work(configuration.properties.len() as u64, OPERATION)?;
             for (key, value) in &configuration.properties {
+                ctx.charge_work(key.as_str().len() as u64, OPERATION)?;
                 let key = cadmpeg_core::text::NonBlankString::new(copy(key.as_str())?)
                     .ok_or_else(|| CodecError::malformed("blank SLDPRT configuration property"))?;
                 let value = copy(value)?;
