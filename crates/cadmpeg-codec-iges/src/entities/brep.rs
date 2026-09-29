@@ -4,10 +4,7 @@
 use super::geometry::{resolve_transform, ProjectionOutcome};
 use super::pointer;
 use super::trimming::pcurve_geometry;
-use crate::decode_resource::{
-    format_retained, insert_optional_btree_map, insert_optional_btree_set, reserve_vec,
-    reserve_vec_growth,
-};
+
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
@@ -150,18 +147,8 @@ fn topology_vertex(
     let Some(position) = FinitePoint3::new(vertex_lists[&list][index]) else {
         return Ok(None);
     };
-    reserve_vec_growth(
-        ctx,
-        &mut candidate.model_mut().points,
-        1,
-        "iges B-rep topology points",
-    )?;
-    reserve_vec_growth(
-        ctx,
-        &mut candidate.model_mut().vertices,
-        1,
-        "iges B-rep topology vertices",
-    )?;
+    ctx.reserve_vec(&mut candidate.model_mut().points, 1, "iges B-rep topology points")?;
+    ctx.reserve_vec(&mut candidate.model_mut().vertices, 1, "iges B-rep topology vertices")?;
     if !vertex_ids.contains_key(&(list, index)) {
         ctx.charge_collection_items(1, "iges B-rep topology vertex index")?;
     }
@@ -248,7 +235,7 @@ fn project_pcurve_uses(
     id_stem: &crate::ids::Stem,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<PcurveUse>, PcurveProjectionError> {
-    let mut projected = reserve_vec(ctx, resolved.len(), "iges B-rep projected pcurve uses")?;
+    let mut projected = ctx.collection_vec(resolved.len(), "iges B-rep projected pcurve uses")?;
     for (index, ((isoparametric, _), (geometry, range))) in uses.iter().zip(resolved).enumerate() {
         let parameter_range = cadmpeg_ir::units::FiniteVector::new(range).ok_or(
             PcurveProjectionError::Invalid(PcurveMetadata::NON_FINITE_PARAMETER_RANGE),
@@ -260,12 +247,7 @@ fn project_pcurve_uses(
                 })
             })
             .transpose()?;
-        reserve_vec_growth(
-            ctx,
-            &mut candidate.model_mut().pcurves,
-            1,
-            "iges B-rep pcurve slots",
-        )?;
+        ctx.reserve_vec(&mut candidate.model_mut().pcurves, 1, "iges B-rep pcurve slots")?;
         let id = crate::ids::pcurve_admitted(&id_stem.slot(index), ctx)?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
         candidate.model_mut().pcurves.push(Pcurve {
@@ -323,8 +305,8 @@ fn resolve_pcurve_uses<'a>(
     let Some(index) = model_index.as_ref() else {
         return Ok(None);
     };
-    let mut resolved = reserve_vec(ctx, uses.len(), "iges B-rep resolved pcurves")?;
-    let mut mapped = reserve_vec(ctx, uses.len(), "iges B-rep mapped pcurves")?;
+    let mut resolved = ctx.collection_vec(uses.len(), "iges B-rep resolved pcurves")?;
+    let mut mapped = ctx.collection_vec(uses.len(), "iges B-rep mapped pcurves")?;
     for (_, sequence) in uses {
         let Some((geometry, range)) = pcurve_geometry(
             source,
@@ -387,23 +369,11 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        crate::decode_resource::insert_optional_btree_map(
-            Some(ctx),
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges brep parameter index",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut records, record.directory_sequence, record, "iges brep parameter index")?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        crate::decode_resource::insert_optional_btree_map(
-            Some(ctx),
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges brep directory index",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut entries, entry.sequence, entry, "iges brep directory index")?;
     }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
@@ -445,7 +415,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut points = reserve_vec(ctx, count, "iges B-rep vertex-list points")?;
+        let mut points = ctx.collection_vec(count, "iges B-rep vertex-list points")?;
         for index in 0..count {
             let start = 2 + index * 3;
             let values = [
@@ -472,13 +442,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        insert_optional_btree_map(
-            Some(ctx),
-            &mut vertex_lists,
-            entry.sequence,
-            points,
-            "iges B-rep vertex-list nodes",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut vertex_lists, entry.sequence, points, "iges B-rep vertex-list nodes")?;
     }
 
     for entry in directory
@@ -512,7 +476,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut edges = reserve_vec(ctx, count, "iges B-rep edge-list edges")?;
+        let mut edges = ctx.collection_vec(count, "iges B-rep edge-list edges")?;
         for item in 0..count {
             let start = 2 + item * 5;
             let Some(edge) = pointer(record, start)
@@ -554,13 +518,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        insert_optional_btree_map(
-            Some(ctx),
-            &mut edge_lists,
-            entry.sequence,
-            edges,
-            "iges B-rep edge-list nodes",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut edge_lists, entry.sequence, edges, "iges B-rep edge-list nodes")?;
     }
 
     for entry in directory
@@ -595,7 +553,7 @@ pub(super) fn project(
             continue;
         };
         let mut index = 2;
-        let mut uses = reserve_vec(ctx, count, "iges B-rep loop uses")?;
+        let mut uses = ctx.collection_vec(count, "iges B-rep loop uses")?;
         for _ in 0..count {
             let Some(use_type) = record.integer(index) else {
                 uses.clear();
@@ -613,7 +571,7 @@ pub(super) fn project(
                 uses.clear();
                 break;
             };
-            let mut pcurves = reserve_vec(ctx, pcurve_count, "iges B-rep use pcurves")?;
+            let mut pcurves = ctx.collection_vec(pcurve_count, "iges B-rep use pcurves")?;
             for pcurve_index in 0..pcurve_count {
                 let isoparametric = match record.integer(index + 5 + pcurve_index * 2) {
                     Some(1) => true,
@@ -694,13 +652,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        insert_optional_btree_map(
-            Some(ctx),
-            &mut loops,
-            entry.sequence,
-            uses,
-            "iges B-rep loop nodes",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut loops, entry.sequence, uses, "iges B-rep loop nodes")?;
     }
 
     for entry in directory
@@ -765,7 +717,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut rest = reserve_vec(ctx, count - 1, "iges B-rep face loop pointers")?;
+        let mut rest = ctx.collection_vec(count - 1, "iges B-rep face loop pointers")?;
         let mut valid_pointers = true;
         for index in 1..count {
             let Some(sequence) = pointer(record, 4 + index) else {
@@ -803,16 +755,10 @@ pub(super) fn project(
             )?;
             continue;
         }
-        insert_optional_btree_map(
-            Some(ctx),
-            &mut faces,
-            entry.sequence,
-            FaceDefinition {
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut faces, entry.sequence, FaceDefinition {
                 surface,
                 loops: face_loops,
-            },
-            "iges B-rep face nodes",
-        )?;
+            }, "iges B-rep face nodes")?;
     }
 
     let mut shell_definitions = BTreeMap::new();
@@ -847,7 +793,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut face_uses = reserve_vec(ctx, count, "iges B-rep shell face uses")?;
+        let mut face_uses = ctx.collection_vec(count, "iges B-rep shell face uses")?;
         for index in 0..count {
             let Some(face) = pointer(record, 2 + index * 2) else {
                 face_uses.clear();
@@ -876,16 +822,10 @@ pub(super) fn project(
             )?;
             continue;
         }
-        insert_optional_btree_map(
-            Some(ctx),
-            &mut shell_definitions,
-            entry.sequence,
-            ShellDefinition {
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut shell_definitions, entry.sequence, ShellDefinition {
                 form: entry.form,
                 faces: face_uses,
-            },
-            "iges B-rep shell nodes",
-        )?;
+            }, "iges B-rep shell nodes")?;
     }
 
     let mut body_definitions = Vec::new();
@@ -894,9 +834,9 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 514 && entry.form == 2)
     {
         if shell_definitions.contains_key(&entry.sequence) {
-            let mut shells = reserve_vec(ctx, 1, "iges B-rep sheet shell uses")?;
+            let mut shells = ctx.collection_vec(1, "iges B-rep sheet shell uses")?;
             shells.push((entry.sequence, Sense::Forward));
-            reserve_vec_growth(ctx, &mut body_definitions, 1, "iges B-rep body definitions")?;
+            ctx.reserve_vec(&mut body_definitions, 1, "iges B-rep body definitions")?;
             body_definitions.push(BodyDefinition {
                 entry,
                 kind: BodyKind::Sheet,
@@ -954,7 +894,7 @@ pub(super) fn project(
         let shell_count = void_count.checked_add(1).ok_or_else(|| {
             cadmpeg_core::decode::refuse_local_limit("iges B-rep solid shell uses", u64::MAX, 1)
         })?;
-        let mut shell_uses = reserve_vec(ctx, shell_count, "iges B-rep solid shell uses")?;
+        let mut shell_uses = ctx.collection_vec(shell_count, "iges B-rep solid shell uses")?;
         shell_uses.push((outer, outer_sense));
         let mut valid = true;
         for index in 0..void_count {
@@ -988,12 +928,7 @@ pub(super) fn project(
             continue;
         }
         for (sequence, _) in &shell_uses {
-            insert_optional_btree_set(
-                Some(ctx),
-                &mut referenced_closed_shells,
-                *sequence,
-                "iges B-rep referenced closed shells",
-            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut referenced_closed_shells, *sequence, "iges B-rep referenced closed shells")?;
         }
         let transform = match resolve_transform(
             entry.transform,
@@ -1016,7 +951,7 @@ pub(super) fn project(
                 continue;
             }
         };
-        reserve_vec_growth(ctx, &mut body_definitions, 1, "iges B-rep body definitions")?;
+        ctx.reserve_vec(&mut body_definitions, 1, "iges B-rep body definitions")?;
         body_definitions.push(BodyDefinition {
             entry,
             kind: BodyKind::Solid,
@@ -1032,9 +967,9 @@ pub(super) fn project(
         if shell_definitions.contains_key(&entry.sequence)
             && !referenced_closed_shells.contains(&entry.sequence)
         {
-            let mut shells = reserve_vec(ctx, 1, "iges B-rep sheet shell uses")?;
+            let mut shells = ctx.collection_vec(1, "iges B-rep sheet shell uses")?;
             shells.push((entry.sequence, Sense::Forward));
-            reserve_vec_growth(ctx, &mut body_definitions, 1, "iges B-rep body definitions")?;
+            ctx.reserve_vec(&mut body_definitions, 1, "iges B-rep body definitions")?;
             body_definitions.push(BodyDefinition {
                 entry,
                 kind: BodyKind::Sheet,
@@ -1056,34 +991,14 @@ pub(super) fn project(
     if !body_definitions.is_empty() {
         for (position, surface) in ir.model.surfaces.iter().enumerate() {
             if !surface_positions.contains_key(surface.id.as_str()) {
-                let key = format_retained(
-                    ctx,
-                    format_args!("{}", surface.id),
-                    "iges B-rep surface index keys",
-                )?;
-                insert_optional_btree_map(
-                    Some(ctx),
-                    &mut surface_positions,
-                    key,
-                    position,
-                    "iges B-rep surface index nodes",
-                )?;
+                let key = ctx.format_retained(format_args!("{}", surface.id), "iges B-rep surface index keys")?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut surface_positions, key, position, "iges B-rep surface index nodes")?;
             }
         }
         for (position, curve) in ir.model.curves.iter().enumerate() {
             if !curve_positions.contains_key(curve.id.as_str()) {
-                let key = format_retained(
-                    ctx,
-                    format_args!("{}", curve.id),
-                    "iges B-rep curve index keys",
-                )?;
-                insert_optional_btree_map(
-                    Some(ctx),
-                    &mut curve_positions,
-                    key,
-                    position,
-                    "iges B-rep curve index nodes",
-                )?;
+                let key = ctx.format_retained(format_args!("{}", curve.id), "iges B-rep curve index keys")?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut curve_positions, key, position, "iges B-rep curve index nodes")?;
             }
         }
     }
@@ -1110,7 +1025,7 @@ pub(super) fn project(
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
         let mut radial = BTreeMap::<(u32, u32, usize), Vec<CoedgeId>>::new();
         let mut region_shells =
-            reserve_vec(ctx, definition.shells.len(), "iges B-rep region shell ids")?;
+            ctx.collection_vec(definition.shells.len(), "iges B-rep region shell ids")?;
         let mut consumed = BTreeSet::new();
         let mut valid = true;
         for (shell_sequence, shell_sense) in definition.shells.iter().copied() {
@@ -1121,11 +1036,7 @@ pub(super) fn project(
                 std::borrow::Cow::Owned(stem.child(shell_sequence))
             };
             let shell_id = crate::ids::shell_admitted(&shell_stem, ctx)?;
-            let mut shell_faces = reserve_vec(
-                ctx,
-                shell_definition.faces.len(),
-                "iges B-rep shell face ids",
-            )?;
+            let mut shell_faces = ctx.collection_vec(shell_definition.faces.len(), "iges B-rep shell face ids")?;
             for &(face_sequence, native_face_sense) in &shell_definition.faces {
                 let face_sense = compose_sense(native_face_sense, shell_sense);
                 let face_definition = &faces[&face_sequence];
@@ -1153,8 +1064,8 @@ pub(super) fn project(
                         .filter(|use_| matches!(use_, LoopUse::Edge { .. }))
                         .count();
                     let mut edge_use_indices =
-                        reserve_vec(ctx, edge_use_count, "iges B-rep edge-use positions")?;
-                    let mut coedge_ids = reserve_vec(ctx, edge_use_count, "iges B-rep coedge ids")?;
+                        ctx.collection_vec(edge_use_count, "iges B-rep edge-use positions")?;
+                    let mut coedge_ids = ctx.collection_vec(edge_use_count, "iges B-rep coedge ids")?;
                     let mut coedge_by_use = BTreeMap::new();
                     for (index, use_) in uses.iter().enumerate() {
                         if matches!(use_, LoopUse::Edge { .. }) {
@@ -1163,23 +1074,17 @@ pub(super) fn project(
                                 &shell_stem.child(loop_sequence).slot(index),
                                 ctx,
                             )?;
-                            insert_optional_btree_map(
-                                Some(ctx),
-                                &mut coedge_by_use,
-                                index,
-                                crate::decode_resource::clone_optional_identity(
+                            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut coedge_by_use, index, crate::decode_resource::clone_optional_identity(
                                     Some(ctx),
                                     &coedge_id,
                                     "iges B-rep identity copy",
-                                )?,
-                                "iges B-rep coedge use nodes",
-                            )?;
+                                )?, "iges B-rep coedge use nodes")?;
                             coedge_ids.push(coedge_id);
                         }
                     }
                     let vertex_use_count = uses.len() - edge_use_count;
                     let mut loop_vertex_uses =
-                        reserve_vec(ctx, vertex_use_count, "iges B-rep loop vertex uses")?;
+                        ctx.collection_vec(vertex_use_count, "iges B-rep loop vertex uses")?;
                     for (use_index, use_) in uses.iter().enumerate() {
                         let LoopUse::Edge {
                             edge_list,
@@ -1386,12 +1291,7 @@ pub(super) fn project(
                                             )?;
                                         }
                                         let indexed = positions.entry(curve.as_str()).or_default();
-                                        reserve_vec_growth(
-                                            ctx,
-                                            indexed,
-                                            1,
-                                            "iges B-rep source edge positions",
-                                        )?;
+                                        ctx.reserve_vec(indexed, 1, "iges B-rep source edge positions")?;
                                         indexed.push(position);
                                     }
                                 }
@@ -1467,12 +1367,7 @@ pub(super) fn project(
                                     break;
                                 }
                             };
-                            reserve_vec_growth(
-                                ctx,
-                                &mut candidate.model_mut().edges,
-                                1,
-                                "iges B-rep topology edges",
-                            )?;
+                            ctx.reserve_vec(&mut candidate.model_mut().edges, 1, "iges B-rep topology edges")?;
                             crate::decode_resource::admit_optional_entities(
                                 Some(ctx),
                                 1,
@@ -1501,17 +1396,11 @@ pub(super) fn project(
                                 )?,
                                 tolerance: None,
                             });
-                            insert_optional_btree_map(
-                                Some(ctx),
-                                &mut edge_ids,
-                                edge_key,
-                                crate::decode_resource::clone_optional_identity(
+                            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut edge_ids, edge_key, crate::decode_resource::clone_optional_identity(
                                     Some(ctx),
                                     &id,
                                     "iges B-rep identity copy",
-                                )?,
-                                "iges B-rep topology edge index",
-                            )?;
+                                )?, "iges B-rep topology edge index")?;
                             id
                         };
                         let projected = match project_pcurve_uses(
@@ -1552,18 +1441,13 @@ pub(super) fn project(
                             ctx.charge_collection_items(1, "iges B-rep radial index nodes")?;
                         }
                         let ring = radial.entry(radial_key).or_default();
-                        reserve_vec_growth(ctx, ring, 1, "iges B-rep radial coedge ids")?;
+                        ctx.reserve_vec(ring, 1, "iges B-rep radial coedge ids")?;
                         ring.push(crate::decode_resource::clone_optional_identity(
                             Some(ctx),
                             &coedge_id,
                             "iges B-rep identity copy",
                         )?);
-                        reserve_vec_growth(
-                            ctx,
-                            &mut candidate.model_mut().coedges,
-                            1,
-                            "iges B-rep topology coedges",
-                        )?;
+                        ctx.reserve_vec(&mut candidate.model_mut().coedges, 1, "iges B-rep topology coedges")?;
                         crate::decode_resource::admit_optional_entities(
                             Some(ctx),
                             1,
@@ -1608,9 +1492,7 @@ pub(super) fn project(
                         }
                         LoopBoundary::Vertex { vertex, pcurves }
                     } else {
-                        let Some(vertex_uses) = crate::decode_resource::collect_optional_vec(
-                            ctx,
-                            loop_vertex_uses
+                        let Some(vertex_uses) = ctx.collect_options(loop_vertex_uses
                                 .into_iter()
                                 .map(|(vertex, after, pcurves)| {
                                     let after = after?;
@@ -1619,9 +1501,7 @@ pub(super) fn project(
                                         after,
                                         pcurves,
                                     })
-                                }),
-                            "iges B-rep anchored vertex uses",
-                        )?
+                                }), "iges B-rep anchored vertex uses")?
                         else {
                             super::push_optional_entity_loss(
                                 Some(ctx),
@@ -1648,12 +1528,7 @@ pub(super) fn project(
                         };
                         LoopBoundary::Ring(ring)
                     };
-                    reserve_vec_growth(
-                        ctx,
-                        &mut candidate.model_mut().loops,
-                        1,
-                        "iges B-rep topology loops",
-                    )?;
+                    ctx.reserve_vec(&mut candidate.model_mut().loops, 1, "iges B-rep topology loops")?;
                     crate::decode_resource::admit_optional_entities(
                         Some(ctx),
                         1,
@@ -1672,12 +1547,7 @@ pub(super) fn project(
                         )?,
                         boundary,
                     });
-                    insert_optional_btree_set(
-                        Some(ctx),
-                        &mut consumed,
-                        loop_sequence,
-                        "iges B-rep consumed loop nodes",
-                    )?;
+                    cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut consumed, loop_sequence, "iges B-rep consumed loop nodes")?;
                 }
                 if !valid {
                     break;
@@ -1685,7 +1555,7 @@ pub(super) fn project(
                 let face_loops = match &face_definition.loops {
                     FaceLoopPointers::OuterFirst { outer, inner } => {
                         let mut inner_ids =
-                            reserve_vec(ctx, inner.len(), "iges B-rep face inner loop ids")?;
+                            ctx.collection_vec(inner.len(), "iges B-rep face inner loop ids")?;
                         for sequence in inner.iter().copied() {
                             inner_ids.push(loop_id_for(sequence)?);
                         }
@@ -1700,7 +1570,7 @@ pub(super) fn project(
                             )
                         })?;
                         let mut loop_ids =
-                            reserve_vec(ctx, count, "iges B-rep face unspecified loop ids")?;
+                            ctx.collection_vec(count, "iges B-rep face unspecified loop ids")?;
                         loop_ids.push(loop_id_for(*first)?);
                         for sequence in rest.iter().copied() {
                             loop_ids.push(loop_id_for(sequence)?);
@@ -1708,12 +1578,7 @@ pub(super) fn project(
                         cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids)
                     }
                 };
-                reserve_vec_growth(
-                    ctx,
-                    &mut candidate.model_mut().faces,
-                    1,
-                    "iges B-rep topology faces",
-                )?;
+                ctx.reserve_vec(&mut candidate.model_mut().faces, 1, "iges B-rep topology faces")?;
                 crate::decode_resource::admit_optional_entities(
                     Some(ctx),
                     1,
@@ -1738,22 +1603,12 @@ pub(super) fn project(
                     tolerance: None,
                 });
                 shell_faces.push(face_id);
-                insert_optional_btree_set(
-                    Some(ctx),
-                    &mut consumed,
-                    face_sequence,
-                    "iges B-rep consumed face nodes",
-                )?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut consumed, face_sequence, "iges B-rep consumed face nodes")?;
             }
             if !valid {
                 break;
             }
-            reserve_vec_growth(
-                ctx,
-                &mut candidate.model_mut().shells,
-                1,
-                "iges B-rep topology shells",
-            )?;
+            ctx.reserve_vec(&mut candidate.model_mut().shells, 1, "iges B-rep topology shells")?;
             crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
             candidate.model_mut().shells.push(
                 match Shell::new(
@@ -1779,12 +1634,7 @@ pub(super) fn project(
                 },
             );
             region_shells.push(shell_id);
-            insert_optional_btree_set(
-                Some(ctx),
-                &mut consumed,
-                shell_sequence,
-                "iges B-rep consumed shell nodes",
-            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut consumed, shell_sequence, "iges B-rep consumed shell nodes")?;
         }
         if !valid {
             super::push_optional_entity_loss(
@@ -1841,12 +1691,7 @@ pub(super) fn project(
                 }
             }
         }
-        reserve_vec_growth(
-            ctx,
-            &mut candidate.model_mut().regions,
-            1,
-            "iges B-rep topology regions",
-        )?;
+        ctx.reserve_vec(&mut candidate.model_mut().regions, 1, "iges B-rep topology regions")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
         candidate.model_mut().regions.push(Region {
             id: crate::decode_resource::clone_optional_identity(
@@ -1861,14 +1706,9 @@ pub(super) fn project(
             )?,
             shells: region_shells,
         });
-        let mut body_regions = reserve_vec(ctx, 1, "iges B-rep body region ids")?;
+        let mut body_regions = ctx.collection_vec(1, "iges B-rep body region ids")?;
         body_regions.push(region_id);
-        reserve_vec_growth(
-            ctx,
-            &mut candidate.model_mut().bodies,
-            1,
-            "iges B-rep topology bodies",
-        )?;
+        ctx.reserve_vec(&mut candidate.model_mut().bodies, 1, "iges B-rep topology bodies")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_brep")?;
         candidate.model_mut().bodies.push(Body {
             id: body_id,
@@ -1892,23 +1732,13 @@ pub(super) fn project(
             )?;
             continue;
         }
-        insert_optional_btree_set(
-            Some(ctx),
-            &mut decoded,
-            entry.sequence,
-            "iges brep decoded sequences",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges brep decoded sequences")?;
         for sequence in consumed
             .into_iter()
             .chain(edge_ids.keys().map(|key| key.0))
             .chain(vertex_ids.keys().map(|key| key.0))
         {
-            insert_optional_btree_set(
-                Some(ctx),
-                &mut decoded,
-                sequence,
-                "iges B-rep decoded topology sequences",
-            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, sequence, "iges B-rep decoded topology sequences")?;
         }
     }
 

@@ -2,10 +2,7 @@
 //! Point and analytic curve entity projection.
 
 use super::curve_conversion::angularly_equal;
-use crate::decode_resource::{
-    clone_optional_identity, collect_optional_vec, insert_optional_btree_map,
-    insert_optional_btree_set, reserve_vec, reserve_vec_growth,
-};
+use crate::decode_resource::{clone_optional_identity};
 use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
@@ -111,16 +108,11 @@ pub(super) fn plane_coordinates(
     let Some(v_axis) = normal.cross(u_axis).unit() else {
         return Ok(None);
     };
-    let coordinates = crate::decode_resource::collect_result_vec(
-        ctx,
-        points.len(),
-        "iges plane coordinates",
-        |index| {
+    let coordinates = ctx.collect_indexed_vec(points.len(), "iges plane coordinates", |index| {
             let point = points[index];
             let displacement = point.vector_from(plane.0);
             Ok([displacement.dot(u_axis), displacement.dot(v_axis)])
-        },
-    )?;
+        })?;
     Ok(coordinates
         .iter()
         .flatten()
@@ -462,11 +454,7 @@ pub(super) fn type126_declared_control_points(
     })() else {
         return Ok(None);
     };
-    let mut controls = reserve_vec(
-        ctx,
-        control_count,
-        "iges Type126 declared control intervals",
-    )?;
+    let mut controls = ctx.collection_vec(control_count, "iges Type126 declared control intervals")?;
     for point in 0..control_count {
         let mut coordinates = [DeclaredInterval::around(0.0, 0.0); 3];
         for (coordinate, value) in coordinates.iter_mut().enumerate() {
@@ -888,13 +876,7 @@ pub(crate) fn enforce_transform_depth(
         });
     let mut entries = BTreeMap::new();
     for entry in directory {
-        insert_optional_btree_map(
-            ctx,
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges transform preflight directory index",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(ctx, &mut entries, entry.sequence, entry, "iges transform preflight directory index")?;
     }
 
     for entry in directory {
@@ -917,12 +899,7 @@ pub(crate) fn enforce_transform_depth(
             if let Some(ctx) = ctx {
                 ctx.charge_work(1, "iges transform preflight walk")?;
             }
-            if !insert_optional_btree_set(
-                ctx,
-                &mut path,
-                sequence,
-                "iges transform preflight path",
-            )? {
+            if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(ctx, &mut path, sequence, "iges transform preflight path")? {
                 break;
             }
             depth += 1;
@@ -993,14 +970,9 @@ impl ProjectionOutcome {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
         for sequence in self.decoded {
-            insert_optional_btree_set(
-                Some(ctx),
-                decoded,
-                sequence,
-                "iges merged decoded sequences",
-            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), decoded, sequence, "iges merged decoded sequences")?;
         }
-        reserve_vec_growth(ctx, losses, self.losses.len(), "iges merged loss slots")?;
+        ctx.reserve_vec(losses, self.losses.len(), "iges merged loss slots")?;
         losses.extend(self.losses);
         Ok(())
     }
@@ -1023,21 +995,11 @@ impl WireProjectionOutcome {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
         for sequence in self.decoded {
-            insert_optional_btree_set(
-                Some(ctx),
-                decoded,
-                sequence,
-                "iges merged decoded sequences",
-            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), decoded, sequence, "iges merged decoded sequences")?;
         }
-        reserve_vec_growth(ctx, losses, self.losses.len(), "iges merged loss slots")?;
+        ctx.reserve_vec(losses, self.losses.len(), "iges merged loss slots")?;
         losses.extend(self.losses);
-        reserve_vec_growth(
-            ctx,
-            wire_edges,
-            self.wire_edges.len(),
-            "iges merged wire edge slots",
-        )?;
+        ctx.reserve_vec(wire_edges, self.wire_edges.len(), "iges merged wire edge slots")?;
         wire_edges.extend(self.wire_edges);
         Ok(())
     }
@@ -1070,13 +1032,7 @@ fn consumed_support_sequences(
 ) -> Result<BTreeSet<u32>, CodecError> {
     let mut entries = BTreeMap::new();
     for entry in directory {
-        insert_optional_btree_map(
-            Some(ctx),
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges consumed-support directory index",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut entries, entry.sequence, entry, "iges consumed-support directory index")?;
     }
     let mut transform_sequences = BTreeSet::new();
     for entry in directory {
@@ -1085,12 +1041,7 @@ fn consumed_support_sequences(
                 .get(sequence)
                 .is_some_and(|target| target.entity_type == 124)
         }) {
-            insert_optional_btree_set(
-                Some(ctx),
-                &mut transform_sequences,
-                sequence,
-                "iges consumed-support transforms",
-            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut transform_sequences, sequence, "iges consumed-support transforms")?;
         }
     }
     for entry in directory
@@ -1113,12 +1064,7 @@ fn consumed_support_sequences(
                         .is_some_and(|target| target.entity_type == 124)
                 })
             {
-                insert_optional_btree_set(
-                    Some(ctx),
-                    &mut transform_sequences,
-                    sequence,
-                    "iges consumed-support transforms",
-                )?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut transform_sequences, sequence, "iges consumed-support transforms")?;
             }
         }
     }
@@ -1149,24 +1095,14 @@ fn consumed_support_sequences(
                             .is_some_and(|target| target.entity_type == 123 && target.form == 0)
                     })
             {
-                insert_optional_btree_set(
-                    Some(ctx),
-                    &mut direction_sequences,
-                    sequence,
-                    "iges consumed-support directions",
-                )?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut direction_sequences, sequence, "iges consumed-support directions")?;
             }
         }
     }
 
     let mut consumed = direction_sequences;
     while let Some(sequence) = transform_sequences.pop_first() {
-        if !insert_optional_btree_set(
-            Some(ctx),
-            &mut consumed,
-            sequence,
-            "iges consumed-support closure",
-        )? {
+        if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut consumed, sequence, "iges consumed-support closure")? {
             continue;
         }
         let Some(entry) = entries.get(&sequence).copied() else {
@@ -1177,12 +1113,7 @@ fn consumed_support_sequences(
                 .get(parent)
                 .is_some_and(|target| target.entity_type == 124)
         }) {
-            insert_optional_btree_set(
-                Some(ctx),
-                &mut transform_sequences,
-                parent,
-                "iges consumed-support transforms",
-            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut transform_sequences, parent, "iges consumed-support transforms")?;
         }
     }
     Ok(consumed)
@@ -1305,7 +1236,7 @@ pub(super) fn curve_geometry_coplanar(
                 }
                 let active_id =
                     clone_optional_identity(ctx, &segment.curve, "iges coplanar active curve id")?;
-                insert_optional_btree_set(ctx, active, active_id, "iges coplanar active curves")?;
+                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(ctx, active, active_id, "iges coplanar active curves")?;
                 let Some(geometry) = curve.geometry.solved() else {
                     valid = false;
                     break;
@@ -1535,7 +1466,7 @@ pub(super) fn source_object(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<SourceObjectAssociation, cadmpeg_core::CodecError> {
     let render = |args: std::fmt::Arguments<'_>, operation: &'static str| match ctx {
-        Some(ctx) => crate::decode_resource::format_retained(ctx, args, operation),
+        Some(ctx) => ctx.format_retained(args, operation),
         None => Ok(args.to_string()),
     };
     let object_id = render(format_args!("D{}", entry.sequence), "iges source object ID")?;
@@ -1617,11 +1548,7 @@ pub(crate) fn project_geometry(
     }
     let admitted_directory = if directory.iter().any(|entry| !admitted(entry)) {
         let admitted_count = directory.iter().filter(|entry| admitted(entry)).count();
-        let mut admitted_entries = crate::decode_resource::reserve_vec(
-            ctx,
-            admitted_count,
-            "iges admitted geometry directory",
-        )?;
+        let mut admitted_entries = ctx.collection_vec(admitted_count, "iges admitted geometry directory")?;
         admitted_entries.extend(directory.iter().filter(|entry| admitted(entry)).cloned());
         Some(admitted_entries)
     } else {
@@ -1630,23 +1557,11 @@ pub(crate) fn project_geometry(
     let directory = admitted_directory.as_deref().unwrap_or(directory);
     let mut records = BTreeMap::new();
     for record in parameters {
-        insert_optional_btree_map(
-            Some(ctx),
-            &mut records,
-            record.directory_sequence,
-            record,
-            "iges geometry parameter index",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut records, record.directory_sequence, record, "iges geometry parameter index")?;
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        insert_optional_btree_map(
-            Some(ctx),
-            &mut entries,
-            entry.sequence,
-            entry,
-            "iges geometry directory index",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(Some(ctx), &mut entries, entry.sequence, entry, "iges geometry directory index")?;
     }
     let mut decoded = BTreeSet::new();
     let mut boundary_vertex_derivations = Vec::new();
@@ -1660,12 +1575,7 @@ pub(crate) fn project_geometry(
             .and_then(|record| record.integer(1))
             .and_then(|value| u32::try_from(value).ok())
         {
-            insert_optional_btree_set(
-                Some(ctx),
-                &mut analytic_surface_locations,
-                sequence,
-                "iges analytic-surface locations",
-            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut analytic_surface_locations, sequence, "iges analytic-surface locations")?;
         }
     }
     let mut free_vertices = Vec::new();
@@ -1921,12 +1831,7 @@ pub(crate) fn project_geometry(
         let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
         let curve = crate::ids::curve_admitted(&stem, ctx)?;
         let edge = crate::ids::edge_admitted(&stem, ctx)?;
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.points,
-            2,
-            "iges circle neutral point slots",
-        )?;
+        ctx.reserve_vec(&mut ir.model.points, 2, "iges circle neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.points.extend([
             Point::new(
@@ -1948,12 +1853,7 @@ pub(crate) fn project_geometry(
                 None,
             ),
         ]);
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.vertices,
-            2,
-            "iges circle neutral vertex slots",
-        )?;
+        ctx.reserve_vec(&mut ir.model.vertices, 2, "iges circle neutral vertex slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
@@ -1976,12 +1876,7 @@ pub(crate) fn project_geometry(
             },
         ]);
         sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.curves,
-            1,
-            "iges circle neutral curve slots",
-        )?;
+        ctx.reserve_vec(&mut ir.model.curves, 1, "iges circle neutral curve slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
             id: clone_optional_identity(Some(ctx), &curve, "iges geometry neutral identity copy")?,
@@ -2004,12 +1899,7 @@ pub(crate) fn project_geometry(
             )),
             source_object: Some(source_object(entry, Some(ctx))?),
         });
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.edges,
-            1,
-            "iges circle neutral edge slots",
-        )?;
+        ctx.reserve_vec(&mut ir.model.edges, 1, "iges circle neutral edge slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
             id: clone_optional_identity(Some(ctx), &edge, "iges geometry neutral identity copy")?,
@@ -2019,14 +1909,9 @@ pub(crate) fn project_geometry(
             end: end_vertex,
             tolerance: None,
         });
-        reserve_vec_growth(ctx, &mut wire_edges, 1, "iges circle wire edge slots")?;
+        ctx.reserve_vec(&mut wire_edges, 1, "iges circle wire edge slots")?;
         wire_edges.push(edge);
-        insert_optional_btree_set(
-            Some(ctx),
-            &mut decoded,
-            entry.sequence,
-            "iges circle decoded sequences",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges circle decoded sequences")?;
     }
     for entry in directory
         .iter()
@@ -2093,12 +1978,7 @@ pub(crate) fn project_geometry(
             &crate::ids::Stem::directory(entry.sequence),
             Some(ctx),
         )?;
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.points,
-            1,
-            "iges point neutral point slots",
-        )?;
+        ctx.reserve_vec(&mut ir.model.points, 1, "iges point neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.points.push(Point::new(
             clone_optional_identity(Some(ctx), &point, "iges geometry neutral identity copy")?,
@@ -2110,12 +1990,7 @@ pub(crate) fn project_geometry(
         {
             let vertex =
                 crate::ids::vertex_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
-            reserve_vec_growth(
-                ctx,
-                &mut ir.model.vertices,
-                1,
-                "iges point neutral vertex slots",
-            )?;
+            ctx.reserve_vec(&mut ir.model.vertices, 1, "iges point neutral vertex slots")?;
             crate::decode_resource::admit_optional_entities(
                 Some(ctx),
                 1,
@@ -2130,15 +2005,10 @@ pub(crate) fn project_geometry(
                 point,
                 tolerance: None,
             });
-            reserve_vec_growth(ctx, &mut free_vertices, 1, "iges point free vertex slots")?;
+            ctx.reserve_vec(&mut free_vertices, 1, "iges point free vertex slots")?;
             free_vertices.push(vertex);
         }
-        insert_optional_btree_set(
-            Some(ctx),
-            &mut decoded,
-            entry.sequence,
-            "iges point decoded sequences",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges point decoded sequences")?;
     }
     for entry in directory
         .iter()
@@ -2248,12 +2118,7 @@ pub(crate) fn project_geometry(
             &crate::ids::Stem::directory(entry.sequence),
             Some(ctx),
         )?;
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.points,
-            1,
-            "iges flash neutral point slots",
-        )?;
+        ctx.reserve_vec(&mut ir.model.points, 1, "iges flash neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.points.push(Point::new(
             clone_optional_identity(Some(ctx), &point, "iges geometry neutral identity copy")?,
@@ -2265,12 +2130,7 @@ pub(crate) fn project_geometry(
         {
             let vertex =
                 crate::ids::vertex_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?;
-            reserve_vec_growth(
-                ctx,
-                &mut ir.model.vertices,
-                1,
-                "iges flash neutral vertex slots",
-            )?;
+            ctx.reserve_vec(&mut ir.model.vertices, 1, "iges flash neutral vertex slots")?;
             crate::decode_resource::admit_optional_entities(
                 Some(ctx),
                 1,
@@ -2285,15 +2145,10 @@ pub(crate) fn project_geometry(
                 point,
                 tolerance: None,
             });
-            reserve_vec_growth(ctx, &mut free_vertices, 1, "iges flash free vertex slots")?;
+            ctx.reserve_vec(&mut free_vertices, 1, "iges flash free vertex slots")?;
             free_vertices.push(vertex);
         }
-        insert_optional_btree_set(
-            Some(ctx),
-            &mut decoded,
-            entry.sequence,
-            "iges flash decoded sequences",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges flash decoded sequences")?;
     }
     for entry in directory
         .iter()
@@ -2387,12 +2242,7 @@ pub(crate) fn project_geometry(
         let stem = crate::ids::Stem::directory(entry.sequence);
         let curve = crate::ids::curve_admitted(&stem, ctx)?;
         sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.curves,
-            1,
-            "iges line neutral curve slots",
-        )?;
+        ctx.reserve_vec(&mut ir.model.curves, 1, "iges line neutral curve slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
             id: clone_optional_identity(Some(ctx), &curve, "iges geometry neutral identity copy")?,
@@ -2402,12 +2252,7 @@ pub(crate) fn project_geometry(
             source_object: Some(source_object(entry, Some(ctx))?),
         });
         if entry.form != 0 {
-            insert_optional_btree_set(
-                Some(ctx),
-                &mut decoded,
-                entry.sequence,
-                "iges line decoded sequences",
-            )?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges line decoded sequences")?;
             continue;
         }
         let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
@@ -2417,12 +2262,7 @@ pub(crate) fn project_geometry(
         let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
         let edge = crate::ids::edge_admitted(&stem, ctx)?;
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.points,
-            2,
-            "iges line neutral point slots",
-        )?;
+        ctx.reserve_vec(&mut ir.model.points, 2, "iges line neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.points.extend([
             Point::new(
@@ -2444,12 +2284,7 @@ pub(crate) fn project_geometry(
                 None,
             ),
         ]);
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.vertices,
-            2,
-            "iges line neutral vertex slots",
-        )?;
+        ctx.reserve_vec(&mut ir.model.vertices, 2, "iges line neutral vertex slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
@@ -2471,7 +2306,7 @@ pub(crate) fn project_geometry(
                 tolerance: None,
             },
         ]);
-        reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges line neutral edge slots")?;
+        ctx.reserve_vec(&mut ir.model.edges, 1, "iges line neutral edge slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
             id: clone_optional_identity(Some(ctx), &edge, "iges geometry neutral identity copy")?,
@@ -2481,14 +2316,9 @@ pub(crate) fn project_geometry(
             end: end_vertex,
             tolerance: None,
         });
-        reserve_vec_growth(ctx, &mut wire_edges, 1, "iges line wire edge slots")?;
+        ctx.reserve_vec(&mut wire_edges, 1, "iges line wire edge slots")?;
         wire_edges.push(edge);
-        insert_optional_btree_set(
-            Some(ctx),
-            &mut decoded,
-            entry.sequence,
-            "iges line decoded sequences",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges line decoded sequences")?;
     }
     for entry in directory
         .iter()
@@ -2615,11 +2445,7 @@ pub(crate) fn project_geometry(
             let Some(end) = start.checked_add(count) else {
                 return Ok(None);
             };
-            collect_optional_vec(
-                ctx,
-                (start..end).map(|index| record.number(index).and_then(FiniteReal::new)),
-                operation,
-            )
+            ctx.collect_options((start..end).map(|index| record.number(index).and_then(FiniteReal::new)), operation)
         };
         let Some(finite_knots) =
             collect_numbers(knot_start, knot_count, "iges NURBS source knots")?
@@ -2634,7 +2460,7 @@ pub(crate) fn project_geometry(
         };
         let domain_start = finite_knots[degree_usize];
         let domain_end = finite_knots[control_count];
-        let mut raw_knots = reserve_vec(ctx, finite_knots.len(), "iges NURBS admitted knots")?;
+        let mut raw_knots = ctx.collection_vec(finite_knots.len(), "iges NURBS admitted knots")?;
         raw_knots.extend(finite_knots.into_iter().map(FiniteReal::get));
         let Ok(knots) = KnotVector::new(raw_knots) else {
             super::push_optional_entity_loss(
@@ -2656,13 +2482,9 @@ pub(crate) fn project_geometry(
             )?;
             continue;
         };
-        let Some(native_weights) = collect_optional_vec(
-            ctx,
-            native_weights
+        let Some(native_weights) = ctx.collect_options(native_weights
                 .into_iter()
-                .map(|weight| PositiveReal::try_from(weight).ok()),
-            "iges NURBS positive weights",
-        )?
+                .map(|weight| PositiveReal::try_from(weight).ok()), "iges NURBS positive weights")?
         else {
             super::push_optional_entity_loss(
                 Some(ctx),
@@ -2790,17 +2612,13 @@ pub(crate) fn project_geometry(
                 continue;
             }
         };
-        let Some(control_points) = collect_optional_vec(
-            ctx,
-            native_poles.chunks_exact(3).map(|point| {
+        let Some(control_points) = ctx.collect_options(native_poles.chunks_exact(3).map(|point| {
                 transform.apply_point(Point3::new(
                     point[0].get() * factor,
                     point[1].get() * factor,
                     point[2].get() * factor,
                 ))
-            }),
-            "iges NURBS placed controls",
-        )?
+            }), "iges NURBS placed controls")?
         else {
             super::push_optional_entity_loss(
                 Some(ctx),
@@ -2811,7 +2629,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         let mut raw_control_points =
-            reserve_vec(ctx, control_points.len(), "iges NURBS plane controls")?;
+            ctx.collection_vec(control_points.len(), "iges NURBS plane controls")?;
         raw_control_points.extend(control_points.iter().copied().map(FinitePoint3::get));
         let point_scale = raw_control_points
             .iter()
@@ -2903,7 +2721,7 @@ pub(crate) fn project_geometry(
         let weights = if polynomial {
             None
         } else {
-            let mut values = reserve_vec(ctx, native_weights.len(), "iges NURBS neutral weights")?;
+            let mut values = ctx.collection_vec(native_weights.len(), "iges NURBS neutral weights")?;
             values.extend(native_weights.into_iter().map(NonZeroReal::from));
             Some(values)
         };
@@ -2974,12 +2792,7 @@ pub(crate) fn project_geometry(
         let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
         let curve = crate::ids::curve_admitted(&stem, ctx)?;
         let edge = crate::ids::edge_admitted(&stem, ctx)?;
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.points,
-            2,
-            "iges NURBS neutral point slots",
-        )?;
+        ctx.reserve_vec(&mut ir.model.points, 2, "iges NURBS neutral point slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.points.extend([
             Point::new(
@@ -3001,12 +2814,7 @@ pub(crate) fn project_geometry(
                 None,
             ),
         ]);
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.vertices,
-            2,
-            "iges NURBS neutral vertex slots",
-        )?;
+        ctx.reserve_vec(&mut ir.model.vertices, 2, "iges NURBS neutral vertex slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 2, "iges_geometry_primitives")?;
         ir.model.vertices.extend([
             Vertex {
@@ -3029,19 +2837,14 @@ pub(crate) fn project_geometry(
             },
         ]);
         sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
-        reserve_vec_growth(
-            ctx,
-            &mut ir.model.curves,
-            1,
-            "iges NURBS neutral curve slots",
-        )?;
+        ctx.reserve_vec(&mut ir.model.curves, 1, "iges NURBS neutral curve slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.curves.push(Curve {
             id: clone_optional_identity(Some(ctx), &curve, "iges geometry neutral identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry, Some(ctx))?),
         });
-        reserve_vec_growth(ctx, &mut ir.model.edges, 1, "iges NURBS neutral edge slots")?;
+        ctx.reserve_vec(&mut ir.model.edges, 1, "iges NURBS neutral edge slots")?;
         crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_primitives")?;
         ir.model.edges.push(Edge {
             id: clone_optional_identity(Some(ctx), &edge, "iges geometry neutral identity copy")?,
@@ -3050,14 +2853,9 @@ pub(crate) fn project_geometry(
             end: end_vertex,
             tolerance: None,
         });
-        reserve_vec_growth(ctx, &mut wire_edges, 1, "iges NURBS wire edge slots")?;
+        ctx.reserve_vec(&mut wire_edges, 1, "iges NURBS wire edge slots")?;
         wire_edges.push(edge);
-        insert_optional_btree_set(
-            Some(ctx),
-            &mut decoded,
-            entry.sequence,
-            "iges NURBS decoded sequences",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut decoded, entry.sequence, "iges NURBS decoded sequences")?;
     }
     // The stanza sequence keeps source order in losses, wire edges, and free
     // vertices. Each projection admits its model entities before creation.
@@ -3124,13 +2922,13 @@ pub(crate) fn project_geometry(
             &crate::ids::Stem::word(crate::ids::Word::FreeGeometry),
             ctx,
         )?;
-        let mut body_regions = reserve_vec(ctx, 1, "iges free wire body regions")?;
+        let mut body_regions = ctx.collection_vec(1, "iges free wire body regions")?;
         body_regions.push(clone_optional_identity(
             Some(ctx),
             &region,
             "iges geometry neutral identity copy",
         )?);
-        reserve_vec_growth(ctx, &mut ir.model.bodies, 1, "iges free wire body slots")?;
+        ctx.reserve_vec(&mut ir.model.bodies, 1, "iges free wire body slots")?;
         crate::decode_resource::admit_optional_entities(
             Some(ctx),
             1,
@@ -3145,13 +2943,13 @@ pub(crate) fn project_geometry(
             color: None,
             visible: None,
         });
-        let mut region_shells = reserve_vec(ctx, 1, "iges free wire region shells")?;
+        let mut region_shells = ctx.collection_vec(1, "iges free wire region shells")?;
         region_shells.push(clone_optional_identity(
             Some(ctx),
             &shell,
             "iges geometry neutral identity copy",
         )?);
-        reserve_vec_growth(ctx, &mut ir.model.regions, 1, "iges free wire region slots")?;
+        ctx.reserve_vec(&mut ir.model.regions, 1, "iges free wire region slots")?;
         crate::decode_resource::admit_optional_entities(
             Some(ctx),
             1,
@@ -3162,7 +2960,7 @@ pub(crate) fn project_geometry(
             body,
             shells: region_shells,
         });
-        reserve_vec_growth(ctx, &mut ir.model.shells, 1, "iges free wire shell slots")?;
+        ctx.reserve_vec(&mut ir.model.shells, 1, "iges free wire shell slots")?;
         crate::decode_resource::admit_optional_entities(
             Some(ctx),
             1,
@@ -3172,11 +2970,7 @@ pub(crate) fn project_geometry(
             Ok(shell) => shell,
             Err(message) => {
                 return Err(CodecError::Malformed(
-                    crate::decode_resource::format_retained(
-                        ctx,
-                        format_args!("{message}"),
-                        "iges free-wire shell error",
-                    )?,
+                    ctx.format_retained(format_args!("{message}"), "iges free-wire shell error")?,
                 ))
             }
         };
@@ -3185,12 +2979,7 @@ pub(crate) fn project_geometry(
 
     let (trimming_projection, trimming_vertex_derivations) =
         super::trimming::project(ir, directory, parameters, global, ctx, &mut sequences)?;
-    reserve_vec_growth(
-        ctx,
-        &mut boundary_vertex_derivations,
-        trimming_vertex_derivations.len(),
-        "iges merged boundary vertex derivations",
-    )?;
+    ctx.reserve_vec(&mut boundary_vertex_derivations, trimming_vertex_derivations.len(), "iges merged boundary vertex derivations")?;
     boundary_vertex_derivations.extend(trimming_vertex_derivations);
     trimming_projection.merge_into(&mut decoded, &mut losses, ctx)?;
 
@@ -3246,12 +3035,7 @@ pub(crate) fn project_geometry(
 
     let mut vertex_points = BTreeSet::new();
     for vertex in &ir.model.vertices {
-        insert_optional_btree_set(
-            Some(ctx),
-            &mut vertex_points,
-            &vertex.point,
-            "iges analytic-surface vertex point index",
-        )?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(Some(ctx), &mut vertex_points, &vertex.point, "iges analytic-surface vertex point index")?;
     }
     ir.model.points.retain(|point| {
         !sequences

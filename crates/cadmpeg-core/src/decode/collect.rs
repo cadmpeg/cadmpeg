@@ -66,6 +66,61 @@ impl DecodeContext<'_> {
             .map_err(|_| self.collection_allocation_failed(additional, operation))
     }
 
+    /// Creates a charged vector when a session is present and an admitted vector otherwise.
+    pub fn collection_vec_optional<T>(
+        ctx: Option<&Self>,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        match ctx {
+            Some(ctx) => ctx.collection_vec(count, operation),
+            None => Self::admitted_vec(count, operation),
+        }
+    }
+
+    /// Reserves vector slots and charges them when a session is present.
+    pub fn reserve_vec_optional<T>(
+        ctx: Option<&Self>,
+        values: &mut Vec<T>,
+        additional: usize,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        match ctx {
+            Some(ctx) => ctx.reserve_vec(values, additional, operation),
+            None => Self::reserve_admitted_vec(values, additional, operation),
+        }
+    }
+
+    /// Copies bytes retained by an optional decode session.
+    pub fn copy_retained_optional(
+        ctx: Option<&Self>,
+        bytes: &[u8],
+        operation: &'static str,
+    ) -> Result<Vec<u8>, CodecError> {
+        match ctx {
+            Some(ctx) => ctx.copy_retained(bytes, operation),
+            None => {
+                let mut copy = Self::admitted_vec(bytes.len(), operation)?;
+                copy.extend_from_slice(bytes);
+                Ok(copy)
+            }
+        }
+    }
+
+    /// Builds a vector of indexed values after charging all slots.
+    pub fn collect_indexed_vec<T>(
+        &self,
+        count: usize,
+        operation: &'static str,
+        mut value_at: impl FnMut(usize) -> Result<T, CodecError>,
+    ) -> Result<Vec<T>, CodecError> {
+        let mut values = self.collection_vec(count, operation)?;
+        for index in 0..count {
+            values.push(value_at(index)?);
+        }
+        Ok(values)
+    }
+
     /// Adds one vector item after charging its slot.
     pub fn push_vec<T>(
         &self,
@@ -75,6 +130,19 @@ impl DecodeContext<'_> {
     ) -> Result<(), CodecError> {
         self.reserve_vec(values, 1, operation)?;
         values.push(value);
+        Ok(())
+    }
+
+    /// Adds a formatted retained note after charging its collection slot.
+    pub fn push_formatted_retained(
+        &self,
+        values: &mut Vec<String>,
+        args: fmt::Arguments<'_>,
+        slots_operation: &'static str,
+        text_operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.reserve_vec(values, 1, slots_operation)?;
+        values.push(self.format_retained(args, text_operation)?);
         Ok(())
     }
 
@@ -555,6 +623,33 @@ impl DecodeContext<'_> {
         Ok(values.insert(value))
     }
 
+    /// Inserts a B-tree set item, charging it when a session is present.
+    pub fn insert_btree_set_optional<T: Ord>(
+        ctx: Option<&Self>,
+        values: &mut BTreeSet<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        match ctx {
+            Some(ctx) => ctx.insert_btree_set(values, value, operation),
+            None => Ok(values.insert(value)),
+        }
+    }
+
+    /// Inserts a B-tree map entry, charging it when a session is present.
+    pub fn insert_btree_map_optional<K: Ord, V>(
+        ctx: Option<&Self>,
+        values: &mut BTreeMap<K, V>,
+        key: K,
+        value: V,
+        operation: &'static str,
+    ) -> Result<Option<V>, CodecError> {
+        match ctx {
+            Some(ctx) => ctx.insert_btree_map(values, key, value, operation),
+            None => Ok(values.insert(key, value)),
+        }
+    }
+
     /// Extends retained bytes after charging both their slots and storage.
     pub fn extend_retained_bytes(
         &self,
@@ -797,6 +892,9 @@ mod tests {
     collection_case!(push_vec_charges_before_growth, 1,
         |ctx: &DecodeContext<'_>| ctx.push_vec(&mut Vec::new(), 7_u8, "test push vec"),
         |ctx: &DecodeContext<'_>| ctx.push_vec(&mut Vec::new(), 7_u8, "test push vec"));
+    collection_case!(push_formatted_retained_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| ctx.push_formatted_retained(&mut Vec::new(), format_args!("a"), "test note slots", "test note text"),
+        |ctx: &DecodeContext<'_>| ctx.push_formatted_retained(&mut Vec::new(), format_args!("a"), "test note slots", "test note text"));
     collection_case!(append_vec_charges_before_growth, 2,
         |ctx: &DecodeContext<'_>| ctx.append_vec(&mut Vec::new(), &mut vec![1_u8, 2], "test append vec"),
         |ctx: &DecodeContext<'_>| ctx.append_vec(&mut Vec::new(), &mut vec![1_u8, 2], "test append vec"));
@@ -872,6 +970,21 @@ mod tests {
     collection_case!(optional_collection_vec_charges_before_allocation, 2,
         |ctx: &DecodeContext<'_>| ctx.optional_collection_vec::<u8>(true, 2, "test optional collection").map(|_| ()),
         |ctx: &DecodeContext<'_>| ctx.optional_collection_vec::<u8>(true, 2, "test optional collection").map(|_| ()));
+    collection_case!(collection_vec_optional_charges_before_allocation, 2,
+        |ctx: &DecodeContext<'_>| DecodeContext::collection_vec_optional::<u8>(Some(ctx), 2, "test optional vec").map(|_| ()),
+        |ctx: &DecodeContext<'_>| DecodeContext::collection_vec_optional::<u8>(Some(ctx), 2, "test optional vec").map(|_| ()));
+    collection_case!(reserve_vec_optional_charges_before_growth, 2,
+        |ctx: &DecodeContext<'_>| DecodeContext::reserve_vec_optional(Some(ctx), &mut Vec::<u8>::new(), 2, "test optional reserve"),
+        |ctx: &DecodeContext<'_>| DecodeContext::reserve_vec_optional(Some(ctx), &mut Vec::<u8>::new(), 2, "test optional reserve"));
+    collection_case!(collect_indexed_vec_charges_before_allocation, 2,
+        |ctx: &DecodeContext<'_>| ctx.collect_indexed_vec(2, "test indexed vec", |index| Ok(index as u8)).map(|_| ()),
+        |ctx: &DecodeContext<'_>| ctx.collect_indexed_vec(2, "test indexed vec", |index| Ok(index as u8)).map(|_| ()));
+    collection_case!(insert_btree_set_optional_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_set_optional(Some(ctx), &mut BTreeSet::new(), 1_u8, "test optional btree set").map(|_| ()),
+        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_set_optional(Some(ctx), &mut BTreeSet::new(), 1_u8, "test optional btree set").map(|_| ()));
+    collection_case!(insert_btree_map_optional_charges_before_growth, 1,
+        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_map_optional(Some(ctx), &mut BTreeMap::new(), 1_u8, 2_u8, "test optional btree map").map(|_| ()),
+        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_map_optional(Some(ctx), &mut BTreeMap::new(), 1_u8, 2_u8, "test optional btree map").map(|_| ()));
 
     macro_rules! admitted_case {
         ($name:ident, $body:expr) => {
@@ -945,6 +1058,8 @@ mod tests {
         |ctx: &DecodeContext<'_>| ctx.join_retained(&["a", "b"], "-", "test join retained").map(|_| ()));
     retained_case!(retained_string_charges_before_allocation, 3,
         |ctx: &DecodeContext<'_>| ctx.retained_string(3, "test retained string").map(|_| ()));
+    retained_case!(copy_retained_optional_charges_before_allocation, 3,
+        |ctx: &DecodeContext<'_>| DecodeContext::copy_retained_optional(Some(ctx), b"abc", "test optional retained").map(|_| ()));
 
     macro_rules! materialized_case {
         ($name:ident, $need:expr, $body:expr) => {
