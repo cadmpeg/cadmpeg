@@ -244,6 +244,40 @@ fn named_surface_scalar_sequence_refuses_before_growth() {
 }
 
 #[test]
+fn normalized_plane_frame_refuses_scoped_bytes_before_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let body = [
+        0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x18, 0x2f, 0x05, 0x00,
+        0x00, 0x0c, 0x98,
+    ];
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy)
+        .expect("root input is admitted");
+    let error = crate::surface::complete_plane_local_system(
+        &ctx, &body, &scalar::ScalarCache::default(),
+    )
+    .expect_err("normalized bytes need a scoped reservation");
+    assert_surface_limit(error, ResourceDimension::MaterializedBytes, "creo normalized plane frame bytes");
+}
+
+#[test]
+fn normalized_plane_frame_refuses_collection_before_growth() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let body = [
+        0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x18, 0x2f, 0x05, 0x00,
+        0x00, 0x0c, 0x98,
+    ];
+    let run = |limit| with_surface_limits(&body, limit, u64::MAX, |ctx| {
+        crate::surface::complete_plane_local_system(ctx, &body, &scalar::ScalarCache::default())
+    });
+    assert!(run(12).expect("twelve normalized bytes are admitted").is_some());
+    let error = run(11).expect_err("twelve items exceed eleven collection items");
+    assert_surface_limit(error, ResourceDimension::CollectionItems, "creo normalized plane frame items");
+}
+
+#[test]
 fn torus_scalar_refuses_outline_marker_vector() {
     use cadmpeg_core::decode::ResourceDimension;
     let body = [0x01, 0x12, 0x50, 0x50];
