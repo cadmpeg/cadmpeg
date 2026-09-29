@@ -1755,26 +1755,27 @@ pub(crate) fn project_draft_operands(
         }
     }
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let Some(native_ref) = feature.native_ref.as_deref() else {
-                break 'feature_edit;
+        let native_ref = feature.native_ref.as_deref();
+        let dependencies = &mut feature.dependencies;
+        feature.evaluation.edit(|definition, _| {
+            let Some(native_ref) = native_ref else {
+                return;
             };
             let Some(operands) = candidates.get(native_ref) else {
-                break 'feature_edit;
+                return;
             };
             let Some(first) = operands
                 .first()
                 .filter(|first| operands.iter().all(|item| same_draft_operands(first, item)))
             else {
-                break 'feature_edit;
+                return;
             };
             let pull_direction = first.pull_direction;
 
             let FeatureDefinition::Operation(FeatureOperation::Draft { faces, anchor, .. }) =
-                &mut definition
+                definition
             else {
-                break 'feature_edit;
+                return;
             };
             match (&first.anchor, &mut *anchor) {
                 (
@@ -1789,7 +1790,7 @@ pub(crate) fn project_draft_operands(
                         native_ref,
                         histories,
                         &feature_ids_by_native,
-                        &mut feature.dependencies,
+                        dependencies,
                     );
                     let pull = pull.take();
                     *anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane { plane, pull };
@@ -1806,7 +1807,7 @@ pub(crate) fn project_draft_operands(
                         native_ref,
                         histories,
                         &feature_ids_by_native,
-                        &mut feature.dependencies,
+                        dependencies,
                     );
                     *anchor = cadmpeg_ir::features::DraftAnchor::PartingLine {
                         tool,
@@ -1824,7 +1825,7 @@ pub(crate) fn project_draft_operands(
                     native_ref,
                     histories,
                     &feature_ids_by_native,
-                    &mut feature.dependencies,
+                    dependencies,
                 );
             }
             match anchor {
@@ -1836,8 +1837,7 @@ pub(crate) fn project_draft_operands(
                 }
                 _ => {}
             }
-        }
-        feature.evaluation.set_definition(definition);
+        });
     }
     Ok(())
 }
