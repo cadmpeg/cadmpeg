@@ -369,7 +369,7 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     let surface_midpoint = cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v)
         .ok()?
         .get();
-    let candidates = [short_end, long_end]
+    let mut candidates = [short_end, long_end]
         .into_iter()
         .filter(|end| {
             let parameter = 0.5 * (start + end);
@@ -389,9 +389,11 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
             }
             let distance_squared = circle_midpoint.distance_squared(surface_midpoint);
             distance_squared.is_finite() && distance_squared.sqrt() <= 2e-3
-        })
-        .collect::<Vec<_>>();
-    let [end] = <[f64; 1]>::try_from(candidates).ok()?;
+        });
+    let end = candidates.next()?;
+    if candidates.next().is_some() {
+        return None;
+    }
     (end.is_finite() && end != start).then_some([start, end])
 }
 
