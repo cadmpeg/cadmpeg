@@ -491,7 +491,7 @@ pub(super) fn coordinate_line_endpoints_with_linked_point<'a>(
     {
         return None;
     }
-    let mut endpoints = marker
+    let endpoints = marker
         .links()
         .iter()
         .filter(|link| link.entity_ref != marker.id())
@@ -503,14 +503,16 @@ pub(super) fn coordinate_line_endpoints_with_linked_point<'a>(
                     endpoint.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
-        })
-        .collect::<Vec<_>>();
-    endpoints.sort_unstable_by_key(|endpoint| endpoint.offset());
-    endpoints.dedup_by_key(|endpoint| endpoint.id());
-    let [endpoint] = endpoints.as_slice() else {
-        return None;
-    };
-    Some([marker, *endpoint])
+        });
+    let mut selected: Option<&'a SketchInputEntity> = None;
+    for endpoint in endpoints {
+        match selected {
+            Some(first) if first.id() != endpoint.id() => return None,
+            None => selected = Some(endpoint),
+            Some(_) => {}
+        }
+    }
+    Some([marker, selected?])
 }
 
 #[cfg(test)]
