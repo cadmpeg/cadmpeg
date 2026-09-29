@@ -484,181 +484,183 @@ fn ruled_homogeneous_carriers_refuse_copied_poles_weights_and_controls() {
 #[test]
 fn aligned_ruled_spans_refuse_nested_split_and_partition_storage() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-
-    let first = NurbsCurve::from_lanes(
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        None,
-        false,
-    )
-    .unwrap();
-    let second = NurbsCurve::from_lanes(
-        1,
-        vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        vec![
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(0.5, 1.0, 0.0),
-            Point3::new(1.0, 1.0, 0.0),
-        ],
-        None,
-        false,
-    )
-    .unwrap();
-    let spans = super::aligned_homogeneous_spans(decode_ctx, &first, &second)
-        .unwrap()
+        let first = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
         .unwrap();
-    assert_eq!(spans.len(), 2);
-    for operation in [
-        "Bezier knot copy",
-        "Bezier internal knots",
-        "Bezier spans",
-        "Bezier span controls",
-        "iges span normalized boundaries",
-        "iges span combined boundaries",
-        "iges span partition controls",
-        "iges span split levels",
-        "iges span split first controls",
-        "iges span split level controls",
-        "iges span split left controls",
-        "iges span split right controls",
-        "iges span partition slots",
-        "iges span aligned pairs",
-    ] {
-        let mut cap = 0_u64;
-        let mut found = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match super::aligned_homogeneous_spans(&ctx, &first, &second) {
-                Err(CodecError::ResourceLimit(limit)) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        found = true;
-                        break;
+        let second = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            vec![
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(0.5, 1.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap();
+        let spans = super::aligned_homogeneous_spans(decode_ctx, &first, &second)
+            .unwrap()
+            .unwrap();
+        assert_eq!(spans.len(), 2);
+        for operation in [
+            "Bezier knot copy",
+            "Bezier internal knots",
+            "Bezier spans",
+            "Bezier span controls",
+            "iges span normalized boundaries",
+            "iges span combined boundaries",
+            "iges span partition controls",
+            "iges span split levels",
+            "iges span split first controls",
+            "iges span split level controls",
+            "iges span split left controls",
+            "iges span split right controls",
+            "iges span partition slots",
+            "iges span aligned pairs",
+        ] {
+            let mut cap = 0_u64;
+            let mut found = false;
+            for _ in 0..4096 {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .unwrap();
+                match super::aligned_homogeneous_spans(&ctx, &first, &second) {
+                    Err(CodecError::ResourceLimit(limit)) => {
+                        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                        if limit.operation == operation {
+                            found = true;
+                            break;
+                        }
+                        cap = limit.used.checked_add(limit.additional).unwrap();
                     }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
+                    Ok(_) => {
+                        panic!(
+                            "expected aligned-span refusal at {operation}, but alignment succeeded"
+                        )
+                    }
+                    Err(error) => panic!("expected aligned-span refusal at {operation}: {error:?}"),
                 }
-                Ok(_) => {
-                    panic!("expected aligned-span refusal at {operation}, but alignment succeeded")
-                }
-                Err(error) => panic!("expected aligned-span refusal at {operation}: {error:?}"),
             }
+            assert!(found, "aligned-span refusal was not reached: {operation}");
         }
-        assert!(found, "aligned-span refusal was not reached: {operation}");
-    }
-
     })
 }
 
 #[test]
 fn unclamped_ruled_span_extraction_refuses_knot_insertion_storage() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-
-    let curve = NurbsCurve::from_lanes(
-        1,
-        vec![-1.0, 0.0, 1.0, 2.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        None,
-        false,
-    )
-    .unwrap();
-    let expected = super::homogeneous_bezier_spans(decode_ctx, &curve)
-        .unwrap()
+        let curve = NurbsCurve::from_lanes(
+            1,
+            vec![-1.0, 0.0, 1.0, 2.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
         .unwrap();
-    for operation in ["Bezier knot insertion", "Bezier inserted knot"] {
-        let mut cap = 0_u64;
-        let mut found = false;
-        for _ in 0..128 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match super::homogeneous_bezier_spans(&ctx, &curve) {
-                Err(CodecError::ResourceLimit(limit)) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        found = true;
-                        break;
-                    }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
-                }
-                Ok(_) => panic!("span extraction succeeded before {operation}"),
-                Err(error) => panic!("unexpected span refusal at {operation}: {error}"),
-            }
-        }
-        assert!(
-            found,
-            "span insertion boundary was not reached: {operation}"
-        );
-    }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        let expected = super::homogeneous_bezier_spans(decode_ctx, &curve)
+            .unwrap()
             .unwrap();
-    let actual = super::homogeneous_bezier_spans(&ctx, &curve)
-        .unwrap()
+        for operation in ["Bezier knot insertion", "Bezier inserted knot"] {
+            let mut cap = 0_u64;
+            let mut found = false;
+            for _ in 0..128 {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .unwrap();
+                match super::homogeneous_bezier_spans(&ctx, &curve) {
+                    Err(CodecError::ResourceLimit(limit)) => {
+                        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                        if limit.operation == operation {
+                            found = true;
+                            break;
+                        }
+                        cap = limit.used.checked_add(limit.additional).unwrap();
+                    }
+                    Ok(_) => panic!("span extraction succeeded before {operation}"),
+                    Err(error) => panic!("unexpected span refusal at {operation}: {error}"),
+                }
+            }
+            assert!(
+                found,
+                "span insertion boundary was not reached: {operation}"
+            );
+        }
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &DecodePolicy::service(),
+        )
         .unwrap();
-    assert_eq!(actual.len(), expected.len());
-    for (actual, expected) in actual.iter().zip(expected) {
-        assert_eq!(actual.domain, expected.domain);
-        assert_eq!(actual.controls, expected.controls);
-    }
-
+        let actual = super::homogeneous_bezier_spans(&ctx, &curve)
+            .unwrap()
+            .unwrap();
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(expected) {
+            assert_eq!(actual.domain, expected.domain);
+            assert_eq!(actual.controls, expected.controls);
+        }
     })
 }
 
 #[test]
 fn same_basis_ruled_surface_refuses_nested_weight_rows() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-
-    let rail = NurbsCurve::from_lanes(
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        None,
-        false,
-    )
-    .unwrap();
-    let weight = cadmpeg_ir::scalar::NonZeroReal::try_from(0.5).unwrap();
-    let weights = [weight, weight];
-    super::same_basis_ruled_surface(&rail, &rail, &weights, decode_ctx).unwrap();
-    for operation in [
-        "iges ruled same-basis weight rows",
-        "iges ruled same-basis weight row controls",
-        "iges ruled same-basis weighted rows",
-        "iges ruled same-basis weighted row controls",
-    ] {
-        let mut cap = 0_u64;
-        let mut found = false;
-        for _ in 0..4096 {
-            let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap;
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let (ctx, _) =
-                cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-            match super::same_basis_ruled_surface(&rail, &rail, &weights, &ctx) {
-                Err(CodecError::ResourceLimit(limit)) => {
-                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-                    if limit.operation == operation {
-                        found = true;
-                        break;
+        let rail = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .unwrap();
+        let weight = cadmpeg_ir::scalar::NonZeroReal::try_from(0.5).unwrap();
+        let weights = [weight, weight];
+        super::same_basis_ruled_surface(&rail, &rail, &weights, decode_ctx).unwrap();
+        for operation in [
+            "iges ruled same-basis weight rows",
+            "iges ruled same-basis weight row controls",
+            "iges ruled same-basis weighted rows",
+            "iges ruled same-basis weighted row controls",
+        ] {
+            let mut cap = 0_u64;
+            let mut found = false;
+            for _ in 0..4096 {
+                let mut policy = DecodePolicy::service();
+                policy.limits.max_collection_items = cap;
+                let arena = cadmpeg_core::decode::DecodeArena::new();
+                let (ctx, _) =
+                    cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+                        .unwrap();
+                match super::same_basis_ruled_surface(&rail, &rail, &weights, &ctx) {
+                    Err(CodecError::ResourceLimit(limit)) => {
+                        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                        if limit.operation == operation {
+                            found = true;
+                            break;
+                        }
+                        cap = limit.used.checked_add(limit.additional).unwrap();
                     }
-                    cap = limit.used.checked_add(limit.additional).unwrap();
+                    Ok(_) => {
+                        panic!("expected same-basis refusal at {operation}, but construction succeeded")
+                    }
+                    Err(error) => panic!("expected same-basis refusal at {operation}: {error:?}"),
                 }
-                Ok(_) => {
-                    panic!("expected same-basis refusal at {operation}, but construction succeeded")
-                }
-                Err(error) => panic!("expected same-basis refusal at {operation}: {error:?}"),
             }
+            assert!(found, "same-basis refusal was not reached: {operation}");
         }
-        assert!(found, "same-basis refusal was not reached: {operation}");
-    }
-
     })
 }
 
@@ -807,18 +809,16 @@ fn decode_refuses_a_nurbs_surface_over_its_pole_limit() {
 #[test]
 fn angular_basis_canonicalizes_a_full_sweep_with_decimal_roundoff() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
+        let basis = angular_basis(
+            0.0,
+            std::f64::consts::TAU + std::f64::consts::TAU * 5.0e-13,
+            decode_ctx,
+        )
+        .unwrap()
+        .expect("a near-full finite sweep has an exact rational basis");
 
-    let basis = angular_basis(
-        0.0,
-        std::f64::consts::TAU + std::f64::consts::TAU * 5.0e-13,
-        decode_ctx,
-    )
-    .unwrap()
-    .expect("a near-full finite sweep has an exact rational basis");
-
-    assert_eq!(basis.controls.len(), 9);
-    assert_eq!(basis.knots.last(), Some(&std::f64::consts::TAU));
-
+        assert_eq!(basis.controls.len(), 9);
+        assert_eq!(basis.knots.last(), Some(&std::f64::consts::TAU));
     })
 }
 
@@ -939,109 +939,105 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
 #[test]
 fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions_and_refuses_weight_limit() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-
-    let first = NurbsCurve::from_lanes(
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-        None,
-        false,
-    )
-    .expect("valid first rail");
-    let second = NurbsCurve::from_lanes(
-        2,
-        vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
-        vec![
-            Point3::new(0.0, 1.0, 0.0),
-            Point3::new(1.0, 2.0, 0.0),
-            Point3::new(2.0, 1.0, 0.0),
-        ],
-        Some(vec![1.0, 0.5, 1.0]),
-        false,
-    )
-    .expect("valid second rail");
-    let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
-        .expect("ruled lanes pair")
-        .expect("relative-parameter rational ruled carrier");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::ruled_surface_carrier(&first, &second, &ctx)
-        .expect_err("two unit weights exceed one admitted collection item");
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems
-    ));
-    assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
-    assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
-    for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
-        let first_point =
-            cadmpeg_ir::eval::nurbs_curve_point_at(&first, u).expect("first rail point");
-        let second_point =
-            cadmpeg_ir::eval::nurbs_curve_point_at(&second, 2.0 * u).expect("second rail point");
-        let expected = Point3::new(
-            (1.0 - v) * first_point.x + v * second_point.x,
-            (1.0 - v) * first_point.y + v * second_point.y,
-            (1.0 - v) * first_point.z + v * second_point.z,
-        );
-        let actual =
-            cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).expect("ruled surface point");
-        assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
-    }
-
+        let first = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid first rail");
+        let second = NurbsCurve::from_lanes(
+            2,
+            vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
+            vec![
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(2.0, 1.0, 0.0),
+            ],
+            Some(vec![1.0, 0.5, 1.0]),
+            false,
+        )
+        .expect("valid second rail");
+        let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
+            .expect("ruled lanes pair")
+            .expect("relative-parameter rational ruled carrier");
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::ruled_surface_carrier(&first, &second, &ctx)
+            .expect_err("two unit weights exceed one admitted collection item");
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems
+        ));
+        assert_eq!((surface.u_degree(), surface.v_degree()), (3, 1));
+        assert_eq!((surface.u_count(), surface.v_count()), (4, 2));
+        for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
+            let first_point =
+                cadmpeg_ir::eval::nurbs_curve_point_at(&first, u).expect("first rail point");
+            let second_point = cadmpeg_ir::eval::nurbs_curve_point_at(&second, 2.0 * u)
+                .expect("second rail point");
+            let expected = Point3::new(
+                (1.0 - v) * first_point.x + v * second_point.x,
+                (1.0 - v) * first_point.y + v * second_point.y,
+                (1.0 - v) * first_point.z + v * second_point.z,
+            );
+            let actual =
+                cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).expect("ruled surface point");
+            assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
+        }
     })
 }
 
 #[test]
 fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-
-    let first = NurbsCurve::from_lanes(
-        1,
-        vec![0.0, 0.0, 0.5, 1.0, 1.0],
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(0.5, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-        ],
-        None,
-        false,
-    )
-    .expect("valid first rail");
-    let second = NurbsCurve::from_lanes(
-        1,
-        vec![0.0, 0.0, 1.0, 1.0],
-        vec![Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-        Some(vec![1.0, 0.5]),
-        false,
-    )
-    .expect("valid second rail");
-    let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
-        .expect("ruled lanes pair")
-        .expect("partition-aligned rational ruled carrier");
-    assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
-    assert_eq!((surface.u_count(), surface.v_count()), (5, 2));
-    assert_eq!(
-        surface.u_knots().as_slice(),
-        [0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]
-    );
-    for (u, v) in [(0.25, 0.4), (0.75, 0.6)] {
-        let first_point =
-            cadmpeg_ir::eval::nurbs_curve_point_at(&first, u).expect("first rail point");
-        let second_point =
-            cadmpeg_ir::eval::nurbs_curve_point_at(&second, u).expect("second rail point");
-        let expected = Point3::new(
-            (1.0 - v) * first_point.x + v * second_point.x,
-            (1.0 - v) * first_point.y + v * second_point.y,
-            (1.0 - v) * first_point.z + v * second_point.z,
+        let first = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.5, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .expect("valid first rail");
+        let second = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            Some(vec![1.0, 0.5]),
+            false,
+        )
+        .expect("valid second rail");
+        let surface = super::ruled_surface_carrier(&first, &second, decode_ctx)
+            .expect("ruled lanes pair")
+            .expect("partition-aligned rational ruled carrier");
+        assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
+        assert_eq!((surface.u_count(), surface.v_count()), (5, 2));
+        assert_eq!(
+            surface.u_knots().as_slice(),
+            [0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]
         );
-        let actual =
-            cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).expect("ruled surface point");
-        assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
-    }
-
+        for (u, v) in [(0.25, 0.4), (0.75, 0.6)] {
+            let first_point =
+                cadmpeg_ir::eval::nurbs_curve_point_at(&first, u).expect("first rail point");
+            let second_point =
+                cadmpeg_ir::eval::nurbs_curve_point_at(&second, u).expect("second rail point");
+            let expected = Point3::new(
+                (1.0 - v) * first_point.x + v * second_point.x,
+                (1.0 - v) * first_point.y + v * second_point.y,
+                (1.0 - v) * first_point.z + v * second_point.z,
+            );
+            let actual =
+                cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).expect("ruled surface point");
+            assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
+        }
     })
 }
 

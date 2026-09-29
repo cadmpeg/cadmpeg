@@ -273,7 +273,7 @@ impl<'a> BitReader<'a> {
             if count > remaining {
                 return Err(malformed("a Binary string payload is truncated"));
             }
-                ctx.charge_retained(u64_from_index(count), "iges binary string payload")?;
+            ctx.charge_retained(u64_from_index(count), "iges binary string payload")?;
             output.try_reserve(count).map_err(|_| {
                 cadmpeg_core::CodecError::ResourceLimit(
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -310,11 +310,7 @@ struct ValueStream<'a, 'ctx, 'arena> {
 }
 
 impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
-    fn new(
-        bytes: &'a [u8],
-        lengths: PrimitiveLengths,
-        ctx: &'ctx DecodeContext<'arena>,
-    ) -> Self {
+    fn new(bytes: &'a [u8], lengths: PrimitiveLengths, ctx: &'ctx DecodeContext<'arena>) -> Self {
         Self {
             bits: BitReader::new(bytes),
             lengths,
@@ -384,7 +380,8 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
     }
 
     fn reserve_pending(&mut self) -> Result<(), CodecError> {
-        self.ctx.charge_collection_items(1, "iges binary repeated values")?;
+        self.ctx
+            .charge_collection_items(1, "iges binary repeated values")?;
         self.pending.try_reserve(1).map_err(|_| {
             cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -403,13 +400,10 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
             BinaryValue::Integer(value) => Ok(BinaryValue::Integer(*value)),
             BinaryValue::Real(value) => Ok(BinaryValue::Real(*value)),
             BinaryValue::Pointer(value) => Ok(BinaryValue::Pointer(*value)),
-            BinaryValue::String(bytes) => {
-                self.ctx.copy_retained(
-                    bytes,
-                    "iges binary repeated string",
-                )
-                .map(BinaryValue::String)
-            }
+            BinaryValue::String(bytes) => self
+                .ctx
+                .copy_retained(bytes, "iges binary repeated string")
+                .map(BinaryValue::String),
         }
     }
 
@@ -1752,11 +1746,7 @@ mod tests {
     const EPS_POINT: f64 = 1.0e-12;
 
     fn normalize_for_test(source: &[u8]) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)?;
-        normalize(source, &ctx)
+        crate::test_support::with_service_context(source, |ctx| normalize(source, ctx))
     }
 
     #[derive(Debug, Default)]
@@ -2103,9 +2093,9 @@ mod tests {
         let physical_bytes = physical.bytes();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &physical_bytes, &arena, &policy,
-        ).expect("test input fits service policy");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&physical_bytes, &arena, &policy)
+                .expect("test input fits service policy");
         let mut stream = ValueStream::new(&physical_bytes, lengths, &ctx);
         assert_eq!(
             stream.next().expect("physical value"),
@@ -2285,9 +2275,9 @@ mod tests {
 
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &bytes, &arena, &policy,
-        ).expect("test input fits service policy");
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+                .expect("test input fits service policy");
         let mut stream = ValueStream::new(&bytes, lengths, &ctx);
         assert_eq!(
             stream.next().expect("default value"),

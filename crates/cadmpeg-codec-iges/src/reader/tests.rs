@@ -818,8 +818,7 @@ fn projected_directory_refuses_entry_limit() {
     let (parse_ctx, _) =
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (global, _) = crate::global::parse(&scan, &parse_ctx).unwrap();
-    let (directory, _) =
-        crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
+    let (directory, _) = crate::directory::parse(&scan, global.global_table(), &parse_ctx).unwrap();
     let quarantined = std::collections::BTreeSet::from([99]);
 
     let arena = DecodeArena::new();

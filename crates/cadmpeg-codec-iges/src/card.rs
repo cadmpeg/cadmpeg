@@ -389,10 +389,7 @@ fn fused_card_count(payload: &[u8]) -> Option<usize> {
         .then_some(count)
 }
 
-fn physical_lines(
-    source: &[u8],
-    ctx: &DecodeContext<'_>,
-) -> Result<Vec<UnframedLine>, CodecError> {
+fn physical_lines(source: &[u8], ctx: &DecodeContext<'_>) -> Result<Vec<UnframedLine>, CodecError> {
     let mut lines = Vec::new();
     let mut start = 0_usize;
     let mut terminated = false;
@@ -442,7 +439,8 @@ fn physical_lines(
                 .ok_or_else(|| CodecError::Malformed("IGES card offset overflow".into()))?
                 .min(payload_end);
             ctx.charge_collection_items(1, "iges_cards")?;
-            let payload = ctx.copy_retained(&source[card_start..card_end], "iges physical card payload")?;
+            let payload =
+                ctx.copy_retained(&source[card_start..card_end], "iges physical card payload")?;
             let marked = !terminated && payload.len() == CARD_WIDTH;
             let section = marked.then(|| marker(&payload)).flatten();
             let sequence = marked.then(|| sequence(&payload)).flatten();
@@ -476,7 +474,10 @@ fn physical_lines(
         }
         if card_start != payload_end {
             ctx.charge_collection_items(1, "iges_cards")?;
-            let payload = ctx.copy_retained(&source[card_start..payload_end], "iges physical card payload")?;
+            let payload = ctx.copy_retained(
+                &source[card_start..payload_end],
+                "iges physical card payload",
+            )?;
             lines.try_reserve(1).map_err(|_| {
                 cadmpeg_core::CodecError::ResourceLimit(
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -691,12 +692,7 @@ fn summary_attribute(
     value: String,
 ) -> Result<(), CodecError> {
     let key = ctx.format_retained(format_args!("{key}"), "iges card summary attribute key")?;
-    ctx.insert_btree_map(
-        attributes,
-        key,
-        value,
-        "iges card summary attributes",
-    )?;
+    ctx.insert_btree_map(attributes, key, value, "iges card summary attributes")?;
     Ok(())
 }
 

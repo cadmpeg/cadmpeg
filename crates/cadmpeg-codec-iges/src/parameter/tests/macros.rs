@@ -95,5 +95,8 @@ fn macro_parameter_data_requires_nonempty_language_statements() {
         macro_parameter_data_with_context(bytes, b',', b';', ctx)
     })
     .unwrap_err();
-    assert!(matches!(error, MacroDataError::Defect(ParameterDefect::MacroStatementEmpty, _)));
+    assert!(matches!(
+        error,
+        MacroDataError::Defect(ParameterDefect::MacroStatementEmpty, _)
+    ));
 }

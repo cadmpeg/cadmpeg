@@ -211,19 +211,11 @@ fn single_target_cycle(
         ctx.charge_work(1, "iges structure cycle traversal")?;
         if visited.contains(&current) {
             for node in path {
-                ctx.insert_btree_set(
-                    visited,
-                    node,
-                    "iges structure visited cycle nodes",
-                )?;
+                ctx.insert_btree_set(visited, node, "iges structure visited cycle nodes")?;
             }
             return Ok(false);
         }
-        if !ctx.insert_btree_set(
-            &mut visiting,
-            current,
-            "iges structure active cycle nodes",
-        )? {
+        if !ctx.insert_btree_set(&mut visiting, current, "iges structure active cycle nodes")? {
             return Ok(true);
         }
         ctx.reserve_vec(&mut path, 1, "iges structure cycle path")?;
@@ -234,11 +226,7 @@ fn single_target_cycle(
             .filter(|target| targets.contains_key(target))
         else {
             for node in path {
-                ctx.insert_btree_set(
-                    visited,
-                    node,
-                    "iges structure visited cycle nodes",
-                )?;
+                ctx.insert_btree_set(visited, node, "iges structure visited cycle nodes")?;
             }
             return Ok(false);
         };
@@ -415,11 +403,7 @@ fn array_mask_valid(
         else {
             return Ok(false);
         };
-        if !ctx.insert_btree_set(
-            &mut positions,
-            position,
-            "iges array mask positions",
-        )? {
+        if !ctx.insert_btree_set(&mut positions, position, "iges array mask positions")? {
             return Ok(false);
         }
     }
@@ -1559,10 +1543,9 @@ fn bounded_plane_curve_is_simple(
                 if active.contains(&segment.curve) {
                     return Ok(false);
                 }
-                let active_id = segment.curve.try_clone_for_decode(
-                    context.ctx,
-                    "iges plane boundary child curve ID",
-                )?;
+                let active_id = segment
+                    .curve
+                    .try_clone_for_decode(context.ctx, "iges plane boundary child curve ID")?;
                 context.ctx.insert_btree_set(
                     active,
                     active_id,
@@ -1734,27 +1717,24 @@ fn plane_boundary_edge(
         .get(&boundary_sequence)
         .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
     let mut active = BTreeSet::new();
-    let active_id =
-        curve_id.try_clone_for_decode(ctx, "iges plane boundary active curve ID")?;
-    if !ctx.insert_btree_set(
-        &mut active,
-        active_id,
-        "iges plane boundary active curve",
-    )? || !bounded_plane_curve_is_simple(
-        geometry,
-        PlaneBoundarySimplicity {
-            index,
-            plane,
-            resolution,
-            transform: Transform::identity(),
-            ctx,
-        },
-        source_is_certified_simple,
-        source_edge
-            .param_range()
-            .map(cadmpeg_ir::units::FiniteVector::get),
-        &mut active,
-    )? {
+    let active_id = curve_id.try_clone_for_decode(ctx, "iges plane boundary active curve ID")?;
+    if !ctx.insert_btree_set(&mut active, active_id, "iges plane boundary active curve")?
+        || !bounded_plane_curve_is_simple(
+            geometry,
+            PlaneBoundarySimplicity {
+                index,
+                plane,
+                resolution,
+                transform: Transform::identity(),
+                ctx,
+            },
+            source_is_certified_simple,
+            source_edge
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            &mut active,
+        )?
+    {
         return Err(PlaneBoundaryError::NotSimple);
     }
     if !curve_geometry_coplanar(
@@ -1811,7 +1791,7 @@ fn plane_face_draft(
             1,
             "iges legacy plane edge slots",
         )?;
-        ctx.charge_entities( 1, "iges_geometry_structure")?;
+        ctx.charge_entities(1, "iges_geometry_structure")?;
         candidate.model_mut().edges.push(edge);
         let loop_id = crate::ids::loop_admitted(&stem.slot(boundary_index), ctx)?;
         let coedge_id = crate::ids::coedge_admitted(&stem.slot(boundary_index), ctx)?;
@@ -1820,13 +1800,12 @@ fn plane_face_draft(
             1,
             "iges legacy plane coedge slots",
         )?;
-        ctx.charge_entities( 1, "iges_geometry_structure")?;
+        ctx.charge_entities(1, "iges_geometry_structure")?;
         candidate.model_mut().coedges.push(Coedge {
             id: coedge_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
             owner_loop: loop_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
             edge: edge_id,
-            radial_next: coedge_id
-                .try_clone_for_decode(ctx, "iges structure identity copy")?,
+            radial_next: coedge_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
@@ -1845,7 +1824,7 @@ fn plane_face_draft(
             1,
             "iges legacy plane loop slots",
         )?;
-        ctx.charge_entities( 1, "iges_geometry_structure")?;
+        ctx.charge_entities(1, "iges_geometry_structure")?;
         candidate.model_mut().loops.push(Loop {
             id: loop_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
             face: face_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
@@ -1864,7 +1843,7 @@ fn plane_face_draft(
         1,
         "iges legacy plane face slots",
     )?;
-    ctx.charge_entities( 1, "iges_geometry_structure")?;
+    ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().faces.push(Face {
         id: face_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
         shell: shell_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
@@ -1890,7 +1869,7 @@ fn plane_face_draft(
         1,
         "iges legacy plane shell slots",
     )?;
-    ctx.charge_entities( 1, "iges_geometry_structure")?;
+    ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().shells.push(shell);
     let mut region_shells = ctx.collection_vec(1, "iges legacy plane region shells")?;
     region_shells.push(shell_id);
@@ -1899,7 +1878,7 @@ fn plane_face_draft(
         1,
         "iges legacy plane region slots",
     )?;
-    ctx.charge_entities( 1, "iges_geometry_structure")?;
+    ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().regions.push(Region {
         id: region_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
         body: body_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
@@ -1912,7 +1891,7 @@ fn plane_face_draft(
         1,
         "iges legacy plane body slots",
     )?;
-    ctx.charge_entities( 1, "iges_geometry_structure")?;
+    ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
@@ -2471,12 +2450,7 @@ pub(super) fn project(
             global.global_table(),
             ctx,
         )? {
-            ctx.insert_btree_map(
-                &mut flows,
-                entry.sequence,
-                flow,
-                "iges flow index nodes",
-            )?;
+            ctx.insert_btree_map(&mut flows, entry.sequence, flow, "iges flow index nodes")?;
         }
     }
 
@@ -2738,11 +2712,7 @@ pub(super) fn project(
         for _ in 0..attribute_count.unwrap_or_default() {
             let attribute_type_valid = match record.integer(cursor) {
                 Some(value) if (0..=9999).contains(&value) => {
-                    ctx.insert_btree_set(
-                        &mut attribute_types,
-                        value,
-                        "iges attribute type nodes",
-                    )?
+                    ctx.insert_btree_set(&mut attribute_types, value, "iges attribute type nodes")?
                 }
                 _ => false,
             };
@@ -2898,11 +2868,7 @@ pub(super) fn project(
                     record.string(start).zip(record.string(start + 1))
                 {
                     unit_value_valid(unit_type, value)
-                        && ctx.insert_btree_set(
-                            &mut types,
-                            unit_type,
-                            "iges unit type nodes",
-                        )?
+                        && ctx.insert_btree_set(&mut types, unit_type, "iges unit type nodes")?
                         && record
                             .number(start + 2)
                             .is_some_and(|scale| scale.is_finite() && scale > 0.0)
@@ -3244,14 +3210,13 @@ pub(super) fn project(
                     })
                 })
         });
-        let cyclic =
-            super::directed_cycle(entry.sequence, &mut visited_flows, ctx, |sequence| {
-                flows
-                    .get(&sequence)
-                    .into_iter()
-                    .flat_map(|flow| flow.continuations.iter().flatten().copied())
-                    .filter(|target| flows.contains_key(target))
-            })?;
+        let cyclic = super::directed_cycle(entry.sequence, &mut visited_flows, ctx, |sequence| {
+            flows
+                .get(&sequence)
+                .into_iter()
+                .flat_map(|flow| flow.continuations.iter().flatten().copied())
+                .filter(|target| flows.contains_key(target))
+        })?;
         if flow_targets_valid && !cyclic {
             ctx.insert_btree_set(
                 &mut decoded,
@@ -3537,11 +3502,7 @@ pub(super) fn project(
             subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?;
         let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances, ctx)?;
         if target_valid && transform_valid && !cyclic {
-            ctx.insert_btree_set(
-                &mut decoded,
-                *sequence,
-                "iges structure decoded sequences",
-            )?;
+            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
             super::push_entity_loss(
                 ctx,
@@ -3686,11 +3647,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_set(
-            &mut decoded,
-            *sequence,
-            "iges structure decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
     }
 
     let mut definitions = BTreeMap::new();
@@ -4071,11 +4028,7 @@ pub(super) fn project(
             }
         });
         if definition_fields_valid.contains(sequence) && nesting_valid {
-            ctx.insert_btree_set(
-                &mut decoded,
-                *sequence,
-                "iges structure decoded sequences",
-            )?;
+            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
             super::push_entity_loss(
                 ctx,
@@ -4094,11 +4047,7 @@ pub(super) fn project(
             && definition_fields_valid.contains(definition_sequence)
             && decoded.contains(definition_sequence)
         {
-            ctx.insert_btree_set(
-                &mut decoded,
-                *sequence,
-                "iges structure decoded sequences",
-            )?;
+            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
             placement_rejections
                 .entry(*sequence)
@@ -4139,11 +4088,7 @@ pub(super) fn project(
             }
         });
         if network_definition_fields_valid.contains(sequence) && nesting_valid {
-            ctx.insert_btree_set(
-                &mut decoded,
-                *sequence,
-                "iges structure decoded sequences",
-            )?;
+            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
             super::push_entity_loss(
                 ctx,
@@ -4172,11 +4117,7 @@ pub(super) fn project(
             && definition_valid
             && decoded.contains(&instance.definition)
         {
-            ctx.insert_btree_set(
-                &mut decoded,
-                *sequence,
-                "iges structure decoded sequences",
-            )?;
+            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
             placement_rejections.entry(*sequence).or_insert(
                 if decoded.contains(&instance.definition) {

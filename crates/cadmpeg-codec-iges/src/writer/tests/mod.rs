@@ -4,13 +4,13 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use super::card;
 use super::curve_entity;
+use super::encode_file;
 use super::ensure_version_support;
 use super::face_loop_order;
 use super::face_outer_loop;
 use super::generated_global;
 use super::generated_minimum_resolution;
 use super::generation_timestamp;
-use super::encode_file;
 use super::hyperbola_point;
 use super::isoparametric_flag;
 use super::number;
@@ -359,7 +359,8 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
     ] {
         let global_bytes = generated_global(version, timestamp, real(0.001), real(1000.0));
         let fixture = fixed_ascii_with_global(&global_bytes);
-        let scan = crate::test_support::scan(&fixture).expect("versioned generated Global cards scan");
+        let scan =
+            crate::test_support::scan(&fixture).expect("versioned generated Global cards scan");
         let (global, losses) =
             crate::test_support::parse_global(&scan).expect("versioned Global parses");
         assert_eq!(
@@ -852,32 +853,28 @@ fn generated_reals_round_trip_without_writer_quantization() {
 #[test]
 fn generated_parameter_cards_preserve_field_boundaries() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-
-    let token = number(real(f64::MAX));
-    let parameters = format!("128,{token},{token},{token},{token};");
-    let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes(), decode_ctx)
-        .expect("ordinary generated real tokens fit one card");
-    assert!(fragments.len() > 1);
-    assert!(fragments.iter().all(|fragment| fragment.len() <= 64));
-    let compact = fragments
-        .concat()
-        .into_iter()
-        .filter(|byte| *byte != b' ')
-        .collect::<Vec<_>>();
-    assert_eq!(compact, parameters.as_bytes());
-
+        let token = number(real(f64::MAX));
+        let parameters = format!("128,{token},{token},{token},{token};");
+        let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes(), decode_ctx)
+            .expect("ordinary generated real tokens fit one card");
+        assert!(fragments.len() > 1);
+        assert!(fragments.iter().all(|fragment| fragment.len() <= 64));
+        let compact = fragments
+            .concat()
+            .into_iter()
+            .filter(|byte| *byte != b' ')
+            .collect::<Vec<_>>();
+        assert_eq!(compact, parameters.as_bytes());
     })
 }
 
 #[test]
 fn generated_parameter_field_wider_than_a_card_is_refused() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-
-    let parameters = format!("{};", "1".repeat(65));
-    let error = crate::parameter::layout_parameter_cards(parameters.as_bytes(), decode_ctx)
-        .expect_err("a field wider than the data area must fail");
-    assert!(error.to_string().contains("field exceeds one card"));
-
+        let parameters = format!("{};", "1".repeat(65));
+        let error = crate::parameter::layout_parameter_cards(parameters.as_bytes(), decode_ctx)
+            .expect_err("a field wider than the data area must fail");
+        assert!(error.to_string().contains("field exceeds one card"));
     })
 }
 
@@ -899,9 +896,11 @@ fn generated_file_parameter_layout_obeys_default_decode_limits() {
     )
     .is_ok());
 
-    let payload_len = 20 * 1024 * 1024;
-    let mut parameter_body = format!("{payload_len}H").into_bytes();
-    parameter_body.extend(std::iter::repeat_n(b'A', payload_len));
+    let omitted_fields = usize::try_from(
+        cadmpeg_core::decode::DecodePolicy::default().limits.max_collection_items,
+    )
+    .expect("test collection limit fits usize");
+    let mut parameter_body = vec![b','; omitted_fields];
     parameter_body.push(b';');
     let oversized = super::Entity {
         parameter_body,
@@ -917,9 +916,34 @@ fn generated_file_parameter_layout_obeys_default_decode_limits() {
     assert!(matches!(
         error,
         CodecError::ResourceLimit(refusal)
-            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                && refusal.operation == "iges parameter layout card bytes"
+            if refusal.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && refusal.operation == "iges parameter layout fields"
+                && refusal.used == u64::try_from(omitted_fields).unwrap()
+                && refusal.additional == 1
     ));
+}
+
+#[test]
+fn generated_parameter_layout_uses_its_own_input_allowance() {
+    let payload_len = 20 * 1024 * 1024;
+    let mut parameter_body = format!("{payload_len}H").into_bytes();
+    parameter_body.extend(std::iter::repeat_n(b'A', payload_len));
+    parameter_body.push(b';');
+    let entity = super::Entity {
+        type_code: 110,
+        form: 0,
+        label: "TEST",
+        status: super::EntityStatus::Independent,
+        parameter_body,
+        transform: None,
+    };
+    assert!(encode_file(
+        &[entity],
+        &std::collections::BTreeMap::new(),
+        IgesVersion::V5_3,
+        0.001,
+    )
+    .is_ok());
 }
 
 #[test]

@@ -151,8 +151,9 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test setup");
-        ctx.charge_entities( 2, "iges geometry test").expect("test setup");
-        let result = ctx.charge_entities( 1, "iges geometry test");
+        ctx.charge_entities(2, "iges geometry test")
+            .expect("test setup");
+        let result = ctx.charge_entities(1, "iges geometry test");
         assert!(matches!(result,
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities

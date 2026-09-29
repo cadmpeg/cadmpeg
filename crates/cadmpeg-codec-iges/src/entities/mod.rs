@@ -42,21 +42,18 @@ fn push_entity_loss(
     reason: fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     push_attributed_loss(
-            ctx,
-            losses,
-            entry,
-            IgesLossCode::EntityNotProjected,
-            format_args!(
-                "IGES entity type {} form {} was not projected: {reason}",
-                entry.entity_type, entry.form
-            ),
-        )
+        ctx,
+        losses,
+        entry,
+        IgesLossCode::EntityNotProjected,
+        format_args!(
+            "IGES entity type {} form {} was not projected: {reason}",
+            entry.entity_type, entry.form
+        ),
+    )
 }
 
-fn non_resource_error(
-    error: CodecError,
-    ctx: &DecodeContext<'_>,
-) -> Result<String, CodecError> {
+fn non_resource_error(error: CodecError, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
     match error {
         CodecError::ResourceLimit(_) => Err(error),
         other => ctx.format_retained(format_args!("{other}"), "iges diagnostic error text"),
@@ -74,50 +71,30 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     }
     let mut active = BTreeSet::new();
     let mut stack = Vec::new();
-    ctx.reserve_vec(
-        &mut stack,
-        1,
-        "iges cycle stack",
-    )?;
+    ctx.reserve_vec(&mut stack, 1, "iges cycle stack")?;
     stack.push((sequence, false));
     while let Some((current, expanded)) = stack.pop() {
-            ctx.charge_work(1, "iges cycle work")?;
+        ctx.charge_work(1, "iges cycle work")?;
         if expanded {
             active.remove(&current);
-            ctx.insert_btree_set(
-                visited,
-                current,
-                "iges cycle visited",
-            )?;
+            ctx.insert_btree_set(visited, current, "iges cycle visited")?;
             continue;
         }
         if visited.contains(&current) {
             continue;
         }
-        if !ctx.insert_btree_set(
-            &mut active,
-            current,
-            "iges cycle active",
-        )? {
+        if !ctx.insert_btree_set(&mut active, current, "iges cycle active")? {
             return Ok(true);
         }
-        ctx.reserve_vec(
-            &mut stack,
-            1,
-            "iges cycle stack",
-        )?;
+        ctx.reserve_vec(&mut stack, 1, "iges cycle stack")?;
         stack.push((current, true));
         for target in successors(current).rev() {
-                ctx.charge_work(1, "iges cycle work")?;
+            ctx.charge_work(1, "iges cycle work")?;
             if active.contains(&target) {
                 return Ok(true);
             }
             if !visited.contains(&target) {
-                ctx.reserve_vec(
-                    &mut stack,
-                    1,
-                    "iges cycle stack",
-                )?;
+                ctx.reserve_vec(&mut stack, 1, "iges cycle stack")?;
                 stack.push((target, false));
             }
         }

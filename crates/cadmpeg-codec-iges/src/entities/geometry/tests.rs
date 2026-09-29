@@ -1056,31 +1056,29 @@ fn type125_form0_without_defining_entity_reports_display_loss() {
 #[test]
 fn transform_depth_overflow_is_a_structured_resource_refusal() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
+        let transform_count = 65_u32;
+        let mut directory = (0..transform_count)
+            .map(|index| {
+                let sequence = 1 + index * 2;
+                let transform = if index + 1 < transform_count {
+                    sequence + 2
+                } else {
+                    0
+                };
+                transform_entry(sequence, i64::from(transform))
+            })
+            .collect::<Vec<_>>();
+        directory.push(transform_entry(1 + transform_count * 2, 1));
 
-    let transform_count = 65_u32;
-    let mut directory = (0..transform_count)
-        .map(|index| {
-            let sequence = 1 + index * 2;
-            let transform = if index + 1 < transform_count {
-                sequence + 2
-            } else {
-                0
-            };
-            transform_entry(sequence, i64::from(transform))
-        })
-        .collect::<Vec<_>>();
-    directory.push(transform_entry(1 + transform_count * 2, 1));
-
-    let error = enforce_transform_depth(&directory, decode_ctx).unwrap_err();
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::Codec("iges_transform_depth")
-                && limit.limit == 64
-                && limit.used == 64
-                && limit.additional == 1
-    ));
-
+        let error = enforce_transform_depth(&directory, decode_ctx).unwrap_err();
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Codec("iges_transform_depth")
+                    && limit.limit == 64
+                    && limit.used == 64
+                    && limit.additional == 1
+        ));
     })
 }
 
@@ -1794,53 +1792,51 @@ fn decode_applies_nested_transforms_reflection_units_and_model_scale_once() {
 #[test]
 fn transform_translation_overflow_after_inch_scaling_is_rejected() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
-
-    use crate::parameter::{ParameterRecord, Token, TokenValue};
-    use std::collections::{BTreeMap, BTreeSet};
-    let entry = transform_entry(1, 0);
-    let values = [
-        124.0,
-        1.0,
-        0.0,
-        0.0,
-        f64::MAX,
-        0.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-    ];
-    let record = ParameterRecord::from_test_tokens(
-        1,
-        1..2,
-        Vec::new(),
-        values.len(),
-        values
-            .into_iter()
-            .map(|value| Token {
-                value: TokenValue::real(value),
-                span: 0..0,
-            })
-            .collect(),
-        Vec::new(),
-    );
-    let result = super::resolve_transform(
-        1,
-        &BTreeMap::from([(1, &entry)]),
-        &BTreeMap::from([(1, &record)]),
-        25.4,
-        crate::global::RealPrecision {
-            single_significance: 6,
-            double_significance: 15,
-        },
-        &mut BTreeSet::new(),
-        decode_ctx,
-    );
-    assert!(result.is_err());
-
+        use crate::parameter::{ParameterRecord, Token, TokenValue};
+        use std::collections::{BTreeMap, BTreeSet};
+        let entry = transform_entry(1, 0);
+        let values = [
+            124.0,
+            1.0,
+            0.0,
+            0.0,
+            f64::MAX,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+        ];
+        let record = ParameterRecord::from_test_tokens(
+            1,
+            1..2,
+            Vec::new(),
+            values.len(),
+            values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::real(value),
+                    span: 0..0,
+                })
+                .collect(),
+            Vec::new(),
+        );
+        let result = super::resolve_transform(
+            1,
+            &BTreeMap::from([(1, &entry)]),
+            &BTreeMap::from([(1, &record)]),
+            25.4,
+            crate::global::RealPrecision {
+                single_significance: 6,
+                double_significance: 15,
+            },
+            &mut BTreeSet::new(),
+            decode_ctx,
+        );
+        assert!(result.is_err());
     })
 }
 

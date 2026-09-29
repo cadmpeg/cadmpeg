@@ -7181,7 +7181,14 @@ fn encode_file(
             .ok_or_else(|| {
                 CodecError::NotImplemented("IGES directory sequence overflows".into())
             })?;
-        let fragments = crate::parameter::layout_parameter_cards(&entity.parameter_text(), &ctx)?;
+        let parameter_text = entity.parameter_text();
+        let parameter_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (parameter_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &parameter_text,
+            &parameter_arena,
+            &policy,
+        )?;
+        let fragments = crate::parameter::layout_parameter_cards(&parameter_text, &parameter_ctx)?;
         let parameter_count = fragments.len();
         let parameter_count = u32::try_from(parameter_count)
             .map_err(|_| CodecError::NotImplemented("IGES parameter count overflows".into()))?;

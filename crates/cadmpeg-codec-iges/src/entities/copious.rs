@@ -59,11 +59,7 @@ impl CopiousProjectionOutcome {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
         for sequence in self.decoded {
-            ctx.insert_btree_set(
-                decoded,
-                sequence,
-                "iges merged decoded sequences",
-            )?;
+            ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")?;
         }
         ctx.reserve_vec(losses, self.losses.len(), "iges merged loss slots")?;
         losses.extend(self.losses);
@@ -523,20 +519,14 @@ pub(super) fn project(
                     ctx,
                 )?;
                 ctx.reserve_vec(&mut ir.model.points, 1, "iges copious neutral points")?;
-                ctx.charge_entities(
-                    1,
-                    "iges_geometry_copious",
-                )?;
+                ctx.charge_entities(1, "iges_geometry_copious")?;
                 ir.model.points.push(Point::new(
                     point.try_clone_for_decode(ctx, "iges copious identity copy")?,
                     position,
                     None,
                 ));
                 ctx.reserve_vec(&mut ir.model.vertices, 1, "iges copious neutral vertices")?;
-                ctx.charge_entities(
-                    1,
-                    "iges_geometry_copious",
-                )?;
+                ctx.charge_entities(1, "iges_geometry_copious")?;
                 ir.model.vertices.push(Vertex {
                     id: vertex.try_clone_for_decode(ctx, "iges copious identity copy")?,
                     point,
@@ -628,14 +618,14 @@ pub(super) fn project(
         let curve = crate::ids::curve_admitted(&stem, ctx)?;
         let edge = crate::ids::edge_admitted(&stem, ctx)?;
         ctx.reserve_vec(&mut ir.model.points, 1, "iges copious neutral points")?;
-        ctx.charge_entities( 1, "iges_geometry_copious")?;
+        ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.points.push(Point::new(
             start_point.try_clone_for_decode(ctx, "iges copious identity copy")?,
             start,
             None,
         ));
         ctx.reserve_vec(&mut ir.model.vertices, 1, "iges copious neutral vertices")?;
-        ctx.charge_entities( 1, "iges_geometry_copious")?;
+        ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.vertices.push(Vertex {
             id: start_vertex.try_clone_for_decode(ctx, "iges copious identity copy")?,
             point: start_point,
@@ -643,14 +633,14 @@ pub(super) fn project(
         });
         if entry.form != 63 {
             ctx.reserve_vec(&mut ir.model.points, 1, "iges copious neutral points")?;
-            ctx.charge_entities( 1, "iges_geometry_copious")?;
+            ctx.charge_entities(1, "iges_geometry_copious")?;
             ir.model.points.push(Point::new(
                 end_point.try_clone_for_decode(ctx, "iges copious identity copy")?,
                 end,
                 None,
             ));
             ctx.reserve_vec(&mut ir.model.vertices, 1, "iges copious neutral vertices")?;
-            ctx.charge_entities( 1, "iges_geometry_copious")?;
+            ctx.charge_entities(1, "iges_geometry_copious")?;
             ir.model.vertices.push(Vertex {
                 id: end_vertex.try_clone_for_decode(ctx, "iges copious identity copy")?,
                 point: end_point,
@@ -671,7 +661,7 @@ pub(super) fn project(
                 .and_then(|poles| NurbsCurve::new(1, knots, poles, false))
         });
         ctx.reserve_vec(&mut ir.model.curves, 1, "iges copious neutral curves")?;
-        ctx.charge_entities( 1, "iges_geometry_copious")?;
+        ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.curves.push(Curve {
             id: curve.try_clone_for_decode(ctx, "iges copious identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.map_err(
@@ -680,7 +670,7 @@ pub(super) fn project(
             source_object: Some(source_object(entry, ctx)?),
         });
         ctx.reserve_vec(&mut ir.model.edges, 1, "iges copious neutral edges")?;
-        ctx.charge_entities( 1, "iges_geometry_copious")?;
+        ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.edges.push(Edge {
             id: edge.try_clone_for_decode(ctx, "iges copious identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(

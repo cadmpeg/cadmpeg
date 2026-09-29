@@ -166,9 +166,9 @@ fn topology_vertex(
     );
     sequences.record_point(&point_id, stem, ctx)?;
     let vertex_id = crate::ids::vertex_admitted(&stem.child(list).slot(index + 1), ctx)?;
-    ctx.charge_entities( 1, "iges_geometry_brep")?;
+    ctx.charge_entities(1, "iges_geometry_brep")?;
     candidate.model_mut().points.push(point);
-    ctx.charge_entities( 1, "iges_geometry_brep")?;
+    ctx.charge_entities(1, "iges_geometry_brep")?;
     candidate.model_mut().vertices.push(Vertex {
         id: vertex_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
         point: point_id,
@@ -252,7 +252,7 @@ fn project_pcurve_uses(
             "iges B-rep pcurve slots",
         )?;
         let id = crate::ids::pcurve_admitted(&id_stem.slot(index), ctx)?;
-        ctx.charge_entities( 1, "iges_geometry_brep")?;
+        ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.model_mut().pcurves.push(Pcurve {
             id: id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
             geometry,
@@ -680,12 +680,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_map(
-            &mut loops,
-            entry.sequence,
-            uses,
-            "iges B-rep loop nodes",
-        )?;
+        ctx.insert_btree_map(&mut loops, entry.sequence, uses, "iges B-rep loop nodes")?;
     }
 
     for entry in directory
@@ -989,12 +984,7 @@ pub(super) fn project(
             Ok(transform) => (entry.transform != 0).then_some(transform),
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_entity_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!("{message}"),
-                )?;
+                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
@@ -1140,8 +1130,7 @@ pub(super) fn project(
                             ctx.insert_btree_map(
                                 &mut coedge_by_use,
                                 index,
-                                coedge_id
-                                    .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                                coedge_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                                 "iges B-rep coedge use nodes",
                             )?;
                             coedge_ids.push(coedge_id);
@@ -1441,13 +1430,9 @@ pub(super) fn project(
                                 1,
                                 "iges B-rep topology edges",
                             )?;
-                            ctx.charge_entities(
-                                1,
-                                "iges_geometry_brep",
-                            )?;
+                            ctx.charge_entities(1, "iges_geometry_brep")?;
                             candidate.model_mut().edges.push(Edge {
-                                id: id
-                                    .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                                id: id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                                 carrier,
                                 start: vertex_ids
                                     [&(edge_definition.start_list, edge_definition.start_index)]
@@ -1501,22 +1486,15 @@ pub(super) fn project(
                         }
                         let ring = radial.entry(radial_key).or_default();
                         ctx.reserve_vec(ring, 1, "iges B-rep radial coedge ids")?;
-                        ring.push(
-                            coedge_id
-                                .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-                        );
+                        ring.push(coedge_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?);
                         ctx.reserve_vec(
                             &mut candidate.model_mut().coedges,
                             1,
                             "iges B-rep topology coedges",
                         )?;
-                        ctx.charge_entities(
-                            1,
-                            "iges_geometry_brep",
-                        )?;
+                        ctx.charge_entities(1, "iges_geometry_brep")?;
                         candidate.model_mut().coedges.push(Coedge {
-                            id: coedge_id
-                                .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                            id: coedge_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                             owner_loop: loop_id
                                 .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                             edge: edge_id,
@@ -1589,14 +1567,10 @@ pub(super) fn project(
                         1,
                         "iges B-rep topology loops",
                     )?;
-                    ctx.charge_entities(
-                        1,
-                        "iges_geometry_brep",
-                    )?;
+                    ctx.charge_entities(1, "iges_geometry_brep")?;
                     candidate.model_mut().loops.push(Loop {
                         id: loop_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
-                        face: face_id
-                            .try_clone_for_decode(ctx, "iges B-rep identity copy")?,
+                        face: face_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                         boundary,
                     });
                     ctx.insert_btree_set(
@@ -1639,10 +1613,7 @@ pub(super) fn project(
                     1,
                     "iges B-rep topology faces",
                 )?;
-                ctx.charge_entities(
-                    1,
-                    "iges_geometry_brep",
-                )?;
+                ctx.charge_entities(1, "iges_geometry_brep")?;
                 candidate.model_mut().faces.push(Face {
                     id: face_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
                     shell: shell_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
@@ -1668,7 +1639,7 @@ pub(super) fn project(
                 1,
                 "iges B-rep topology shells",
             )?;
-            ctx.charge_entities( 1, "iges_geometry_brep")?;
+            ctx.charge_entities(1, "iges_geometry_brep")?;
             candidate.model_mut().shells.push(
                 match Shell::new(
                     shell_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
@@ -1748,7 +1719,7 @@ pub(super) fn project(
             1,
             "iges B-rep topology regions",
         )?;
-        ctx.charge_entities( 1, "iges_geometry_brep")?;
+        ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.model_mut().regions.push(Region {
             id: region_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
             body: body_id.try_clone_for_decode(ctx, "iges B-rep identity copy")?,
@@ -1761,7 +1732,7 @@ pub(super) fn project(
             1,
             "iges B-rep topology bodies",
         )?;
-        ctx.charge_entities( 1, "iges_geometry_brep")?;
+        ctx.charge_entities(1, "iges_geometry_brep")?;
         candidate.model_mut().bodies.push(Body {
             id: body_id,
             kind: definition.kind,
@@ -1784,11 +1755,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_set(
-            &mut decoded,
-            entry.sequence,
-            "iges brep decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges brep decoded sequences")?;
         for sequence in consumed
             .into_iter()
             .chain(edge_ids.keys().map(|key| key.0))
