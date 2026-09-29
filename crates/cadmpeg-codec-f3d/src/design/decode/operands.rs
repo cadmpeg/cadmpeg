@@ -1179,8 +1179,7 @@ pub(crate) fn decode_face_source_groups(
             ) else {
                 continue;
             };
-            let Some(source_members) = source_reference_offsets
-                .into_iter()
+            let parsed_source_members = source_reference_offsets.into_iter()
                 .map(|(offset, source_record_index)| -> Result<Option<_>, CodecError> {
                     let Some(source_byte_offset) = records.first_at_or_after(
                         carrier_byte_offset.saturating_add(indexed_header::LEN),
@@ -1214,13 +1213,17 @@ pub(crate) fn decode_face_source_groups(
                             persistent_identity,
                         },
                     }))
-                })
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .collect::<Option<Vec<_>>>()
-            else {
-                continue;
-            };
+                });
+            // The supported carrier layouts contain at most four source slots.
+            let mut source_members = Vec::with_capacity(4);
+            let mut complete = true;
+            for member in parsed_source_members {
+                match member? {
+                    Some(member) => source_members.push(member),
+                    None => complete = false,
+                }
+            }
+            if !complete { continue; }
             let Ok(carrier_reference_ordinal) = u32::try_from(carrier_ordinal) else {
                 continue;
             };
@@ -1363,14 +1366,14 @@ fn parse_face_source_carrier_prefix(
     {
         return None;
     }
-    (0..layout.source_count)
-        .map(|ordinal| {
-            let offset = start
-                .checked_add(layout.source_reference_offset)?
-                .checked_add(ordinal.checked_mul(11)?)?;
-            Some((offset, marked_face_source_reference(bytes, offset)?))
-        })
-        .collect()
+    // Every supported carrier uses the same four-slot allocation.
+    let mut references = Vec::with_capacity(4);
+    for ordinal in 0..layout.source_count {
+        let offset = start.checked_add(layout.source_reference_offset)?
+            .checked_add(ordinal.checked_mul(11)?)?;
+        references.push((offset, marked_face_source_reference(bytes, offset)?));
+    }
+    Some(references)
 }
 
 fn marked_face_source_reference(bytes: &[u8], offset: usize) -> Option<u32> {

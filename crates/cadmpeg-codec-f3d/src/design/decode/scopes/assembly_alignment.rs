@@ -149,13 +149,13 @@ pub(super) fn exact_assembly_alignment(
             ),
             _ => return None,
         };
-        let owners: Vec<crate::records::identity::Located<u32>> = alignment_lanes
-            .iter()
-            .map(|owner| crate::records::identity::Located {
-                value: owner.record_index(),
-                offset: owner.evaluated_value_offset(),
-            })
-            .collect();
+        // Both supported alignment lanes use one fixed four-owner allocation.
+        let mut owners = Vec::with_capacity(4);
+        for owner in alignment_lanes {
+            owners.push(crate::records::identity::Located {
+                value: owner.record_index(), offset: owner.evaluated_value_offset(),
+            });
+        }
         if legacy_class_388 {
             let owner_reference_order_matches = CLASS_388_OWNER_REFERENCE_ORDINALS
                 .into_iter()

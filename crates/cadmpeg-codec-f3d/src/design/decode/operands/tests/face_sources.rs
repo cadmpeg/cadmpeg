@@ -131,3 +131,14 @@ fn face_source_carrier_prefix_rejects_wrong_count_and_discriminator() {
     bytes[80..84].copy_from_slice(&101u32.to_le_bytes());
     assert!(parse_face_source_carrier_prefix(&bytes, 0, 12, layout).is_none());
 }
+
+#[test]
+fn face_source_reference_storage_has_fixed_capacity() {
+    for (tag, count, offset, discriminator) in [(b"398", 4, 80, 100), (b"394", 2, 58, 109)] {
+        let layout = face_source_carrier_layout(class_tag_str(tag)).unwrap();
+        let bytes = source_carrier(tag, 100, 12, count, offset, discriminator);
+        let references = parse_face_source_carrier_prefix(&bytes, 0, 12, layout).unwrap();
+        assert_eq!(references.len(), count);
+        assert_eq!(references.capacity(), 4);
+    }
+}

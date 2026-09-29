@@ -33,16 +33,12 @@ pub(super) fn exact_variable_reference_operand_qualifiers(
     scope: &DesignParameterScope,
     frames: &[DesignAssemblyOperandFrame; 2],
 ) -> Option<[DesignAssemblyOperandQualifier; 2]> {
-    frames
-        .iter()
-        .map(|frame| {
-            exact_class_363_operand_path(bytes, records, scope, frame)
-                .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
-                .or_else(|| exact_class_307_joint_origin(bytes, records, frame))
-        })
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()
+    let [first, second] = frames.each_ref().map(|frame| {
+        exact_class_363_operand_path(bytes, records, scope, frame)
+            .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+            .or_else(|| exact_class_307_joint_origin(bytes, records, frame))
+    });
+    Some([first?, second?])
 }
 
 fn exact_class_363_operand_path(

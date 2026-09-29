@@ -4411,21 +4411,15 @@ fn project_hem(
         ctx,
     )?;
 
-    let edge_slot = edge_operands
-        .iter()
-        .filter(|operand| {
-            native_stream(&operand.id) == native_stream(&edge_group.id)
-                && operand.scope_record_index == edge_group.scope_record_index
-                && operand.record_index() == operation.edge_operand_record_index()
-        })
-        .collect::<Vec<_>>();
-    let edge_slot = match edge_slot.as_slice() {
-        [operand] => crate::design::edge_resolve::resolved_hem_edge_slot(
-            operand,
-            crate::history::effective_scope_previous_history_state_id(scope, histories),
-            ctx,
+    let edge_slot = match unique_feature_match(edge_operands.iter().filter(|operand| {
+        native_stream(&operand.id) == native_stream(&edge_group.id)
+            && operand.scope_record_index == edge_group.scope_record_index
+            && operand.record_index() == operation.edge_operand_record_index()
+    })) {
+        Some(operand) => crate::design::edge_resolve::resolved_hem_edge_slot(
+            operand, crate::history::effective_scope_previous_history_state_id(scope, histories), ctx,
         )?,
-        _ => None,
+        None => None,
     };
     let semantics = edge_slot
         .map(|edge_slot| crate::history::hem_geometry_semantics(scope, edge_slot, histories));
@@ -6309,194 +6303,95 @@ fn project_chamfer(
     let edge_treatment_vertex_operands = inputs.edge_treatment_vertex_operands;
     let histories = inputs.histories;
     let native_scope = native_stream(&scope.id);
-    let mut edge_groups = construction_groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == native_scope
-                && group.scope_record_index == scope.record_index
-                && group.extrude_role().is_none()
-        })
-        .collect::<Vec<_>>();
-    edge_groups.sort_by_key(|group| group.scope_reference_ordinal);
-    // The edge groups the source states are the whole population: every parameter lane below
-    // pairs one value with one group, so a scope that states no group carries no typed chamfer
-    // and the caller writes the native feature instead.
-    let group_count = edge_groups.len();
-
-    let ordered_parameters = |source_kind: &str| {
-        let mut matches = parameters
-            .iter()
-            .filter(|(_, parameter)| parameter.source_kind() == source_kind)
-            .copied()
-            .collect::<Vec<_>>();
-        matches.sort_by_key(|(local_ordinal, _)| *local_ordinal);
-        matches
-            .into_iter()
-            .map(|(_, parameter)| parameter)
-            .collect::<Vec<_>>()
-    };
-    let distances = ordered_parameters("Distance");
-    let first_distances = ordered_parameters("Distance 1");
-    let second_distances = ordered_parameters("Distance 2");
-    let left_distances = ordered_parameters("leftDistance");
-    let right_distances = ordered_parameters("rightDistance");
-    let mut angles = parameters
-        .iter()
-        .filter(|(_, parameter)| {
-            matches!(
-                parameter.source_kind(),
-                "Angle" | "Rotate Angle" | "rotateAngle"
-            )
-        })
-        .copied()
-        .collect::<Vec<_>>();
-    angles.sort_by_key(|(local_ordinal, _)| *local_ordinal);
-    let angles = angles
-        .into_iter()
-        .map(|(_, parameter)| parameter)
-        .collect::<Vec<_>>();
-
-    if !parameters.iter().all(|(_, parameter)| {
-        matches!(
-            parameter.source_kind(),
-            "Distance"
-                | "Distance 1"
-                | "Distance 2"
-                | "leftDistance"
-                | "rightDistance"
-                | "Angle"
-                | "Rotate Angle"
-                | "rotateAngle"
-        )
+    let mut edge_groups = Vec::new();
+    for group in construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == native_scope
+            && group.scope_record_index == scope.record_index
+            && group.extrude_role().is_none()
     }) {
+        push_feature_item(ctx, &mut edge_groups, group, "f3d chamfer edge groups")?;
+    }
+    edge_groups.sort_by_key(|group| group.scope_reference_ordinal);
+    let group_count = edge_groups.len();
+    let ordered_parameters = |matches_kind: &dyn Fn(&str) -> bool| -> Result<Vec<&DesignParameter>, CodecError> {
+        let mut matches = Vec::new();
+        for parameter in parameters.iter().filter(|(_, parameter)| matches_kind(parameter.source_kind())).copied() {
+            push_feature_item(ctx, &mut matches, parameter, "f3d chamfer ordered parameter entries")?;
+        }
+        matches.sort_by_key(|(ordinal, _)| *ordinal);
+        let mut out = Vec::new();
+        for (_, parameter) in matches {
+            push_feature_item(ctx, &mut out, parameter, "f3d chamfer ordered parameter output")?;
+        }
+        Ok(out)
+    };
+    let distances = ordered_parameters(&|kind| kind == "Distance")?;
+    let first_distances = ordered_parameters(&|kind| kind == "Distance 1")?;
+    let second_distances = ordered_parameters(&|kind| kind == "Distance 2")?;
+    let left_distances = ordered_parameters(&|kind| kind == "leftDistance")?;
+    let right_distances = ordered_parameters(&|kind| kind == "rightDistance")?;
+    let angles = ordered_parameters(&|kind| matches!(kind, "Angle" | "Rotate Angle" | "rotateAngle"))?;
+    if !parameters.iter().all(|(_, parameter)| matches!(parameter.source_kind(),
+        "Distance" | "Distance 1" | "Distance 2" | "leftDistance" | "rightDistance"
+            | "Angle" | "Rotate Angle" | "rotateAngle")) {
         return Ok(None);
     }
-
-    let candidates = if !left_distances.is_empty() || !right_distances.is_empty() {
+    enum Lanes<'a> {
+        Distance(&'a [&'a DesignParameter]),
+        TwoDistances(&'a [&'a DesignParameter], &'a [&'a DesignParameter]),
+        DistanceAngle(&'a [&'a DesignParameter], &'a [&'a DesignParameter]),
+    }
+    let lanes = if !left_distances.is_empty() || !right_distances.is_empty() {
         if !distances.is_empty() || !first_distances.is_empty() || !second_distances.is_empty() {
             return Ok(None);
         }
         if right_distances.is_empty() && !angles.is_empty() {
-            (left_distances.len() == group_count && angles.len() == group_count).then(|| {
-                left_distances
-                    .iter()
-                    .zip(&angles)
-                    .map(|(distance, angle)| {
-                        design_positive_length(distance)
-                            .zip(design_angle(angle).and_then(|value| {
-                                cadmpeg_ir::scalar::InteriorAngle::try_from(value).ok()
-                            }))
-                            .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
-                    })
-                    .collect::<Vec<_>>()
-            })
+            if left_distances.len() != group_count || angles.len() != group_count { return Ok(None); }
+            Lanes::DistanceAngle(&left_distances, &angles)
         } else if right_distances.is_empty() {
-            if !angles.is_empty() {
-                return Ok(None);
-            }
-            (left_distances.len() == group_count).then(|| {
-                left_distances
-                    .iter()
-                    .map(|distance| {
-                        design_positive_length(distance)
-                            .map(|distance| ChamferSpec::Distance { distance })
-                    })
-                    .collect::<Vec<_>>()
-            })
+            if left_distances.len() != group_count { return Ok(None); }
+            Lanes::Distance(&left_distances)
         } else {
-            if !angles.is_empty() {
-                return Ok(None);
-            }
-            (left_distances.len() == group_count && right_distances.len() == group_count).then(
-                || {
-                    left_distances
-                        .iter()
-                        .zip(&right_distances)
-                        .map(|(first, second)| {
-                            design_positive_length(first)
-                                .zip(design_positive_length(second))
-                                .map(|(first, second)| ChamferSpec::TwoDistances { first, second })
-                        })
-                        .collect::<Vec<_>>()
-                },
-            )
+            if !angles.is_empty() || left_distances.len() != group_count || right_distances.len() != group_count { return Ok(None); }
+            Lanes::TwoDistances(&left_distances, &right_distances)
         }
     } else if !first_distances.is_empty() || !second_distances.is_empty() {
-        if !distances.is_empty() || !angles.is_empty() {
-            return Ok(None);
-        }
-        let candidates = (first_distances.len() == group_count
-            && second_distances.len() == group_count)
-            .then(|| {
-                first_distances
-                    .iter()
-                    .zip(&second_distances)
-                    .map(|(first, second)| {
-                        design_positive_length(first)
-                            .zip(design_positive_length(second))
-                            .map(|(first, second)| ChamferSpec::TwoDistances { first, second })
-                    })
-                    .collect::<Vec<_>>()
-            });
-        candidates
+        if !distances.is_empty() || !angles.is_empty() || first_distances.len() != group_count || second_distances.len() != group_count { return Ok(None); }
+        Lanes::TwoDistances(&first_distances, &second_distances)
     } else if !angles.is_empty() {
-        if distances.len() != group_count || angles.len() != group_count {
-            return Ok(None);
-        }
-        let candidates = Some({
-            distances
-                .iter()
-                .zip(&angles)
-                .map(|(distance, angle)| {
-                    design_positive_length(distance)
-                        .zip(design_angle(angle).and_then(|value| {
-                            cadmpeg_ir::scalar::InteriorAngle::try_from(value).ok()
-                        }))
-                        .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
-                })
-                .collect::<Vec<_>>()
-        });
-        candidates
+        if distances.len() != group_count || angles.len() != group_count { return Ok(None); }
+        Lanes::DistanceAngle(&distances, &angles)
     } else if !distances.is_empty() {
-        if distances.len() != group_count {
-            return Ok(None);
-        }
-        let candidates = Some({
-            distances
-                .iter()
-                .map(|distance| {
-                    design_positive_length(distance)
-                        .map(|distance| ChamferSpec::Distance { distance })
-                })
-                .collect::<Vec<_>>()
-        });
-        candidates
-    } else {
-        None
-    };
-    let candidates = or_none!(or_none!(candidates).into_iter().collect::<Option<Vec<_>>>());
-
-    let groups: Vec<_> = candidates
-        .into_iter()
-        .zip(edge_groups)
-        .map(|(spec, group)| -> Result<_, CodecError> {
-            Ok(ChamferGroup {
-                edges: resolved_edge_treatment_group_with_corners(
-                    group,
-                    construction_groups,
-                    edge_operands,
-                    edge_identity_operands,
-                    edge_treatment_vertex_operands,
-                    histories,
-                    scope.previous_history_state_id(),
-                    &crate::design::identity::neutral_feature_id(ctx,scope)?,
-                    None,
-                    ctx,
-                )?,
-                spec,
-            })
-        })
-        .collect::<Result<_, _>>()?;
+        if distances.len() != group_count { return Ok(None); }
+        Lanes::Distance(&distances)
+    } else { return Ok(None); };
+    let mut candidates = Vec::new();
+    for ordinal in 0..group_count {
+        let spec = match lanes {
+            Lanes::Distance(distance) => design_positive_length(distance[ordinal])
+                .map(|distance| ChamferSpec::Distance { distance }),
+            Lanes::TwoDistances(first, second) => design_positive_length(first[ordinal])
+                .zip(design_positive_length(second[ordinal]))
+                .map(|(first, second)| ChamferSpec::TwoDistances { first, second }),
+            Lanes::DistanceAngle(distance, angle) => design_positive_length(distance[ordinal])
+                .zip(design_angle(angle[ordinal]).and_then(|value| cadmpeg_ir::scalar::InteriorAngle::try_from(value).ok()))
+                .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle }),
+        };
+        let spec = or_none!(spec);
+        push_feature_item(ctx, &mut candidates, spec, "f3d chamfer specifications")?;
+    }
+    let mut groups = Vec::new();
+    for (spec, group) in candidates.into_iter().zip(edge_groups) {
+        let group = ChamferGroup {
+            edges: resolved_edge_treatment_group_with_corners(
+                group, construction_groups, edge_operands, edge_identity_operands,
+                edge_treatment_vertex_operands, histories, scope.previous_history_state_id(),
+                &crate::design::identity::neutral_feature_id(ctx, scope)?, None, ctx,
+            )?,
+            spec,
+        };
+        push_feature_item(ctx, &mut groups, group, "f3d chamfer output groups")?;
+    }
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Chamfer {
             groups: or_none!(groups.try_into().ok()),
@@ -6521,16 +6416,9 @@ fn project_fixed_chamfer(
 
     let fixed = or_none!(scope.fixed_chamfer_parameters());
     let stream = or_none!(native_stream(&scope.id));
-    let groups = construction_groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
-    let [group] = groups.as_slice() else {
-        return Ok(None);
-    };
+    let group = or_none!(unique_feature_match(construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
+    })));
     let spec = match fixed {
         crate::records::feature::fixed_parameters::DesignFixedChamferParameters::EqualDistance { distance } => {
             ChamferSpec::Distance {
@@ -7906,15 +7794,9 @@ fn project_fixed_pipe(
             return None;
         }
         let unique = |source_kind: &str| {
-            let matches = parameters
-                .iter()
+            unique_feature_match(parameters.iter()
                 .filter(|(_, parameter)| parameter.source_kind() == source_kind)
-                .map(|(_, parameter)| *parameter)
-                .collect::<Vec<_>>();
-            let [parameter] = matches.as_slice() else {
-                return None;
-            };
-            Some(*parameter)
+                .map(|(_, parameter)| *parameter))
         };
         let along = unique("AlongDistance")?;
         let against = unique("AgainstDistance")?;
@@ -8057,14 +7939,17 @@ fn surface_patch_boundary_continuity(
 /// A missing or unknown component condition makes the complete per-boundary
 /// vector unavailable. The caller can still retain the native scope.
 fn surface_patch_boundary_continuities(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
-) -> Vec<cadmpeg_ir::features::SurfaceContinuity> {
-    scope
-        .surface_patch_boundaries()
-        .iter()
-        .map(|boundary| surface_patch_boundary_continuity(boundary.continuity))
-        .collect::<Option<Vec<_>>>()
-        .unwrap_or_default()
+) -> Result<Vec<cadmpeg_ir::features::SurfaceContinuity>, CodecError> {
+    let mut conditions = Vec::new();
+    for boundary in scope.surface_patch_boundaries() {
+        let Some(condition) = surface_patch_boundary_continuity(boundary.continuity) else {
+            return Ok(Vec::new());
+        };
+        push_feature_item(ctx, &mut conditions, condition, "f3d surface-patch continuity")?;
+    }
+    Ok(conditions)
 }
 
 fn project_surface_patch(
@@ -8084,23 +7969,12 @@ fn project_surface_patch(
     let Some(stream) = native_stream(&scope.id) else {
         return Ok(None);
     };
-    if let Some(ctx) = ctx {
-        let count = construction_groups
-            .iter()
-            .filter(|group| {
-                native_stream(&group.id) == Some(stream)
-                    && group.scope_record_index == scope.record_index
-            })
-            .count();
-        ctx.charge_collection_items(count as u64, "f3d surface-patch groups")?;
+    let mut groups = Vec::new();
+    for group in construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
+    }) {
+        push_feature_item(ctx, &mut groups, group, "f3d surface-patch groups")?;
     }
-    let mut groups = construction_groups
-        .iter()
-        .filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-        })
-        .collect::<Vec<_>>();
     groups.sort_by_key(|group| group.scope_reference_ordinal);
 
     // The single-group path form stores the group, all of its ordered edge
@@ -8241,15 +8115,12 @@ fn project_surface_patch(
         occupied[member_ordinal] = true;
         occupied[settings_ordinal] = true;
     }
-    if let Some(ctx) = ctx {
-        let count = occupied.iter().filter(|&&occupied| !occupied).count();
-        ctx.charge_collection_items(count as u64, "f3d surface-patch unoccupied references")?;
+    let mut unoccupied = Vec::new();
+    for (ordinal, occupied) in occupied.iter().enumerate() {
+        if !occupied {
+            push_feature_item(ctx, &mut unoccupied, ordinal, "f3d surface-patch unoccupied references")?;
+        }
     }
-    let unoccupied = occupied
-        .iter()
-        .enumerate()
-        .filter_map(|(ordinal, occupied)| (!occupied).then_some(ordinal))
-        .collect::<Vec<_>>();
     let endpoint_unoccupied = unoccupied.as_slice() == [0]
         || unoccupied.as_slice() == [scope.reference_members().len().saturating_sub(1)];
     if (scope.reference_members().len() == 3 && !unoccupied.is_empty())
@@ -8282,7 +8153,7 @@ fn project_surface_patch(
             boundary: SurfaceBoundary::Path(boundary),
             support_faces: FaceSelection::Faces(Vec::new()),
             continuity: cadmpeg_ir::features::NonEmptyMembers::try_from(
-                surface_patch_boundary_continuities(scope),
+                surface_patch_boundary_continuities(ctx, scope)?,
             )
             .map_or_else(
                 |_| cadmpeg_ir::features::FilledSurfaceContinuityState::unresolved(),

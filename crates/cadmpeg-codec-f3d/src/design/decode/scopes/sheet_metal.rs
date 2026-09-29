@@ -558,7 +558,9 @@ fn edge_flange_operation_at(
     }
     // Every reference the fixed section names is removed from this pool, so the
     // entries that remain at the end are exactly the unclaimed ones.
-    let mut unclaimed: Vec<u32> = references.to_vec();
+    // The three width modes share one fixed ten-slot allocation.
+    let mut unclaimed = Vec::with_capacity(8 + MAX_EDGE_WIDTH_DISTANCE_OWNERS);
+    unclaimed.extend_from_slice(references);
     let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
         let at = pool.iter().position(|entry| *entry == index)?;
         pool.remove(at);

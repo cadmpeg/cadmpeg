@@ -98,3 +98,52 @@ fn a_chamfer_that_states_no_edge_group_refuses_a_one_element_distance_lane() {
             }] if selection == &group.id && distance.get() == 1.0)
     ));
 }
+
+fn assert_chamfer_collection_refusal(limit: u64, operation: &str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let scope = localized_chamfer_scope();
+    let parameter = localized_fillet_parameter(10, 11, "Distance", Some("mm"), 0.1);
+    let group = localized_fillet_group(100, 0, vec![200]);
+    let inputs = crate::design::feature_project::ProjectInputs {
+        native: &[], owners: &[], scopes: &[], timelines: &[],
+        construction_groups: std::slice::from_ref(&group), fillet_radius_groups: &[],
+        edge_operands: &[], edge_identity_operands: &[], edge_treatment_vertex_operands: &[],
+        entity_selection_operands: &[], curve_identities: &[], face_operands: &[],
+        body_recipe_operands: &[], legacy_loft_body_carriers: &[], placements: &[],
+        body_bindings: &[], component_naming_spaces: &[], histories: &[],
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(crate::design::feature_project::project_chamfer(&scope, &[(0, &parameter)],
+        &inputs, Some(&ctx)), Err(CodecError::ResourceLimit(failure))
+        if failure.dimension == ResourceDimension::CollectionItems && failure.operation == operation));
+}
+
+#[test]
+fn chamfer_edge_groups_refuse_collection_limit() {
+    assert_chamfer_collection_refusal(0, "f3d chamfer edge groups");
+}
+
+#[test]
+fn chamfer_ordered_parameter_entries_refuse_collection_limit() {
+    assert_chamfer_collection_refusal(1, "f3d chamfer ordered parameter entries");
+}
+
+#[test]
+fn chamfer_ordered_parameter_output_refuses_collection_limit() {
+    assert_chamfer_collection_refusal(2, "f3d chamfer ordered parameter output");
+}
+
+#[test]
+fn chamfer_specifications_refuse_collection_limit() {
+    assert_chamfer_collection_refusal(3, "f3d chamfer specifications");
+}
+
+#[test]
+fn chamfer_output_groups_refuse_collection_limit() {
+    // Four chamfer entries and one edge-member identity precede the output group.
+    assert_chamfer_collection_refusal(5, "f3d chamfer output groups");
+}
