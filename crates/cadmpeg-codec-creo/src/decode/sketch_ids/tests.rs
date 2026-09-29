@@ -4,7 +4,8 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDim
 
 use super::{
     feature_sketch_record_id_in_scan, model_sketch_id, owning_feature_definition_ref,
-    sketch_constraint_id_admitted, sketch_native_ref_admitted, sketch_table_headers,
+    section_owner_feature_id, sketch_constraint_id_admitted, sketch_native_ref_admitted,
+    sketch_table_headers,
 };
 use crate::decode::native_records::CreoSketchTableKind;
 use crate::feature::definitions::{
@@ -66,6 +67,28 @@ fn sketch_constraint_identity_and_native_ref_refuse_retained_bytes() {
     );
     assert_eq!(sketch_native_ref_admitted(&ctx, &sketch).expect("service native ref"),
         "creo:featdefs:sketch#40");
+}
+
+#[test]
+fn section_owner_feature_identity_refuses_before_formatting() {
+    let scan = crate::container::scan_bytes_ok(Vec::new());
+    let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917")
+        .expect("sketch ID");
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = "creo:model:sketch_feature#917".len() as u64 - 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let error = section_owner_feature_id(&ctx, &scan, 917, &sketch)
+        .expect_err("owner feature ID exceeds retained cap");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo section owner feature identity"));
+    let service = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+    assert_eq!(section_owner_feature_id(&ctx, &scan, 917, &sketch)
+        .expect("service owner ID")
+        .expect("valid owner ID")
+        .as_str(), "creo:model:sketch_feature#917");
 }
 
 #[test]

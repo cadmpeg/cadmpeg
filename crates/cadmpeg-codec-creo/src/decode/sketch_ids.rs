@@ -379,19 +379,23 @@ pub(super) fn sketch_feature_id(sketch: &SketchId) -> Option<IrFeatureId> {
 }
 
 pub(super) fn section_owner_feature_id(
+    ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     definition_id: u32,
     sketch: &SketchId,
-) -> Option<IrFeatureId> {
-    owned_section_feature_id(scan, definition_id).map_or_else(
-        || sketch_feature_id(sketch),
-        |feature_id| {
-            Some(IrFeatureId::compose(
-                &crate::identity::MODEL_FEATURE,
-                feature_id,
-            ))
-        },
-    )
+) -> Result<Option<IrFeatureId>, CodecError> {
+    let text = if let Some(feature_id) = owned_section_feature_id(scan, definition_id) {
+        ctx.format_retained(
+            format_args!("creo:model:feature#{feature_id}"),
+            "creo section owner feature identity",
+        )?
+    } else {
+        ctx.format_retained(
+            format_args!("creo:model:sketch_feature#{}", sketch_identity_scope(sketch)),
+            "creo section owner feature identity",
+        )?
+    };
+    Ok(IrFeatureId::try_from(text).ok())
 }
 
 pub(super) fn owning_feature_definition_ref(
