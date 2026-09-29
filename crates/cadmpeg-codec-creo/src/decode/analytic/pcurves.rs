@@ -33,6 +33,10 @@ use super::planes::point_on_carrier;
 use super::vertices::{finite_model_point, model_points_agree};
 use crate::vecmath::{cross, dot};
 
+macro_rules! require_some {
+    ($value:expr) => { match $value { Some(value) => value, None => return Ok(None) } };
+}
+
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_ORTHO: f64 = 1.0e-10;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
@@ -129,14 +133,14 @@ enum TwoChartMapping {
     },
 }
 
-fn map_two_chart_endpoint_sets(
+fn map_two_chart_endpoint_sets(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     pcurve: &crate::curve::TwoChartPcurveSamples,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> TwoChartMapping {
+) -> Result<TwoChartMapping, cadmpeg_core::CodecError> {
     let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
-        return TwoChartMapping::NoSamples;
+        return Ok(TwoChartMapping::NoSamples);
     };
     let surfaces = pcurve
         .faces
@@ -156,11 +160,11 @@ fn map_two_chart_endpoint_sets(
             let Some(surface) = surfaces[face_index] else {
                 continue;
             };
-            points[face_index] = match cadmpeg_ir::eval::surface_point(
+            points[face_index] = match cadmpeg_ir::eval::admitted::surface_point(ctx,
                 source_carriers.surface_geometry(surface),
                 sample[face_index][0],
                 sample[face_index][1],
-            ) {
+            )? {
                 Ok(point) => Some(Ok(point)),
                 Err(failure) => failure.non_finite().map(Err),
             };
@@ -190,21 +194,21 @@ fn map_two_chart_endpoint_sets(
         [None, None] => None,
     };
     let surface_mismatch = mapped[0] && mapped[1] && mismatch;
-    TwoChartMapping::Mapped {
+    Ok(TwoChartMapping::Mapped {
         endpoint_sets,
         missing_surface_paths,
         unevaluable_paths,
         surface_mismatch,
-    }
+    })
 }
 
-pub(in crate::decode) fn mapped_two_chart_endpoint_sets(
+pub(in crate::decode) fn mapped_two_chart_endpoint_sets(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &CadIr,
     pcurve: &crate::curve::TwoChartPcurveSamples,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> Option<TwoChartEndpointSets> {
-    match map_two_chart_endpoint_sets(scan, ir, pcurve, source_carriers) {
+) -> Result<Option<TwoChartEndpointSets>, cadmpeg_core::CodecError> {
+    Ok(match map_two_chart_endpoint_sets(ctx, scan, ir, pcurve, source_carriers)? {
         TwoChartMapping::Mapped {
             endpoint_sets,
             surface_mismatch: false,
@@ -215,7 +219,7 @@ pub(in crate::decode) fn mapped_two_chart_endpoint_sets(
             surface_mismatch: true,
             ..
         } => None,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -487,42 +491,45 @@ fn pcurve_path_carrier_status(
     )
 }
 
-fn pcurve_endpoint_carrier_status(
+fn pcurve_endpoint_carrier_status(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
     faces: [Option<NonZeroU32>; 2],
     face_index: usize,
     endpoints: [[f64; 2]; 2],
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> PcurveCarrierStatus {
+) -> Result<PcurveCarrierStatus, cadmpeg_core::CodecError> {
     let face_id = faces[face_index];
     let other_id = faces[1 - face_index];
     let Some(surface) = face_id.and_then(|id| unique_model_surface(&ir.model.surfaces, id.get()))
     else {
-        return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingSurface);
+        return Ok(PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingSurface));
     };
     let Some(face_carrier) = face_id.and_then(|id| carriers.get(&id.get())).copied() else {
-        return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
+        return Ok(PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier));
     };
     let Some(other_carrier) = other_id.and_then(|id| carriers.get(&id.get())).copied() else {
-        return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
+        return Ok(PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier));
     };
-    let valid = endpoints.into_iter().all(|uv| {
-        let Ok(point) = cadmpeg_ir::eval::surface_point(
+    let mut valid = true;
+    for uv in endpoints {
+        if !valid { break; }
+        let Ok(point) = cadmpeg_ir::eval::admitted::surface_point(ctx,
             source_carriers.surface_geometry(surface),
             uv[0],
             uv[1],
-        ) else {
-            return false;
+        )? else {
+            valid = false;
+            break;
         };
         let point = [point.x, point.y, point.z];
-        point_on_carrier(point, face_carrier) && point_on_carrier(point, other_carrier)
-    });
-    if valid {
+        valid = point_on_carrier(point, face_carrier) && point_on_carrier(point, other_carrier);
+    }
+    Ok(if valid {
         PcurveCarrierStatus::Validated
     } else {
         PcurveCarrierStatus::Rejected
-    }
+    })
 }
 
 /// Mirrors an apex cone through its apex: the same shape a cone surface record carries, so it
@@ -683,7 +690,7 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
     }
     for pcurve in &scan.curves.two_chart_pcurves {
         let faces = pcurve.faces.map(NonZeroU32::new);
-        let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve, source_carriers);
+        let mapping = map_two_chart_endpoint_sets(ctx, scan, ir, pcurve, source_carriers)?;
         let TwoChartMapping::Mapped {
             endpoint_sets: Some(endpoint_sets),
             ..
@@ -753,18 +760,18 @@ fn map_pcurve_paths(
         };
         // A non-finite endpoint is a mapped endpoint; the path comparisons
         // read it as a mismatch.
-        let [first, second] = endpoints.map(|uv| {
-            let point = match cadmpeg_ir::eval::surface_point(
+        let [first, second] = endpoints.map(|uv| -> Result<_, cadmpeg_core::CodecError> {
+            let point = match cadmpeg_ir::eval::admitted::surface_point(ctx,
                 source_carriers.surface_geometry(surface),
                 uv[0],
                 uv[1],
-            ) {
+            )? {
                 Ok(point) => point.get(),
-                Err(failure) => failure.non_finite()?,
+                Err(failure) => match failure.non_finite() { Some(point) => point, None => return Ok(None) },
             };
-            Some([point.x, point.y, point.z])
+            Ok(Some([point.x, point.y, point.z]))
         });
-        let [Some(first), Some(second)] = [first, second] else {
+        let [Some(first), Some(second)] = [first?, second?] else {
             result.unevaluable_paths += 1;
             continue;
         };
@@ -908,13 +915,13 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             mapped_paths.extend(mapped.mapped.iter().copied());
             let carrier_status = if endpoint_carrier_proof {
                 pcurve_endpoint_carrier_status(
-                    ir,
+                    ctx, ir,
                     carriers,
                     faces,
                     face_index,
                     endpoints,
                     source_carriers,
-                )
+                )?
             } else {
                 pcurve_path_carrier_status(
                     ir,
@@ -1065,7 +1072,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let faces = pcurve.faces.map(NonZeroU32::new);
         diagnostics.records += 1;
         diagnostics.two_chart_records += 1;
-        let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve, source_carriers);
+        let mapping = map_two_chart_endpoint_sets(ctx, scan, ir, pcurve, source_carriers)?;
         let (endpoint_sets, surface_mismatch) = match mapping {
             TwoChartMapping::NoSamples => {
                 diagnostics.two_chart_no_sample_records += 1;
@@ -1540,7 +1547,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
         for pcurve in &scan.curves.two_chart_pcurves {
             let faces = pcurve.faces.map(NonZeroU32::new);
             let Some(endpoint_sets) =
-                mapped_two_chart_endpoint_sets(scan, ir, pcurve, source_carriers)
+                mapped_two_chart_endpoint_sets(ctx, scan, ir, pcurve, source_carriers)?
             else {
                 continue;
             };
@@ -1844,41 +1851,41 @@ pub(super) fn solve_pcurve_vertex_domains_with_authoritative_points(
     Ok(solved)
 }
 
-pub(super) fn native_pcurve_midpoint(
+pub(super) fn native_pcurve_midpoint(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
     edge_points: [[f64; 3]; 2],
-) -> Option<[f64; 3]> {
+) -> Result<Option<[f64; 3]>, cadmpeg_core::CodecError> {
     // A point outside the finite range, mapped or on the edge, aligns with
     // no point.
-    let mapped_point = |uv: [f64; 2]| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]).ok();
+    let [first, second] = endpoints.map(|uv| cadmpeg_ir::eval::admitted::surface_point(ctx, surface, uv[0], uv[1]));
     let ([Some(first), Some(second)], [Some(start), Some(end)]) = (
-        endpoints.map(mapped_point),
+        [first?.ok(), second?.ok()],
         edge_points.map(finite_model_point),
     ) else {
-        return None;
+        return Ok(None);
     };
-    point_pair_alignments([first, second], [start, end])
+    require_some!(point_pair_alignments([first, second], [start, end])
         .into_iter()
         .any(|matches| matches)
-        .then_some(())?;
+        .then_some(()));
     // A midpoint outside the finite range is returned as the evaluation
     // reached it.
-    let point = match cadmpeg_ir::eval::surface_point(
+    let point = match cadmpeg_ir::eval::admitted::surface_point(ctx,
         surface,
         f64::midpoint(endpoints[0][0], endpoints[1][0]),
         f64::midpoint(endpoints[0][1], endpoints[1][1]),
-    ) {
+    )? {
         Ok(point) => point.get(),
-        Err(failure) => failure.non_finite()?,
+        Err(failure) => require_some!(failure.non_finite()),
     };
-    Some(<[f64; 3]>::from(point))
+    Ok(Some(<[f64; 3]>::from(point)))
 }
 
 pub(in crate::decode) type NativePcurveCandidates =
     BTreeMap<(u32, u32), Vec<([[f64; 2]; 2], usize)>>;
 
-pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
+pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     geometry: &CurveGeometry,
     curve_id: u32,
     faces: [u32; 2],
@@ -1886,7 +1893,7 @@ pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
     surfaces: &[Surface],
     points: [[f64; 3]; 2],
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
-) -> Option<[f64; 2]> {
+) -> Result<Option<[f64; 2]>, cadmpeg_core::CodecError> {
     let mut selected = None;
     for face_id in faces {
         let Some(surface) = unique_model_surface(surfaces, face_id)
@@ -1895,61 +1902,61 @@ pub(in crate::decode) fn pcurve_backed_periodic_conic_parameter_range(
             continue;
         };
         for (endpoints, _) in candidates.get(&(curve_id, face_id)).into_iter().flatten() {
-            let Some(interior) = native_pcurve_midpoint(surface, *endpoints, points) else {
+            let Some(interior) = native_pcurve_midpoint(ctx, surface, *endpoints, points)? else {
                 continue;
             };
-            let candidate = periodic_conic_edge_parameter_range(geometry, points, interior)?;
+            let candidate = require_some!(periodic_conic_edge_parameter_range(geometry, points, interior));
             if selected.is_some_and(|selected: [f64; 2]| {
                 candidate
                     .into_iter()
                     .zip(selected)
                     .any(|(candidate, selected)| (candidate - selected).abs() > EPS_AGREE)
             }) {
-                return None;
+                return Ok(None);
             }
             selected = Some(candidate);
         }
     }
-    selected
+    Ok(selected)
 }
 
-fn oriented_native_pcurve_endpoints(
+fn oriented_native_pcurve_endpoints(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
     traversal: [[f64; 3]; 2],
-) -> Option<[[f64; 2]; 2]> {
+) -> Result<Option<[[f64; 2]; 2]>, cadmpeg_core::CodecError> {
     // A point outside the finite range, mapped or traversed, aligns with no
     // point.
-    let mapped = endpoints.map(|uv| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]).ok());
+    let [first, second] = endpoints.map(|uv| cadmpeg_ir::eval::admitted::surface_point(ctx, surface, uv[0], uv[1]));
+    let mapped = [first?.ok(), second?.ok()];
     let ([Some(first), Some(second)], [Some(start), Some(end)]) =
         (mapped, traversal.map(finite_model_point))
     else {
-        return None;
+        return Ok(None);
     };
-    match point_pair_alignments([first, second], [start, end]) {
+    Ok(match point_pair_alignments([first, second], [start, end]) {
         [true, false] => Some(endpoints),
         [false, true] => Some([endpoints[1], endpoints[0]]),
         _ => None,
-    }
+    })
 }
 
-pub(in crate::decode) fn unique_oriented_native_pcurve(
+pub(in crate::decode) fn unique_oriented_native_pcurve(ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     surface: &SurfaceGeometry,
     candidates: &[([[f64; 2]; 2], usize)],
     traversal: [[f64; 3]; 2],
-) -> Option<([[f64; 2]; 2], usize)> {
-    let mut matching = candidates.iter().filter_map(|(endpoints, offset)| {
-        oriented_native_pcurve_endpoints(surface, *endpoints, traversal)
-            .map(|oriented| (oriented, *offset))
-    });
-    let mut selected = matching.next()?;
-    for candidate in matching {
-        if candidate.0 != selected.0 {
-            return None;
+) -> Result<Option<([[f64; 2]; 2], usize)>, cadmpeg_core::CodecError> {
+    let mut selected: Option<([[f64; 2]; 2], usize)> = None;
+    for (endpoints, offset) in candidates {
+        let Some(oriented) = oriented_native_pcurve_endpoints(ctx, surface, *endpoints, traversal)? else { continue; };
+        if let Some(previous) = selected.as_mut() {
+            if oriented != previous.0 { return Ok(None); }
+            previous.1 = previous.1.min(*offset);
+        } else {
+            selected = Some((oriented, *offset));
         }
-        selected.1 = selected.1.min(candidate.1);
     }
-    Some(selected)
+    Ok(selected)
 }
 
 pub(in crate::decode) fn planar_curve_pcurve(
@@ -2700,6 +2707,10 @@ mod tests {
 
     #[test]
     fn two_chart_samples_validate_every_point_and_extend_a_nurbs_boundary_span() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+
         let scan = crate::container::scan_bytes_ok(Vec::new());
         let mut ir = CadIr::empty();
         ir.model.surfaces.extend([
@@ -2757,12 +2768,12 @@ mod tests {
         };
 
         assert_eq!(
-            mapped_two_chart_endpoint_sets(
+            mapped_two_chart_endpoint_sets(&evaluation_ctx,
                 &scan,
                 &ir,
                 &pcurve,
                 &crate::decode::source_carriers::SourceUnitCarriers::default()
-            ),
+            ).expect("evaluation resources"),
             Some(TwoChartEndpointSets::Both([
                 [[-0.01, 0.25], [1.01, 0.75]],
                 [[-0.01, 0.25], [1.01, 0.75]],
@@ -2770,12 +2781,12 @@ mod tests {
         );
 
         pcurve.samples[1][1][0] = 0.6;
-        let mapping = map_two_chart_endpoint_sets(
+        let mapping = map_two_chart_endpoint_sets(&evaluation_ctx,
             &scan,
             &ir,
             &pcurve,
             &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        );
+        ).expect("evaluation resources");
         assert!(matches!(
             mapping,
             TwoChartMapping::Mapped {
@@ -2784,12 +2795,12 @@ mod tests {
                 ..
             }
         ));
-        assert!(mapped_two_chart_endpoint_sets(
+        assert!(mapped_two_chart_endpoint_sets(&evaluation_ctx,
             &scan,
             &ir,
             &pcurve,
             &crate::decode::source_carriers::SourceUnitCarriers::default()
-        )
+        ).expect("evaluation resources")
         .is_none());
 
         pcurve.samples[1][1][0] = 0.5;
@@ -3341,6 +3352,10 @@ mod tests {
 
     #[test]
     fn a_two_chart_path_with_an_overflowing_sample_is_mapped_and_mismatched() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+
         let scan = crate::container::scan_bytes_ok(Vec::new());
         let mut ir = CadIr::empty();
         ir.model
@@ -3356,12 +3371,12 @@ mod tests {
             offset: 0,
         };
         assert!(matches!(
-            map_two_chart_endpoint_sets(
+            map_two_chart_endpoint_sets(&evaluation_ctx,
                 &scan,
                 &ir,
                 &pcurve,
                 &crate::decode::source_carriers::SourceUnitCarriers::default()
-            ),
+            ).expect("evaluation resources"),
             TwoChartMapping::Mapped {
                 endpoint_sets: Some(TwoChartEndpointSets::Both(_)),
                 missing_surface_paths: 0,
@@ -3473,21 +3488,25 @@ mod tests {
 
     #[test]
     fn a_native_pcurve_with_an_overflowing_endpoint_has_no_midpoint_and_no_orientation() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+
         // The endpoint u = MAX reaches x = +inf on the plane through
         // (MAX, 0, 0). A point outside the finite range aligns with no edge
         // point, so neither pairing aligns.
         let surface = overflowing_plane_surface(7).geometry;
         let endpoints = [[f64::MAX, 0.0], [-f64::MAX, 5.0]];
         assert_eq!(
-            super::native_pcurve_midpoint(&surface, endpoints, [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]]),
+            super::native_pcurve_midpoint(&evaluation_ctx, &surface, endpoints, [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]]).expect("evaluation resources"),
             None
         );
         assert_eq!(
-            super::oriented_native_pcurve_endpoints(
+            super::oriented_native_pcurve_endpoints(&evaluation_ctx,
                 &surface,
                 endpoints,
                 [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]],
-            ),
+            ).expect("evaluation resources"),
             None
         );
     }
@@ -3520,6 +3539,10 @@ mod tests {
 
     #[test]
     fn a_two_chart_path_with_an_overflowing_placed_sample_is_a_surface_mismatch() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+
         // The placed sample reaches x = +inf. It is a mapped sample on both
         // charts, and a point outside the finite range agrees with no point,
         // so the charts do not agree.
@@ -3538,12 +3561,12 @@ mod tests {
             offset: 0,
         };
         assert!(matches!(
-            map_two_chart_endpoint_sets(
+            map_two_chart_endpoint_sets(&evaluation_ctx,
                 &scan,
                 &ir,
                 &pcurve,
                 &crate::decode::source_carriers::SourceUnitCarriers::default()
-            ),
+            ).expect("evaluation resources"),
             TwoChartMapping::Mapped {
                 endpoint_sets: Some(TwoChartEndpointSets::Both(_)),
                 missing_surface_paths: 0,
@@ -3632,22 +3655,29 @@ mod tests {
 
     #[test]
     fn a_native_pcurve_with_an_overflowing_placed_endpoint_has_no_midpoint_and_no_orientation() {
+    let evaluation_arena = cadmpeg_core::decode::DecodeArena::new();
+    let evaluation_policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (evaluation_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &evaluation_arena, &evaluation_policy).expect("evaluation root");
+
         // The placed endpoint reaches x = +inf. A point outside the finite
         // range aligns with no edge point, so neither pairing aligns: no
         // midpoint is read, and no orientation is found.
         let surface = overflowing_placed_plane_surface(7).geometry;
         let endpoints = [[f64::MAX, 0.0], [-f64::MAX, 5.0]];
         assert_eq!(
-            super::native_pcurve_midpoint(&surface, endpoints, [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]]),
+            super::native_pcurve_midpoint(&evaluation_ctx, &surface, endpoints, [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]]).expect("evaluation resources"),
             None
         );
         assert_eq!(
-            super::oriented_native_pcurve_endpoints(
+            super::oriented_native_pcurve_endpoints(&evaluation_ctx,
                 &surface,
                 endpoints,
                 [[9.0, 9.0, 9.0], [0.0, 5.0, 0.0]],
-            ),
+            ).expect("evaluation resources"),
             None
         );
     }
 }
+
+#[cfg(test)]
+mod evaluation_tests;

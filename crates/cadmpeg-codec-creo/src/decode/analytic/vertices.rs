@@ -714,7 +714,7 @@ pub(in crate::decode) fn solve_topological_vertices(
             continue;
         };
         let Some(points) =
-            nonperiodic_nurbs_endpoint_points(source_carriers.curve_geometry(geometry))
+            nonperiodic_nurbs_endpoint_points(ctx, source_carriers.curve_geometry(geometry))?
         else {
             continue;
         };
