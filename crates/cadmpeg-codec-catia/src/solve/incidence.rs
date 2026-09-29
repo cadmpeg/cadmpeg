@@ -35,14 +35,7 @@ type MeshEndpointSolutionVisitor<'a> =
     &'a mut dyn FnMut(&[MeshEndpointPair]) -> Result<ControlFlow<()>, CodecError>;
 type DegreeSupportWitnesses = RefCell<HashMap<(usize, usize), Vec<(usize, [usize; 2])>>>;
 
-fn charge_collection_items(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let count = u64_from_index(count);
-    ctx.charge_collection_items(count, operation)
-}
+
 
 fn copy_incidence_degree_rows(
     ctx: &DecodeContext<'_>,
@@ -274,13 +267,8 @@ fn prune_incidence_choices_with_explicit_support(
         BTreeMap::<usize, u8>::new(),
         "catia_incidence_degrees",
     )?;
-    charge_collection_items(ctx, choices.len(), "catia incidence edge supports")?;
     let mut edge_supports = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut edge_supports,
-        choices.len(),
-        "catia incidence edge supports",
-    )?;
+    ctx.reserve_vec(&mut edge_supports, choices.len(), "catia incidence edge supports")?;
     for pairs in choices.iter() {
         edge_supports.push(choice_points(ctx, pairs)?);
     }
@@ -293,7 +281,7 @@ fn prune_incidence_choices_with_explicit_support(
         for face in unique_faces(edge_faces[edge]) {
             for &point in points {
                 if !supports[face].contains_key(&point) {
-                    charge_collection_items(ctx, 1, "catia incidence point support counts")?;
+                    ctx.charge_collection_items(u64_from_index(1), "catia incidence point support counts")?;
                 }
                 let count = supports[face].entry(point).or_default();
                 let Some(next) = count.checked_add(1) else {
@@ -349,7 +337,7 @@ fn prune_incidence_choices_with_explicit_support(
             for face in unique_faces(edge_faces[edge]) {
                 for point in pair {
                     if !degrees[face].contains_key(point) {
-                        charge_collection_items(ctx, 1, "catia incidence endpoint degrees")?;
+                        ctx.charge_collection_items(u64_from_index(1), "catia incidence endpoint degrees")?;
                     }
                     let degree = degrees[face].entry(*point).or_default();
                     let Some(next) = degree.checked_add(1) else {
@@ -716,17 +704,8 @@ fn order_incidence_components_by_constraints(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia incidence component edge indices", u64::MAX, u64::MAX)
         })?;
-    charge_collection_items(
-        ctx,
-        edge_entry_count,
-        "catia incidence component edge indices",
-    )?;
     let mut component_by_edge = HashMap::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_map(
-        &mut component_by_edge,
-        edge_entry_count,
-        "catia incidence component edge indices",
-    )?;
+    ctx.reserve_map(&mut component_by_edge, edge_entry_count, "catia incidence component edge indices")?;
     for (component, edges) in components.iter().enumerate() {
         for edge in edges.iter().copied() {
             component_by_edge.insert(edge, component);
@@ -795,13 +774,8 @@ fn order_incidence_components_by_constraints(
         .keys()
         .filter(|edge| local_incoming[**edge] == 0)
         .count();
-    charge_collection_items(ctx, local_ready_count, "catia incidence local ready edges")?;
     let mut local_ready = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut local_ready,
-        local_ready_count,
-        "catia incidence local ready edges",
-    )?;
+    ctx.reserve_vec(&mut local_ready, local_ready_count, "catia incidence local ready edges")?;
     local_ready.extend(
         component_by_edge
             .keys()
@@ -834,21 +808,11 @@ fn order_incidence_components_by_constraints(
     let ready_count = (0..components.len())
         .filter(|component| incoming[*component] == 0)
         .count();
-    charge_collection_items(ctx, ready_count, "catia incidence ready components")?;
     let mut ready = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut ready,
-        ready_count,
-        "catia incidence ready components",
-    )?;
+    ctx.reserve_vec(&mut ready, ready_count, "catia incidence ready components")?;
     ready.extend((0..components.len()).filter(|component| incoming[*component] == 0));
-    charge_collection_items(ctx, components.len(), "catia incidence ordered components")?;
     let mut ordered = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut ordered,
-        components.len(),
-        "catia incidence ordered components",
-    )?;
+    ctx.reserve_vec(&mut ordered, components.len(), "catia incidence ordered components")?;
     while let Some((position, &component)) =
         ready.iter().enumerate().min_by_key(|(_, component)| {
             (
@@ -1038,13 +1002,8 @@ impl FaceFactorGraph {
         domains: &[MeshFaceEndpointConfigurations],
         budget: &WorkBudget<'_>,
     ) -> Result<Option<Self>, CodecError> {
-        charge_collection_items(ctx, domains.len(), "catia face factor edge sets")?;
         let mut edge_sets = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut edge_sets,
-            domains.len(),
-            "catia face factor edge sets",
-        )?;
+        ctx.reserve_vec(&mut edge_sets, domains.len(), "catia face factor edge sets")?;
         for domain in domains {
             let mut edges = HashSet::new();
             for &(edge, _) in domain.iter().flatten() {
@@ -1052,13 +1011,8 @@ impl FaceFactorGraph {
             }
             edge_sets.push(edges);
         }
-        charge_collection_items(ctx, domains.len(), "catia face factor right indexes")?;
         let mut right_indexes = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut right_indexes,
-            domains.len(),
-            "catia face factor right indexes",
-        )?;
+        ctx.reserve_vec(&mut right_indexes, domains.len(), "catia face factor right indexes")?;
         for domain in domains {
             let word_count = domain.len().div_ceil(index_from_u32(u64::BITS));
             let mut present = HashMap::<usize, Vec<u64>>::new();
@@ -1338,13 +1292,8 @@ fn prune_face_configuration_support(
     domains: &mut [MeshFaceEndpointConfigurations],
     budget: &WorkBudget<'_>,
 ) -> Result<bool, CodecError> {
-    charge_collection_items(ctx, domains.len(), "catia face configuration edge sets")?;
     let mut edge_sets = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut edge_sets,
-        domains.len(),
-        "catia face configuration edge sets",
-    )?;
+    ctx.reserve_vec(&mut edge_sets, domains.len(), "catia face configuration edge sets")?;
     for domain in domains.iter() {
         let mut edges = HashSet::new();
         for &(edge, _) in domain.iter().flatten() {
@@ -1398,17 +1347,8 @@ fn prune_face_configuration_support(
                 )?;
             }
         }
-        charge_collection_items(
-            ctx,
-            domains[left].len(),
-            "catia face configuration keep marks",
-        )?;
         let mut keep = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut keep,
-            domains[left].len(),
-            "catia face configuration keep marks",
-        )?;
+        ctx.reserve_vec(&mut keep, domains[left].len(), "catia face configuration keep marks")?;
         for candidate in &domains[left] {
             let Some(work) = candidate.len().checked_add(word_count) else {
                 return Ok(true);
@@ -1479,17 +1419,8 @@ fn prune_face_configuration_singleton_support(
     }
     loop {
         let mut changed = false;
-        charge_collection_items(
-            ctx,
-            domains.len(),
-            "catia face configuration singleton order",
-        )?;
         let mut order = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut order,
-            domains.len(),
-            "catia face configuration singleton order",
-        )?;
+        ctx.reserve_vec(&mut order, domains.len(), "catia face configuration singleton order")?;
         order.extend(0..domains.len());
         order.sort_unstable_by_key(|domain| {
             active[*domain]
@@ -1580,13 +1511,8 @@ fn prune_ordered_face_endpoint_support(
                 .ok_or_else(|| {
                     ctx.refuse_codec_limit("catia ordered face edges", u64::MAX, u64::MAX)
                 })?;
-            charge_collection_items(ctx, use_count, "catia ordered face edges")?;
             let mut edges = Vec::new();
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-                &mut edges,
-                use_count,
-                "catia ordered face edges",
-            )?;
+            ctx.reserve_vec(&mut edges, use_count, "catia ordered face edges")?;
             edges.extend(
                 assignments
                     .iter()
@@ -1777,13 +1703,8 @@ fn prepare_face_configuration_domains(
             .flat_map(|assignment| assignment.boundaries.iter())
             .try_fold(0usize, |count, boundary| count.checked_add(boundary.len()))
             .ok_or_else(|| ctx.refuse_codec_limit("catia face factor edges", u64::MAX, u64::MAX))?;
-        charge_collection_items(ctx, use_count, "catia face factor edges")?;
         let mut edges = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut edges,
-            use_count,
-            "catia face factor edges",
-        )?;
+        ctx.reserve_vec(&mut edges, use_count, "catia face factor edges")?;
         edges.extend(
             assignments
                 .iter()
@@ -1809,30 +1730,16 @@ fn prepare_face_configuration_domains(
         };
         domains[face] = Some(configurations);
     }
-    charge_collection_items(ctx, domains.len(), "catia face factor retained faces")?;
     let mut retained_faces = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut retained_faces,
-        domains.len(),
-        "catia face factor retained faces",
-    )?;
+    ctx.reserve_vec(&mut retained_faces, domains.len(), "catia face factor retained faces")?;
     retained_faces.extend(
         domains
             .iter()
             .enumerate()
             .filter_map(|(face, domain)| domain.as_ref().map(|_| face)),
     );
-    charge_collection_items(
-        ctx,
-        retained_faces.len(),
-        "catia face factor configurations",
-    )?;
     let mut configurations = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut configurations,
-        retained_faces.len(),
-        "catia face factor configurations",
-    )?;
+    ctx.reserve_vec(&mut configurations, retained_faces.len(), "catia face factor configurations")?;
     for face in &retained_faces {
         configurations.push(
             domains[*face]
@@ -2153,13 +2060,8 @@ fn advance_compact_boundary_domains<'a>(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia compact boundary edges", u64::MAX, u64::MAX)
         })?;
-        charge_collection_items(ctx, edge_count, "catia compact boundary edges")?;
         let mut edges = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut edges,
-            edge_count,
-            "catia compact boundary edges",
-        )?;
+        ctx.reserve_vec(&mut edges, edge_count, "catia compact boundary edges")?;
         match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => edges.extend(
                 assignments
@@ -2180,13 +2082,8 @@ fn advance_compact_boundary_domains<'a>(
                 );
             }
         }
-        charge_collection_items(ctx, edges.len(), "catia compact boundary selected edges")?;
         let mut edge_points = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut edge_points,
-            edges.len(),
-            "catia compact boundary selected edges",
-        )?;
+        ctx.reserve_vec(&mut edge_points, edges.len(), "catia compact boundary selected edges")?;
         for edge in edges {
             let Some(pair) = selected
                 .filter(|(selected_edge, _)| *selected_edge == edge)
@@ -2207,17 +2104,8 @@ fn advance_compact_boundary_domains<'a>(
         }
         let alternatives = match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => {
-                charge_collection_items(
-                    ctx,
-                    assignments.len(),
-                    "catia compact boundary alternatives",
-                )?;
                 let mut copied = Vec::new();
-                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-                    &mut copied,
-                    assignments.len(),
-                    "catia compact boundary alternatives",
-                )?;
+                ctx.reserve_vec(&mut copied, assignments.len(), "catia compact boundary alternatives")?;
                 for alternative in assignments {
                     let mut boundaries = Vec::new();
                     ctx.reserve_vec(
@@ -2291,11 +2179,7 @@ fn advance_compact_boundary_domains<'a>(
     if ordered.is_empty() {
         return Ok(CompactBoundaryAdvanceOutcome::Complete(states));
     }
-    charge_collection_items(
-        ctx,
-        assignment.len(),
-        "catia compact boundary candidate rows",
-    )?;
+    ctx.charge_collection_items(u64_from_index(assignment.len()), "catia compact boundary candidate rows")?;
     let candidate_count = assignment
         .iter()
         .enumerate()
@@ -2312,11 +2196,7 @@ fn advance_compact_boundary_domains<'a>(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia compact boundary candidate pairs", u64::MAX, u64::MAX)
         })?;
-    charge_collection_items(
-        ctx,
-        candidate_count,
-        "catia compact boundary candidate pairs",
-    )?;
+    ctx.charge_collection_items(u64_from_index(candidate_count), "catia compact boundary candidate pairs")?;
     let mut candidates = Vec::new();
     for (edge, pair) in assignment.iter().enumerate() {
         let row = if let Some(pair) = selected
@@ -3277,17 +3157,8 @@ impl IncidenceComponentSearch<'_, '_> {
             .face_configuration_domains
             .as_ref()
             .and_then(|factors| factors.active.as_ref());
-        charge_collection_items(
-            self.ctx,
-            component_faces.len(),
-            "catia face option candidates",
-        )?;
         let mut faces = Vec::new();
-        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-            &mut faces,
-            component_faces.len(),
-            "catia face option candidates",
-        )?;
+        self.ctx.reserve_vec(&mut faces, component_faces.len(), "catia face option candidates")?;
         faces.extend(component_faces.iter().copied().filter_map(|face| {
             let domain = mesh_assignments.get(face)?;
             let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
@@ -4036,13 +3907,8 @@ pub(super) fn deferred_boundary_assignment(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia deferred incident edges", u64::MAX, u64::MAX)
         })?;
-    charge_collection_items(ctx, incident_count, "catia deferred incident edges")?;
     let mut incident = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut incident,
-        incident_count,
-        "catia deferred incident edges",
-    )?;
+    ctx.reserve_vec(&mut incident, incident_count, "catia deferred incident edges")?;
     incident.extend_from_slice(&domain.missing_edges);
     incident.extend(
         domain
@@ -4058,17 +3924,8 @@ pub(super) fn deferred_boundary_assignment(
     if incidence.len() != domain.cycles.len() {
         return Ok(None);
     }
-    charge_collection_items(
-        ctx,
-        domain.missing_edges.len(),
-        "catia deferred missing edges",
-    )?;
     let mut missing = HashSet::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_set(
-        &mut missing,
-        domain.missing_edges.len(),
-        "catia deferred missing edges",
-    )?;
+    ctx.reserve_set(&mut missing, domain.missing_edges.len(), "catia deferred missing edges")?;
     missing.extend(domain.missing_edges.iter().copied());
     let compatibility_count = domain
         .cycles
@@ -4077,16 +3934,8 @@ pub(super) fn deferred_boundary_assignment(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia deferred compatibility cells", u64::MAX, u64::MAX)
         })?;
-    charge_collection_items(
-        ctx,
-        domain.cycles.len(),
-        "catia deferred compatibility rows",
-    )?;
-    charge_collection_items(
-        ctx,
-        compatibility_count,
-        "catia deferred compatibility cells",
-    )?;
+    ctx.charge_collection_items(u64_from_index(domain.cycles.len()), "catia deferred compatibility rows")?;
+    ctx.charge_collection_items(u64_from_index(compatibility_count), "catia deferred compatibility cells")?;
     let mut compatible = Vec::new();
     cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut compatible,
@@ -4107,8 +3956,8 @@ pub(super) fn deferred_boundary_assignment(
         }
         compatible.push(row);
     }
-    charge_collection_items(ctx, domain.cycles.len(), "catia deferred matching rows")?;
-    charge_collection_items(ctx, compatibility_count, "catia deferred matching cells")?;
+    ctx.charge_collection_items(u64_from_index(domain.cycles.len()), "catia deferred matching rows")?;
+    ctx.charge_collection_items(u64_from_index(compatibility_count), "catia deferred matching cells")?;
     let mut boolean_compatible = Vec::new();
     cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut boolean_compatible,
@@ -4174,13 +4023,8 @@ fn deferred_boundary_closes(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("catia deferred close incident edges", u64::MAX, u64::MAX)
         })?;
-    charge_collection_items(ctx, incident_count, "catia deferred close incident edges")?;
     let mut incident = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
-        &mut incident,
-        incident_count,
-        "catia deferred close incident edges",
-    )?;
+    ctx.reserve_vec(&mut incident, incident_count, "catia deferred close incident edges")?;
     incident.extend_from_slice(&domain.missing_edges);
     incident.extend(
         domain
@@ -4196,17 +4040,8 @@ fn deferred_boundary_closes(
     if incidence.len() != domain.cycles.len() {
         return Ok(false);
     }
-    charge_collection_items(
-        ctx,
-        domain.missing_edges.len(),
-        "catia deferred close missing edges",
-    )?;
     let mut missing = HashSet::new();
-    cadmpeg_core::decode::DecodeContext::reserve_admitted_set(
-        &mut missing,
-        domain.missing_edges.len(),
-        "catia deferred close missing edges",
-    )?;
+    ctx.reserve_set(&mut missing, domain.missing_edges.len(), "catia deferred close missing edges")?;
     missing.extend(domain.missing_edges.iter().copied());
     let cells = domain
         .cycles
@@ -4219,12 +4054,8 @@ fn deferred_boundary_closes(
                 u64::MAX,
             )
         })?;
-    charge_collection_items(
-        ctx,
-        domain.cycles.len(),
-        "catia deferred close compatibility rows",
-    )?;
-    charge_collection_items(ctx, cells, "catia deferred close compatibility cells")?;
+    ctx.charge_collection_items(u64_from_index(domain.cycles.len()), "catia deferred close compatibility rows")?;
+    ctx.charge_collection_items(u64_from_index(cells), "catia deferred close compatibility cells")?;
     let mut compatible = Vec::new();
     cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
         &mut compatible,
