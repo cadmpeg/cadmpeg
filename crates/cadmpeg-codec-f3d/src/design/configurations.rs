@@ -15,6 +15,8 @@ use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, Visitor};
 use std::collections::HashSet;
 use std::fmt;
 
+mod json;
+
 fn format_configuration_diagnostic(
     ctx: Option<&DecodeContext<'_>>,
     arguments: fmt::Arguments<'_>,
@@ -104,6 +106,8 @@ fn configuration_scalar_text(
         ConfigurationScalar::String(text) => {
             copy_configuration_text(ctx, text, "f3d configuration parameter value")
         }
+        ConfigurationScalar::Number(number) => crate::design::text::format_design_text(
+            ctx, format_args!("{number}"), "f3d configuration scalar text"),
         _ => Ok(value.text()),
     }
 }
@@ -137,8 +141,8 @@ impl<'de> Visitor<'de> for ConfigurationMemberOrderSeed<'_, '_> {
     {
         let mut names = Vec::new();
         let mut seen_configurations = false;
-        while let Some(field) = map.next_key::<String>()? {
-            if field == "configurations" {
+        while let Some(field) = map.next_key_seed(json::ConfigurationFieldSeed)? {
+            if field {
                 if seen_configurations {
                     return Err(serde::de::Error::duplicate_field("configurations"));
                 }
@@ -184,7 +188,10 @@ impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
     {
         let mut names = Vec::new();
         let mut unique = HashSet::new();
-        while let Some(name) = map.next_key::<String>()? {
+        while let Some(name) = map.next_key_seed(json::ConfigurationTextSeed {
+            ctx: self.ctx, refusal: &mut *self.refusal,
+            operation: "f3d configuration variant unique name", entry: false, expected: "a string",
+        })? {
             if unique.contains(&name) {
                 let message = format_configuration_diagnostic(self.ctx,
                     format_args!("duplicate configuration variant {name:?}"),
@@ -239,9 +246,6 @@ fn parse_configuration_variant_order(
             ctx.refuse_codec_limit("f3d configuration order JSON", 0, 1)
         })?, "f3d configuration order JSON")
     }).transpose()?;
-    let invalid = |error| CodecError::malformed(format_args!(
-        "invalid F3D configuration variant order {entry_name}: {error}"
-    ));
     let mut refusal = None;
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
     let result = ConfigurationMemberOrderSeed { ctx, refusal: &mut refusal }
@@ -252,7 +256,12 @@ fn parse_configuration_variant_order(
         });
     match result {
         Ok(names) => Ok(names),
-        Err(error) => Err(refusal.unwrap_or_else(|| invalid(error))),
+        Err(error) => match refusal {
+            Some(error) => Err(error),
+            None => Err(CodecError::Malformed(crate::design::text::format_design_text(
+                ctx, format_args!("invalid F3D configuration variant order {entry_name}: {error}"),
+                "f3d configuration order diagnostic")?)),
+        },
     }
 }
 
@@ -266,23 +275,11 @@ pub(crate) fn decode_configurations(
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::DesignConfig))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let _reservation = ctx.reserve_scoped(u64::try_from(bytes.len()).map_err(|_| {
-            ctx.refuse_codec_limit("f3d configuration JSON", 0, 1)
-        })?, "f3d configuration JSON")?;
-        ctx.charge_retained(u64::try_from(bytes.len()).map_err(|_| {
-            ctx.refuse_codec_limit("f3d configuration JSON payload", 0, 1)
-        })?, "f3d configuration JSON payload")?;
-        let payload: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
-            CodecError::malformed(format_args!(
-                "invalid F3D configuration JSON {}: {error}",
-                entry.name
-            ))
-        })?;
+        let payload = json::parse_configuration_payload(ctx, &entry.name, bytes)?;
         let serde_json::Value::Object(payload) = payload else {
-            return Err(CodecError::malformed(format_args!(
-                "F3D configuration JSON must be an object: {}",
-                entry.name
-            )));
+            return Err(CodecError::Malformed(crate::design::text::format_design_text(
+                Some(ctx), format_args!("F3D configuration JSON must be an object: {}", entry.name),
+                "f3d configuration JSON root diagnostic")?));
         };
         let kind = if entry.name.ends_with(".dsgcfgrule") {
             DesignConfigurationKind::Rule
@@ -306,10 +303,9 @@ pub(crate) fn decode_configurations(
     let mut names = HashSet::new();
     for configuration in &configurations {
         if names.contains(configuration.entry_name().as_str()) {
-            return Err(CodecError::malformed(format_args!(
-                "duplicate F3D configuration identity: {}",
-                configuration.entry_name()
-            )));
+            return Err(CodecError::Malformed(crate::design::text::format_design_text(
+                Some(ctx), format_args!("duplicate F3D configuration identity: {}", configuration.entry_name()),
+                "f3d configuration identity diagnostic")?));
         }
         ctx.charge_collection_items(1, "f3d configuration identity index")?;
         names.try_reserve(1).map_err(|_| {
@@ -1154,7 +1150,8 @@ mod tests {
         let bytes = br#"{"configurations":{"Small":{},"Small":{}}}"#;
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 5;
+        // Two input names and the unique-name copy consume 15 bytes.
+        policy.limits.max_retained_bytes = 15;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
             parse_configuration_variant_order(Some(&ctx), "table.dsgcfg", bytes),
