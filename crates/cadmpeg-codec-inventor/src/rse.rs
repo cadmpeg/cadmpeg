@@ -15,14 +15,13 @@ use crate::database::{
 };
 use crate::kernel::{select_active_carrier, ActiveCarrierState};
 use crate::layout::bulk_envelope as envelope;
-use crate::record_issue::{admit_formatted, admit_issue_detail};
 use crate::records::{frame_bulk_records, parse_meta_tables, MetaTables, RseRecordTable};
 
 fn rse_issue_detail(ctx: &DecodeContext<'_>, error: CodecError) -> Result<String, CodecError> {
     if matches!(error, CodecError::ResourceLimit(_)) {
         return Err(error);
     }
-    admit_issue_detail(ctx, &error, "retain RSe issue detail")?;
+    ctx.charge_formatted_retained(format_args!("{}", &error), "retain RSe issue detail")?;
     crate::issue_detail(error)
 }
 
@@ -395,16 +394,12 @@ impl DatabaseDescriptor {
         match &self.state {
             DatabaseState::Parsed(_) => Ok(None),
             DatabaseState::Unframed { schema, detail } => {
-                admit_formatted(
-                    ctx,
-                    format_args!(
+                ctx.charge_formatted_retained(format_args!(
                         "RSe database schema {} was read with the schema {} grammar, which did not frame it: \
                          {detail}",
                         schema.value(),
                         RseSchema::SCHEMA_31.value()
-                    ),
-                    "retain Inventor database issue detail",
-                )?;
+                    ), "retain Inventor database issue detail")?;
                 Ok(Some(DatabaseHeader::unframed_detail(*schema, detail)))
             }
             DatabaseState::Unreadable(detail) => {
@@ -676,7 +671,7 @@ fn push_identity_issue(
     detail: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "admit RSe segment identity issue")?;
-    admit_formatted(ctx, detail, "retain RSe segment identity issue")?;
+    ctx.charge_formatted_retained(detail, "retain RSe segment identity issue")?;
     issues.push(format!("{detail}"));
     Ok(())
 }

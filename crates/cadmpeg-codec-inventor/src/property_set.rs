@@ -109,13 +109,13 @@ impl PropertyValue<'_> {
         ctx: &DecodeContext<'_>,
     ) -> Result<Option<String>, CodecError> {
         let text = match self {
-            Self::Signed { value, .. } => retained_scalar(ctx, format_args!("{value}"))?,
-            Self::Unsigned { value, .. } => retained_scalar(ctx, format_args!("{value}"))?,
+            Self::Signed { value, .. } => ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?,
+            Self::Unsigned { value, .. } => ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?,
             Self::Float { value, .. } if value.is_finite() => {
-                retained_scalar(ctx, format_args!("{value}"))?
+                ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?
             }
-            Self::Bool { value, .. } => retained_scalar(ctx, format_args!("{value}"))?,
-            Self::Filetime { value, .. } => retained_scalar(ctx, format_args!("{value}"))?,
+            Self::Bool { value, .. } => ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?,
+            Self::Filetime { value, .. } => ctx.format_retained(format_args!("{value}"), "retain OLE scalar text")?,
             Self::String { value, .. } => {
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(value.len()),
@@ -137,23 +137,6 @@ impl PropertyValue<'_> {
         };
         Ok(Some(text))
     }
-}
-
-fn retained_scalar(
-    ctx: &DecodeContext<'_>,
-    value: std::fmt::Arguments<'_>,
-) -> Result<String, CodecError> {
-    crate::record_issue::admit_formatted(ctx, value, "retain OLE scalar text")?;
-    Ok(value.to_string())
-}
-
-fn charge_retained_len(
-    ctx: &DecodeContext<'_>,
-    len: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let len = cadmpeg_core::decode::u64_from_index(len);
-    ctx.charge_retained(len, operation)
 }
 
 fn has_property_set_header(bytes: &[u8]) -> bool {
@@ -186,21 +169,13 @@ pub(crate) fn inventory<'a>(
             Ok(property_set) => PropertySetState::Parsed(property_set),
             Err(error) => {
                 if !matches!(error, CodecError::ResourceLimit(_)) {
-                    crate::record_issue::admit_issue_detail(
-                        ctx,
-                        &error,
-                        "retain Inventor malformed property-set detail",
-                    )?;
+                    ctx.charge_formatted_retained(format_args!("{}", &error), "retain Inventor malformed property-set detail")?;
                 }
                 PropertySetState::Malformed(crate::issue_detail(error)?)
             }
         };
         ctx.charge_collection_items(1, "admit Inventor property-set streams")?;
-        charge_retained_len(
-            ctx,
-            stream.path().len(),
-            "retain Inventor property-set path",
-        )?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(stream.path().len()), "retain Inventor property-set path")?;
         property_sets.push(PropertySetDescriptor {
             stream: stream.id(),
             path: stream.path().into(),
@@ -417,7 +392,7 @@ fn parse_section<'a>(
             parse_typed_value(ctx, raw, code_page)?
         };
         let name = if let Some(name) = names.get(&id) {
-            charge_retained_len(ctx, name.len(), "retain OLE property name")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(name.len()), "retain OLE property name")?;
             Some(name.clone())
         } else {
             None
@@ -477,7 +452,7 @@ fn parse_dictionary(
         let id = cursor.u32("entry id")?;
         let size = cursor.count("entry string size", MAX_STREAM_SIZE)?;
         let name = cursor.code_page_string(ctx, size, code_page, "entry name")?;
-        charge_retained_len(ctx, name.len(), "retain OLE dictionary name copy")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(name.len()), "retain OLE dictionary name copy")?;
         if id == 0 || names.insert(id, name.clone()).is_some() {
             return Err(CodecError::Malformed(
                 "OLE property dictionary duplicates or names a reserved id".into(),
@@ -488,7 +463,7 @@ fn parse_dictionary(
             .flat_map(char::to_uppercase)
             .map(char::len_utf8)
             .sum::<usize>();
-        charge_retained_len(ctx, uppercase_len, "retain OLE dictionary uppercase name")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(uppercase_len), "retain OLE dictionary uppercase name")?;
         if !folded_names.insert(name.to_uppercase()) {
             return Err(CodecError::Malformed(
                 "OLE property dictionary duplicates a name".into(),
@@ -803,7 +778,7 @@ fn decode_code_page(
             cadmpeg_core::decode::u64_from_index(bytes.len()),
             "decode OLE code-page UTF-16 units",
         )?;
-        charge_retained_len(ctx, utf8_len, "retain OLE property string")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(utf8_len), "retain OLE property string")?;
         let value = view
             .utf16_le(bytes.len() / 2)
             .ok_or_else(|| CodecError::Malformed("OLE code-page string is not UTF-16".into()))?;
@@ -820,11 +795,7 @@ fn decode_code_page(
     let page = code_page.unwrap_or(1252);
     let Some(encoding) = encoding_for_code_page(page) else {
         let message = format_args!("OLE code page {page} is not implemented");
-        crate::record_issue::admit_formatted(
-            ctx,
-            message,
-            "retain OLE unsupported code-page detail",
-        )?;
+        ctx.charge_formatted_retained(message, "retain OLE unsupported code-page detail")?;
         return Err(CodecError::NotImplemented(message.to_string()));
     };
     ctx.charge_work(
@@ -854,7 +825,7 @@ fn decode_code_page(
             }
         }
     }
-    charge_retained_len(ctx, decoded_len, "retain OLE property string")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(decoded_len), "retain OLE property string")?;
     let (decoded, _, malformed) = encoding.decode(content);
     if malformed {
         return Err(CodecError::malformed(format_args!(
@@ -1025,7 +996,7 @@ impl<'a> Cursor<'a> {
             cadmpeg_core::decode::u64_from_index(byte_len),
             "decode OLE Unicode property units",
         )?;
-        charge_retained_len(ctx, utf8_len, "retain OLE Unicode property string")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(utf8_len), "retain OLE Unicode property string")?;
         // `utf16_le` proves the byte count before it reads a code unit, so a
         // short window is refused with the view still at the read's start.
         let value = self.view.utf16_le(count).ok_or_else(|| {

@@ -4,7 +4,6 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-use crate::record_issue::admit_issue_detail;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RseSchema(u32);
@@ -154,7 +153,7 @@ pub(crate) fn parse_database(
         Ok(database) => Ok(DatabaseHeader::Supported(database)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            admit_issue_detail(ctx, &error, "retain RSe unframed database detail")?;
+            ctx.charge_formatted_retained(format_args!("{}", &error), "retain RSe unframed database detail")?;
             Ok(DatabaseHeader::Unframed {
                 schema,
                 detail: error.to_string(),
