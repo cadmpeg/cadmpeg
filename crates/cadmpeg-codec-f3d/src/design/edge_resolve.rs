@@ -685,15 +685,14 @@ fn resolved_edge_group_with_transition_chain(
         .iter()
         .map(|member| &member.value)
         .all(|member| {
-            let matches = operands
+            let mut matches = operands
                 .iter()
                 .filter(|operand| {
                     native_stream(&operand.id) == stream
                         && operand.scope_record_index == group.scope_record_index
                         && operand.record_index() == *member
-                })
-                .collect::<Vec<_>>();
-            matches.len() == 1
+                });
+            matches.next().is_some() && matches.next().is_none()
         });
     let has_unstructured_recipe_operand =
         members
@@ -728,23 +727,20 @@ fn resolved_edge_group_with_transition_chain(
             .iter()
             .map(|member| &member.value)
             .any(|member| {
-                let matches = operands
+                let mut matches = operands
                     .iter()
                     .filter(|operand| {
                         native_stream(&operand.id) == stream
                             && operand.scope_record_index == group.scope_record_index
                             && operand.record_index() == *member
-                    })
-                    .collect::<Vec<_>>();
-                match matches.as_slice() {
-                    [operand] => {
-                        operand.resolved_edge_slot.is_some()
+                    });
+                matches.next().is_some_and(|operand| {
+                    matches.next().is_none()
+                        && (operand.resolved_edge_slot.is_some()
                             || !operand.changed_boundary_edge_slots.is_empty()
                             || !operand.deleted_boundary_edge_slots.is_empty()
-                            || !operand.treatment_radius_candidates.is_empty()
-                    }
-                    _ => false,
-                }
+                            || !operand.treatment_radius_candidates.is_empty())
+                })
             });
     let identity_transition_slots = (allow_edge_treatment_transition_chain
         && treatment_radius.is_none()
