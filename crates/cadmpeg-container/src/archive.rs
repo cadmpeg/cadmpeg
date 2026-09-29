@@ -126,7 +126,10 @@ impl<'a> ArchiveSnapshot<'a> {
         let mut archive = zip::ZipArchive::new(Cursor::new(root.window()))
             .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
         let archive_central_start = archive.central_directory_start();
-        ctx.charge_collection_items(archive.len() as u64, "ZIP duplicate name set")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(archive.len()),
+            "ZIP duplicate name set",
+        )?;
         let central_entry_count =
             reject_duplicate_central_names(root.window(), archive_central_start)?;
         if central_entry_count != archive.len() {
@@ -135,14 +138,20 @@ impl<'a> ArchiveSnapshot<'a> {
             ));
         }
         let mut names = BTreeSet::new();
-        ctx.charge_collection_items(archive.len() as u64, "ZIP entry records")?;
-        ctx.charge_collection_items(archive.len() as u64, "ZIP decoded name set")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(archive.len()),
+            "ZIP entry records",
+        )?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(archive.len()),
+            "ZIP decoded name set",
+        )?;
         let mut entries = DecodeContext::admitted_vec(archive.len(), "ZIP entry records")?;
         for index in 0..archive.len() {
             let file = archive.by_index(index).map_err(|error| {
                 CodecError::malformed(format_args!("bad ZIP entry {index}: {error}"))
             })?;
-            let name_len = file.name().len() as u64;
+            let name_len = cadmpeg_core::decode::u64_from_index(file.name().len());
             ctx.charge_retained(name_len, "ZIP entry record name")?;
             ctx.charge_retained(name_len, "ZIP duplicate name")?;
             let name = file.name().to_owned();
@@ -177,7 +186,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 record.data_end()?,
                 record.central_start,
             ] {
-                if offset > root.window().len() as u64 {
+                if offset > cadmpeg_core::decode::u64_from_index(root.window().len()) {
                     return Err(CodecError::malformed(format_args!(
                         "ZIP offset outside archive for {}",
                         record.name
@@ -187,9 +196,15 @@ impl<'a> ArchiveSnapshot<'a> {
             entries.push(record);
         }
         drop(archive);
-        ctx.charge_collection_items(entries.len() as u64, "ZIP name index")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(entries.len()),
+            "ZIP name index",
+        )?;
         for entry in &entries {
-            ctx.charge_retained(entry.name.len() as u64, "ZIP indexed entry name")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                "ZIP indexed entry name",
+            )?;
         }
         let by_name = entries
             .iter()
@@ -237,7 +252,8 @@ impl<'a> ArchiveSnapshot<'a> {
                 let source = self.compressed_source(entry, range)?;
                 let mut decoder = flate2::read::DeflateDecoder::new(source.window());
                 let view = Self::open_expanded(ctx, entry, &mut decoder)?;
-                if decoder.total_in() != source.window().len() as u64 {
+                if decoder.total_in() != cadmpeg_core::decode::u64_from_index(source.window().len())
+                {
                     return Err(CodecError::Malformed(
                         "raw-DEFLATE member does not exhaust its declared ZIP payload".into(),
                     ));
@@ -282,7 +298,7 @@ impl<'a> ArchiveSnapshot<'a> {
         range: ByteRange,
     ) -> Result<View<'a>, CodecError> {
         let view = ctx.register_slice(self.root, range)?;
-        if view.window().len() as u64 != entry.uncompressed_size {
+        if cadmpeg_core::decode::u64_from_index(view.window().len()) != entry.uncompressed_size {
             return Err(CodecError::malformed(format_args!(
                 "stored size mismatch for {}",
                 entry.name
@@ -690,7 +706,7 @@ fn collection_vec<T>(
     count: usize,
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
-    ctx.charge_collection_items(count as u64, operation)?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
     let mut values = Vec::new();
     values.try_reserve_exact(count).map_err(|_| {
         CodecError::ResourceLimit(ResourceLimit::allocation_failed(
@@ -739,7 +755,7 @@ fn physical_ledger(
     entries: &[EntryRecord],
     central_begin: u64,
 ) -> Result<Vec<PhysicalSpan>, CodecError> {
-    let len = bytes.len() as u64;
+    let len = cadmpeg_core::decode::u64_from_index(bytes.len());
     let mut regions = Vec::new();
     let mut local_order = collection_vec(ctx, entries.len(), "ZIP ledger local order")?;
     local_order.extend(entries.iter());
@@ -1189,7 +1205,7 @@ mod tests {
                 .expect("empty ZIP has a complete physical ledger"),
             vec![PhysicalSpan {
                 start: 0,
-                end: bytes.len() as u64,
+                end: cadmpeg_core::decode::u64_from_index(bytes.len()),
                 role: ZipSpanRole::EndRecord,
             }]
         );
@@ -1265,7 +1281,8 @@ mod tests {
                 .expect("archive root");
         let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
         let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = snapshot.entries().len() as u64 - 1;
+        policy.limits.max_collection_items =
+            cadmpeg_core::decode::u64_from_index(snapshot.entries().len()) - 1;
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
         assert!(matches!(snapshot.physical_ledger(&limited),
@@ -1282,7 +1299,8 @@ mod tests {
                 .expect("archive root");
         let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = snapshot.entries()[0].name.len() as u64 - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(snapshot.entries()[0].name.len()) - 1;
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
         assert!(matches!(snapshot.physical_ledger(&limited),
@@ -1299,7 +1317,8 @@ mod tests {
                 .expect("archive root");
         let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
         let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = snapshot.entries().len() as u64 - 1;
+        policy.limits.max_collection_items =
+            cadmpeg_core::decode::u64_from_index(snapshot.entries().len()) - 1;
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
         assert!(
@@ -1318,7 +1337,8 @@ mod tests {
                 .expect("archive root");
         let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = snapshot.entries()[0].name.len() as u64 - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(snapshot.entries()[0].name.len()) - 1;
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
         assert!(
@@ -1675,7 +1695,8 @@ mod tests {
             .position(|window| window == [0x50, 0x4b, 0x01, 0x02])
         {
             let record = at + found;
-            let name_len = u16::from_le_bytes([bytes[record + 28], bytes[record + 29]]) as usize;
+            let name_len =
+                usize::from(u16::from_le_bytes([bytes[record + 28], bytes[record + 29]]));
             let start = record + 46;
             if &bytes[start..start + name_len] == name.as_bytes() {
                 bytes[record + 24..record + 28].copy_from_slice(&size.to_le_bytes());
@@ -1789,8 +1810,10 @@ mod tests {
         let header = usize::try_from(entry.header_start).expect("header fits memory");
         let central = usize::try_from(entry.central_start).expect("central header fits memory")
             + suffix.len();
-        let compressed_size = u32::try_from(entry.compressed_size + suffix.len() as u64)
-            .expect("fixture compressed size fits u32");
+        let compressed_size = u32::try_from(
+            entry.compressed_size + cadmpeg_core::decode::u64_from_index(suffix.len()),
+        )
+        .expect("fixture compressed size fits u32");
         bytes[header + 18..header + 22].copy_from_slice(&compressed_size.to_le_bytes());
         bytes[central + 20..central + 24].copy_from_slice(&compressed_size.to_le_bytes());
         let end = bytes

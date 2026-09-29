@@ -280,11 +280,16 @@ fn finite_pcurve_admission_marks_unsampled_global_divergence() {
     };
 
     for sample in 0..PCURVE_LOCUS_SAMPLE_COUNT {
-        let fraction = sample as f64 / (PCURVE_LOCUS_SAMPLE_COUNT - 1) as f64;
+        let fraction = cadmpeg_core::convert::f64_from_index(sample).expect("test sample is exact")
+            / cadmpeg_core::convert::f64_from_index(PCURVE_LOCUS_SAMPLE_COUNT - 1)
+                .expect("test sample count is exact");
         assert!(point_set_residual(fraction) <= COINCIDENCE_TOLERANCE);
     }
     for gap in 0..(PCURVE_LOCUS_SAMPLE_COUNT - 1) {
-        let fraction = (gap as f64 + 0.5) / (PCURVE_LOCUS_SAMPLE_COUNT - 1) as f64;
+        let fraction = (cadmpeg_core::convert::f64_from_index(gap).expect("test gap is exact")
+            + 0.5)
+            / cadmpeg_core::convert::f64_from_index(PCURVE_LOCUS_SAMPLE_COUNT - 1)
+                .expect("test sample count is exact");
         assert!(point_set_residual(fraction) > 1.0);
     }
 
@@ -704,27 +709,29 @@ fn shared_surface_carrier_is_staged_once() {
     let body_id = BodyId::mint("step:data:body#shared-surface").expect("identity grammar");
     let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
     let built = super::super::staged_topology(
-        HashSet::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        vec![surface.clone(), surface],
-        Vec::new(),
-        Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
+        super::super::StagedTopologyParts {
+            typed: HashSet::new(),
+            vertices: Vec::new(),
+            edges: Vec::new(),
+            coedges: Vec::new(),
+            loops: Vec::new(),
+            faces: Vec::new(),
+            surfaces: vec![surface.clone(), surface],
             shells: Vec::new(),
-        },
-        Body {
-            id: body_id,
-            kind: BodyKind::Sheet,
-            regions: vec![region_id],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
+            region: Region {
+                id: region_id.clone(),
+                body: body_id.clone(),
+                shells: Vec::new(),
+            },
+            body: Body {
+                id: body_id,
+                kind: BodyKind::Sheet,
+                regions: vec![region_id],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
         },
         &ctx,
     )

@@ -2,7 +2,7 @@
 
 use super::{
     emit_carrier_curve, emit_coedges, emit_containers, emit_edges, emit_faces, emit_loops,
-    emit_vertices, into_support_sides, CoedgeDecodeInputs, CurveSenseRefs,
+    emit_vertices, into_support_sides, CoedgeDecodeInputs, ContainerInputs, CurveSenseRefs,
 };
 use crate::brep::records::{FaceSidedness, TolerantCoedgeExtension};
 use crate::brep::{AsmBrep, Carriers, Reachable, WireShellTopology};
@@ -40,13 +40,15 @@ fn body_source_stream_copy_refuses_retained_limit() {
     let error = emit_containers(
         &ctx,
         &mut AsmBrep::default(),
-        &records,
-        &by_index,
-        &Reachable::default(),
-        &WireShellTopology::default(),
-        "folder/source.brp",
-        1.0,
-        crate::asm_format!("f3d"),
+        ContainerInputs {
+            records: &records,
+            by_index: &by_index,
+            reach: &Reachable::default(),
+            wire: &WireShellTopology::default(),
+            stream: "folder/source.brp",
+            header_scale: 1.0,
+            format: crate::asm_format!("f3d"),
+        },
     )
     .expect_err("stream name exceeds zero retained bytes");
     let CodecError::ResourceLimit(limit) = error else {
@@ -904,14 +906,16 @@ fn reversed_intcurve_context_uses_the_parsed_cache_domain() {
             ..Reachable::default()
         };
         super::super::topology::walk_reachable_topology(
-            &asm_decode_ctx,
+            super::super::topology::TopologyContext {
+                ctx: &asm_decode_ctx,
+                by_index: &by_index,
+                token_table: &table,
+                purpose: super::super::DecodePurpose::Model,
+                format: crate::asm_format!("f3d"),
+            },
             &mut out,
-            &by_index,
-            &table,
             &mut carriers,
             &mut reach,
-            super::super::DecodePurpose::Model,
-            crate::asm_format!("f3d"),
         )
         .expect("generated topology is within resource limits");
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(normalized)) = &carriers.curve_geo[&4]

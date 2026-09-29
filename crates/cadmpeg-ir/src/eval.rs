@@ -12,6 +12,7 @@
 //! [`model_curve_point_by_id`] resolves construction-backed curves whose
 //! parameterization is established by model entities.
 
+use cadmpeg_core::convert::f64_from_index;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -521,10 +522,10 @@ fn restrict_homogeneous_bezier(
     Ok(split_homogeneous_bezier(&left, relative_start)?.map(|split| split.into_polygons().1))
 }
 
-fn binomial_coefficient(degree: usize, index: usize) -> f64 {
+fn binomial_coefficient(degree: usize, index: usize) -> Option<f64> {
     let index = index.min(degree - index);
-    (1..=index).fold(1.0, |value, factor| {
-        value * (degree - index + factor) as f64 / factor as f64
+    (1..=index).try_fold(1.0, |value, factor| {
+        Some(value * f64_from_index(degree - index + factor)? / f64_from_index(factor)?)
     })
 }
 
@@ -600,9 +601,14 @@ fn rational_patch_parameter_segment(
     for (u, row) in restricted.iter().enumerate() {
         for (v, control) in row.iter().enumerate() {
             let index = u + v;
-            let factor = binomial_coefficient(patch.u_degree, u)
-                * binomial_coefficient(patch.v_degree, v)
-                / binomial_coefficient(degree, index);
+            let (Some(u_factor), Some(v_factor), Some(denominator)) = (
+                binomial_coefficient(patch.u_degree, u),
+                binomial_coefficient(patch.v_degree, v),
+                binomial_coefficient(degree, index),
+            ) else {
+                return Ok(None);
+            };
+            let factor = u_factor * v_factor / denominator;
             for axis in 0..4 {
                 diagonal[index][axis] += factor * control[axis];
             }
@@ -634,7 +640,7 @@ fn rational_curve_chord_bound(controls: &[[f64; 4]], chord: [Point3; 2]) -> Opti
     for index in 0..=elevated_degree {
         let previous = index.checked_sub(1).and_then(|index| controls.get(index));
         let current = controls.get(index);
-        let previous_factor = index as f64 / elevated_degree as f64;
+        let previous_factor = f64_from_index(index)? / f64_from_index(elevated_degree)?;
         let current_factor = 1.0 - previous_factor;
         let weight = previous_factor * previous.map_or(0.0, |control| control[3])
             + current_factor * current.map_or(0.0, |control| control[3]);
@@ -1412,6 +1418,7 @@ pub fn nurbs_surface_parameter_near_point(
     seed: Option<Point2>,
 ) -> Result<Option<FinitePoint2>, ResourceLimit> {
     const COARSE_GRID: usize = 8;
+    const COARSE_GRID_F64: f64 = 8.0;
     const MAX_ITERATIONS: usize = 24;
     const MAX_LINE_SEARCH_STEPS: usize = 12;
 
@@ -1448,17 +1455,20 @@ pub fn nurbs_surface_parameter_near_point(
         None => {
             let mut best = None;
             for u_index in 0..=COARSE_GRID {
-                let Some(u) =
-                    crate::math::interpolate(u_start, u_end, u_index as f64 / COARSE_GRID as f64)
+                let Some(u_index) = f64_from_index(u_index) else {
+                    return Ok(None);
+                };
+                let Some(u) = crate::math::interpolate(u_start, u_end, u_index / COARSE_GRID_F64)
                 else {
                     return Ok(None);
                 };
                 for v_index in 0..=COARSE_GRID {
-                    let Some(v) = crate::math::interpolate(
-                        v_start,
-                        v_end,
-                        v_index as f64 / COARSE_GRID as f64,
-                    ) else {
+                    let Some(v_index) = f64_from_index(v_index) else {
+                        return Ok(None);
+                    };
+                    let Some(v) =
+                        crate::math::interpolate(v_start, v_end, v_index / COARSE_GRID_F64)
+                    else {
                         return Ok(None);
                     };
                     let Some(candidate) =
@@ -1648,6 +1658,9 @@ fn bspline_basis_derivative(
     if degree == 0 {
         return scratch::filled(1, 0.0, "IR B-spline derivative basis").map(Some);
     }
+    let Some(degree_real) = f64_from_index(degree) else {
+        return Ok(None);
+    };
     let Some(lower) = bspline_basis(knots, degree - 1, span, t)? else {
         return Ok(None);
     };
@@ -1667,10 +1680,10 @@ fn bspline_basis_derivative(
         let left = if left_denominator == 0.0 {
             0.0
         } else if left_denominator.is_finite() {
-            degree as f64 * lower_at(index) / left_denominator
+            degree_real * lower_at(index) / left_denominator
         } else {
             match FiniteReal::array([
-                degree as f64 * lower_at(index),
+                degree_real * lower_at(index),
                 knots[index + degree],
                 knots[index],
             ]) {
@@ -1684,10 +1697,10 @@ fn bspline_basis_derivative(
         let right = if right_denominator == 0.0 {
             0.0
         } else if right_denominator.is_finite() {
-            degree as f64 * lower_at(index + 1) / right_denominator
+            degree_real * lower_at(index + 1) / right_denominator
         } else {
             match FiniteReal::array([
-                degree as f64 * lower_at(index + 1),
+                degree_real * lower_at(index + 1),
                 knots[index + degree + 1],
                 knots[index + 1],
             ]) {
@@ -1716,6 +1729,9 @@ fn bspline_basis_second_derivative(
     if degree == 1 {
         return Ok(Some(Cow::Borrowed(&[0.0, 0.0])));
     }
+    let Some(degree_real) = f64_from_index(degree) else {
+        return Ok(None);
+    };
     let Some(lower) = bspline_basis_derivative(knots, degree - 1, span, t)? else {
         return Ok(None);
     };
@@ -1735,10 +1751,10 @@ fn bspline_basis_second_derivative(
         let left = if left_denominator == 0.0 {
             0.0
         } else if left_denominator.is_finite() {
-            degree as f64 * lower_at(index) / left_denominator
+            degree_real * lower_at(index) / left_denominator
         } else {
             match FiniteReal::array([
-                degree as f64 * lower_at(index),
+                degree_real * lower_at(index),
                 knots[index + degree],
                 knots[index],
             ]) {
@@ -1752,10 +1768,10 @@ fn bspline_basis_second_derivative(
         let right = if right_denominator == 0.0 {
             0.0
         } else if right_denominator.is_finite() {
-            degree as f64 * lower_at(index + 1) / right_denominator
+            degree_real * lower_at(index + 1) / right_denominator
         } else {
             match FiniteReal::array([
-                degree as f64 * lower_at(index + 1),
+                degree_real * lower_at(index + 1),
                 knots[index + degree + 1],
                 knots[index + 1],
             ]) {
@@ -1828,6 +1844,9 @@ fn bspline_basis_scaled_derivative_level(
     scale: PositiveReal,
     lower: &[f64],
 ) -> Result<Option<Vec<f64>>, ResourceLimit> {
+    let Some(degree_real) = f64_from_index(degree) else {
+        return Ok(None);
+    };
     let lower_start = span - (degree - 1);
     let Some(count) = degree.checked_add(1) else {
         return Ok(None);
@@ -1865,7 +1884,7 @@ fn bspline_basis_scaled_derivative_level(
             return Ok(None);
         };
         *derivative_value =
-            degree as f64 * (left * lower_at(lower, index) - right * lower_at(lower, index + 1));
+            degree_real * (left * lower_at(lower, index) - right * lower_at(lower, index + 1));
         if !derivative_value.is_finite() {
             return Ok(None);
         }
@@ -3848,7 +3867,8 @@ fn curve_derivative_evaluation(
             )
         }
         SolvedCurveGeometry::Polyline(polyline) => {
-            let (points, parameters) = polyline_samples(polyline);
+            let (points, parameters) =
+                polyline_samples(polyline).ok_or(EvaluationFailure::NoValue)?;
             let tangent = polyline_tangent(&points, &parameters, t)?;
             Ok(if second { FiniteVector3::ZERO } else { tangent })
         }
@@ -5526,7 +5546,7 @@ fn direct_curve_parameter_near_point(
                 }
             }
             SolvedCurveGeometry::Polyline(polyline) => {
-                let (points, parameters) = polyline_samples(polyline);
+                let (points, parameters) = polyline_samples(polyline)?;
                 polyline_parameter_near_point(&points, &parameters, point, tolerance, seed)?
             }
             SolvedCurveGeometry::Transformed(placed) => {
@@ -6638,7 +6658,7 @@ fn scalar_sweep_law_differential(
     match expression {
         LawExpression::Null {} => Ok(constant_sweep_differential(FiniteReal::ZERO)),
         LawExpression::Integer { value } => Ok(constant_sweep_differential(
-            FiniteReal::from_integer(*value),
+            FiniteReal::from_integer(*value).ok_or(no_value)?,
         )),
         LawExpression::Double { value } => Ok(constant_sweep_differential(*value)),
         LawExpression::Text { value } => {
@@ -6720,7 +6740,8 @@ fn scalar_sweep_law_differential(
                                     value,
                                     crate::math::sum::ScaledValue::product_of_nonzero([
                                         divisor, divisor,
-                                    ]),
+                                    ])
+                                    .ok_or(EvaluationFailure::NoValue)?,
                                 )
                             })
                         }),
@@ -6813,9 +6834,9 @@ fn scalar_unary_sweep_law_differential(
                     let denominator =
                         crate::math::sum::ScaledValue::product_of_nonzero([sine, sine]);
                     if operator == "COT" {
-                        (1.0 / x.tan(), -1.0, Ok(denominator))
+                        (1.0 / x.tan(), -1.0, denominator.ok_or(no_value))
                     } else {
-                        (1.0 / sine.get(), -x.cos(), Ok(denominator))
+                        (1.0 / sine.get(), -x.cos(), denominator.ok_or(no_value))
                     }
                 }
                 "TAN" | "SEC" => {
@@ -6823,9 +6844,9 @@ fn scalar_unary_sweep_law_differential(
                     let denominator =
                         crate::math::sum::ScaledValue::product_of_nonzero([cosine, cosine]);
                     if operator == "TAN" {
-                        (x.tan(), 1.0, Ok(denominator))
+                        (x.tan(), 1.0, denominator.ok_or(no_value))
                     } else {
-                        (1.0 / cosine.get(), x.sin(), Ok(denominator))
+                        (1.0 / cosine.get(), x.sin(), denominator.ok_or(no_value))
                     }
                 }
                 _ => {
@@ -6839,7 +6860,7 @@ fn scalar_unary_sweep_law_differential(
                     (
                         (1.0 + root.map_or(0.0, PositiveReal::get)).ln() - x.ln(),
                         -1.0,
-                        root.map(|root| {
+                        root.and_then(|root| {
                             crate::math::sum::ScaledValue::product_of_nonzero([
                                 positive.into(),
                                 root.into(),
@@ -6865,8 +6886,7 @@ fn scalar_unary_sweep_law_differential(
             let (value, sign, denominator) = match operator {
                 "ARCTAN" | "ARCOT" => {
                     let hypotenuse = operand.value.hypot_one_nonzero();
-                    let denominator =
-                        Some(ScaledValue::product_of_nonzero([hypotenuse, hypotenuse]));
+                    let denominator = ScaledValue::product_of_nonzero([hypotenuse, hypotenuse]);
                     if operator == "ARCTAN" {
                         (x.atan(), 1.0, denominator)
                     } else {
@@ -6877,7 +6897,7 @@ fn scalar_unary_sweep_law_differential(
                     if x.abs() < 1.0 {
                         return Err(no_value);
                     }
-                    let denominator = operand.value.beyond_unit().map(|beyond| {
+                    let denominator = operand.value.beyond_unit().and_then(|beyond| {
                         let magnitude = beyond.magnitude();
                         let factor = beyond.arcsec_factor();
                         ScaledValue::product_of_nonzero([magnitude, magnitude, factor])
@@ -6891,8 +6911,7 @@ fn scalar_unary_sweep_law_differential(
                 _ => {
                     let magnitude = NonZeroReal::new(x).ok_or(no_value)?.magnitude();
                     let hypotenuse = operand.value.hypot_one_nonzero();
-                    let denominator =
-                        Some(ScaledValue::product_of_nonzero([magnitude, hypotenuse]));
+                    let denominator = ScaledValue::product_of_nonzero([magnitude, hypotenuse]);
                     let inverse = 1.0 / x;
                     let value = if inverse.is_finite() {
                         inverse.asinh()
@@ -6940,7 +6959,7 @@ fn scalar_unary_sweep_law_differential(
                     (
                         2.0 * tail / (1.0 + tail * tail),
                         [-2.0 * x.tanh(), half_tail, half_tail],
-                        ScaledValue::of_nonzero(unit_sum),
+                        Some(ScaledValue::of_nonzero(unit_sum)),
                     )
                 }
                 _ => {
@@ -6959,6 +6978,7 @@ fn scalar_unary_sweep_law_differential(
                 value,
                 operand.derivative.and_then(|derivative| {
                     let [first, second, third] = numerator_factors;
+                    let denominator = denominator.ok_or(no_value)?;
                     let mut numerator = ExactSignedSum::default();
                     numerator.add_factors([first, second, third, derivative.get()]);
                     match numerator.finish() {
@@ -7263,7 +7283,7 @@ fn unit_vector_with_derivative(
     let (unit, cubed_length) = vector.unit_with_cubed_length()?;
     let vector = vector.get();
     let components = [vector.x, vector.y, vector.z];
-    let denominator = crate::math::sum::ScaledValue::product_of_nonzero(cubed_length);
+    let denominator = crate::math::sum::ScaledValue::product_of_nonzero(cubed_length)?;
     let unit_derivative = derivative.and_then(|derivative| {
         let derivative = derivative.get();
         let derivatives = [derivative.x, derivative.y, derivative.z];

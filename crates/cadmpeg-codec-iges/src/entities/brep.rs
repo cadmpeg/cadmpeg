@@ -296,17 +296,26 @@ fn surface_point_or_refusal(
 /// One resolved pcurve use: its geometry and the parameter range it covers.
 type ResolvedPcurveUses = Vec<(PcurveGeometry, [f64; 2])>;
 
-#[allow(clippy::too_many_arguments)] // the lazily built model index rides along as the eighth argument
+#[derive(Clone, Copy)]
+struct PcurveEndpointCheck {
+    start: Point3,
+    end: Point3,
+    tolerance: f64,
+}
+
 fn resolve_pcurve_uses<'a>(
     source: &'a CadIr,
     uses: &[(bool, u32)],
     support: &SurfaceSupport<'_>,
-    expected_start: Point3,
-    expected_end: Point3,
-    tolerance: f64,
+    endpoints: PcurveEndpointCheck,
     ctx: &DecodeContext<'_>,
     model_index: &mut Option<cadmpeg_ir::index::ModelIndex<'a>>,
 ) -> Result<Option<ResolvedPcurveUses>, super::composite::CompositeCurveError> {
+    let PcurveEndpointCheck {
+        start: expected_start,
+        end: expected_end,
+        tolerance,
+    } = endpoints;
     if uses.is_empty() {
         return Ok(Some(Vec::new()));
     }
@@ -1213,9 +1222,11 @@ pub(super) fn project(
                                     geometry: support_geometry,
                                     factor,
                                 },
-                                expected,
-                                expected,
-                                tolerance,
+                                PcurveEndpointCheck {
+                                    start: expected,
+                                    end: expected,
+                                    tolerance,
+                                },
                                 ctx,
                                 &mut model_index,
                             ) {
@@ -1319,9 +1330,11 @@ pub(super) fn project(
                                 geometry: support_geometry,
                                 factor,
                             },
-                            expected_start,
-                            expected_end,
-                            tolerance,
+                            PcurveEndpointCheck {
+                                start: expected_start,
+                                end: expected_end,
+                                tolerance,
+                            },
                             ctx,
                             &mut model_index,
                         ) {

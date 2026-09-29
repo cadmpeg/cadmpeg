@@ -175,7 +175,6 @@ impl ColorSource {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ObjectAttributes {
     /// Complete source range.
     source: SourceRange,
@@ -239,8 +238,8 @@ pub(crate) struct ObjectAttributes {
     pub(crate) display_order: i32,
     /// Clipping-plane participation selector.
     clip_participation_source: u8,
-    /// Clipping proof flag.
-    pub(crate) clipping_proof: bool,
+    /// Clipping participation flags.
+    pub(crate) clipping: ObjectClippingFlags,
     /// Clipping-plane UUIDs.
     pub(crate) clipping_plane_ids: Vec<Uuid>,
     /// Section-attributes source selector.
@@ -255,10 +254,8 @@ pub(crate) struct ObjectAttributes {
     pub(crate) linetype_pattern_scale: FiniteReal,
     /// Hatch background color.
     pub(crate) hatch_background: [u8; 4],
-    /// Whether hatch boundaries are visible.
-    pub(crate) hatch_boundary_visible: bool,
-    /// Whether a detail requests its display-mode background.
-    pub(crate) detail_background_visible: bool,
+    /// Hatch and detail display flags.
+    pub(crate) display: ObjectDisplayFlags,
     /// Object frame transform.
     object_frame: Option<Xform>,
     /// Section-fill rule.
@@ -273,8 +270,6 @@ pub(crate) struct ObjectAttributes {
     line_join_style: u8,
     /// Clipping-plane label style.
     pub(crate) clipping_plane_label_style: u8,
-    /// Obsolete selective-clipping-list flag.
-    selective_clipping_list: bool,
     /// Direct embedded linetype.
     embedded_linetype: Option<settings::EmbeddedDescriptor>,
     /// Direct embedded section style.
@@ -283,6 +278,20 @@ pub(crate) struct ObjectAttributes {
     pub(crate) custom_render_mesh: Option<settings::MeshParameters>,
     /// Per-object mesh modifier userdata.
     pub(crate) mesh_modifiers: Option<crate::mesh_modifiers::MeshModifiers>,
+}
+
+/// Clipping participation switches in object attributes.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ObjectClippingFlags {
+    pub(crate) proof: bool,
+    pub(crate) selective_list: bool,
+}
+
+/// Hatch and detail display switches in object attributes.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ObjectDisplayFlags {
+    pub(crate) hatch_boundary_visible: bool,
+    pub(crate) detail_background_visible: bool,
 }
 
 /// Resolved source identity and display state for one object.
@@ -382,8 +391,6 @@ pub(crate) struct ObjectDescriptor<I = SourceIdentity> {
 
 /// A scanned object record: framed contents, or a degraded outer range.
 #[derive(Debug, Clone, PartialEq)]
-// Framed records are the common case; retain their descriptors inline during table traversal.
-#[allow(clippy::large_enum_variant)]
 pub(crate) enum ObjectRecord<I = SourceIdentity> {
     /// Bounded inner framing was malformed; only the outer range survived.
     Degraded {
@@ -393,7 +400,7 @@ pub(crate) enum ObjectRecord<I = SourceIdentity> {
         warning: String,
     },
     /// Fully framed object record.
-    Framed(ObjectDescriptor<I>),
+    Framed(Box<ObjectDescriptor<I>>),
 }
 
 impl<I> ObjectRecord<I> {
@@ -1099,7 +1106,10 @@ pub(crate) fn parse_attributes(
             viewport_id,
             display_order: 0,
             clip_participation_source: 0,
-            clipping_proof: false,
+            clipping: ObjectClippingFlags {
+                proof: false,
+                selective_list: false,
+            },
             clipping_plane_ids: Vec::new(),
             section_attributes_source: 0,
             hatch_pattern_index: -1,
@@ -1107,8 +1117,10 @@ pub(crate) fn parse_attributes(
             section_hatch_rotation: FiniteReal::ZERO,
             linetype_pattern_scale: FiniteReal::ONE,
             hatch_background: [0; 4],
-            hatch_boundary_visible: false,
-            detail_background_visible: false,
+            display: ObjectDisplayFlags {
+                hatch_boundary_visible: false,
+                detail_background_visible: false,
+            },
             object_frame: None,
             section_fill_rule: 0,
             line_cap_source: 0,
@@ -1116,7 +1128,6 @@ pub(crate) fn parse_attributes(
             line_join_source: 0,
             line_join_style: 0,
             clipping_plane_label_style: 0,
-            selective_clipping_list: false,
             embedded_linetype: None,
             embedded_section_style: None,
             custom_render_mesh: None,
@@ -1165,7 +1176,10 @@ pub(crate) fn parse_attributes(
         viewport_id: Uuid::nil(),
         display_order: 0,
         clip_participation_source: 0,
-        clipping_proof: false,
+        clipping: ObjectClippingFlags {
+            proof: false,
+            selective_list: false,
+        },
         clipping_plane_ids: Vec::new(),
         section_attributes_source: 0,
         hatch_pattern_index: -1,
@@ -1173,8 +1187,10 @@ pub(crate) fn parse_attributes(
         section_hatch_rotation: FiniteReal::ZERO,
         linetype_pattern_scale: FiniteReal::ONE,
         hatch_background: [0; 4],
-        hatch_boundary_visible: false,
-        detail_background_visible: false,
+        display: ObjectDisplayFlags {
+            hatch_boundary_visible: false,
+            detail_background_visible: false,
+        },
         object_frame: None,
         section_fill_rule: 0,
         line_cap_source: 0,
@@ -1182,7 +1198,6 @@ pub(crate) fn parse_attributes(
         line_join_source: 0,
         line_join_style: 0,
         clipping_plane_label_style: 0,
-        selective_clipping_list: false,
         embedded_linetype: None,
         embedded_section_style: None,
         custom_render_mesh: None,
@@ -1284,7 +1299,7 @@ pub(crate) fn parse_attributes(
                 attributes.clip_participation_source = reader.u8()?;
             }
             AttributeItem::Clipping => {
-                attributes.clipping_proof = reader.bool_with_writer_version(writer_version)?;
+                attributes.clipping.proof = reader.bool_with_writer_version(writer_version)?;
                 attributes.clipping_plane_ids = read_uuid_list(ctx, &mut reader, archive)?;
             }
             AttributeItem::SectionAttributesSource => {
@@ -1305,11 +1320,11 @@ pub(crate) fn parse_attributes(
                 attributes.hatch_background = reader.array::<4>()?;
             }
             AttributeItem::HatchBoundaryVisible => {
-                attributes.hatch_boundary_visible =
+                attributes.display.hatch_boundary_visible =
                     reader.bool_with_writer_version(writer_version)?;
             }
             AttributeItem::DetailBackgroundVisible => {
-                attributes.detail_background_visible =
+                attributes.display.detail_background_visible =
                     reader.bool_with_writer_version(writer_version)?;
             }
             AttributeItem::ObjectFrame => {
@@ -1338,7 +1353,7 @@ pub(crate) fn parse_attributes(
                 attributes.clipping_plane_label_style = reader.u8()?;
             }
             AttributeItem::SelectiveClippingList => {
-                attributes.selective_clipping_list =
+                attributes.clipping.selective_list =
                     reader.bool_with_writer_version(writer_version)?;
             }
         }
@@ -1536,7 +1551,7 @@ fn parse_obsolete_custom_mesh_userdata(
         // userdata, whose setter forces these two logical fields.
         mesh.custom_settings_enabled = Some(in_use);
         mesh.custom_settings = Some(true);
-        mesh.compute_curvature = false;
+        mesh.generation.compute_curvature = false;
         Ok::<_, FramingError>(mesh)
     })();
     match parsed {
@@ -1613,7 +1628,7 @@ fn parse_per_object_mesh_userdata(
         // ON_PerObjectMeshParameters::Read applies these class invariants after
         // reading the nested mesh body.
         mesh.custom_settings = Some(true);
-        mesh.compute_curvature = false;
+        mesh.generation.compute_curvature = false;
         Ok::<_, FramingError>(mesh)
     })();
     match parsed {
@@ -1961,7 +1976,7 @@ pub(crate) fn parse_object_record(
             &mut warnings,
         )?;
     }
-    Ok(ObjectRecord::Framed(ObjectDescriptor {
+    Ok(ObjectRecord::Framed(Box::new(ObjectDescriptor {
         range: record.range.clone(),
         object_type,
         class_uuid,
@@ -1977,7 +1992,7 @@ pub(crate) fn parse_object_record(
             warnings
         },
         warnings: Diagnostics::new(),
-    }))
+    })))
 }
 
 /// Builds a range-preserving descriptor for a malformed bounded object record.
@@ -2033,7 +2048,7 @@ pub(crate) fn resolve_identities(
                     )?;
                 }
                 object.warnings.append_admitted(ctx, &mut local_warnings)?;
-                ObjectRecord::Framed(ObjectDescriptor {
+                ObjectRecord::Framed(Box::new(ObjectDescriptor {
                     identity,
                     range: object.range,
                     object_type: object.object_type,
@@ -2046,7 +2061,7 @@ pub(crate) fn resolve_identities(
                     unknown_trailer: object.unknown_trailer,
                     checksum_warnings: object.checksum_warnings,
                     warnings: object.warnings,
-                })
+                }))
             }
         });
     }

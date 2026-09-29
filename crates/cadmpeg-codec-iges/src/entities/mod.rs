@@ -24,7 +24,10 @@ fn push_attributed_loss(
 ) -> Result<(), CodecError> {
     ctx.reserve_vec(losses, 1, "iges entity loss slots")?;
     let message = ctx.format_retained(message, "iges entity loss message")?;
-    ctx.charge_retained(4 + code.code().len() as u64, "iges entity loss kind")?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges entity loss kind",
+    )?;
     losses.push(
         code.note(message)
             .with_provenance(entry.admitted_loss_provenance(ctx)?),

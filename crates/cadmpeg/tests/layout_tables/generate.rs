@@ -188,7 +188,7 @@ fn render_into(out: &mut String, file: &LayoutFile) -> std::fmt::Result {
                 }
                 RecordKind::Slot => {
                     rows.push((
-                        index as u64,
+                        cadmpeg_core::decode::u64_from_index(index),
                         format!(
                             "| {index} | `{}` | `{}` | {endian} | {src} | {meaning} |",
                             field.name, field.ty

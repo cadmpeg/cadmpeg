@@ -233,14 +233,17 @@ impl std::error::Error for FramingError {}
 
 /// Parses the exact 32-byte file header.
 pub(crate) fn parse_header(bytes: &[u8]) -> Result<Header, FramingError> {
-    let search_end = bytes
-        .len()
-        .min(33_554_432_usize.saturating_add(MAGIC.len()));
+    const MAX_HEADER_SEARCH: usize = 33_554_432 + MAGIC.len();
+    let search_end = bytes.len().min(MAX_HEADER_SEARCH);
     let start_offset = bytes[..search_end]
         .windows(MAGIC.len())
         .position(|window| window == MAGIC)
         .ok_or(FramingError::InvalidHeader)?;
-    let header_end = start_offset.saturating_add(file_header::LEN);
+    let header_end = start_offset
+        .checked_add(file_header::LEN)
+        .ok_or(FramingError::Overflow {
+            offset: start_offset,
+        })?;
     if bytes.len() < header_end {
         return Err(FramingError::Truncated {
             offset: bytes.len(),
@@ -459,11 +462,13 @@ pub(crate) fn checked_count_bytes(
         .checked_mul(element_size)
         .ok_or(FramingError::Overflow { offset })?;
     if bytes > remaining {
-        return Err(FramingError::OutOfBounds {
-            offset,
-            end: offset.saturating_add(bytes),
-            bound: offset + remaining,
-        });
+        let end = offset
+            .checked_add(bytes)
+            .ok_or(FramingError::Overflow { offset })?;
+        let bound = offset
+            .checked_add(remaining)
+            .ok_or(FramingError::Overflow { offset })?;
+        return Err(FramingError::OutOfBounds { offset, end, bound });
     }
     Ok(bytes)
 }

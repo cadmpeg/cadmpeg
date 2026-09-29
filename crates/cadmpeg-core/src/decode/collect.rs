@@ -1362,10 +1362,12 @@ mod tests {
         collect_indexed_vec_charges_before_allocation,
         2,
         |ctx: &DecodeContext<'_>| ctx
-            .collect_indexed_vec(2, "test indexed vec", |index| Ok(index as u8))
+            .collect_indexed_vec(2, "test indexed vec", |index| u8::try_from(index)
+                .map_err(CodecError::malformed))
             .map(|_| ()),
         |ctx: &DecodeContext<'_>| ctx
-            .collect_indexed_vec(2, "test indexed vec", |index| Ok(index as u8))
+            .collect_indexed_vec(2, "test indexed vec", |index| u8::try_from(index)
+                .map_err(CodecError::malformed))
             .map(|_| ())
     );
     collection_case!(
@@ -1516,7 +1518,7 @@ mod tests {
     );
     retained_case!(
         copy_retained_rows_charges_before_allocation,
-        std::mem::size_of::<Vec<u8>>() as u64,
+        crate::decode::u64_from_index(std::mem::size_of::<Vec<u8>>()),
         |ctx: &DecodeContext<'_>| ctx
             .copy_retained_rows(
                 &[vec![1_u8]],
@@ -1527,7 +1529,7 @@ mod tests {
     );
     retained_case!(
         copy_retained_set_charges_before_allocation,
-        (std::mem::size_of::<HashSet<u8>>() + 1) as u64,
+        crate::decode::u64_from_index(std::mem::size_of::<HashSet<u8>>() + 1),
         |ctx: &DecodeContext<'_>| ctx
             .copy_retained_set(&HashSet::from([1_u8]), "test retained set")
             .map(|_| ())

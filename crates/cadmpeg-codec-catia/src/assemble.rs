@@ -1607,7 +1607,7 @@ mod route_tests {
         });
         ir.model
             .add_procedural_curve(
-                curve_id,
+                &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint("catia:test:procedural-curve#0")
                         .expect("identity grammar"),
@@ -1658,7 +1658,7 @@ mod route_tests {
 
         ir.model
             .add_procedural_curve(
-                curve_id,
+                &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(
                         "catia:test:proceduralcurve#procedural-curve-0".to_string(),
@@ -1677,7 +1677,7 @@ mod route_tests {
             .expect("attach construction to its fixture carrier");
         ir.model
             .add_procedural_surface(
-                surface_id.clone(),
+                &surface_id,
                 ProceduralSurface::new(
                     ProceduralSurfaceId::mint(
                         "catia:test:proceduralsurface#procedural-surface-0".to_string(),
@@ -1696,7 +1696,7 @@ mod route_tests {
             .expect("attach construction to its fixture carrier");
         ir.model
             .add_procedural_surface(
-                offset_id,
+                &offset_id,
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
                     surface_id,
                     2.0,

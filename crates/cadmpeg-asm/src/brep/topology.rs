@@ -65,20 +65,32 @@ pub(super) fn decode_analytic_carriers(
     Ok((carriers, inward_normal_surfaces))
 }
 
+/// Inputs shared by the topology passes of one ASM decode.
+#[derive(Clone, Copy)]
+pub(super) struct TopologyContext<'a, 'ctx, 'record> {
+    pub(super) ctx: &'a cadmpeg_core::decode::DecodeContext<'ctx>,
+    pub(super) by_index: &'a HashMap<i64, &'record Record>,
+    pub(super) token_table: &'a nurbs::toks::SubtypeTable,
+    pub(super) purpose: DecodePurpose,
+    pub(super) format: IdFormat,
+}
+
 /// Pass 2 (faces): keep every face whose surface reference resolves, decoding
 /// or classifying its carrier and recording surface reachability.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn keep_faces_and_carriers(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    inputs: TopologyContext<'_, '_, '_>,
     out: &mut AsmBrep,
     records: &[Record],
-    by_index: &HashMap<i64, &Record>,
-    token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
-    purpose: DecodePurpose,
-    format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let TopologyContext {
+        ctx,
+        by_index,
+        token_table,
+        purpose,
+        format,
+    } = inputs;
     let Carriers {
         surface_geo,
         procedural_surface_defs,
@@ -282,17 +294,19 @@ pub(super) fn keep_faces_and_carriers(
 
 /// Pass 2 (topology): walk each kept face's loops and coedge rings, pulling in
 /// the supporting edge/vertex/point graph and decoding curve and pcurve carriers.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn walk_reachable_topology(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    inputs: TopologyContext<'_, '_, '_>,
     out: &mut AsmBrep,
-    by_index: &HashMap<i64, &Record>,
-    token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
-    purpose: DecodePurpose,
-    format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let TopologyContext {
+        ctx,
+        by_index,
+        token_table,
+        purpose,
+        format,
+    } = inputs;
     let Carriers {
         curve_geo,
         procedural_curve_defs,
@@ -593,19 +607,20 @@ pub(super) fn walk_reachable_topology(
 
 /// Pass 2 (wires): collect shell wire edges and free vertices, decoding wire
 /// curve carriers and emitting wire topologies.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn collect_wire_topology(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    inputs: TopologyContext<'_, '_, '_>,
     out: &mut AsmBrep,
     records: &[Record],
-    by_index: &HashMap<i64, &Record>,
     saved_entity_limit: Option<i64>,
-    token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
-    purpose: DecodePurpose,
-    format: IdFormat,
 ) -> Result<WireShellTopology, cadmpeg_core::CodecError> {
+    let TopologyContext {
+        ctx,
+        by_index,
+        format,
+        ..
+    } = inputs;
     let mut wire_edges_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut free_vertices_by_shell = HashMap::<i64, Vec<i64>>::new();
     let mut saved_free_edges = Vec::new();
@@ -616,17 +631,7 @@ pub(super) fn collect_wire_topology(
         }) {
             let edge_index = edge.index as i64;
             let already_owned = reach.edges.contains(&edge_index);
-            keep_wire_edge(
-                ctx,
-                out,
-                edge_index,
-                by_index,
-                token_table,
-                carriers,
-                reach,
-                purpose,
-                format,
-            )?;
+            keep_wire_edge(inputs, out, edge_index, carriers, reach)?;
             if !already_owned && reach.edges.contains(&edge_index) {
                 ctx.push_vec(&mut saved_free_edges, edge_index, "ASM saved free edges")?;
             }
@@ -683,17 +688,7 @@ pub(super) fn collect_wire_topology(
                             if !edges.contains(&edge_index) {
                                 ctx.push_vec(edges, edge_index, "ASM shell wire edges")?;
                             }
-                            keep_wire_edge(
-                                ctx,
-                                out,
-                                edge_index,
-                                by_index,
-                                token_table,
-                                carriers,
-                                reach,
-                                purpose,
-                                format,
-                            )?;
+                            keep_wire_edge(inputs, out, edge_index, carriers, reach)?;
                         }
                         coedge_ref = coedge.ref_at(3);
                         if coedge_ref == Some(first_coedge) {
@@ -764,18 +759,20 @@ pub(super) fn collect_wire_topology(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn keep_wire_edge(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    inputs: TopologyContext<'_, '_, '_>,
     out: &mut AsmBrep,
     edge_index: i64,
-    by_index: &HashMap<i64, &Record>,
-    token_table: &nurbs::toks::SubtypeTable,
     carriers: &mut Carriers,
     reach: &mut Reachable,
-    purpose: DecodePurpose,
-    format: IdFormat,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let TopologyContext {
+        ctx,
+        by_index,
+        token_table,
+        purpose,
+        format,
+    } = inputs;
     let Carriers {
         curve_geo,
         procedural_curve_defs,

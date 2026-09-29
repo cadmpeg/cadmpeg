@@ -161,15 +161,10 @@ struct NamedConstructionPlane {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "independent serialized viewport validity and lock flags"
-)]
 struct Viewport {
     version: [u8; 2],
-    camera_valid: bool,
-    frustum_valid: bool,
-    port_valid: bool,
+    #[serde(flatten)]
+    validity: ViewportValidity,
     projection: i32,
     camera_location_mm: [FiniteReal; 3],
     camera_direction: [FiniteReal; 3],
@@ -180,14 +175,33 @@ struct Viewport {
     frustum_mm: [FiniteReal; 6],
     port: [i32; 6],
     source_uuid: Option<String>,
-    camera_up_locked: bool,
-    camera_direction_locked: bool,
-    camera_location_locked: bool,
-    frustum_left_right_symmetric: bool,
-    frustum_top_bottom_symmetric: bool,
+    #[serde(flatten)]
+    camera_locks: CameraLocks,
+    #[serde(flatten)]
+    frustum_symmetry: FrustumSymmetry,
     target_millimeters: Option<[FiniteReal; 3]>,
     camera_frame_valid: Option<bool>,
     view_scale: Option<[PositiveReal; 3]>,
+}
+
+#[derive(Debug, Serialize)]
+struct ViewportValidity {
+    camera_valid: bool,
+    frustum_valid: bool,
+    port_valid: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct CameraLocks {
+    camera_up_locked: bool,
+    camera_direction_locked: bool,
+    camera_location_locked: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct FrustumSymmetry {
+    frustum_left_right_symmetric: bool,
+    frustum_top_bottom_symmetric: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -661,9 +675,11 @@ fn parse_viewport(
     reader.skip_remaining()?;
     Ok(Viewport {
         version,
-        camera_valid,
-        frustum_valid,
-        port_valid,
+        validity: ViewportValidity {
+            camera_valid,
+            frustum_valid,
+            port_valid,
+        },
         projection,
         camera_location_mm: camera_location,
         camera_direction,
@@ -677,11 +693,15 @@ fn parse_viewport(
             .filter(|id| !id.is_nil())
             .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino viewport UUID"))
             .transpose()?,
-        camera_up_locked: locks[0],
-        camera_direction_locked: locks[1],
-        camera_location_locked: locks[2],
-        frustum_left_right_symmetric: locks[3],
-        frustum_top_bottom_symmetric: locks[4],
+        camera_locks: CameraLocks {
+            camera_up_locked: locks[0],
+            camera_direction_locked: locks[1],
+            camera_location_locked: locks[2],
+        },
+        frustum_symmetry: FrustumSymmetry {
+            frustum_left_right_symmetric: locks[3],
+            frustum_top_bottom_symmetric: locks[4],
+        },
         target_millimeters: target,
         camera_frame_valid,
         view_scale,
@@ -2678,7 +2698,7 @@ mod tests {
             value.view_scale,
             Some([1.0, 2.0, 3.0].map(crate::test_support::positive))
         );
-        assert!(value.camera_valid && value.camera_location_locked);
+        assert!(value.validity.camera_valid && value.camera_locks.camera_location_locked);
     }
 
     #[test]

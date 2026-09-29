@@ -178,7 +178,7 @@ fn card_summary_refuses_entry_attribute_and_text_limits_before_allocation() {
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::WorkUnits
                 && limit.used == 0
-                && limit.additional == scan.lines.len() as u64 * 5
+                && limit.additional == cadmpeg_core::decode::u64_from_index(scan.lines.len()) * 5
                 && limit.operation == "iges card summary section scans"
     ));
 

@@ -40,11 +40,9 @@ pub(super) fn pcurve_admission_note(admissions: &[PcurveAdmission]) -> Option<Lo
         })
         .collect::<Vec<_>>()
         .join(", ");
-    let unnamed = count.saturating_sub(PCURVE_UNPROVED_NOTE_EXEMPLARS);
-    let more = if unnamed == 0 {
-        String::new()
-    } else {
-        format!(", and {unnamed} more")
+    let more = match count.checked_sub(PCURVE_UNPROVED_NOTE_EXEMPLARS) {
+        Some(unnamed) if unnamed > 0 => format!(", and {unnamed} more"),
+        _ => String::new(),
     };
     Some(StepLossCode::PcurveGlobalFidelityUnproved.note(format!(
         "a finite endpoint and locus witness admits {count} pcurve relation(s); global model-space point-set equality and direction are unproved: {named}{more}"

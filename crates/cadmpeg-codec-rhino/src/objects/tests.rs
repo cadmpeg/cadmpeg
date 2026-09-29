@@ -504,8 +504,8 @@ fn parses_tagged_attribute_items_in_source_shaped_groups() {
     assert!(parsed.embedded_linetype.is_some());
     assert!(parsed.embedded_section_style.is_some());
     assert_eq!(parsed.clipping_plane_label_style, 2);
-    assert!(parsed.selective_clipping_list);
-    assert!(parsed.detail_background_visible);
+    assert!(parsed.clipping.selective_list);
+    assert!(parsed.display.detail_background_visible);
 }
 
 #[test]
@@ -771,7 +771,10 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     .expect("required invariant");
     attributes.layer_index = -1;
     attributes.color_source = crate::objects::ColorSource::Material;
-    let material = vec![ObjectRecord::Framed(descriptor(attributes.clone(), 10))];
+    let material = vec![ObjectRecord::Framed(Box::new(descriptor(
+        attributes.clone(),
+        10,
+    )))];
     let mut warnings = Diagnostics::new();
     let material = crate::objects::resolve_identities(
         &cadmpeg_test_support::service_decode_context(),
@@ -803,7 +806,7 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
 
     attributes.color_source = crate::objects::ColorSource::Parent;
     attributes.object_mode = 0xf3;
-    let parent = vec![ObjectRecord::Framed(descriptor(attributes, 20))];
+    let parent = vec![ObjectRecord::Framed(Box::new(descriptor(attributes, 20)))];
     let parent = crate::objects::resolve_identities(
         &cadmpeg_test_support::service_decode_context(),
         parent,
@@ -845,9 +848,9 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
     let mut duplicate_again = duplicate.clone();
     duplicate_again.object_id = duplicate.object_id;
     let mut objects = vec![
-        ObjectRecord::Framed(descriptor(attributes, 10)),
-        ObjectRecord::Framed(descriptor(duplicate, 20)),
-        ObjectRecord::Framed(descriptor(duplicate_again, 30)),
+        ObjectRecord::Framed(Box::new(descriptor(attributes, 10))),
+        ObjectRecord::Framed(Box::new(descriptor(duplicate, 20))),
+        ObjectRecord::Framed(Box::new(descriptor(duplicate_again, 30))),
     ];
     let ObjectRecord::Framed(object) = &mut objects[0] else {
         panic!("test object is framed");
@@ -1026,8 +1029,8 @@ fn obsolete_custom_mesh_userdata_transfers_to_object_attributes() {
             .and_then(|attributes| attributes.custom_render_mesh.as_ref())
             .expect("converted custom mesh settings");
         assert_eq!(mesh.version, (1, 5));
-        assert!(!mesh.compute_curvature);
-        assert!(mesh.simple_planes);
+        assert!(!mesh.generation.compute_curvature);
+        assert!(mesh.generation.simple_planes);
         assert_eq!(mesh.obsolete_weld, -17);
         assert_eq!(mesh.tolerance, crate::test_support::finite(0.125));
         assert_eq!(mesh.custom_settings, Some(true));
@@ -1137,7 +1140,7 @@ fn per_object_mesh_userdata_transfers_nested_parameters_to_object_attributes() {
             .and_then(|attributes| attributes.custom_render_mesh.as_ref())
             .expect("nested custom mesh settings");
         assert_eq!(mesh.version, (1, 5));
-        assert!(!mesh.compute_curvature);
+        assert!(!mesh.generation.compute_curvature);
         assert_eq!(mesh.custom_settings, Some(true));
         assert_eq!(mesh.custom_settings_enabled, Some(false));
         assert_eq!(mesh.obsolete_weld, -17);

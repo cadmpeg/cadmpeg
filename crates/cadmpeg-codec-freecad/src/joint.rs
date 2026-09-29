@@ -120,10 +120,10 @@ pub(crate) fn transfer(
             };
             JointBody::Pair {
                 kind: PairedJointFamily::new(joint_type).map_err(CodecError::Malformed)?,
-                connectors: [
+                connectors: Box::new([
                     connector_record(&owned, "Reference1", "Placement1", "Offset1")?,
                     connector_record(&owned, "Reference2", "Placement2", "Offset2")?,
-                ],
+                ]),
             }
         } else {
             continue;
@@ -317,10 +317,8 @@ pub(crate) fn transfer_neutral(
                     None,
                 )
             }
-            JointBody::Pair {
-                kind,
-                connectors: [first, second],
-            } => {
+            JointBody::Pair { kind, connectors } => {
+                let [first, second] = connectors.as_ref();
                 let kind = joint_kind(
                     ctx,
                     kind,

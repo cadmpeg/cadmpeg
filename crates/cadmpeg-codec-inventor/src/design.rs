@@ -581,7 +581,10 @@ pub(crate) fn project_parameters(
     }
     let (projected, graph_rejections) = close_parameter_graph(ctx, projected)?;
     *admitted_entities = projected.len() as u64;
-    Ok((projected, unresolved.saturating_add(graph_rejections)))
+    let unresolved = unresolved.checked_add(graph_rejections).ok_or_else(|| {
+        ctx.refuse_codec_limit("Inventor unresolved design parameters", u64::MAX, u64::MAX)
+    })?;
+    Ok((projected, unresolved))
 }
 
 fn close_parameter_graph(

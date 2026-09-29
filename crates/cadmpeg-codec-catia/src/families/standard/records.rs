@@ -267,7 +267,11 @@ fn standard_surface_record_table(
         }
     }
     let mut next_analytic = analytic_ranges.iter().copied().peekable();
-    for pos in 0..brep.len().saturating_sub(freeform_core::SIGN) {
+    let candidate_positions = match brep.len().checked_sub(freeform_core::SIGN) {
+        Some(last) => 0..last,
+        None => 0..0,
+    };
+    for pos in candidate_positions {
         if brep.get(pos + freeform_core::ZERO_RUN..pos + freeform_core::BOUNDS) != Some(&[0, 0, 0])
         {
             continue;
@@ -879,7 +883,11 @@ fn standard_curve_support_row_at(
 
 fn standard_curve_support_has_predecessor(brep: &[u8], face_count: usize, start: usize) -> bool {
     const MAX_ROW_BYTES: usize = 35;
-    (start.saturating_sub(MAX_ROW_BYTES)..start).any(|candidate| {
+    let mut candidates = match start.checked_sub(MAX_ROW_BYTES) {
+        Some(first) => first..start,
+        None => 0..start,
+    };
+    candidates.any(|candidate| {
         brep[candidate] == 0x60
             && standard_curve_support_row_at(brep, face_count, candidate)
                 .is_some_and(|(_, end)| end == start)

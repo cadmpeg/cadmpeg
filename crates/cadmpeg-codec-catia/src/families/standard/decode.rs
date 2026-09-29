@@ -861,7 +861,7 @@ mod consolidated_revolution_binding_tests {
         }
         ir.model
             .add_procedural_curve(
-                curve_id.clone(),
+                &curve_id,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(
                         "catia:test:proceduralcurve#seam-construction".to_string(),
@@ -3343,16 +3343,26 @@ fn try_decode_standard_population(
     }
     let annotations = annotations.build();
 
+    let (Some(face_local_freeform), Some(unbound_revolution), Some(withheld_face_rows)) = (
+        unresolved_freeform_record_count
+            .checked_sub(bound_revolution_face_surface_count)
+            .and_then(|count| count.checked_sub(consolidated_curve_bindings.standard_face_surfaces)),
+        revolution_record_count.checked_sub(resolved_revolution_count),
+        scan.census.fbb_face_rows.checked_sub(face_count),
+    ) else {
+        return Some(Err(cadmpeg_core::CodecError::malformed(
+            "CATIA geometry report counts are inconsistent",
+        )));
+    };
+
     let mut report = match build_geometry_report(ctx,
 &ir,
 scan,
 &typed,
 (plane_faces, analytic_record_count),
 &crate::assemble::GeometryReportCounts {
-            face_local_freeform: unresolved_freeform_record_count
-                .saturating_sub(bound_revolution_face_surface_count)
-                .saturating_sub(consolidated_curve_bindings.standard_face_surfaces),
-            unbound_revolution: revolution_record_count.saturating_sub(resolved_revolution_count),
+            face_local_freeform,
+            unbound_revolution,
             admitted_standard_face_rows: face_count,
         },
 topology_failure.map(StandardTopologyFailure::message)) {
@@ -3386,7 +3396,7 @@ topology_failure.map(StandardTopologyFailure::message)) {
     );
     report.coverage.record(
         crate::coverage::STANDARD_FBB_WITHHELD_FACE_ROW_COUNT,
-        scan.census.fbb_face_rows.saturating_sub(face_count),
+        withheld_face_rows,
     );
     report.coverage.record(
         crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT,
@@ -7994,7 +8004,8 @@ fn resolve_standard_endpoint_pairs(
         };
         let relation_count = points
             .len()
-            .checked_mul(points.len().saturating_sub(1))
+            .checked_sub(1)
+            .and_then(|other| points.len().checked_mul(other))
             .and_then(|value| value.checked_div(2));
         if relation_count.is_none_or(|count| count > MAX_PAIR_RELATIONS_PER_EDGE) {
             continue;
@@ -8086,7 +8097,8 @@ fn resolve_standard_endpoint_pairs(
         let points = &candidates[edge];
         let relation_count = points
             .len()
-            .checked_mul(points.len().saturating_sub(1))
+            .checked_sub(1)
+            .and_then(|other| points.len().checked_mul(other))
             .and_then(|value| value.checked_div(2));
         let Some(relation_count) = relation_count.filter(|count| {
             *count <= MAX_PAIR_RELATIONS_PER_EDGE && *count <= fallback_relation_budget

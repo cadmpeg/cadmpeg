@@ -445,7 +445,9 @@ pub(super) fn close_coordinate_roots_with_incidence(
                             "catia_coordinate_closure_degree_entries",
                         )?;
                         let degree = degrees.entry(key).or_default();
-                        *degree = degree.saturating_add(1);
+                        *degree = degree.checked_add(1).ok_or_else(|| {
+                            CodecError::malformed("CATIA coordinate closure degree exceeds usize")
+                        })?;
                         ctx.push_vec(
                             &mut undo.entries,
                             (key, previous),
@@ -635,7 +637,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
                                         "catia_coordinate_closure_probe_degrees",
                                     )?;
                                     let degree = degrees.entry((face, endpoint)).or_default();
-                                    *degree = degree.saturating_add(1);
+                                    let Some(next_degree) = degree.checked_add(1) else {
+                                        return Ok(false);
+                                    };
+                                    *degree = next_degree;
                                     if *degree > 2 {
                                         return Ok(false);
                                     }
@@ -747,9 +752,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
                         .iter()
                         .enumerate()
                         .filter(|(_, point)| point.is_none())
-                        .map(|(root, _)| domains[root].len().saturating_add(1))
-                        .fold(0usize, usize::saturating_add)
-                        > budget.remaining()
+                        .try_fold(0usize, |work, (root, _)| {
+                            work.checked_add(domains[root].len().checked_add(1)?)
+                        })
+                        .is_none_or(|work| work > budget.remaining())
                 });
             let remaining = assigned.iter().filter(|point| point.is_none()).count();
             let unused = component_points
@@ -771,9 +777,13 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     continue;
                 }
                 let work_budget = budget.map(|budget| WorkBudget::new(budget.remaining()));
+                let Some(scan_work) = domains[root].len().checked_add(1) else {
+                    scan_deferred = true;
+                    continue;
+                };
                 if work_budget
                     .as_ref()
-                    .is_some_and(|budget| !budget.charge_by(domains[root].len().saturating_add(1)))
+                    .is_some_and(|budget| !budget.charge_by(scan_work))
                 {
                     scan_deferred = true;
                     continue;
@@ -1127,7 +1137,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
                                     "catia_coordinate_closure_completed_degrees",
                                 )?;
                                 let degree = degrees.entry((face, point)).or_default();
-                                *degree = degree.saturating_add(1);
+                                let Some(next_degree) = degree.checked_add(1) else {
+                                    return Ok(false);
+                                };
+                                *degree = next_degree;
                             }
                         }
                     }
@@ -1142,9 +1155,10 @@ pub(super) fn close_coordinate_roots_with_incidence(
                             .iter()
                             .filter(|closed| **closed)
                             .count();
-                        if budget.is_some_and(|budget| {
-                            !budget.charge_by(edge_ids.len().saturating_add(closed_face_count))
-                        }) {
+                        let Some(work) = edge_ids.len().checked_add(closed_face_count) else {
+                            return Ok(false);
+                        };
+                        if budget.is_some_and(|budget| !budget.charge_by(work)) {
                             return Ok(false);
                         }
                         let mut selected = ctx.alloc_filled(
@@ -1393,10 +1407,13 @@ pub(super) fn close_coordinate_roots_with_incidence(
     let mut assignment = ctx.alloc_filled(roots.len(), None, "catia coordinate root assignment")?;
     let shared_budget = budget;
     for component in components {
-        let support_count = component
+        let Some(support_count) = component
             .iter()
             .map(|root| domains[*root].len())
-            .fold(0usize, usize::saturating_add);
+            .try_fold(0usize, usize::checked_add)
+        else {
+            return Ok(None);
+        };
         let mut component_set = HashSet::new();
         let mut local_index = HashMap::new();
         for (local, &global) in component.iter().enumerate() {
@@ -1426,15 +1443,20 @@ pub(super) fn close_coordinate_roots_with_incidence(
                 "catia_coordinate_closure_component_points",
             )?;
         }
-        let explicit_pair_supports = edge_ids
+        let Some(explicit_pair_supports) = edge_ids
             .iter()
             .map(|edge| edge_candidates[*edge].len())
-            .fold(0usize, usize::saturating_add);
-        let traversal_bound = component
+            .try_fold(0usize, usize::checked_add)
+        else {
+            return Ok(None);
+        };
+        let Some(traversal_bound) = component
             .len()
-            .saturating_add(component_points.len())
-            .isqrt()
-            .saturating_add(9);
+            .checked_add(component_points.len())
+            .and_then(|size| size.isqrt().checked_add(9))
+        else {
+            return Ok(None);
+        };
         // A component may require one branch state for every explicit
         // root-point support before propagation distinguishes a solution.
         let state_limit = MAX_COORDINATE_CLOSURE_STATES.max(support_count);
@@ -1442,17 +1464,23 @@ pub(super) fn close_coordinate_roots_with_incidence(
             // Reserve the same graph-traversal allowance used by coordinate
             // preparation plus face-incidence scans for every permitted
             // branch state.
-            let state_work = support_count
-                .saturating_add(explicit_pair_supports)
-                .saturating_mul(traversal_bound)
-                .saturating_add(if incidence.is_some() {
-                    support_count.saturating_mul(edge_ids.len())
-                } else {
-                    0
-                });
-            base.saturating_add(state_work.saturating_mul(state_limit))
+            let incidence_work = if incidence.is_some() {
+                support_count.checked_mul(edge_ids.len())?
+            } else {
+                0
+            };
+            support_count
+                .checked_add(explicit_pair_supports)?
+                .checked_mul(traversal_bound)?
+                .checked_add(incidence_work)?
+                .checked_mul(state_limit)?
+                .checked_add(base)
         });
-        let component_budget = component_limit.map(WorkBudget::new);
+        let component_budget = match component_limit {
+            Some(Some(limit)) => Some(WorkBudget::new(limit)),
+            Some(None) => return Ok(None),
+            None => None,
+        };
         let budget = component_budget.as_ref().or(shared_budget);
         let mut local_edges = Vec::new();
         let mut local_edge_by_id = HashMap::new();

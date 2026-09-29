@@ -205,9 +205,8 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
             )
         })
         .collect::<HashMap<_, _>>();
-    let resolves = |token: &str, reference: u32| {
-        reference == 0 || raw.contains_key(&(token, reference.saturating_sub(1)))
-    };
+    let resolves =
+        |token: &str, reference: u32| reference == 0 || raw.contains_key(&(token, reference - 1));
     unique(
         findings,
         data.pm_dc_parameters.iter().map(|record| {
@@ -376,9 +375,9 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         raw.get(&(token, ordinal)).copied() == Some(type_id)
     };
     let references_resolve = |token: &str, references: &[u32]| {
-        references.iter().all(|reference| {
-            *reference == 0 || raw.contains_key(&(token, reference.saturating_sub(1)))
-        })
+        references
+            .iter()
+            .all(|reference| *reference == 0 || raw.contains_key(&(token, reference - 1)))
     };
     unique(
         findings,
@@ -702,9 +701,8 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             )
         })
         .collect::<HashMap<_, _>>();
-    let resolves = |token: &str, reference: u32| {
-        reference == 0 || raw.contains_key(&(token, reference.saturating_sub(1)))
-    };
+    let resolves =
+        |token: &str, reference: u32| reference == 0 || raw.contains_key(&(token, reference - 1));
     unique(
         findings,
         data.pm_dc_features.iter().map(|record| {
@@ -1294,10 +1292,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
         }
         for reference in record.style_references.references() {
             if reference.index == 0
-                || !raw_keys.contains(&(
-                    record.segment_token.as_str(),
-                    reference.index.saturating_sub(1),
-                ))
+                || !raw_keys.contains(&(record.segment_token.as_str(), reference.index - 1))
             {
                 findings.push(finding(
                     Check::NativeLinks,
@@ -1948,24 +1943,21 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             None,
         ));
     }
-    if let UfrxRecord::ParsedPrefix {
-        id,
-        representation: Some(representation),
-        ..
-    } = record
-    {
-        let representation_pair_present = representation.active_representation.is_some();
-        let expected_pair = document_kind(ir).and_then(|kind| match kind {
-            "assembly" => Some(true),
-            "part" => Some(false),
-            _ => None,
-        });
-        if expected_pair.is_some_and(|expected| representation_pair_present != expected) {
-            findings.push(finding(
-                Check::NativeLinks,
-                "Inventor UFRxDoc representation state is inconsistent".into(),
-                Some(id.clone()),
-            ));
+    if let UfrxRecord::ParsedPrefix(payload) = record {
+        if let Some(representation) = payload.representation.as_ref() {
+            let representation_pair_present = representation.active_representation.is_some();
+            let expected_pair = document_kind(ir).and_then(|kind| match kind {
+                "assembly" => Some(true),
+                "part" => Some(false),
+                _ => None,
+            });
+            if expected_pair.is_some_and(|expected| representation_pair_present != expected) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor UFRxDoc representation state is inconsistent".into(),
+                    Some(payload.id.clone()),
+                ));
+            }
         }
     }
     unique(

@@ -97,7 +97,7 @@ fn procedural_surface_attachment_moves_the_solved_knot_storage() {
     });
     model
         .add_procedural_surface(
-            surface_id,
+            &surface_id,
             ProceduralSurface::new(
                 procedural_id,
                 ProceduralSurfaceDefinition::Unknown {
@@ -137,7 +137,7 @@ fn procedural_curve_attachment_moves_the_solved_knot_storage() {
     });
     model
         .add_procedural_curve(
-            curve_id,
+            &curve_id,
             ProceduralCurve::new(
                 procedural_id,
                 ProceduralCurveDefinition::Unknown {
@@ -196,7 +196,7 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
         }
     };
     macro_rules! visit_arenas {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for entity in &ir.model.$field {
                 crate::schema::EntitySchema::visit_references(entity, &mut visit)
                     .expect("every entity states its typed references");
@@ -484,7 +484,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     });
     ir.model
         .add_procedural_surface(
-            surface.clone(),
+            &surface,
             ProceduralSurface::new(
                 surface_construction,
                 ProceduralSurfaceDefinition::Unknown {
@@ -509,7 +509,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     });
     ir.model
         .add_procedural_curve(
-            curve.clone(),
+            &curve,
             ProceduralCurve::new(
                 curve_construction,
                 ProceduralCurveDefinition::Exact { cache: None },

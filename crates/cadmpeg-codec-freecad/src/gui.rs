@@ -221,17 +221,20 @@ pub(crate) fn requires_alpha_conversion(program_version: Option<&str>) -> bool {
     program_version.is_some_and(|version| version.starts_with('0') || version.starts_with("1.0"))
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(crate) struct GuiSources<'a, 'b> {
+    pub(crate) entries: &'a BTreeMap<String, View<'b>>,
+    pub(crate) objects: &'a [ObjectRecord],
+    pub(crate) properties: &'a [PropertyRecord],
+    pub(crate) payloads: &'a [ShapePayloadRecord],
+    pub(crate) element_maps: &'a [ElementMapRecord],
+    pub(crate) requires_alpha_conversion: bool,
+}
+
 pub(crate) fn transfer(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     bytes: &[u8],
-    entries: &BTreeMap<String, View<'_>>,
-    objects: &[ObjectRecord],
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
-    element_maps: &[ElementMapRecord],
-    requires_alpha_conversion: bool,
+    sources: &GuiSources<'_, '_>,
 ) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
@@ -256,12 +259,7 @@ pub(crate) fn transfer(
         &xml,
         schema_declaration.as_deref(),
         neutral_schema_version,
-        entries,
-        objects,
-        properties,
-        payloads,
-        element_maps,
-        requires_alpha_conversion,
+        sources,
     );
     match (admission, transferred) {
         (GuiSchemaAdmission::Schema1, result) => {
@@ -300,7 +298,6 @@ pub(crate) fn transfer(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn transfer_schema_one(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -308,13 +305,13 @@ fn transfer_schema_one(
     xml: &roxmltree::Document<'_>,
     schema_declaration: Option<&str>,
     neutral_schema_version: Option<u32>,
-    entries: &BTreeMap<String, View<'_>>,
-    objects: &[ObjectRecord],
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
-    element_maps: &[ElementMapRecord],
-    requires_alpha_conversion: bool,
+    sources: &GuiSources<'_, '_>,
 ) -> Result<(Graph, AppearancePlan), CodecError> {
+    let entries = sources.entries;
+    let objects = sources.objects;
+    let properties = sources.properties;
+    let payloads = sources.payloads;
+    let requires_alpha_conversion = sources.requires_alpha_conversion;
     let root = xml.root_element();
     let mut plan = AppearancePlan::default();
     let camera_count = root
@@ -543,17 +540,15 @@ fn transfer_schema_one(
                 ctx,
                 ir,
                 &mut plan,
-                name,
-                &provider_key,
-                object_id,
-                file,
-                entries,
-                properties,
-                payloads,
-                element_maps,
-                TopologyColorKind::Face,
-                requires_alpha_conversion,
-                property_provenance("DiffuseColor", "App::PropertyColorList")?,
+                TopologyColorRequest {
+                    provider_name: name,
+                    provider_key: &provider_key,
+                    object_id,
+                    entry_name: file,
+                    kind: TopologyColorKind::Face,
+                    provenance: property_provenance("DiffuseColor", "App::PropertyColorList")?,
+                },
+                sources,
                 &mut losses,
             )?;
         }
@@ -590,17 +585,15 @@ fn transfer_schema_one(
                 ctx,
                 ir,
                 &mut plan,
-                name,
-                &provider_key,
-                object_id,
-                file,
-                entries,
-                properties,
-                payloads,
-                element_maps,
-                TopologyColorKind::Edge,
-                requires_alpha_conversion,
-                property_provenance("LineColorArray", "App::PropertyColorList")?,
+                TopologyColorRequest {
+                    provider_name: name,
+                    provider_key: &provider_key,
+                    object_id,
+                    entry_name: file,
+                    kind: TopologyColorKind::Edge,
+                    provenance: property_provenance("LineColorArray", "App::PropertyColorList")?,
+                },
+                sources,
                 &mut losses,
             )?;
         }
@@ -636,17 +629,15 @@ fn transfer_schema_one(
                 ctx,
                 ir,
                 &mut plan,
-                name,
-                &provider_key,
-                object_id,
-                file,
-                entries,
-                properties,
-                payloads,
-                element_maps,
-                TopologyColorKind::Vertex,
-                requires_alpha_conversion,
-                property_provenance("PointColorArray", "App::PropertyColorList")?,
+                TopologyColorRequest {
+                    provider_name: name,
+                    provider_key: &provider_key,
+                    object_id,
+                    entry_name: file,
+                    kind: TopologyColorKind::Vertex,
+                    provenance: property_provenance("PointColorArray", "App::PropertyColorList")?,
+                },
+                sources,
                 &mut losses,
             )?;
         }
@@ -731,9 +722,7 @@ fn transfer_schema_one(
         &mut plan,
         &graph,
         &material_lists,
-        properties,
-        payloads,
-        element_maps,
+        sources,
         &mut material_losses,
     )?;
     append_graph_losses(ctx, &mut graph, material_losses)?;
@@ -4446,18 +4435,18 @@ fn read_material_string(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn transfer_shape_appearances(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
     graph: &Graph,
     material_lists: &HashMap<String, Vec<GuiMaterial>>,
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
-    element_maps: &[ElementMapRecord],
+    sources: &GuiSources<'_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let properties = sources.properties;
+    let payloads = sources.payloads;
+    let element_maps = sources.element_maps;
     for provider in &graph.providers {
         let provider_key = provider_identity_key(ctx, &provider.name)?;
         let Some(object_id) = provider
@@ -4859,24 +4848,36 @@ impl TopologyColorKind {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+struct TopologyColorRequest<'a> {
+    provider_name: &'a str,
+    provider_key: &'a IdentityKey,
+    object_id: &'a str,
+    entry_name: &'a str,
+    kind: TopologyColorKind,
+    provenance: SourceProvenance,
+}
+
 fn transfer_topology_colors(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     plan: &mut AppearancePlan,
-    provider_name: &str,
-    provider_key: &IdentityKey,
-    object_id: &str,
-    entry_name: &str,
-    entries: &BTreeMap<String, View<'_>>,
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
-    element_maps: &[ElementMapRecord],
-    kind: TopologyColorKind,
-    requires_alpha_conversion: bool,
-    provenance: SourceProvenance,
+    request: TopologyColorRequest<'_>,
+    sources: &GuiSources<'_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let TopologyColorRequest {
+        provider_name,
+        provider_key,
+        object_id,
+        entry_name,
+        kind,
+        provenance,
+    } = request;
+    let entries = sources.entries;
+    let properties = sources.properties;
+    let payloads = sources.payloads;
+    let element_maps = sources.element_maps;
+    let requires_alpha_conversion = sources.requires_alpha_conversion;
     let view = *entries.get(entry_name).ok_or_else(|| {
         gui_malformed(
             ctx,

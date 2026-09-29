@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
+use crate::decode::u64_from_index;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -167,17 +168,17 @@ const LENGTH_OVER_ALLOCATION: &str = "declared length exceeds the largest live a
 impl AllocatedLen {
     /// A declared byte length, absent when it exceeds `isize::MAX`.
     #[must_use]
-    pub const fn new(bytes: u64) -> Option<Self> {
-        if bytes > isize::MAX as u64 {
+    pub fn new(bytes: u64) -> Option<Self> {
+        if bytes > u64_from_index(isize::MAX.unsigned_abs()) {
             return None;
         }
-        Some(Self(bytes as usize))
+        Some(Self(usize::try_from(bytes).ok()?))
     }
 
     /// The length in bytes.
     #[must_use]
-    pub const fn get(self) -> u64 {
-        self.0 as u64
+    pub fn get(self) -> u64 {
+        u64_from_index(self.0)
     }
 }
 
@@ -213,7 +214,7 @@ const _: () = assert!(usize::BITS <= 64);
 /// A live allocation is at most `isize::MAX` bytes and a framing at most
 /// `u32::MAX`, so their sum is inside `u64`. This is what justifies the
 /// unchecked `+` in [`FramedSpan::stored`], and it justifies nothing else.
-const _: () = assert!((isize::MAX as u128) + (u32::MAX as u128) < (u64::MAX as u128));
+const _: () = assert!(isize::BITS <= 64);
 
 /// A verbatim payload inside a strictly larger stored span.
 ///
@@ -241,7 +242,7 @@ impl FramedSpan {
 
     /// Payload size in bytes.
     #[must_use]
-    pub const fn payload(self) -> u64 {
+    pub fn payload(self) -> u64 {
         self.payload.get()
     }
 
@@ -252,8 +253,8 @@ impl FramedSpan {
     /// module assertions prove sum inside `u64`, so this addition is total for
     /// every span the type can hold.
     #[must_use]
-    pub const fn stored(self) -> u64 {
-        self.payload.get() + self.framing.get() as u64
+    pub fn stored(self) -> u64 {
+        self.payload.get() + u64::from(self.framing.get())
     }
 }
 
@@ -360,7 +361,7 @@ impl EntryStorage {
 
     /// Stored span in bytes, absent when the container reports none.
     #[must_use]
-    pub const fn stored_size(&self) -> Option<u64> {
+    pub fn stored_size(&self) -> Option<u64> {
         match self {
             Self::Directory => None,
             Self::Verbatim { size, .. } => match size {
@@ -374,7 +375,7 @@ impl EntryStorage {
 
     /// Expanded size in bytes, absent when the container reports none.
     #[must_use]
-    pub const fn expanded_size(&self) -> Option<u64> {
+    pub fn expanded_size(&self) -> Option<u64> {
         match self {
             Self::Directory => None,
             Self::Verbatim { size, .. } => match size {
@@ -410,13 +411,13 @@ pub struct ContainerEntry {
 impl ContainerEntry {
     /// Stored span in bytes, absent when the entry reports none.
     #[must_use]
-    pub const fn stored_size(&self) -> Option<u64> {
+    pub fn stored_size(&self) -> Option<u64> {
         self.storage.stored_size()
     }
 
     /// Expanded size in bytes, absent when the entry reports none.
     #[must_use]
-    pub const fn expanded_size(&self) -> Option<u64> {
+    pub fn expanded_size(&self) -> Option<u64> {
         self.storage.expanded_size()
     }
 }
@@ -693,6 +694,7 @@ impl From<ContainerEntryWire> for ContainerEntry {
 
 #[cfg(test)]
 mod tests {
+    use super::u64_from_index;
     use super::{
         CompressionMethod, ContainerEntry, ContainerRole, EntryStorage, VerbatimLabel, VerbatimSize,
     };
@@ -897,14 +899,14 @@ mod tests {
         assert_eq!(span.stored(), 1);
         let body = vec![0u8; 12];
         let span = super::FramedSpan::from_parts(body.as_slice().into(), NonZeroU32::MIN);
-        assert_eq!(span.payload(), body.len() as u64);
+        assert_eq!(span.payload(), u64_from_index(body.len()));
         assert_eq!(span.stored(), 13);
         assert_eq!(nonzero(span.stored() - span.payload()), nonzero(1));
         let span = super::FramedSpan::from_parts("target.CATPart".into(), NonZeroU32::MAX);
-        assert_eq!(span.payload(), "target.CATPart".len() as u64);
+        assert_eq!(span.payload(), u64_from_index("target.CATPart".len()));
         assert_eq!(
             span.stored(),
-            "target.CATPart".len() as u64 + u64::from(u32::MAX)
+            u64_from_index("target.CATPart".len()) + u64::from(u32::MAX)
         );
     }
 

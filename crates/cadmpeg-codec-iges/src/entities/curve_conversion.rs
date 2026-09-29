@@ -35,9 +35,13 @@ pub(super) fn angularly_equal(left: f64, right: f64) -> bool {
 /// it carries last-place noise and the platform's libm decides which side of the
 /// boundary it falls on. Backing the sweep off by [`ANGULAR_TOLERANCE`] first
 /// keeps an exact multiple of a quarter turn on the lower side.
-pub(super) fn quarter_turn_spans(sweep: f64) -> usize {
+pub(super) fn quarter_turn_spans(sweep: f64) -> Option<usize> {
     let quarters = (sweep - ANGULAR_TOLERANCE) / std::f64::consts::FRAC_PI_2;
-    quarters.ceil().max(1.0) as usize
+    if quarters <= 1.0 {
+        Some(1)
+    } else {
+        cadmpeg_core::convert::truncate_f64_to_usize(quarters.ceil())
+    }
 }
 
 pub(crate) fn circular_arc_nurbs(
@@ -68,8 +72,13 @@ pub(crate) fn elliptical_arc_nurbs(
     let minor_radius = minor_radius.get();
     let delta = delta.min(std::f64::consts::TAU);
     let transverse = axis.cross(major_direction);
-    let spans = quarter_turn_spans(delta);
-    let step = delta / spans as f64;
+    let Some(spans) = quarter_turn_spans(delta) else {
+        return Ok(None);
+    };
+    let Some(span_count) = cadmpeg_core::convert::f64_from_index(spans) else {
+        return Ok(None);
+    };
+    let step = delta / span_count;
     let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
         ctx,
         spans * 2 + 4,
@@ -84,12 +93,18 @@ pub(crate) fn elliptical_arc_nurbs(
         let start = if span == 0 {
             interval[0]
         } else {
-            interval[0] + step * span as f64
+            let Some(span) = cadmpeg_core::convert::f64_from_index(span) else {
+                return Ok(None);
+            };
+            interval[0] + step * span
         };
         let end = if span + 1 == spans {
             interval[1]
         } else {
-            interval[0] + step * (span + 1) as f64
+            let Some(span) = cadmpeg_core::convert::f64_from_index(span + 1) else {
+                return Ok(None);
+            };
+            interval[0] + step * span
         };
         let middle = (start + end) * 0.5;
         let middle_weight = ((end - start) * 0.5).cos();

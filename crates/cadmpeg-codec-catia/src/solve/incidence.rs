@@ -529,7 +529,7 @@ fn incidence_choice_components(
         }
     }
     if let Some(mesh_quotient) = mesh_quotient {
-        if mesh_quotient.len() == choices.len().saturating_mul(2) {
+        if choices.len().checked_mul(2) == Some(mesh_quotient.len()) {
             let mut owner = HashMap::<usize, usize>::new();
             for &edge in &ambiguous {
                 for port in [edge * 2, edge * 2 + 1] {
@@ -653,12 +653,13 @@ fn order_incidence_components_by_branch_width(
         return None;
     }
     let branch_width = |component: &[usize]| {
-        component.iter().fold(1usize, |width, edge| {
-            width.saturating_mul(choices[*edge].len())
+        component.iter().try_fold(1usize, |width, edge| {
+            width.checked_mul(choices[*edge].len())
         })
     };
     components.sort_by_key(|component| {
         (
+            branch_width(component).is_none(),
             branch_width(component),
             component.len(),
             component.first().copied().unwrap_or_default(),
@@ -824,8 +825,8 @@ fn order_incidence_components_by_constraints(
     }
 
     let branch_width = |component: &[usize]| {
-        component.iter().fold(1usize, |width, edge| {
-            width.saturating_mul(choices[*edge].len())
+        component.iter().try_fold(1usize, |width, edge| {
+            width.checked_mul(choices[*edge].len())
         })
     };
     let ready_count = (0..components.len())
@@ -849,6 +850,7 @@ fn order_incidence_components_by_constraints(
     while let Some((position, &component)) =
         ready.iter().enumerate().min_by_key(|(_, component)| {
             (
+                branch_width(&components[**component]).is_none(),
                 branch_width(&components[**component]),
                 components[**component].len(),
                 components[**component].first().copied().unwrap_or_default(),
@@ -1105,7 +1107,10 @@ impl FaceFactorGraph {
                     "catia face factor support rows",
                 )?;
                 for candidate in &domains[left] {
-                    if !budget.charge_by(work_units(candidate.len().saturating_add(word_count))) {
+                    let Some(work) = candidate.len().checked_add(word_count) else {
+                        return Ok(None);
+                    };
+                    if !budget.charge_by(work_units(work)) {
                         return Ok(None);
                     }
                     let mut compatible = full_configuration_mask(ctx, domains[right].len())?;
@@ -1403,7 +1408,10 @@ fn prune_face_configuration_support(
             "catia face configuration keep marks",
         )?;
         for candidate in &domains[left] {
-            if !budget.charge_by(work_units(candidate.len().saturating_add(word_count))) {
+            let Some(work) = candidate.len().checked_add(word_count) else {
+                return Ok(true);
+            };
+            if !budget.charge_by(work_units(work)) {
                 return Ok(true);
             }
             let mut viable = ctx.alloc_filled(word_count, u64::MAX, "catia_face_config_viable")?;
@@ -2329,12 +2337,15 @@ fn advance_compact_boundary_domains<'a>(
         let mut signatures = HashSet::new();
         for (state, oriented_edges) in states {
             for face in &alternatives {
+                let Some(remaining) = MAX_QUOTIENT_STATES.checked_sub(next.len()) else {
+                    return Ok(CompactBoundaryAdvanceOutcome::Exhausted);
+                };
                 for (_, mut candidate) in state.assignment_options_limited(
                     ctx,
                     face,
                     &candidates,
                     &oriented_edges,
-                    MAX_QUOTIENT_STATES.saturating_sub(next.len()),
+                    remaining,
                     Some(budget),
                 )? {
                     let mut next_oriented = HashSet::new();
@@ -2352,11 +2363,13 @@ fn advance_compact_boundary_domains<'a>(
                             "catia_compact_boundary_oriented_edges",
                         )?;
                     }
-                    if !budget.charge_by(
-                        candidate
-                            .signature_work()
-                            .saturating_add(work_units(next_oriented.len())),
-                    ) {
+                    let Some(work) = candidate
+                        .signature_work()
+                        .and_then(|work| work.checked_add(work_units(next_oriented.len())))
+                    else {
+                        return Ok(CompactBoundaryAdvanceOutcome::Exhausted);
+                    };
+                    if !budget.charge_by(work) {
                         return Ok(CompactBoundaryAdvanceOutcome::Exhausted);
                     }
                     let mut oriented_signature = Vec::new();
@@ -3290,14 +3303,14 @@ impl IncidenceComponentSearch<'_, '_> {
                 .iter()
                 .copied()
                 .filter(|edge| self.active[*edge] && self.assignment[*edge].is_none())
-                .fold(assignments.len().max(1), |width, edge| {
+                .try_fold(assignments.len().max(1), |width, edge| {
                     has_unresolved = true;
-                    width.saturating_mul(self.choices[edge].len())
+                    width.checked_mul(self.choices[edge].len())
                 });
             if !has_unresolved {
                 return None;
             }
-            Some((width, face, assignments))
+            Some((width?, face, assignments))
         }));
         faces.sort_by_key(|(width, face, _)| (*width, *face));
         let mut domains = Vec::new();

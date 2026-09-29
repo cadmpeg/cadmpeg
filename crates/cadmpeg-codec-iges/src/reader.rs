@@ -124,7 +124,10 @@ fn push_occurrence_loss(
 ) -> Result<(), CodecError> {
     ctx.reserve_vec(losses, 1, "iges occurrence loss slots")?;
     let message = ctx.format_retained(message, "iges occurrence loss message")?;
-    ctx.charge_retained(4 + code.code().len() as u64, "iges occurrence loss kind")?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges occurrence loss kind",
+    )?;
     let note = code.note(message);
     if let Some(entry) = directory
         .iter()
@@ -265,7 +268,10 @@ fn append_generic_losses(
                 ), "iges generic loss message")?,
             )
         };
-        ctx.charge_retained(4 + code.code().len() as u64, "iges generic loss kind")?;
+        ctx.charge_retained(
+            4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+            "iges generic loss kind",
+        )?;
         losses.push(
             code.note(message)
                 .with_provenance(entry.admitted_loss_provenance(ctx)?),
@@ -356,7 +362,7 @@ enum ParseMode {
 fn parameter_tokens(records: &[parameter::ParameterRecord]) -> u64 {
     records
         .iter()
-        .map(|record| record.tokens().len() as u64)
+        .map(|record| cadmpeg_core::decode::u64_from_index(record.tokens().len()))
         .sum()
 }
 
@@ -392,8 +398,15 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
                 "iges_inspect_parameter_parse",
             ),
         };
-        charge_work(ctx, bytes.len() as u64, card_scan)?;
-        let scan_storage = ctx.reserve_scoped(bytes.len() as u64, card_storage)?;
+        charge_work(
+            ctx,
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            card_scan,
+        )?;
+        let scan_storage = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            card_storage,
+        )?;
         let scan = card::scan_with_context(bytes, Some(ctx))?;
         let (global, mut global_losses) = global::parse(&scan, ctx)?;
         let (directory, quarantined_directory) =
@@ -464,7 +477,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
                 ), "iges admission framing loss message")?;
                 let code = IgesLossCode::GlobalNoncanonicalFraming;
                 ctx.charge_retained(
-                    4 + code.code().len() as u64,
+                    4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
                     "iges admission framing loss kind",
                 )?;
                 losses.push(code.note(message));
@@ -607,17 +620,19 @@ fn decode_with_occurrence_limits(
         unstatable_attribute_tables,
     } = native::store(
         &mut ir,
-        &parse.scan,
-        &parse.directory,
-        &parse.parameters,
-        &parse.trailing_pointer_analysis,
-        native::QuarantinedRecords {
-            directory: &parse.quarantined_directory,
-            parameters: &parse.quarantined_parameters,
+        native::NativeStoreInputs {
+            scan: &parse.scan,
+            directory: &parse.directory,
+            parameters: &parse.parameters,
+            trailing_pointer_analysis: &parse.trailing_pointer_analysis,
+            quarantine: native::QuarantinedRecords {
+                directory: &parse.quarantined_directory,
+                parameters: &parse.quarantined_parameters,
+            },
+            structure_admitted: semantic_structure_admitted,
+            sequences: &projection.sequences,
+            boundary_vertex_derivations: &projection.boundary_vertex_derivations,
         },
-        semantic_structure_admitted,
-        &projection.sequences,
-        &projection.boundary_vertex_derivations,
         &mut parse.references,
         &parse.global,
         native::ProductOccurrenceLimits::new(
@@ -645,7 +660,7 @@ fn decode_with_occurrence_limits(
         )?;
         let code = IgesLossCode::GlobalSemanticContextSubstituted;
         ctx.charge_retained(
-            4 + code.code().len() as u64,
+            4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
             "iges substituted context loss kind",
         )?;
         losses.push(code.note(message));
@@ -764,7 +779,7 @@ fn decode_with_occurrence_limits(
         )?;
         charge_work(
             ctx,
-            ir.model.entity_count() as u64,
+            cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
             "iges_semantic_validation",
         )?;
         reject_invalid_semantic_ir(&ir)?;

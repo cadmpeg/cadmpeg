@@ -328,6 +328,8 @@ impl IrDiff {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(rename = "IrDiff"))]
 struct IrDiffWriteWire<'a> {
     unit_change: Option<(
         crate::units::CanonicalUnitsWire,
@@ -351,26 +353,13 @@ impl Serialize for IrDiff {
 }
 
 #[cfg(feature = "schema")]
-#[derive(JsonSchema)]
-#[expect(dead_code, reason = "fields define the structural-diff wire schema")]
-struct IrDiffSchemaWire {
-    unit_change: Option<(
-        crate::units::CanonicalUnitsWire,
-        crate::units::CanonicalUnitsWire,
-    )>,
-    tolerance_change: Option<(crate::units::Tolerances, crate::units::Tolerances)>,
-    source: SourceDiff,
-    per_arena: Vec<ArenaDiff>,
-}
-
-#[cfg(feature = "schema")]
 impl JsonSchema for IrDiff {
     fn schema_name() -> std::borrow::Cow<'static, str> {
         "IrDiff".into()
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        IrDiffSchemaWire::json_schema(generator)
+        IrDiffWriteWire::json_schema(generator)
     }
 }
 
@@ -452,10 +441,10 @@ where
 }
 
 macro_rules! define_diff_arenas {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*]; )*) => {
+    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
             vec![$(arena(
-                ArenaKind::Model(ArenaName::$field),
+                ArenaKind::Model(ArenaName::registered(stringify!($field))),
                 &left.model.$field,
                 &right.model.$field,
                 crate::schema::EntitySchema::identity,
@@ -586,7 +575,6 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use std::collections::BTreeMap;
 
@@ -687,8 +675,8 @@ mod tests {
         );
 
         assert_ne!(
-            serde_json::to_value(&left.model.points).unwrap(),
-            serde_json::to_value(&right.model.points).unwrap(),
+            serde_json::to_value(&left.model.points).expect("test fixture invariant"),
+            serde_json::to_value(&right.model.points).expect("test fixture invariant"),
             "the serialized documents must differ, or exact equality would pass too"
         );
         let result = diff(&left, &right);
@@ -763,7 +751,7 @@ mod tests {
                     None,
                     false,
                 )
-                .unwrap(),
+                .expect("test fixture invariant"),
             )),
             source_object: None,
         };
@@ -934,12 +922,17 @@ mod tests {
         for (left, right) in [(&bare, &populated), (&populated, &bare)] {
             let result = diff(left, right);
             assert!(!result.is_empty());
-            let change = result.source.format_change.as_ref().unwrap();
+            let change = result
+                .source
+                .format_change
+                .as_ref()
+                .expect("test fixture invariant");
             assert_ne!(change.before(), change.after());
             assert_eq!(result.source.attributes.len(), 1);
         }
 
-        let rendered = serde_json::to_value(&diff(&bare, &populated).source).unwrap();
+        let rendered =
+            serde_json::to_value(&diff(&bare, &populated).source).expect("test fixture invariant");
         assert_eq!(rendered["format_change"], serde_json::json!(["", "rhino"]));
 
         assert!(diff(&bare, &bare).is_empty());
@@ -972,9 +965,26 @@ mod tests {
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());
-        let change = result.source.dialects_change.as_ref().unwrap();
-        assert_eq!(change.before(), left.source.as_ref().unwrap().dialects());
-        assert_eq!(change.after(), right.source.as_ref().unwrap().dialects());
+        let change = result
+            .source
+            .dialects_change
+            .as_ref()
+            .expect("test fixture invariant");
+        assert_eq!(
+            change.before(),
+            left.source
+                .as_ref()
+                .expect("test fixture invariant")
+                .dialects()
+        );
+        assert_eq!(
+            change.after(),
+            right
+                .source
+                .as_ref()
+                .expect("test fixture invariant")
+                .dialects()
+        );
 
         let mut declared_left = with_source(&[]);
         let mut declared_right = declared_left.clone();
@@ -1001,14 +1011,26 @@ mod tests {
 
         let declared = diff(&declared_left, &declared_right);
         assert!(!declared.is_empty());
-        let declared_change = declared.source.dialects_change.as_ref().unwrap();
+        let declared_change = declared
+            .source
+            .dialects_change
+            .as_ref()
+            .expect("test fixture invariant");
         assert_eq!(
             declared_change.before(),
-            declared_left.source.as_ref().unwrap().dialects()
+            declared_left
+                .source
+                .as_ref()
+                .expect("test fixture invariant")
+                .dialects()
         );
         assert_eq!(
             declared_change.after(),
-            declared_right.source.as_ref().unwrap().dialects()
+            declared_right
+                .source
+                .as_ref()
+                .expect("test fixture invariant")
+                .dialects()
         );
         assert!(declared.source.attributes.is_empty());
     }
@@ -1036,7 +1058,7 @@ mod tests {
         );
         assert!(!diff(&left, &right).is_empty());
 
-        let source = right.source.take().unwrap();
+        let source = right.source.take().expect("test fixture invariant");
         right.source = Some(crate::document::SourceMeta::classified(
             DialectLayers::of(DialectMatch::admitted(cadmpeg_core::dialect_id!(
                 "rhino:archive-80",
@@ -1055,9 +1077,9 @@ mod tests {
                 .source
                 .dialects_change
                 .as_ref()
-                .unwrap()
+                .expect("test fixture invariant")
                 .after()
-                .unwrap()
+                .expect("test fixture invariant")
                 .iter()
                 .count(),
             2
@@ -1069,7 +1091,8 @@ mod tests {
     #[test]
     fn an_unpopulated_dialect_adds_no_key_to_the_serialized_diff() {
         let ir = with_source(&[]);
-        let rendered = serde_json::to_string(&diff(&ir, &ir).source).unwrap();
+        let rendered =
+            serde_json::to_string(&diff(&ir, &ir).source).expect("test fixture invariant");
 
         assert!(!rendered.contains("dialects_change"), "{rendered}");
     }

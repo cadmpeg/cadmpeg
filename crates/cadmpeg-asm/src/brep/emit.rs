@@ -548,7 +548,7 @@ fn emit_carrier_surface(
                     EmbeddedOffsetLayout::Revision(form) => (
                         None,
                         None,
-                        cadmpeg_ir::geometry::OffsetExtension::Revision { form: *form },
+                        cadmpeg_ir::geometry::OffsetExtension::Revision { form },
                     ),
                 };
                 ProceduralSurfaceDefinition::Offset(
@@ -613,11 +613,13 @@ fn emit_carrier_surface(
                 ctx,
                 out,
                 i,
-                supports,
-                spine,
-                radius_offsets,
-                cross_section,
-                native,
+                BlendSurfaceParts {
+                    supports,
+                    spine,
+                    radius_offsets,
+                    cross_section,
+                    native,
+                },
                 format,
             )?,
         };
@@ -2248,8 +2250,8 @@ fn emit_sweep_surface(
                 map_formula(2, third_formula)?,
             ];
             (
-                profile,
-                spine,
+                *profile,
+                *spine,
                 cadmpeg_ir::geometry::SweepSurfaceLayout::ProfileFirst {
                     secondary_kind,
                     directions,
@@ -2259,21 +2261,18 @@ fn emit_sweep_surface(
                 },
             )
         }
-        LegacySweepLayout::Sweep {
-            profile:
-                crate::nurbs::proc_surface::SweepProfile {
-                    profile,
-                    mode,
-                    profile_range,
-                    profile_frame,
-                    origin,
-                    directions,
-                    path,
-                    path_range,
-                    path_parameter,
-                },
-            tail,
-        } => {
+        LegacySweepLayout::Sweep { profile, tail } => {
+            let crate::nurbs::proc_surface::SweepProfile {
+                profile,
+                mode,
+                profile_range,
+                profile_frame,
+                origin,
+                directions,
+                path,
+                path_range,
+                path_parameter,
+            } = *profile;
             let layout = match tail {
                 crate::nurbs::proc_surface::SweepTail::LawOrFormula(
                     SweepLawOrFormula::Formula {
@@ -3234,19 +3233,28 @@ fn emit_vertex_blend_surface(
     ))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn emit_blend_surface(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-
-    out: &mut AsmBrep,
-    i: i64,
+struct BlendSurfaceParts {
     supports: Box<[Option<SurfaceGeometry>; 2]>,
     spine: Option<NurbsCurve>,
     radius_offsets: [f64; 2],
     cross_section: BlendCrossSection,
     native: Option<Box<EmbeddedRollingBall>>,
+}
+
+fn emit_blend_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    out: &mut AsmBrep,
+    i: i64,
+    parts: BlendSurfaceParts,
     format: IdFormat,
 ) -> Result<ProceduralSurfaceDefinition, cadmpeg_core::CodecError> {
+    let BlendSurfaceParts {
+        supports,
+        spine,
+        radius_offsets,
+        cross_section,
+        native,
+    } = parts;
     let mut resolved_supports = [None, None];
     for (side, support) in supports.into_iter().enumerate() {
         if let Some(support) = support {
@@ -4249,33 +4257,36 @@ fn emit_spring_curve(
     let emit_pcurve = |nurbs| PcurveGeometry::Nurbs { nurbs };
     let layout = match embedded.layout {
         EmbeddedSpringLayout::ContextFirst {
-            supports: [first_support, second_support],
+            supports,
             first_pcurve,
             second_pcurve,
             parameter_range,
             discontinuities,
             discontinuity_flag,
-        } => cadmpeg_ir::geometry::SpringLayout::ContextFirst {
-            supports: [
-                emit_spring_support(ctx, out, i, format, 0, first_support)?,
-                emit_spring_support(ctx, out, i, format, 1, second_support)?,
-            ],
-            first_pcurve: match first_pcurve {
-                EmbeddedSpringPcurve::Pcurve(pcurve) => {
-                    cadmpeg_ir::geometry::SpringPcurve::Pcurve(emit_pcurve(pcurve))
-                }
-                EmbeddedSpringPcurve::Range(range) => {
-                    cadmpeg_ir::geometry::SpringPcurve::Range(range)
-                }
-            },
-            second_pcurve: second_pcurve.map(emit_pcurve),
-            parameter_range,
-            discontinuities,
-            discontinuity_flag,
-            cache: None,
-        },
+        } => {
+            let [first_support, second_support] = *supports;
+            cadmpeg_ir::geometry::SpringLayout::ContextFirst {
+                supports: [
+                    emit_spring_support(ctx, out, i, format, 0, first_support)?,
+                    emit_spring_support(ctx, out, i, format, 1, second_support)?,
+                ],
+                first_pcurve: Box::new(match *first_pcurve {
+                    EmbeddedSpringPcurve::Pcurve(pcurve) => {
+                        cadmpeg_ir::geometry::SpringPcurve::Pcurve(emit_pcurve(pcurve))
+                    }
+                    EmbeddedSpringPcurve::Range(range) => {
+                        cadmpeg_ir::geometry::SpringPcurve::Range(range)
+                    }
+                }),
+                second_pcurve: second_pcurve.map(emit_pcurve),
+                parameter_range,
+                discontinuities,
+                discontinuity_flag,
+                cache: None,
+            }
+        }
         EmbeddedSpringLayout::CacheFirst { context } => {
-            let (context, form) = context
+            let (context, form) = (*context)
                 .into_intersection(solved_domain.ok_or("missing procedural curve cache domain")?);
             let [first_surface, second_surface] = context
                 .surfaces
@@ -5241,18 +5252,32 @@ pub(super) fn emit_faces(
 
 /// Emit shells, regions, and bodies for every record so back-references
 /// resolve, filtering child lists to reachable entities.
-#[allow(clippy::too_many_arguments)]
+/// Source records and decode settings for emitting shell containers.
+#[derive(Clone, Copy)]
+pub(super) struct ContainerInputs<'a, 'record> {
+    pub(super) records: &'record [Record],
+    pub(super) by_index: &'a HashMap<i64, &'record Record>,
+    pub(super) reach: &'a Reachable,
+    pub(super) wire: &'a WireShellTopology,
+    pub(super) stream: &'a str,
+    pub(super) header_scale: f64,
+    pub(super) format: IdFormat,
+}
+
 pub(super) fn emit_containers(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut AsmBrep,
-    records: &[Record],
-    by_index: &HashMap<i64, &Record>,
-    reach: &Reachable,
-    wire: &WireShellTopology,
-    stream: &str,
-    header_scale: f64,
-    format: IdFormat,
+    inputs: ContainerInputs<'_, '_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let ContainerInputs {
+        records,
+        by_index,
+        reach,
+        wire,
+        stream,
+        header_scale,
+        format,
+    } = inputs;
     let Reachable {
         faces: kept_faces, ..
     } = reach;

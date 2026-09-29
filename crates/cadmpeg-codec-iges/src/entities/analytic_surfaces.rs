@@ -130,7 +130,6 @@ impl fmt::Display for AnalyticDirectionError {
     }
 }
 
-#[allow(clippy::many_single_char_names)]
 fn direction(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
@@ -158,10 +157,10 @@ fn direction(
         .copied()
         .ok_or(DirectionError::MissingParameters(sequence))?;
     let components = [record.number(1), record.number(2), record.number(3)];
-    let [Some(x), Some(y), Some(z)] = components else {
+    let [Some(x_component), Some(y_component), Some(z_component)] = components else {
         return Err(DirectionError::NonNumeric(sequence));
     };
-    FiniteVector3::new(Vector3::new(x, y, z))
+    FiniteVector3::new(Vector3::new(x_component, y_component, z_component))
         .and_then(UnitVector3::normalized_nonzero)
         .ok_or(DirectionError::ZeroOrNonFinite(sequence))
 }

@@ -693,7 +693,7 @@ fn scale_decoded_curve(
         DecodedCurve::Leaf { geometry, .. } => match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 nurbs
-                    .map_control_points(|point| {
+                    .try_map_control_points(|_, point| {
                         point.scaled(scale.positive()).ok_or_else(|| {
                             cadmpeg_ir::geometry::nurbs::NurbsError::EditRefused(
                                 "scaled plane-space curve is invalid".to_string(),

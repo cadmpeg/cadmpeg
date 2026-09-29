@@ -430,7 +430,12 @@ fn connected_wire_typed_claims_refuse_collection_limit() {
     let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
         .expect("empty carrier index fits policy");
     assert!(matches!(
-        super::super::build_wire_set(3, 1, &exchange, &BTreeMap::new(), &BTreeMap::new(), &carriers, false, &mut Vec::new(), &ctx),
+        super::super::build_wire_set(
+            3, 1, &exchange,
+            super::super::WireSources { vdefs: &BTreeMap::new(), edefs: &BTreeMap::new(), point_positions: &carriers },
+            false,
+            &mut Vec::new(), &ctx,
+        ),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_wire_typed"
@@ -449,7 +454,12 @@ fn shell_wire_typed_claims_refuse_collection_limit() {
     let carriers = crate::reader::index::CarrierIndex::from_ir(&cadmpeg_ir::CadIr::empty(), &ctx)
         .expect("empty carrier index fits policy");
     assert!(matches!(
-        super::super::build_shell_wire_set(3, 1, &exchange, &BTreeMap::new(), &BTreeMap::new(), &carriers, false, false, &mut Vec::new(), &ctx),
+        super::super::build_shell_wire_set(
+            3, 1, &exchange,
+            super::super::WireSources { vdefs: &BTreeMap::new(), edefs: &BTreeMap::new(), point_positions: &carriers },
+            super::super::WireScope { scoped: false, root: false },
+            &mut Vec::new(), &ctx,
+        ),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_wire_typed"
@@ -817,27 +827,29 @@ fn staged_topology_refusal(
         })
         .collect();
     super::super::staged_topology(
-        std::collections::HashSet::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        surfaces,
-        Vec::new(),
-        cadmpeg_ir::topology::Region {
-            id: region_id.clone(),
-            body: body_id.clone(),
+        super::super::StagedTopologyParts {
+            typed: std::collections::HashSet::new(),
+            vertices: Vec::new(),
+            edges: Vec::new(),
+            coedges: Vec::new(),
+            loops: Vec::new(),
+            faces: Vec::new(),
+            surfaces,
             shells: Vec::new(),
-        },
-        cadmpeg_ir::topology::Body {
-            id: body_id,
-            kind: cadmpeg_ir::topology::BodyKind::Sheet,
-            regions: vec![region_id],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
+            region: cadmpeg_ir::topology::Region {
+                id: region_id.clone(),
+                body: body_id.clone(),
+                shells: Vec::new(),
+            },
+            body: cadmpeg_ir::topology::Body {
+                id: body_id,
+                kind: cadmpeg_ir::topology::BodyKind::Sheet,
+                regions: vec![region_id],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
         },
         &ctx,
     )
@@ -908,23 +920,29 @@ fn brep_builder_refusal(collection_limit: u64) -> super::super::BuildError {
     super::super::build_one(
         3,
         exchange.records().get(&3).expect("model"),
-        &exchange,
-        &cadmpeg_ir::CadIr::empty(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &shells,
-        &std::collections::BTreeSet::new(),
-        &carriers,
-        &[1],
-        body_id(),
-        &region,
-        false,
-        false,
-        false,
+        super::super::BuildSources {
+            exchange: &exchange,
+            ir: &cadmpeg_ir::CadIr::empty(),
+            vdefs: &BTreeMap::new(),
+            edefs: &BTreeMap::new(),
+            odefs: &BTreeMap::new(),
+            shell_definitions: &shells,
+            decoded_pcurves: &std::collections::BTreeSet::new(),
+            point_positions: &carriers,
+            ctx: &ctx,
+        },
+        super::super::BuildRoot {
+            shell_steps: &[1],
+            bid: body_id(),
+            rid: &region,
+        },
+        super::super::BuildScope {
+            faces: false,
+            edges: false,
+            root: false,
+        },
         &mut Vec::new(),
         &mut None,
-        &ctx,
     )
     .err()
     .expect("builder exceeds limit")
@@ -1165,7 +1183,9 @@ fn selected_pcurve_id_refuses_retained_limit() {
     assert!(matches!(super::super::select_associated_pcurve(
         &cadmpeg_ir::CadIr::empty(), &exchange, 1,
         &super::super::EdgeDef::Bare { start: 1, end: 2 },
-        &BTreeMap::new(), &carriers, &[candidate], &ctx,
+        super::super::PcurveAssociationSources {
+            vdefs: &BTreeMap::new(), point_positions: &carriers, candidates: &[candidate],
+        }, &ctx,
     ), Err(super::super::PcurveSelectionFailure::Resource(CodecError::ResourceLimit(refusal)))
         if refusal.dimension == ResourceDimension::RetainedBytes
             && refusal.operation == "step_selected_pcurve_id"));

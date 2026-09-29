@@ -174,15 +174,17 @@ fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
         &edge,
         &surface_id,
         &pcurve,
-        PcurveEndpointFit {
-            start_parameter: lower,
-            end_parameter: upper,
-            max_residual: 0.0,
+        super::super::PcurveWitness {
+            endpoint: PcurveEndpointFit {
+                start_parameter: lower,
+                end_parameter: upper,
+                max_residual: 0.0,
+            },
+            curve_start: Point3::new(lower, 0.0, 0.0),
+            curve_end: Point3::new(upper, 0.0, 0.0),
+            bound: COINCIDENCE_TOLERANCE
         },
-        Point3::new(lower, 0.0, 0.0),
-        Point3::new(upper, 0.0, 0.0),
-        COINCIDENCE_TOLERANCE,
-        ctx,
+        ctx
     ))
     .expect("resource allocation did not fail"));
 }
@@ -222,13 +224,10 @@ fn pcurve_locus_fractions_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
-    assert!(matches!(pcurve_locus_witness(
-        &index, &exchange, &edge, &surface_id, &pcurve,
-        PcurveEndpointFit { start_parameter: 0.0, end_parameter: 1.0, max_residual: 0.0 },
-        Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0),
-        COINCIDENCE_TOLERANCE, &ctx,
-    ), Err(PcurveSelectionFailure::Resource(CodecError::ResourceLimit(refusal)))
-        if refusal.operation == "step_pcurve_locus_fractions"));
+    assert!(
+        matches!(pcurve_locus_witness(&index, &exchange, &edge, &surface_id, &pcurve, super::super::PcurveWitness { endpoint: PcurveEndpointFit { start_parameter: 0.0, end_parameter: 1.0, max_residual: 0.0 }, curve_start: Point3::new(0.0, 0.0, 0.0), curve_end: Point3::new(1.0, 0.0, 0.0), bound: COINCIDENCE_TOLERANCE }, &ctx), Err(PcurveSelectionFailure::Resource(CodecError::ResourceLimit(refusal)))
+        if refusal.operation == "step_pcurve_locus_fractions")
+    );
 }
 
 #[test]
@@ -240,9 +239,15 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
     let control_count = 2049;
     let mut knots = vec![lower, lower];
     knots.extend((1..control_count - 1).map(|index| {
-        cadmpeg_ir::math::interpolate(lower, upper, index as f64 / (control_count - 1) as f64)
-            .expect("finite interior knot")
-            .get()
+        cadmpeg_ir::math::interpolate(
+            lower,
+            upper,
+            cadmpeg_core::convert::f64_from_index(index).expect("test index is exact")
+                / cadmpeg_core::convert::f64_from_index(control_count - 1)
+                    .expect("test control count is exact"),
+        )
+        .expect("finite interior knot")
+        .get()
     }));
     knots.extend([upper, upper]);
     let controls = (0..control_count)
@@ -291,15 +296,17 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
         &edge,
         &surface_id,
         &pcurve,
-        PcurveEndpointFit {
-            start_parameter: 0.5,
-            end_parameter: 0.6,
-            max_residual: 0.0,
+        super::super::PcurveWitness {
+            endpoint: PcurveEndpointFit {
+                start_parameter: 0.5,
+                end_parameter: 0.6,
+                max_residual: 0.0,
+            },
+            curve_start: Point3::new(0.5, 0.0, 0.0),
+            curve_end: Point3::new(0.6, 0.0, 0.0),
+            bound: COINCIDENCE_TOLERANCE
         },
-        Point3::new(0.5, 0.0, 0.0),
-        Point3::new(0.6, 0.0, 0.0),
-        COINCIDENCE_TOLERANCE,
-        ctx,
+        ctx
     ))
     .expect("resource allocation did not fail"));
 }

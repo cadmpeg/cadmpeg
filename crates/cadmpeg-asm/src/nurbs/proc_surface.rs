@@ -1424,15 +1424,13 @@ pub struct SweepProfile {
 }
 
 /// The layout-discriminated body of an embedded sweep surface.
-// Keep typed source payloads inline without an allocation for each admitted record.
-#[allow(clippy::large_enum_variant)]
 pub enum LegacySweepLayout {
     /// The profile-first form: profile, spine, and a formula triple.
     ProfileFirst {
         /// The embedded profile curve.
-        profile: NurbsCurve,
+        profile: Box<NurbsCurve>,
         /// The embedded spine curve.
-        spine: NurbsCurve,
+        spine: Box<NurbsCurve>,
         /// The secondary kind integer.
         secondary_kind: i64,
         /// Five direction vectors.
@@ -1447,7 +1445,7 @@ pub enum LegacySweepLayout {
     /// An explicit or law-driven sweep with a shared profile and path.
     Sweep {
         /// Shared profile and path fields.
-        profile: SweepProfile,
+        profile: Box<SweepProfile>,
         /// The fields selected by the sweep form.
         tail: SweepTail,
     },
@@ -1545,7 +1543,7 @@ pub enum EmbeddedSweepSurfaceLayout {
         /// The revision form fields.
         form: cadmpeg_ir::geometry::SweepRevisionForm,
         /// The profile and path fields.
-        profile: SweepProfile,
+        profile: Box<SweepProfile>,
         /// The law or formula tail.
         tail: SweepLawOrFormula,
     },
@@ -1789,11 +1787,13 @@ fn revision_loft_profile_data(
     };
     match std::num::NonZeroI64::new(type_code) {
         Some(type_code) => {
-            let (surface, support_bounds) =
-                match optional_embedded_surface_with_bounds(ctx, cur, table)? {
-                    Ok(surface) => surface,
-                    Err(error) => return Some(Err(error)),
-                };
+            let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+                surface,
+                bounds: support_bounds,
+            } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+                Ok(surface) => surface,
+                Err(error) => return Some(Err(error)),
+            };
             let pcurve = propagate_resource!(nullable_embedded_pcurve(ctx, cur)?).value();
             let first_flag = cur.take_bool()?;
             let (asm_extension, subdata, direction) = propagate_resource!(tail(cur)?);
@@ -3118,8 +3118,8 @@ fn sweep_spl_sur(
             propagate_resource!(law_formula(ctx, &mut cur)?),
         ];
         LegacySweepLayout::ProfileFirst {
-            profile,
-            spine,
+            profile: Box::new(profile),
+            spine: Box::new(spine),
             secondary_kind,
             directions,
             origin: Point3::new(
@@ -3238,7 +3238,10 @@ fn sweep_spl_sur(
                 }
                 _ => return None,
             };
-            LegacySweepLayout::Sweep { profile, tail }
+            LegacySweepLayout::Sweep {
+                profile: Box::new(profile),
+                tail,
+            }
         } else {
             let first_law = propagate_resource!(sweep_law_expression(ctx, &mut cur)?);
             let first_mode = cur.take_long()?;
@@ -3257,7 +3260,7 @@ fn sweep_spl_sur(
             let formula = propagate_resource!(law_formula(ctx, &mut cur)?);
             let trailing_flag = cur.take_bool()?;
             LegacySweepLayout::Sweep {
-                profile: SweepProfile {
+                profile: Box::new(SweepProfile {
                     profile,
                     mode,
                     profile_range,
@@ -3267,7 +3270,7 @@ fn sweep_spl_sur(
                     path,
                     path_range,
                     path_parameter,
-                },
+                }),
                 tail: SweepTail::LawOrFormula(SweepLawOrFormula::Law {
                     first_law: Box::new(first_law),
                     first_mode,
@@ -3460,7 +3463,7 @@ fn revision_sweep_sur(
                     path_endpoints,
                     cache: cache.into_form()?,
                 },
-                profile,
+                profile: Box::new(profile),
                 tail,
             },
             discontinuities,
@@ -3500,11 +3503,13 @@ fn taper_spl_sur(
         (name == "ortho_spl_sur").then_some(())?;
         let table = resolver?;
         let revision = PositiveI64::new(cur.take_long()?)?;
-        let (support, support_bounds) =
-            match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
-                Ok(support) => support,
-                Err(error) => return Some(Err(error)),
-            };
+        let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+            surface: support,
+            bounds: support_bounds,
+        } = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
+            Ok(support) => support,
+            Err(error) => return Some(Err(error)),
+        };
         let support = support?;
         let reference =
             propagate_resource!(embedded_base_curve_resolving_refs(ctx, &mut cur, table)?);
@@ -3755,11 +3760,13 @@ fn off_spl_sur(
         modern.then_some(())?;
         let table = resolver?;
         let revision = PositiveI64::new(cur.take_long()?)?;
-        let (support, support_bounds) =
-            match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
-                Ok(support) => support,
-                Err(error) => return Some(Err(error)),
-            };
+        let crate::nurbs::proc_curve::EmbeddedSurfaceWithBounds {
+            surface: support,
+            bounds: support_bounds,
+        } = match optional_embedded_surface_with_bounds(ctx, &mut cur, table)? {
+            Ok(support) => support,
+            Err(error) => return Some(Err(error)),
+        };
         let support = support?;
         let distance = cur.take_f64()? * LEN_TO_MM;
         // Four booleans carry the record orientation pair and the ASM extension
@@ -4077,7 +4084,7 @@ fn exact_spl_sur(
                 spline: cadmpeg_ir::geometry::ExactSpline::Revision {
                     intervals: unextended_ranges,
                     extension,
-                    form: cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    form: Box::new(cadmpeg_ir::geometry::RevisionSurfaceForm {
                         revision,
                         support_bounds: [None; 4],
                         reference_endpoints: [None; 2],
@@ -4087,7 +4094,7 @@ fn exact_spl_sur(
                         discontinuities,
                         tail_flag,
                         trailing_flags: Vec::new(),
-                    },
+                    }),
                 },
             },
         )));

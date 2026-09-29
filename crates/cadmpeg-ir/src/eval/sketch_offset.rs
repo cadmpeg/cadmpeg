@@ -18,7 +18,7 @@ pub(super) fn clamped_nurbs_pcurve_endpoint_frames(
     let control_points = curve.pole_rows().raw_points();
     let [lower, upper] =
         nurbs_pcurve_parameter_domain(curve.degree(), knots, control_points.len())?.endpoints();
-    let degree = curve.degree() as usize;
+    let degree = cadmpeg_core::decode::index_from_u32(curve.degree());
     if knots.iter().take(degree + 1).any(|knot| *knot != lower)
         || knots
             .iter()

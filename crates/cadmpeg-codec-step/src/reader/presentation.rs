@@ -387,10 +387,12 @@ pub(super) fn decode(
                 reference,
                 exchange,
                 domain,
-                &mut active,
-                &mut color_cache,
-                &mut losses,
-                &mut invalid_surface_sides,
+                ColorSearchState {
+                    active: &mut active,
+                    cache: &mut color_cache,
+                    losses: &mut losses,
+                    invalid_surface_sides: &mut invalid_surface_sides,
+                },
                 0,
                 ctx,
             )
@@ -402,10 +404,12 @@ pub(super) fn decode(
                     reference,
                     exchange,
                     StyleDomain::Surface,
-                    &mut active,
-                    &mut color_cache,
-                    &mut losses,
-                    &mut invalid_surface_sides,
+                    ColorSearchState {
+                        active: &mut active,
+                        cache: &mut color_cache,
+                        losses: &mut losses,
+                        invalid_surface_sides: &mut invalid_surface_sides,
+                    },
                     0,
                     ctx,
                 )
@@ -1693,18 +1697,27 @@ fn combine_color_resolutions(
     }
 }
 
-#[allow(clippy::too_many_arguments)] // Recursive search keeps cache, loss, and invalid-source tracking separate.
+struct ColorSearchState<'a> {
+    active: &'a mut BTreeSet<u64>,
+    cache: &'a mut BTreeMap<(u64, StyleDomain), CachedColor>,
+    losses: &'a mut Vec<LossNote>,
+    invalid_surface_sides: &'a mut BTreeSet<u64>,
+}
+
 fn find_color(
     id: u64,
     exchange: &Exchange,
     domain: StyleDomain,
-    active: &mut BTreeSet<u64>,
-    cache: &mut BTreeMap<(u64, StyleDomain), CachedColor>,
-    losses: &mut Vec<LossNote>,
-    invalid_surface_sides: &mut BTreeSet<u64>,
+    state: ColorSearchState<'_>,
     depth: usize,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<CachedColor, CodecError> {
+    let ColorSearchState {
+        active,
+        cache,
+        losses,
+        invalid_surface_sides,
+    } = state;
     if depth >= 256 {
         return Ok(None);
     }
@@ -1773,10 +1786,12 @@ fn find_color(
                     reference,
                     exchange,
                     domain,
-                    active,
-                    cache,
-                    losses,
-                    invalid_surface_sides,
+                    ColorSearchState {
+                        active: &mut *active,
+                        cache: &mut *cache,
+                        losses: &mut *losses,
+                        invalid_surface_sides: &mut *invalid_surface_sides,
+                    },
                     depth + 1,
                     ctx,
                 )?;
@@ -1811,7 +1826,14 @@ fn find_color(
                         .find(|partial| partial.name == "COLOUR_SPECIFICATION")
                         .and_then(|partial| partial.parameters.first())
                 };
-                let Some(color) = Color::new(r as f32, g as f32, b as f32, 1.0) else {
+                let Some((r, g, b)) = cadmpeg_core::convert::f32_from_f64(r)
+                    .zip(cadmpeg_core::convert::f32_from_f64(g))
+                    .zip(cadmpeg_core::convert::f32_from_f64(b))
+                    .map(|((r, g), b)| (r, g, b))
+                else {
+                    return Ok(None);
+                };
+                let Some(color) = Color::new(r, g, b, 1.0) else {
                     return Ok(None);
                 };
                 let name = name_value
@@ -1880,10 +1902,12 @@ fn find_color(
                             reference,
                             exchange,
                             domain,
-                            active,
-                            cache,
-                            losses,
-                            invalid_surface_sides,
+                            ColorSearchState {
+                                active: &mut *active,
+                                cache: &mut *cache,
+                                losses: &mut *losses,
+                                invalid_surface_sides: &mut *invalid_surface_sides,
+                            },
                             depth + 1,
                             ctx,
                         )
@@ -1901,10 +1925,9 @@ fn find_color(
     if let Some(transparency) = transparency {
         match result.as_mut() {
             Some(ColorResolution::Candidate(candidate)) => {
-                candidate.color = candidate
-                    .color
-                    .with_alpha((1.0 - transparency.get()) as f32)
-                    .unwrap_or(candidate.color);
+                if let Some(alpha) = cadmpeg_core::convert::f32_from_f64(1.0 - transparency.get()) {
+                    candidate.color = candidate.color.with_alpha(alpha).unwrap_or(candidate.color);
+                }
             }
             Some(ColorResolution::Ambiguous { .. }) => {}
             None => {}
