@@ -113,11 +113,11 @@ mod tests {
     #[test]
     fn source_and_native_extents_follow_null_and_variable_width_slots() {
         let bytes = [2, 1, 0x11, 0xff, 1, 0x80, 1, 0x90, 0, 1, 2, 0x11];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let policy = cadmpeg_core::decode::DecodePolicy::default();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let lane = StateSlotLane::read(&ctx, &bytes, 0, bytes.len(), 100)
+        
+        
+        crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
+
+        let lane = StateSlotLane::read(ctx, &bytes, 0, bytes.len(), 100)
             .unwrap()
             .unwrap();
         assert_eq!(lane.slots().len(), 4);
@@ -141,9 +141,11 @@ mod tests {
         )
         .is_err());
         assert!(
-            StateSlotLane::read(&ctx, &bytes, 0, bytes.len(), usize::MAX - 11)
+            StateSlotLane::read(ctx, &bytes, 0, bytes.len(), usize::MAX - 11)
                 .unwrap()
                 .is_none()
         );
-    }
+    
+})
+}
 }

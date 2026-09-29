@@ -160,16 +160,18 @@ mod tests {
     #[test]
     fn name_field_scan_refuses_collection_limit() {
         let bytes = [3, 3, b'A', 0];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = scan(&ctx, &bytes).unwrap_err();
+        
+        
+        
+        crate::test_support::with_decode_context_over(&bytes, |policy| { policy.limits.max_collection_items = 0; }, |ctx| {
+
+        let error = scan(ctx, &bytes).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
         );
-    }
+    
+})
+}
 
     #[test]
     fn native_name_frames_bound_text_and_full_extent() {

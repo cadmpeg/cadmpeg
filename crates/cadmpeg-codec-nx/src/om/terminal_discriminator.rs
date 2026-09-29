@@ -191,43 +191,40 @@ mod tests {
         .unwrap()
     }
 
-    fn terminal_limit_error(
-        policy: &cadmpeg_core::decode::DecodePolicy,
-    ) -> cadmpeg_core::CodecError {
+    fn terminal_limit_error(adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
         let payload = b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00";
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(payload, &arena, policy).unwrap();
+        
+        crate::test_support::with_decode_context_over(payload, adjust, |ctx| {
+
         let record = OperationPayload::new(payload, 200, "EXTRUDE").unwrap();
-        operation_terminal_discriminator(&ctx, record).expect_err("terminal discriminator refusal")
-    }
+        operation_terminal_discriminator(ctx, record).expect_err("terminal discriminator refusal")
+    
+})
+}
 
     #[test]
     fn om_terminal_discriminator_route_refuses_collection_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 0; };
         assert!(
-            matches!(terminal_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(terminal_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
         );
     }
 
     #[test]
     fn om_terminal_discriminator_route_refuses_retained_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 0; };
         assert!(
-            matches!(terminal_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(terminal_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
         );
     }
 
     #[test]
     fn om_terminal_discriminator_route_refuses_work_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_work_units = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_work_units = 0; };
         assert!(
-            matches!(terminal_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(terminal_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
         );
     }

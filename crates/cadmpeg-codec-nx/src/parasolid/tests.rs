@@ -62,15 +62,18 @@ fn legacy_short_sections_are_bounded_by_complete_transmit_headers() {
     bytes.extend_from_slice(second_description);
     bytes.extend_from_slice(&[0; 64]);
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let streams = super::extract_legacy_streams(&ctx, root).unwrap();
+    
+    
+    crate::test_support::with_decode_context_over(&bytes, |_| {}, |ctx| {
+let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+    let streams = super::extract_legacy_streams(ctx, root).unwrap();
 
     assert_eq!(streams.len(), 2);
     assert_eq!(streams[0].file_offset, 0);
     assert_eq!(streams[1].file_offset, second);
+
+})
 }
 
 #[test]
@@ -381,35 +384,40 @@ fn extraction_rejects_zlib_members_with_invalid_integrity_trailers() {
     let mut indexed = segment_stream_payload();
     *indexed.last_mut().expect("indexed zlib integrity trailer") ^= 0x01;
     let indexed = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", indexed)]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&indexed, &arena, &policy)
-            .expect("bounded test input");
+    
+    
+    crate::test_support::with_decode_context_over(&indexed, |_| {}, |ctx| {
+let root = cadmpeg_core::decode::View::over_retained(&indexed);
+
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, indexed.clone()))
             .expect("test SPLMSSTR container");
-    assert!(parasolid::extract_streams(&ctx, root, &container).is_err());
+    assert!(parasolid::extract_streams(ctx, root, &container).is_err());
+
+})
 }
 
 #[test]
 fn extraction_refuses_inflated_stream_copy_when_retained_budget_is_exhausted() {
     let file = prt_with_partition(&partition_stream());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&file, &arena, &policy)
-        .expect("bounded test input");
+    
+    
+    
+    crate::test_support::with_decode_context_over(&file, |policy| { policy.limits.max_retained_bytes = 1; }, |ctx| {
+let root = cadmpeg_core::decode::View::over_retained(&file);
+
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.clone()))
             .expect("test SPLMSSTR container");
 
     assert!(matches!(
-        parasolid::extract_streams(&ctx, root, &container),
+        parasolid::extract_streams(ctx, root, &container),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
                 && limit.operation == "retain NX inflated stream"
     ));
+
+})
 }
 
 #[test]

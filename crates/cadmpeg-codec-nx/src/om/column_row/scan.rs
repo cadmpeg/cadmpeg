@@ -278,43 +278,40 @@ mod linked_row_color_index_tests {
 
 #[cfg(test)]
 mod tests {
-    fn index_row_limit_error(
-        policy: &cadmpeg_core::decode::DecodePolicy,
-    ) -> cadmpeg_core::CodecError {
+    fn index_row_limit_error(adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy)) -> cadmpeg_core::CodecError {
         let bytes =
             b"\x2d\x02\x0b\x2a\x93\x8a\x03\x80\x18\x20\x20\x41\x00\x47\x04\x04\x01\xc0\x44\x04\x00";
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, policy).unwrap();
-        super::index_rows(&ctx, bytes).expect_err("index row resource refusal")
-    }
+        
+        crate::test_support::with_decode_context_over(bytes, adjust, |ctx| {
+
+        super::index_rows(ctx, bytes).expect_err("index row resource refusal")
+    
+})
+}
 
     #[test]
     fn om_index_row_route_refuses_collection_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_collection_items = 0; };
         assert!(
-            matches!(index_row_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(index_row_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
         );
     }
 
     #[test]
     fn om_index_row_route_refuses_retained_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_retained_bytes = 0; };
         assert!(
-            matches!(index_row_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(index_row_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
         );
     }
 
     #[test]
     fn om_index_row_route_refuses_work_limit() {
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_work_units = 0;
+        let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| { policy.limits.max_work_units = 0; };
         assert!(
-            matches!(index_row_limit_error(&policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            matches!(index_row_limit_error(adjust_policy), cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
         );
     }
