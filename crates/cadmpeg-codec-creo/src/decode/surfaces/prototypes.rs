@@ -20,6 +20,32 @@ use crate::vecmath::{cross, dot, local_system_lanes};
 
 const EPS_PROTOTYPE_AGREEMENT: f64 = 1.0e-10;
 
+struct JoinedLaneRecords<'a>(&'a [String]);
+
+impl std::fmt::Display for JoinedLaneRecords<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (index, record) in self.0.iter().enumerate() {
+            if index != 0 {
+                formatter.write_str("; ")?;
+            }
+            formatter.write_str(record)?;
+        }
+        Ok(())
+    }
+}
+
+fn push_prototype_loss(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    code: crate::loss::CreoLossCode,
+    message: impl std::fmt::Display,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let message = ctx.format_retained(message, "creo prototype loss text")?;
+    ctx.try_reserve_items(losses, 1, "creo prototype losses")?;
+    losses.push(code.note(message));
+    Ok(())
+}
+
 pub(in super::super) fn prototype_scalar(
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
@@ -118,7 +144,7 @@ fn prototype_spline_nurbs(
     interpolation_spline_surface(
         ctx,
         &grid,
-        &format!(
+        &format_args!(
             "VisibGeom surface prototype record at offset {}",
             record.offset
         ),
@@ -473,15 +499,16 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 let refused = refusal.take_records_checked()?;
                 let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
                     if !refused.is_empty() {
-                        losses.push(
-                            crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred.note(format!(
+                        push_prototype_loss(ctx, losses,
+                            crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred,
+                            format_args!(
                                 "VisibGeom surface row {} states a spline prototype at offset {} \
                                  that forms no NURBS carrier: {}",
                                 row.id,
                                 record.offset,
-                                refused.join("; ")
-                            )),
-                        );
+                                JoinedLaneRecords(&refused)
+                            ),
+                        )?;
                     }
                     continue;
                 };
@@ -621,7 +648,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         let nurbs = interpolation_spline_surface(
             ctx,
             &replay,
-            &format!(
+            &format_args!(
                 "VisibGeom surface row {} positional spline replay at offset {}",
                 row.id, parameter.body_offset
             ),
@@ -630,15 +657,16 @@ pub(in super::super) fn transfer_positional_spline_replays(
         let refused = refusal.take_records_checked()?;
         let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
             if !refused.is_empty() {
-                losses.push(
-                    crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred.note(format!(
+                push_prototype_loss(ctx, losses,
+                    crate::loss::CreoLossCode::VisibGeomSurfaceUntransferred,
+                    format_args!(
                         "VisibGeom surface row {} states a positional spline replay at offset {} \
                          that forms no NURBS carrier: {}",
                         row.id,
                         parameter.body_offset,
-                        refused.join("; ")
-                    )),
-                );
+                        JoinedLaneRecords(&refused)
+                    ),
+                )?;
             }
             continue;
         };
@@ -793,7 +821,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 let nurbs = interpolation_spline_surface(
                     ctx,
                     spline,
-                    &format!(
+                    &format_args!(
                         "legacy {}{} spline carrier at offset {}",
                         carrier.namespace.source_prefix(),
                         carrier.surface_id,
@@ -804,18 +832,17 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
                 let refused = refusal.take_records_checked()?;
                 let Some(nurbs) = nurbs.filter(|_| refused.is_empty()) else {
                     if !refused.is_empty() {
-                        losses.push(
-                            crate::loss::CreoLossCode::LegacySurfaceCarrierUnresolved.note(
-                                format!(
+                        push_prototype_loss(ctx, losses,
+                            crate::loss::CreoLossCode::LegacySurfaceCarrierUnresolved,
+                            format_args!(
                                 "{}{} states a legacy spline carrier at offset {} that forms no \
                                  NURBS carrier: {}",
                                 carrier.namespace.source_prefix(),
                                 carrier.surface_id,
                                 carrier.offset,
-                                refused.join("; ")
+                                JoinedLaneRecords(&refused)
                             ),
-                            ),
-                        );
+                        )?;
                     }
                     continue;
                 };

@@ -38,6 +38,17 @@ use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
+fn push_revolution_surface_loss(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    message: impl std::fmt::Display,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let message = ctx.format_retained(message, "creo revolved saved spline loss text")?;
+    ctx.try_reserve_items(losses, 1, "creo revolved saved spline losses")?;
+    losses.push(crate::loss::CreoLossCode::FeatureSurfaceOperationIncomplete.note(message));
+    Ok(())
+}
+
 fn insert_generating_segment_id(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ids: &mut BTreeSet<u32>,
@@ -353,7 +364,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 ctx,
                 &directrix,
                 &axis,
-                &format!(
+                &format_args!(
                     "feature {feature_id} saved spline at offset {}",
                     spline.offset
                 ),
@@ -362,13 +373,11 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             let refused = refusal.take_records_checked()?;
             let Some(surface) = surface.filter(|_| refused.is_empty()) else {
                 for record in &refused {
-                    losses.push(
-                        crate::loss::CreoLossCode::FeatureSurfaceOperationIncomplete.note(format!(
+                    push_revolution_surface_loss(ctx, losses, format_args!(
                             "Feature {feature_id} states a revolved saved spline at offset {} \
                              that forms no surface carrier: {record}",
                             spline.offset
-                        )),
-                    );
+                        ))?;
                 }
                 continue;
             };
