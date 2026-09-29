@@ -14,6 +14,29 @@ use crate::CreoCodec;
 const EPS_PROTOTYPE_RADIUS_MM: f64 = 1.0e-8;
 
 #[test]
+fn legacy_carrier_count_node_refuses_before_first_insert() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let error = super::legacy_carrier_counts(&ctx, [42, 42])
+        .expect_err("first count node exceeds limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo legacy carrier count nodes"));
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    let counts = super::legacy_carrier_counts(&ctx, [42, 42]).expect("service counts");
+    assert_eq!(counts.get(&42), Some(&2));
+    assert_eq!(counts.len(), 1);
+}
+
+#[test]
 fn positional_replay_section_rows_refuse_before_vec_growth() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
