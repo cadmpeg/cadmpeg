@@ -7,7 +7,7 @@ use cadmpeg_ir::features::{
     SplitFaceTool,
 };
 use cadmpeg_ir::topology::Face;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::history::classify::is_history_metadata_record;
 
@@ -188,6 +188,33 @@ pub(crate) fn order_features_for_regeneration(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    let Some(order) = regeneration_order(ctx, features, None)? else {
+        return Ok(false);
+    };
+    assign_regeneration_ordinals(ctx, features, order)?;
+    Ok(true)
+}
+
+fn add_regeneration_predecessor<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    predecessors: &mut HashSet<&'a FeatureId>,
+    predecessor: &'a FeatureId,
+) -> Result<(), cadmpeg_core::CodecError> {
+    if !predecessors.contains(predecessor) {
+        ctx.charge_collection_items(1, "collect SLDPRT feature predecessors")?;
+        predecessors.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("collect SLDPRT feature predecessors", u64::MAX - 1, u64::MAX)
+        })?;
+    }
+    predecessors.insert(predecessor);
+    Ok(())
+}
+
+fn regeneration_order(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    features: &[cadmpeg_ir::features::Feature],
+    model: Option<&cadmpeg_ir::document::Model>,
+) -> Result<Option<Vec<usize>>, cadmpeg_core::CodecError> {
     let mut outgoing = ctx.alloc_filled(
         features.len(),
         Vec::<usize>::new(),
@@ -228,25 +255,31 @@ pub(crate) fn order_features_for_regeneration(
         by_id.insert(&feature.id, index);
     }
     for (consumer, feature) in features.iter().enumerate() {
-        let mut predecessors = std::collections::HashSet::new();
+        let mut predecessors = HashSet::new();
         for predecessor in feature.dependencies.iter() {
             ctx.charge_work(1, "collect SLDPRT feature predecessors")?;
-            if !predecessors.contains(predecessor) {
-                ctx.charge_collection_items(1, "collect SLDPRT feature predecessors")?;
-                predecessors.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("collect SLDPRT feature predecessors", u64::MAX - 1, u64::MAX)
-                })?;
-            }
-            predecessors.insert(predecessor);
+            add_regeneration_predecessor(ctx, &mut predecessors, predecessor)?;
         }
         if let Some(parent) = tree_parent_by_child.get(&feature.id) {
-            if !predecessors.contains(parent) {
-                ctx.charge_collection_items(1, "collect SLDPRT feature predecessors")?;
-                predecessors.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("collect SLDPRT feature predecessors", u64::MAX - 1, u64::MAX)
-                })?;
+            add_regeneration_predecessor(ctx, &mut predecessors, parent)?;
+        }
+        if let Some(model) = model {
+            let scan_units = u64::try_from(features.len()).map_err(|_| {
+                ctx.refuse_codec_limit("scan SLDPRT feature parents", u64::MAX - 1, u64::MAX)
+            })?;
+            ctx.charge_work(scan_units, "scan SLDPRT feature parents")?;
+            if let Some(parent) = model.feature_parent(&feature.id) {
+                add_regeneration_predecessor(ctx, &mut predecessors, parent)?;
             }
-            predecessors.insert(parent);
+            for configuration in &model.configurations {
+                ctx.charge_work(1, "scan SLDPRT configuration feature dependencies")?;
+                if let Some(state) = configuration.feature_states.get(&feature.id) {
+                    for dependency in &state.dependencies {
+                        ctx.charge_work(1, "scan SLDPRT configuration feature dependencies")?;
+                        add_regeneration_predecessor(ctx, &mut predecessors, dependency)?;
+                    }
+                }
+            }
         }
         for predecessor in predecessors {
             ctx.charge_work(1, "build SLDPRT feature regeneration graph")?;
@@ -285,14 +318,22 @@ pub(crate) fn order_features_for_regeneration(
         }
     }
     if order.len() != features.len() {
-        return Ok(false);
+        return Ok(None);
     }
+    Ok(Some(order))
+}
+
+fn assign_regeneration_ordinals(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    features: &mut [cadmpeg_ir::features::Feature],
+    order: Vec<usize>,
+) -> Result<(), cadmpeg_core::CodecError> {
     for (ordinal, index) in order.into_iter().enumerate() {
         features[index].ordinal = u64::try_from(ordinal).map_err(|_| {
             ctx.refuse_codec_limit("number SLDPRT feature regeneration order", u64::MAX - 1, u64::MAX)
         })?;
     }
-    Ok(true)
+    Ok(())
 }
 
 /// Assign one regeneration order that satisfies the baseline feature graph and
@@ -301,45 +342,10 @@ pub(crate) fn order_model_features_for_regeneration(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let mut ordering_graph = ir.model.features.clone();
-    let by_id = ordering_graph
-        .iter()
-        .enumerate()
-        .map(|(index, feature)| (feature.id.clone(), index))
-        .collect::<HashMap<_, _>>();
-    for feature in &ir.model.features {
-        let Some(parent) = ir.model.feature_parent(&feature.id) else {
-            continue;
-        };
-        let target = &mut ordering_graph[by_id[&feature.id]];
-        if !target.dependencies.contains(parent) {
-            target.dependencies.insert(parent.clone());
-        }
-    }
-    for configuration in &ir.model.configurations {
-        for (feature_id, state) in &configuration.feature_states {
-            let Some(&index) = by_id.get(feature_id) else {
-                continue;
-            };
-            for dependency in &state.dependencies {
-                if !ordering_graph[index].dependencies.contains(dependency) {
-                    ordering_graph[index]
-                        .dependencies
-                        .insert(dependency.clone());
-                }
-            }
-        }
-    }
-    if !order_features_for_regeneration(ctx, &mut ordering_graph)? {
+    let Some(order) = regeneration_order(ctx, &ir.model.features, Some(&ir.model))? else {
         return Ok(false);
-    }
-    let ordinals = ordering_graph
-        .into_iter()
-        .map(|feature| (feature.id, feature.ordinal))
-        .collect::<HashMap<_, _>>();
-    for feature in &mut ir.model.features {
-        feature.ordinal = ordinals[&feature.id];
-    }
+    };
+    assign_regeneration_ordinals(ctx, &mut ir.model.features, order)?;
     Ok(true)
 }
 
@@ -575,7 +581,7 @@ pub(super) fn bind_definition_sketch(
 
 #[cfg(test)]
 mod tests {
-    use super::order_features_for_regeneration;
+    use super::{order_features_for_regeneration, order_model_features_for_regeneration};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::features::{
         DistinctMembers, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
@@ -583,9 +589,8 @@ mod tests {
     };
     use cadmpeg_ir::scalar::Length;
 
-    #[test]
-    fn feature_regeneration_index_refuses_work_limit() {
-        let mut features = [Feature {
+    fn ordering_feature() -> Feature {
+        Feature {
             id: FeatureId::mint("synthetic:test:id#ordering")
                 .unwrap_or_else(|error| panic!("invalid test ID: {error}")),
             ordinal: 0,
@@ -603,7 +608,12 @@ mod tests {
                 },
             )),
             native_ref: None,
-        }];
+        }
+    }
+
+    #[test]
+    fn feature_regeneration_index_refuses_work_limit() {
+        let mut features = [ordering_feature()];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
         policy.limits.max_work_units = 0;
@@ -616,6 +626,25 @@ mod tests {
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "index SLDPRT feature regeneration IDs"
+        ));
+    }
+
+    #[test]
+    fn model_regeneration_parent_scan_refuses_work_limit() {
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.features.push(ordering_feature());
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_work_units = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
+            .unwrap_or_else(|error| panic!("test context failed: {error}"));
+        let error = order_model_features_for_regeneration(&ctx, &mut ir)
+            .expect_err("the parent scan must exceed the remaining work limit");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "scan SLDPRT feature parents"
         ));
     }
 }
