@@ -6787,20 +6787,16 @@ fn validate_standard_topology(
     }) {
         return Ok(None);
     }
-    let Some(body_arena_indices) = crate::resource::collect_options(
-        ctx,
-        (0..body_kinds.len()).map(|body_index| {
-            let id = BodyId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "standard", "body"),
-                body_index,
-            );
-            ir.model.bodies.iter().position(|body| body.id == id)
-        }),
-        "catia_standard_body_arena_indices",
-    )?
-    else {
-        return Ok(None);
-    };
+    let mut body_arena_indices = Vec::new();
+    for body_index in 0..body_kinds.len() {
+        let id = standard_id(ctx, "body", format_args!("{body_index}"),
+            BodyId::mint, "catia_standard_body_lookup_identity")?;
+        let Some(arena_index) = ir.model.bodies.iter().position(|body| body.id == id) else {
+            return Ok(None);
+        };
+        crate::resource::push(ctx, &mut body_arena_indices, arena_index,
+            "catia_standard_body_arena_indices")?;
+    }
     for (&arena_index, &kind) in body_arena_indices.iter().zip(&body_kinds) {
         ir.model.bodies[arena_index].kind = kind;
     }
@@ -6818,6 +6814,22 @@ fn validate_standard_topology(
 
 /// The face's loop ids and their classification, built once from the boundary
 /// rows the solved topology states for this face.
+fn standard_id<T>(
+    ctx: &DecodeContext<'_>,
+    kind: &'static str,
+    key: std::fmt::Arguments<'_>,
+    mint: impl FnOnce(String) -> Result<T, cadmpeg_ir::ids::IdentityError>,
+    operation: &'static str,
+) -> Result<T, CodecError> {
+    let (key, _reservation) = crate::resource::format_scoped(ctx, key, operation)?;
+    let id = crate::resource::format_retained(
+        ctx,
+        format_args!("catia:standard:{kind}#{key}"),
+        operation,
+    )?;
+    mint(id).map_err(CodecError::malformed)
+}
+
 fn standard_face_loops(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -6838,10 +6850,10 @@ fn standard_face_loops(
         "catia_standard_face_loop_ids",
     )?;
     for loop_index in 0..face_topology.boundaries.len() {
-        ids.push(LoopId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "standard", "loop"),
-            cadmpeg_ir::ids::IdentityKey::from(face_index).colon(loop_index),
-        ));
+        ids.push(standard_id(
+            ctx, "loop", format_args!("{face_index}:{loop_index}"),
+            LoopId::mint, "catia_standard_face_loop_identity",
+        )?);
     }
     let unspecified = || -> Result<_, CodecError> {
         let mut copy = Vec::new();
@@ -6975,10 +6987,8 @@ fn emit_standard_topology(
         } else {
             [start_point, end_point]
         };
-        let id = EdgeId::compose(
-            &cadmpeg_ir::identity_namespace!("catia", "standard", "edge"),
-            edge_index,
-        );
+        let id = standard_id(ctx, "edge", format_args!("{edge_index}"),
+            EdgeId::mint, "catia_standard_edge_identity")?;
         annotate(
             ctx,
             annotations,
@@ -7000,14 +7010,10 @@ fn emit_standard_topology(
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            start: VertexId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "standard", "v"),
-                start_point,
-            ),
-            end: VertexId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "standard", "v"),
-                end_point,
-            ),
+            start: standard_id(ctx, "v", format_args!("{start_point}"),
+                VertexId::mint, "catia_standard_edge_start_identity")?,
+            end: standard_id(ctx, "v", format_args!("{end_point}"),
+                VertexId::mint, "catia_standard_edge_end_identity")?,
             tolerance: None,
         });
     }
@@ -7034,7 +7040,6 @@ fn emit_standard_topology(
         "catia_standard_edge_coedge_rows",
     )?;
     let coedge_namespace = cadmpeg_ir::identity_namespace!("catia", "standard", "coedge");
-    let vertex_namespace = cadmpeg_ir::identity_namespace!("catia", "standard", "v");
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
         let face_loops = standard_face_loops(
             admission.context(),
@@ -7046,18 +7051,29 @@ fn emit_standard_topology(
             point_assignment,
         )?;
         for (loop_index, boundary) in face_topology.boundaries.iter().enumerate() {
-            let loop_id = LoopId::compose(
-                &cadmpeg_ir::identity_namespace!("catia", "standard", "loop"),
-                cadmpeg_ir::ids::IdentityKey::from(face_index).colon(loop_index),
-            );
-            let vertices = boundary.coedges.clone().map(|edge_use| {
-                VertexId::compose(&vertex_namespace, point_assignment[edge_use.end_vertex])
-            });
-            let ring = cadmpeg_ir::topology::LoopRing::from_vertices(
+            let loop_id = standard_id(ctx, "loop", format_args!("{face_index}:{loop_index}"),
+                LoopId::mint, "catia_standard_loop_identity")?;
+            let mut vertices = Vec::new();
+            for edge_use in &boundary.coedges {
+                let point = point_assignment[edge_use.end_vertex];
+                let vertex = standard_id(ctx, "v", format_args!("{point}"),
+                    VertexId::mint, "catia_standard_ring_vertex_identity")?;
+                crate::resource::push(ctx, &mut vertices, vertex,
+                    "catia_standard_ring_vertices")?;
+            }
+            let vertices = vertices.try_into().map_err(CodecError::malformed)?;
+            let (ring_key, _ring_key_reservation) = crate::resource::format_scoped(
+                ctx, format_args!("{face_index}:{loop_index}"),
+                "catia_standard_ring_key")?;
+            let ring_key = cadmpeg_ir::ids::IdentityKey::try_new(ring_key)
+                .map_err(CodecError::malformed)?;
+            let ring = cadmpeg_ir::topology::LoopRing::from_vertices_charged(
+                ctx,
                 &coedge_namespace,
-                &loop_id.key(),
+                &ring_key,
                 vertices,
-            );
+                "catia_standard_ring_members",
+            )?;
             let coedge_ids = ring.coedges();
             for (coedge_index, edge_use) in boundary.coedges.iter().enumerate() {
                 let support = &supports[edge_use.edge_row];
@@ -7086,12 +7102,9 @@ fn emit_standard_topology(
                     refusal,
                 )?
                 .map(|(geometry, range)| -> Result<_, cadmpeg_core::CodecError> {
-                    let id = PcurveId::compose(
-                        &cadmpeg_ir::identity_namespace!("catia", "standard", "pcurve"),
-                        cadmpeg_ir::ids::IdentityKey::from(face_index)
-                            .colon(loop_index)
-                            .colon(coedge_index),
-                    );
+                    let id = standard_id(ctx, "pcurve",
+                        format_args!("{face_index}:{loop_index}:{coedge_index}"),
+                        PcurveId::mint, "catia_standard_pcurve_identity")?;
                     annotate(
                         ctx,
                         annotations,
@@ -7178,10 +7191,8 @@ fn emit_standard_topology(
                         LoopId::mint,
                         "catia_standard_coedge_owner_loop_copy",
                     )?,
-                    edge: EdgeId::compose(
-                        &cadmpeg_ir::identity_namespace!("catia", "standard", "edge"),
-                        edge_use.edge_row,
-                    ),
+                    edge: standard_id(ctx, "edge", format_args!("{}", edge_use.edge_row),
+                        EdgeId::mint, "catia_standard_coedge_edge_identity")?,
                     radial_next: crate::resource::copy_id(
                         ctx,
                         coedge_ids[coedge_index].as_str(),
@@ -7214,10 +7225,8 @@ fn emit_standard_topology(
             admission.reserve_entity(&mut ir.model.loops, "catia_standard_model_loops")?;
             ir.model.loops.push(Loop {
                 id: loop_id,
-                face: FaceId::compose(
-                    &cadmpeg_ir::identity_namespace!("catia", "standard", "face"),
-                    face_index,
-                ),
+                face: standard_id(ctx, "face", format_args!("{face_index}"),
+                    FaceId::mint, "catia_standard_loop_face_identity")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
         }
