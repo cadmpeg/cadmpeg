@@ -326,7 +326,7 @@ impl TryFrom<DesignCombineExternalBodyIdentityWire> for DesignCombineExternalBod
         let after_text = |offset: u64, text: &str, delta: u64| {
             utf16_end(offset, text).and_then(|end| end.checked_add(delta))
         };
-        let prefix = (crate::layout::combine_external_selector_prefix::LEN + 4) as u64;
+        let prefix = cadmpeg_core::decode::u64_from_index(crate::layout::combine_external_selector_prefix::LEN + 4);
         if wire.selector_asset_id_offset < prefix {
             return Err("selector_asset_id_offset must follow the selector header".into());
         }

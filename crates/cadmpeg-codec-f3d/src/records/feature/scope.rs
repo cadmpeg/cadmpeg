@@ -2115,7 +2115,7 @@ impl DesignParameterScope {
                         kind, tail,
                     )
                     .ok_or_else(|| fail("previous_history_state_id_offset"))?;
-                if draft.feature_ordinal_offset.checked_add(relative as u64) != Some(offset)
+                if draft.feature_ordinal_offset.checked_add(cadmpeg_core::decode::u64_from_index(relative)) != Some(offset)
                     || draft.history_state_id.is_some() != draft.previous_history_state_id.is_some()
                 {
                     return Err(fail("previous_history_state_id_offset/history_state_id/previous_history_state_id"));

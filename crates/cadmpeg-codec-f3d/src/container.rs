@@ -180,12 +180,12 @@ pub(crate) fn read_entry_bounded(
             cadmpeg_core::decode::refuse_local_limit(
                 "F3D entry allocation",
                 MAX_INFLATED_ENTRY_BYTES,
-                bytes.len().saturating_add(read) as u64,
+                cadmpeg_core::decode::u64_from_index(bytes.len().saturating_add(read)),
             )
         })?;
         bytes.extend_from_slice(&chunk[..read]);
     }
-    if bytes.len() as u64 > MAX_INFLATED_ENTRY_BYTES {
+    if cadmpeg_core::decode::u64_from_index(bytes.len()) > MAX_INFLATED_ENTRY_BYTES {
         return Err(CodecError::malformed(format_args!(
             "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
         )));

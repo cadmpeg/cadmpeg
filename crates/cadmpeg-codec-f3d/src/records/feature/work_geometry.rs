@@ -828,7 +828,7 @@ impl DesignWorkPointSketchPointSelection {
         }
         draft
             .identity_record_offset
-            .checked_add(crate::layout::work_point_sketch_point_identity::LEN as u64)
+            .checked_add(cadmpeg_core::decode::u64_from_index(crate::layout::work_point_sketch_point_identity::LEN))
             .ok_or("identity_record_offset overflows")?;
         if !(draft.asset_id_offset < draft.context_id_offset
             && draft.context_id_offset < draft.identity_record_offset)
@@ -885,14 +885,14 @@ impl DesignWorkPointSketchPointSelection {
     }
     fn sketch_record_index_offset(&self) -> u64 {
         self.identity_record_offset
-            + crate::layout::work_point_sketch_point_identity::SKETCH_RECORD_INDEX as u64
+            + cadmpeg_core::decode::u64_from_index(crate::layout::work_point_sketch_point_identity::SKETCH_RECORD_INDEX)
     }
     fn point_persistent_id_offset(&self) -> u64 {
         self.identity_record_offset
-            + crate::layout::work_point_sketch_point_identity::POINT_PERSISTENT_ID as u64
+            + cadmpeg_core::decode::u64_from_index(crate::layout::work_point_sketch_point_identity::POINT_PERSISTENT_ID)
     }
     fn next_byte_offset(&self) -> u64 {
-        self.identity_record_offset + crate::layout::work_point_sketch_point_identity::LEN as u64
+        self.identity_record_offset + cadmpeg_core::decode::u64_from_index(crate::layout::work_point_sketch_point_identity::LEN)
     }
 }
 

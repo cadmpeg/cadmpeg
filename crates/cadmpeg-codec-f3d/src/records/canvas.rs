@@ -264,7 +264,7 @@ impl DesignCanvasGeometry {
         self.record_index
     }
     fn frame_length(&self) -> u64 {
-        CANVAS_GEOMETRY_PREFIX_BYTES + 2 * self.label.encode_utf16().count() as u64
+        CANVAS_GEOMETRY_PREFIX_BYTES + 2 * cadmpeg_core::decode::u64_from_index(self.label.encode_utf16().count())
     }
     fn paired_byte_offset(&self) -> u64 {
         self.byte_offset + self.frame_length()
@@ -323,7 +323,7 @@ impl DesignCanvasAsset {
         })
     }
     fn frame_length(&self) -> u64 {
-        CANVAS_IMAGE_ASSET_PREFIX_BYTES + 2 * self.name.encode_utf16().count() as u64
+        CANVAS_IMAGE_ASSET_PREFIX_BYTES + 2 * cadmpeg_core::decode::u64_from_index(self.name.encode_utf16().count())
     }
 }
 

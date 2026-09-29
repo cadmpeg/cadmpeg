@@ -211,7 +211,7 @@ impl DesignExtrudeSelectionGroup {
             .member_offsets
             .iter()
             .enumerate()
-            .all(|(index, offset)| *offset == offsets[0] + 5 + index as u64 * 11)
+            .all(|(index, offset)| *offset == offsets[0] + 5 + cadmpeg_core::decode::u64_from_index(index) * 11)
         {
             return Err(
                 "member_offsets must start after member_count_offset and have stride 11".into(),
@@ -353,7 +353,7 @@ impl DesignExtrudeSelectionGroup {
         let offsets = Self::offsets(self.byte_offset, members.len())?;
         let mut wire = DesignExtrudeSelectionGroupWire::from(self.clone());
         wire.member_offsets = (0..members.len())
-            .map(|index| offsets[0] + 5 + index as u64 * 11)
+            .map(|index| offsets[0] + 5 + cadmpeg_core::decode::u64_from_index(index) * 11)
             .collect();
         wire.members = members;
         [
