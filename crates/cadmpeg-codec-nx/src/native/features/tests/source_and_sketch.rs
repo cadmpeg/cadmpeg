@@ -1709,7 +1709,7 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
         opening_block_offset: 8,
     };
 
-    let uses = feature_input_column_row_uses(&[input], &[row], &[], &[], &[]);
+    let uses = crate::test_support::with_decode_context(|ctx| feature_input_column_row_uses(ctx, &[input], &[row], &[], &[], &[])).unwrap();
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
@@ -1778,13 +1778,13 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         source_entry: "entry".into(),
         source_offset: 100,
     };
-    let uses = feature_input_column_row_uses(
+    let uses = crate::test_support::with_decode_context(|ctx| feature_input_column_row_uses(ctx,
         std::slice::from_ref(&input),
         &[],
         std::slice::from_ref(&row),
         &[],
         &[table],
-    );
+    )).unwrap();
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
@@ -1863,21 +1863,21 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         source_entry: "entry".into(),
         source_offset: 50,
     };
-    let ambiguous = feature_input_column_row_uses(
+    let ambiguous = crate::test_support::with_decode_context(|ctx| feature_input_column_row_uses(ctx,
         std::slice::from_ref(&input),
         &[],
         &[],
         std::slice::from_ref(&row),
         &[table.clone(), table.clone()],
-    );
+    )).unwrap();
     assert!(ambiguous.iter().all(|use_| use_.column_table.is_none()));
-    let uses = feature_input_column_row_uses(
+    let uses = crate::test_support::with_decode_context(|ctx| feature_input_column_row_uses(ctx,
         std::slice::from_ref(&input),
         &[],
         &[],
         std::slice::from_ref(&row),
         &[table],
-    );
+    )).unwrap();
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
@@ -1974,7 +1974,7 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
         source_offset: 50,
     };
 
-    let uses = feature_datum_csys_column_row_uses(&[construction], &[], &[], &[row], &[table]);
+    let uses = crate::test_support::with_decode_context(|ctx| feature_datum_csys_column_row_uses(ctx, &[construction], &[], &[], &[row], &[table])).unwrap();
     assert_eq!(uses.len(), 4);
     assert_eq!(
         uses.iter()
