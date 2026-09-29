@@ -526,7 +526,11 @@ pub(crate) fn bind_configuration_suppressed_features(
                 Ok((id, cadmpeg_ir::features::ConfigurationFeatureState {
                     evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {},
                     dependencies,
-                    definition: feature.evaluation.definition().clone(),
+                    definition: match ctx {
+                        Some(ctx) => feature.evaluation.definition().clone_for_decode(
+                            ctx, "f3d configuration suppressed definition")?,
+                        None => feature.evaluation.definition().clone(),
+                    },
                 }))
             })();
             let (id, state) = match projected {
@@ -590,6 +594,8 @@ pub(crate) fn unresolved_configuration_member_count(native: &[DesignConfiguratio
 
 #[cfg(test)]
 mod tests {
+    mod definition_copy;
+
     use super::{
         bind_configuration_parameter_overrides, bind_configuration_suppressed_features,
         parse_configuration_variant_order, project_configurations,
