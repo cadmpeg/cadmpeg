@@ -195,6 +195,15 @@ fn copy_parameter_id(
         .map_err(CodecError::malformed)
 }
 
+fn copy_body_id(
+    ctx: Option<&DecodeContext<'_>>,
+    id: &cadmpeg_ir::ids::BodyId,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::ids::BodyId, CodecError> {
+    cadmpeg_ir::ids::BodyId::try_from(copy_feature_text(ctx, id.as_str(), operation)?)
+        .map_err(CodecError::malformed)
+}
+
 fn insert_feature_dependency(
     ctx: Option<&DecodeContext<'_>>,
     dependencies: &mut cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::features::FeatureId>,
@@ -1358,38 +1367,33 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 parameters: BTreeMap::new(),
                             }))
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::CopyPasteBodies {
-                        scope.copy_paste_bodies_operation().map_or_else(
-                            || FeatureDefinition::Operation(FeatureOperation::Native {
+                        if let Some(operation) = scope.copy_paste_bodies_operation() {
+                            let selection = design_body_selection(
+                                ctx,
+                                scope,
+                                operation.bodies().iter().map(|body| u64::from(body.copied.value)),
+                                body_bindings,
+                            )?;
+                            let bodies = match selection {
+                                cadmpeg_ir::features::BodySelection::Resolved { bodies, native } => {
+                                    for body in bodies.as_slice() {
+                                        let id = copy_body_id(ctx, body, "f3d copied body output id")?;
+                                        push_feature_item(ctx, &mut inserted_bodies, id,
+                                            "f3d copied body output")?;
+                                    }
+                                    cadmpeg_ir::features::InsertedBodies::Resolved { native }
+                                }
+                                _ => cadmpeg_ir::features::InsertedBodies::Native(
+                                    copy_feature_text(ctx, &scope.id,
+                                        "f3d copied body native selection")?),
+                            };
+                            FeatureDefinition::Operation(FeatureOperation::InsertBodies { bodies })
+                        } else {
+                            FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
-                            }),
-                            |operation| {
-                                let selection = design_body_selection(
-                                    scope,
-                                    operation
-                                        .bodies()
-                                        .iter()
-                                        .map(|body| u64::from(body.copied.value)),
-                                    body_bindings,
-                                );
-                                FeatureDefinition::Operation(FeatureOperation::InsertBodies {
-                                    bodies: match selection {
-                                        cadmpeg_ir::features::BodySelection::Resolved {
-                                            bodies,
-                                            native,
-                                        } => {
-                                            inserted_bodies = bodies.as_slice().to_vec();
-                                            cadmpeg_ir::features::InsertedBodies::Resolved {
-                                                native,
-                                            }
-                                        }
-                                        _ => cadmpeg_ir::features::InsertedBodies::Native(
-                                            scope.id.clone(),
-                                        ),
-                                    },
-                                })
-                            },
-                        )
+                            })
+                        }
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::CopyPaste {
                         scope.copy_paste_component_operation().map_or_else(
                             || FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1403,19 +1407,17 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             }),
                         )
                     } else if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFeature {
-                        scope.base_feature_construction().map_or_else(
-                            || FeatureDefinition::Operation(FeatureOperation::Native {
+                        if let Some(construction) = scope.base_feature_construction() {
+                            FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                                bodies: design_body_selection(ctx, scope,
+                                    construction.body_entity_suffixes(), body_bindings)?,
+                            })
+                        } else {
+                            FeatureDefinition::Operation(FeatureOperation::Native {
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
-                            }),
-                            |construction| FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-                                bodies: design_body_selection(
-                                    scope,
-                                    construction.body_entity_suffixes(),
-                                    body_bindings,
-                                ),
-                            }),
-                        )
+                            })
+                        }
                     } else {
                         native_scope_definition(scope, &parameters)?
                     }
@@ -2662,37 +2664,43 @@ fn project_full_round_fillet(
 }
 
 fn design_body_selection(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     entity_suffixes: impl ExactSizeIterator<Item = u64>,
     body_bindings: &[DesignBodyBinding],
-) -> cadmpeg_ir::features::BodySelection {
+) -> Result<cadmpeg_ir::features::BodySelection, CodecError> {
     use cadmpeg_ir::features::BodySelection;
 
     let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
     let expected_count = entity_suffixes.len();
-    let bodies = entity_suffixes
-        .filter_map(|suffix| {
-            let matches = body_bindings
-                .iter()
-                .filter(|binding| {
-                    native_stream(&binding.id) == Some(stream) && binding.entity_suffix == suffix
-                })
-                .filter_map(|binding| binding.body.clone())
-                .collect::<HashSet<_>>();
-            (matches.len() == 1)
-                .then(|| matches.into_iter().next())
-                .flatten()
-        })
-        .collect::<Vec<_>>();
+    let mut bodies = Vec::new();
+    for suffix in entity_suffixes {
+        let mut matches = body_bindings.iter()
+            .filter(|binding| native_stream(&binding.id) == Some(stream)
+                && binding.entity_suffix == suffix)
+            .filter_map(|binding| binding.body.as_ref());
+        let Some(body) = matches.next() else {
+            return Ok(BodySelection::Native(copy_feature_text(ctx, &scope.id,
+                "f3d body selection native id")?));
+        };
+        if matches.any(|candidate| candidate != body) {
+            return Ok(BodySelection::Native(copy_feature_text(ctx, &scope.id,
+                "f3d body selection native id")?));
+        }
+        let body = copy_body_id(ctx, body, "f3d body selection body id")?;
+        push_feature_item(ctx, &mut bodies, body, "f3d body selection body")?;
+    }
     if bodies.len() == expected_count {
         if let Ok(bodies) = bodies.try_into() {
-            return BodySelection::Resolved {
+            return Ok(BodySelection::Resolved {
                 bodies,
-                native: scope.id.clone(),
-            };
+                native: copy_feature_text(ctx, &scope.id,
+                    "f3d body selection resolved native id")?,
+            });
         }
     }
-    BodySelection::Native(scope.id.clone())
+    Ok(BodySelection::Native(copy_feature_text(ctx, &scope.id,
+        "f3d body selection native id")?))
 }
 
 /// Bind each Sketch history node to geometry in exactly one neutral sketch arena.
