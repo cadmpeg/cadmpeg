@@ -310,16 +310,6 @@ pub(super) fn sketch_entity_id_admitted(
     Ok(SketchEntityId::try_from(text).ok())
 }
 
-pub(super) fn sketch_constraint_id(
-    sketch: &SketchId,
-    suffix: impl std::fmt::Display,
-) -> Option<SketchConstraintId> {
-    Some(SketchConstraintId::compose(
-        &crate::identity::FEATDEFS_SKETCH_CONSTRAINT,
-        sketch_identity_key(sketch)?.colon(IdentityKey::try_new(suffix.to_string()).ok()?),
-    ))
-}
-
 pub(super) fn sketch_constraint_id_admitted(
     ctx: &DecodeContext<'_>,
     sketch: &SketchId,
@@ -333,10 +323,6 @@ pub(super) fn sketch_constraint_id_admitted(
         "creo sketch constraint identity",
     )?;
     Ok(SketchConstraintId::try_from(text).ok())
-}
-
-pub(super) fn sketch_native_ref(sketch: &SketchId) -> String {
-    format!("creo:featdefs:sketch#{}", sketch_identity_scope(sketch))
 }
 
 pub(super) fn sketch_native_ref_admitted(

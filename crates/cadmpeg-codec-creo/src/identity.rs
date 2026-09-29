@@ -222,8 +222,6 @@ pub(crate) const FEATDEFS_SAVED_DUMMY: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "featdefs", "saved_dummy");
 pub(crate) const FEATDEFS_SKETCH_ENTITY: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "featdefs", "sketch_entity");
-pub(crate) const FEATDEFS_SKETCH_CONSTRAINT: IdentityNamespace =
-    cadmpeg_ir::identity_namespace!("creo", "featdefs", "sketch_constraint");
 pub(crate) const FEATDEFS_SECTION_CURVE: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "featdefs", "section_curve");
 pub(crate) const FEATDEFS_PARAMETER: IdentityNamespace =
