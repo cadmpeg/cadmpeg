@@ -107,7 +107,7 @@ pub(super) fn append_consolidated_revolutions(
             annotations,
             &directrix,
             "consolidated_b2_03_19",
-            profile.pos as u64,
+            cadmpeg_core::decode::u64_from_index(profile.pos),
             format_args!("circle:{}", profile.record_id),
             Exactness::ByteExact,
         )?;
@@ -181,7 +181,7 @@ pub(super) fn append_consolidated_revolutions(
             annotations,
             &surface,
             "consolidated_b2_03_2d",
-            revolution.pos as u64,
+            cadmpeg_core::decode::u64_from_index(revolution.pos),
             format_args!("profile-allocation:{}", revolution.profile_allocation_id),
             Exactness::ByteExact,
         )?;
@@ -332,7 +332,7 @@ pub(super) fn try_decode_freeform_surfaces(
             Err(error) => return Some(Err(error)),
         };
         let selection_budget =
-            ctx.work_budget(crate::families::b5::graph::MAX_OBJECT_STREAM_SELECTION_WORK as u64);
+            ctx.work_budget(cadmpeg_core::decode::u64_from_index(crate::families::b5::graph::MAX_OBJECT_STREAM_SELECTION_WORK));
         let object_selection = crate::families::b5::graph::select_object_stream_population(
             ctx,
             &logical_streams,
@@ -720,7 +720,7 @@ pub(super) fn try_decode_freeform_surfaces(
                     &mut annotations,
                     &id,
                     "object_stream_a8_03",
-                    surface.pos as u64,
+                    cadmpeg_core::decode::u64_from_index(surface.pos),
                     &surface.source_tag,
                     Exactness::ByteExact
                 ));
@@ -790,7 +790,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 &mut annotations,
                 &id,
                 "consolidated_b2_03_16",
-                curve.pos as u64,
+                cadmpeg_core::decode::u64_from_index(curve.pos),
                 format_args!("header_token:{:08x}", curve.header_token),
                 Exactness::ByteExact
             ));
@@ -828,7 +828,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 &mut annotations,
                 &id,
                 "consolidated_a5_13_16",
-                curve.pos as u64,
+                cadmpeg_core::decode::u64_from_index(curve.pos),
                 format_args!("header_token:{:08x}", curve.header_token),
                 Exactness::ByteExact
             ));
@@ -869,7 +869,7 @@ pub(super) fn try_decode_freeform_surfaces(
                 &mut annotations,
                 &id,
                 "consolidated_b2_03_0f",
-                circle.pos as u64,
+                cadmpeg_core::decode::u64_from_index(circle.pos),
                 format_args!(
                     "header_token:{:08x}:range:{:?}:chart_shift:{}",
                     circle.header_token,
@@ -1334,7 +1334,7 @@ fn attach_standalone_wires(
                 annotations,
                 id,
                 "consolidated_curve_wire",
-                pos as u64,
+                cadmpeg_core::decode::u64_from_index(pos),
                 "curve_domain_endpoint",
                 Exactness::Derived,
             )?;
@@ -1704,7 +1704,7 @@ fn append_consolidated_line_profiles(
             annotations,
             &profile.curve.id,
             "consolidated_b2_03_0e",
-            profile.pos as u64,
+            cadmpeg_core::decode::u64_from_index(profile.pos),
             "line_profile_carrier",
             Exactness::ByteExact,
         )?;
@@ -1761,7 +1761,7 @@ pub(super) fn append_freeform_surface_pools(
             annotations,
             &id,
             "object_stream_a8_03_or_consolidated_a5_03",
-            surface.pos as u64,
+            cadmpeg_core::decode::u64_from_index(surface.pos),
             source_tag,
             Exactness::ByteExact,
         )?;
@@ -1806,7 +1806,7 @@ pub(super) fn append_freeform_surface_pools(
             annotations,
             &surface_id,
             "consolidated_b2_03_31_cache",
-            offset.pos as u64,
+            cadmpeg_core::decode::u64_from_index(offset.pos),
             format_args!("support_ref:{:08x}", offset.support_id),
             Exactness::Unknown,
         )?;
@@ -1832,7 +1832,7 @@ pub(super) fn append_freeform_surface_pools(
             annotations,
             &procedural_id,
             "consolidated_b2_03_31",
-            offset.pos as u64,
+            cadmpeg_core::decode::u64_from_index(offset.pos),
             format_args!("support_ref:{:08x}", offset.support_id),
             Exactness::ByteExact,
         )?;
@@ -1931,7 +1931,7 @@ pub(super) fn append_freeform_surface_pools(
             annotations,
             &id,
             "consolidated_a5_03_39",
-            guide.pos as u64,
+            cadmpeg_core::decode::u64_from_index(guide.pos),
             format_args!("header_token:{:08x}", guide.header_token),
             Exactness::Derived,
         )?;
@@ -1969,7 +1969,7 @@ pub(super) fn append_freeform_surface_pools(
                 annotations,
                 &id,
                 "consolidated_a5_03_32",
-                jet.pos as u64,
+                cadmpeg_core::decode::u64_from_index(jet.pos),
                 format_args!("limit_{}", side + 1),
                 Exactness::Derived,
             )?;
@@ -2014,7 +2014,7 @@ pub(super) fn append_freeform_surface_pools(
             annotations,
             &surface_id,
             "consolidated_a5_03_32_cache",
-            jet.pos as u64,
+            cadmpeg_core::decode::u64_from_index(jet.pos),
             format_args!("header_token:{:08x}", jet.header_token),
             Exactness::Unknown,
         )?;
@@ -2039,7 +2039,7 @@ pub(super) fn append_freeform_surface_pools(
             annotations,
             &procedural_id,
             "consolidated_a5_03_32",
-            jet.pos as u64,
+            cadmpeg_core::decode::u64_from_index(jet.pos),
             format_args!("header_token:{:08x}", jet.header_token),
             Exactness::ByteExact,
         )?;
@@ -2565,7 +2565,7 @@ fn append_resolved_consolidated_surface_curves(
                             annotations,
                             &id,
                             "consolidated_a5_03_34_offset_cache",
-                            *pos as u64,
+                            cadmpeg_core::decode::u64_from_index(*pos),
                             "resolved_pcurve_support",
                             Exactness::Unknown,
                         )?;
@@ -2600,7 +2600,7 @@ fn append_resolved_consolidated_surface_curves(
                             annotations,
                             &procedural_id,
                             "consolidated_a5_03_34_constant_normal_offset",
-                            *pos as u64,
+                            cadmpeg_core::decode::u64_from_index(*pos),
                             "resolved_pcurve_support",
                             Exactness::Derived,
                         )?;
@@ -2772,7 +2772,7 @@ fn append_resolved_consolidated_surface_curves(
                     annotations,
                     &id,
                     annotation_kind,
-                    key.0 as u64,
+                    cadmpeg_core::decode::u64_from_index(key.0),
                     "resolved_pcurve_support",
                     Exactness::ByteExact,
                 )?;
@@ -3340,7 +3340,7 @@ fn append_resolved_consolidated_surface_curves(
                         annotations,
                         &pcurve_id,
                         "consolidated_edge_run",
-                        run.edge.pcurves[0].pos as u64,
+                        cadmpeg_core::decode::u64_from_index(run.edge.pcurves[0].pos),
                         "resolved_face_side_pcurve",
                         Exactness::Derived,
                     )?;
@@ -3389,7 +3389,7 @@ fn append_resolved_consolidated_surface_curves(
                 annotations,
                 &procedural.id,
                 "consolidated_edge_run",
-                run.edge.pcurves[0].pos as u64,
+                cadmpeg_core::decode::u64_from_index(run.edge.pcurves[0].pos),
                 "resolved_surface_curve_bound_to_standard_edge",
                 Exactness::Derived,
             )?;
@@ -3420,7 +3420,7 @@ fn append_resolved_consolidated_surface_curves(
                 annotations,
                 &curve_id,
                 "consolidated_edge_run",
-                run.edge.pcurves[0].pos as u64,
+                cadmpeg_core::decode::u64_from_index(run.edge.pcurves[0].pos),
                 "procedural_curve_cache",
                 Exactness::Unknown,
             )?;
@@ -3446,7 +3446,7 @@ fn append_resolved_consolidated_surface_curves(
                 annotations,
                 &procedural_id,
                 "consolidated_edge_run",
-                run.edge.pcurves[0].pos as u64,
+                cadmpeg_core::decode::u64_from_index(run.edge.pcurves[0].pos),
                 "resolved_surface_curve",
                 Exactness::Derived,
             )?;
@@ -3534,7 +3534,8 @@ fn solve_planar_chart_rechart(
     if count < 2 {
         return Ok(None);
     }
-    let scale = 1.0 / count as f64;
+    let Some(count) = cadmpeg_core::convert::f64_from_index(count) else { return Ok(None); };
+    let scale = 1.0 / count;
     let mean = |values: &[[f64; 2]]| {
         values.iter().fold([0.0, 0.0], |acc, value| {
             [acc[0] + value[0] * scale, acc[1] + value[1] * scale]
@@ -3976,7 +3977,7 @@ fn append_a8_rolling_ball_pools(
             annotations,
             &surface_id,
             "object_stream_a8_03_32_cache",
-            jet.pos as u64,
+            cadmpeg_core::decode::u64_from_index(jet.pos),
             format_args!("object_id:{:08x}", jet.object_id),
             Exactness::Unknown,
         )?;
@@ -3999,7 +4000,7 @@ fn append_a8_rolling_ball_pools(
             annotations,
             &procedural_id,
             "object_stream_a8_03_32",
-            jet.pos as u64,
+            cadmpeg_core::decode::u64_from_index(jet.pos),
             format_args!(
                 "object_id:{:08x}:multiplicities:{:?}",
                 jet.object_id,
@@ -4559,7 +4560,7 @@ mod tests {
             source_object: None,
         });
         let wires = [(curve_id.clone(), [0.0, 1.0], 0)];
-        let limit = curve_id.as_str().len() as u64;
+        let limit = cadmpeg_core::decode::u64_from_index(curve_id.as_str().len());
         let limited = crate::test_support::with_retained_limit(limit, |ctx| {
             let mut admission = super::FamilyEntityAdmission::new(ctx);
             attach_standalone_wires(
