@@ -562,11 +562,10 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             || feature.source_properties.contains_key("Plane");
         let result_frame = stored_frame(feature);
         let source_reference_frame = serialized_reference_frame(feature);
-        let mut definition = feature.evaluation.definition().clone();
         let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference,
             distance,
-        }) = &mut definition
+        }) = feature.evaluation.definition()
         else {
             continue;
         };
@@ -614,7 +613,15 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
                 }
             };
         if invalid {
-            *reference = None;
+            feature.evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                    reference,
+                    ..
+                }) = definition
+                {
+                    *reference = None;
+                }
+            });
             feature
                 .dependencies
                 .retain(|dependency| dependency != &reference_id);
@@ -622,7 +629,6 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             feature.dependencies.insert(reference_id);
         }
 
-        feature.evaluation.set_definition(definition);
     }
     let mut frames = features
         .iter()
@@ -760,56 +766,58 @@ pub(super) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             })
             .collect::<Vec<_>>();
         for (index, (reference, distance)) in bindings {
-            let mut definition = features[index].evaluation.definition().clone();
-            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                reference: slot,
-                distance: stored_distance,
-            }) = &mut definition
-            else {
-                continue;
-            };
             let Some(distance) = Length::new(distance) else {
                 continue;
             };
-            *slot = Some(DatumPlaneReference::Feature {
-                feature: reference.clone(),
+            let mut bound = false;
+            features[index].evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                    reference: slot,
+                    distance: stored_distance,
+                }) = definition
+                {
+                    *slot = Some(DatumPlaneReference::Feature {
+                        feature: reference.clone(),
+                    });
+                    *stored_distance = distance;
+                    bound = true;
+                }
             });
-            *stored_distance = distance;
+            if !bound {
+                continue;
+            }
             if !features[index].dependencies.contains(&reference) {
                 features[index].dependencies.insert(reference);
             }
             changed = true;
-
-            features[index].evaluation.set_definition(definition);
         }
         if !changed {
             break;
         }
     }
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-            reference: reference @ None,
-            ..
-        }) = &mut definition
-        else {
-            continue;
-        };
-        *reference = (|| {
-            Some(DatumPlaneReference::ResolvedPlane {
-                frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::from_parts(
-                    parse_point3_mm(feature.source_properties.get("ReferenceFaceOrigin")?)?,
-                    cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
-                        feature.source_properties.get("ReferenceFaceNormal")?,
-                    )?)?,
-                    cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
-                        feature.source_properties.get("ReferenceFaceUAxis")?,
-                    )?)?,
-                )?,
-            })
-        })();
-
-        feature.evaluation.set_definition(definition);
+        let properties = &feature.source_properties;
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference: reference @ None,
+                ..
+            }) = definition
+            {
+                *reference = (|| {
+                    Some(DatumPlaneReference::ResolvedPlane {
+                        frame: cadmpeg_ir::features::FeatureSupportPlaneFrame::from_parts(
+                            parse_point3_mm(properties.get("ReferenceFaceOrigin")?)?,
+                            cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
+                                properties.get("ReferenceFaceNormal")?,
+                            )?)?,
+                            cadmpeg_ir::features::FeatureDirection3::new(parse_vector3(
+                                properties.get("ReferenceFaceUAxis")?,
+                            )?)?,
+                        )?,
+                    })
+                })();
+            }
+        });
     }
 }
 
