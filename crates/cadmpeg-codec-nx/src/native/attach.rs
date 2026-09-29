@@ -6027,13 +6027,8 @@ fn attach_sketch_graph(
         let mut pair_entity_keys = BTreeSet::new();
         let mut pair_ordinals = BTreeSet::new();
         for pair in coordinate_pairs {
-            if !insert_sketch_key(ctx, &mut reservation, &mut pair_ids, pair.id.as_str())?
-                || !insert_sketch_key(
-                    ctx,
-                    &mut reservation,
-                    &mut pair_ordinals,
-                    (pair.payload.id(), pair.ordinal),
-                )?
+            if !ctx.insert_scoped_btree_set(&mut reservation, &mut pair_ids, pair.id.as_str(), "NX sketch key uniqueness", "NX sketch key index")?
+                || !ctx.insert_scoped_btree_set(&mut reservation, &mut pair_ordinals, (pair.payload.id(), pair.ordinal), "NX sketch key uniqueness", "NX sketch key index")?
             {
                 return Ok(None);
             }
@@ -6043,7 +6038,7 @@ fn attach_sketch_graph(
                 .map_or(pair.id.as_str(), |(_, key)| key);
             if pair_key.is_empty()
                 || pair_key.chars().any(char::is_whitespace)
-                || !insert_sketch_key(ctx, &mut reservation, &mut pair_entity_keys, pair_key)?
+                || !ctx.insert_scoped_btree_set(&mut reservation, &mut pair_entity_keys, pair_key, "NX sketch key uniqueness", "NX sketch key index")?
             {
                 return Ok(None);
             }
@@ -6139,13 +6134,7 @@ fn attach_sketch_graph(
     let mut groups_by_id =
         BTreeMap::<&str, &crate::native::features::FeatureSketchPointGroup>::new();
     for group in &operation_groups {
-        if !insert_sketch_record(
-            ctx,
-            &mut reservation,
-            &mut groups_by_id,
-            group.id.as_str(),
-            group,
-        )? {
+        if !ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut groups_by_id, group.id.as_str(), group, "NX sketch record uniqueness", "NX sketch record index")? {
             return Ok(None);
         }
     }
@@ -6153,13 +6142,7 @@ fn attach_sketch_graph(
         BTreeMap::<&str, &crate::native::features::FeatureSketchPointUse>::new();
     for point_use in sources.point_uses {
         if point_use.operation_label != label.id
-            || !insert_sketch_record(
-                ctx,
-                &mut reservation,
-                &mut point_uses_by_group,
-                point_use.sketch_point_group.as_str(),
-                point_use,
-            )?
+            || !ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut point_uses_by_group, point_use.sketch_point_group.as_str(), point_use, "NX sketch record uniqueness", "NX sketch record index")?
         {
             return Ok(None);
         }
@@ -6187,25 +6170,13 @@ fn attach_sketch_graph(
     }
     let mut points_by_id = BTreeMap::<&str, &crate::native::features::FeatureSketchPoint>::new();
     for point in sources.points {
-        if !insert_sketch_record(
-            ctx,
-            &mut reservation,
-            &mut points_by_id,
-            point.id.as_str(),
-            point,
-        )? {
+        if !ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut points_by_id, point.id.as_str(), point, "NX sketch record uniqueness", "NX sketch record index")? {
             return Ok(None);
         }
     }
     let mut scalars_by_id = BTreeMap::<&str, &crate::native::features::FeaturePayloadScalar>::new();
     for scalar in sources.payload_scalars {
-        if !insert_sketch_record(
-            ctx,
-            &mut reservation,
-            &mut scalars_by_id,
-            scalar.id.as_str(),
-            scalar,
-        )? {
+        if !ctx.insert_scoped_btree_map_if_vacant(&mut reservation, &mut scalars_by_id, scalar.id.as_str(), scalar, "NX sketch record uniqueness", "NX sketch record index")? {
             return Ok(None);
         }
     }
@@ -6397,49 +6368,6 @@ fn sketch_group_source_offset(
     Ok(minimum)
 }
 
-fn insert_sketch_key<K: Ord>(
-    ctx: &DecodeContext<'_>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    keys: &mut BTreeSet<K>,
-    key: K,
-) -> Result<bool, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(keys.len()),
-        "NX sketch key uniqueness",
-    )?;
-    if keys.contains(&key) {
-        return Ok(false);
-    }
-    ctx.charge_collection_items(1, "NX sketch key index")?;
-    reservation.grow(cadmpeg_core::decode::u64_from_index(
-        std::mem::size_of::<K>() * 4,
-    ))?;
-    keys.insert(key);
-    Ok(true)
-}
-
-fn insert_sketch_record<'a, T>(
-    ctx: &DecodeContext<'_>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    records: &mut BTreeMap<&'a str, &'a T>,
-    key: &'a str,
-    record: &'a T,
-) -> Result<bool, CodecError> {
-    ctx.charge_work(
-        cadmpeg_core::decode::u64_from_index(records.len()),
-        "NX sketch record uniqueness",
-    )?;
-    if records.contains_key(key) {
-        return Ok(false);
-    }
-    ctx.charge_collection_items(1, "NX sketch record index")?;
-    reservation.grow(cadmpeg_core::decode::u64_from_index(
-        std::mem::size_of::<(&str, &T)>() * 4,
-    ))?;
-    records.insert(key, record);
-    Ok(true)
-}
-
 fn sketch_entity_identity(
     ctx: &DecodeContext<'_>,
     prefix: &str,
@@ -6564,7 +6492,7 @@ fn native_fixed_point_entities(
     let mut entities = Vec::new();
     for point in points {
         if point.operation_label != label.id
-            || !insert_sketch_key(ctx, reservation, &mut point_ids, point.id.as_str())?
+            || !ctx.insert_scoped_btree_set(reservation, &mut point_ids, point.id.as_str(), "NX sketch key uniqueness", "NX sketch key index")?
         {
             return Ok(None);
         }
@@ -6574,7 +6502,7 @@ fn native_fixed_point_entities(
             .map_or(point.id.as_str(), |(_, key)| key);
         if point_key.is_empty()
             || point_key.chars().any(char::is_whitespace)
-            || !insert_sketch_key(ctx, reservation, &mut entity_keys, point_key)?
+            || !ctx.insert_scoped_btree_set(reservation, &mut entity_keys, point_key, "NX sketch key uniqueness", "NX sketch key index")?
         {
             return Ok(None);
         }
@@ -6805,27 +6733,6 @@ fn stream_prefix(ordinal: u32, body_marker: bool) -> ([u8; 20], usize) {
     let prefix_len = suffix_start + suffix.len();
     prefix[suffix_start..prefix_len].copy_from_slice(suffix);
     (prefix, prefix_len)
-}
-
-fn insert_scoped_body_output<K: Ord + Copy>(
-    ctx: &DecodeContext<'_>,
-    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    outputs: &mut BTreeMap<K, BodyId>,
-    key: K,
-    body: &BodyId,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_work(1, operation)?;
-    if !outputs.contains_key(&key) {
-        ctx.charge_collection_items(1, operation)?;
-        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
-            K,
-            BodyId,
-        )>()))?;
-    }
-    reservation.grow(cadmpeg_core::decode::u64_from_index(body.as_str().len()))?;
-    outputs.insert(key, body.clone());
-    Ok(())
 }
 
 fn push_grouped_operation<K: Ord, V>(
@@ -9161,14 +9068,12 @@ fn operation_body_image_outputs_by_write<'a, 'ctx>(
         else {
             continue;
         };
-        insert_scoped_body_output(
-            ctx,
-            &mut reservation,
-            &mut outputs,
-            write,
-            body,
-            "NX body image outputs",
-        )?;
+        ctx.charge_work(1, "NX body image outputs")?;
+        let entry = (write, body.try_clone_for_decode(ctx, "NX body image outputs")?);
+        if !outputs.contains_key(&entry.0) {
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&entry)))?;
+        }
+        ctx.insert_btree_map(&mut outputs, entry.0, entry.1, "NX body image outputs")?;
     }
     Ok((outputs, reservation))
 }
@@ -9316,27 +9221,23 @@ fn operation_body_group_partition_outputs_by_write<'a, 'ctx>(
         if matches.next().is_some() {
             continue;
         }
-        insert_scoped_body_output(
-            ctx,
-            &mut reservation,
-            &mut unique_bodies,
-            identity,
-            &body.id,
-            "NX unique partition body",
-        )?;
+        ctx.charge_work(1, "NX unique partition body")?;
+        let entry = (identity, body.id.try_clone_for_decode(ctx, "NX unique partition body")?);
+        if !unique_bodies.contains_key(&entry.0) {
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&entry)))?;
+        }
+        ctx.insert_btree_map(&mut unique_bodies, entry.0, entry.1, "NX unique partition body")?;
     }
     let mut outputs = BTreeMap::new();
     for write in writes {
         ctx.charge_work(1, "NX partition body write lookup")?;
         if let Some(body) = unique_bodies.get(&write.frame.body_identity()) {
-            insert_scoped_body_output(
-                ctx,
-                &mut reservation,
-                &mut outputs,
-                write.id.as_str(),
-                body,
-                "NX partition body output",
-            )?;
+            ctx.charge_work(1, "NX partition body output")?;
+        let entry = (write.id.as_str(), body.try_clone_for_decode(ctx, "NX partition body output")?);
+        if !outputs.contains_key(&entry.0) {
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(&entry)))?;
+        }
+        ctx.insert_btree_map(&mut outputs, entry.0, entry.1, "NX partition body output")?;
         }
     }
     Ok((outputs, reservation))

@@ -632,18 +632,6 @@ pub(crate) fn composite_curves(
     Graph::parse(ctx, stream)?.composite_curves(ctx)
 }
 
-fn insert_reference(
-    ctx: &DecodeContext<'_>,
-    references: &mut BTreeSet<u32>,
-    reference: u32,
-) -> Result<(), CodecError> {
-    if !references.contains(&reference) {
-        ctx.charge_collection_items(1, "NX topology carrier references")?;
-    }
-    references.insert(reference);
-    Ok(())
-}
-
 impl Graph {
     pub(crate) fn composite_curves(
         &self,
@@ -1038,9 +1026,11 @@ impl Graph {
                     .flatten()
             {
                 if matches!(kind, NodeKind::Body | NodeKind::Region) {
-                    { ctx.reserve_scoped_vec(&mut ownership_reservation, &mut ownership_candidates, 1, "NX topology ownership candidates")?; (&mut ownership_candidates).push(candidate); Ok::<(), cadmpeg_core::CodecError>(()) }?;
+                    ctx.reserve_scoped_vec(&mut ownership_reservation, &mut ownership_candidates, 1, "NX topology ownership candidates")?;
+        ownership_candidates.push(candidate);
                 } else {
-                    { ctx.reserve_scoped_vec(&mut candidate_reservation, &mut candidates, 1, "NX topology candidates")?; (&mut candidates).push(candidate); Ok::<(), cadmpeg_core::CodecError>(()) }?;
+                    ctx.reserve_scoped_vec(&mut candidate_reservation, &mut candidates, 1, "NX topology candidates")?;
+        candidates.push(candidate);
                 }
             }
         }
@@ -1070,7 +1060,8 @@ impl Graph {
                 .iter()
                 .all(|selected| !selected.overlaps(candidate))
             {
-                { ctx.reserve_scoped_vec(&mut admitted_reservation, &mut admitted_ownership, 1, "NX admitted ownership candidates")?; (&mut admitted_ownership).push(candidate); Ok::<(), cadmpeg_core::CodecError>(()) }?;
+                ctx.reserve_scoped_vec(&mut admitted_reservation, &mut admitted_ownership, 1, "NX admitted ownership candidates")?;
+        admitted_ownership.push(candidate);
             }
         }
         let mut graph = Self::default();
@@ -1174,7 +1165,8 @@ impl Graph {
         let mut selected = Vec::new();
         let mut reservation = ctx.reserve_scoped(0, "NX topology unique candidates")?;
         for candidate in by_key.into_values().flatten() {
-            { ctx.reserve_scoped_vec(&mut reservation, &mut selected, 1, "NX topology unique candidates")?; (&mut selected).push(candidate); Ok::<(), cadmpeg_core::CodecError>(()) }?;
+            ctx.reserve_scoped_vec(&mut reservation, &mut selected, 1, "NX topology unique candidates")?;
+        selected.push(candidate);
         }
         Ok((selected, reservation))
     }
@@ -1203,7 +1195,8 @@ impl Graph {
             ctx.charge_work(1, "select NX topology candidates")?;
             if fixed_record_boundary(stream, first.end()) {
                 let end = first.end();
-                { ctx.reserve_scoped_vec(&mut reservation, &mut selected, 1, "NX topology nonoverlapping candidates")?; (&mut selected).push(first); Ok::<(), cadmpeg_core::CodecError>(()) }?;
+                ctx.reserve_scoped_vec(&mut reservation, &mut selected, 1, "NX topology nonoverlapping candidates")?;
+        selected.push(first);
                 start += 1;
                 while nodes
                     .get(start)
@@ -1224,7 +1217,8 @@ impl Graph {
             }
             let cluster = &nodes[start..end];
             if let [node] = cluster {
-                { ctx.reserve_scoped_vec(&mut reservation, &mut selected, 1, "NX topology nonoverlapping candidates")?; (&mut selected).push(*node); Ok::<(), cadmpeg_core::CodecError>(()) }?;
+                ctx.reserve_scoped_vec(&mut reservation, &mut selected, 1, "NX topology nonoverlapping candidates")?;
+        selected.push(*node);
             } else {
                 let mut boundary_candidates = cluster
                     .iter()
@@ -1235,7 +1229,8 @@ impl Graph {
                     continue;
                 };
                 if boundary_candidates.next().is_none() {
-                    { ctx.reserve_scoped_vec(&mut reservation, &mut selected, 1, "NX topology nonoverlapping candidates")?; (&mut selected).push(node); Ok::<(), cadmpeg_core::CodecError>(()) }?;
+                    ctx.reserve_scoped_vec(&mut reservation, &mut selected, 1, "NX topology nonoverlapping candidates")?;
+        selected.push(node);
                 }
             }
             start = end;
@@ -1294,7 +1289,7 @@ impl Graph {
             .filter_map(|fields| fields.curve.map(u32::from))
             .filter(|reference| *reference > 1)
         {
-            insert_reference(ctx, &mut references, reference)?;
+            ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
         }
         for reference in self
             .of_kind(NodeKind::Fin)
@@ -1302,7 +1297,7 @@ impl Graph {
             .filter_map(|fields| fields.curve_xmt.map(u32::from))
             .filter(|reference| *reference > 1)
         {
-            insert_reference(ctx, &mut references, reference)?;
+            ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
         }
         for node in self.of_kind(NodeKind::BlendSurface) {
             let Some(mut at) = node.compact_tail_offset() else {
@@ -1316,7 +1311,7 @@ impl Graph {
                 .and_then(|items| items.get(2).copied())
                 .filter(|reference| *reference > 1)
             {
-                insert_reference(ctx, &mut references, spine)?;
+                ctx.insert_btree_set(&mut references, spine, "NX topology carrier references")?;
             }
         }
         for node in self.of_kind(NodeKind::TrimmedCurve) {
@@ -1325,7 +1320,7 @@ impl Graph {
                 .and_then(|items| items.first().copied())
                 .filter(|reference| *reference > 1)
             {
-                insert_reference(ctx, &mut references, reference)?;
+                ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
             }
         }
         for node in self.of_kind(NodeKind::SpCurve) {
@@ -1334,7 +1329,7 @@ impl Graph {
                 .and_then(|items| items.get(2).copied())
                 .filter(|reference| *reference > 1)
             {
-                insert_reference(ctx, &mut references, reference)?;
+                ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
             }
         }
         Ok(references)
@@ -1382,7 +1377,7 @@ impl Graph {
             .filter_map(|fields| fields.surface.map(u32::from))
             .filter(|reference| *reference > 1)
         {
-            insert_reference(ctx, &mut references, reference)?;
+            ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
         }
         for reference in self
             .of_kind(NodeKind::Vertex)
@@ -1390,7 +1385,7 @@ impl Graph {
             .filter_map(|fields| fields.point.map(u32::from))
             .filter(|reference| *reference > 1)
         {
-            insert_reference(ctx, &mut references, reference)?;
+            ctx.insert_btree_set(&mut references, reference, "NX topology carrier references")?;
         }
         Ok(references)
     }

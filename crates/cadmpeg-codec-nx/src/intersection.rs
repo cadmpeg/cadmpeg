@@ -41,11 +41,7 @@ pub(crate) struct SupportUvLane(Vec<FiniteVector<2>>);
 
 impl SupportUvLane {
     pub(crate) fn clone_charged(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let count = self.0.len();
-        let operation = "NX solved support-UV lane copy";
-        let mut values = ctx.retained_vec(count, operation)?;
-        values.extend_from_slice(&self.0);
-        Ok(Self(values))
+        Ok(Self(ctx.copy_retained_slice(&self.0, "NX solved support-UV lane copy")?))
     }
     pub(crate) fn from_present_values_charged(
         ctx: &DecodeContext<'_>,
@@ -861,7 +857,7 @@ pub(crate) fn blend_bounds(
             )?;
         }
     }
-    unique_values_charged(ctx, out, "NX blend-bound records")
+    ctx.collect_retained_vec(out.into_values(), "NX blend-bound records")
 }
 
 fn insert_unique_charged<'ctx, T>(
@@ -889,17 +885,6 @@ fn insert_unique_charged<'ctx, T>(
     }
     insert_unique(records, duplicates, xmt, record);
     Ok(())
-}
-
-fn unique_values_charged<T>(
-    ctx: &DecodeContext<'_>,
-    records: BTreeMap<u32, T>,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let count = records.len();
-    let mut out = ctx.retained_vec(count, operation)?;
-    out.extend(records.into_values());
-    Ok(out)
 }
 
 pub(crate) fn blend_bound_at(stream: &[u8], tag: usize) -> Option<(BlendBound, usize)> {
@@ -1314,7 +1299,7 @@ pub(crate) fn term_use_records(
             }
         }
     }
-    unique_values_charged(ctx, out, "NX term-use records")
+    ctx.collect_retained_vec(out.into_values(), "NX term-use records")
 }
 
 pub(crate) fn term_use_at(stream: &[u8], tag: usize) -> Option<(TermUse, usize)> {
@@ -1435,7 +1420,7 @@ pub(crate) fn support_uv_records(
         }
         label_start = label + 1;
     }
-    unique_values_charged(ctx, out, "NX support-UV records")
+    ctx.collect_retained_vec(out.into_values(), "NX support-UV records")
 }
 
 pub(crate) fn support_uv_record_at(
