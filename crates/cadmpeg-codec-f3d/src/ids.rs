@@ -1060,20 +1060,8 @@ pub(crate) fn native_scope(name: &str) -> String {
     format!("f3d:{}", identity_key_component(name))
 }
 
-/// Compare an escaped native scope without materializing the encoded entry name.
-pub(crate) fn native_scope_matches(stream: &str, entry: &str) -> bool {
-    fn encoded_len(source: &str) -> Option<usize> {
-        source.chars().try_fold(0usize, |length, character| {
-            let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
-                character.len_utf8().checked_mul(3)?
-            } else {
-                character.len_utf8()
-            };
-            length.checked_add(width)
-        })
-    }
-
-    fn encoded_matches(encoded: &str, source: &str) -> bool {
+/// Compare an encoded identity component with source text without allocating.
+pub(crate) fn encoded_identity_key_component_matches(encoded: &str, source: &str) -> bool {
         const HEX: &[u8; 16] = b"0123456789ABCDEF";
         let mut actual = encoded.as_bytes().iter();
         for character in source.chars() {
@@ -1096,13 +1084,26 @@ pub(crate) fn native_scope_matches(stream: &str, entry: &str) -> bool {
             }
         }
         actual.next().is_none()
+}
+
+/// Compare an escaped native scope without materializing the encoded entry name.
+pub(crate) fn native_scope_matches(stream: &str, entry: &str) -> bool {
+    fn encoded_len(source: &str) -> Option<usize> {
+        source.chars().try_fold(0usize, |length, character| {
+            let width = if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
+                character.len_utf8().checked_mul(3)?
+            } else {
+                character.len_utf8()
+            };
+            length.checked_add(width)
+        })
     }
 
     let Some(encoded_length) = encoded_len(entry) else {
         return false;
     };
     if let Some(direct) = stream.strip_prefix("f3d:") {
-        if direct.len() == encoded_length && encoded_matches(direct, entry) {
+        if direct.len() == encoded_length && encoded_identity_key_component_matches(direct, entry) {
             return true;
         }
     }

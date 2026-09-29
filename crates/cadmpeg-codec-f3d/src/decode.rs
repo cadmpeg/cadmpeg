@@ -5306,14 +5306,16 @@ fn extend_related_design_records(
             &native.design_record_headers,
         )?;
     crate::history::bind_entity_selection_history(
+        Some(ctx),
         &mut native.design_entity_selection_operands,
         &native.design_parameter_scopes,
         &native.asm_histories,
-    );
+    )?;
     crate::history::bind_hole_selection_history(
+        Some(ctx),
         &mut native.design_parameter_scopes,
         &native.asm_histories,
-    );
+    )?;
     native.design_body_recipe_operands =
         crate::design::decode::operands::decode_body_recipe_operands(
             scan,
@@ -5340,11 +5342,12 @@ fn extend_related_design_records(
         &native.design_construction_operand_identities,
     );
     crate::history::bind_extrude_selection_history(
+        Some(ctx),
         &mut native.design_extrude_selection_members,
         &native.design_component_naming_spaces,
         &native.design_body_bindings,
         &native.asm_histories,
-    );
+    )?;
     let scope_histories = crate::history::bind_scope_histories(
         Some(ctx),
         &native.design_parameter_scopes,
@@ -5353,10 +5356,11 @@ fn extend_related_design_records(
         &native.asm_histories,
     )?;
     crate::history::bind_circular_pattern_axes(
+        Some(ctx),
         &mut native.design_parameter_scopes,
         &native.asm_histories,
         &scope_histories,
-    );
+    )?;
     crate::history::bind_edge_identity_history(
         Some(ctx),
         &mut native.design_edge_identity_operands,
@@ -5444,13 +5448,14 @@ fn extend_related_design_records(
         &scope_histories,
     )?;
     crate::history::bind_mirror_selection_planes(
+        Some(ctx),
         &mut native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.design_entity_selection_operands,
         &native.design_face_operands,
         &native.design_construction_operand_identities,
         &native.asm_histories,
-    );
+    )?;
     crate::history::bind_edge_identity_bounded_face_rules(
         &mut native.design_edge_identity_operands,
         &native.design_face_operands,

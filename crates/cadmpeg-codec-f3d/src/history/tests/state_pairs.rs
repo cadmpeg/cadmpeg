@@ -635,10 +635,10 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         }],
     };
     assert_eq!(
-        raw_axes(historical_pattern_identity_axes_for_selection(
+        raw_axes(historical_pattern_identity_axes_for_selection(None,
             Some((AsmHistoricalEntityKind::Face, 11, &[1])),
             &history,
-        )),
+        ).unwrap()),
         vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
     );
 
@@ -653,10 +653,10 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0),
     }];
     assert_eq!(
-        raw_axes(historical_pattern_identity_axes_for_selection(
+        raw_axes(historical_pattern_identity_axes_for_selection(None,
             Some((AsmHistoricalEntityKind::Face, 11, &[1])),
             &planar_history,
-        )),
+        ).unwrap()),
         vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
     );
 
@@ -672,10 +672,10 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         }],
         ..history.clone()
     };
-    assert!(historical_pattern_identity_axes_for_selection(
+    assert!(historical_pattern_identity_axes_for_selection(None,
         Some((AsmHistoricalEntityKind::Face, 11, &[1])),
         &ambiguous_history,
-    )
+    ).unwrap()
     .is_empty());
 
     let mut missing_carrier = history.clone();
@@ -688,22 +688,22 @@ fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
         }),
         ..history.states[0].clone()
     });
-    assert!(historical_pattern_identity_axes_for_selection(
+    assert!(historical_pattern_identity_axes_for_selection(None,
         Some((AsmHistoricalEntityKind::Face, 11, &[1, 2])),
         &missing_carrier,
-    )
+    ).unwrap()
     .is_empty());
-    let identities = HistoricalIdentityIndex::build(std::slice::from_ref(&missing_carrier), [11]);
+    let identities = HistoricalIdentityIndex::build(None, std::slice::from_ref(&missing_carrier), [11]).unwrap();
     assert_eq!(
-        raw_axes(historical_pattern_identity_axes(
+        raw_axes(historical_pattern_identity_axes(None,
             11,
             &identities,
             &missing_carrier,
             Some(1)
-        )),
+        ).unwrap()),
         vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
     );
-    assert!(historical_pattern_identity_axes(11, &identities, &missing_carrier, None).is_empty());
+    assert!(historical_pattern_identity_axes(None, 11, &identities, &missing_carrier, None).unwrap().is_empty());
 }
 
 #[test]
@@ -809,15 +809,15 @@ fn historical_identity_edge_requires_unique_incidence() {
         ..Default::default()
     };
     assert_eq!(
-        historical_identity_edge(AsmHistoricalEntityKind::Coedge, 17, &topology),
+        historical_identity_edge(None, AsmHistoricalEntityKind::Coedge, 17, &topology).unwrap(),
         Some(7)
     );
     assert_eq!(
-        historical_identity_edge(AsmHistoricalEntityKind::Curve, 27, &topology),
+        historical_identity_edge(None, AsmHistoricalEntityKind::Curve, 27, &topology).unwrap(),
         Some(7)
     );
     assert_eq!(
-        historical_identity_edge(AsmHistoricalEntityKind::Pcurve, 37, &topology),
+        historical_identity_edge(None, AsmHistoricalEntityKind::Pcurve, 37, &topology).unwrap(),
         Some(7)
     );
     topology.edge_curves.push(
@@ -827,7 +827,7 @@ fn historical_identity_edge_requires_unique_incidence() {
         },
     );
     assert_eq!(
-        historical_identity_edge(AsmHistoricalEntityKind::Curve, 27, &topology),
+        historical_identity_edge(None, AsmHistoricalEntityKind::Curve, 27, &topology).unwrap(),
         None
     );
 }
@@ -1613,7 +1613,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         Some((AsmHistoricalEntityKind::Vertex, vec![5]))
     );
     assert_eq!(
-        historical_selection_identity_kind(std::slice::from_ref(&history), 42),
+        historical_selection_identity_kind(None, std::slice::from_ref(&history), 42).unwrap(),
         Some((AsmHistoricalEntityKind::Edge, 42, vec![3, 5]))
     );
     assert_eq!(
@@ -1630,11 +1630,11 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         record_ref: 701,
     }];
     assert_eq!(
-        historical_selection_identity_kind(std::slice::from_ref(&revision_history), 700),
+        historical_selection_identity_kind(None, std::slice::from_ref(&revision_history), 700).unwrap(),
         Some((AsmHistoricalEntityKind::Edge, 42, vec![3]))
     );
     assert_eq!(
-        historical_selection_identity_kind(std::slice::from_ref(&revision_history), 701),
+        historical_selection_identity_kind(None, std::slice::from_ref(&revision_history), 701).unwrap(),
         Some((AsmHistoricalEntityKind::Edge, 42, vec![5]))
     );
     let revision_change = |new_ref| AsmEntityChange {
@@ -1656,10 +1656,10 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         changes: vec![revision_change(42)],
     }];
     assert_eq!(
-        historical_selection_identity_kind(
+        historical_selection_identity_kind(None,
             std::slice::from_ref(&reconstructed_revision_history),
             700,
-        ),
+        ).unwrap(),
         Some((AsmHistoricalEntityKind::Edge, 42, vec![3, 5]))
     );
     let mut incomplete_revision_history = reconstructed_revision_history.clone();
@@ -1671,17 +1671,17 @@ fn design_identity_resolves_only_one_invariant_history_family() {
                 .clone(),
         );
     assert_eq!(
-        historical_selection_identity_kind(std::slice::from_ref(&incomplete_revision_history), 700,),
+        historical_selection_identity_kind(None, std::slice::from_ref(&incomplete_revision_history), 700,).unwrap(),
         None
     );
     reconstructed_revision_history.states[0].bulletin_boards[0]
         .changes
         .push(revision_change(90));
     assert_eq!(
-        historical_selection_identity_kind(
+        historical_selection_identity_kind(None,
             std::slice::from_ref(&reconstructed_revision_history),
             700,
-        ),
+        ).unwrap(),
         None
     );
     revision_history.states[0].entity_versions = vec![AsmEntityVersion {
@@ -1689,7 +1689,7 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         record_ref: 42,
     }];
     assert_eq!(
-        historical_selection_identity_kind(std::slice::from_ref(&revision_history), 42),
+        historical_selection_identity_kind(None, std::slice::from_ref(&revision_history), 42).unwrap(),
         None
     );
     let duplicate_state_history = AsmHistory {
@@ -1715,10 +1715,10 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         record_ref: 700,
     }];
     assert_eq!(
-        historical_selection_identity_kind(
+        historical_selection_identity_kind(None,
             &[revision_history.clone(), duplicate_revision_history],
             700,
-        ),
+        ).unwrap(),
         None
     );
     let ambiguous = AsmHistory {
@@ -1798,9 +1798,9 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
             transition: None,
         }],
     };
-    let identities = HistoricalIdentityIndex::build(std::slice::from_ref(&history), [700, 800]);
+    let identities = HistoricalIdentityIndex::build(None, std::slice::from_ref(&history), [700, 800]).unwrap();
     let candidates =
-        entity_selection_edge_candidates([(0, 700), (1, 800)], 3, &identities, &topology);
+        entity_selection_edge_candidates(None, [(0, 700), (1, 800)], 3, &identities, &topology).unwrap();
     assert_eq!(
         candidates,
         [
@@ -1886,7 +1886,7 @@ fn a_retained_state_beside_a_complete_snapshot_resolves_no_reconstructed_revisio
     let history: AsmHistory = serde_json::from_value(document).unwrap();
     assert!(!history.projection_finalized());
     assert_eq!(
-        historical_selection_identity_kind(std::slice::from_ref(&history), 700),
+        historical_selection_identity_kind(None, std::slice::from_ref(&history), 700).unwrap(),
         None
     );
 }

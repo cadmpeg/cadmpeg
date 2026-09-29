@@ -81,7 +81,7 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
         }]
     );
     assert_eq!(
-        historical_selection_identity_kind(&histories, 30),
+        historical_selection_identity_kind(None, &histories, 30).unwrap(),
         Some((AsmHistoricalEntityKind::Face, 10, vec![1]))
     );
 }
