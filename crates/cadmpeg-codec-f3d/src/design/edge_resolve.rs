@@ -933,26 +933,10 @@ fn resolved_edge_group_with_transition_chain(
                     "f3d single identity historical group id");
             }
         }
-        let members = identity_matches
-            .iter()
-            .map(|operand| (operand.id.as_str(), operand.resolved_edge_slot))
-            .collect::<Vec<_>>();
-        if members.iter().all(|(_, edge)| edge.is_some()) {
-            let edges = members
-                .into_iter()
-                .filter_map(|(_, edge)| edge)
-                .map(|edge_slot| {
-                    ids::history_input_edge_id(
-                        &ids::history_input_prefix(&feature_key, previous_state_id),
-                        edge_slot,
-                    )
-                })
-                .collect();
-            return Ok(EdgeSelection::historical(state, edges, group.id.clone())
-                .unwrap_or_else(|_| EdgeSelection::Native(group.id.clone())));
-        }
         return match partial_historical_edge_selection(
-            members,
+            identity_matches
+                .iter()
+                .map(|operand| (operand.id.as_str(), operand.resolved_edge_slot)),
             previous_state_id,
             &feature_key,
             state,
