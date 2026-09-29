@@ -765,10 +765,11 @@ fn resolved_extrude_profile_active_faces(
 /// group member. Any competing common clause or incomplete topology context
 /// keeps the native group unresolved.
 pub(super) fn resolved_loft_edge_profile_group(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignEdgeOperand],
-) -> Option<cadmpeg_ir::features::ProfileRef> {
+) -> Result<Option<cadmpeg_ir::features::ProfileRef>, CodecError> {
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Loft
         || !matches!(
             group.role(),
@@ -777,29 +778,29 @@ pub(super) fn resolved_loft_edge_profile_group(
         || group.members().is_empty()
         || !group.lost_edge_references.is_empty()
     {
-        return None;
+        return Ok(None);
     }
-    let previous_state_id = scope.previous_history_state_id()?;
-    let stream = native_stream(&group.id)?;
-    let group_ordinal = usize::try_from(group.scope_reference_ordinal).ok()?;
+    let Some(previous_state_id) = scope.previous_history_state_id() else { return Ok(None); };
+    let Some(stream) = native_stream(&group.id) else { return Ok(None); };
+    let Some(group_ordinal) = usize::try_from(group.scope_reference_ordinal).ok() else { return Ok(None); };
     let mut member_ids = HashSet::new();
-    if group
-        .members()
-        .iter()
-        .map(|member| &member.value)
-        .any(|member| !member_ids.insert(*member))
-    {
-        return None;
+    for member in group.members().iter().map(|member| member.value) {
+        if !insert_face_set(ctx, &mut member_ids, member,
+            "f3d Loft edge profile member index")? {
+            return Ok(None);
+        }
     }
     if scope.reference_members().values().nth(group_ordinal) != Some(&group.record_index) {
-        return None;
+        return Ok(None);
     }
-    let member_operands = group
+    let mut member_operands = Vec::new();
+    for (ordinal, record_index) in group
         .members()
         .iter()
         .map(|member| &member.value)
         .enumerate()
-        .map(|(ordinal, record_index)| {
+    {
+        let Some(operand) = (|| {
             let scope_ordinal = group
                 .scope_reference_ordinal
                 .checked_add(1)?
@@ -827,25 +828,33 @@ pub(super) fn resolved_loft_edge_profile_group(
                 return None;
             }
             Some(operand)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let face_slot = loft_edge_profile_face_slot(group.members().len(), &member_operands)?;
-    let selection = historical_face_selection(scope, group, vec![face_slot])?;
+        })() else { return Ok(None); };
+        push_face_item(ctx, &mut member_operands, operand,
+            "f3d Loft edge profile member")?;
+    }
+    let Some(face_slot) = loft_edge_profile_face_slot(group.members().len(), &member_operands) else {
+        return Ok(None);
+    };
+    let Some(selection) = historical_face_selection(scope, group, vec![face_slot]) else {
+        return Ok(None);
+    };
     let cadmpeg_ir::features::FaceSelection::Historical {
         state,
         faces,
         native,
     } = selection
     else {
-        return None;
+        return Ok(None);
     };
-    Some(cadmpeg_ir::features::ProfileRef::Planar(
+    Ok(Some(cadmpeg_ir::features::ProfileRef::Planar(
         cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
             state,
             faces,
-            native: vec![native.as_str().to_owned()].try_into().ok()?,
+            native: vec![copy_face_text(ctx, native.as_str(),
+                "f3d Loft historical group id")?]
+                .try_into().map_err(CodecError::malformed)?,
         },
-    ))
+    )))
 }
 
 fn loft_edge_profile_face_slot(
@@ -855,45 +864,34 @@ fn loft_edge_profile_face_slot(
     if member_count == 0 || operands.len() != member_count {
         return None;
     }
-    let mut common_clauses = operands
-        .first()?
-        .recipe_references
-        .iter()
-        .filter(|reference| {
-            reference.candidate_faces.len() == 1 && reference.alternate_selector_faces.is_empty()
-        })
-        .map(|reference| {
-            (
-                reference.selector,
-                reference.token.clone(),
-                reference.design_reference,
-            )
-        })
-        .collect::<Vec<_>>();
-    common_clauses.sort_unstable();
-    common_clauses.dedup();
-    common_clauses.retain(|(selector, token, design_reference)| {
-        operands.iter().all(|operand| {
-            operand
-                .recipe_references
-                .iter()
-                .filter(|reference| {
-                    reference.selector == *selector
-                        && reference.token == *token
-                        && reference.design_reference == *design_reference
-                        && reference.candidate_faces.len() == 1
-                        && reference.alternate_selector_faces.is_empty()
-                })
-                .count()
-                == 1
-        })
-    });
-    let [(selector, token, design_reference)] = common_clauses.as_slice() else {
-        return None;
-    };
-    let evidence = operands
-        .iter()
-        .map(|operand| {
+    let mut common_clause = None;
+    for reference in &operands.first()?.recipe_references {
+        if reference.candidate_faces.len() != 1 || !reference.alternate_selector_faces.is_empty() {
+            continue;
+        }
+        if !operands.iter().all(|operand| {
+            operand.recipe_references.iter().filter(|candidate| {
+                candidate.selector == reference.selector
+                    && candidate.token == reference.token
+                    && candidate.design_reference == reference.design_reference
+                    && candidate.candidate_faces.len() == 1
+                    && candidate.alternate_selector_faces.is_empty()
+            }).count() == 1
+        }) {
+            continue;
+        }
+        if let Some(prior) = common_clause {
+            if prior != (reference.selector, &reference.token, reference.design_reference) {
+                return None;
+            }
+        } else {
+            common_clause = Some((reference.selector, &reference.token, reference.design_reference));
+        }
+    }
+    let (selector, token, design_reference) = common_clause?;
+    let mut evidence = None;
+    for operand in operands {
+        let (candidate, slot, count) = (|| {
             if operand.recipe_references.len() != operand.recipe_reference_contexts.len()
                 || operand.candidate_faces.is_empty()
                 || operand.preceding_candidate_faces.is_empty()
@@ -906,9 +904,9 @@ fn loft_edge_profile_face_slot(
                 .iter()
                 .enumerate()
                 .filter(|(_, reference)| {
-                    reference.selector == *selector
+                    reference.selector == selector
                         && reference.token == *token
-                        && reference.design_reference == *design_reference
+                        && reference.design_reference == design_reference
                         && reference.candidate_faces.len() == 1
                         && reference.alternate_selector_faces.is_empty()
                 })
@@ -972,21 +970,23 @@ fn loft_edge_profile_face_slot(
                     return None;
                 }
                 if ordinal == target_ordinal {
-                    target = Some((candidate.clone(), slot, boundary_edge_count));
+                    target = Some((candidate, slot, boundary_edge_count));
                 }
             }
             target
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let (face, slot, boundary_edge_count) = evidence.first()?;
-    if *boundary_edge_count != member_count
-        || evidence.iter().any(|(candidate, candidate_slot, count)| {
-            candidate != face || candidate_slot != slot || count != boundary_edge_count
-        })
-    {
-        return None;
+        })()?;
+        if count != member_count {
+            return None;
+        }
+        if let Some((face, prior_slot, prior_count)) = evidence {
+            if candidate != face || slot != prior_slot || count != prior_count {
+                return None;
+            }
+        } else {
+            evidence = Some((candidate, slot, count));
+        }
     }
-    Some(*slot)
+    Some(evidence?.1)
 }
 
 pub(super) fn resolved_historical_face_group(
@@ -3213,13 +3213,76 @@ mod tests {
             edge_operand(3, 100, 0, 3, 202),
         ];
         assert!(matches!(
-            super::resolved_loft_edge_profile_group(&scope, &group, &operands),
+            super::resolved_loft_edge_profile_group(None, &scope, &group, &operands).unwrap(),
             Some(cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::HistoricalFaces {
                 state,
                 faces,
                 native,
             })) if state == expected_state && faces.as_slice() == [expected_face] && native.as_slice() == [group.id]
         ));
+    }
+
+    fn assert_loft_edge_profile_collection_limit(operation: &'static str) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let scope = loft_scope();
+        let group = loft_group();
+        let operands = vec![
+            edge_operand(1, 100, 0, 3, 200),
+            edge_operand(2, 100, 1, 3, 201),
+            edge_operand(3, 100, 0, 3, 202),
+        ];
+        for limit in 0..16 {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_collection_items = limit;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            if matches!(super::resolved_loft_edge_profile_group(Some(&ctx), &scope,
+                &group, &operands), Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::CollectionItems
+                        && failure.operation == operation) {
+                return;
+            }
+        }
+        panic!("no Loft edge profile refusal at {operation}");
+    }
+
+    #[test]
+    fn loft_edge_member_index_refuses_collection_limit() {
+        assert_loft_edge_profile_collection_limit("f3d Loft edge profile member index");
+    }
+
+    #[test]
+    fn loft_edge_member_refuses_collection_limit() {
+        assert_loft_edge_profile_collection_limit("f3d Loft edge profile member");
+    }
+
+    #[test]
+    fn loft_historical_group_id_refuses_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let scope = loft_scope();
+        let group = loft_group();
+        let operands = vec![
+            edge_operand(1, 100, 0, 3, 200),
+            edge_operand(2, 100, 1, 3, 201),
+            edge_operand(3, 100, 0, 3, 202),
+        ];
+        for limit in 0..1000 {
+            let mut policy = DecodePolicy::default();
+            policy.limits.max_retained_bytes = limit;
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            if matches!(super::resolved_loft_edge_profile_group(Some(&ctx), &scope,
+                &group, &operands), Err(CodecError::ResourceLimit(failure))
+                    if failure.dimension == ResourceDimension::RetainedBytes
+                        && failure.operation == "f3d Loft historical group id") {
+                return;
+            }
+        }
+        panic!("no Loft historical group ID refusal");
     }
 
     fn start_geometry_fixture() -> (DesignFaceOperand, DesignConstructionOperandGroup, Vec<Face>) {

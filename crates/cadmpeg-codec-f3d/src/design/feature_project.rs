@@ -6979,7 +6979,7 @@ pub(super) fn project_fixed_loft(
         }
         let mut sections = Vec::new();
         for group in &profile_groups {
-            let profile = match resolved_loft_edge_profile_group(scope, group, edge_operands)
+            let profile = match resolved_loft_edge_profile_group(ctx, scope, group, edge_operands)?
                 .or_else(|| resolved_profile_face_group(scope, group, face_operands)) {
                 Some(profile) => profile,
                 None => ProfileRef::Planar(PlanarProfileRef::Native(copy_feature_text(
