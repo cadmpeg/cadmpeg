@@ -322,10 +322,12 @@ pub(crate) const FEATDEFS_SAVED_SPLINE_CURVE: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "featdefs", "saved_spline_curve");
 pub(crate) const FEATDEFS_SAVED_DUMMY: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "featdefs", "saved_dummy");
+#[cfg(test)]
 pub(crate) const FEATDEFS_SKETCH_ENTITY: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "featdefs", "sketch_entity");
 pub(crate) const FEATDEFS_SECTION_CURVE: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "featdefs", "section_curve");
+#[cfg(test)]
 pub(crate) const FEATDEFS_PARAMETER: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "featdefs", "parameter");
 
