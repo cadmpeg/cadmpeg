@@ -1192,7 +1192,7 @@ fn implicit_dimension_nominal(
             length_from_applied_geometry(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
         }
         "GdtDistanceBetween" => {
-            directional_distance(entity, feature_index).map(ImplicitNominal::Exact)
+            directional_distance(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
         }
         "GdtCounterBore" => {
             counterbore_from_direct_geometry(entity, feature_index).map(ImplicitNominal::Exact)
@@ -1245,51 +1245,53 @@ fn diameter_from_applied_geometry(
 }
 
 fn directional_distance(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     if annotation.integers.get("ComputeAnswerBy") != Some(&0)
         || annotation.integers.get("Direction") != Some(&4)
         || annotation.integers.get("NormalTo") != Some(&1)
-        || !identity_transform(&unique_related(annotation, "NominalTransform")?.entity)
     {
-        return None;
+        return Ok(None);
     }
-    let direction_entity = &unique_related(annotation, "DirectionVector")?.entity;
-    let direction = vector(direction_entity, ["I", "J", "K"])?;
+    let Some(transform) = unique_related(annotation, "NominalTransform") else { return Ok(None) };
+    if !identity_transform(&transform.entity) { return Ok(None) }
+    let Some(direction_entity) = unique_related(annotation, "DirectionVector") else { return Ok(None) };
+    let Some(direction) = vector(&direction_entity.entity, ["I", "J", "K"]) else { return Ok(None) };
     let [direction_i, direction_j, direction_k] = direction.get();
     if !approximately_equal(direction_i.hypot(direction_j).hypot(direction_k), 1.0) {
-        return None;
+        return Ok(None);
     }
     if let Some(length) =
-        closed_slot_feature_size_distance(annotation, feature_index, direction.get())
+        closed_slot_feature_size_distance(ctx, annotation, feature_index, direction.get())?
     {
-        return Some(length);
+        return Ok(Some(length));
     }
     let [first, second] = annotation.features.references.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    let first = location_projection(&first.id, feature_index, direction.get())?;
-    let second = location_projection(&second.id, feature_index, direction.get())?;
-    PositiveReal::new((second.get() - first.get()).abs())
+    let Some(first) = location_projection(ctx, &first.id, feature_index, direction.get())? else { return Ok(None) };
+    let Some(second) = location_projection(ctx, &second.id, feature_index, direction.get())? else { return Ok(None) };
+    Ok(PositiveReal::new((second.get() - first.get()).abs()))
 }
 
 fn closed_slot_feature_size_distance(
+    ctx: &DecodeContext<'_>,
     annotation: &Entity,
     feature_index: &BTreeMap<&str, &Entity>,
     direction: [f64; 3],
-) -> Option<PositiveReal> {
+) -> Result<Option<PositiveReal>, CodecError> {
     if annotation.integers.get("FeatureFosUsage") != Some(&2)
         || annotation.integers.get("OriginFeatureFosUsage") != Some(&2)
     {
-        return None;
+        return Ok(None);
     }
-    let [first_reference, second_reference] = annotation.features.references.as_slice() else {
-        return None;
-    };
-    let first = feature_index.get(first_reference.id.as_str())?;
-    let second = feature_index.get(second_reference.id.as_str())?;
-    let (cylinder_id, cylinder, slot_id, slot) =
+    let Some((cylinder_id, cylinder, slot_id, slot)) = (|| {
+        let [first_reference, second_reference] = annotation.features.references.as_slice() else { return None };
+        let first = feature_index.get(first_reference.id.as_str())?;
+        let second = feature_index.get(second_reference.id.as_str())?;
+        Some(
         match (short_class(&first.class), short_class(&second.class)) {
             ("GdtCylinder", "GdtCompoundClosedSlot3D") => (
                 first_reference.id.as_str(),
@@ -1304,10 +1306,12 @@ fn closed_slot_feature_size_distance(
                 *first,
             ),
             _ => return None,
-        };
-    if !feature_reaches(slot_id, cylinder_id, feature_index, &mut BTreeSet::new(), 0) {
-        return None;
+        })
+    })() else { return Ok(None) };
+    if !feature_reaches(ctx, slot_id, cylinder_id, feature_index, &mut BTreeSet::new(), 0)? {
+        return Ok(None);
     }
+    Ok((|| {
     let slot_geometry = &unique_related(slot, "NomClosedSlot")?.entity;
     let cylinder_geometry = &unique_related(cylinder, "NomCylinder")?.entity;
     let length = PositiveReal::new(slot_geometry.doubles.get("Length").copied()?)?;
@@ -1352,34 +1356,37 @@ fn closed_slot_feature_size_distance(
     (approximately_equal(displacement_norm, longitudinal.abs())
         && approximately_equal(longitudinal.abs(), (length.get() - width.get()) / 2.0))
     .then_some(length)
+    })())
 }
 
 fn feature_reaches(
+    ctx: &DecodeContext<'_>,
     id: &str,
     target: &str,
     feature_index: &BTreeMap<&str, &Entity>,
     visited: &mut BTreeSet<String>,
     depth: usize,
-) -> bool {
-    if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
-        return false;
+) -> Result<bool, CodecError> {
+    let _depth = ctx.enter_nested("traverse SWIFT feature reachability")?;
+    ctx.charge_work(1, "traverse SWIFT feature reachability")?;
+    if depth >= MAX_DEPTH || visited.contains(id) {
+        return Ok(false);
     }
-    let Some(feature) = feature_index.get(id) else {
-        return false;
-    };
-    let Some(next_depth) = depth.checked_add(1) else {
-        return false;
-    };
-    child_feature_ids(feature).into_iter().any(|child| {
-        child == target
-            || feature_reaches(
-                child,
-                target,
-                feature_index,
-                &mut visited.clone(),
-                next_depth,
-            )
-    })
+    ctx.charge_collection_items(1, "track SWIFT reachability path")?;
+    let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT reachability path ID")?;
+    visited.insert(owned_id);
+    let result = (|| {
+        let Some(feature) = feature_index.get(id) else { return Ok(false) };
+        let Some(next_depth) = depth.checked_add(1) else { return Ok(false) };
+        for child in child_feature_ids(feature) {
+            if child == target || feature_reaches(ctx, child, target, feature_index, visited, next_depth)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    })();
+    visited.remove(id);
+    result
 }
 
 fn identity_transform(transform: &Entity) -> bool {
@@ -1407,29 +1414,31 @@ fn identity_transform(transform: &Entity) -> bool {
 }
 
 fn location_projection(
+    ctx: &DecodeContext<'_>,
     id: &str,
     feature_index: &BTreeMap<&str, &Entity>,
     direction: [f64; 3],
-) -> Option<FiniteReal> {
-    let feature = feature_index.get(id)?;
-    match short_class(&feature.class) {
+) -> Result<Option<FiniteReal>, CodecError> {
+    let Some(feature) = feature_index.get(id) else { return Ok(None) };
+    Ok(match short_class(&feature.class) {
         "GdtPlane" | "GdtIntersectPlane" => plane_projection(feature, direction),
         "GdtCylinder" => axis_projection(feature, "NomCylinder", direction),
         "GdtCone" => axis_projection(feature, "NomCone", direction),
         "GdtCompoundHole" => {
             let mut projections = Vec::new();
             collect_rotational_projections(
+                ctx,
                 id,
                 feature_index,
                 direction,
                 &mut BTreeSet::new(),
                 0,
                 &mut projections,
-            );
+            )?;
             unique_measurement(projections.into_iter())
         }
         _ => None,
-    }
+    })
 }
 
 fn plane_projection(feature: &Entity, direction: [f64; 3]) -> Option<FiniteReal> {
@@ -1465,41 +1474,42 @@ fn axis_projection(feature: &Entity, geometry: &str, direction: [f64; 3]) -> Opt
 }
 
 fn collect_rotational_projections(
+    ctx: &DecodeContext<'_>,
     id: &str,
     feature_index: &BTreeMap<&str, &Entity>,
     direction: [f64; 3],
     visited: &mut BTreeSet<String>,
     depth: usize,
     projections: &mut Vec<FiniteReal>,
-) {
-    if depth >= MAX_DEPTH || !visited.insert(id.to_string()) {
-        return;
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("scan SWIFT rotational features")?;
+    ctx.charge_work(1, "scan SWIFT rotational features")?;
+    if depth >= MAX_DEPTH || visited.contains(id) {
+        return Ok(());
     }
-    let Some(feature) = feature_index.get(id) else {
-        return;
-    };
-    let projection = match short_class(&feature.class) {
-        "GdtCylinder" => axis_projection(feature, "NomCylinder", direction),
-        "GdtCone" => axis_projection(feature, "NomCone", direction),
-        _ => None,
-    };
-    if let Some(projection) = projection {
-        projections.push(projection);
-        return;
-    }
-    let Some(next_depth) = depth.checked_add(1) else {
-        return;
-    };
-    for child in child_feature_ids(feature) {
-        collect_rotational_projections(
-            child,
-            feature_index,
-            direction,
-            &mut visited.clone(),
-            next_depth,
-            projections,
-        );
-    }
+    ctx.charge_collection_items(1, "track SWIFT rotational path")?;
+    let owned_id = ctx.format_retained(format_args!("{id}"), "retain SWIFT rotational path ID")?;
+    visited.insert(owned_id);
+    let result = (|| {
+        let Some(feature) = feature_index.get(id) else { return Ok(()) };
+        let projection = match short_class(&feature.class) {
+            "GdtCylinder" => axis_projection(feature, "NomCylinder", direction),
+            "GdtCone" => axis_projection(feature, "NomCone", direction),
+            _ => None,
+        };
+        if let Some(projection) = projection {
+            ctx.reserve_collection_vec(projections, 1, "collect SWIFT rotational projections")?;
+            projections.push(projection);
+            return Ok(());
+        }
+        let Some(next_depth) = depth.checked_add(1) else { return Ok(()) };
+        for child in child_feature_ids(feature) {
+            collect_rotational_projections(ctx, child, feature_index, direction, visited, next_depth, projections)?;
+        }
+        Ok(())
+    })();
+    visited.remove(id);
+    result
 }
 
 fn diameter_nominal(
