@@ -18,7 +18,7 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     let mut resolved = operands
         .iter()
         .map(|operand| {
-            resolve_operand_marker(entities.iter().copied(), operand.kind, operand.entity_index)
+            resolve_operand_marker_excluding(&entities, operand.kind, operand.entity_index, |_| false)
         })
         .collect::<Vec<_>>();
     if let ([first_operand, second_operand], [Some(first), Some(second)]) =
@@ -27,14 +27,14 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
         if first.id() == second.id() && first_operand.entity_index != second_operand.entity_index {
             let alternatives = [
                 resolve_operand_marker_excluding(
-                    entities.iter().copied(),
+                    &entities,
                     first_operand.kind,
                     first_operand.entity_index,
                     |id| id == second.id(),
                 )
                 .map(|alternative| [alternative, *second]),
                 resolve_operand_marker_excluding(
-                    entities.iter().copied(),
+                    &entities,
                     second_operand.kind,
                     second_operand.entity_index,
                     |id| id == first.id(),
@@ -58,7 +58,7 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     for (operand, target) in operands.iter().zip(&mut resolved) {
         if target.is_none() {
             *target = resolve_operand_marker_excluding(
-                entities.iter().copied(),
+                &entities,
                 operand.kind,
                 operand.entity_index,
                 |id| resolved_siblings.contains(id),
@@ -68,12 +68,14 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     resolved
 }
 
+#[cfg(test)]
 fn resolve_operand_marker<'a>(
     entities: impl IntoIterator<Item = &'a SketchInputEntity>,
     kind: FeatureInputOperandKind,
     address: u16,
 ) -> Option<&'a SketchInputEntity> {
-    resolve_operand_marker_excluding(entities, kind, address, |_| false)
+    let entities = entities.into_iter().collect::<Vec<_>>();
+    resolve_operand_marker_excluding(&entities, kind, address, |_| false)
 }
 
 fn unique_entity<'a>(mut candidates: impl Iterator<Item = &'a SketchInputEntity>) -> Option<&'a SketchInputEntity> {
@@ -82,13 +84,12 @@ fn unique_entity<'a>(mut candidates: impl Iterator<Item = &'a SketchInputEntity>
 }
 
 fn resolve_operand_marker_excluding<'a>(
-    entities: impl IntoIterator<Item = &'a SketchInputEntity>,
+    entities: &[&'a SketchInputEntity],
     kind: FeatureInputOperandKind,
     address: u16,
     excluded: impl Fn(&str) -> bool,
 ) -> Option<&'a SketchInputEntity> {
     let excluded = &excluded;
-    let entities = entities.into_iter().collect::<Vec<_>>();
     if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD) {
         let mut points = entities
             .iter()
