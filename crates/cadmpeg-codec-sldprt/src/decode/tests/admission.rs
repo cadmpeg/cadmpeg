@@ -1132,3 +1132,44 @@ fn metadata_surface_projection_refuses_retained_limit() {
                 && limit.operation == "retain SLDPRT trim surface tool"
     ));
 }
+
+fn loft_reference_source() -> Vec<u8> {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x43, "Contents/Keywords",
+        br#"<Keywords><Loft Name="Loft" id="10" Profiles="a,b" Guides="c"/></Keywords>"#,
+    ));
+    source
+}
+
+#[test]
+fn metadata_loft_projection_refuses_collection_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = collection_refusal_with_options(
+        &loft_reference_source(), options, "project SLDPRT loft references",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(refusal.additional, 1);
+}
+
+#[test]
+fn metadata_loft_projection_refuses_retained_limit() {
+    let mut options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    options.policy.limits.max_retained_bytes = 1;
+    let error = retained_refusal_at(&loft_reference_source(), &mut options, "retain SLDPRT loft reference");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                && limit.operation == "retain SLDPRT loft reference"
+    ));
+}
+
+#[test]
+fn metadata_loft_projection_refuses_work_limit() {
+    let options = DecodeOptions { container_only: true, ..DecodeOptions::default() };
+    let refusal = work_refusal_with_options(
+        &loft_reference_source(), options, "project SLDPRT loft references",
+    );
+    assert_eq!(refusal.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(refusal.additional, 3);
+}

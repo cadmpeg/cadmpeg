@@ -143,7 +143,7 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
 
     assert!(native_parameter_is_length(&feature, "s", Some("2.1")));
     assert!(matches!(
-        project_extrude(&feature, &HashMap::new(), &HashMap::new()),
+        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &HashMap::new()).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -169,7 +169,7 @@ fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
         .insert(cadmpeg_core::nonblank_literal!("m"), "6.4".into());
 
     assert!(matches!(
-        project_extrude(&feature, &HashMap::new(), &HashMap::new()),
+        project_extrude(&cadmpeg_test_support::service_decode_context(), &feature, &HashMap::new(), &HashMap::new()).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
