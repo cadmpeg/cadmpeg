@@ -206,7 +206,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
         })
         .collect::<HashMap<_, _>>();
     let resolves = |token: &str, reference: u32| {
-        reference == 0 || raw.contains_key(&(token, reference.saturating_sub(1)))
+        reference == 0 || raw.contains_key(&(token, reference - 1))
     };
     unique(
         findings,
@@ -377,7 +377,7 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     };
     let references_resolve = |token: &str, references: &[u32]| {
         references.iter().all(|reference| {
-            *reference == 0 || raw.contains_key(&(token, reference.saturating_sub(1)))
+            *reference == 0 || raw.contains_key(&(token, reference - 1))
         })
     };
     unique(
@@ -703,7 +703,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         })
         .collect::<HashMap<_, _>>();
     let resolves = |token: &str, reference: u32| {
-        reference == 0 || raw.contains_key(&(token, reference.saturating_sub(1)))
+        reference == 0 || raw.contains_key(&(token, reference - 1))
     };
     unique(
         findings,
@@ -1296,7 +1296,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
             if reference.index == 0
                 || !raw_keys.contains(&(
                     record.segment_token.as_str(),
-                    reference.index.saturating_sub(1),
+                    reference.index - 1,
                 ))
             {
                 findings.push(finding(
