@@ -186,7 +186,18 @@ fn validate_embedded_helix_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let embedded = project_features(&native.feature_histories)?
+    let projection_bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &projection_bytes,
+        &arena,
+        &DecodePolicy::service(),
+    )?;
+    let embedded = project_features(&ctx, &native.feature_histories)?
         .into_iter()
         .filter_map(|feature| {
             matches!(
@@ -299,7 +310,7 @@ fn project_feature_model_with_native_inputs(
         &native.pmi_dimensions,
         HistoryEnrichment::Write,
     )?;
-    let mut projection = project_feature_model(&histories)?;
+    let mut projection = project_feature_model(&ctx, &histories)?;
     let features = &mut projection.features;
     crate::resolved_features::bindings::bind_pattern_inputs(
         &ctx,

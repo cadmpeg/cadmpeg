@@ -181,7 +181,7 @@ pub(crate) fn validate(
                         .any(|feature| feature.id == original.id)
                 })
         {
-            let baseline_features = crate::history::project::project_features(&baseline)?;
+            let baseline_features = crate::history::project::project_features(&ctx, &baseline)?;
             let neutral = ir
                 .model
                 .features

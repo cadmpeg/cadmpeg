@@ -866,7 +866,7 @@ mod tests {
             configurations: Vec::new(),
             features: vec![crate::history::tests::feature("native", Some("700"), 0)],
         }];
-        let mut projected = crate::history::project::project_features(&histories)
+        let mut projected = crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories)
             .unwrap_or_else(|error| panic!("test projection failed: {error}"));
         let body_modifiers = [("sldprt:brep:body#333".to_owned(), 1)];
         let arena = DecodeArena::new();

@@ -79,7 +79,7 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
         ],
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.features = project_features(&[history]).unwrap();
+    ir.model.features = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     let predecessor = ir.model.features[1].id.clone();
     let consumer = ir.model.features[0].id.clone();
     ir.model
@@ -210,7 +210,7 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
         features: vec![extrusion, profile],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     let extrusion = projected
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:1"))
@@ -277,7 +277,7 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
         features: vec![extrusion, early_profile, origin_profile, preceding_profile],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     let extrusion = projected
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:3"))
@@ -332,13 +332,13 @@ fn spatial_profile_class_projects_a_spatial_sketch() {
     spatial.input_class = Some("mo3DProfileFeature_c".into());
 
     assert_eq!(
-        project_definition(
+        project_definition(&cadmpeg_test_support::service_decode_context(),
             &spatial,
             &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             std::slice::from_ref(&spatial),
-        ),
+        ).unwrap(),
         FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None })
     );
 }
@@ -350,13 +350,13 @@ fn base_body_class_projects_stored_geometry_independently_of_display_name() {
     base_body.input_class = Some("moBaseBody_c".into());
 
     assert_eq!(
-        project_definition(
+        project_definition(&cadmpeg_test_support::service_decode_context(),
             &base_body,
             &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             std::slice::from_ref(&base_body),
-        ),
+        ).unwrap(),
         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
     );
 }
@@ -1043,13 +1043,13 @@ fn angular_plane_parameter_does_not_claim_offset_semantics() {
 
     assert!(!is_offset_plane(&plane));
     assert_eq!(
-        project_definition(
+        project_definition(&cadmpeg_test_support::service_decode_context(),
             &plane,
             &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             std::slice::from_ref(&plane),
-        ),
+        ).unwrap(),
         FeatureDefinition::Operation(FeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
                 Point3::new(0.0, 70.0, 0.0),
@@ -1071,13 +1071,13 @@ fn length_plane_parameter_claims_offset_semantics() {
 
     assert!(is_offset_plane(&plane));
     assert_eq!(
-        project_definition(
+        project_definition(&cadmpeg_test_support::service_decode_context(),
             &plane,
             &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             std::slice::from_ref(&plane),
-        ),
+        ).unwrap(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
             reference: None,
             distance: Length::new(70.0).unwrap(),
@@ -1091,13 +1091,13 @@ fn frameless_reference_plane_remains_typed_unresolved() {
     plane.input_class = Some("moRefPlane_c".into());
 
     assert_eq!(
-        project_definition(
+        project_definition(&cadmpeg_test_support::service_decode_context(),
             &plane,
             &HashMap::new(),
             &HashMap::new(),
             &HashMap::new(),
             std::slice::from_ref(&plane),
-        ),
+        ).unwrap(),
         FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumPlane
         })
@@ -1196,7 +1196,7 @@ fn native_attribute_records_are_metadata_not_model_features() {
         features: vec![definition, attribute, comments, alignment, model],
     };
 
-    let projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(projected[0].native_ref.as_deref(), Some("model"));
     assert!(project_parameters(&[history]).is_empty());
@@ -1220,7 +1220,7 @@ fn native_attribute_definition_type_is_metadata_without_an_instance_name_match()
         features: vec![definition],
     };
 
-    assert!(project_features(std::slice::from_ref(&history))
+    assert!(project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history))
         .unwrap()
         .is_empty());
     assert!(project_parameters(&[history]).is_empty());
@@ -1237,7 +1237,7 @@ fn configuration_snapshots_preserve_base_tree_node_roles() {
         configurations: Vec::new(),
         features: vec![light],
     };
-    let mut configured = project_features(std::slice::from_ref(&history)).unwrap();
+    let mut configured = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
     assert!(matches!(
         configured[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })
@@ -1291,7 +1291,7 @@ fn simple_hole_uses_its_profile_dimension_roles() {
         features: vec![hole, position, profile],
     };
 
-    let projected = project_features(std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
         projected[0].evaluation.definition()
     else {
@@ -1314,7 +1314,7 @@ fn simple_hole_uses_its_profile_dimension_roles() {
         cadmpeg_core::nonblank_literal!("another length"),
         "2".into(),
     );
-    let ambiguous = project_features(&[ambiguous]).unwrap();
+    let ambiguous = project_features(&cadmpeg_test_support::service_decode_context(), &[ambiguous]).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
         ambiguous[0].evaluation.definition()
     else {
@@ -1367,7 +1367,7 @@ fn hole_wizard_rejects_unsupported_countersink_child_schema() {
         features: vec![hole, position, profile],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
@@ -1422,7 +1422,7 @@ fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
         features: vec![hole, profile],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
@@ -1481,7 +1481,7 @@ fn legacy_revolve_uses_d1_angle_and_cut_class_operation() {
         features: vec![revolve],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -1509,7 +1509,7 @@ fn localized_cut_extrusion_uses_its_native_class_operation() {
         features: vec![cut],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -1538,7 +1538,7 @@ fn revolve_uses_its_ordered_angle_dimension_name() {
         features: vec![revolve],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Revolve {
@@ -1577,7 +1577,7 @@ fn chamfer_uses_physical_types_of_ordered_localized_dimensions() {
         features: vec![chamfer],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     assert!(matches!(
         projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { ref groups, .. })
@@ -1658,7 +1658,7 @@ fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
         features: vec![thread],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     assert_eq!(
         *projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -1687,7 +1687,7 @@ fn cosmetic_thread_without_blind_length_is_through() {
         features: vec![thread],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     assert_eq!(
         *projected[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -1719,7 +1719,7 @@ fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
             features: vec![thread],
         };
 
-        let projected = project_features(&[history]).unwrap();
+        let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
         assert_eq!(
             *projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
@@ -1752,7 +1752,7 @@ fn cosmetic_thread_requires_one_named_diameter() {
         features: vec![thread],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     let FeatureDefinition::Operation(FeatureOperation::CosmeticThread { diameter, .. }) =
         projected[0].evaluation.definition()
     else {
@@ -1911,7 +1911,7 @@ fn exact_native_profile_source_projects_a_feature_dependency() {
         features: vec![sketch, extrusion],
     };
 
-    let projected = project_features(&[history]).unwrap();
+    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     let sketch_id = neutral_feature_id("sketch");
     assert!(matches!(
         projected[1].evaluation.definition(),
@@ -1941,7 +1941,7 @@ fn a_regeneration_edge_the_model_refuses_is_reported_as_one_loss() {
         configurations: Vec::new(),
         features: vec![child, feature("sldprt:history:feature#0:1", None, 1)],
     };
-    let projection = project_feature_model(&[history]).unwrap();
+    let projection = project_feature_model(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
     let (model, losses) = projection.into_model();
     let child_id = model.features[0].id.clone();
     assert!(model.feature_regeneration_parent(&child_id).is_none());

@@ -248,7 +248,7 @@ pub(crate) fn project_configuration_design_states(
             pmi_dimensions,
             HistoryEnrichment::Write,
         )?;
-        let mut features = project_features(&projection)?;
+        let mut features = project_features(ctx, &projection)?;
         crate::resolved_features::bindings::bind_pattern_inputs(
             ctx,
             &mut features,

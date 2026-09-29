@@ -1818,7 +1818,7 @@ pub(crate) fn enrich_history_reference_axes(
         }
     }
 
-    let projected = match crate::history::project::project_features(histories) {
+    let projected = match crate::history::project::project_features(ctx, histories) {
         Ok(projected) => projected,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(()),
