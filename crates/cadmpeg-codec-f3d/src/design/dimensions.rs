@@ -4004,30 +4004,27 @@ fn radial_locus_dimension_definition(
         };
     }
 
-    let sketch = loci.first()?.sketch.clone();
-    if loci.iter().any(|entity| entity.sketch != sketch) {
+    let sketch = &loci.first()?.sketch;
+    if loci.iter().any(|entity| &entity.sketch != sketch) {
         return None;
     }
-    let centers = loci
-        .iter()
-        .filter_map(|entity| match entity.geometry.definition() {
-            SketchGeometryDefinition::Point { position } => Some(*position),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if centers.is_empty() {
+    let centers = || loci.iter().filter_map(|entity| match entity.geometry.definition() {
+        SketchGeometryDefinition::Point { position } => Some(*position),
+        _ => None,
+    });
+    if centers().next().is_none() {
         return None;
     }
     let candidates = all_entities
         .iter()
-        .filter(|entity| entity.sketch == sketch)
+        .filter(|entity| &entity.sketch == sketch)
         .filter(|entity| {
             let center = match entity.geometry.definition() {
                 SketchGeometryDefinition::Circle { center, .. }
                 | SketchGeometryDefinition::Arc { center, .. } => *center,
                 _ => return false,
             };
-            centers.iter().any(|witness| {
+            centers().any(|witness| {
                 let scale = 1.0
                     + center
                         .u
