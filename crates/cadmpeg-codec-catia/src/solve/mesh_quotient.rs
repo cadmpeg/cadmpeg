@@ -3517,7 +3517,7 @@ fn quotient_clone_refuses_retained_domains_and_member_nodes() {
             "catia_quotient_clone_domains",
         ),
         (
-            (std::mem::size_of::<usize>() + std::mem::size_of::<Arc<HashSet<usize>>>()) as u64,
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>() + std::mem::size_of::<Arc<HashSet<usize>>>()),
             "catia_quotient_clone_member_nodes",
         ),
     ] {
@@ -11162,7 +11162,7 @@ fn fixed_mesh_direction_overflow_charges_general_face_state() {
         .collect::<Vec<_>>();
     let candidates = vec![vec![[0, 1]]; edge_count];
     let identities = (0..edge_count)
-        .map(|edge| [(edge * 2) as u32, (edge * 2 + 1) as u32])
+        .map(|edge| [u32::try_from(edge * 2).expect("fixture value fits u32"), u32::try_from(edge * 2 + 1).expect("fixture value fits u32")])
         .collect::<Vec<_>>();
     let selected = [MeshFaceBoundaryAssignment {
         boundaries: (0..BOUNDARY_COUNT)
@@ -13048,10 +13048,10 @@ fn singleton_mesh_path_handles_many_independent_face_cycles() {
         let edge = face * 4;
         let point = face * 4;
         vertex_points.extend([
-            [point as f64, 0.0, 0.0],
-            [(point + 1) as f64, 0.0, 0.0],
-            [(point + 2) as f64, 0.0, 0.0],
-            [(point + 3) as f64, 0.0, 0.0],
+            [cadmpeg_core::convert::f64_from_index(point).expect("fixture index is exactly representable"), 0.0, 0.0],
+            [cadmpeg_core::convert::f64_from_index(point + 1).expect("fixture index is exactly representable"), 0.0, 0.0],
+            [cadmpeg_core::convert::f64_from_index(point + 2).expect("fixture index is exactly representable"), 0.0, 0.0],
+            [cadmpeg_core::convert::f64_from_index(point + 3).expect("fixture index is exactly representable"), 0.0, 0.0],
         ]);
         edge_rows.extend((0..4).map(|_| EdgeRow {
             kind: 1,
@@ -13064,7 +13064,7 @@ fn singleton_mesh_path_handles_many_independent_face_cycles() {
             vec![[point + 2, point + 3]],
             vec![[point, point + 3]],
         ]);
-        let identity = (edge * 2) as u32;
+        let identity = u32::try_from(edge * 2).expect("fixture value fits u32");
         port_identities.extend([
             [identity, identity + 1],
             [identity + 2, identity + 3],
@@ -13250,7 +13250,7 @@ mod direct_matching_tests {
         let edge_rows = (0..3)
             .map(|edge| EdgeRow {
                 kind: 1,
-                handles: vec![edge as u32],
+                handles: vec![u32::try_from(edge).expect("fixture value fits u32")],
                 boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
             })
             .collect::<Vec<_>>();

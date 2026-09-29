@@ -17,13 +17,13 @@ pub(crate) fn a8_surface_stream() -> Vec<u8> {
     payload.extend_from_slice(&le_f64(1.0));
     payload.extend_from_slice(&[13, 13, 1]); // multiplicities and plain mode
     for i in 0..9 {
-        for value in [i as f64, (i / 3) as f64, (i % 3) as f64] {
+        for value in [f64::from(i), f64::from(i / 3), f64::from(i % 3)] {
             payload.extend_from_slice(&le_f64(value));
         }
     }
     let mut record = Vec::new();
     record.extend_from_slice(&[0xa8, 0x03, 0x34]);
-    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
     record.extend_from_slice(&0xdeca_fbad_u32.to_le_bytes());
     record.extend_from_slice(&payload);
     record
@@ -55,7 +55,7 @@ pub(crate) fn a8_surface_stream_with_u_count(u_count: u32) -> Vec<u8> {
         payload.extend_from_slice(&le_f64(0.0));
     }
     let mut record = vec![0xa8, 0x03, 0x34];
-    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
     record.extend_from_slice(&0xdeca_fbad_u32.to_le_bytes());
     record.extend_from_slice(&payload);
     record
@@ -102,7 +102,7 @@ pub(crate) fn a8_elided_surface_stream() -> Vec<u8> {
     let mut pcurve_payload = vec![0; 58];
     pcurve_payload[0] = 0x81;
     pcurve_payload[1] = 0x18;
-    pcurve_payload[2..4].copy_from_slice(&(SURFACE as u16).to_le_bytes());
+    pcurve_payload[2..4].copy_from_slice(&(u16::try_from(SURFACE).expect("fixture value fits u16")).to_le_bytes());
     pcurve_payload[57] = 0x07;
     bytes.extend_from_slice(&[0xb5, 0x03, 0x21, 58, 1, 0, 0, 0]);
     bytes.extend_from_slice(&pcurve_payload);
@@ -123,7 +123,7 @@ pub(crate) fn a8_rational_surface_stream() -> Vec<u8> {
     for _ in 0..9 {
         record.extend_from_slice(&le_f64(2.0));
     }
-    let payload_len = (record.len() - 11) as u32;
+    let payload_len = u32::try_from(record.len() - 11).expect("fixture value fits u32");
     record[3..7].copy_from_slice(&payload_len.to_le_bytes());
     record
 }
@@ -147,7 +147,7 @@ pub(crate) fn a8_pcurve_stream() -> Vec<u8> {
     payload.extend_from_slice(&le_f64(1.0));
     payload.push(0x07);
     let mut record = vec![0xa8, 0x03, 0x20];
-    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
     record.extend_from_slice(&0x5678u32.to_le_bytes());
     record.extend_from_slice(&payload);
     record
@@ -184,7 +184,7 @@ pub(crate) fn a8_pcurve_stream_with_count(count: u32) -> Vec<u8> {
     payload.extend_from_slice(&le_f64(f64::from(count - 1)));
     payload.push(0x07);
     let mut record = vec![0xa8, 0x03, 0x20];
-    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
     record.extend_from_slice(&0x5678u32.to_le_bytes());
     record.extend_from_slice(&payload);
     record
@@ -221,7 +221,7 @@ pub(crate) fn a5_pcurve_stream_with_count(count: u32) -> Vec<u8> {
     payload.extend_from_slice(&le_f64(f64::from(count - 1)));
     payload.push(0x07);
     let mut record = vec![0xa5, 0x03, 0x20];
-    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
     record.push(0x05);
     record.extend_from_slice(&payload);
     record
@@ -264,7 +264,7 @@ pub(super) fn a5_pcurve_stream_with_support_and_uv(
     payload.extend_from_slice(&le_f64(1.0));
     payload.push(0x07);
     let mut record = vec![0xa5, 0x03, 0x20];
-    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
     record.push(0x05);
     record.extend_from_slice(&payload);
     record
@@ -453,7 +453,7 @@ pub(crate) fn a5_freeform_curve_stream_with_count(count: u32) -> Vec<u8> {
         }
     }
     let mut record = vec![0xa5, 0x03, 0x32];
-    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
     record.push(0x05);
     record.extend_from_slice(&payload);
     record
@@ -498,7 +498,7 @@ pub(crate) fn a5_guide_curve_stream_with_count(count: u32) -> Vec<u8> {
     }
     payload.extend_from_slice(&[0; 48]);
     let mut record = vec![0xa5, 0x03, 0x39];
-    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
     record.push(0x05);
     record.extend_from_slice(&payload);
     record
@@ -565,7 +565,7 @@ pub(crate) fn a8_freeform_curve_stream_with_count(count: u32) -> Vec<u8> {
     }
     payload.extend_from_slice(&[0; 59]);
     let mut record = vec![0xa8, 0x03, 0x32];
-    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
     record.extend_from_slice(&0x1234_5678u32.to_le_bytes());
     record.extend_from_slice(&payload);
     record

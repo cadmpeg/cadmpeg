@@ -5093,7 +5093,7 @@ mod tests {
         for point in points {
             bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
             for value in [point.x, point.y, point.z] {
-                bytes.extend_from_slice(&(value as f32).to_le_bytes());
+                bytes.extend_from_slice(&(cadmpeg_core::convert::f32_from_f64(value).expect("fixture value fits f32")).to_le_bytes());
             }
         }
         let mut edge_run =
@@ -5496,7 +5496,7 @@ mod tests {
         for point in points {
             bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
             for value in [point.x, point.y, point.z] {
-                bytes.extend_from_slice(&(value as f32).to_le_bytes());
+                bytes.extend_from_slice(&(cadmpeg_core::convert::f32_from_f64(value).expect("fixture value fits f32")).to_le_bytes());
             }
         }
         bytes.extend_from_slice(

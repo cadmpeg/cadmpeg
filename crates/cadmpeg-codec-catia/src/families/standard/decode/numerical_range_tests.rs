@@ -50,9 +50,9 @@ fn bezier_parameter_search_refuses_before_nodes_queue_and_parameters() {
 fn numerical_0922_quintic_keeps_both_branches() {
     for d in [1., SMALL_PARAMETER_DOMAIN] {
         let mut poles = (0..6)
-            .map(|i| Point3::new(-1. + 2. * i as f64 / 5., 0., 0.))
+            .map(|i| Point3::new(-1. + 2. * f64::from(i) / 5., 0., 0.))
             .collect::<Vec<_>>();
-        poles.extend((0..6).map(|i| Point3::new(1. - 2. * i as f64 / 5., 0., 0.)));
+        poles.extend((0..6).map(|i| Point3::new(1. - 2. * f64::from(i) / 5., 0., 0.)));
         let mut knots = vec![0.; 6];
         knots.extend(vec![0.5 * d; 6]);
         knots.extend(vec![d; 6]);
@@ -69,7 +69,7 @@ fn numerical_0922_quintic_keeps_both_branches() {
 fn numerical_0922_finite_bezier_midpoint() {
     for x in [0., 1e308] {
         let poles = (0..6)
-            .map(|i| Point3::new(x, i as f64 / 5., 0.))
+            .map(|i| Point3::new(x, f64::from(i) / 5., 0.))
             .collect::<Vec<_>>();
         let mut knots = vec![0.; 6];
         knots.extend(vec![1.; 6]);
@@ -86,7 +86,7 @@ fn numerical_0922_finite_bezier_midpoint() {
 #[test]
 fn standard_limit_curve_finds_interior_point_on_wide_finite_domain() {
     let poles = (0..6)
-        .map(|index| Point3::new(0.0, index as f64 / 5.0, 0.0))
+        .map(|index| Point3::new(0.0, f64::from(index) / 5.0, 0.0))
         .collect::<Vec<_>>();
     let mut knots = vec![-f64::MAX; 6];
     knots.extend(vec![f64::MAX; 6]);

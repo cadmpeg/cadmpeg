@@ -3002,11 +3002,11 @@ mod tests {
         at += 3;
         assert_eq!(at, grid_offset);
         for pole in 0..pole_count {
-            let value = pole as f64;
+            let value = cadmpeg_core::convert::f64_from_index(pole).expect("fixture index is exactly representable");
             for coordinate in 0..3 {
                 let offset = at + pole * 24 + coordinate * 8;
                 bytes[offset..offset + 8]
-                    .copy_from_slice(&(value + coordinate as f64).to_le_bytes());
+                    .copy_from_slice(&(value + cadmpeg_core::convert::f64_from_index(coordinate).expect("fixture index is exactly representable")).to_le_bytes());
             }
         }
         bytes
@@ -3195,7 +3195,7 @@ mod tests {
         let pole_start = multiplicity_start + multiplicities.len() * 5;
         let points = (0..control_count)
             .map(|index| {
-                let parameter = index as f64 / (control_count - 1) as f64;
+                let parameter = cadmpeg_core::convert::f64_from_index(index).expect("fixture index is exactly representable") / cadmpeg_core::convert::f64_from_index(control_count - 1).expect("fixture index is exactly representable");
                 [parameter, parameter * (1.0 - parameter)]
             })
             .collect::<Vec<_>>();

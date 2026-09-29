@@ -4099,14 +4099,14 @@ mod route_tests {
                 0 => ([0.0, 0.0], [1.0, 0.0]),
                 1 => ([0.0, 0.0], [0.0, 1.0]),
                 _ => {
-                    let offset = index as f64;
+                    let offset = cadmpeg_core::convert::f64_from_index(index).expect("fixture index is exactly representable");
                     ([offset, 0.0], [offset + 0.5, 0.0])
                 }
             };
-            let start_vertex = 1000 + 2 * index as u32;
+            let start_vertex = 1000 + 2 * u32::try_from(index).expect("fixture value fits u32");
             let end_vertex = start_vertex + 1;
-            let edge_ref = 3000 + index as u32;
-            let pcurve_ref = 2000 + index as u32;
+            let edge_ref = 3000 + u32::try_from(index).expect("fixture value fits u32");
+            let pcurve_ref = 2000 + u32::try_from(index).expect("fixture value fits u32");
             vertex_refs.extend([start_vertex, end_vertex]);
             points.extend([
                 point([start_uv[0], start_uv[1], 0.0]),

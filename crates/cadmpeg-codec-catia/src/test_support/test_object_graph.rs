@@ -13,17 +13,17 @@ pub(crate) fn object_graph_record(head: &[u8], payload: &[u8]) -> Vec<u8> {
     let child_len = 6 + payload.len();
     let total_len = 6 + head.len() + child_len;
     let mut bytes = vec![0x7c, 0x09];
-    bytes.extend_from_slice(&(total_len as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(total_len).expect("fixture value fits u32")).to_le_bytes());
     bytes.extend_from_slice(head);
     bytes.extend_from_slice(&[0x7c, 0x0a]);
-    bytes.extend_from_slice(&(child_len as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(child_len).expect("fixture value fits u32")).to_le_bytes());
     bytes.extend_from_slice(payload);
     bytes
 }
 
 pub(crate) fn inline_object_graph_record(body: &[u8]) -> Vec<u8> {
     let mut bytes = vec![0x7c, 0x09];
-    bytes.extend_from_slice(&(6_u32 + body.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(6_u32 + u32::try_from(body.len()).expect("fixture value fits u32")).to_le_bytes());
     bytes.extend_from_slice(body);
     bytes
 }
@@ -31,7 +31,7 @@ pub(crate) fn inline_object_graph_record(body: &[u8]) -> Vec<u8> {
 pub(crate) fn object_graph_from_records(records: &[Vec<u8>]) -> Vec<u8> {
     let total_len = 6 + records.iter().map(Vec::len).sum::<usize>();
     let mut bytes = vec![0x7c, 0x08];
-    bytes.extend_from_slice(&(total_len as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(total_len).expect("fixture value fits u32")).to_le_bytes());
     for record in records {
         bytes.extend_from_slice(record);
     }

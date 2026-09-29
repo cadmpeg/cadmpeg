@@ -168,13 +168,13 @@ fn e5_plane_solver_rechecks_the_returned_unit_frame() {
     let mut pcurves = BTreeMap::new();
     for index in 0..4 {
         let next = (index + 1) % 4;
-        let key = index as u32;
+        let key = u32::try_from(index).expect("fixture value fits u32");
         edges.insert(
             key,
             E5Edge {
                 support: 0,
                 start_vertex: key,
-                end_vertex: next as u32,
+                end_vertex: u32::try_from(next).expect("fixture value fits u32"),
                 parameter_start: 0,
                 parameter_end: 0,
                 tail: Vec::new(),

@@ -96,7 +96,7 @@ fn e5_edge_parser_reads_u24_reference_tokens() {
     let payload = [
         0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x80,
     ];
-    record[5..7].copy_from_slice(&(payload.len() as u16).to_le_bytes());
+    record[5..7].copy_from_slice(&(u16::try_from(payload.len()).expect("fixture value fits u16")).to_le_bytes());
     record.extend_from_slice(&payload);
 
     let edges =
@@ -116,7 +116,7 @@ fn e5_circle_plane_and_edge_results_refuse_before_growth() {
     let payload = [
         0x85, 0x38, 1, 2, 3, 0x38, 4, 5, 6, 0x38, 7, 8, 9, 0x80, 0x80, 0x80,
     ];
-    edge[5..7].copy_from_slice(&(payload.len() as u16).to_le_bytes());
+    edge[5..7].copy_from_slice(&(u16::try_from(payload.len()).expect("fixture value fits u16")).to_le_bytes());
     edge.extend_from_slice(&payload);
     assert!(matches!(
         crate::test_support::with_collection_limit(0, |ctx| crate::families::e5::records::e5_circles(ctx, &circle)),

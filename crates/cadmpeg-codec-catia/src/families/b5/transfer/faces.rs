@@ -946,8 +946,8 @@ mod tests {
             for member in 0..4 {
                 let start = vertices[member];
                 let end = vertices[(member + 1) % vertices.len()];
-                let edge = edge_base + member as u32;
-                let pcurve = pcurve_base + member as u32;
+                let edge = edge_base + u32::try_from(member).expect("fixture value fits u32");
+                let pcurve = pcurve_base + u32::try_from(member).expect("fixture value fits u32");
                 edge_vertices.insert(
                     edge,
                     [start, end].map(crate::families::b5::graph::vertex_refs::B5VertexRef::Raw),

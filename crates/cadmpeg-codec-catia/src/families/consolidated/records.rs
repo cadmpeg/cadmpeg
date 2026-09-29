@@ -2461,7 +2461,7 @@ mod tests {
                 .enumerate()
                 .map(
                     |(index, point)| crate::wire::records::ConsolidatedPcurveSite {
-                        knot: crate::test_support::test_b5::finite(index as f64),
+                        knot: crate::test_support::test_b5::finite(cadmpeg_core::convert::f64_from_index(index).expect("fixture index is exactly representable")),
                         point: crate::test_support::test_b5::finite_vector(point),
                         first_derivatives: crate::test_support::test_b5::finite_vector([0.0, 0.0]),
                         second_derivatives: crate::test_support::test_b5::finite_vector([0.0, 0.0]),

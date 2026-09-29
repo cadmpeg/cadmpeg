@@ -1685,7 +1685,7 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
     let edge_rows = (0..COMPONENT_COUNT * 2)
         .map(|edge| EdgeRow {
             kind: 2,
-            handles: vec![(edge * 2) as u32, (edge * 2 + 1) as u32],
+            handles: vec![u32::try_from(edge * 2).expect("fixture value fits u32"), u32::try_from(edge * 2 + 1).expect("fixture value fits u32")],
             boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
         })
         .collect::<Vec<_>>();
@@ -1775,7 +1775,7 @@ fn mesh_candidate_comparison_collapses_independent_seam_row_coordinate_automorph
             faces: vec![face(), face()],
             edge_rows: edge_rows.clone(),
             vertex_points: (0..COMPONENT_COUNT * 4)
-                .map(|point| [point as f64, 0.0, 0.0])
+                .map(|point| [cadmpeg_core::convert::f64_from_index(point).expect("fixture index is exactly representable"), 0.0, 0.0])
                 .collect(),
             logical_vertex_count: COMPONENT_COUNT * 4,
         }

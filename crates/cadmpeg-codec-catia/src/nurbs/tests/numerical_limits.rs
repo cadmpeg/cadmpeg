@@ -490,7 +490,7 @@ fn helix_cache_computes_finite_sagitta_without_doubling_radius() {
         .expect("service resource budget")
         .expect("finite cache and sagitta");
         assert!(cache.fit_tolerance.get() > 0.0 && cache.fit_tolerance.get() <= tolerance);
-        let step = sweep / (cache.curve.control_points().len() - 1) as f64;
+        let step = sweep / cadmpeg_core::convert::f64_from_index(cache.curve.control_points().len() - 1).expect("fixture index is exactly representable");
         // For a tiny angle, sagitta/r is step^2/8 to relative roundoff.
         // Divide before comparing so the reference does not square the angle.
         let expected = if step < 1e-100 {

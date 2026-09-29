@@ -1289,7 +1289,7 @@ fn native_namespace_retains_boundary_face_node_for_checked_cycle_prelude() {
         .as_ref()
         .expect("source-scoped boundary face node");
     assert_eq!(face_node.byte_offset, u64_from_index(face_node_pos));
-    assert_eq!(face_node.byte_len, (owner_pos - face_node_pos) as u64);
+    assert_eq!(face_node.byte_len, cadmpeg_core::decode::u64_from_index(owner_pos - face_node_pos));
     assert_eq!(face_node.target, 1014);
     assert_eq!(face_node.terminal, [0x27, 0x05]);
     assert_eq!(

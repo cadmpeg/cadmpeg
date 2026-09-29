@@ -721,7 +721,7 @@ fn standard_line_interval_constraint_rejects_partial_collinear_overlap() {
     let supports = (0..3)
         .map(|tag| StandardCurveSupport {
             pos: tag,
-            tag: tag as u32,
+            tag: u32::try_from(tag).expect("fixture value fits u32"),
             faces: [0, 1],
             geometry: StandardCurveGeometry::Line,
         })
@@ -847,7 +847,7 @@ fn repeated_shared_boundary_rows_keep_domains_when_one_witness_cannot_cover_them
         .into_iter()
         .map(|pos| StandardCurveSupport {
             pos,
-            tag: pos as u32,
+            tag: u32::try_from(pos).expect("fixture value fits u32"),
             faces: [3, 7],
             geometry: StandardCurveGeometry::Bspline,
         })
@@ -903,7 +903,7 @@ fn repeated_shared_boundary_rows_keep_positive_narrowing_when_witnesses_cover_ro
         .into_iter()
         .map(|pos| StandardCurveSupport {
             pos,
-            tag: pos as u32,
+            tag: u32::try_from(pos).expect("fixture value fits u32"),
             faces: [3, 7],
             geometry: StandardCurveGeometry::Bspline,
         })
@@ -931,7 +931,7 @@ fn repeated_shared_boundary_rows_keep_domains_when_a_witness_is_unavailable() {
         .into_iter()
         .map(|pos| StandardCurveSupport {
             pos,
-            tag: pos as u32,
+            tag: u32::try_from(pos).expect("fixture value fits u32"),
             faces: [3, 7],
             geometry: StandardCurveGeometry::Bspline,
         })
@@ -970,7 +970,7 @@ fn cached_standard_line_pair_preference_matches_the_geometry_rule() {
     let supports = (0..3)
         .map(|tag| StandardCurveSupport {
             pos: tag,
-            tag: tag as u32,
+            tag: u32::try_from(tag).expect("fixture value fits u32"),
             faces: [0, 1],
             geometry: StandardCurveGeometry::Line,
         })

@@ -1789,5 +1789,5 @@ fn the_minimal_parsed_entity_frame_is_the_empty_nested_body() {
         crate::native::CatiaEntityRecordBody::empty_nested()
     );
     assert_eq!(record.byte_len(), 24);
-    assert_eq!(record.byte_len() as usize, frame.len());
+    assert_eq!(cadmpeg_core::decode::index_from_u64(record.byte_len()).expect("fixture length fits usize"), frame.len());
 }
