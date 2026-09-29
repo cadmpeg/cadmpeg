@@ -575,16 +575,22 @@ fn homogeneous_product_control(
     let scalar_degree = scalar_controls.len().checked_sub(1)?;
     let degree = vector_degree.checked_add(scalar_degree)?;
     let denominator = bernstein_binomial(degree, index)?;
-    let lower = index.saturating_sub(scalar_degree);
     let upper = index.min(vector_degree);
     let mut control = [0.0; 4];
-    for (offset, vector_control) in vector_controls[lower..=upper].iter().enumerate() {
-        let vector_index = lower + offset;
-        let scalar_index = index - vector_index;
+    for (vector_index, vector_control) in vector_controls.iter().enumerate() {
+        if vector_index > upper {
+            break;
+        }
+        let Some(scalar_index) = index.checked_sub(vector_index) else {
+            continue;
+        };
+        let Some(scalar_control) = scalar_controls.get(scalar_index) else {
+            continue;
+        };
         let coefficient = bernstein_binomial(vector_degree, vector_index)?
             * bernstein_binomial(scalar_degree, scalar_index)?
             / denominator;
-        let scalar = scalar_controls[scalar_index][3];
+        let scalar = scalar_control[3];
         for axis in 0..4 {
             control[axis] += coefficient * vector_control[axis] * scalar;
         }

@@ -653,11 +653,15 @@ fn delimited_value(
     retain: bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Value, usize, bool), CodecError> {
+    let remaining = bytes
+        .len()
+        .checked_sub(start)
+        .ok_or_else(|| CodecError::malformed("IGES Global value offset exceeds input"))?;
     let value_start = start
         + bytes[start..]
             .iter()
             .position(|byte| *byte != b' ')
-            .unwrap_or(bytes.len().saturating_sub(start));
+            .unwrap_or(remaining);
     if bytes.get(value_start) == Some(&parameter_delimiter) {
         return Ok((Value::Omitted, value_start + 1, false));
     }
@@ -705,10 +709,14 @@ fn delimited_value(
             }
         };
     let separator_start = if allow_padding_after {
+        let remaining = bytes
+            .len()
+            .checked_sub(end)
+            .ok_or_else(|| CodecError::malformed("IGES Global separator exceeds input"))?;
         end + bytes[end..]
             .iter()
             .position(|byte| *byte != b' ')
-            .unwrap_or(bytes.len().saturating_sub(end))
+            .unwrap_or(remaining)
     } else {
         end
     };

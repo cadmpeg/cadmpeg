@@ -1804,13 +1804,17 @@ fn bounded_nurbs_for_id(
             policy.min(MAX_COMPOSITE_DEPTH)
         });
     if depth >= depth_limit {
-        let requested = depth.saturating_add(1) as u64;
-        return Err(CompositeCurveError::Budget(match ctx {
+        let refusal = |requested| match ctx {
             Some(ctx) => {
                 ctx.refuse_codec_limit("iges_composite_depth", depth_limit as u64, requested)
             }
             None => refuse_local_limit("iges_composite_depth", depth_limit as u64, requested),
-        }));
+        };
+        let requested = depth
+            .checked_add(1)
+            .map(u64_from_index)
+            .ok_or_else(|| CompositeCurveError::Budget(refusal(u64::MAX)))?;
+        return Err(CompositeCurveError::Budget(refusal(requested)));
     }
     let curve = match index {
         Some(index) => index

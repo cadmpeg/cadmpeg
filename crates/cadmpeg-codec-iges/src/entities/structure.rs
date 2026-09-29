@@ -2831,7 +2831,10 @@ pub(super) fn project(
                 Some(TokenValue::Integer(value)) => {
                     usize::try_from(*value).ok().and_then(|count| {
                         (entry.form == 0
-                            || count <= record.parameter_end().saturating_sub(cursor + 3))
+                            || cursor
+                                .checked_add(3)
+                                .and_then(|start| record.parameter_end().checked_sub(start))
+                                .is_some_and(|available| count <= available))
                         .then_some(count)
                     })
                 }
@@ -2917,8 +2920,9 @@ pub(super) fn project(
         let row_count = declared_row_count
             .zip(values_per_row)
             .and_then(|(rows, width)| {
-                let available = record.parameter_end().saturating_sub(value_start);
-                (width == 0 || rows <= available / width).then_some(rows)
+                record.parameter_end().checked_sub(value_start).and_then(|available| {
+                    (width == 0 || rows <= available / width).then_some(rows)
+                })
             });
         let mut cursor = value_start;
         let mut values_valid = shape.is_some() && row_count.is_some();
