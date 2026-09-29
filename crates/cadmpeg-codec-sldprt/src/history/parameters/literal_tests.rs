@@ -68,19 +68,19 @@ fn diameter_display_literals_participate_in_expressions() {
     let aliases = std::collections::HashMap::new();
     let values = std::collections::HashMap::new();
     assert_eq!(
-        ParameterExpressionParser::new_flat("<MOD-DIAM>4mm / 2", &aliases, &values).parse(),
+        ParameterExpressionParser::new_flat(&cadmpeg_test_support::service_decode_context(), "<MOD-DIAM>4mm / 2", &aliases, &values).parse().unwrap(),
         Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap()
         ))
     );
     assert_eq!(
-        ParameterExpressionParser::new_flat("<MOD-DIAM>4 + 1mm", &aliases, &values).parse(),
+        ParameterExpressionParser::new_flat(&cadmpeg_test_support::service_decode_context(), "<MOD-DIAM>4 + 1mm", &aliases, &values).parse().unwrap(),
         Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(5.0).unwrap()
         ))
     );
     assert_eq!(
-        ParameterExpressionParser::new_flat("&lt;MOD-DIAM&gt;4mm / 2", &aliases, &values,).parse(),
+        ParameterExpressionParser::new_flat(&cadmpeg_test_support::service_decode_context(), "&lt;MOD-DIAM&gt;4mm / 2", &aliases, &values,).parse().unwrap(),
         Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap()
         ))
@@ -98,13 +98,13 @@ fn radius_display_literals_participate_in_expressions() {
     let aliases = std::collections::HashMap::new();
     let values = std::collections::HashMap::new();
     assert_eq!(
-        ParameterExpressionParser::new_flat("<MOD-RHO>4mm / 2", &aliases, &values).parse(),
+        ParameterExpressionParser::new_flat(&cadmpeg_test_support::service_decode_context(), "<MOD-RHO>4mm / 2", &aliases, &values).parse().unwrap(),
         Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap()
         ))
     );
     assert_eq!(
-        ParameterExpressionParser::new_flat("&lt;MOD-RHO&gt;4 + 1mm", &aliases, &values,).parse(),
+        ParameterExpressionParser::new_flat(&cadmpeg_test_support::service_decode_context(), "&lt;MOD-RHO&gt;4 + 1mm", &aliases, &values,).parse().unwrap(),
         Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(5.0).unwrap()
         ))
@@ -140,7 +140,7 @@ fn dimension_decorations_preserve_the_nominal_scalar() {
         );
         assert_eq!(dimension_display(expression), Some(display), "{expression}");
         assert_eq!(
-            ParameterExpressionParser::new_flat(expression, &aliases, &values).parse(),
+            ParameterExpressionParser::new_flat(&cadmpeg_test_support::service_decode_context(), expression, &aliases, &values).parse().unwrap(),
             Some(ParameterValue::Length(
                 cadmpeg_ir::scalar::Length::new(expected).unwrap()
             )),
