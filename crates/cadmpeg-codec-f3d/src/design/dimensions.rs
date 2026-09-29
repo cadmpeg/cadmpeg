@@ -805,15 +805,14 @@ fn project_all_dimension_constraints(
                 Some(Err(error)) => return Some(Err(error)),
                 None => {}
             }
-            let locus_entities = group
-                .loci
-                .iter()
-                .map(|locus| {
-                    projected
-                        .get(&(scope, locus.geometry_record_index))
-                        .copied()
-                })
-                .collect::<Option<Vec<_>>>()?;
+            let mut locus_entities = Vec::new();
+            for locus in &group.loci {
+                let entity = projected.get(&(scope, locus.geometry_record_index)).copied()?;
+                if let Err(error) = push_dimension_item(ctx, &mut locus_entities, entity,
+                    "f3d radial group locus entity") {
+                    return Some(Err(error));
+                }
+            }
             if !radial_extension_annotation_group(&locus_entities, parameter) {
                 return None;
             }
