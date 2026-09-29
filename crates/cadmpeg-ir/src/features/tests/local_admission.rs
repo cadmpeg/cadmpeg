@@ -55,6 +55,25 @@ fn local_collection_admission_preserves_order_and_rejects_invalid_membership() {
 }
 
 #[test]
+fn charged_selection_members_refuse_uniqueness_index_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        SelectionMembers::try_from_charged(
+            vec!["first", "second"], &ctx, "selection uniqueness",
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "selection uniqueness"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
 fn selection_owners_enforce_local_arity_and_atomic_nonoverlap() {
     let first = BodySelection::Bodies(vec![body_id("first")].try_into().expect("distinct bodies"));
     let second =

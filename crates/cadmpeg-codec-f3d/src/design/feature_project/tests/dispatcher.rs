@@ -916,14 +916,16 @@ fn loft_path_preserves_complete_historical_edge_selection() {
         HistoricalEdgeId::mint("f3d:history-input:edge#7:feature:41:17").expect("identity grammar");
     assert_eq!(
         crate::design::feature_project::loft_path_from_edge_selection(
+            None,
             "group",
             EdgeSelection::historical(state.clone(), vec![edge.clone()], "selection".into())
                 .unwrap(),
-        ),
+        ).unwrap(),
         PathRef::historical_edges(state.clone(), vec![edge.clone()], "selection".into()).unwrap()
     );
     assert_eq!(
         crate::design::feature_project::loft_path_from_edge_selection(
+            None,
             "group",
             EdgeSelection::historical_partial(
                 state,
@@ -932,9 +934,54 @@ fn loft_path_preserves_complete_historical_edge_selection() {
                 "selection".into()
             )
             .unwrap(),
-        ),
+        ).unwrap(),
         PathRef::Native("group".into())
     );
+}
+
+#[test]
+fn loft_native_path_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::EdgeSelection;
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::loft_path_from_edge_selection(
+            Some(&ctx), "group", EdgeSelection::Unresolved,
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d loft native path"
+                && failure.dimension == ResourceDimension::RetainedBytes
+    ));
+}
+
+#[test]
+fn empty_surface_patch_path_refuses_native_copy_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        100,
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::resolved_surface_patch_path(
+            &[], &[], &[], &[], &scope,
+            crate::design::feature_project::SurfacePatchRecipe::Direct, Some(&ctx),
+        ),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d surface patch native path"
+                && failure.dimension == ResourceDimension::RetainedBytes
+    ));
 }
 
 #[test]

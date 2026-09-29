@@ -6481,6 +6481,31 @@ impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for SelectionMembers<T> {
     }
 }
 
+impl<T: Eq + std::hash::Hash> SelectionMembers<T> {
+    /// Admit decoded members after charging the temporary uniqueness index.
+    pub fn try_from_charged(
+        value: Vec<T>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::CodecError> {
+        if value.is_empty() {
+            return Ok(Err(BodySelectionError::Empty));
+        }
+        let count = u64::try_from(value.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.charge_collection_items(count, operation)?;
+        let mut unique = HashSet::new();
+        unique.try_reserve(value.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        for member in &value {
+            if !unique.insert(member) {
+                return Ok(Err(BodySelectionError::RepeatedBody));
+            }
+        }
+        Ok(Ok(Self(value)))
+    }
+}
+
 impl<T> SelectionMembers<T> {
     /// The selected members in source order.
     pub fn as_slice(&self) -> &[T] {
