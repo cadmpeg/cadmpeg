@@ -1036,15 +1036,26 @@ pub(crate) fn project_relation_point_geometry(
     Ok(())
 }
 
-pub(super) fn relation_operand_geometry_ref(
-    relation: &FeatureInputRelationInstance,
-    operand_index: usize,
-) -> String {
-    format!("{}:operand:{operand_index}", relation.id)
+fn indexed_geometry_ref_matches(value: &str, owner: &str, kind: &str, index: usize) -> bool {
+    let Some(suffix) = value.strip_prefix(owner).and_then(|rest| rest.strip_prefix(kind)) else {
+        return false;
+    };
+    !suffix.is_empty()
+        && (suffix == "0" || !suffix.starts_with('0'))
+        && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        && suffix.parse::<usize>() == Ok(index)
 }
 
-pub(super) fn solver_line_geometry_ref(feature: &str, index: u16) -> String {
-    format!("{feature}:solver-line:{index}")
+pub(super) fn relation_operand_geometry_ref_matches(
+    value: &str,
+    relation: &FeatureInputRelationInstance,
+    operand_index: usize,
+) -> bool {
+    indexed_geometry_ref_matches(value, &relation.id, ":operand:", operand_index)
+}
+
+pub(super) fn solver_line_geometry_ref_matches(value: &str, feature: &str, index: u16) -> bool {
+    indexed_geometry_ref_matches(value, feature, ":solver-line:", usize::from(index))
 }
 
 fn is_solver_line_operand(kind: FeatureInputOperandKind) -> bool {
@@ -1533,16 +1544,19 @@ pub(crate) fn project_relation_solved_line_geometry(
                                 .iter()
                                 .zip(selected.iter())
                                 .all(|(operand, line)| {
-                                    let geometry_ref = solver_line_geometry_ref(
-                                        &relation.feature_ref,
-                                        operand.entity_index,
-                                    );
                                     entities
                                         .iter()
                                         .filter(|entity| {
                                             entity.sketch == *sketch
-                                                && entity.geometry_ref.as_deref()
-                                                    == Some(geometry_ref.as_str())
+                                                && entity.geometry_ref.as_deref().is_some_and(
+                                                    |geometry_ref| {
+                                                        solver_line_geometry_ref_matches(
+                                                            geometry_ref,
+                                                            &relation.feature_ref,
+                                                            operand.entity_index,
+                                                        )
+                                                    },
+                                                )
                                         })
                                         .all(|entity| {
                                             dynamic_line_geometry_key(entity, QUANTUM)
@@ -3542,7 +3556,7 @@ pub(super) fn relation_parameter_by_display_name<'a>(
 mod relation_geometry_tests {
     use super::super::relation_loci::same_dimension_length;
     use super::{
-        project_relation_bindings, project_relation_solved_line_geometry,
+        indexed_geometry_ref_matches, project_relation_bindings, project_relation_solved_line_geometry,
         project_relation_solved_point_geometry, project_spatial_relation_bindings,
         spatial_point_line_distance, unique_dynamic_line_pair,
     };
@@ -3566,6 +3580,30 @@ mod relation_geometry_tests {
     use std::collections::HashMap;
 
     const TEST_LINE_GEOMETRY_QUANTUM: f64 = 1.0 / 100_000_000.0;
+
+    #[test]
+    fn indexed_geometry_refs_match_only_canonical_exact_ids() {
+        assert!(indexed_geometry_ref_matches(
+            "feature:solver-line:12",
+            "feature",
+            ":solver-line:",
+            12,
+        ));
+        for value in [
+            "feature-extra:solver-line:12",
+            "feature:solver-line:012",
+            "feature:solver-line:+12",
+            "feature:solver-line:12-extra",
+            "feature:operand:12",
+        ] {
+            assert!(!indexed_geometry_ref_matches(
+                value,
+                "feature",
+                ":solver-line:",
+                12,
+            ));
+        }
+    }
 
     #[test]
     fn solver_point_relation_projects_graph_resolved_operands() {
