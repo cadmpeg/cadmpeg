@@ -459,11 +459,12 @@ fn circular_pattern_face_uses_unique_rigid_surface_radius() {
     ];
     assert_eq!(
         resolve_pattern_face_by_surface_radius(
+            None,
             &candidates,
             &preceding,
             &result,
             &HashSet::from([11, 12]),
-        ),
+        ).unwrap(),
         Some(11)
     );
 
@@ -471,11 +472,12 @@ fn circular_pattern_face_uses_unique_rigid_surface_radius() {
     ambiguous.surface_radii[1].radius = 2.5;
     assert_eq!(
         resolve_pattern_face_by_surface_radius(
+            None,
             &candidates,
             &ambiguous,
             &result,
             &HashSet::from([11, 12]),
-        ),
+        ).unwrap(),
         None
     );
 }

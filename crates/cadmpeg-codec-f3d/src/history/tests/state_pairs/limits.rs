@@ -6,6 +6,9 @@ use super::{
     history_state_index, AsmDeltaState, AsmHistoricalTopology, AsmHistoricalEntityDelta,
     AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, HashMap,
 };
+use crate::history::resolve_pattern_face_by_surface_radius;
+use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalSurfaceRadius};
+use std::collections::HashSet;
 
 pub(super) fn change_state(state_id: i64) -> AsmDeltaState {
     AsmDeltaState {
@@ -153,4 +156,46 @@ fn edge_change_chain_refuses_updated_collection_limit() {
     let error = edge_changes_across_state_chain(Some(&ctx), &result, 1, &states).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D updated edges"));
+}
+
+fn pattern_face_limit_case(max_items: u64) -> Result<Option<i64>, cadmpeg_core::CodecError> {
+    let candidate = crate::ids::brep_face_id(21);
+    let preceding = AsmHistoricalTopology::default();
+    let result = AsmHistoricalTopology {
+        face_surfaces: vec![AsmHistoricalCarrierBinding {
+            entity: 21,
+            carrier: 201,
+        }],
+        surface_radii: vec![AsmHistoricalSurfaceRadius {
+            surface: 201,
+            radius: 2.5,
+        }],
+        ..AsmHistoricalTopology::default()
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = max_items;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    resolve_pattern_face_by_surface_radius(
+        Some(&ctx),
+        &[candidate],
+        &preceding,
+        &result,
+        &HashSet::new(),
+    )
+}
+
+#[test]
+fn pattern_face_candidate_index_refuses_collection_limit() {
+    let error = pattern_face_limit_case(0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D pattern face candidates"));
+}
+
+#[test]
+fn pattern_face_bound_index_refuses_collection_limit() {
+    let error = pattern_face_limit_case(1).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D pattern bound faces"));
 }
