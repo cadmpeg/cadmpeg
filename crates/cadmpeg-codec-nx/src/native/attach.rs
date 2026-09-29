@@ -2706,15 +2706,16 @@ fn attach_feature_operations(
             )?;
         }
         if outputs.is_empty() {
-            outputs = hole_outputs
+            if let Some(bodies) = hole_outputs
                 .get(label.id.as_str())
                 .or_else(|| hole_packages.outputs.get(label.id.as_str()))
-                .cloned()
-                .unwrap_or_default();
+            {
+                outputs = copy_feature_output_bodies(ctx, bodies)?;
+            }
         }
         if outputs.is_empty() {
             if let Some(body) = boolean_target_output(boolean_definition.as_ref()) {
-                outputs.push(body);
+                outputs = copy_feature_output_bodies(ctx, std::slice::from_ref(body))?;
             }
         }
         let native_primary_body = body_references
@@ -9274,7 +9275,7 @@ fn boolean_target_writer(
     (Some(native_body), None)
 }
 
-fn boolean_target_output(definition: Option<&FeatureDefinition>) -> Option<BodyId> {
+fn boolean_target_output(definition: Option<&FeatureDefinition>) -> Option<&BodyId> {
     let Some(FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })) = definition
     else {
         return None;
@@ -9282,7 +9283,23 @@ fn boolean_target_output(definition: Option<&FeatureDefinition>) -> Option<BodyI
     let BodySelection::Resolved { bodies, .. } = operands.target() else {
         return None;
     };
-    bodies.first().cloned()
+    bodies.first()
+}
+
+fn copy_feature_output_bodies(
+    ctx: &DecodeContext<'_>,
+    bodies: &[BodyId],
+) -> Result<Vec<BodyId>, CodecError> {
+    let mut outputs = Vec::new();
+    for body in bodies {
+        let bytes = std::mem::size_of::<BodyId>().checked_add(body.as_str().len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX feature output body", 0, cadmpeg_core::decode::u64_from_index(body.as_str().len())))?;
+        ctx.charge_collection_items(1, "NX feature output bodies")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX feature output body")?;
+        outputs.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("allocate NX feature output bodies", 0, 1))?;
+        outputs.push(body.clone());
+    }
+    Ok(outputs)
 }
 
 pub(super) fn boolean_feature_definition(
