@@ -1040,6 +1040,75 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
     );
 }
 
+fn thread_face_group_fixture() -> (DesignParameterScope, DesignConstructionOperandGroup) {
+    let scope = DesignParameterScope::empty(
+        "f3d:test:scope#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        100,
+    );
+    let group = serde_json::from_value(serde_json::json!({
+        "id": "f3d:test:construction-group#150",
+        "scope_record_index": 100,
+        "scope_reference_ordinal": 0,
+        "record_index": 150,
+        "byte_offset": 0,
+        "class_tag": "346",
+        "role": 0x0000_0010_0000_0000_u64,
+        "members": [200],
+        "member_offsets": [0],
+        "frame": {
+            "member_count_offset": 0,
+            "opaque_index": 1,
+            "opaque_index_offset": 18,
+            "opaque_scalar": 0.0,
+            "opaque_scalar_offset": 22,
+            "variant": false
+        },
+        "role_offset": 0,
+        "paired_class_tag": "262",
+        "paired_byte_offset": 325,
+        "next_record_index": 151,
+        "next_byte_offset": 0
+    })).expect("Thread face group");
+    (scope, group)
+}
+
+#[test]
+fn thread_face_group_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (scope, group) = thread_face_group_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::project_thread_face_selection(Some(&ctx), &scope, &[150], &[group], &[]),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d Thread face group"
+                && failure.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn thread_face_native_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let (scope, group) = thread_face_group_fixture();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(matches!(
+        crate::design::feature_project::project_thread_face_selection(Some(&ctx), &scope, &[150], &[group], &[]),
+        Err(CodecError::ResourceLimit(failure))
+            if failure.operation == "f3d Thread face native id"
+                && failure.dimension == ResourceDimension::RetainedBytes
+    ));
+}
+
 #[test]
 fn form_dispatcher_binds_a_unique_long_cage_list() {
     use std::io::{Cursor, Write};
