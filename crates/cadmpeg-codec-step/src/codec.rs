@@ -162,12 +162,16 @@ fn inspect_parsed_exchange(
         opaque_offsets,
     } = reader::analyze_exchange(bytes, exchange, diagnostics, ctx)?;
     let mut entries = Vec::new();
-    ctx.push_vec(&mut entries, ContainerEntry {
+    ctx.push_vec(
+        &mut entries,
+        ContainerEntry {
             name: "HEADER".into(),
             role: ContainerRole::Metadata,
             storage: EntryStorage::unreported(VerbatimLabel::None),
             attributes: BTreeMap::default(),
-        }, "step_inspect_entries")?;
+        },
+        "step_inspect_entries",
+    )?;
     if !exchange.anchors().is_empty() {
         let mut attributes = std::collections::BTreeMap::new();
         insert_attribute(
@@ -176,12 +180,16 @@ fn inspect_parsed_exchange(
             "anchor_count",
             exchange.anchors().len().to_string(),
         )?;
-        ctx.push_vec(&mut entries, ContainerEntry {
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
                 name: "ANCHOR".into(),
                 role: ContainerRole::InFileAnchors,
                 storage: EntryStorage::unreported(VerbatimLabel::None),
                 attributes,
-            }, "step_inspect_entries")?;
+            },
+            "step_inspect_entries",
+        )?;
     }
     if !exchange.references().is_empty() {
         let mut attributes = std::collections::BTreeMap::new();
@@ -201,12 +209,16 @@ fn inspect_parsed_exchange(
                 "step_inspect_external_uris",
             )?,
         )?;
-        ctx.push_vec(&mut entries, ContainerEntry {
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
                 name: "REFERENCE".into(),
                 role: ContainerRole::ExternalReferences,
                 storage: EntryStorage::unreported(VerbatimLabel::None),
                 attributes,
-            }, "step_inspect_entries")?;
+            },
+            "step_inspect_entries",
+        )?;
     }
     for (index, section) in exchange.data().iter().enumerate() {
         let mut counts = BTreeMap::<&str, usize>::new();
@@ -239,12 +251,16 @@ fn inspect_parsed_exchange(
             section.records.len().to_string(),
         )?;
         insert_attribute(ctx, &mut attributes, "unknown_entities", unknown)?;
-        ctx.push_vec(&mut entries, ContainerEntry {
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
                 name: format!("DATA[{index}]"),
                 role: ContainerRole::EntityRecords,
                 storage: EntryStorage::unreported(VerbatimLabel::None),
                 attributes,
-            }, "step_inspect_entries")?;
+            },
+            "step_inspect_entries",
+        )?;
     }
     let external_dependencies = decoded.body.notes.iter().filter(|note| {
         note.starts_with("external document ") || note.starts_with("external source ")
@@ -268,15 +284,21 @@ fn inspect_parsed_exchange(
                 "step_inspect_dependency_text",
             )?,
         )?;
-        ctx.push_vec(&mut entries, ContainerEntry {
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
                 name: "EXTERNAL_DEPENDENCIES".into(),
                 role: ContainerRole::ExternalReferences,
                 storage: EntryStorage::unreported(VerbatimLabel::None),
                 attributes,
-            }, "step_inspect_entries")?;
+            },
+            "step_inspect_entries",
+        )?;
     }
     for (index, signature) in exchange.signatures().iter().enumerate() {
-        ctx.push_vec(&mut entries, ContainerEntry {
+        ctx.push_vec(
+            &mut entries,
+            ContainerEntry {
                 name: if index == 0 {
                     "SIGNATURE".into()
                 } else {
@@ -288,7 +310,9 @@ fn inspect_parsed_exchange(
                     cadmpeg_core::decode::u64_from_index(signature.len()),
                 ),
                 attributes: BTreeMap::default(),
-            }, "step_inspect_entries")?;
+            },
+            "step_inspect_entries",
+        )?;
     }
     let identifiers = exchange.joined_schema_identifiers(ctx)?;
     let schema = if identifiers.is_empty() {
@@ -298,10 +322,14 @@ fn inspect_parsed_exchange(
     };
     let dialect = matched.dialect();
     let mut notes = Vec::new();
-    ctx.push_vec(&mut notes, ctx.format_retained(
+    ctx.push_vec(
+        &mut notes,
+        ctx.format_retained(
             format_args!("schema {schema}; dialect {dialect}"),
             "step_inspect_schema_note",
-        )?, "step_codec_notes")?;
+        )?,
+        "step_codec_notes",
+    )?;
     for diagnostic in diagnostics {
         let note = ctx.format_retained(
             format_args!("{}", diagnostic.message),
@@ -396,8 +424,23 @@ fn inspect_zip(
         )?;
     }
     let mut notes = Vec::new();
-    { ctx.push_vec(&mut notes, format!("root {}", archive::ROOT_NAME), "step_codec_notes")?; ctx.push_vec(&mut notes, format!("archive entries={entry_count}; root data offset={root_data_offset}"), "step_codec_notes") }?;
-    ctx.extend_vec(&mut notes, std::mem::take(&mut inspected.notes), "step_codec_notes")?;
+    {
+        ctx.push_vec(
+            &mut notes,
+            format!("root {}", archive::ROOT_NAME),
+            "step_codec_notes",
+        )?;
+        ctx.push_vec(
+            &mut notes,
+            format!("archive entries={entry_count}; root data offset={root_data_offset}"),
+            "step_codec_notes",
+        )
+    }?;
+    ctx.extend_vec(
+        &mut notes,
+        std::mem::take(&mut inspected.notes),
+        "step_codec_notes",
+    )?;
     let losses = std::mem::take(&mut inspected.losses);
     ctx.extend_vec(&mut notes, resource_notes, "step_codec_notes")?;
     // ZIP packaging is a container fact, not an identity axis: the
@@ -434,10 +477,14 @@ fn decode_zip(
             root_data_offset,
         },
     )?;
-    ctx.push_vec(&mut decoded.body.notes, format!(
+    ctx.push_vec(
+        &mut decoded.body.notes,
+        format!(
             "container root {}; archive entries={entry_count}",
             archive::ROOT_NAME
-        ), "step_codec_notes")?;
+        ),
+        "step_codec_notes",
+    )?;
     ctx.extend_vec(&mut decoded.body.notes, resource_notes, "step_codec_notes")?;
     Ok(decoded)
 }
@@ -667,8 +714,6 @@ mod tests {
 
     use super::{insert_attribute, starts_with_step_magic, StepCodec};
 
-
-
     #[test]
     fn inspect_attribute_refuses_collection_limit() {
         let arena = DecodeArena::new();
@@ -684,8 +729,6 @@ mod tests {
                     && refusal.operation == "step_inspect_attributes"
         ));
     }
-
-
 
     fn inspect_text_refuses(source: &[u8], operation: &str) {
         let mut limit = 0u64;

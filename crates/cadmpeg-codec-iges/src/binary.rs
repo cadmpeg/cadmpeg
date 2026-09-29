@@ -355,12 +355,14 @@ impl<'a, 'ctx, 'arena> ValueStream<'a, 'ctx, 'arena> {
         if physically_present {
             for _ in 1..repeat {
                 let value = self.one(format)?;
-                self.ctx.push_back(&mut self.pending, value, "iges binary repeated values")?;
+                self.ctx
+                    .push_back(&mut self.pending, value, "iges binary repeated values")?;
             }
         } else {
             for _ in 1..repeat {
                 let cloned = self.clone_value(&first)?;
-                self.ctx.push_back(&mut self.pending, cloned, "iges binary repeated values")?;
+                self.ctx
+                    .push_back(&mut self.pending, cloned, "iges binary repeated values")?;
             }
         }
         Ok(Some(first))
@@ -753,7 +755,11 @@ fn render_parameter_value(
             }
             let header = stack_text(format_args!("{}H", value.len()))?;
             let mut output = Vec::new();
-            ctx.extend_retained_bytes(&mut output, header.as_bytes(), "iges binary rendered string")?;
+            ctx.extend_retained_bytes(
+                &mut output,
+                header.as_bytes(),
+                "iges binary rendered string",
+            )?;
             ctx.extend_retained_bytes(&mut output, value, "iges binary rendered string")?;
             Ok(output)
         }
@@ -789,7 +795,11 @@ fn parameter_text(
     let mut output = ctx.copy_retained(entity_text.as_bytes(), "iges binary parameter text")?;
     for value in values {
         ctx.extend_retained_bytes(&mut output, b",", "iges binary parameter text")?;
-        ctx.extend_retained_bytes(&mut output, &render_parameter_value(value, false, ctx)?, "iges binary parameter text")?;
+        ctx.extend_retained_bytes(
+            &mut output,
+            &render_parameter_value(value, false, ctx)?,
+            "iges binary parameter text",
+        )?;
     }
     ctx.extend_retained_bytes(&mut output, b";", "iges binary parameter text")?;
     Ok(output)
@@ -983,7 +993,11 @@ fn normalize_global(
         if index > 2 {
             ctx.extend_retained_bytes(&mut output, b",", "iges binary global text")?;
         }
-        ctx.extend_retained_bytes(&mut output, &render_parameter_value(value, false, ctx)?, "iges binary global text")?;
+        ctx.extend_retained_bytes(
+            &mut output,
+            &render_parameter_value(value, false, ctx)?,
+            "iges binary global text",
+        )?;
     }
     ctx.extend_retained_bytes(&mut output, b";", "iges binary global text")?;
     Ok(output)
@@ -1334,7 +1348,6 @@ fn append_output_card(
     card: &[u8; CARD_WIDTH],
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-
     ctx.reserve_retained_admitted_vec(output, 81, "iges binary normalized card")?;
     output.extend_from_slice(card);
     output.push(b'\n');

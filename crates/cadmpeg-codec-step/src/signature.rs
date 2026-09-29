@@ -38,7 +38,12 @@ pub(crate) fn decode_payload(
             }
         }
 
-        ctx.reserve_scoped_vec(&mut compact_reservation, &mut compact, 1, "step_signature_compact_items")?;
+        ctx.reserve_scoped_vec(
+            &mut compact_reservation,
+            &mut compact,
+            1,
+            "step_signature_compact_items",
+        )?;
         compact.push(input[at]);
         at += 1;
     }

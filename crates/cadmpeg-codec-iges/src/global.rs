@@ -700,7 +700,6 @@ fn global_bytes(scan: &CardScan<'_>, ctx: &DecodeContext<'_>) -> Result<Vec<u8>,
         .ok_or_else(|| CodecError::NotImplemented("IGES Global stream exceeds usize".into()))?;
     let mut bytes = ctx.retained_admitted_vec(length, "iges_global_stream")?;
 
-
     for (_, line) in scan.section(Section::Global) {
         bytes.extend_from_slice(&line.payload[..72]);
     }
@@ -893,7 +892,8 @@ fn parse_real_text(text: &str, ctx: &DecodeContext<'_>) -> Result<Option<FiniteR
     if !text.bytes().any(|byte| matches!(byte, b'D' | b'd')) {
         return Ok(text.parse::<f64>().ok().and_then(FiniteReal::new));
     }
-    let (mut normalized, _reservation) = ctx.scoped_admitted_vec(text.len(), "iges global numeric text")?;
+    let (mut normalized, _reservation) =
+        ctx.scoped_admitted_vec(text.len(), "iges global numeric text")?;
     normalized.extend_from_slice(text.as_bytes());
     for byte in &mut normalized {
         if matches!(byte, b'D' | b'd') {

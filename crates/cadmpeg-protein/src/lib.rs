@@ -939,7 +939,10 @@ mod tests {
     #[test]
     fn schema_edit_reader_uses_the_caller_resource_limits() {
         let arena = DecodeArena::new();
-        for dimension in [ResourceDimension::RetainedBytes, ResourceDimension::CollectionItems] {
+        for dimension in [
+            ResourceDimension::RetainedBytes,
+            ResourceDimension::CollectionItems,
+        ] {
             let mut policy = DecodePolicy::service();
             match dimension {
                 ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 2,
@@ -948,11 +951,18 @@ mod tests {
             }
             let (ctx, _) = DecodeContext::from_root_bytes(b"xml", &arena, &policy).expect("root");
             let mut reader = Cursor::new(b"xml");
-            assert!(matches!(super::read_entry_bounded(&ctx, &mut reader, 3, "schema"),
-                Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension && limit.operation == "Protein schema allocation"));
+            assert!(
+                matches!(super::read_entry_bounded(&ctx, &mut reader, 3, "schema"),
+                Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension && limit.operation == "Protein schema allocation")
+            );
         }
-        let (ctx, _) = DecodeContext::from_root_bytes(b"xml", &arena, &DecodePolicy::service()).expect("root");
-        assert_eq!(super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3, "schema").expect("service admission"), b"xml");
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(b"xml", &arena, &DecodePolicy::service()).expect("root");
+        assert_eq!(
+            super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3, "schema")
+                .expect("service admission"),
+            b"xml"
+        );
     }
 
     #[test]

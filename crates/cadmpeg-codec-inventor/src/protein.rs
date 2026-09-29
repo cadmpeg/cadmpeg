@@ -62,7 +62,10 @@ pub(crate) fn parse<'a>(
         }),
         Err(error) => {
             if !matches!(error, CodecError::ResourceLimit(_)) {
-                ctx.charge_formatted_retained(format_args!("{}", &error), "retain Inventor malformed Protein detail")?;
+                ctx.charge_formatted_retained(
+                    format_args!("{error}"),
+                    "retain Inventor malformed Protein detail",
+                )?;
             }
             ProteinState::Malformed {
                 stream: stream.id(),
@@ -145,7 +148,10 @@ pub(crate) fn decode_instances_with_issue(
         Ok(instances) => Ok((instances, None)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            ctx.charge_formatted_retained(format_args!("{}", &error), "retain Inventor Protein semantic issue")?;
+            ctx.charge_formatted_retained(
+                format_args!("{error}"),
+                "retain Inventor Protein semantic issue",
+            )?;
             Ok((Vec::new(), Some(crate::issue_detail(error)?)))
         }
     }
@@ -205,7 +211,10 @@ fn validate_entry_name(ctx: &DecodeContext<'_>, name: &str) -> Result<(), CodecE
             .split('/')
             .any(|component| matches!(component, "" | "." | ".."))
     {
-        ctx.charge_formatted_retained(format_args!("Inventor Protein package has unsafe entry name {name:?}"), "retain Inventor unsafe Protein entry diagnostic")?;
+        ctx.charge_formatted_retained(
+            format_args!("Inventor Protein package has unsafe entry name {name:?}"),
+            "retain Inventor unsafe Protein entry diagnostic",
+        )?;
         return Err(CodecError::malformed(format_args!(
             "Inventor Protein package has unsafe entry name {name:?}"
         )));

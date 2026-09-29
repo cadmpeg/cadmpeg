@@ -236,11 +236,20 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             .iter()
             .filter(|id| !self.typed_records.contains(id))
             .count();
-        self.ctx.reserve_set(&mut self.typed_records, new_claims, "step_stage_claims")?;
+        self.ctx
+            .reserve_set(&mut self.typed_records, new_claims, "step_stage_claims")?;
         self.typed_records.extend(outcome.claims.drain());
-        self.ctx.reserve_vec(&mut self.body.losses, outcome.losses.len(), "step_stage_losses")?;
+        self.ctx.reserve_vec(
+            &mut self.body.losses,
+            outcome.losses.len(),
+            "step_stage_losses",
+        )?;
         self.body.losses.append(&mut outcome.losses);
-        self.ctx.reserve_vec(&mut self.body.notes, outcome.notes.len(), "step_stage_notes")?;
+        self.ctx.reserve_vec(
+            &mut self.body.notes,
+            outcome.notes.len(),
+            "step_stage_notes",
+        )?;
         self.body.notes.append(&mut outcome.notes);
         Ok(())
     }
@@ -486,7 +495,11 @@ fn decode_exchange_mode(
         &mut post_decode_losses,
         session.ctx,
     )?;
-    session.ctx.reserve_vec(&mut session.body.losses, post_decode_losses.len(), "step_carrier_retention_losses")?;
+    session.ctx.reserve_vec(
+        &mut session.body.losses,
+        post_decode_losses.len(),
+        "step_carrier_retention_losses",
+    )?;
     session.body.losses.append(&mut post_decode_losses);
 
     session.charge_stage("step_opaque_record_retention")?;
@@ -510,7 +523,9 @@ fn decode_exchange_mode(
             session.ctx.charge_collection_items(1, "step_opaque_ids")?;
             opaque_ids.insert(id, unknown_id);
         }
-        session.ctx.reserve_vec(&mut opaque_sources, opaque_ids.len(), "step_opaque_sources")?;
+        session
+            .ctx
+            .reserve_vec(&mut opaque_sources, opaque_ids.len(), "step_opaque_sources")?;
         for (&id, record) in exchange.records() {
             if session.typed_records.contains(&id) {
                 continue;
@@ -585,7 +600,9 @@ fn decode_exchange_mode(
                     .ctx
                     .refuse_codec_limit("step_opaque_records", 0, u64::MAX)
             })?;
-        let mut opaque = session.ctx.collection_vec(opaque_count, "step_opaque_records")?;
+        let mut opaque = session
+            .ctx
+            .collection_vec(opaque_count, "step_opaque_records")?;
         for source in opaque_sources {
             session
                 .ctx
@@ -596,11 +613,21 @@ fn decode_exchange_mode(
             let mut links = Vec::new();
             for id in source.links {
                 if let Some(unknown_id) = opaque_ids.get(&id) {
-                    (session.ctx).push_formatted_retained(&mut links, format_args!("{}", unknown_id.as_str()), "step_opaque_links", "step_opaque_link_text")?;
+                    (session.ctx).push_formatted_retained(
+                        &mut links,
+                        format_args!("{}", unknown_id.as_str()),
+                        "step_opaque_links",
+                        "step_opaque_link_text",
+                    )?;
                 }
                 if let Some(targets) = source_targets.get(&id) {
                     for target in targets {
-                        (session.ctx).push_formatted_retained(&mut links, format_args!("{}", target), "step_opaque_links", "step_opaque_link_text")?;
+                        (session.ctx).push_formatted_retained(
+                            &mut links,
+                            format_args!("{target}"),
+                            "step_opaque_links",
+                            "step_opaque_link_text",
+                        )?;
                     }
                 }
             }
@@ -652,23 +679,33 @@ fn decode_exchange_mode(
         accounting.unclassified.to_string(),
     );
     if accounting.unclassified > 0 {
-        (session.ctx).push_vec(&mut session.body.losses, StepLossCode::ByteAccountingUnclassified.note(format!(
+        (session.ctx).push_vec(
+            &mut session.body.losses,
+            StepLossCode::ByteAccountingUnclassified.note(format!(
                 "STEP byte accounting left {} byte(s) unclassified",
                 accounting.unclassified
-            )), "step_decode_loss_notes")?;
+            )),
+            "step_decode_loss_notes",
+        )?;
     }
     let accounting_note = format!(
         "byte accounting: {} structural, {} typed, {} named opaque, {} unclassified",
         accounting.structural, accounting.typed, accounting.opaque, accounting.unclassified
     );
-    session.ctx.reserve_vec(&mut session.body.notes, 1, "step_byte_accounting_note")?;
+    session
+        .ctx
+        .reserve_vec(&mut session.body.notes, 1, "step_byte_accounting_note")?;
     session.body.notes.push(accounting_note);
     for (name, count) in counts {
         let message = session.ctx.format_retained(
             format_args!("preserved {count} {name} instance(s) as named opaque STEP records"),
             "step_opaque_preservation_loss_text",
         )?;
-        (session.ctx).push_vec(&mut session.body.losses, StepLossCode::OpaqueRecordPreserved.note(message), "step_decode_loss_notes")?;
+        (session.ctx).push_vec(
+            &mut session.body.losses,
+            StepLossCode::OpaqueRecordPreserved.note(message),
+            "step_decode_loss_notes",
+        )?;
     }
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
     session.into_result(source_fidelity, opaque_offsets)
@@ -1071,7 +1108,11 @@ fn record_closure(
         {
             collect_references(value, &mut references, ctx)?;
         }
-        ctx.reserve_vec(&mut pending, references.len(), "step_record_closure_pending")?;
+        ctx.reserve_vec(
+            &mut pending,
+            references.len(),
+            "step_record_closure_pending",
+        )?;
         pending.extend(references);
     }
     Ok(closure)
@@ -1128,7 +1169,6 @@ fn opaque_record_id(
         })
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     let mut kind = ctx.retained_string(len, operation)?;
-
 
     for (index, partial) in record.partials.iter().enumerate() {
         if index > 0 {

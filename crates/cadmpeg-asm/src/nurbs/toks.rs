@@ -689,7 +689,6 @@ impl SubtypeTable {
                         record.tokens.get(pos + 1)
                     {
                         if name != "ref" {
-
                             ctx.reserve_vec(&mut defs, 1, "index ASM subtype definitions")?;
                             defs.push((record.tokens.clone(), pos));
                         }

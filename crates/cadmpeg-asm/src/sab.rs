@@ -555,12 +555,22 @@ fn frame_impl(
                     .into());
                 }
                 Lexed::SubIdent(s) if !name_done => {
-                    ctx.reserve_scoped_vec(&mut scratch, &mut name_parts, 1, "frame SAB name part")?;
+                    ctx.reserve_scoped_vec(
+                        &mut scratch,
+                        &mut name_parts,
+                        1,
+                        "frame SAB name part",
+                    )?;
                     let part = ctx.copy_scoped_text(s, &mut scratch, "frame SAB name part")?;
                     name_parts.push(part);
                 }
                 Lexed::Ident(s) if !name_done => {
-                    ctx.reserve_scoped_vec(&mut scratch, &mut name_parts, 1, "frame SAB name part")?;
+                    ctx.reserve_scoped_vec(
+                        &mut scratch,
+                        &mut name_parts,
+                        1,
+                        "frame SAB name part",
+                    )?;
                     let part = ctx.copy_scoped_text(s, &mut scratch, "frame SAB name part")?;
                     name_parts.push(part);
                     name_done = true;
@@ -608,7 +618,12 @@ fn frame_impl(
                 Lexed::Value(Token::SubtypeOpen) => {
                     payload_start = false;
                     let guard = ctx.enter_nested("frame SAB subtype")?;
-                    ctx.reserve_scoped_vec(&mut scratch, &mut depth_guards, 1, "frame SAB subtype guards")?;
+                    ctx.reserve_scoped_vec(
+                        &mut scratch,
+                        &mut depth_guards,
+                        1,
+                        "frame SAB subtype guards",
+                    )?;
                     depth_guards.push(guard);
                     name_done = true;
                     ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")?;

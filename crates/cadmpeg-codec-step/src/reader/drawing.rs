@@ -186,8 +186,7 @@ pub(super) fn decode(
 
     let mut drawing_ids = BTreeSet::new();
     for candidate in &candidates {
-        ctx.insert_btree_set(&mut drawing_ids, candidate.id, "step_drawing_ids")
-            ?;
+        ctx.insert_btree_set(&mut drawing_ids, candidate.id, "step_drawing_ids")?;
     }
     let mut hidden_drawing_ids = BTreeSet::new();
     for record in exchange.records().values() {
@@ -201,8 +200,7 @@ pub(super) fn decode(
         };
         visit_drawing_references(items, ctx, &mut |id| {
             if drawing_ids.contains(&id) {
-                ctx.insert_btree_set(&mut hidden_drawing_ids, id, "step_hidden_drawing_ids")
-                    ?;
+                ctx.insert_btree_set(&mut hidden_drawing_ids, id, "step_hidden_drawing_ids")?;
             }
             Ok(())
         })?;
@@ -224,8 +222,7 @@ pub(super) fn decode(
                 "step_drawing_target_member_text",
             )?,
             "step_drawing_target_members",
-        )
-        ?;
+        )?;
     }
     // DR-01: a drawing association scoped by PRODUCT_DEFINITION_SHAPE targets
     // that shape's one owning product-definition view, not a product-wide
@@ -240,8 +237,7 @@ pub(super) fn decode(
                 "step_drawing_target_member_text",
             )?,
             "step_drawing_target_members",
-        )
-        ?;
+        )?;
     }
     let drawing_target_ids = referenced_target_ids(exchange, &candidates, ctx)?;
     add_source_typed_targets(
@@ -353,12 +349,10 @@ pub(super) fn decode(
 
     let mut typed_records = HashSet::new();
     for &id in drawings.keys() {
-        ctx.insert_hash_set(&mut typed_records, id, "step_drawing_typed_claims")
-            ?;
+        ctx.insert_hash_set(&mut typed_records, id, "step_drawing_typed_claims")?;
     }
     for id in association_ids {
-        ctx.insert_hash_set(&mut typed_records, id, "step_drawing_typed_claims")
-            ?;
+        ctx.insert_hash_set(&mut typed_records, id, "step_drawing_typed_claims")?;
     }
     ctx.reserve_vec(
         &mut ir.model.drawings,
@@ -421,8 +415,7 @@ fn referenced_target_ids(
             .any(|partial| partial.name == "DRAUGHTING_MODEL_ITEM_ASSOCIATION_WITH_PLACEHOLDER")
         {
             if let Some(placeholder_id) = association_placeholder_reference(record, parameters) {
-                ctx.insert_btree_set(&mut ids, placeholder_id, "step_drawing_referenced_targets")
-                    ?;
+                ctx.insert_btree_set(&mut ids, placeholder_id, "step_drawing_referenced_targets")?;
             }
         }
     }
@@ -629,7 +622,13 @@ fn add_reference_fields(
         visit_drawing_references(value, target_context.ctx, &mut |target_id| {
             match target_context.resolve(target_id)? {
                 TargetResolution::Resolved(target) => {
-                    (target_context.ctx).push_btree_group(relationships, role.clone(), target, "step_drawing_relationship_groups", "step_drawing_relationship_members")?;
+                    (target_context.ctx).push_btree_group(
+                        relationships,
+                        role.clone(),
+                        target,
+                        "step_drawing_relationship_groups",
+                        "step_drawing_relationship_members",
+                    )?;
                 }
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
@@ -692,7 +691,13 @@ fn add_sheet_revision_usages(
         let revision_target = target_context.resolve(sheet_id)?;
         if let Some(sheet) = drawings.get_mut(&sheet_id) {
             match sheet_target {
-                TargetResolution::Resolved(target) => (target_context.ctx).push_btree_group(&mut sheet.relationships, cadmpeg_core::nonblank_literal!("drawing_revision"), target, "step_drawing_relationship_groups", "step_drawing_relationship_members")?,
+                TargetResolution::Resolved(target) => (target_context.ctx).push_btree_group(
+                    &mut sheet.relationships,
+                    cadmpeg_core::nonblank_literal!("drawing_revision"),
+                    target,
+                    "step_drawing_relationship_groups",
+                    "step_drawing_relationship_members",
+                )?,
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
                     &format!("drawing sheet #{sheet_id} usage #{usage_id}"),
@@ -736,7 +741,13 @@ fn add_sheet_revision_usages(
         }
         if let Some(revision) = drawings.get_mut(&revision_id) {
             match revision_target {
-                TargetResolution::Resolved(target) => (target_context.ctx).push_btree_group(&mut revision.relationships, cadmpeg_core::nonblank_literal!("sheet_revision"), target, "step_drawing_relationship_groups", "step_drawing_relationship_members")?,
+                TargetResolution::Resolved(target) => (target_context.ctx).push_btree_group(
+                    &mut revision.relationships,
+                    cadmpeg_core::nonblank_literal!("sheet_revision"),
+                    target,
+                    "step_drawing_relationship_groups",
+                    "step_drawing_relationship_members",
+                )?,
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
                     &format!("drawing revision #{revision_id} usage #{usage_id}"),
@@ -829,7 +840,13 @@ fn add_draughting_model_associations(
             visit_drawing_references(items, target_context.ctx, &mut |item_id| {
                 has_items = true;
                 match target_context.resolve(item_id)? {
-                    TargetResolution::Resolved(item) => (target_context.ctx).push_btree_group(&mut model.relationships, cadmpeg_core::nonblank_literal!("associated_items"), item, "step_drawing_relationship_groups", "step_drawing_relationship_members")?,
+                    TargetResolution::Resolved(item) => (target_context.ctx).push_btree_group(
+                        &mut model.relationships,
+                        cadmpeg_core::nonblank_literal!("associated_items"),
+                        item,
+                        "step_drawing_relationship_groups",
+                        "step_drawing_relationship_members",
+                    )?,
                     TargetResolution::Ambiguous(identities) => {
                         note_ambiguous_target(
                             losses,
@@ -901,16 +918,29 @@ fn add_draughting_model_associations(
         };
 
         if let Some(definition) = definition_target {
-            (target_context.ctx).push_btree_group(&mut model.relationships, cadmpeg_core::nonblank_literal!("semantic_definition"), definition, "step_drawing_relationship_groups", "step_drawing_relationship_members")?;
+            (target_context.ctx).push_btree_group(
+                &mut model.relationships,
+                cadmpeg_core::nonblank_literal!("semantic_definition"),
+                definition,
+                "step_drawing_relationship_groups",
+                "step_drawing_relationship_members",
+            )?;
         }
         if let Some(placeholder) = placeholder_target {
-            (target_context.ctx).push_btree_group(&mut model.relationships, cadmpeg_core::nonblank_literal!("annotation_placeholder"), placeholder, "step_drawing_relationship_groups", "step_drawing_relationship_members")?;
+            (target_context.ctx).push_btree_group(
+                &mut model.relationships,
+                cadmpeg_core::nonblank_literal!("annotation_placeholder"),
+                placeholder,
+                "step_drawing_relationship_groups",
+                "step_drawing_relationship_members",
+            )?;
         }
         if complete {
-            target_context
-                .ctx
-                .insert_hash_set(typed, association_id, "step_drawing_typed_claims")
-                ?;
+            target_context.ctx.insert_hash_set(
+                typed,
+                association_id,
+                "step_drawing_typed_claims",
+            )?;
         }
     }
     Ok(())
@@ -1020,8 +1050,7 @@ fn wrapper_target_resolution(
     while let Some((id, leaving)) = pending.pop() {
         if leaving {
             active.remove(&id);
-            ctx.insert_btree_set(&mut complete, id, "step_drawing_wrapper_complete")
-                ?;
+            ctx.insert_btree_set(&mut complete, id, "step_drawing_wrapper_complete")?;
             continue;
         }
         if complete.contains(&id) {
@@ -1030,8 +1059,7 @@ fn wrapper_target_resolution(
         if active.contains(&id) {
             return Ok(None);
         }
-        ctx.insert_btree_set(&mut active, id, "step_drawing_wrapper_active")
-            ?;
+        ctx.insert_btree_set(&mut active, id, "step_drawing_wrapper_active")?;
         ctx.reserve_vec(&mut pending, 1, "step_drawing_wrapper_pending")?;
         pending.push((id, true));
         if let Some(targets) = target_identities.get(&id) {
@@ -1148,9 +1176,15 @@ fn value_text(
                 "step_drawing_value_text",
             )?;
             for byte in value.data() {
-                ctx.append_formatted_retained(&mut text, format_args!("{}{}",
-                    char::from(HEX[usize::from(byte >> 4)]),
-                    char::from(HEX[usize::from(byte & 0x0f)])), "step_drawing_value_text")?;
+                ctx.append_formatted_retained(
+                    &mut text,
+                    format_args!(
+                        "{}{}",
+                        char::from(HEX[usize::from(byte >> 4)]),
+                        char::from(HEX[usize::from(byte & 0x0f)])
+                    ),
+                    "step_drawing_value_text",
+                )?;
             }
             text
         }

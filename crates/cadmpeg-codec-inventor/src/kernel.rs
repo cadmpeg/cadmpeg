@@ -150,10 +150,13 @@ pub(crate) fn decode_kernel_carrier(
             ))
         })
     })?;
-    ctx.charge_formatted_retained(format_args!(
+    ctx.charge_formatted_retained(
+        format_args!(
             "RSeStorage/B{}:record:{}",
             carrier.segment_token, carrier.record_ordinal
-        ), "retain Inventor kernel carrier stream name")?;
+        ),
+        "retain Inventor kernel carrier stream name",
+    )?;
     let stream = format!(
         "RSeStorage/B{}:record:{}",
         carrier.segment_token, carrier.record_ordinal
@@ -253,7 +256,10 @@ pub(crate) fn select_active_carrier<'a>(
         Ok(carrier) => Ok(ActiveCarrierState::Selected(carrier)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            ctx.charge_formatted_retained(format_args!("{}", &error), "retain Inventor carrier unavailable detail")?;
+            ctx.charge_formatted_retained(
+                format_args!("{error}"),
+                "retain Inventor carrier unavailable detail",
+            )?;
             Ok(ActiveCarrierState::Unavailable(error.to_string()))
         }
     }

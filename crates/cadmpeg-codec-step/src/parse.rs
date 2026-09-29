@@ -294,9 +294,8 @@ impl EntityIndex {
                 if let Some(ids) = index.get_mut(partial.name.as_str()) {
                     budget.push_vec(ids, id, "step_entity_index_ids")?;
                 } else {
-                    let name = budget.copy_retained_text(
-                        &partial.name, "step_entity_index_name_storage",
-                    )?;
+                    let name = budget
+                        .copy_retained_text(&partial.name, "step_entity_index_name_storage")?;
                     let ids = budget.collect_vec([id], "step_entity_index_ids")?;
                     budget.insert_hash_map(&mut index, name, ids, "step_entity_index_names")?;
                 }
@@ -358,7 +357,6 @@ impl Exchange {
         );
         let len = len.ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
         let mut joined = ctx.retained_string(len, operation)?;
-
 
         for identifier in self.schema_identifiers() {
             if !joined.is_empty() {
@@ -1087,7 +1085,8 @@ impl Parser<'_, '_, '_> {
                     )?;
                 }
 
-                self.budget.reserve_vec(parameters, 1, "step_omitted_name_recovery_item")?;
+                self.budget
+                    .reserve_vec(parameters, 1, "step_omitted_name_recovery_item")?;
                 record.partials[0]
                     .parameters
                     .insert(0, Value::String(Vec::new()));
@@ -2505,7 +2504,9 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         .map_err(ResolveError::Resource)?;
                 }
 
-                self.budget.reserve_vec(stack, 1, "step_anchor_reference_stack").map_err(ResolveError::Resource)?;
+                self.budget
+                    .reserve_vec(stack, 1, "step_anchor_reference_stack")
+                    .map_err(ResolveError::Resource)?;
                 stack.push(name);
                 let resolved = self.resolve(source, stack, budget, depth + 1);
                 stack.pop();
@@ -2743,7 +2744,9 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 .map_err(ResolveError::Resource)?;
         }
 
-                self.budget.reserve_vec(&mut self.stack, 1, "step_reference_stack").map_err(ResolveError::Resource)?;
+        self.budget
+            .reserve_vec(&mut self.stack, 1, "step_reference_stack")
+            .map_err(ResolveError::Resource)?;
         self.stack.push(key);
         let resolved = self.resolve_value(anchor, depth + 1);
         self.stack.pop();

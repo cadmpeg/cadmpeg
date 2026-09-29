@@ -516,7 +516,12 @@ fn topology_root_refusal(collection_limit: u64, include_distinct: bool) -> Codec
         return key.expect_err("root key exceeds limit");
     }
     let mut distinct = std::collections::BTreeSet::new();
-    ctx.insert_btree_set(&mut distinct, key.expect("root key fits limit"), "step_distinct_topology_roots").map(|_| ())
+    ctx.insert_btree_set(
+        &mut distinct,
+        key.expect("root key fits limit"),
+        "step_distinct_topology_roots",
+    )
+    .map(|_| ())
     .expect_err("distinct root set exceeds limit")
 }
 

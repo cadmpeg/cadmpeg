@@ -207,7 +207,10 @@ fn admit_container_entries(
         ctx.charge_retained(path_len, "retain Inventor summary entry path")?;
         ctx.charge_collection_items(1, "collect Inventor summary directory attribute")?;
         ctx.charge_retained(12, "retain Inventor summary directory key")?;
-        ctx.charge_formatted_retained(format_args!("{}", entry.directory_id()), "retain Inventor summary directory id")?;
+        ctx.charge_formatted_retained(
+            format_args!("{}", entry.directory_id()),
+            "retain Inventor summary directory id",
+        )?;
         if let CompoundEntry::Stream(stream) = entry {
             if let Some(allocation) = stream.allocation() {
                 ctx.charge_collection_items(1, "collect Inventor summary allocation attribute")?;
@@ -219,7 +222,10 @@ fn admit_container_entries(
             }
             ctx.charge_collection_items(1, "collect Inventor summary start-sector attribute")?;
             ctx.charge_retained(12, "retain Inventor summary start-sector key")?;
-            ctx.charge_formatted_retained(format_args!("{}", stream.start_sector()), "retain Inventor summary start sector")?;
+            ctx.charge_formatted_retained(
+                format_args!("{}", stream.start_sector()),
+                "retain Inventor summary start sector",
+            )?;
         }
     }
     Ok(())
