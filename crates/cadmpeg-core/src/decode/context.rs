@@ -257,6 +257,16 @@ impl<'a> DecodeContext<'a> {
         Ok(copy)
     }
 
+    /// Copies admitted text into session-retained storage.
+    pub fn copy_retained_text(
+        &self,
+        text: &str,
+        operation: &'static str,
+    ) -> Result<String, CodecError> {
+        self.copy_retained_text_limit(text, operation)
+            .map_err(Into::into)
+    }
+
     /// Copies bytes into session-retained storage after charging and reserving safely.
     pub fn copy_retained(
         &self,

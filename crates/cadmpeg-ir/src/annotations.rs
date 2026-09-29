@@ -272,20 +272,7 @@ pub struct AnnotationBuilder {
     annotations: Annotations,
 }
 
-fn copy_annotation_text(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    source: &str,
-    operation: &'static str,
-) -> Result<String, cadmpeg_core::CodecError> {
-    let bytes =
-        u64::try_from(source.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut text = String::new();
-    text.try_reserve(source.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
-    text.push_str(source);
-    Ok(text)
-}
+
 
 impl AnnotationBuilder {
     /// Copy a speculative annotation set under the active decode budget.
@@ -297,18 +284,18 @@ impl AnnotationBuilder {
         let mut annotations = Annotations::default();
         for (id, source) in &self.annotations.provenance {
             ctx.charge_collection_items(1, operation)?;
-            let id = copy_annotation_text(ctx, id, operation)?;
+            let id = ctx.copy_retained_text(id, operation)?;
             annotations
                 .provenance
                 .insert(id, source.copy_charged(ctx, operation)?);
         }
         for (id, note) in &self.annotations.exactness {
             ctx.charge_collection_items(1, operation)?;
-            let id = copy_annotation_text(ctx, id, operation)?;
+            let id = ctx.copy_retained_text(id, operation)?;
             let mut fields = BTreeMap::new();
             for (field, exactness) in note.fields() {
                 ctx.charge_collection_items(1, operation)?;
-                let field = FieldName(copy_annotation_text(ctx, field.as_str(), operation)?);
+                let field = FieldName(ctx.copy_retained_text(field.as_str(), operation)?);
                 fields.insert(field, *exactness);
             }
             let note = match note {
@@ -372,9 +359,9 @@ impl AnnotationBuilder {
         if !self.annotations.provenance.contains_key(id) {
             ctx.charge_collection_items(1, "collect source provenance")?;
         }
-        let id = copy_annotation_text(ctx, id, "retain source provenance identity")?;
+        let id = ctx.copy_retained_text(id, "retain source provenance identity")?;
         let tag = tag
-            .map(|tag| copy_annotation_text(ctx, tag, "retain source provenance tag"))
+            .map(|tag| ctx.copy_retained_text(tag, "retain source provenance tag"))
             .transpose()?;
         let note = self.note_owned(id, stream, offset);
         if let Some(tag) = tag {
@@ -466,8 +453,8 @@ impl AnnotationBuilder {
         if existing.is_none_or(|note| !note.fields().contains_key(field)) {
             ctx.charge_collection_items(1, "collect source exactness fields")?;
         }
-        let id = copy_annotation_text(ctx, id, "retain source exactness identity")?;
-        let field = copy_annotation_text(ctx, field, "retain source exactness field")?;
+        let id = ctx.copy_retained_text(id, "retain source exactness identity")?;
+        let field = ctx.copy_retained_text(field, "retain source exactness field")?;
         self.derived_owned(id, field)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         Ok(())
@@ -633,10 +620,10 @@ impl Annotations {
                 return Ok(Err(AnnotationIdentityCollision { id: target }));
             }
             ctx.charge_collection_items(1, operation)?;
-            targets.insert(copy_annotation_text(ctx, &target, operation)?);
+            targets.insert(ctx.copy_retained_text(&target, operation)?);
             let provenance_target = if self.provenance.contains_key(id) {
                 ctx.charge_collection_items(1, operation)?;
-                Some(copy_annotation_text(ctx, &target, operation)?)
+                Some(ctx.copy_retained_text(&target, operation)?)
             } else {
                 None
             };
@@ -644,7 +631,7 @@ impl Annotations {
                 ctx.charge_collection_items(1, operation)?;
             }
             remapping.push((
-                copy_annotation_text(ctx, id, operation)?,
+                ctx.copy_retained_text(id, operation)?,
                 target,
                 provenance_target,
             ));
@@ -705,7 +692,7 @@ impl Annotations {
         for id in other.provenance.keys().chain(other.exactness.keys()) {
             if self.provenance.contains_key(id) || self.exactness.contains_key(id) {
                 return Ok(Err(AnnotationIdentityCollision {
-                    id: copy_annotation_text(ctx, id, operation)?,
+                    id: ctx.copy_retained_text(id, operation)?,
                 }));
             }
         }
