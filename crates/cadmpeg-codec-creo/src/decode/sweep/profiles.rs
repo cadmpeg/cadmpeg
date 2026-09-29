@@ -646,9 +646,7 @@ pub(in super::super) fn resolved_sketch_profiles(
             let source_geometry = match source_geometry.definition() {
                 SketchGeometryDefinition::Nurbs { curve } => {
                     let operation = "creo resolved profile NURBS copy";
-                    let items = curve.knots().len().checked_add(curve.pole_rows().count())
-                        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-                    SketchGeometry::nurbs(ctx.try_collection(items, operation, || curve.try_clone())?)
+                    SketchGeometry::nurbs(curve.copy_admitted(ctx, operation, operation)?)
                 }
                 SketchGeometryDefinition::Line { .. }
                 | SketchGeometryDefinition::Arc { .. }

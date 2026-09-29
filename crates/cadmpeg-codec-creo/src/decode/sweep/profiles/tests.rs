@@ -831,3 +831,26 @@ fn audit_regression_line_arc_endpoint_tolerance_has_length_units() {
     assert!(super::line_arc_intersect(line, arc(1000.1005), 0.001));
     assert!(super::line_arc_intersect(line, arc(999.5), 0.001));
 }
+
+#[test]
+fn resolved_profile_nurbs_copy_refuses_knots_and_poles_separately() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    for rational in [false, true] {
+        let sketch_id = SketchId::mint("creo:model:sketch#74").expect("ID");
+        let entity_id = SketchEntityId::mint("creo:featdefs:sketch_entity#74:1").expect("ID");
+        let curve = PcurveNurbs::from_lanes(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0), Point2::new(0.0, 0.0)],
+            rational.then(|| vec![1.0, 2.0, 1.0]), false).expect("curve");
+        let mut ir = CadIr::empty(); ir.model.sketches.push(sketch(&sketch_id, &entity_id));
+        ir.model.sketch_entities.push(SketchEntity::new(entity_id, sketch_id.clone(), SketchGeometry::nurbs(curve.clone())));
+        let carriers = crate::decode::source_carriers::SourceUnitCarriers::default();
+        for cap in [5, 8] {
+            let arena = DecodeArena::new(); let mut policy = DecodePolicy::service(); policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            assert!(matches!(super::resolved_sketch_profiles(&ctx, &ir, &carriers, &sketch_id, 1),
+                Err(cadmpeg_core::CodecError::ResourceLimit(resource)) if resource.operation == "creo resolved profile NURBS copy"));
+        }
+        let profiles = crate::decode::with_test_decode_ctx(|ctx| super::resolved_sketch_profiles(ctx, &ir, &carriers, &sketch_id, 1)).expect("service").expect("profile");
+        assert!(matches!(profiles[0][0].geometry(), super::ProfileGeometry::Nurbs { curve: copied, .. } if copied == &curve));
+    }
+}

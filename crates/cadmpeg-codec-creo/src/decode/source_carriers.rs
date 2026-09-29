@@ -45,11 +45,7 @@ impl SourceUnitCarriers {
         match geometry.definition() {
             SketchGeometryDefinition::Nurbs { curve } => {
                 let operation = "creo source sketch NURBS copy";
-                let items = curve.knots().len().checked_add(curve.pole_rows().count())
-                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-                Ok(SketchGeometry::nurbs(
-                    ctx.try_collection(items, operation, || curve.try_clone())?,
-                ))
+                Ok(SketchGeometry::nurbs(curve.copy_admitted(ctx, operation, operation)?))
             }
             SketchGeometryDefinition::Text {
                 text,
@@ -482,9 +478,9 @@ impl SourceUnitCarriers {
             let curve = ir.model.curves.iter().find(|curve| curve.id == *curve_id);
             let parameter_scale = curve
                 .and_then(|curve| self.curve_geometry(curve).solved())
-                .and_then(|geometry| {
-                    crate::decode::build::units::curve_parameter_scale(geometry, scale)
-                });
+                .map(|geometry| {
+                    crate::decode::build::units::curve_parameter_scale(ctx, geometry, scale)
+                }).transpose()?.flatten();
             if let Some(parameter_scale) = parameter_scale {
                 *interval = interval.scaled(parameter_scale).ok_or_else(|| {
                     not_implemented_refusal(ctx, "edge param_range must be finite and ordered")
@@ -530,9 +526,9 @@ impl SourceUnitCarriers {
                 .find(|curve| curve.id == use_curve.curve);
             let parameter_scale = curve
                 .and_then(|curve| self.curve_geometry(curve).solved())
-                .and_then(|geometry| {
-                    crate::decode::build::units::curve_parameter_scale(geometry, scale)
-                });
+                .map(|geometry| {
+                    crate::decode::build::units::curve_parameter_scale(ctx, geometry, scale)
+                }).transpose()?.flatten();
             if let Some(parameter_scale) = parameter_scale {
                 use_curve.parameter_range = use_curve
                     .parameter_range
@@ -562,9 +558,9 @@ impl SourceUnitCarriers {
             .ok_or_else(|| malformed_refusal(ctx, "Creo pcurve has no owning surface"))?;
         let scales = self.length_scale_mm.and_then(|scale| {
             self.surface_geometry(surface).solved().map(|geometry| {
-                crate::decode::build::units::surface_parameter_scales(geometry, scale.get())
+                crate::decode::build::units::surface_parameter_scales(ctx, geometry, scale.get())
             })
-        });
+        }).transpose()?;
         Self::push_pcurve(ctx, ir, pcurve, scales)
     }
 
@@ -577,9 +573,9 @@ impl SourceUnitCarriers {
     ) -> Result<(), CodecError> {
         let scales = self.length_scale_mm.and_then(|scale| {
             source_surface.solved().map(|geometry| {
-                crate::decode::build::units::surface_parameter_scales(geometry, scale.get())
+                crate::decode::build::units::surface_parameter_scales(ctx, geometry, scale.get())
             })
-        });
+        }).transpose()?;
         Self::push_pcurve(ctx, ir, pcurve, scales)
     }
 
@@ -2412,4 +2408,38 @@ mod tests {
         ).expect_err("overflow remains not implemented");
         assert_eq!(error.to_string(), "not implemented yet: Creo pcurve cannot be represented after unit normalization with scales [25.4, 25.4]");
     }
+    #[test]
+    fn source_sketch_nurbs_copy_refuses_knots_and_poles_separately() {
+        for rational in [false, true] {
+            let geometry = SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                1, vec![0.0, 0.0, 1.0, 1.0], vec![cadmpeg_ir::math::Point2::new(0.0, 0.0); 2],
+                rational.then(|| vec![1.0, 2.0]), false).expect("curve"));
+            for cap in [3, 5] {
+                let arena = DecodeArena::new(); let mut policy = DecodePolicy::service(); policy.limits.max_collection_items = cap;
+                let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                assert!(matches!(SourceUnitCarriers::copy_sketch_geometry(&ctx, &geometry),
+                    Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo source sketch NURBS copy"));
+            }
+            assert_eq!(crate::decode::with_test_decode_ctx(|ctx| SourceUnitCarriers::copy_sketch_geometry(ctx, &geometry)).expect("service"), geometry);
+        }
+    }
+
+    #[test]
+    fn pcurve_normalization_propagates_owned_scaling_work_refusal() {
+        let mut pcurve = admission_pcurve();
+        pcurve.geometry = cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(1,
+                vec![0.0, 0.0, 1.0, 1.0], vec![cadmpeg_ir::math::Point2::new(1.0, 2.0); 2], None, false).expect("curve"),
+        };
+        let arena = DecodeArena::new(); let mut policy = DecodePolicy::service(); policy.limits.max_work_units = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        let mut ir = CadIr::empty();
+        assert!(matches!(SourceUnitCarriers::push_pcurve(&ctx, &mut ir, pcurve.clone(), Some([2.0, 3.0])),
+            Err(CodecError::ResourceLimit(resource)) if resource.operation == "IR pcurve pole coordinate scaling work"));
+        assert!(ir.model.pcurves.is_empty());
+        let mut expected = pcurve.clone(); expected.geometry.try_scale_coordinates([2.0, 3.0]).expect("reference");
+        crate::decode::with_test_decode_ctx(|ctx| SourceUnitCarriers::push_pcurve(ctx, &mut ir, pcurve, Some([2.0, 3.0]))).expect("service");
+        assert_eq!(ir.model.pcurves, vec![expected]);
+    }
+
 }

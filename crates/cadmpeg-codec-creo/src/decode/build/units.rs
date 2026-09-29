@@ -298,6 +298,7 @@ fn scale_feature_operation(
             let mut points = Vec::new();
             ctx.try_reserve_items(&mut points, chain.points().len(), "creo scaled feature polyline points")?;
             for point in chain.points() {
+                ctx.charge_work(2, "creo unit scaling polyline work")?;
                 let scaled = point.scaled(scale).ok_or_else(|| {
                     malformed_refusal(ctx, "Creo scaled polyline must have finite distinct adjacent vertices")
                 })?;
@@ -390,6 +391,11 @@ fn scale_feature_operation(
         } => {}
         FeatureOperation::Primitive { solid, .. } => scale_primitive_solid(ctx, solid, scale)?,
         FeatureOperation::Sweep { shape, .. } => {
+            let count = u64::try_from(shape.additional_section_count()).ok()
+                .and_then(|count| count.checked_add(1)).ok_or_else(|| {
+                    ctx.refuse_codec_limit("creo unit scaling member work", u64::MAX, u64::MAX)
+                })?;
+            ctx.charge_work(count, "creo unit scaling member work")?;
             for generated in shape.generated_sections_mut() {
                 scale_sweep_section(ctx, generated, scale)?;
             }
@@ -423,6 +429,7 @@ fn scale_feature_operation(
         FeatureOperation::Binder { .. } => {}
         FeatureOperation::Loft { sections, .. } => {
             for section in sections {
+                ctx.charge_work(1, "creo unit scaling member work")?;
                 if let cadmpeg_ir::features::LoftSection::Point(
                     cadmpeg_ir::features::LoftPointSection::Point(point),
                 ) = section
@@ -467,12 +474,14 @@ fn scale_feature_operation(
         }
         FeatureOperation::Fillet { groups } => {
             for group in groups {
+                ctx.charge_work(1, "creo unit scaling member work")?;
                 scale_radius_spec(ctx, &mut group.radius, scale)?;
             }
         }
         FeatureOperation::FaceBlend { radius, .. } => scale_radius_spec(ctx, radius, scale)?,
         FeatureOperation::Chamfer { groups, .. } => {
             for group in groups {
+                ctx.charge_work(1, "creo unit scaling member work")?;
                 scale_chamfer_spec(ctx, &mut group.spec, scale)?;
             }
         }
@@ -528,6 +537,7 @@ fn scale_feature_operation(
             ..
         } => {
             for placement in placements.iter_mut().flatten() {
+                ctx.charge_work(1, "creo unit scaling member work")?;
                 scale_hole_placement(ctx, placement, scale)?;
             }
             scale_hole_shape(ctx, shape, scale)?;
@@ -1146,13 +1156,16 @@ pub(in crate::decode) fn scale_procedural_curve(ctx: &DecodeContext<'_>,
 /// parameterized by length. A conic's parameter is dimensionless, so the
 /// scaling keeps it, and the other carriers state no parameter scale.
 pub(in crate::decode) fn curve_parameter_scale(
+    ctx: &DecodeContext<'_>,
     geometry: &SolvedCurveGeometry,
     length_scale_mm: PositiveReal,
-) -> Option<PositiveReal> {
-    match geometry {
+) -> Result<Option<PositiveReal>, CodecError> {
+    ctx.charge_work(1, "creo curve parameter scale work")?;
+    Ok(match geometry {
         SolvedCurveGeometry::Line(_) => Some(length_scale_mm),
         SolvedCurveGeometry::Transformed(placed) => {
-            curve_parameter_scale(placed.basis(), length_scale_mm)
+            let _depth = ctx.enter_nested("creo curve parameter scale nesting")?;
+            curve_parameter_scale(ctx, placed.basis(), length_scale_mm)?
         }
         SolvedCurveGeometry::Circle(_)
         | SolvedCurveGeometry::Ellipse(_)
@@ -1163,26 +1176,29 @@ pub(in crate::decode) fn curve_parameter_scale(
         | SolvedCurveGeometry::Composite { .. }
         | SolvedCurveGeometry::Polyline(_)
         | SolvedCurveGeometry::Unknown { .. } => None,
-    }
+    })
 }
 
 pub(in crate::decode) fn surface_parameter_scales(
+    ctx: &DecodeContext<'_>,
     geometry: &SolvedSurfaceGeometry,
     length_scale_mm: f64,
-) -> [f64; 2] {
-    match geometry {
+) -> Result<[f64; 2], CodecError> {
+    ctx.charge_work(1, "creo surface parameter scale work")?;
+    Ok(match geometry {
         SolvedSurfaceGeometry::Plane(_) => [length_scale_mm, length_scale_mm],
         SolvedSurfaceGeometry::Cylinder(_) => [1.0, length_scale_mm],
         SolvedSurfaceGeometry::Cone(_) => [1.0, length_scale_mm],
         SolvedSurfaceGeometry::Sphere(_) => [1.0, 1.0],
         SolvedSurfaceGeometry::Torus(_) => [1.0, 1.0],
         SolvedSurfaceGeometry::Transformed(placed) => {
-            surface_parameter_scales(placed.basis(), length_scale_mm)
+            let _depth = ctx.enter_nested("creo surface parameter scale nesting")?;
+            surface_parameter_scales(ctx, placed.basis(), length_scale_mm)?
         }
         SolvedSurfaceGeometry::Nurbs { .. }
         | SolvedSurfaceGeometry::Polygonal(_)
         | SolvedSurfaceGeometry::Unknown { .. } => [1.0, 1.0],
-    }
+    })
 }
 
 pub(in crate::decode) fn scale_sketch_geometry(ctx: &DecodeContext<'_>, 
@@ -2229,6 +2245,117 @@ mod tests {
         assert!(matches!(specification.as_ref(), HoleSpecification::Clearance {
             standard, designation: Some(designation), fit: Some(fit), depth: HoleThreadDepth::Blind { depth }, clearance: Some(clearance), ..
         } if standard.as_str() == "test-standard" && designation == "test-size" && fit == "test-fit" && depth.get() == 6.0 && clearance.get() == 2.0));
+    }
+
+    #[test]
+    fn parameter_scale_traversals_refuse_each_recursive_frame() {
+        let curve = SolvedCurveGeometry::Transformed(cadmpeg_ir::geometry::PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Line(cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).expect("line"))),
+            cadmpeg_ir::transform::Transform::identity()).expect("placed"));
+        let surface = SolvedSurfaceGeometry::Transformed(cadmpeg_ir::geometry::PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Plane(cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0), Vector3::new(1.0, 0.0, 0.0)).expect("plane"))),
+            cadmpeg_ir::transform::Transform::identity()).expect("placed"));
+        for (depth, work, operation) in [(0, u64::MAX, "nesting"), (1, 1, "work")] {
+            let arena = cadmpeg_core::decode::DecodeArena::new(); let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_recursion_depth = depth; policy.limits.max_work_units = work;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let error = super::curve_parameter_scale(&ctx, &curve, positive(2.0)).expect_err("limit");
+            assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == format!("creo curve parameter scale {operation}")));
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            let error = super::surface_parameter_scales(&ctx, &surface, 2.0).expect_err("limit");
+            assert!(matches!(error, CodecError::ResourceLimit(resource) if resource.operation == format!("creo surface parameter scale {operation}")));
+        }
+        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::curve_parameter_scale(ctx, &curve, positive(2.0))).expect("service"), Some(positive(2.0)));
+        assert_eq!(crate::decode::with_test_decode_ctx(|ctx| super::surface_parameter_scales(ctx, &surface, 2.0)).expect("service"), [2.0, 2.0]);
+    }
+
+    fn check_member_work(mut definition: FeatureDefinition, cap: u64) -> FeatureDefinition {
+        let arena = cadmpeg_core::decode::DecodeArena::new(); let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = cap;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        assert!(matches!(scale_feature_definition(&ctx, &mut definition.clone(), positive(2.0)),
+            Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo unit scaling member work"));
+        crate::decode::with_test_decode_ctx(|ctx| scale_feature_definition(ctx, &mut definition, positive(2.0))).expect("service");
+        definition
+    }
+
+    #[test]
+    fn generated_sweep_scaling_refuses_member_work_without_reference_rows() {
+        let shape = cadmpeg_ir::features::SweepShape::Solid {
+            op: cadmpeg_ir::features::SolidSweepOperation::NewBody,
+            section: cadmpeg_ir::features::SweepSection::Unresolved(None),
+            sections: vec![cadmpeg_ir::features::SweepSection::Generated(cadmpeg_ir::features::GeneratedSweepSection::CircularRegion {
+                region: cadmpeg_ir::features::SweepCircularRegion::new(positive_length(1.0), None).expect("region"),
+            })],
+        };
+        let mut definition = check_member_work(FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape, path: None, orientation: None, transition: None, transformation: None,
+            path_tangent: false, linearize: false, twist: None, path_extent: None, guide_rail: None,
+            taper: None, scale: None, allow_multi_profile_faces: None,
+        }), 1);
+        let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) = &mut definition else { panic!("fixture"); };
+        assert!(matches!(shape.generated_sections_mut().next(), Some(cadmpeg_ir::features::GeneratedSweepSection::CircularRegion { region }) if region.outer_radius().get() == 2.0));
+    }
+
+    #[test]
+    fn loft_scaling_refuses_each_member_work() {
+        let point = cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("point");
+        let result = check_member_work(FeatureDefinition::Operation(FeatureOperation::Loft {
+            sections: vec![cadmpeg_ir::features::LoftSection::Point(cadmpeg_ir::features::LoftPointSection::Point(point))],
+            guidance: cadmpeg_ir::features::LoftGuidance::default(), op: cadmpeg_ir::features::BooleanOp::Join,
+            closed: false, solid: true, ruled: false, linearize: false, max_degree: None, allow_multi_profile_faces: None,
+        }), 0);
+        assert!(matches!(result, FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. })
+            if matches!(&sections[0], cadmpeg_ir::features::LoftSection::Point(cadmpeg_ir::features::LoftPointSection::Point(point)) if point.get().x == 2.0)));
+    }
+
+    #[test]
+    fn fillet_and_chamfer_scaling_refuse_each_group_work() {
+        use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec, ChamferGroup, ChamferSpec};
+        let fillet = check_member_work(FeatureDefinition::Operation(FeatureOperation::Fillet {
+            groups: vec![FilletGroup { edges: cadmpeg_ir::features::EdgeSelection::All,
+                radius: RadiusSpec::Constant { radius: positive_length(1.0) }, tangency_weight: None }].try_into().expect("group"),
+        }), 0);
+        assert!(matches!(fillet, FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
+            if matches!(groups[0].radius, RadiusSpec::Constant { radius } if radius.get() == 2.0)));
+        let chamfer = check_member_work(FeatureDefinition::Operation(FeatureOperation::Chamfer {
+            groups: vec![ChamferGroup { edges: cadmpeg_ir::features::EdgeSelection::All,
+                spec: ChamferSpec::Distance { distance: positive_length(1.0) } }].try_into().expect("group"), flip_direction: false,
+        }), 0);
+        assert!(matches!(chamfer, FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
+            if matches!(groups[0].spec, ChamferSpec::Distance { distance } if distance.get() == 2.0)));
+    }
+
+    #[test]
+    fn hole_scaling_refuses_each_placement_work() {
+        use cadmpeg_ir::features::holes::{HoleShape, HoleConstruction, HoleKind, HolePlacement};
+        let point = cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("point");
+        let result = check_member_work(FeatureDefinition::Operation(FeatureOperation::Hole {
+            profile: None, profile_filter: None, face: None, direction: None,
+            placements: Some(vec![HolePlacement::Axis { origin: point, axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).expect("axis") }]),
+            shape: HoleShape::new(HoleConstruction::form(HoleKind::Simple), None, None).expect("shape"),
+            extent: None, bottom: None, taper_angle: None, allow_multi_profile_faces: None,
+        }), 0);
+        assert!(matches!(result, FeatureDefinition::Operation(FeatureOperation::Hole { placements: Some(placements), .. })
+            if matches!(&placements[0], HolePlacement::Axis { origin, .. } if origin.get().x == 2.0)));
+    }
+
+    #[test]
+    fn feature_polyline_scaling_refuses_each_point_work() {
+        let definition = || FeatureDefinition::Operation(FeatureOperation::Polyline {
+            chain: cadmpeg_ir::features::FeaturePolyline::new(vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)], false).expect("chain"),
+        });
+        for cap in [1, 3] {
+            let arena = cadmpeg_core::decode::DecodeArena::new(); let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_work_units = cap;
+            let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+            assert!(matches!(scale_feature_definition(&ctx, &mut definition(), positive(2.0)),
+                Err(CodecError::ResourceLimit(resource)) if resource.operation == "creo unit scaling polyline work"));
+        }
+        let mut result = definition(); crate::decode::with_test_decode_ctx(|ctx| scale_feature_definition(ctx, &mut result, positive(2.0))).expect("service");
+        assert!(matches!(result, FeatureDefinition::Operation(FeatureOperation::Polyline { chain }) if chain.points()[0].get().x == 2.0 && chain.points()[1].get().x == 4.0));
     }
 
 }
