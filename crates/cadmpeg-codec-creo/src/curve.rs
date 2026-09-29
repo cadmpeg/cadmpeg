@@ -1443,8 +1443,10 @@ fn curve_expression_solve_program(
             continue;
         }
         if starts_relation_keyword(source, "for") {
-            let unknowns = conditional_keyword_expression(source, "for")
-                .and_then(curve_expression_solve_unknowns);
+            let unknowns = match conditional_keyword_expression(source, "for") {
+                Some(unknowns) => curve_expression_solve_unknowns(ctx, unknowns)?,
+                None => None,
+            };
             let mut equations = Vec::new();
             let mut assignments = Vec::new();
             let mut assignment_line_indices = Vec::new();
@@ -1529,25 +1531,35 @@ fn curve_expression_solve_program(
     Ok(program)
 }
 
-fn curve_expression_solve_unknowns(source: &str) -> Option<Vec<SolveUnknown>> {
-    let unknowns = source
+fn curve_expression_solve_unknowns(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    source: &str,
+) -> Result<Option<Vec<SolveUnknown>>, cadmpeg_core::CodecError> {
+    let mut unknowns = Vec::<SolveUnknown>::new();
+    for name in source
         .split(|character: char| character == ',' || character.is_ascii_whitespace())
         .filter(|variable| !variable.is_empty())
-        .map(|name| SolveUnknown {
-            name: name.to_owned(),
-            solution: None,
-        })
-        .collect::<Vec<_>>();
-    let keys = unknowns
-        .iter()
-        .map(|variable| expression_identifier_key(&variable.name))
-        .collect::<BTreeSet<_>>();
-    (!unknowns.is_empty()
-        && keys.len() == unknowns.len()
-        && unknowns
+    {
+        if !valid_scoped_expression_identifier(name) {
+            return Ok(None);
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(unknowns.len()),
+            "creo solve unknown duplicate checks",
+        )?;
+        if unknowns
             .iter()
-            .all(|variable| valid_scoped_expression_identifier(&variable.name)))
-    .then_some(unknowns)
+            .any(|known| known.name.eq_ignore_ascii_case(name))
+        {
+            return Ok(None);
+        }
+        ctx.try_reserve_items(&mut unknowns, 1, "creo solve unknowns")?;
+        unknowns.push(SolveUnknown {
+            name: ctx.copy_retained_text(name, "creo solve unknown names")?,
+            solution: None,
+        });
+    }
+    Ok((!unknowns.is_empty()).then_some(unknowns))
 }
 
 fn expression_assignment_target(source: &str) -> Option<CurveExpressionTarget> {
