@@ -258,7 +258,7 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
         ..Default::default()
     };
 
-    let plane = historical_mirror_coedge_plane(30, &topology)
+    let plane = historical_mirror_coedge_plane(None, 30, &topology).unwrap()
         .expect("radial coedge cycle has one exact planar face");
     assert_eq!(plane.origin, Point3::new(1.0, 2.0, 3.0));
     assert_eq!(plane.normal, Vector3::new(0.0, 0.0, 1.0));
@@ -297,14 +297,14 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
             },
             face_slot: 10,
         };
-    let dispatched = historical_mirror_plane(&candidate, 1, std::slice::from_ref(&history))
+    let dispatched = historical_mirror_plane(None, &candidate, 1, std::slice::from_ref(&history)).unwrap()
         .expect("coedge dispatch uses radial plane resolver");
     assert_eq!(dispatched.origin, Point3::new(1.0, 2.0, 3.0));
     assert_eq!(dispatched.normal, Vector3::new(0.0, 0.0, 1.0));
 
     let mut open_cycle = topology.clone();
     open_cycle.coedge_topology[1].radial_next = 31;
-    assert!(historical_mirror_coedge_plane(30, &open_cycle).is_none());
+    assert!(historical_mirror_coedge_plane(None, 30, &open_cycle).unwrap().is_none());
 
     let mut ambiguous = topology;
     ambiguous.surface_planes.push(AsmHistoricalPlane {
@@ -312,5 +312,5 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
         origin: Point3::new(1.0, 2.0, 4.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
     });
-    assert!(historical_mirror_coedge_plane(30, &ambiguous).is_none());
+    assert!(historical_mirror_coedge_plane(None, 30, &ambiguous).unwrap().is_none());
 }

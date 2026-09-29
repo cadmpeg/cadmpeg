@@ -8937,7 +8937,7 @@ fn historical_surface_axis(
     surface: i64,
     topology: &AsmHistoricalTopology,
 ) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
-    let candidates = topology
+    let mut candidates = topology
         .surface_axes
         .iter()
         .filter(|axis| axis.surface == surface)
@@ -8948,12 +8948,9 @@ fn historical_surface_axis(
                 .iter()
                 .filter(|plane| plane.surface == surface)
                 .map(|plane| (plane.origin, plane.normal)),
-        )
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+        );
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
 
 pub(crate) fn same_axis_line(
@@ -9068,7 +9065,7 @@ pub(crate) fn bind_mirror_selection_planes(
                 else {
                     continue;
                 };
-                historical_mirror_plane(&candidate, previous_state_id, histories)
+                historical_mirror_plane(decode, &candidate, previous_state_id, histories)?
             }
         } else if let [operand] = matching_face_operands.as_slice() {
             historical_mirror_face_operand_plane(operand, history, previous_state_id)
@@ -9192,25 +9189,26 @@ fn design_geometry_mirror_plane(primary_identity: u64) -> Option<HistoricalMirro
 }
 
 fn historical_mirror_plane(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     candidate: &crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
     preferred_state_id: i64,
     histories: &[AsmHistory],
-) -> Option<HistoricalMirrorPlane> {
+) -> Result<Option<HistoricalMirrorPlane>, cadmpeg_core::CodecError> {
     if candidate.historical.state_ids.contains(&preferred_state_id) {
-        return historical_mirror_plane_in_state(candidate, preferred_state_id, histories);
+        return historical_mirror_plane_in_state(decode, candidate, preferred_state_id, histories);
     }
     let mut resolved = None;
     for state_id in &candidate.historical.state_ids {
-        let plane = historical_mirror_plane_in_state(candidate, *state_id, histories)?;
+        let Some(plane) = historical_mirror_plane_in_state(decode, candidate, *state_id, histories)? else { return Ok(None) };
         if resolved
             .as_ref()
             .is_some_and(|exact: &HistoricalMirrorPlane| !mirror_planes_coincident(exact, &plane))
         {
-            return None;
+            return Ok(None);
         }
         resolved = Some(plane);
     }
-    resolved
+    Ok(resolved)
 }
 
 fn mirror_planes_coincident(left: &HistoricalMirrorPlane, right: &HistoricalMirrorPlane) -> bool {
@@ -9221,34 +9219,35 @@ fn mirror_planes_coincident(left: &HistoricalMirrorPlane, right: &HistoricalMirr
 }
 
 fn historical_mirror_plane_in_state(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     candidate: &crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate,
     state_id: i64,
     histories: &[AsmHistory],
-) -> Option<HistoricalMirrorPlane> {
+) -> Result<Option<HistoricalMirrorPlane>, cadmpeg_core::CodecError> {
     let mut matching_histories = histories
         .iter()
         .filter(|history| history.id == candidate.history_id);
-    let history = matching_histories.next()?;
+    let Some(history) = matching_histories.next() else { return Ok(None) };
     if matching_histories.next().is_some() {
-        return None;
+        return Ok(None);
     }
     let mut matching_states = history
         .states
         .iter()
         .filter(|state| state.state_id == state_id);
-    let state = matching_states.next()?;
+    let Some(state) = matching_states.next() else { return Ok(None) };
     if matching_states.next().is_some() {
-        return None;
+        return Ok(None);
     }
-    let topology = state.topology()?;
+    let Some(topology) = state.topology() else { return Ok(None) };
     match candidate.historical.kind {
         AsmHistoricalEntityKind::Coedge => {
-            historical_mirror_coedge_plane(candidate.historical.entity_ref, topology)
+            historical_mirror_coedge_plane(decode, candidate.historical.entity_ref, topology)
         }
         AsmHistoricalEntityKind::Loop => {
-            historical_loop_plane(candidate.historical.entity_ref, topology)
+            historical_loop_plane(decode, candidate.historical.entity_ref, topology)
         }
-        _ => historical_mirror_plane_for_face_slot_in_topology(candidate.face_slot, topology),
+        _ => Ok(historical_mirror_plane_for_face_slot_in_topology(candidate.face_slot, topology)),
     }
 }
 
@@ -9292,64 +9291,76 @@ fn historical_mirror_plane_for_face_slot_in_topology(
     })
 }
 
+macro_rules! mirror_some {
+    ($value:expr) => {
+        match $value {
+            Some(value) => value,
+            None => return Ok(None),
+        }
+    };
+}
+
 fn historical_loop_plane(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     loop_ref: i64,
     topology: &AsmHistoricalTopology,
-) -> Option<HistoricalMirrorPlane> {
+) -> Result<Option<HistoricalMirrorPlane>, cadmpeg_core::CodecError> {
     let mut loop_relations = topology
         .loop_coedges
         .iter()
         .filter(|relation| relation.owner_ref == loop_ref);
-    let relation = loop_relations.next()?;
+    let relation = mirror_some!(loop_relations.next());
     if loop_relations.next().is_some() || relation.member_refs.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let mut planes = Vec::with_capacity(relation.member_refs.len());
+    let mut planes = Vec::new();
     for coedge_ref in &relation.member_refs {
         let mut coedges = topology
             .coedge_topology
             .iter()
             .filter(|coedge| coedge.coedge == *coedge_ref && coedge.owner_loop == loop_ref);
-        let coedge = coedges.next()?;
+        let coedge = mirror_some!(coedges.next());
         if coedges.next().is_some() {
-            return None;
+            return Ok(None);
         }
         let mut bindings = topology
             .edge_curves
             .iter()
             .filter(|binding| binding.entity == coedge.edge);
-        let binding = bindings.next()?;
+        let binding = mirror_some!(bindings.next());
         if bindings.next().is_some() {
-            return None;
+            return Ok(None);
         }
-        let curve = binding.carrier?;
+        let curve = mirror_some!(binding.carrier);
         let mut axes = topology
             .curve_axes
             .iter()
             .filter(|axis| axis.curve == curve);
-        let axis = axes.next()?;
+        let axis = mirror_some!(axes.next());
         if axes.next().is_some() {
-            return None;
+            return Ok(None);
         }
         let norm = (axis.direction.x * axis.direction.x
             + axis.direction.y * axis.direction.y
             + axis.direction.z * axis.direction.z)
             .sqrt();
         if !norm.is_finite() || (norm - 1.0).abs() > EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9 {
-            return None;
+            return Ok(None);
         }
+        charge_history_item(decode, "collect F3D loop mirror planes")?;
+        planes.try_reserve(1).map_err(|_| history_reserve_error(decode, "collect F3D loop mirror planes"))?;
         planes.push(HistoricalMirrorPlane {
             origin: axis.origin,
             normal: axis.direction,
         });
     }
     let [first, remaining @ ..] = planes.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    remaining
+    Ok(remaining
         .iter()
         .all(|candidate| mirror_planes_coincident(first, candidate))
-        .then_some(first.clone())
+        .then_some(first.clone()))
 }
 
 /// Resolve a Mirror plane from a selected coedge's complete radial cycle.
@@ -9361,22 +9372,26 @@ fn historical_loop_plane(
 /// cycle member must belong to one loop and one face, and the incident faces
 /// must expose one coincident set of exact plane carriers.
 fn historical_mirror_coedge_plane(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     coedge_ref: i64,
     topology: &AsmHistoricalTopology,
-) -> Option<HistoricalMirrorPlane> {
+) -> Result<Option<HistoricalMirrorPlane>, cadmpeg_core::CodecError> {
     let mut coedges = HashMap::new();
     for coedge in &topology.coedge_topology {
+        if !coedges.contains_key(&coedge.coedge) {
+            charge_history_item(decode, "index F3D mirror coedges")?;
+            coedges.try_reserve(1).map_err(|_| history_reserve_error(decode, "index F3D mirror coedges"))?;
+        }
         if coedges.insert(coedge.coedge, coedge).is_some() {
-            return None;
+            return Ok(None);
         }
     }
-    let selected = coedges.get(&coedge_ref)?;
+    let selected = mirror_some!(coedges.get(&coedge_ref));
     let edge = selected.edge;
-    let same_edge = coedges
-        .values()
-        .filter(|coedge| coedge.edge == edge)
-        .map(|coedge| coedge.coedge)
-        .collect::<HashSet<_>>();
+    let mut same_edge = HashSet::new();
+    for coedge in coedges.values().filter(|coedge| coedge.edge == edge) {
+        history_hash_set_insert(decode, &mut same_edge, coedge.coedge, "index F3D mirror edge coedges")?;
+    }
     let mut radial_cycle = Vec::new();
     let mut current = coedge_ref;
     loop {
@@ -9384,27 +9399,32 @@ fn historical_mirror_coedge_plane(
             break;
         }
         if radial_cycle.contains(&current) {
-            return None;
+            return Ok(None);
         }
-        let coedge = coedges.get(&current)?;
+        let coedge = mirror_some!(coedges.get(&current));
         if coedge.edge != edge {
-            return None;
+            return Ok(None);
         }
+        charge_history_item(decode, "collect F3D mirror radial cycle")?;
+        radial_cycle.try_reserve(1).map_err(|_| history_reserve_error(decode, "collect F3D mirror radial cycle"))?;
         radial_cycle.push(current);
         current = coedge.radial_next;
     }
-    let radial_refs = radial_cycle.iter().copied().collect::<HashSet<_>>();
+    let mut radial_refs = HashSet::new();
+    for coedge in &radial_cycle {
+        history_hash_set_insert(decode, &mut radial_refs, *coedge, "index F3D mirror radial refs")?;
+    }
     if radial_refs != same_edge {
-        return None;
+        return Ok(None);
     }
 
     let mut faces = HashSet::new();
     for coedge_ref in radial_cycle {
-        let coedge = coedges.get(&coedge_ref)?;
+        let coedge = mirror_some!(coedges.get(&coedge_ref));
         let mut loop_relations = topology.loop_coedges.iter().filter(|relation| {
             relation.owner_ref == coedge.owner_loop && relation.member_refs.contains(&coedge_ref)
         });
-        let loop_relation = loop_relations.next()?;
+        let loop_relation = mirror_some!(loop_relations.next());
         if loop_relations.next().is_some()
             || loop_relation
                 .member_refs
@@ -9413,13 +9433,13 @@ fn historical_mirror_coedge_plane(
                 .count()
                 != 1
         {
-            return None;
+            return Ok(None);
         }
         let mut face_relations = topology
             .face_loops
             .iter()
             .filter(|relation| relation.member_refs.contains(&coedge.owner_loop));
-        let face_relation = face_relations.next()?;
+        let face_relation = mirror_some!(face_relations.next());
         if face_relations.next().is_some()
             || face_relation
                 .member_refs
@@ -9428,9 +9448,9 @@ fn historical_mirror_coedge_plane(
                 .count()
                 != 1
         {
-            return None;
+            return Ok(None);
         }
-        faces.insert(face_relation.owner_ref);
+        history_hash_set_insert(decode, &mut faces, face_relation.owner_ref, "index F3D mirror incident faces")?;
     }
 
     let mut planes = Vec::new();
@@ -9439,9 +9459,9 @@ fn historical_mirror_coedge_plane(
             .face_surfaces
             .iter()
             .filter(|binding| binding.entity == face);
-        let surface = surface_bindings.next()?;
+        let surface = mirror_some!(surface_bindings.next());
         if surface_bindings.next().is_some() {
-            return None;
+            return Ok(None);
         }
         let mut surface_planes = topology
             .surface_planes
@@ -9449,8 +9469,10 @@ fn historical_mirror_coedge_plane(
             .filter(|plane| plane.surface == surface.carrier);
         if let Some(plane) = surface_planes.next() {
             if surface_planes.next().is_some() {
-                return None;
+                return Ok(None);
             }
+            charge_history_item(decode, "collect F3D coedge mirror planes")?;
+            planes.try_reserve(1).map_err(|_| history_reserve_error(decode, "collect F3D coedge mirror planes"))?;
             planes.push(HistoricalMirrorPlane {
                 origin: plane.origin,
                 normal: plane.normal,
@@ -9458,12 +9480,12 @@ fn historical_mirror_coedge_plane(
         }
     }
     let [first, remaining @ ..] = planes.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    remaining
+    Ok(remaining
         .iter()
         .all(|candidate| mirror_planes_coincident(first, candidate))
-        .then_some(first.clone())
+        .then_some(first.clone()))
 }
 
 fn entity_selection_face_candidates(
