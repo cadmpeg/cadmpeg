@@ -123,43 +123,6 @@ impl DecodeContext<'_> {
         self.reserve_vec(values, count, operation)
     }
 
-    /// Reserves temporary vector storage with a typed optional-session refusal.
-    pub fn reserve_temporary_vec_optional_limit<'ctx, T>(
-        ctx: Option<&'ctx Self>,
-        values: &mut Vec<T>,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<Option<ScopedReservation<'ctx>>, ResourceLimit> {
-        let count_u64 = u64_from_index(count);
-        let reservation = if let Some(ctx) = ctx {
-            ctx.charge_collection_items_limit(count_u64, operation)?;
-            let bytes =
-                count
-                    .checked_mul(std::mem::size_of::<T>())
-                    .ok_or_else(|| ResourceLimit {
-                        dimension: ResourceDimension::MaterializedBytes,
-                        reason: super::ResourceFailure::BudgetExceeded,
-                        limit: ctx.policy().limits.max_materialized_bytes,
-                        used: 0,
-                        additional: u64::MAX,
-                        operation,
-                    })?;
-            let reservation = ctx.reserve_scoped_limit(u64_from_index(bytes), operation)?;
-            Some(reservation)
-        } else {
-            None
-        };
-        values.try_reserve_exact(count).map_err(|_| {
-            ResourceLimit::allocation_failed(
-                ResourceDimension::CollectionItems,
-                ctx.map_or(u64::MAX, |ctx| ctx.policy().limits.max_collection_items),
-                count_u64,
-                operation,
-            )
-        })?;
-        Ok(reservation)
-    }
-
     /// Reserves temporary vector storage and returns its live byte reservation.
     pub fn reserve_temporary_vec<T>(
         &self,
@@ -297,19 +260,6 @@ impl DecodeContext<'_> {
         self.charge_entities(u64_from_index(count), operation)?;
         self.charge_retained(text_bytes, operation)?;
         self.reserve_retained_vec(records, count, operation)
-    }
-
-    /// Copies a temporary slice under an optional session and keeps its reservation live.
-    pub fn copy_temporary_slice_optional_limit<'ctx, T: Clone>(
-        ctx: Option<&'ctx Self>,
-        values: &[T],
-        operation: &'static str,
-    ) -> Result<(Vec<T>, Option<ScopedReservation<'ctx>>), ResourceLimit> {
-        let mut copy = Vec::new();
-        let reservation =
-            Self::reserve_temporary_vec_optional_limit(ctx, &mut copy, values.len(), operation)?;
-        copy.extend_from_slice(values);
-        Ok((copy, reservation))
     }
 
     /// Collects retained slots before adding each value.
@@ -547,47 +497,6 @@ impl DecodeContext<'_> {
         values
             .try_reserve(additional)
             .map_err(|_| self.collection_allocation_failed(additional, operation))
-    }
-
-    /// Creates a charged vector when a session is present and an admitted vector otherwise.
-    pub fn collection_vec_optional<T>(
-        ctx: Option<&Self>,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<Vec<T>, CodecError> {
-        match ctx {
-            Some(ctx) => ctx.collection_vec(count, operation),
-            None => Self::admitted_vec(count, operation),
-        }
-    }
-
-    /// Reserves vector slots and charges them when a session is present.
-    pub fn reserve_vec_optional<T>(
-        ctx: Option<&Self>,
-        values: &mut Vec<T>,
-        additional: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        match ctx {
-            Some(ctx) => ctx.reserve_vec(values, additional, operation),
-            None => Self::reserve_admitted_vec(values, additional, operation),
-        }
-    }
-
-    /// Copies bytes retained by an optional decode session.
-    pub fn copy_retained_optional(
-        ctx: Option<&Self>,
-        bytes: &[u8],
-        operation: &'static str,
-    ) -> Result<Vec<u8>, CodecError> {
-        match ctx {
-            Some(ctx) => ctx.copy_retained(bytes, operation),
-            None => {
-                let mut copy = Self::admitted_vec(bytes.len(), operation)?;
-                copy.extend_from_slice(bytes);
-                Ok(copy)
-            }
-        }
     }
 
     /// Builds a vector of indexed values after charging all slots.
@@ -853,32 +762,6 @@ impl DecodeContext<'_> {
         }
     }
 
-    /// Reserves a vector for an optional session after aggregate admission.
-    pub fn optional_admitted_vec<T>(
-        ctx: Option<&Self>,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<Vec<T>, CodecError> {
-        if ctx.is_some() {
-            Self::admitted_vec(count, operation)
-        } else {
-            Ok(Vec::new())
-        }
-    }
-
-    /// Reserves additional slots for an optional session after admission.
-    pub fn reserve_optional_admitted_vec<T>(
-        ctx: Option<&Self>,
-        values: &mut Vec<T>,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        if ctx.is_some() {
-            Self::reserve_admitted_vec(values, count, operation)?;
-        }
-        Ok(())
-    }
-
     /// Reserves a hash map whose entries were charged by aggregate admission.
     pub fn reserve_admitted_map<K: Eq + Hash, V>(
         values: &mut HashMap<K, V>,
@@ -1104,33 +987,6 @@ impl DecodeContext<'_> {
         }
         self.charge_collection_items(1, operation)?;
         Ok(values.insert(value))
-    }
-
-    /// Inserts a B-tree set item, charging it when a session is present.
-    pub fn insert_btree_set_optional<T: Ord>(
-        ctx: Option<&Self>,
-        values: &mut BTreeSet<T>,
-        value: T,
-        operation: &'static str,
-    ) -> Result<bool, CodecError> {
-        match ctx {
-            Some(ctx) => ctx.insert_btree_set(values, value, operation),
-            None => Ok(values.insert(value)),
-        }
-    }
-
-    /// Inserts a B-tree map entry, charging it when a session is present.
-    pub fn insert_btree_map_optional<K: Ord, V>(
-        ctx: Option<&Self>,
-        values: &mut BTreeMap<K, V>,
-        key: K,
-        value: V,
-        operation: &'static str,
-    ) -> Result<Option<V>, CodecError> {
-        match ctx {
-            Some(ctx) => ctx.insert_btree_map(values, key, value, operation),
-            None => Ok(values.insert(key, value)),
-        }
     }
 
     /// Extends retained bytes after charging both their slots and storage.
@@ -1763,38 +1619,6 @@ mod tests {
             .map(|_| ())
     );
     collection_case!(
-        collection_vec_optional_charges_before_allocation,
-        2,
-        |ctx: &DecodeContext<'_>| DecodeContext::collection_vec_optional::<u8>(
-            Some(ctx),
-            2,
-            "test optional vec"
-        )
-        .map(|_| ()),
-        |ctx: &DecodeContext<'_>| DecodeContext::collection_vec_optional::<u8>(
-            Some(ctx),
-            2,
-            "test optional vec"
-        )
-        .map(|_| ())
-    );
-    collection_case!(
-        reserve_vec_optional_charges_before_growth,
-        2,
-        |ctx: &DecodeContext<'_>| DecodeContext::reserve_vec_optional(
-            Some(ctx),
-            &mut Vec::<u8>::new(),
-            2,
-            "test optional reserve"
-        ),
-        |ctx: &DecodeContext<'_>| DecodeContext::reserve_vec_optional(
-            Some(ctx),
-            &mut Vec::<u8>::new(),
-            2,
-            "test optional reserve"
-        )
-    );
-    collection_case!(
         collect_indexed_vec_charges_before_allocation,
         2,
         |ctx: &DecodeContext<'_>| ctx
@@ -1805,44 +1629,6 @@ mod tests {
             .collect_indexed_vec(2, "test indexed vec", |index| u8::try_from(index)
                 .map_err(CodecError::malformed))
             .map(|_| ())
-    );
-    collection_case!(
-        insert_btree_set_optional_charges_before_growth,
-        1,
-        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_set_optional(
-            Some(ctx),
-            &mut BTreeSet::new(),
-            1_u8,
-            "test optional btree set"
-        )
-        .map(|_| ()),
-        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_set_optional(
-            Some(ctx),
-            &mut BTreeSet::new(),
-            1_u8,
-            "test optional btree set"
-        )
-        .map(|_| ())
-    );
-    collection_case!(
-        insert_btree_map_optional_charges_before_growth,
-        1,
-        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_map_optional(
-            Some(ctx),
-            &mut BTreeMap::new(),
-            1_u8,
-            2_u8,
-            "test optional btree map"
-        )
-        .map(|_| ()),
-        |ctx: &DecodeContext<'_>| DecodeContext::insert_btree_map_optional(
-            Some(ctx),
-            &mut BTreeMap::new(),
-            1_u8,
-            2_u8,
-            "test optional btree map"
-        )
-        .map(|_| ())
     );
 
     macro_rules! admitted_case {
@@ -1906,24 +1692,6 @@ mod tests {
         admitted_vec_follows_prior_admission,
         |_ctx: &DecodeContext<'_>| DecodeContext::admitted_vec::<u8>(2, "test admitted")
             .map(|_| ())
-    );
-    admitted_case!(
-        optional_admitted_vec_follows_prior_admission,
-        |ctx: &DecodeContext<'_>| DecodeContext::optional_admitted_vec::<u8>(
-            Some(ctx),
-            2,
-            "test admitted"
-        )
-        .map(|_| ())
-    );
-    admitted_case!(
-        reserve_optional_admitted_vec_follows_prior_admission,
-        |ctx: &DecodeContext<'_>| DecodeContext::reserve_optional_admitted_vec(
-            Some(ctx),
-            &mut Vec::<u8>::new(),
-            2,
-            "test admitted"
-        )
     );
 
     macro_rules! retained_case {
@@ -2011,10 +1779,9 @@ mod tests {
         |ctx: &DecodeContext<'_>| ctx.retained_string(3, "test retained string").map(|_| ())
     );
     retained_case!(
-        copy_retained_optional_charges_before_allocation,
+        copy_retained_charges_before_allocation,
         3,
-        |ctx: &DecodeContext<'_>| DecodeContext::copy_retained_optional(
-            Some(ctx),
+        |ctx: &DecodeContext<'_>| ctx.copy_retained(
             b"abc",
             "test optional retained"
         )
@@ -2226,27 +1993,6 @@ mod tests {
         }
     );
     operation_case!(
-        reserve_temporary_vec_optional_limit_refuses_before_growth,
-        reserve_temporary_vec_optional_limit_succeeds_under_service_profile,
-        ResourceDimension::MaterializedBytes,
-        2,
-        |ctx: &DecodeContext<'_>| {
-            let mut values = Vec::<u8>::new();
-            let result = DecodeContext::reserve_temporary_vec_optional_limit(
-                Some(ctx),
-                &mut values,
-                2,
-                "test geometry vec",
-            )
-            .map(|_| ())
-            .map_err(CodecError::from);
-            if result.is_err() {
-                assert_eq!(values.capacity(), 0);
-            }
-            result
-        }
-    );
-    operation_case!(
         collect_retained_texts_refuses_at_byte_limit,
         collect_retained_texts_succeeds_under_service_profile,
         ResourceDimension::RetainedBytes,
@@ -2341,19 +2087,6 @@ mod tests {
         drop(reservation);
     }
 
-    operation_case!(
-        copy_temporary_slice_optional_limit_refuses_before_copy,
-        copy_temporary_slice_optional_limit_succeeds_under_service_profile,
-        ResourceDimension::MaterializedBytes,
-        2,
-        |ctx: &DecodeContext<'_>| DecodeContext::copy_temporary_slice_optional_limit(
-            Some(ctx),
-            &[1u8, 2],
-            "test temporary copy"
-        )
-        .map(|_| ())
-        .map_err(CodecError::from)
-    );
     operation_case!(
         collect_retained_vec_refuses_before_first_allocation,
         collect_retained_vec_succeeds_under_service_profile,
