@@ -1602,7 +1602,7 @@ pub fn compound_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<Compou
     if component_count == 0 {
         return None;
     }
-    let mut component_parameters = Vec::with_capacity(component_count);
+    let mut component_parameters = Vec::new();
     for _ in 0..component_count {
         component_parameters.push(take_double_payload(bytes, &mut position)?);
     }

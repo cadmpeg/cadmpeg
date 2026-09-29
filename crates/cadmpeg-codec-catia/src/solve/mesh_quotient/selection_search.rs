@@ -211,7 +211,7 @@ impl MeshSelectionSearch<'_, '_> {
             .into_iter()
             .flat_map(|(component, domain)| {
                 let required = required_count(&component);
-                std::iter::repeat_n(domain, required)
+                std::iter::repeat(domain).take(required)
             })
             .collect::<Vec<_>>();
         if universal_required > point_count.saturating_sub(domains.len()) {
