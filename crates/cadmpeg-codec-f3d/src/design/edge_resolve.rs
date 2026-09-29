@@ -1403,22 +1403,20 @@ fn unique_edge_group_assignment(
     if operands.is_empty() {
         return Ok(None);
     }
-    let candidate_sets = operands
-        .iter()
-        .map(|operand| {
-            if let Some(edge) = resolved_edge_operand(operand) {
-                Some(EdgeAssignmentCandidates::Edges(vec![edge]))
-            } else {
-                edge_group_assignment_candidates(
+    let mut candidate_sets = Vec::new();
+    for operand in operands {
+        let candidates = if let Some(edge) = resolved_edge_operand(operand) {
+            Some(EdgeAssignmentCandidates::Edges(vec![edge]))
+        } else {
+            edge_group_assignment_candidates(
                     &operand.recipe_selectors,
                     edge_operand_reference_edge_sets(operand),
                 )
-            }
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(candidate_sets) = candidate_sets else {
-        return Ok(None);
-    };
+        };
+        let Some(candidates) = candidates else { return Ok(None); };
+        push_edge_item(ctx, &mut candidate_sets, candidates,
+            "f3d unique edge candidate set")?;
+    }
     unique_edge_assignment_with_context(&candidate_sets, ctx)
 }
 
@@ -1627,13 +1625,17 @@ fn unique_edge_assignment_with_context(
     candidate_sets: &[EdgeAssignmentCandidates],
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<Vec<i64>>, CodecError> {
-    let edge_candidate_sets = candidate_sets
-        .iter()
-        .filter_map(|candidates| match candidates {
-            EdgeAssignmentCandidates::Context => None,
-            EdgeAssignmentCandidates::Edges(edges) => Some(edges.clone()),
-        })
-        .collect::<Vec<_>>();
+    let mut edge_candidate_sets = Vec::new();
+    for candidates in candidate_sets {
+        let EdgeAssignmentCandidates::Edges(edges) = candidates else { continue; };
+        let mut copied_edges = Vec::new();
+        for edge in edges {
+            push_edge_item(ctx, &mut copied_edges, *edge,
+                "f3d unique edge assignment candidate")?;
+        }
+        push_edge_item(ctx, &mut edge_candidate_sets, copied_edges,
+            "f3d unique edge assignment set")?;
+    }
     unique_bipartite_assignment(&edge_candidate_sets, ctx)
 }
 
