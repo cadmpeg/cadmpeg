@@ -301,11 +301,11 @@ fn source_sequence_maps_refuse_nodes_and_copied_keys() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut sequences = super::SourceSequences::default();
         let result = match kind {
-            "body" => sequences.record_body(&crate::ids::body(&stem), 1, &stem, Some(&ctx)),
-            "face" => sequences.record_face(&crate::ids::face(&stem), 1, Some(&ctx)),
-            "curve" => sequences.record_curve(&crate::ids::curve(&stem), 1, Some(&ctx)),
-            "surface" => sequences.record_surface(&crate::ids::surface(&stem), 1, Some(&ctx)),
-            "point" => sequences.record_point(&crate::ids::point(&stem), &stem, Some(&ctx)),
+            "body" => sequences.record_body(&crate::ids::body(&stem), 1, &stem, &ctx),
+            "face" => sequences.record_face(&crate::ids::face(&stem), 1, &ctx),
+            "curve" => sequences.record_curve(&crate::ids::curve(&stem), 1, &ctx),
+            "surface" => sequences.record_surface(&crate::ids::surface(&stem), 1, &ctx),
+            "point" => sequences.record_point(&crate::ids::point(&stem), &stem, &ctx),
             _ => panic!("unsupported test kind"),
         };
         assert!(
@@ -318,7 +318,7 @@ fn source_sequence_maps_refuse_nodes_and_copied_keys() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut sequences = super::SourceSequences::default();
-    let result = sequences.record_point(&crate::ids::point(&stem), &stem, Some(&ctx));
+    let result = sequences.record_point(&crate::ids::point(&stem), &stem, &ctx);
     assert!(
         matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == "iges source sequence key")
     );
@@ -331,11 +331,11 @@ fn source_sequence_maps_refuse_nodes_and_copied_keys() {
     let curve = crate::ids::curve(&stem);
     let surface = crate::ids::surface(&stem);
     let point = crate::ids::point(&stem);
-    sequences.record_body(&body, 1, &stem, Some(&ctx)).unwrap();
-    sequences.record_face(&face, 1, Some(&ctx)).unwrap();
-    sequences.record_curve(&curve, 1, Some(&ctx)).unwrap();
-    sequences.record_surface(&surface, 1, Some(&ctx)).unwrap();
-    sequences.record_point(&point, &stem, Some(&ctx)).unwrap();
+    sequences.record_body(&body, 1, &stem, &ctx).unwrap();
+    sequences.record_face(&face, 1, &ctx).unwrap();
+    sequences.record_curve(&curve, 1, &ctx).unwrap();
+    sequences.record_surface(&surface, 1, &ctx).unwrap();
+    sequences.record_point(&point, &stem, &ctx).unwrap();
     assert_eq!(
         (
             sequences.body(&body),
@@ -428,7 +428,7 @@ fn composite_coplanarity_refuses_segment_work_active_nodes_and_depth() {
             plane,
             0.001,
             &mut BTreeSet::new(),
-            Some(&ctx),
+            &ctx,
         );
         assert!(
             matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension && limit.operation == operation)
@@ -443,7 +443,7 @@ fn composite_coplanarity_refuses_segment_work_active_nodes_and_depth() {
         plane,
         0.001,
         &mut BTreeSet::new(),
-        Some(&ctx),
+        &ctx,
     )
     .unwrap());
 }
@@ -463,14 +463,14 @@ fn source_object_fields_refuse_retained_limits_before_copy() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = source_object(&entry, Some(&ctx)).unwrap_err();
+        let error = source_object(&entry, &ctx).unwrap_err();
         assert!(
             matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation)
         );
     }
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let source = source_object(&entry, Some(&ctx)).unwrap();
+    let source = source_object(&entry, &ctx).unwrap();
     assert_eq!(source.object_id.as_str(), "D1");
     assert_eq!(source.name.as_deref(), Some("HELLO"));
     assert_eq!(source.layer.as_deref(), Some("7"));
@@ -1055,29 +1055,31 @@ fn type125_form0_without_defining_entity_reports_display_loss() {
 
 #[test]
 fn transform_depth_overflow_is_a_structured_resource_refusal() {
-    let transform_count = 65_u32;
-    let mut directory = (0..transform_count)
-        .map(|index| {
-            let sequence = 1 + index * 2;
-            let transform = if index + 1 < transform_count {
-                sequence + 2
-            } else {
-                0
-            };
-            transform_entry(sequence, i64::from(transform))
-        })
-        .collect::<Vec<_>>();
-    directory.push(transform_entry(1 + transform_count * 2, 1));
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let transform_count = 65_u32;
+        let mut directory = (0..transform_count)
+            .map(|index| {
+                let sequence = 1 + index * 2;
+                let transform = if index + 1 < transform_count {
+                    sequence + 2
+                } else {
+                    0
+                };
+                transform_entry(sequence, i64::from(transform))
+            })
+            .collect::<Vec<_>>();
+        directory.push(transform_entry(1 + transform_count * 2, 1));
 
-    let error = enforce_transform_depth(&directory, None).unwrap_err();
-    assert!(matches!(
-        error,
-        CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::Codec("iges_transform_depth")
-                && limit.limit == 64
-                && limit.used == 64
-                && limit.additional == 1
-    ));
+        let error = enforce_transform_depth(&directory, decode_ctx).unwrap_err();
+        assert!(matches!(
+            error,
+            CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::Codec("iges_transform_depth")
+                    && limit.limit == 64
+                    && limit.used == 64
+                    && limit.additional == 1
+        ));
+    });
 }
 
 #[test]
@@ -1093,7 +1095,7 @@ fn transform_preflight_admits_directory_index_and_walk_path() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = enforce_transform_depth(&directory, Some(&ctx));
+        let result = enforce_transform_depth(&directory, &ctx);
         assert!(matches!(
             result,
             Err(CodecError::ResourceLimit(limit))
@@ -1106,7 +1108,7 @@ fn transform_preflight_admits_directory_index_and_walk_path() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(enforce_transform_depth(&directory, Some(&ctx)).is_ok());
+    assert!(enforce_transform_depth(&directory, &ctx).is_ok());
 }
 
 #[test]
@@ -1789,51 +1791,53 @@ fn decode_applies_nested_transforms_reflection_units_and_model_scale_once() {
 
 #[test]
 fn transform_translation_overflow_after_inch_scaling_is_rejected() {
-    use crate::parameter::{ParameterRecord, Token, TokenValue};
-    use std::collections::{BTreeMap, BTreeSet};
-    let entry = transform_entry(1, 0);
-    let values = [
-        124.0,
-        1.0,
-        0.0,
-        0.0,
-        f64::MAX,
-        0.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-    ];
-    let record = ParameterRecord::from_test_tokens(
-        1,
-        1..2,
-        Vec::new(),
-        values.len(),
-        values
-            .into_iter()
-            .map(|value| Token {
-                value: TokenValue::real(value),
-                span: 0..0,
-            })
-            .collect(),
-        Vec::new(),
-    );
-    let result = super::resolve_transform(
-        1,
-        &BTreeMap::from([(1, &entry)]),
-        &BTreeMap::from([(1, &record)]),
-        25.4,
-        crate::global::RealPrecision {
-            single_significance: 6,
-            double_significance: 15,
-        },
-        &mut BTreeSet::new(),
-        None,
-    );
-    assert!(result.is_err());
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        use crate::parameter::{ParameterRecord, Token, TokenValue};
+        use std::collections::{BTreeMap, BTreeSet};
+        let entry = transform_entry(1, 0);
+        let values = [
+            124.0,
+            1.0,
+            0.0,
+            0.0,
+            f64::MAX,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+        ];
+        let record = ParameterRecord::from_test_tokens(
+            1,
+            1..2,
+            Vec::new(),
+            values.len(),
+            values
+                .into_iter()
+                .map(|value| Token {
+                    value: TokenValue::real(value),
+                    span: 0..0,
+                })
+                .collect(),
+            Vec::new(),
+        );
+        let result = super::resolve_transform(
+            1,
+            &BTreeMap::from([(1, &entry)]),
+            &BTreeMap::from([(1, &record)]),
+            25.4,
+            crate::global::RealPrecision {
+                single_significance: 6,
+                double_significance: 15,
+            },
+            &mut BTreeSet::new(),
+            decode_ctx,
+        );
+        assert!(result.is_err());
+    });
 }
 
 #[test]
@@ -1906,7 +1910,7 @@ fn transform_chain_path_refuses_collection_limit_before_insertion() {
         1.0,
         precision,
         &mut BTreeSet::new(),
-        Some(&ctx),
+        &ctx,
     );
     assert!(matches!(
         result,
@@ -1926,7 +1930,7 @@ fn transform_chain_path_refuses_collection_limit_before_insertion() {
         1.0,
         precision,
         &mut BTreeSet::new(),
-        Some(&ctx),
+        &ctx,
     )
     .is_ok());
 }

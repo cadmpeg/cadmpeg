@@ -25,16 +25,6 @@ fn try_clone_for_decode_refuses_before_allocation_and_succeeds_under_service_pro
 }
 
 #[test]
-fn optional_identity_copy_without_context_preserves_identity() {
-    let id = super::CurveId::mint("test:model:curve#1").expect("valid identity");
-    let no_context: Option<&cadmpeg_core::decode::DecodeContext<'_>> = None;
-    let copy = id
-        .try_clone_for_decode(no_context, "optional identity copy")
-        .expect("identity copy fits memory");
-    assert_eq!(copy, id);
-}
-
-#[test]
 fn source_key_encoding_preserves_reserved_and_separator_distinctions() {
     let mut seen = std::collections::BTreeSet::new();
     for (source, expected) in [
