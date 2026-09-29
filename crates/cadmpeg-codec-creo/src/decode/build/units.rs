@@ -1560,7 +1560,7 @@ mod tests {
             ),
         );
         source_carriers
-            .admit_procedural_surface(&mut ir, surface_id, surface)
+            .admit_procedural_surface(&mut ir, &surface_id, surface)
             .expect("surface construction admission");
         let curve_id =
             cadmpeg_ir::ids::CurveId::mint("test:model:entity#curve").expect("identity grammar");
@@ -1600,7 +1600,7 @@ mod tests {
             curve_definition,
         );
         source_carriers
-            .admit_procedural_curve(&mut ir, curve_id, curve)
+            .admit_procedural_curve(&mut ir, &curve_id, curve)
             .expect("curve construction admission");
 
         let surface = &ir.model.procedural_surfaces[0];
@@ -1737,7 +1737,7 @@ mod tests {
                 None,
             );
             let error = source_carriers
-                .admit_procedural_surface(&mut ir, surface_id, surface)
+                .admit_procedural_surface(&mut ir, &surface_id, surface)
                 .expect_err("an overflowing scaled vector has no payload")
                 .to_string();
             assert!(error.contains(refusal), "{error}");

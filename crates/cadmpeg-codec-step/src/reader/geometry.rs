@@ -62,9 +62,16 @@ fn push_geometry_vec<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    values.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        )
+    })?;
     values.push(value);
     Ok(())
 }
@@ -105,9 +112,16 @@ fn insert_geometry_hash<K: Eq + Hash, V>(
 ) -> Result<(), CodecError> {
     if !values.contains_key(&key) {
         ctx.charge_collection_items(1, operation)?;
-        values
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        values.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            )
+        })?;
     }
     values.insert(key, value);
     Ok(())
@@ -120,9 +134,16 @@ fn claim_geometry_typed(
 ) -> Result<(), CodecError> {
     if !typed.contains(&id) {
         ctx.charge_collection_items(1, "step_geometry_typed_ids")?;
-        typed
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_geometry_typed_ids", 0, 1))?;
+        typed.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("step_geometry_typed_ids"),
+                    0,
+                    1,
+                    "step_geometry_typed_ids",
+                ),
+            )
+        })?;
         typed.insert(id);
     }
     Ok(())
@@ -136,9 +157,16 @@ fn insert_geometry_hash_set<T: Eq + Hash>(
 ) -> Result<(), CodecError> {
     if !values.contains(&value) {
         ctx.charge_collection_items(1, operation)?;
-        values
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        values.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            )
+        })?;
         values.insert(value);
     }
     Ok(())
@@ -153,7 +181,7 @@ fn attach_geometry_source(
 ) -> Result<(), CodecError> {
     if source.is_none() {
         let name = name
-            .map(|name| crate::decode_alloc::charged_format(ctx, operation, format_args!("{name}")))
+            .map(|name| ctx.format_retained(format_args!("{name}"), operation))
             .transpose()?;
         *source = Some(super::step_source_association(id, name));
     }
@@ -202,18 +230,36 @@ pub(super) fn infer_edge_parameter_ranges(
     let mut points = HashMap::new();
     for point in &ir.model.points {
         ctx.charge_collection_items(1, "step_parameter_inference_points")?;
-        points
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_parameter_inference_points", 0, 1))?;
+        points.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "step_parameter_inference_points",
+                    ),
+                    0,
+                    1,
+                    "step_parameter_inference_points",
+                ),
+            )
+        })?;
         points.insert(point.id.as_str(), point.position().get());
     }
     let mut vertices = HashMap::new();
     for vertex in &ir.model.vertices {
         if let Some(point) = points.get(vertex.point.as_str()).copied() {
             ctx.charge_collection_items(1, "step_parameter_inference_vertices")?;
-            vertices
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("step_parameter_inference_vertices", 0, 1))?;
+            vertices.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "step_parameter_inference_vertices",
+                        ),
+                        0,
+                        1,
+                        "step_parameter_inference_vertices",
+                    ),
+                )
+            })?;
             vertices.insert(vertex.id.as_str(), point);
         }
     }
@@ -232,9 +278,18 @@ pub(super) fn infer_edge_parameter_ranges(
             continue;
         };
         ctx.charge_collection_items(1, "step_parameter_inference_candidates")?;
-        candidates
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_parameter_inference_candidates", 0, 1))?;
+        candidates.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "step_parameter_inference_candidates",
+                    ),
+                    0,
+                    1,
+                    "step_parameter_inference_candidates",
+                ),
+            )
+        })?;
         candidates.push((index, curve, start, end));
     }
     let work = u64_from_index(candidates.len())
@@ -278,9 +333,18 @@ pub(super) fn infer_edge_parameter_ranges(
             };
             if let Some(range) = edge_parameter_range(solved, start_parameter, end_parameter) {
                 ctx.charge_collection_items(1, "step_parameter_inference_ranges")?;
-                inferred
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("step_parameter_inference_ranges", 0, 1))?;
+                inferred.try_reserve(1).map_err(|_| {
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "step_parameter_inference_ranges",
+                            ),
+                            0,
+                            1,
+                            "step_parameter_inference_ranges",
+                        ),
+                    )
+                })?;
                 inferred.push((edge_index, range));
             }
             Ok::<_, CodecError>(inferred)
@@ -582,19 +646,18 @@ pub(super) fn decode(
             unresolved,
         } => {
             let default_linear = ir.tolerances.linear.get();
-            let listed = crate::decode_alloc::charged_join(
-                ctx,
-                "step_uncertainty_values_text",
+            let listed = ctx.join_display_retained(
                 [first, second]
                     .iter()
                     .chain(&rest)
                     .map(|value| format!("{:?}", value.get())),
                 ", ",
+                "step_uncertainty_values_text",
             )?;
-            let message = crate::decode_alloc::charged_format(ctx, "step_uncertainty_note_text", format_args!(
+            let message = ctx.format_retained(format_args!(
                 "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT records give {} different linear uncertainty values in millimetres ({listed}) and {unresolved} unresolved measure(s); the linear tolerance keeps the default {default_linear:?}",
                 2 + rest.len()
-            ))?;
+            ), "step_uncertainty_note_text")?;
             push_geometry_vec(
                 &mut losses,
                 StepLossCode::UncertaintyLengthAmbiguous.note(message),
@@ -1029,11 +1092,13 @@ pub(super) fn decode(
             if let Some(geometry) = decode_pcurve_geometry(
                 curve,
                 exchange,
-                &points2,
-                &vectors2,
-                &placements2,
-                &transformation_operators2,
-                pcurve_angle_scale,
+                PcurveSources {
+                    points: &points2,
+                    vectors: &vectors2,
+                    placements: &placements2,
+                    transformations: &transformation_operators2,
+                    angle_scale: pcurve_angle_scale,
+                },
                 &mut losses,
                 &mut BTreeSet::new(),
                 0,
@@ -1353,7 +1418,7 @@ pub(super) fn decode(
                 ctx,
                 "step_geometry_ir_curves",
             )?;
-            let _attached = ir.model.add_procedural_curve(curve, procedural);
+            let _attached = ir.model.add_procedural_curve(&curve, procedural);
             insert_geometry_hash(
                 &mut carrier_index.curves,
                 id,
@@ -1498,7 +1563,7 @@ pub(super) fn decode(
                 "step_geometry_ir_curves",
             )?;
 
-            let _attached = ir.model.add_procedural_curve(curve.clone(), procedural);
+            let _attached = ir.model.add_procedural_curve(&curve, procedural);
 
             insert_geometry_hash(
                 &mut carrier_index.curves,
@@ -1689,7 +1754,7 @@ pub(super) fn decode(
             ctx,
             "step_geometry_ir_curves",
         )?;
-        let _attached = ir.model.add_procedural_curve(curve.clone(), procedural);
+        let _attached = ir.model.add_procedural_curve(&curve, procedural);
         insert_geometry_hash(
             &mut carrier_index.curves,
             id,
@@ -1948,7 +2013,7 @@ pub(super) fn decode(
             "step_geometry_ir_surfaces",
         )?;
         let _attached = ir.model.add_procedural_surface(
-            surface,
+            &surface,
             ProceduralSurface::new(
                 ProceduralSurfaceId::from(ids::construction(kind!("swept_surface"), id)),
                 definition,
@@ -2248,7 +2313,7 @@ pub(super) fn decode(
                 "step_geometry_ir_surfaces",
             )?;
             let _attached = ir.model.add_procedural_surface(
-                surface,
+                &surface,
                 match (|| {
                     let ranges = parameter_ranges.map(|range| {
                         DirectedParameterRange::from_finite_endpoints(range).map_err(|_| {
@@ -2390,7 +2455,7 @@ pub(super) fn decode(
                 "step_geometry_ir_surfaces",
             )?;
             let _attached = ir.model.add_procedural_surface(
-                surface,
+                &surface,
                 ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(
                         kind!("curve_bounded_surface"),
@@ -2456,7 +2521,7 @@ pub(super) fn decode(
                 "step_geometry_ir_surfaces",
             )?;
             let _attached = ir.model.add_procedural_surface(
-                surface,
+                &surface,
                 match cadmpeg_ir::geometry::surface_payloads::ParallelOffsetSurfaceConstruction::try_new(support, distance * record_scale, self_intersect).map(|admitted_payload| ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("offset_surface"), id)),
                     ProceduralSurfaceDefinition::ParallelOffset(admitted_payload),
@@ -2539,7 +2604,7 @@ pub(super) fn decode(
                 "step_geometry_ir_surfaces",
             )?;
             let _attached = ir.model.add_procedural_surface(
-                surface,
+                &surface,
                 ProceduralSurface::new(
                     ProceduralSurfaceId::from(ids::construction(kind!("surface_replica"), id)),
                     ProceduralSurfaceDefinition::Replica {
@@ -2920,7 +2985,7 @@ pub(super) fn decode(
             continue;
         }
         let _attached = ir.model.add_procedural_surface(
-            surface,
+            &surface,
             ProceduralSurface::new(
                 ProceduralSurfaceId::from(ids::construction(kind!("degenerate_torus"), id)),
                 ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
@@ -3064,11 +3129,7 @@ fn decode_tessellated_curve_sets(
             let source_name = source_name
                 .as_ref()
                 .map(|name| {
-                    crate::decode_alloc::charged_format(
-                        ctx,
-                        "step_curve_strip_source_name",
-                        format_args!("{name}"),
-                    )
+                    ctx.format_retained(format_args!("{name}"), "step_curve_strip_source_name")
                 })
                 .transpose()?;
             push_geometry_vec(
@@ -4890,7 +4951,8 @@ fn trim_parameter_value(
         context.ctx,
     )?;
     match value {
-        Value::Integer(value) => Ok(Some(scale * *value as f64 + context.parameter_offset)),
+        Value::Integer(value) => Ok(cadmpeg_core::convert::f64_from_i64(*value)
+            .map(|value| scale * value + context.parameter_offset)),
         Value::Real(value) => Ok(Some(scale * *value + context.parameter_offset)),
         Value::Typed(name, value) if name == "PARAMETER_VALUE" => {
             trim_parameter_value(value, context)
@@ -5169,9 +5231,16 @@ fn defer_geometry_dependency(
 ) -> Result<(), CodecError> {
     if !waiting_on.contains_key(&dependency) {
         ctx.charge_collection_items(1, group_operation)?;
-        waiting_on
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(group_operation, 0, 1))?;
+        waiting_on.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(group_operation),
+                    0,
+                    1,
+                    group_operation,
+                ),
+            )
+        })?;
     }
     let dependents = waiting_on.entry(dependency).or_default();
     push_geometry_vec(dependents, id, ctx, item_operation)
@@ -5186,9 +5255,16 @@ fn wake_deferred_dependents(
 ) -> Result<(), CodecError> {
     if let Some(dependents) = waiting_on.remove(&id) {
         ctx.charge_collection_items(u64_from_index(dependents.len()), operation)?;
-        queue
-            .try_reserve(dependents.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(dependents.len())))?;
+        queue.try_reserve(dependents.len()).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    u64_from_index(dependents.len()),
+                    operation,
+                ),
+            )
+        })?;
         queue.extend(dependents);
     }
     Ok(())
@@ -5604,7 +5680,9 @@ fn default_nurbs_knots(
     match kind {
         DefaultNurbsKnotKind::Uniform => {
             for index in 0..expected {
-                let knot = geometry_or_none!(FiniteReal::new(index as f64 - degree as f64));
+                let index = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
+                let degree = geometry_or_none!(cadmpeg_core::convert::f64_from_index(degree));
+                let knot = geometry_or_none!(FiniteReal::new(index - degree));
                 push_geometry_vec(&mut knots, knot, ctx, "step_default_nurbs_knots")?;
             }
         }
@@ -5618,7 +5696,9 @@ fn default_nurbs_knots(
                 } else {
                     1
                 };
-                let knot = geometry_or_none!(FiniteReal::new(index as f64));
+                let knot = geometry_or_none!(FiniteReal::new(geometry_or_none!(
+                    cadmpeg_core::convert::f64_from_index(index)
+                )));
                 for _ in 0..multiplicity {
                     push_geometry_vec(&mut knots, knot, ctx, "step_default_nurbs_knots")?;
                 }
@@ -5640,7 +5720,9 @@ fn default_nurbs_knots(
                 } else {
                     degree
                 };
-                let knot = geometry_or_none!(FiniteReal::new(index as f64));
+                let knot = geometry_or_none!(FiniteReal::new(geometry_or_none!(
+                    cadmpeg_core::convert::f64_from_index(index)
+                )));
                 for _ in 0..multiplicity {
                     push_geometry_vec(&mut knots, knot, ctx, "step_default_nurbs_knots")?;
                 }
@@ -5750,20 +5832,31 @@ fn nurbs_pcurve(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct PcurveSources<'a> {
+    points: &'a BTreeMap<u64, Point2>,
+    vectors: &'a BTreeMap<u64, Point2>,
+    placements: &'a BTreeMap<u64, (Point2, HypotDirection2, HypotDirection2)>,
+    transformations: &'a BTreeMap<u64, Transform2>,
+    angle_scale: f64,
+}
+
 fn decode_pcurve_geometry(
     id: u64,
     exchange: &Exchange,
-    points: &BTreeMap<u64, Point2>,
-    vectors: &BTreeMap<u64, Point2>,
-    placements: &BTreeMap<u64, (Point2, HypotDirection2, HypotDirection2)>,
-    transformations: &BTreeMap<u64, Transform2>,
-    angle_scale: f64,
+    sources: PcurveSources<'_>,
     losses: &mut Vec<LossNote>,
     active: &mut BTreeSet<u64>,
     depth: usize,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<(PcurveGeometry, BTreeSet<u64>)>, CodecError> {
+    let PcurveSources {
+        points,
+        vectors,
+        placements,
+        transformations,
+        angle_scale,
+    } = sources;
     if depth >= 256 || active.contains(&id) {
         return Ok(None);
     }
@@ -5929,11 +6022,7 @@ fn decode_pcurve_geometry(
                     let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
                         basis_id,
                         exchange,
-                        points,
-                        vectors,
-                        placements,
-                        transformations,
-                        angle_scale,
+                        sources,
                         losses,
                         active,
                         depth + 1,
@@ -5973,11 +6062,7 @@ fn decode_pcurve_geometry(
                     let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
                         basis_id,
                         exchange,
-                        points,
-                        vectors,
-                        placements,
-                        transformations,
-                        angle_scale,
+                        sources,
                         losses,
                         active,
                         depth + 1,
@@ -6034,11 +6119,7 @@ fn decode_pcurve_geometry(
                     let (basis, basis_records) = geometry_or_none!(decode_pcurve_geometry(
                         basis_id,
                         exchange,
-                        points,
-                        vectors,
-                        placements,
-                        transformations,
-                        angle_scale,
+                        sources,
                         losses,
                         active,
                         depth + 1,
@@ -6073,7 +6154,7 @@ fn decode_pcurve_geometry(
 fn pcurve_trim_parameter(value: &Value) -> Option<FiniteReal> {
     fn bare_number(value: &Value) -> Option<f64> {
         match value {
-            Value::Integer(value) => Some(*value as f64),
+            Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value),
             Value::Real(value) => Some(*value),
             _ => None,
         }
@@ -6204,10 +6285,9 @@ fn procedural_surface_parameter_scales(
         if active.contains(surface_id) {
             return Ok(None);
         }
-        let key = crate::decode_alloc::charged_format(
-            ctx,
-            "step_surface_scale_active_id",
+        let key = ctx.format_retained(
             format_args!("{}", surface_id.as_str()),
+            "step_surface_scale_active_id",
         )?;
         let key = geometry_or_none!(SurfaceId::mint(key).ok());
         insert_geometry_set(&mut active, key, ctx, "step_surface_scale_active")?;
@@ -6409,10 +6489,9 @@ fn directrix_parameter_scale_inner(
         return Ok(None);
     }
     let _depth = ctx.enter_nested("step_directrix_scale_walk")?;
-    let key = crate::decode_alloc::charged_format(
-        ctx,
-        "step_directrix_scale_active_id",
+    let key = ctx.format_retained(
         format_args!("{}", curve_id.as_str()),
+        "step_directrix_scale_active_id",
     )?;
     let key = geometry_or_none!(CurveId::mint(key).ok());
     insert_geometry_set(active, key, ctx, "step_directrix_scale_active")?;
@@ -6522,11 +6601,14 @@ fn polyline_pcurve(
     if control_points.len() < 2 {
         return Ok(None);
     }
-    let last = (control_points.len() - 1) as f64;
+    let last = geometry_or_none!(cadmpeg_core::convert::f64_from_index(
+        control_points.len() - 1
+    ));
     let mut knots = Vec::new();
     push_geometry_vec(&mut knots, 0.0, ctx, "step_polyline_pcurve_knots")?;
     for index in 0..control_points.len() {
-        push_geometry_vec(&mut knots, index as f64, ctx, "step_polyline_pcurve_knots")?;
+        let knot = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
+        push_geometry_vec(&mut knots, knot, ctx, "step_polyline_pcurve_knots")?;
     }
     push_geometry_vec(&mut knots, last, ctx, "step_polyline_pcurve_knots")?;
     match PcurveNurbs::from_lanes(1, knots, control_points, None, false) {
@@ -6563,11 +6645,14 @@ fn polyline(
     if control_points.len() < 2 {
         return Ok(None);
     }
-    let last = (control_points.len() - 1) as f64;
+    let last = geometry_or_none!(cadmpeg_core::convert::f64_from_index(
+        control_points.len() - 1
+    ));
     let mut knots = Vec::new();
     push_geometry_vec(&mut knots, 0.0, ctx, "step_polyline_knots")?;
     for index in 0..control_points.len() {
-        push_geometry_vec(&mut knots, index as f64, ctx, "step_polyline_knots")?;
+        let knot = geometry_or_none!(cadmpeg_core::convert::f64_from_index(index));
+        push_geometry_vec(&mut knots, knot, ctx, "step_polyline_knots")?;
     }
     push_geometry_vec(&mut knots, last, ctx, "step_polyline_knots")?;
     match NurbsCurve::from_lanes(1, knots, control_points, None, false) {
@@ -6627,9 +6712,10 @@ fn nurbs_surface(
     if v_count == 0
         || u_degree >= u_count
         || v_degree >= v_count
-        || rows
-            .iter()
-            .any(|row| row.list().is_none_or(|row| row.len() != v_count as usize))
+        || rows.iter().any(|row| {
+            row.list()
+                .is_none_or(|row| row.len() != cadmpeg_core::decode::index_from_u32(v_count))
+        })
     {
         return Ok(None);
     }
@@ -6810,9 +6896,16 @@ fn expand_knots(
         }
         ctx.charge_collection_items(u64_from_index(count), "step_expanded_nurbs_knots")?;
         knots.try_reserve(count).map_err(|_| {
-            ctx.refuse_codec_limit("step_expanded_nurbs_knots", 0, u64_from_index(count))
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("step_expanded_nurbs_knots"),
+                    0,
+                    u64_from_index(count),
+                    "step_expanded_nurbs_knots",
+                ),
+            )
         })?;
-        knots.extend(std::iter::repeat_n(knot, count));
+        knots.extend(std::iter::repeat_with(|| knot).take(count));
     }
     Ok(KnotVector::from_finite_lanes(knots).ok())
 }

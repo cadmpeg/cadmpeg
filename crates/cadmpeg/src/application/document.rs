@@ -15,7 +15,6 @@ pub(crate) struct LoadedDocument {
 
 /// Source information attached to a loaded document.
 #[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::large_enum_variant)]
 pub(crate) enum LoadOrigin {
     /// The document was loaded without native decode metadata.
     Neutral,
@@ -24,7 +23,7 @@ pub(crate) enum LoadOrigin {
         /// What the decoder transferred and omitted.
         report: DecodeReport,
         /// Decode-time annotations and retained native records.
-        fidelity: SourceFidelity,
+        fidelity: Box<SourceFidelity>,
     },
     /// The document was produced by a native decoder.
     Decoded {
@@ -33,7 +32,7 @@ pub(crate) enum LoadOrigin {
         /// What the decoder transferred and omitted.
         report: DecodeReport,
         /// Decode-time annotations and retained native records.
-        fidelity: SourceFidelity,
+        fidelity: Box<SourceFidelity>,
     },
 }
 
@@ -53,7 +52,7 @@ impl LoadedDocument {
             ir,
             origin: LoadOrigin::Decoded {
                 report,
-                fidelity,
+                fidelity: Box::new(fidelity),
                 selection,
             },
         }
@@ -63,7 +62,10 @@ impl LoadedDocument {
     pub(crate) fn restored(ir: CadIr, report: DecodeReport, fidelity: SourceFidelity) -> Self {
         Self {
             ir,
-            origin: LoadOrigin::Restored { report, fidelity },
+            origin: LoadOrigin::Restored {
+                report,
+                fidelity: Box::new(fidelity),
+            },
         }
     }
 

@@ -315,8 +315,7 @@ impl DefinitionDiagnostic {
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<cadmpeg_ir::report::loss::LossNote, cadmpeg_core::CodecError> {
-        let message = crate::wire::admitted_format(
-            ctx,
+        let message = ctx.format_retained(
             format_args!(
                 "instance-definition record at offset {}: {}",
                 self.source_range.start, self.diagnostic.message
@@ -354,7 +353,7 @@ pub(crate) fn hex(
         .len()
         .checked_mul(2)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("hex digest length overflow"))?;
-    let mut value = crate::wire::admitted_retained_string(ctx, byte_len, operation)?;
+    let mut value = ctx.retained_string(byte_len, operation)?;
     for byte in bytes {
         value.push(char::from(DIGITS[usize::from(byte >> 4)]));
         value.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
@@ -1202,27 +1201,18 @@ fn apply_idef_alternative_path(
             LinkSource::Structured(reference) => {
                 if relative {
                     if reference.relative_path.is_empty() {
-                        reference.relative_path = crate::wire::copy_retained_string(
-                            ctx,
-                            path.as_str(),
-                            "Rhino instance relative path",
-                        )?;
+                        reference.relative_path =
+                            ctx.copy_retained_text(path.as_str(), "Rhino instance relative path")?;
                     }
                 } else if reference.full_path.is_empty() {
-                    reference.full_path = crate::wire::copy_retained_string(
-                        ctx,
-                        path.as_str(),
-                        "Rhino instance full path",
-                    )?;
+                    reference.full_path =
+                        ctx.copy_retained_text(path.as_str(), "Rhino instance full path")?;
                 }
             }
             LinkSource::LegacyFull(full_path) => {
                 if relative {
-                    let copied_full_path = crate::wire::copy_retained_string(
-                        ctx,
-                        full_path.as_str(),
-                        "Rhino instance full path",
-                    )?;
+                    let copied_full_path =
+                        ctx.copy_retained_text(full_path.as_str(), "Rhino instance full path")?;
                     let copied_full_path =
                         NonBlankString::new(copied_full_path).ok_or_else(|| {
                             FramingError::structural(
@@ -1307,8 +1297,7 @@ pub(crate) fn parse_definitions(
                 v5_layout,
             ) {
                 Ok(member_ids) => {
-                    crate::wire::reserve_hash_set(
-                        ctx,
+                    ctx.reserve_set(
                         &mut result.scan.member_object_ids,
                         member_ids.len(),
                         "Rhino instance member identities",
@@ -1347,8 +1336,7 @@ pub(crate) fn parse_definitions(
             )?;
             Ok((definition, userdata_degraded))
         })();
-        crate::wire::reserve_collection(
-            ctx,
+        ctx.reserve_vec(
             &mut result.scan.diagnostics,
             warnings.len(),
             "Rhino instance definition diagnostics",
@@ -1365,8 +1353,7 @@ pub(crate) fn parse_definitions(
                 if userdata_degraded {
                     insert_opaque_index(ctx, &mut opaque_indices, source_order)?;
                 }
-                crate::wire::reserve_hash_set(
-                    ctx,
+                ctx.reserve_set(
                     &mut result.scan.member_object_ids,
                     definition.members.len(),
                     "Rhino instance member identities",
@@ -1379,22 +1366,19 @@ pub(crate) fn parse_definitions(
                     insert_opaque_index(ctx, &mut opaque_indices, first)?;
                     insert_opaque_index(ctx, &mut opaque_indices, source_order)?;
                     let duplicate_message = || {
-                        crate::wire::admitted_format(
-                            ctx,
+                        ctx.format_retained(
                             format_args!("duplicate instance definition UUID {}", definition.id),
                             "Rhino duplicate instance definition diagnostic",
                         )
                     };
                     if !result.scan.ambiguous_ids.contains(&definition.id) {
-                        crate::wire::reserve_hash_set(
-                            ctx,
+                        ctx.reserve_set(
                             &mut result.scan.ambiguous_ids,
                             1,
                             "Rhino ambiguous instance definitions",
                         )?;
                         result.scan.ambiguous_ids.insert(definition.id);
-                        crate::wire::reserve_collection(
-                            ctx,
+                        ctx.reserve_vec(
                             &mut result.scan.diagnostics,
                             1,
                             "Rhino instance definition diagnostics",
@@ -1407,8 +1391,7 @@ pub(crate) fn parse_definitions(
                             source_range: records[first].range.clone(),
                         });
                     }
-                    crate::wire::reserve_collection(
-                        ctx,
+                    ctx.reserve_vec(
                         &mut result.scan.diagnostics,
                         1,
                         "Rhino instance definition diagnostics",
@@ -1421,15 +1404,9 @@ pub(crate) fn parse_definitions(
                         source_range: record.range.clone(),
                     });
                 } else {
-                    crate::wire::reserve_hash_map(
-                        ctx,
-                        &mut seen,
-                        1,
-                        "Rhino instance definition identities",
-                    )?;
+                    ctx.reserve_map(&mut seen, 1, "Rhino instance definition identities")?;
                     seen.insert(definition.id, source_order);
-                    crate::wire::reserve_collection(
-                        ctx,
+                    ctx.reserve_vec(
                         &mut result.scan.definitions,
                         1,
                         "Rhino instance definitions",
@@ -1441,8 +1418,7 @@ pub(crate) fn parse_definitions(
                 return Err(cadmpeg_core::CodecError::ResourceLimit(limit));
             }
             Err(error) => {
-                crate::wire::reserve_collection(
-                    ctx,
+                ctx.reserve_vec(
                     &mut result.scan.diagnostics,
                     1,
                     "Rhino instance definition diagnostics",
@@ -1450,8 +1426,7 @@ pub(crate) fn parse_definitions(
                 result.scan.diagnostics.push(DefinitionDiagnostic {
                     diagnostic: RhinoDiagnostic {
                         code: Some(RhinoLossCode::ContainerInstanceDefinitionDegraded),
-                        message: crate::wire::admitted_format(
-                            ctx,
+                        message: ctx.format_retained(
                             format_args!("instance definition retained: {error}"),
                             "Rhino instance definition diagnostic",
                         )?,
@@ -1466,11 +1441,8 @@ pub(crate) fn parse_definitions(
         .scan
         .definitions
         .retain(|definition| !result.scan.ambiguous_ids.contains(&definition.id));
-    let mut opaque_records = crate::wire::admitted_collection(
-        ctx,
-        opaque_indices.len(),
-        "Rhino opaque instance definitions",
-    )?;
+    let mut opaque_records =
+        ctx.collection_vec(opaque_indices.len(), "Rhino opaque instance definitions")?;
     for index in opaque_indices {
         opaque_records.push(OpaqueRecord {
             table_typecode,

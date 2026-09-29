@@ -33,6 +33,33 @@ fn admitted_pcurve_parts_keep_rational_pole_storage() {
 }
 
 #[test]
+fn admitted_pcurve_point_replacement_preserves_weights_and_rejects_short_lanes() {
+    use crate::units::FinitePoint2;
+
+    let mut curve = pcurve();
+    let prior = curve.clone();
+    assert!(!curve.replace_admitted_control_points(&[]));
+    assert_eq!(curve, prior);
+    let mut positions = Vec::new();
+    let mut index = 0;
+    while curve.pole_rows().point_at(index).is_some() {
+        positions.push(
+            FinitePoint2::new(Point2::new(
+                cadmpeg_core::convert::f64_from_index(index)
+                    .expect("test index is exactly representable"),
+                2.0,
+            ))
+            .unwrap(),
+        );
+        index += 1;
+    }
+    let weights = curve.weights();
+    assert!(curve.replace_admitted_control_points(&positions));
+    assert_eq!(curve.control_points(), positions);
+    assert_eq!(curve.weights(), weights);
+}
+
+#[test]
 fn pcurve_copy_refuses_knot_and_pole_limits() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
@@ -106,8 +133,7 @@ fn hypot_axes_build_pcurves_without_changing_admitted_coordinates() {
 fn a_refused_pcurve_pole_edit_keeps_the_prior_poles() {
     let mut pcurve = pcurve();
     let original = pcurve.clone();
-    let refusal = pcurve.edit_control_points(|point| {
-        point.u = 9.0;
+    let refusal = pcurve.try_map_control_points(|_, _| {
         Err(crate::geometry::nurbs::NurbsError::EditRefused(
             "caller refused this pole".into(),
         ))
@@ -119,6 +145,78 @@ fn a_refused_pcurve_pole_edit_keeps_the_prior_poles() {
         ))
     );
     assert_eq!(pcurve, original);
+}
+
+#[test]
+fn polynomial_pcurve_map_updates_all_poles_and_refuses_last_atomically() {
+    use crate::units::FinitePoint2;
+
+    let mut curve = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let original = curve.clone();
+    let refusal = curve.try_map_control_points(|index, point| {
+        if index == 1 {
+            Err("last pole")
+        } else {
+            FinitePoint2::new(Point2::new(point.get().u + 5.0, point.get().v))
+                .ok_or("non-finite point")
+        }
+    });
+    assert_eq!(refusal, Err("last pole"));
+    assert_eq!(curve, original);
+    curve
+        .try_map_control_points(|index, point| {
+            FinitePoint2::new(Point2::new(
+                point.get().u + if index == 0 { 0.0 } else { 1.0 },
+                point.get().v * 2.0,
+            ))
+            .ok_or("non-finite point")
+        })
+        .unwrap();
+    assert_eq!(
+        curve.control_points(),
+        vec![Point2::new(1.0, 4.0), Point2::new(4.0, 8.0)]
+    );
+    assert_eq!(curve.weights(), None);
+}
+
+#[test]
+fn rational_pcurve_map_updates_all_poles_keeps_weights_and_refuses_last_atomically() {
+    use crate::units::FinitePoint2;
+
+    let mut curve = pcurve();
+    let original = curve.clone();
+    let weights = curve.weights();
+    let refusal = curve.try_map_control_points(|index, point| {
+        if index == 1 {
+            Err("last pole")
+        } else {
+            FinitePoint2::new(Point2::new(point.get().u + 5.0, point.get().v))
+                .ok_or("non-finite point")
+        }
+    });
+    assert_eq!(refusal, Err("last pole"));
+    assert_eq!(curve, original);
+    curve
+        .try_map_control_points(|index, point| {
+            FinitePoint2::new(Point2::new(
+                point.get().u + if index == 0 { 0.0 } else { 1.0 },
+                point.get().v * 2.0,
+            ))
+            .ok_or("non-finite point")
+        })
+        .unwrap();
+    assert_eq!(
+        curve.control_points(),
+        vec![Point2::new(1.0, 4.0), Point2::new(4.0, 8.0)]
+    );
+    assert_eq!(curve.weights(), weights);
 }
 
 #[test]

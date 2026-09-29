@@ -441,7 +441,7 @@ mod tests {
             );
             let state = PresentationState {
                 kind,
-                order: order as u32,
+                order: u32::try_from(order).expect("test order fits u32"),
                 attributes: BTreeMap::new(),
                 assets: Vec::new(),
             };

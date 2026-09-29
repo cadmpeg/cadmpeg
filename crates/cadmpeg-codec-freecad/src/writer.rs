@@ -291,7 +291,7 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
             "overlapping retained FCStd property spans".into(),
         ));
     }
-    let mut result = Vec::with_capacity(source.len());
+    let mut result = Vec::new();
     let mut cursor = 0usize;
     for property in ordered {
         let start = usize::try_from(property.xml.start())

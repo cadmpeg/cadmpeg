@@ -23,20 +23,25 @@ use cadmpeg_ir::report::{
     Severity,
 };
 
-/// Render an identity population for a loss note: every identity when the
-/// population is small, otherwise the leading identities and how many remain.
-pub(crate) fn identity_statement<T: std::fmt::Display>(ids: &[T]) -> String {
-    const LISTED: usize = 8;
-    let listed = ids
-        .iter()
-        .take(LISTED)
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(", ");
-    match ids.len().checked_sub(LISTED) {
-        Some(rest) if rest > 0 => format!("{listed} and {rest} more"),
-        _ => listed,
+/// Render an identity population into the caller's loss message.
+pub(crate) fn identity_statement<T: std::fmt::Display>(ids: &[T]) -> impl std::fmt::Display + '_ {
+    struct Statement<'a, T>(&'a [T]);
+    impl<T: std::fmt::Display> std::fmt::Display for Statement<'_, T> {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            const LISTED: usize = 8;
+            for (index, id) in self.0.iter().take(LISTED).enumerate() {
+                if index != 0 {
+                    formatter.write_str(", ")?;
+                }
+                write!(formatter, "{id}")?;
+            }
+            if let Some(rest) = self.0.len().checked_sub(LISTED).filter(|rest| *rest > 0) {
+                write!(formatter, " and {rest} more")?;
+            }
+            Ok(())
+        }
     }
+    Statement(ids)
 }
 
 /// A stable, machine-readable identifier for one CATIA V5 transfer loss.
@@ -280,6 +285,23 @@ impl CatiaLossCode {
     #[must_use]
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
+    }
+
+    pub(crate) fn note_charged(
+        self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        message: String,
+        operation: &'static str,
+    ) -> Result<LossNote, cadmpeg_core::CodecError> {
+        let namespace = ctx.copy_retained_text("catia", operation)?;
+        let code = ctx.copy_retained_text(self.code(), operation)?;
+        let kind = cadmpeg_ir::report::loss::NamespacedLossKind::new_owned(
+            namespace,
+            code,
+            self.shared_taxonomy(),
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+        Ok(LossNote::new(kind, message).with_severity(self.severity()))
     }
 }
 

@@ -123,7 +123,49 @@ pub enum EntityKind {
 impl EntityKind {
     /// Position of this kind in the canonical arena registry.
     pub(crate) const fn index(self) -> usize {
-        self as usize
+        match self {
+            Self::Body => 0,
+            Self::Region => 1,
+            Self::Shell => 2,
+            Self::Face => 3,
+            Self::Loop => 4,
+            Self::Coedge => 5,
+            Self::Edge => 6,
+            Self::Vertex => 7,
+            Self::Point => 8,
+            Self::Surface => 9,
+            Self::Curve => 10,
+            Self::SubdSurface => 11,
+            Self::Pcurve => 12,
+            Self::ProceduralSurface => 13,
+            Self::ProceduralCurve => 14,
+            Self::Asset => 15,
+            Self::Feature => 16,
+            Self::FeatureInputTopology => 17,
+            Self::FeatureResultTopology => 18,
+            Self::DesignConfiguration => 19,
+            Self::DesignParameter => 20,
+            Self::Sketch => 21,
+            Self::SketchEntity => 22,
+            Self::SketchConstraint => 23,
+            Self::SpatialSketch => 24,
+            Self::SpatialSketchEntity => 25,
+            Self::SpatialSketchConstraint => 26,
+            Self::Spreadsheet => 27,
+            Self::ProductDefinition => 28,
+            Self::Occurrence => 29,
+            Self::AssemblyJoint => 30,
+            Self::Drawing => 31,
+            Self::SemanticAnnotation => 32,
+            Self::PresentationDocument => 33,
+            Self::ViewPresentation => 34,
+            Self::Tessellation => 35,
+            Self::Appearance => 36,
+            Self::AppearanceBinding => 37,
+            Self::SourceAttribute => 38,
+            Self::PmiAnnotation => 39,
+            Self::PresentationLayer => 40,
+        }
     }
 
     /// Every registered entity kind in canonical arena order.

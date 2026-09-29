@@ -10,12 +10,10 @@ use crate::families::b5::transfer::{
 };
 const EPS_PCURVE_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
-use super::super::edges::merge_curve_plan;
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::pcurves::{
-    cylinder_helix, cylinder_point, isocurve_endpoint_parameters, lifted_curve_geometry,
-    neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
-    sphere_great_circle_geometry, sphere_great_circle_pcurve,
+    cylinder_point, neutral_pcurve_point, oriented_line_plan, sphere_great_circle_geometry,
+    sphere_great_circle_pcurve,
 };
 use super::super::surfaces::revolution_surface;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
@@ -29,6 +27,157 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn merge_curve_plan(
+    plans: &mut HashMap<u32, CurvePlan>,
+    conflicts: &mut HashSet<u32>,
+    edge: u32,
+    candidate: CurvePlan,
+) {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::edges::merge_curve_plan(ctx, plans, conflicts, edge, candidate)
+    })
+    .expect("service budget");
+}
+
+fn oriented_nurbs_range(
+    geometry: &CurveGeometry,
+    parameters: [f64; 2],
+    edge_start: [f64; 3],
+    edge_end: [f64; 3],
+) -> Option<CurvePlan> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::oriented_nurbs_range(ctx, geometry, parameters, edge_start, edge_end)
+    })
+    .expect("service budget")
+}
+
+fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<CurveGeometry> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::lifted_curve_geometry(ctx, pcurve, surface)
+    })
+    .expect("service budget")
+}
+
+fn isocurve_endpoint_parameters(pcurve: &B5Pcurve, parameters: [f64; 2]) -> Option<[f64; 2]> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::isocurve_endpoint_parameters(ctx, pcurve, parameters)
+    })
+    .expect("service budget")
+}
+
+fn oriented_circle_plan(
+    pcurve: &B5Pcurve,
+    surface: &B5Surface,
+    geometry: &CurveGeometry,
+    parameters: [f64; 2],
+    edge_start: [f64; 3],
+    edge_end: [f64; 3],
+) -> Option<CurvePlan> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::oriented_circle_plan(
+            ctx, pcurve, surface, geometry, parameters, edge_start, edge_end,
+        )
+    })
+    .expect("service budget")
+}
+
+fn cylinder_helix(
+    pcurve: &B5Pcurve,
+    surface: &B5Surface,
+    parameters: [f64; 2],
+    edge_start: [f64; 3],
+    edge_end: [f64; 3],
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<super::super::HelixPlan> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::cylinder_helix(
+            ctx, pcurve, surface, parameters, edge_start, edge_end, refusal,
+        )
+    })
+    .expect("service budget")
+}
+
+#[test]
+fn lifted_pcurve_refuses_the_caller_collection_limit() {
+    let pcurve = B5Pcurve {
+        object_id: 1,
+        surface: 2,
+        degree: 1,
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
+        multiplicities: vec![2, 2],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
+            crate::test_support::test_b5::finite_vector([1.0, 0.0]),
+        ],
+        weights: None,
+        parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
+        class_21_suffix_scalar: None,
+        lifted_endpoints: None,
+    };
+    let plane = B5Surface::Plane {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::pcurves::lifted_curve_geometry(ctx, &pcurve, &plane)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_expanded_pcurve_knots")
+    );
+    assert!(lifted_curve_geometry(&pcurve, &plane).is_some());
+}
+
+#[test]
+fn nurbs_isocurve_refuses_collection_limit_before_evaluator_allocates() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+    let pcurve = B5Pcurve {
+        object_id: 1,
+        surface: 2,
+        degree: 1,
+        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
+        multiplicities: vec![2, 2],
+        control_points: vec![
+            crate::test_support::test_b5::finite_vector([0.5, 0.0]),
+            crate::test_support::test_b5::finite_vector([0.5, 1.0]),
+        ],
+        weights: None,
+        parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
+        class_21_suffix_scalar: None,
+        lifted_endpoints: None,
+    };
+    let surface = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("valid bilinear surface");
+    let refused = crate::test_support::with_collection_limit(9, |ctx| {
+        super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface)
+    });
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        super::super::pcurves::nurbs_isocurve(ctx, &pcurve, &surface)
+    })
+    .expect("service budget");
+    assert!(admitted.is_some());
+}
 
 #[test]
 fn cylinder_pcurve_uses_independent_angular_scale_without_origin_rotation() {
@@ -275,7 +424,7 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))) =
-        lifted_curve_geometry(&pcurve, &plane).expect("evaluator allocation succeeds")
+        lifted_curve_geometry(&pcurve, &plane)
     else {
         panic!("plane lift must be NURBS");
     };
@@ -292,7 +441,7 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         chart_origin: crate::test_support::test_b5::finite(0.0),
     };
     assert!(
-        matches!(lifted_curve_geometry(&pcurve, &cylinder).expect("evaluator allocation succeeds"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) if { circle_curve.radius().get() == 2.0 })
+        matches!(lifted_curve_geometry(&pcurve, &cylinder), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) if { circle_curve.radius().get() == 2.0 })
     );
     let meridian = B5Pcurve {
         control_points: vec![
@@ -302,7 +451,7 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         ..pcurve
     };
     assert!(matches!(
-        lifted_curve_geometry(&meridian, &cylinder).expect("evaluator allocation succeeds"),
+        lifted_curve_geometry(&meridian, &cylinder),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
 }
@@ -335,9 +484,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         angular_scale: crate::test_support::test_b5::finite(scale),
         chart_origin: crate::test_support::test_b5::finite(0.0),
     };
-    let geometry = lifted_curve_geometry(&pcurve, &cylinder)
-        .expect("evaluator allocation succeeds")
-        .expect("cylinder latitude");
+    let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("cylinder latitude");
     let edge_start = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -384,7 +531,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         ..pcurve.clone()
     };
     assert!(
-        matches!(lifted_curve_geometry(&cone_pcurve, &cone).expect("evaluator allocation succeeds"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        matches!(lifted_curve_geometry(&cone_pcurve, &cone), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
         if {
             let radius = circle_curve.radius().get();
             radius == scale * 0.5
@@ -418,7 +565,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         ..pcurve
     };
     assert!(
-        matches!(lifted_curve_geometry(&torus_pcurve, &torus).expect("evaluator allocation succeeds"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        matches!(lifted_curve_geometry(&torus_pcurve, &torus), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
         if {
             let radius = circle_curve.radius().get();
             radius == 2.0 * scale
@@ -457,7 +604,7 @@ fn affine_plane_lift_preserves_pcurve_weights() {
         v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
     };
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve))) =
-        lifted_curve_geometry(&pcurve, &plane).expect("evaluator allocation succeeds")
+        lifted_curve_geometry(&pcurve, &plane)
     else {
         panic!("expected lifted rational curve");
     };
@@ -485,24 +632,27 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         )
         .expect("valid affine lift curve"),
     ));
-    let forward = oriented_nurbs_range(
-        geometry.clone(),
-        [2.0, 8.0],
-        [2.0, 0.0, 2.0],
-        [8.0, 0.0, 2.0],
-    )
-    .expect("forward trimmed range");
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::pcurves::oriented_nurbs_range(
+            ctx,
+            &geometry,
+            [2.0, 8.0],
+            [2.0, 0.0, 2.0],
+            [8.0, 0.0, 2.0],
+        )
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_oriented_nurbs_curve")
+    );
+    let forward = oriented_nurbs_range(&geometry, [2.0, 8.0], [2.0, 0.0, 2.0], [8.0, 0.0, 2.0])
+        .expect("forward trimmed range");
     assert_eq!(forward.geometry, geometry);
     assert_eq!(forward.parameter_range, Some([2.0, 8.0]));
     assert_eq!(forward.edge_tolerance, None);
 
-    let reversed = oriented_nurbs_range(
-        geometry.clone(),
-        [8.0, 2.0],
-        [8.0, 0.0, 2.0],
-        [2.0, 0.0, 2.0],
-    )
-    .expect("reversed trimmed range");
+    let reversed = oriented_nurbs_range(&geometry, [8.0, 2.0], [8.0, 0.0, 2.0], [2.0, 0.0, 2.0])
+        .expect("reversed trimmed range");
     assert_eq!(reversed.parameter_range, Some([2.0, 8.0]));
     let Some(SolvedCurveGeometry::Nurbs(reversed)) = reversed.geometry.solved() else {
         unreachable!();
@@ -511,10 +661,12 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         reversed.control_points(),
         [Point3::new(10.0, 0.0, 2.0), Point3::new(0.0, 0.0, 2.0)]
     );
-    assert!(oriented_nurbs_range(geometry, [2.0, 8.0], [3.0, 0.0, 2.0], [8.0, 0.0, 2.0]).is_none());
+    assert!(
+        oriented_nurbs_range(&geometry, [2.0, 8.0], [3.0, 0.0, 2.0], [8.0, 0.0, 2.0]).is_none()
+    );
 
     let tolerant = oriented_nurbs_range(
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(
                 1,
                 vec![0.0, 0.0, 10.0, 10.0],
@@ -669,9 +821,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
-    let geometry = lifted_curve_geometry(&pcurve, &cylinder)
-        .expect("evaluator allocation succeeds")
-        .expect("cylinder latitude");
+    let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("cylinder latitude");
     let edge_start = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -707,9 +857,8 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         ],
         ..pcurve.clone()
     };
-    let tiny_geometry = lifted_curve_geometry(&tiny_pcurve, &cylinder)
-        .expect("evaluator allocation succeeds")
-        .expect("tiny cylinder latitude");
+    let tiny_geometry =
+        lifted_curve_geometry(&tiny_pcurve, &cylinder).expect("tiny cylinder latitude");
     let tiny_end = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -762,9 +911,8 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         ],
         ..pcurve
     };
-    let turnback_geometry = lifted_curve_geometry(&turnback, &cylinder)
-        .expect("evaluator allocation succeeds")
-        .expect("turnback latitude locus");
+    let turnback_geometry =
+        lifted_curve_geometry(&turnback, &cylinder).expect("turnback latitude locus");
     let turnback_end = cylinder_point(
         [0.0; 3],
         [1.0, 0.0, 0.0],
@@ -803,9 +951,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         ],
         ..reversed_pcurve
     };
-    let cone_geometry = lifted_curve_geometry(&cone_pcurve, &cone)
-        .expect("evaluator allocation succeeds")
-        .expect("signed cone latitude");
+    let cone_geometry = lifted_curve_geometry(&cone_pcurve, &cone).expect("signed cone latitude");
     let cone_point = |angle: f64| {
         [
             -4.0 * half_angle.sin() * angle.cos(),
@@ -843,6 +989,24 @@ fn edge_curve_plans_merge_proofs_and_discard_conflicting_carriers() {
     ));
     let mut plans = HashMap::new();
     let mut conflicts = HashSet::new();
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::edges::merge_curve_plan(
+            ctx,
+            &mut HashMap::new(),
+            &mut HashSet::new(),
+            4,
+            CurvePlan {
+                geometry: geometry.clone(),
+                parameter_range: None,
+                edge_tolerance: None,
+                cache_fit_tolerance: None,
+            },
+        )
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_edge_curve_plans")
+    );
     merge_curve_plan(
         &mut plans,
         &mut conflicts,
@@ -941,7 +1105,7 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
         Point2::new(-std::f64::consts::PI, 2.0 * half_angle.cos())
     );
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) =
-        lifted_curve_geometry(&pcurve, &cone).expect("evaluator allocation succeeds")
+        lifted_curve_geometry(&pcurve, &cone)
     else {
         panic!("expected cone latitude circle");
     };
@@ -1128,7 +1292,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         .expect("service decode")
         .is_some());
     assert!(loop_chain_closes(&graph.loops[&3], graph.vertices.edges()));
-    let senses = graph.loops[&3].edge_senses();
+    let senses = graph.loops[&3].edge_senses(&ctx).expect("service budget");
     assert!(
         orient_loop_members(&ctx, &graph, BTreeMap::from([(3, senses)]))
             .expect("service decode")
@@ -1455,7 +1619,7 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
         Point2::new(std::f64::consts::PI, 1.0)
     );
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) =
-        lifted_curve_geometry(&base, &torus).expect("evaluator allocation succeeds")
+        lifted_curve_geometry(&base, &torus)
     else {
         panic!("expected meridian circle");
     };
@@ -1474,7 +1638,7 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
         ..base
     };
     let Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve))) =
-        lifted_curve_geometry(&latitude, &torus).expect("evaluator allocation succeeds")
+        lifted_curve_geometry(&latitude, &torus)
     else {
         panic!("expected latitude circle");
     };

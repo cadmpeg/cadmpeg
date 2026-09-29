@@ -337,21 +337,23 @@ pub(crate) struct ScopeHistoryGraph<'a> {
 
 impl<'a> ScopeHistoryGraph<'a> {
     pub(crate) fn new(
+        decode: Option<&DecodeContext<'_>>,
         scopes: &'a [DesignParameterScope],
         body_bindings: &[DesignBodyBinding],
         body_recipe_operands: &[DesignBodyRecipeOperand],
         component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
         histories: &[crate::history_records::AsmHistory],
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
         let binding = if histories.is_empty() {
             ScopeHistoryBinding::Absent
         } else {
             ScopeHistoryBinding::Bound(crate::history::bind_scope_histories(
+                decode,
                 scopes,
                 body_bindings,
                 body_recipe_operands,
                 histories,
-            ))
+            )?)
         };
         let component_namespaces = scopes
             .iter()
@@ -389,11 +391,11 @@ impl<'a> ScopeHistoryGraph<'a> {
                 .or_insert_with(Vec::new)
                 .push(scope);
         }
-        Self {
+        Ok(Self {
             binding,
             component_namespaces,
             scopes_by_state,
-        }
+        })
     }
 
     fn component_namespace(
@@ -708,7 +710,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     .map_or_else(
                         || native_scope_definition(scope, &parameters),
                         |_| Ok(FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
-                            joint: crate::ids::neutral_assembly_joint_id(scope),
+                            joint: crate::ids::neutral_assembly_joint_id(ctx, scope)?,
                         })),
                     )?,
                 Some(DesignFeatureFamily::Extrude) => project_extrude(
@@ -1274,12 +1276,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         })
         .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
     let scope_history = ScopeHistoryGraph::new(
+        ctx,
         scopes,
         body_bindings,
         body_recipe_operands,
         component_naming_spaces,
         histories,
-    );
+    )?;
     for feature in &mut features {
         let Some(scope) = feature
             .native_ref
@@ -3898,7 +3901,8 @@ fn project_hem(
         _ => None,
     };
     let semantics = edge_slot
-        .map(|edge_slot| crate::history::hem_geometry_semantics(scope, edge_slot, histories));
+        .map(|edge_slot| crate::history::hem_geometry_semantics(ctx, scope, edge_slot, histories))
+        .transpose()?;
     let form = match (
         form,
         semantics.and_then(|semantics| semantics.gap_length_form),

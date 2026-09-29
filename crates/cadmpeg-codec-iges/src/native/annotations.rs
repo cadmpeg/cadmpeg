@@ -5,7 +5,7 @@
 //! counted-tail verdicts.
 
 use super::{collect_native_items, OverdeclaredCounts};
-use crate::decode_resource::{collect_result_vec, format_retained};
+
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
@@ -201,32 +201,28 @@ struct Subject<'a, 'ctx> {
 
 impl Subject<'_, '_> {
     fn id(&self) -> Result<String, CodecError> {
-        format_retained(
-            self.ctx,
+        self.ctx.format_retained(
             format_args!("iges:presentation:annotation#D{}", self.sequence),
             "iges native annotation id",
         )
     }
 
     fn source_entity(&self) -> Result<String, CodecError> {
-        format_retained(
-            self.ctx,
+        self.ctx.format_retained(
             format_args!("iges:entity:directory#{}", self.sequence),
             "iges native annotation source",
         )
     }
 
     fn annotation_link_id(&self, sequence: u32) -> Result<String, CodecError> {
-        format_retained(
-            self.ctx,
+        self.ctx.format_retained(
             format_args!("iges:presentation:annotation#D{sequence}"),
             "iges native annotation link",
         )
     }
 
     fn entity_link_id(&self, sequence: u32) -> Result<String, CodecError> {
-        format_retained(
-            self.ctx,
+        self.ctx.format_retained(
             format_args!("iges:entity:directory#{sequence}"),
             "iges native annotation entity link",
         )
@@ -277,8 +273,7 @@ impl Subject<'_, '_> {
                 .parameter_resolver
                 .resolve_negative_type(self.sequence, start + 3, value, 310, &[0])?
                 .map(|sequence| {
-                    format_retained(
-                        self.ctx,
+                    self.ctx.format_retained(
                         format_args!("iges:presentation:text-font#D{sequence}"),
                         "iges native text run font",
                     )
@@ -344,12 +339,10 @@ impl Subject<'_, '_> {
         overdeclared: &mut OverdeclaredCounts,
     ) -> Result<Vec<Option<String>>, CodecError> {
         let count = self.counted_tail_at(count_index, leader_start, 1, overdeclared);
-        collect_result_vec(
-            self.ctx,
-            count,
-            "iges native annotation leader slots",
-            |offset| self.leader_link(leader_start + offset),
-        )
+        self.ctx
+            .collect_indexed_vec(count, "iges native annotation leader slots", |offset| {
+                self.leader_link(leader_start + offset)
+            })
     }
 
     fn witness_link(&self, index: usize) -> Result<Option<String>, CodecError> {
@@ -491,8 +484,7 @@ fn general_note(
         source_entity: subject.source_entity()?,
         form: subject.form,
         declared_string_count: record.and_then(|record| record.integer(1)),
-        strings: collect_result_vec(
-            subject.ctx,
+        strings: subject.ctx.collect_indexed_vec(
             count,
             "iges native general note text run slots",
             |index| subject.text_run(2 + index * 12),
@@ -529,8 +521,7 @@ fn new_general_note(
         ],
         normal_interline_spacing: record.and_then(|record| record.number(11)),
         declared_string_count: record.and_then(|record| record.integer(12)),
-        strings: collect_result_vec(
-            subject.ctx,
+        strings: subject.ctx.collect_indexed_vec(
             count,
             "iges native new note text run slots",
             |index| -> Result<NativeNewTextRun, CodecError> {
@@ -585,8 +576,7 @@ fn leader(
             record.and_then(|record| record.number(6)),
             z,
         ],
-        segment_tails: collect_result_vec(
-            subject.ctx,
+        segment_tails: subject.ctx.collect_indexed_vec(
             count,
             "iges native leader segment tail slots",
             |index| {
@@ -677,15 +667,13 @@ fn general_symbol(
         form: subject.form,
         note: subject.note_link(1)?,
         declared_geometry_count,
-        geometry: collect_result_vec(
-            subject.ctx,
+        geometry: subject.ctx.collect_indexed_vec(
             geometry_count,
             "iges native symbol geometry slots",
             |offset| subject.geometry_link(3 + offset, global_table),
         )?,
         declared_leader_count,
-        leaders: collect_result_vec(
-            subject.ctx,
+        leaders: subject.ctx.collect_indexed_vec(
             leader_count,
             "iges native symbol leader slots",
             |offset| subject.leader_link(leader_count_index + 1 + offset),
@@ -715,8 +703,7 @@ fn sectioned_area(
         pattern_spacing: record.and_then(|record| record.number(6)),
         pattern_angle: record.and_then(|record| record.number(7)),
         declared_island_count: record.and_then(|record| record.integer(8)),
-        islands: collect_result_vec(
-            subject.ctx,
+        islands: subject.ctx.collect_indexed_vec(
             island_count,
             "iges native section island slots",
             |offset| subject.section_boundary_link(9 + offset),
@@ -759,8 +746,7 @@ pub(super) fn build(
             };
             let transformation = (entry.transform > 0)
                 .then(|| {
-                    format_retained(
-                        ctx,
+                    ctx.format_retained(
                         format_args!("iges:native:transformation#D{}", entry.transform),
                         "iges native annotation transformation",
                     )

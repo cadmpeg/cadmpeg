@@ -37,11 +37,28 @@ pub(crate) fn native_id_charged(
         .checked_add(kind.len())
         .and_then(|len| len.checked_add(1))
         .and_then(|len| len.checked_add(encoded_len))
-        .ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, OPERATION))?;
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    ctx.policy().limits.max_retained_bytes,
+                    u64::MAX,
+                    OPERATION,
+                ),
+            )
+        })?;
     ctx.charge_retained(len as u64, OPERATION)?;
     let mut id = String::new();
-    id.try_reserve_exact(len)
-        .map_err(|_| crate::resource::retained_allocation_failed(ctx, len as u64, OPERATION))?;
+    id.try_reserve_exact(len).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                len as u64,
+                OPERATION,
+            ),
+        )
+    })?;
     id.push_str("fcstd:native:");
     id.push_str(kind);
     id.push('#');
@@ -57,8 +74,16 @@ pub(crate) fn encoded_segment_charged(
     let len = encoded_segment_len(ctx, value, operation)?;
     ctx.charge_retained(len as u64, operation)?;
     let mut key = String::new();
-    key.try_reserve_exact(len)
-        .map_err(|_| crate::resource::retained_allocation_failed(ctx, len as u64, operation))?;
+    key.try_reserve_exact(len).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                len as u64,
+                operation,
+            ),
+        )
+    })?;
     push_encoded_segment(&mut key, value);
     IdentityKey::try_new(key).map_err(CodecError::malformed)
 }
@@ -79,11 +104,28 @@ pub(crate) fn native_child_id_charged(
         .and_then(|len| len.checked_add(parent_key.len()))
         .and_then(|len| len.checked_add(1))
         .and_then(|len| len.checked_add(child_len))
-        .ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, OPERATION))?;
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    ctx.policy().limits.max_retained_bytes,
+                    u64::MAX,
+                    OPERATION,
+                ),
+            )
+        })?;
     ctx.charge_retained(len as u64, OPERATION)?;
     let mut id = String::new();
-    id.try_reserve_exact(len)
-        .map_err(|_| crate::resource::retained_allocation_failed(ctx, len as u64, OPERATION))?;
+    id.try_reserve_exact(len).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                len as u64,
+                OPERATION,
+            ),
+        )
+    })?;
     id.push_str("fcstd:native:");
     id.push_str(kind);
     id.push('#');
@@ -122,11 +164,28 @@ pub(crate) fn model_id_charged_at(
         .and_then(|len| len.checked_add(parent_key.len()))
         .and_then(|len| len.checked_add(1))
         .and_then(|len| len.checked_add(child_len))
-        .ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, operation))?;
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    ctx.policy().limits.max_retained_bytes,
+                    u64::MAX,
+                    operation,
+                ),
+            )
+        })?;
     ctx.charge_retained(len as u64, operation)?;
     let mut id = String::new();
-    id.try_reserve_exact(len)
-        .map_err(|_| crate::resource::retained_allocation_failed(ctx, len as u64, operation))?;
+    id.try_reserve_exact(len).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                len as u64,
+                operation,
+            ),
+        )
+    })?;
     id.push_str("fcstd:model:");
     id.push_str(kind);
     id.push('#');
@@ -156,7 +215,16 @@ fn encoded_segment_len(
                 },
             )
         })
-        .ok_or_else(|| crate::resource::retained_allocation_failed(ctx, u64::MAX, operation))
+        .ok_or_else(|| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    ctx.policy().limits.max_retained_bytes,
+                    u64::MAX,
+                    operation,
+                ),
+            )
+        })
 }
 
 fn push_encoded_segment(output: &mut String, key: &str) {
@@ -1299,7 +1367,10 @@ impl RetainedXml {
         start: u64,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let copy = copy_xml_text(ctx, text, operation)?;
+        let copy = match ctx {
+            Some(ctx) => ctx.copy_retained_text(text, operation),
+            None => Ok((text).to_owned()),
+        }?;
         Self::from_text(copy, start).map_err(CodecError::Malformed)
     }
     pub(crate) fn text(&self) -> &str {
@@ -1310,21 +1381,6 @@ impl RetainedXml {
     }
     pub(crate) fn end(&self) -> u64 {
         self.span.end()
-    }
-}
-
-/// Charge the bytes of each separate retained XML string before copying them.
-pub(crate) fn copy_xml_text(
-    ctx: Option<&DecodeContext<'_>>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    if let Some(ctx) = ctx {
-        let bytes = ctx.copy_retained(text.as_bytes(), operation)?;
-        String::from_utf8(bytes)
-            .map_err(|_| CodecError::Malformed("retained XML is not UTF-8".into()))
-    } else {
-        Ok(text.to_owned())
     }
 }
 
@@ -1759,8 +1815,6 @@ pub(crate) struct ProductNodeRecord {
 
 /// Structural family of a product node.
 #[derive(Debug, Clone, PartialEq)]
-// Keep each native node payload inline; occurrence fields are read together during projection.
-#[allow(clippy::large_enum_variant)]
 pub(crate) enum ProductNode {
     /// `App::DocumentObjectGroup`.
     Group(ContainerNode),
@@ -1774,7 +1828,7 @@ pub(crate) enum ProductNode {
         element_objects: Vec<String>,
     },
     /// `App::Link` or `App::LinkElement`.
-    Occurrence(LinkOccurrence),
+    Occurrence(Box<LinkOccurrence>),
 }
 
 /// Shared payload of a non-occurrence product container.
@@ -2270,7 +2324,7 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                     },
                 }
             }
-            "occurrence" => ProductNode::Occurrence(LinkOccurrence {
+            "occurrence" => ProductNode::Occurrence(Box::new(LinkOccurrence {
                 members: wire.members,
                 prototype: wire.prototype,
                 external_document: ExternalDocument::from_wire(
@@ -2317,7 +2371,7 @@ impl TryFrom<ProductNodeRecordWire> for ProductNodeRecord {
                     })
                     .transpose()
                     .map_err(|error| format!("scale: {error}"))?,
-            }),
+            })),
             _ => return Err("unknown product node kind".to_owned()),
         };
         Ok(Self {
@@ -2881,11 +2935,9 @@ pub(crate) enum ExternalDocument {
 
 impl ExternalDocument {
     pub(crate) fn clone_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let value = NonBlankString::new(crate::resource::retained_string(
-            ctx,
-            self.as_str(),
-            "FreeCAD external document copy",
-        )?)
+        let value = NonBlankString::new(
+            ctx.copy_retained_text(self.as_str(), "FreeCAD external document copy")?,
+        )
         .ok_or_else(|| CodecError::Malformed("external document is empty".into()))?;
         Ok(match self {
             Self::File(_) => Self::File(value),
@@ -2952,25 +3004,16 @@ impl LinkTarget {
             .object
             .as_ref()
             .map(|value| {
-                NonBlankString::new(crate::resource::retained_string(
-                    ctx,
-                    value.as_str(),
-                    "FreeCAD link object copy",
-                )?)
+                NonBlankString::new(
+                    ctx.copy_retained_text(value.as_str(), "FreeCAD link object copy")?,
+                )
                 .ok_or_else(|| CodecError::Malformed("link object is empty".into()))
             })
             .transpose()?;
-        let mut subelements = crate::resource::collection_vec(
-            ctx,
-            self.subelements.len(),
-            "FreeCAD link subelement copies",
-        )?;
+        let mut subelements =
+            ctx.collection_vec(self.subelements.len(), "FreeCAD link subelement copies")?;
         for subelement in &self.subelements {
-            subelements.push(crate::resource::retained_string(
-                ctx,
-                subelement,
-                "FreeCAD link subelement text",
-            )?);
+            subelements.push(ctx.copy_retained_text(subelement, "FreeCAD link subelement text")?);
         }
         Ok(Self {
             document,
@@ -3170,8 +3213,7 @@ pub(crate) fn sole_named_property<'a>(
 ) -> Result<Option<&'a PropertyRecord>, CodecError> {
     match unique_property(properties.iter().copied(), |property| property.name == name) {
         Ok(property) => Ok(property),
-        Err(_) => Err(CodecError::Malformed(crate::resource::retained_format(
-            ctx,
+        Err(_) => Err(CodecError::Malformed(ctx.format_retained(
             format_args!("{owner} property {name} occurs more than once"),
             "FreeCAD duplicate property diagnostic",
         )?)),

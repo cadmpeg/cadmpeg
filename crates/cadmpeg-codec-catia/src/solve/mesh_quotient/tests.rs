@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Work-estimate tests for the mesh quotient search.
 
-use super::{direction_work_estimate, MeshQuotient, MeshSelectionSearch, SearchOutcome};
+use super::selection_search::direction_work_estimate;
+use super::{MeshQuotient, MeshSelectionSearch, SearchOutcome};
 use crate::solve::missing_edge::{MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment};
 use cadmpeg_core::decode::WorkBudget;
 use std::cell::RefCell;
@@ -83,4 +84,6 @@ fn a_face_the_work_counter_cannot_estimate_exhausts_the_search() {
 }
 
 mod face_equation_cache;
+mod orientation_limits;
 mod quotient_search;
+mod selection_limits;

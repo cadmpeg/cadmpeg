@@ -5,6 +5,48 @@ use super::*;
 const SMALL_PARAMETER_DOMAIN: f64 = 1e-12;
 
 #[test]
+fn bezier_parameter_search_refuses_before_nodes_queue_and_parameters() {
+    use cadmpeg_core::CodecError;
+
+    let point = Point3::new(0.0, 0.0, 0.0);
+    for (limit, operation) in [
+        (0, "catia_bezier_search_nodes"),
+        (1, "catia_bezier_search_queue"),
+        (2, "catia_bezier_parameters"),
+    ] {
+        let result = crate::test_support::with_collection_limit(limit, |ctx| {
+            let mut parameters = Vec::new();
+            collect_bezier_point_parameters(
+                ctx,
+                [point; 6],
+                [0.0, 1.0],
+                point,
+                0.01,
+                1.0,
+                &mut parameters,
+            )
+        });
+        assert!(
+            matches!(result, Err(CodecError::ResourceLimit(error)) if error.operation == operation)
+        );
+    }
+    crate::test_support::with_service_context(|ctx| {
+        let mut parameters = Vec::new();
+        collect_bezier_point_parameters(
+            ctx,
+            [point; 6],
+            [0.0, 1.0],
+            point,
+            0.01,
+            1.0,
+            &mut parameters,
+        )
+        .expect("service budget");
+        assert!(!parameters.is_empty());
+    });
+}
+
+#[test]
 fn numerical_0922_quintic_keeps_both_branches() {
     for d in [1., SMALL_PARAMETER_DOMAIN] {
         let mut poles = (0..6)
@@ -15,7 +57,10 @@ fn numerical_0922_quintic_keeps_both_branches() {
         knots.extend(vec![0.5 * d; 6]);
         knots.extend(vec![d; 6]);
         let n = NurbsCurve::from_lanes(5, knots, poles, None, false).expect("valid quintic curve");
-        let result = standard_limit_curve_point_parameter(&n, Point3::new(0., 0., 0.), 2e-3);
+        let result = crate::test_support::with_service_context(|ctx| {
+            standard_limit_curve_point_parameter(ctx, &n, Point3::new(0., 0., 0.), 2e-3)
+        })
+        .expect("service budget");
         println!("CATIA folded quintic locus d{d:e}: {result:?}");
         assert_eq!(result, None);
     }
@@ -29,7 +74,10 @@ fn numerical_0922_finite_bezier_midpoint() {
         let mut knots = vec![0.; 6];
         knots.extend(vec![1.; 6]);
         let n = NurbsCurve::from_lanes(5, knots, poles, None, false).expect("valid quintic curve");
-        let result = standard_limit_curve_point_parameter(&n, Point3::new(x, 0.5, 0.), 2e-3);
+        let result = crate::test_support::with_service_context(|ctx| {
+            standard_limit_curve_point_parameter(ctx, &n, Point3::new(x, 0.5, 0.), 2e-3)
+        })
+        .expect("service budget");
         println!("CATIA straight quintic at x{x:e} midpoint: {result:?}");
         assert_eq!(result, Some(0.5));
     }
@@ -44,8 +92,11 @@ fn standard_limit_curve_finds_interior_point_on_wide_finite_domain() {
     knots.extend(vec![f64::MAX; 6]);
     let curve =
         NurbsCurve::from_lanes(5, knots, poles, None, false).expect("wide finite quintic domain");
-    let parameter = standard_limit_curve_point_parameter(&curve, Point3::new(0.0, 0.2, 0.0), 2e-3)
-        .expect("interior point parameter");
+    let parameter = crate::test_support::with_service_context(|ctx| {
+        standard_limit_curve_point_parameter(ctx, &curve, Point3::new(0.0, 0.2, 0.0), 2e-3)
+    })
+    .expect("service budget")
+    .expect("interior point parameter");
     assert!((parameter / f64::MAX + 0.6).abs() <= 0.01);
 }
 
@@ -70,7 +121,7 @@ fn numerical_0922b_surface_membership_wide_chart() {
     for d in [[0., 1.], [-1e308, 1e308]] {
         let r = point_on_nurbs_surface(Point3::new(0.3, 0.7, 0.), &audit_plane(d, 1.));
         println!("CATIA plane chart{d:?}: {r:?}");
-        assert_eq!(r, Some(true));
+        assert_eq!(r, Ok(Some(true)));
     }
 }
 #[test]
@@ -81,6 +132,6 @@ fn numerical_0922b_surface_membership_large_plane() {
             &audit_plane([0., 1.], scale),
         );
         println!("CATIA plane scale{scale:e}: {r:?}");
-        assert_eq!(r, Some(true));
+        assert_eq!(r, Ok(Some(true)));
     }
 }

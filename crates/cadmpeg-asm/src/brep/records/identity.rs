@@ -11,6 +11,12 @@ pub struct NativeRecordNamespace {
 }
 
 impl NativeRecordNamespace {
+    /// The source namespace without a record kind or index.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.namespace
+    }
+
     /// Identify the namespace of an unqualified ASM stream.
     #[must_use]
     pub fn new(format: IdFormat) -> Self {

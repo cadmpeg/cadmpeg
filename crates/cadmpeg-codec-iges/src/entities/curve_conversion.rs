@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact conversions from bounded analytic curves to NURBS carriers.
 
-use crate::decode_resource::reserve_optional_vec;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
@@ -36,9 +35,13 @@ pub(super) fn angularly_equal(left: f64, right: f64) -> bool {
 /// it carries last-place noise and the platform's libm decides which side of the
 /// boundary it falls on. Backing the sweep off by [`ANGULAR_TOLERANCE`] first
 /// keeps an exact multiple of a quarter turn on the lower side.
-pub(super) fn quarter_turn_spans(sweep: f64) -> usize {
+pub(super) fn quarter_turn_spans(sweep: f64) -> Option<usize> {
     let quarters = (sweep - ANGULAR_TOLERANCE) / std::f64::consts::FRAC_PI_2;
-    quarters.ceil().max(1.0) as usize
+    if quarters <= 1.0 {
+        Some(1)
+    } else {
+        cadmpeg_core::convert::truncate_f64_to_usize(quarters.ceil())
+    }
 }
 
 pub(crate) fn circular_arc_nurbs(
@@ -69,20 +72,39 @@ pub(crate) fn elliptical_arc_nurbs(
     let minor_radius = minor_radius.get();
     let delta = delta.min(std::f64::consts::TAU);
     let transverse = axis.cross(major_direction);
-    let spans = quarter_turn_spans(delta);
-    let step = delta / spans as f64;
-    let mut knots = reserve_optional_vec(ctx, spans * 2 + 4, "iges analytic arc knots")?;
-    let mut poles = reserve_optional_vec(ctx, spans * 2 + 1, "iges analytic arc weighted poles")?;
+    let Some(spans) = quarter_turn_spans(delta) else {
+        return Ok(None);
+    };
+    let Some(span_count) = cadmpeg_core::convert::f64_from_index(spans) else {
+        return Ok(None);
+    };
+    let step = delta / span_count;
+    let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        spans * 2 + 4,
+        "iges analytic arc knots",
+    )?;
+    let mut poles = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        spans * 2 + 1,
+        "iges analytic arc weighted poles",
+    )?;
     for span in 0..spans {
         let start = if span == 0 {
             interval[0]
         } else {
-            interval[0] + step * span as f64
+            let Some(span) = cadmpeg_core::convert::f64_from_index(span) else {
+                return Ok(None);
+            };
+            interval[0] + step * span
         };
         let end = if span + 1 == spans {
             interval[1]
         } else {
-            interval[0] + step * (span + 1) as f64
+            let Some(span) = cadmpeg_core::convert::f64_from_index(span + 1) else {
+                return Ok(None);
+            };
+            interval[0] + step * span
         };
         let middle = (start + end) * 0.5;
         let middle_weight = ((end - start) * 0.5).cos();
@@ -200,9 +222,17 @@ pub(crate) fn parabolic_arc_nurbs(
     {
         return Ok(None);
     }
-    let mut knots = reserve_optional_vec(ctx, 6, "iges parabolic arc knots")?;
+    let mut knots = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        6,
+        "iges parabolic arc knots",
+    )?;
     knots.extend([start, start, start, end, end, end]);
-    let mut points = reserve_optional_vec(ctx, 3, "iges parabolic arc poles")?;
+    let mut points = cadmpeg_core::decode::DecodeContext::collection_vec_optional(
+        ctx,
+        3,
+        "iges parabolic arc poles",
+    )?;
     for point in [start_point, middle_point, end_point] {
         points.push(finite_arc_point(point)?);
     }

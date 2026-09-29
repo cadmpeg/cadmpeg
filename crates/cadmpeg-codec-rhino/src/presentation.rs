@@ -114,7 +114,7 @@ fn push_presentation_loss(
     code: RhinoLossCode,
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    crate::wire::reserve_collection(ctx, losses, 1, "Rhino presentation losses")?;
+    ctx.reserve_vec(losses, 1, "Rhino presentation losses")?;
     losses.push(crate::wire::admitted_loss(
         ctx,
         code,
@@ -130,7 +130,7 @@ fn push_opaque_record(
     table_typecode: u32,
     record: &Record,
 ) -> Result<(), CodecError> {
-    crate::wire::reserve_collection(ctx, opaque_records, 1, "Rhino opaque presentation records")?;
+    ctx.reserve_vec(opaque_records, 1, "Rhino opaque presentation records")?;
     opaque_records.push(OpaqueRecord {
         table_typecode,
         record: record.clone(),
@@ -156,10 +156,6 @@ struct GroupRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "independent material render switches"
-)]
 struct MaterialRecord {
     id: String,
     source_offset: u64,
@@ -182,8 +178,8 @@ struct MaterialRecord {
     textures: Vec<TextureRecord>,
     shareable: bool,
     disable_lighting: bool,
-    #[serde(flatten, serialize_with = "serialize_material_fresnel")]
-    fresnel: Option<MaterialFresnelSettings>,
+    #[serde(flatten)]
+    fresnel: MaterialFresnelSlot,
     rdk_instance_uuid: Option<String>,
     diffuse_texture_alpha_transparency: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -198,32 +194,33 @@ struct MaterialFresnelSettings {
     index_of_refraction: FiniteReal,
 }
 
-// Serde passes the field by reference to this adapter.
-#[allow(clippy::ref_option)]
-fn serialize_material_fresnel<S: serde::Serializer>(
-    settings: &Option<MaterialFresnelSettings>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeMap;
+#[derive(Debug)]
+struct MaterialFresnelSlot(Option<MaterialFresnelSettings>);
 
-    let mut fields = serializer.serialize_map(Some(4))?;
-    fields.serialize_entry(
-        "fresnel_reflections",
-        &settings.as_ref().is_some_and(|value| value.reflections),
-    )?;
-    fields.serialize_entry(
-        "reflection_glossiness",
-        &settings.as_ref().map(|value| value.reflection_glossiness),
-    )?;
-    fields.serialize_entry(
-        "refraction_glossiness",
-        &settings.as_ref().map(|value| value.refraction_glossiness),
-    )?;
-    fields.serialize_entry(
-        "fresnel_index_of_refraction",
-        &settings.as_ref().map(|value| value.index_of_refraction),
-    )?;
-    fields.end()
+impl Serialize for MaterialFresnelSlot {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        let settings = self.0.as_ref();
+        let mut fields = serializer.serialize_map(Some(4))?;
+        fields.serialize_entry(
+            "fresnel_reflections",
+            &settings.as_ref().is_some_and(|value| value.reflections),
+        )?;
+        fields.serialize_entry(
+            "reflection_glossiness",
+            &settings.as_ref().map(|value| value.reflection_glossiness),
+        )?;
+        fields.serialize_entry(
+            "refraction_glossiness",
+            &settings.as_ref().map(|value| value.refraction_glossiness),
+        )?;
+        fields.serialize_entry(
+            "fresnel_index_of_refraction",
+            &settings.as_ref().map(|value| value.index_of_refraction),
+        )?;
+        fields.end()
+    }
 }
 
 fn serialize_material_textures<S: serde::Serializer>(
@@ -538,9 +535,8 @@ impl DimensionControlEntries {
         match self.0.binary_search_by(|(key, _)| key.as_str().cmp(name)) {
             Ok(index) => self.0[index].1 = value()?,
             Err(index) => {
-                let key =
-                    crate::wire::copy_retained_string(ctx, name, "Rhino dimension control key")?;
-                crate::wire::reserve_collection(ctx, &mut self.0, 1, "Rhino dimension controls")?;
+                let key = ctx.copy_retained_text(name, "Rhino dimension control key")?;
+                ctx.reserve_vec(&mut self.0, 1, "Rhino dimension controls")?;
                 self.0.insert(index, (key, value()?));
             }
         }
@@ -794,8 +790,8 @@ struct TextureMappingRecord {
 struct RenderingMaterialReference {
     plugin_uuid: String,
     front_material_uuid: String,
-    #[serde(flatten, serialize_with = "serialize_material_back_face")]
-    back_face: Option<RenderingMaterialBackFace>,
+    #[serde(flatten)]
+    back_face: RenderingMaterialBackFaceSlot,
 }
 
 #[derive(Debug)]
@@ -804,25 +800,26 @@ struct RenderingMaterialBackFace {
     material_source: u8,
 }
 
-// Serde passes the field by reference to this adapter.
-#[allow(clippy::ref_option)]
-fn serialize_material_back_face<S: serde::Serializer>(
-    back_face: &Option<RenderingMaterialBackFace>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeStruct;
-    let mut fields = serializer.serialize_struct("RenderingMaterialBackFace", 2)?;
-    fields.serialize_field(
-        "back_material_uuid",
-        &back_face
-            .as_ref()
-            .and_then(|value| value.back_material_uuid.as_ref()),
-    )?;
-    fields.serialize_field(
-        "material_source",
-        &back_face.as_ref().map(|value| value.material_source),
-    )?;
-    fields.end()
+#[derive(Debug)]
+struct RenderingMaterialBackFaceSlot(Option<RenderingMaterialBackFace>);
+
+impl Serialize for RenderingMaterialBackFaceSlot {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let back_face = self.0.as_ref();
+        let mut fields = serializer.serialize_struct("RenderingMaterialBackFace", 2)?;
+        fields.serialize_field(
+            "back_material_uuid",
+            &back_face
+                .as_ref()
+                .and_then(|value| value.back_material_uuid.as_ref()),
+        )?;
+        fields.serialize_field(
+            "material_source",
+            &back_face.as_ref().map(|value| value.material_source),
+        )?;
+        fields.end()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -863,7 +860,6 @@ struct MeshModifiersRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct DisplacementRecord {
     xml_version: i32,
     on: bool,
@@ -886,7 +882,6 @@ struct DisplacementRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct DisplacementSubItemRecord {
     face_index: i32,
     on: bool,
@@ -897,30 +892,25 @@ struct DisplacementSubItemRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct EdgeSofteningRecord {
     xml_version: i32,
     on: bool,
     softening: FiniteReal,
-    chamfer: bool,
-    faceted: bool,
-    force_softening: bool,
+    #[serde(flatten)]
+    options: crate::mesh_modifiers::EdgeSofteningOptions,
     edge_angle_threshold: FiniteReal,
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct ThickeningRecord {
     xml_version: i32,
     on: bool,
-    solid: bool,
-    both_sides: bool,
-    offset_only: bool,
+    #[serde(flatten)]
+    options: crate::mesh_modifiers::ThickeningOptions,
     distance: FiniteReal,
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct CurvePipingRecord {
     xml_version: i32,
     on: bool,
@@ -932,18 +922,15 @@ struct CurvePipingRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct ShutLiningRecord {
     xml_version: i32,
     on: bool,
-    faceted: bool,
-    auto_update: bool,
-    force_update: bool,
+    #[serde(flatten)]
+    options: crate::mesh_modifiers::ShutLiningOptions,
     curves: Vec<ShutLiningCurveRecord>,
 }
 
 #[derive(Debug, Serialize)]
-#[allow(clippy::struct_excessive_bools)]
 struct ShutLiningCurveRecord {
     uuid: Option<String>,
     radius: FiniteReal,
@@ -978,8 +965,7 @@ fn displacement_record(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     displacement: &crate::mesh_modifiers::DisplacementModifier,
 ) -> Result<DisplacementRecord, CodecError> {
-    let mut sub_items = crate::wire::admitted_collection(
-        ctx,
+    let mut sub_items = ctx.collection_vec(
         displacement.sub_items.len(),
         "Rhino projected displacement sub-items",
     )?;
@@ -990,8 +976,7 @@ fn displacement_record(
             texture: item
                 .texture
                 .map(|uuid| {
-                    crate::wire::admitted_format(
-                        ctx,
+                    ctx.format_retained(
                         format_args!("{uuid}"),
                         "Rhino projected displacement sub-item texture UUID",
                     )
@@ -1008,8 +993,7 @@ fn displacement_record(
         texture: displacement
             .texture
             .map(|uuid| {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!("{uuid}"),
                     "Rhino projected displacement texture UUID",
                 )
@@ -1040,9 +1024,7 @@ fn edge_softening_record(
         xml_version: edge_softening.xml_version,
         on: edge_softening.on,
         softening: edge_softening.softening,
-        chamfer: edge_softening.chamfer,
-        faceted: edge_softening.faceted,
-        force_softening: edge_softening.force_softening,
+        options: edge_softening.options.clone(),
         edge_angle_threshold: edge_softening.edge_angle_threshold,
     }
 }
@@ -1051,9 +1033,7 @@ fn thickening_record(thickening: &crate::mesh_modifiers::ThickeningModifier) -> 
     ThickeningRecord {
         xml_version: thickening.xml_version,
         on: thickening.on,
-        solid: thickening.solid,
-        both_sides: thickening.both_sides,
-        offset_only: thickening.offset_only,
+        options: thickening.options.clone(),
         distance: thickening.distance,
     }
 }
@@ -1076,8 +1056,7 @@ fn shut_lining_record(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     shut_lining: &crate::mesh_modifiers::ShutLiningModifier,
 ) -> Result<ShutLiningRecord, CodecError> {
-    let mut curves = crate::wire::admitted_collection(
-        ctx,
+    let mut curves = ctx.collection_vec(
         shut_lining.curves.len(),
         "Rhino projected shut-lining curves",
     )?;
@@ -1086,8 +1065,7 @@ fn shut_lining_record(
             uuid: curve
                 .uuid
                 .map(|uuid| {
-                    crate::wire::admitted_format(
-                        ctx,
+                    ctx.format_retained(
                         format_args!("{uuid}"),
                         "Rhino projected shut-lining curve UUID",
                     )
@@ -1103,9 +1081,7 @@ fn shut_lining_record(
     Ok(ShutLiningRecord {
         xml_version: shut_lining.xml_version,
         on: shut_lining.on,
-        faceted: shut_lining.faceted,
-        auto_update: shut_lining.auto_update,
-        force_update: shut_lining.force_update,
+        options: shut_lining.options.clone(),
         curves,
     })
 }
@@ -1134,38 +1110,40 @@ impl Serialize for settings::LayerPerViewportSettings {
     }
 }
 
-// Serde passes the field by reference to this adapter.
-#[allow(clippy::ref_option)]
-fn serialize_layer_hierarchy<S: serde::Serializer>(
-    hierarchy: &Option<settings::LayerHierarchy>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeStruct;
+#[derive(Debug)]
+struct LayerHierarchySlot(Option<settings::LayerHierarchy>);
 
-    let mut record = serializer.serialize_struct("LayerHierarchy", 2)?;
-    record.serialize_field(
-        "parent_uuid",
-        &hierarchy
-            .map(|value| value.parent_id)
-            .filter(|id| !id.is_nil())
-            .map(|id| id.to_string()),
-    )?;
-    record.serialize_field("expanded", &hierarchy.map(|value| value.expanded))?;
-    record.end()
+impl Serialize for LayerHierarchySlot {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+
+        let hierarchy = self.0.as_ref();
+        let mut record = serializer.serialize_struct("LayerHierarchy", 2)?;
+        record.serialize_field(
+            "parent_uuid",
+            &hierarchy
+                .map(|value| value.parent_id)
+                .filter(|id| !id.is_nil())
+                .map(|id| id.to_string()),
+        )?;
+        record.serialize_field("expanded", &hierarchy.map(|value| value.expanded))?;
+        record.end()
+    }
 }
 
-// Serde passes the field by reference to this adapter.
-#[allow(clippy::ref_option)]
-fn serialize_layer_plot<S: serde::Serializer>(
-    plot: &Option<settings::LayerPlot>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeStruct;
+#[derive(Debug)]
+struct LayerPlotSlot(Option<settings::LayerPlot>);
 
-    let mut record = serializer.serialize_struct("LayerPlot", 2)?;
-    record.serialize_field("plot_color", &plot.map(|value| value.color))?;
-    record.serialize_field("plot_weight_mm", &plot.map(|value| value.weight_mm))?;
-    record.end()
+impl Serialize for LayerPlotSlot {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+
+        let plot = self.0.as_ref();
+        let mut record = serializer.serialize_struct("LayerPlot", 2)?;
+        record.serialize_field("plot_color", &plot.map(|value| value.color))?;
+        record.serialize_field("plot_weight_mm", &plot.map(|value| value.weight_mm))?;
+        record.end()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -1174,8 +1152,8 @@ struct LayerPresentationRecord {
     source_offset: u64,
     archive_index: i32,
     source_uuid: Option<String>,
-    #[serde(flatten, serialize_with = "serialize_layer_hierarchy")]
-    hierarchy: Option<settings::LayerHierarchy>,
+    #[serde(flatten)]
+    hierarchy: LayerHierarchySlot,
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
@@ -1186,8 +1164,8 @@ struct LayerPresentationRecord {
     color: [u8; 4],
     material_index: i32,
     linetype_index: Option<i32>,
-    #[serde(flatten, serialize_with = "serialize_layer_plot")]
-    plot: Option<settings::LayerPlot>,
+    #[serde(flatten)]
+    plot: LayerPlotSlot,
     display_material_uuid: Option<String>,
     clipping_planes_enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1198,10 +1176,6 @@ struct LayerPresentationRecord {
 }
 
 #[derive(Debug, Serialize)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "independent serialized object display flags"
-)]
 struct ObjectAttributesPresentation {
     source_uuid: String,
     name: String,
@@ -1285,11 +1259,7 @@ fn user_string_records(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entries: Vec<(String, String)>,
 ) -> Result<Vec<UserStringRecord>, CodecError> {
-    let mut records = crate::wire::admitted_collection(
-        ctx,
-        entries.len(),
-        "Rhino projected user-string entries",
-    )?;
+    let mut records = ctx.collection_vec(entries.len(), "Rhino projected user-string entries")?;
     for (key, value) in entries {
         records.push(UserStringRecord { key, value });
     }
@@ -1369,21 +1339,27 @@ fn first_user_string_records(
     Ok((geometry, attributes))
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the projection keeps source data, both userdata owners, and loss reporting explicit"
-)]
+#[derive(Clone, Copy)]
+struct ObjectPresentationSource {
+    archive: ArchiveVersion,
+    offset: usize,
+    uuid: Uuid,
+}
+
 fn object_attributes_presentation(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     data: &[u8],
     attributes: &ObjectAttributes,
     class_userdata: &[UserdataDescriptor],
     attribute_userdata: &[AttributeUserdataDescriptor],
-    archive: ArchiveVersion,
-    source_offset: usize,
-    source_uuid: Uuid,
+    source: ObjectPresentationSource,
     losses: &mut Vec<LossNote>,
 ) -> Result<ObjectAttributesPresentation, CodecError> {
+    let ObjectPresentationSource {
+        archive,
+        offset: source_offset,
+        uuid: source_uuid,
+    } = source;
     let rendering = match rendering_attributes(
         ctx,
         data,
@@ -1409,30 +1385,22 @@ fn object_attributes_presentation(
         source_offset,
         losses,
     )?;
-    let name =
-        crate::wire::copy_retained_string(ctx, &attributes.name, "Rhino projected object name")?;
-    let url =
-        crate::wire::copy_retained_string(ctx, &attributes.url, "Rhino projected object URL")?;
-    let mut group_indexes = crate::wire::admitted_collection(
-        ctx,
-        attributes.groups.len(),
-        "Rhino projected object groups",
-    )?;
+    let name = ctx.copy_retained_text(&attributes.name, "Rhino projected object name")?;
+    let url = ctx.copy_retained_text(&attributes.url, "Rhino projected object URL")?;
+    let mut group_indexes =
+        ctx.collection_vec(attributes.groups.len(), "Rhino projected object groups")?;
     group_indexes.extend_from_slice(&attributes.groups);
-    let mut display_materials = crate::wire::admitted_collection(
-        ctx,
+    let mut display_materials = ctx.collection_vec(
         attributes.display_materials.len(),
         "Rhino projected display materials",
     )?;
     for (viewport, material) in &attributes.display_materials {
         display_materials.push([
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("{viewport}"),
                 "Rhino projected display viewport UUID",
             )?,
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("{material}"),
                 "Rhino projected display material UUID",
             )?,
@@ -1441,30 +1409,24 @@ fn object_attributes_presentation(
     let viewport_uuid = if attributes.viewport_id.is_nil() {
         None
     } else {
-        Some(crate::wire::admitted_format(
-            ctx,
+        Some(ctx.format_retained(
             format_args!("{}", attributes.viewport_id),
             "Rhino projected active viewport UUID",
         )?)
     };
-    let mut clipping_plane_uuids = crate::wire::admitted_collection(
-        ctx,
+    let mut clipping_plane_uuids = ctx.collection_vec(
         attributes.clipping_plane_ids.len(),
         "Rhino projected clipping plane UUIDs",
     )?;
     for id in &attributes.clipping_plane_ids {
-        clipping_plane_uuids.push(crate::wire::admitted_format(
-            ctx,
+        clipping_plane_uuids.push(ctx.format_retained(
             format_args!("{id}"),
             "Rhino projected clipping plane UUID text",
         )?);
     }
     Ok(ObjectAttributesPresentation {
-        source_uuid: crate::wire::admitted_format(
-            ctx,
-            format_args!("{source_uuid}"),
-            "Rhino projected source UUID",
-        )?,
+        source_uuid: ctx
+            .format_retained(format_args!("{source_uuid}"), "Rhino projected source UUID")?,
         name,
         url,
         layer_index: attributes.layer_index,
@@ -1487,15 +1449,15 @@ fn object_attributes_presentation(
         active_space: attributes.active_space,
         viewport_uuid,
         display_order: attributes.display_order,
-        clipping_proof: attributes.clipping_proof,
+        clipping_proof: attributes.clipping.proof,
         clipping_plane_uuids,
         hatch_pattern_index: attributes.hatch_pattern_index,
         section_hatch_scale: attributes.section_hatch_scale,
         section_hatch_rotation: attributes.section_hatch_rotation,
         linetype_pattern_scale: attributes.linetype_pattern_scale,
         hatch_background: attributes.hatch_background,
-        hatch_boundary_visible: attributes.hatch_boundary_visible,
-        detail_background_visible: attributes.detail_background_visible.then_some(true),
+        hatch_boundary_visible: attributes.display.hatch_boundary_visible,
+        detail_background_visible: attributes.display.detail_background_visible.then_some(true),
         section_fill_rule: attributes.section_fill_rule,
         clipping_plane_label_style: attributes.clipping_plane_label_style,
         rendering_materials: rendering.materials,
@@ -1882,7 +1844,7 @@ fn wide_string(
             let text = std::str::from_utf8(bytes).map_err(|_| {
                 FramingError::structural(value.position(), "wide string is not UTF-8")
             })?;
-            crate::wire::copy_retained_string(ctx, text, "Rhino wide string")?
+            ctx.copy_retained_text(text, "Rhino wide string")?
         }
         _ => {
             return Err(FramingError::structural(
@@ -2087,9 +2049,11 @@ fn parse_light_record_attributes(
         attributes,
         &[],
         &attributes_userdata,
-        archive,
-        record.range.start,
-        attributes.object_id,
+        ObjectPresentationSource {
+            archive,
+            offset: record.range.start,
+            uuid: attributes.object_id,
+        },
         losses,
     )
     .map_err(FramingError::from)?;
@@ -2265,11 +2229,7 @@ fn parse_texture(
             embedded_file_uuid: value
                 .embedded_file_id
                 .map(|id| {
-                    crate::wire::admitted_format(
-                        ctx,
-                        format_args!("{id}"),
-                        "Rhino texture embedded-file UUID",
-                    )
+                    ctx.format_retained(format_args!("{id}"), "Rhino texture embedded-file UUID")
                 })
                 .transpose()?,
         })
@@ -2282,9 +2242,7 @@ fn parse_texture(
     Ok(TextureRecord {
         source_offset: source_offset as u64,
         source_uuid: (!id.is_nil())
-            .then(|| {
-                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino texture source UUID")
-            })
+            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino texture source UUID"))
             .transpose()?,
         mapping_channel_id,
         legacy_file_path,
@@ -2299,8 +2257,7 @@ fn parse_texture(
         transparent_color,
         transparency_texture_uuid: (!transparency.is_nil())
             .then(|| {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!("{transparency}"),
                     "Rhino texture transparency UUID",
                 )
@@ -2566,14 +2523,12 @@ fn parse_v2_v3_material(
     reader.skip_remaining()?;
     Ok(MaterialRecord {
         id: if id.is_nil() {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:material#record-{source_offset}"),
                 "Rhino material ID",
             )?
         } else {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:material#{id}"),
                 "Rhino material ID",
             )?
@@ -2581,20 +2536,10 @@ fn parse_v2_v3_material(
         source_offset: source_offset as u64,
         archive_index: Some(archive_index),
         source_uuid: (!id.is_nil())
-            .then(|| {
-                crate::wire::admitted_format(
-                    ctx,
-                    format_args!("{id}"),
-                    "Rhino material source UUID",
-                )
-            })
+            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino material source UUID"))
             .transpose()?,
         name,
-        plugin_uuid: crate::wire::admitted_format(
-            ctx,
-            format_args!("{plugin}"),
-            "Rhino material plugin UUID",
-        )?,
+        plugin_uuid: ctx.format_retained(format_args!("{plugin}"), "Rhino material plugin UUID")?,
         ambient,
         diffuse,
         emission,
@@ -2608,7 +2553,7 @@ fn parse_v2_v3_material(
         textures,
         shareable: false,
         disable_lighting: false,
-        fresnel: None,
+        fresnel: MaterialFresnelSlot(None),
         rdk_instance_uuid: None,
         diffuse_texture_alpha_transparency: None,
         physically_based,
@@ -2764,14 +2709,12 @@ fn parse_material(
     reader.skip_remaining()?;
     Ok(MaterialRecord {
         id: if component.id.is_nil() {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:material#record-{source_offset}"),
                 "Rhino material ID",
             )?
         } else {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:material#{}", component.id),
                 "Rhino material ID",
             )?
@@ -2780,19 +2723,14 @@ fn parse_material(
         archive_index: component.index,
         source_uuid: (!component.id.is_nil())
             .then(|| {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!("{}", component.id),
                     "Rhino material source UUID",
                 )
             })
             .transpose()?,
         name: component.name,
-        plugin_uuid: crate::wire::admitted_format(
-            ctx,
-            format_args!("{plugin}"),
-            "Rhino material plugin UUID",
-        )?,
+        plugin_uuid: ctx.format_retained(format_args!("{plugin}"), "Rhino material plugin UUID")?,
         ambient,
         diffuse,
         emission,
@@ -2806,12 +2744,10 @@ fn parse_material(
         textures,
         shareable,
         disable_lighting,
-        fresnel,
+        fresnel: MaterialFresnelSlot(fresnel),
         rdk_instance_uuid: rdk
             .filter(|id| !id.is_nil())
-            .map(|id| {
-                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino material RDK UUID")
-            })
+            .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino material RDK UUID"))
             .transpose()?,
         diffuse_texture_alpha_transparency: alpha,
         physically_based,
@@ -2843,14 +2779,12 @@ fn parse_group(
     let id = id.filter(|id| !id.is_nil());
     Ok(GroupRecord {
         id: if let Some(id) = id {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:group#{id}"),
                 "Rhino group ID",
             )?
         } else {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:group#index-{index}"),
                 "Rhino group ID",
             )?
@@ -2858,9 +2792,7 @@ fn parse_group(
         source_offset: source_offset as u64,
         archive_index: index,
         source_uuid: id
-            .map(|id| {
-                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino group source UUID")
-            })
+            .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino group source UUID"))
             .transpose()?,
         name,
         links: Vec::new(),
@@ -2884,7 +2816,7 @@ fn disambiguate_group_ids(
                 &str,
                 usize,
             )>()))?;
-            crate::wire::reserve_hash_map(ctx, &mut counts, 1, "Rhino group identity counts")?;
+            ctx.reserve_map(&mut counts, 1, "Rhino group identity counts")?;
             counts.insert(group.id.as_str(), 1);
         }
     }
@@ -2894,12 +2826,7 @@ fn disambiguate_group_ids(
             workspace.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
                 usize,
             >()))?;
-            crate::wire::reserve_collection(
-                ctx,
-                &mut duplicate_indices,
-                1,
-                "Rhino duplicate group indices",
-            )?;
+            ctx.reserve_vec(&mut duplicate_indices, 1, "Rhino duplicate group indices")?;
             duplicate_indices.push(order);
         }
     }
@@ -2907,8 +2834,7 @@ fn disambiguate_group_ids(
     let changed = duplicate_indices.len();
     for order in duplicate_indices {
         let group = &mut groups[order];
-        group.id = crate::wire::admitted_format(
-            ctx,
+        group.id = ctx.format_retained(
             format_args!(
                 "{}-source-offset-{:016x}-record-{order:06}",
                 group.id, group.source_offset
@@ -2976,34 +2902,27 @@ fn parse_light(
     }
     let mut links = Vec::new();
     if let Some(order) = link_order {
-        let link = crate::wire::admitted_format(
-            ctx,
+        let link = ctx.format_retained(
             format_args!("rhino:object:record#{order:06}"),
             "Rhino light object link",
         )?;
-        crate::wire::reserve_collection(ctx, &mut links, 1, "Rhino light links")?;
+        ctx.reserve_vec(&mut links, 1, "Rhino light links")?;
         links.push(link);
     }
     Ok(LightRecord {
         id: if id.is_nil() {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:light#record-{source_offset}"),
                 "Rhino light ID",
             )?
         } else {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:light#{id}"),
                 "Rhino light ID",
             )?
         },
         source_offset: source_offset as u64,
-        source_uuid: crate::wire::admitted_format(
-            ctx,
-            format_args!("{id}"),
-            "Rhino light source UUID",
-        )?,
+        source_uuid: ctx.format_retained(format_args!("{id}"), "Rhino light source UUID")?,
         archive_index: index,
         name,
         enabled,
@@ -3038,8 +2957,7 @@ fn push_light(
         .ok_or_else(|| CodecError::malformed("light source UUID is invalid"))?;
     if !source_id.is_nil() {
         if indexes.contains_key(&source_id) {
-            light.id = crate::wire::admitted_format(
-                ctx,
+            light.id = ctx.format_retained(
                 format_args!("{}-offset-{}", light.id, light.source_offset),
                 "Rhino duplicate light ID",
             )?;
@@ -3048,11 +2966,11 @@ fn push_light(
                 Uuid,
                 usize,
             )>()))?;
-            crate::wire::reserve_hash_map(ctx, indexes, 1, "Rhino light identity index")?;
+            ctx.reserve_map(indexes, 1, "Rhino light identity index")?;
             indexes.insert(source_id, lights.len());
         }
     }
-    crate::wire::reserve_collection(ctx, lights, 1, "Rhino lights")?;
+    ctx.reserve_vec(lights, 1, "Rhino lights")?;
     lights.push(light);
     Ok(())
 }
@@ -3208,14 +3126,12 @@ fn parse_linetype(
     let id = component.id;
     Ok(LinetypeRecord {
         id: if id.is_nil() {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:linetype#record-{source_offset}"),
                 "Rhino linetype ID",
             )?
         } else {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:linetype#{id}"),
                 "Rhino linetype ID",
             )?
@@ -3223,13 +3139,7 @@ fn parse_linetype(
         source_offset: source_offset as u64,
         archive_index: component.index,
         source_uuid: (!id.is_nil())
-            .then(|| {
-                crate::wire::admitted_format(
-                    ctx,
-                    format_args!("{id}"),
-                    "Rhino linetype source UUID",
-                )
-            })
+            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino linetype source UUID"))
             .transpose()?,
         name: component.name,
         segments,
@@ -3463,14 +3373,12 @@ fn parse_hatch_pattern(
     };
     Ok(HatchPatternRecord {
         id: if component.id.is_nil() {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:hatch_pattern#record-{source_offset}"),
                 "Rhino hatch ID",
             )?
         } else {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:hatch_pattern#{}", component.id),
                 "Rhino hatch ID",
             )?
@@ -3479,11 +3387,7 @@ fn parse_hatch_pattern(
         archive_index: component.index,
         source_uuid: (!component.id.is_nil())
             .then(|| {
-                crate::wire::admitted_format(
-                    ctx,
-                    format_args!("{}", component.id),
-                    "Rhino hatch source UUID",
-                )
+                ctx.format_retained(format_args!("{}", component.id), "Rhino hatch source UUID")
             })
             .transpose()?,
         name: component.name,
@@ -3581,8 +3485,7 @@ fn dimension_style_controls(
     put!(
         "source_dimension_style_uuid",
         (!source.is_nil())
-            .then(|| crate::wire::admitted_format(
-                ctx,
+            .then(|| ctx.format_retained(
                 format_args!("{source}"),
                 "Rhino dimension control source UUID"
             ))
@@ -3655,18 +3558,15 @@ fn dimension_style_controls(
     put!(
         "arrow_block_uuids",
         [
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("{}", uuid(reader)?),
                 "Rhino dimension arrow UUID"
             )?,
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("{}", uuid(reader)?),
                 "Rhino dimension arrow UUID"
             )?,
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("{}", uuid(reader)?),
                 "Rhino dimension arrow UUID"
             )?
@@ -3805,8 +3705,7 @@ fn parse_v5_dimension_style_extra(
     Ok(V5DimensionStyleExtraRecord {
         parent_style_uuid: (!parent_style_uuid.is_nil())
             .then(|| {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!("{parent_style_uuid}"),
                     "Rhino V5 dimension parent UUID",
                 )
@@ -3826,8 +3725,7 @@ fn parse_v5_dimension_style_extra(
         dimension_scale_source,
         source_style_uuid: (!source_style_uuid.is_nil())
             .then(|| {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!("{source_style_uuid}"),
                     "Rhino V5 dimension source UUID",
                 )
@@ -3981,14 +3879,12 @@ fn parse_v5_dimension_style(
     })?;
     Ok(DimensionStyleRecord {
         id: if id.is_nil() {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:dimension_style#record-{source_offset}"),
                 "Rhino dimension style ID",
             )?
         } else {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:dimension_style#{id}"),
                 "Rhino dimension style ID",
             )?
@@ -3996,13 +3892,7 @@ fn parse_v5_dimension_style(
         source_offset: source_offset as u64,
         archive_index: Some(archive_index),
         source_uuid: (!id.is_nil())
-            .then(|| {
-                crate::wire::admitted_format(
-                    ctx,
-                    format_args!("{id}"),
-                    "Rhino dimension style source UUID",
-                )
-            })
+            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino dimension style source UUID"))
             .transpose()?,
         name,
         extension_line_extension_mm,
@@ -4083,14 +3973,12 @@ fn parse_dimension_style(
     let controls = dimension_style_controls(ctx, data, &mut reader, archive, scale, version.1)?;
     Ok(DimensionStyleRecord {
         id: if component.id.is_nil() {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:dimension_style#record-{source_offset}"),
                 "Rhino dimension style ID",
             )?
         } else {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:dimension_style#{}", component.id),
                 "Rhino dimension style ID",
             )?
@@ -4099,8 +3987,7 @@ fn parse_dimension_style(
         archive_index: component.index,
         source_uuid: (!component.id.is_nil())
             .then(|| {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!("{}", component.id),
                     "Rhino dimension style source UUID",
                 )
@@ -4135,11 +4022,7 @@ fn parse_dimension_style(
         details: DimensionStyleDetails::Modern {
             parent_style_uuid: (!parent.is_nil())
                 .then(|| {
-                    crate::wire::admitted_format(
-                        ctx,
-                        format_args!("{parent}"),
-                        "Rhino dimension parent UUID",
-                    )
+                    ctx.format_retained(format_args!("{parent}"), "Rhino dimension parent UUID")
                 })
                 .transpose()?,
             controls,
@@ -4245,23 +4128,19 @@ fn parse_embedded_image(
     let source_uuid = source_uuid.filter(|id| !id.is_nil());
     Ok(EmbeddedImageRecord {
         id: if let Some(id) = source_uuid {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:image#{id}"),
                 "Rhino image ID",
             )?
         } else {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:image#record-{source_offset}"),
                 "Rhino image ID",
             )?
         },
         source_offset: source_offset as u64,
         source_uuid: source_uuid
-            .map(|id| {
-                crate::wire::admitted_format(ctx, format_args!("{id}"), "Rhino image source UUID")
-            })
+            .map(|id| ctx.format_retained(format_args!("{id}"), "Rhino image source UUID"))
             .transpose()?,
         name,
         file_path,
@@ -4404,14 +4283,12 @@ fn parse_windows_bitmap(
     reader.skip_remaining()?;
     let buffer = &data[pixel_buffer_offset..pixel_buffer_end];
     Ok(WindowsBitmapRecord {
-        id: crate::wire::admitted_format(
-            ctx,
+        id: ctx.format_retained(
             format_args!("rhino:presentation:windows_bitmap#offset-{source_offset}"),
             "Rhino Windows bitmap ID",
         )?,
         source_offset: source_offset as u64,
-        class_uuid: crate::wire::admitted_format(
-            ctx,
+        class_uuid: ctx.format_retained(
             format_args!("{class_uuid}"),
             "Rhino Windows bitmap class UUID",
         )?,
@@ -4492,8 +4369,7 @@ fn parse_texture_mapping(
                         && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
                 });
         (
-            Some(crate::wire::admitted_format(
-                ctx,
+            Some(ctx.format_retained(
                 format_args!("{}", value.class_uuid),
                 "Rhino texture mapping primitive UUID",
             )?),
@@ -4507,14 +4383,12 @@ fn parse_texture_mapping(
     Ok(ParsedTextureMapping {
         value: TextureMappingRecord {
             id: if id.is_nil() {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!("rhino:presentation:texture_mapping#record-{source_offset}"),
                     "Rhino texture mapping ID",
                 )?
             } else {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!("rhino:presentation:texture_mapping#{id}"),
                     "Rhino texture mapping ID",
                 )?
@@ -4522,11 +4396,7 @@ fn parse_texture_mapping(
             source_offset: source_offset as u64,
             source_uuid: (!id.is_nil())
                 .then(|| {
-                    crate::wire::admitted_format(
-                        ctx,
-                        format_args!("{id}"),
-                        "Rhino texture mapping source UUID",
-                    )
+                    ctx.format_retained(format_args!("{id}"), "Rhino texture mapping source UUID")
                 })
                 .transpose()?,
             name,
@@ -4583,8 +4453,7 @@ fn parse_rendering_mapping_channel(
         RenderingMappingChannel {
             mapping_channel_id,
             mapping_uuid: if retain_uuid {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!("{mapping_uuid}"),
                     "Rhino rendering channel UUID",
                 )?
@@ -4651,14 +4520,12 @@ fn rendering_attributes(
                     ));
                 }
                 let plugin = uuid(&mut value)?;
-                let plugin_uuid = crate::wire::admitted_format(
-                    ctx,
+                let plugin_uuid = ctx.format_retained(
                     format_args!("{plugin}"),
                     "Rhino rendering material plugin UUID",
                 )?;
                 let front = uuid(&mut value)?;
-                let front_material_uuid = crate::wire::admitted_format(
-                    ctx,
+                let front_material_uuid = ctx.format_retained(
                     format_args!("{front}"),
                     "Rhino rendering front material UUID",
                 )?;
@@ -4687,8 +4554,7 @@ fn rendering_attributes(
                     Some(RenderingMaterialBackFace {
                         back_material_uuid: (!id.is_nil())
                             .then(|| {
-                                crate::wire::admitted_format(
-                                    ctx,
+                                ctx.format_retained(
                                     format_args!("{id}"),
                                     "Rhino rendering back material UUID",
                                 )
@@ -4703,7 +4569,7 @@ fn rendering_attributes(
                 Ok(RenderingMaterialReference {
                     plugin_uuid,
                     front_material_uuid,
-                    back_face,
+                    back_face: RenderingMaterialBackFaceSlot(back_face),
                 })
             })();
             presentation.materials.push(parsed?);
@@ -4739,8 +4605,7 @@ fn rendering_attributes(
                     ));
                 }
                 let plugin = uuid(&mut value)?;
-                let plugin_uuid = crate::wire::admitted_format(
-                    ctx,
+                let plugin_uuid = ctx.format_retained(
                     format_args!("{plugin}"),
                     "Rhino rendering mapping plugin UUID",
                 )?;
@@ -4944,8 +4809,7 @@ fn parse_text_style(
                     FramingError::structural(reader.position(), "legacy font face length overflow")
                 })?;
         }
-        let mut windows_logfont_name =
-            crate::wire::admitted_retained_string(ctx, face_len, "Rhino legacy font face")?;
+        let mut windows_logfont_name = ctx.retained_string(face_len, "Rhino legacy font face")?;
         for character in std::char::decode_utf16(face_units.iter().copied()) {
             windows_logfont_name.push(character.unwrap_or(char::REPLACEMENT_CHARACTER));
         }
@@ -4954,7 +4818,7 @@ fn parse_text_style(
         let postscript_name = if named_description
             && (apple_runtime || writer_version.is_some_and(|version| version > 201_802_230))
         {
-            crate::wire::copy_retained_string(ctx, &description, "Rhino legacy PostScript name")?
+            ctx.copy_retained_text(&description, "Rhino legacy PostScript name")?
         } else {
             if named_description && !apple_runtime && writer_version.is_none() {
                 crate::chunks::reserve_admitted_vec(
@@ -4975,11 +4839,8 @@ fn parse_text_style(
         let mut font = FontRecord {
             windows_logfont_name,
             postscript_name,
-            obsolete_description: crate::wire::copy_retained_string(
-                ctx,
-                &description,
-                "Rhino legacy font description",
-            )?,
+            obsolete_description: ctx
+                .copy_retained_text(&description, "Rhino legacy font description")?,
             ..FontRecord::default()
         };
         if packed & 0x0f >= 1 {
@@ -5004,23 +4865,16 @@ fn parse_text_style(
         };
         reader.skip_remaining()?;
         return Ok(TextStyleRecord {
-            id: crate::wire::admitted_format(
-                ctx,
+            id: ctx.format_retained(
                 format_args!("rhino:presentation:text_style#index-{index}-offset-{source_offset}"),
                 "Rhino text style ID",
             )?,
             source_offset: source_offset as u64,
             archive_index: Some(index),
             source_uuid: (!id.is_nil())
-                .then(|| {
-                    crate::wire::admitted_format(
-                        ctx,
-                        format_args!("{id}"),
-                        "Rhino text style source UUID",
-                    )
-                })
+                .then(|| ctx.format_retained(format_args!("{id}"), "Rhino text style source UUID"))
                 .transpose()?,
-            name: crate::wire::copy_retained_string(ctx, &description, "Rhino text style name")?,
+            name: ctx.copy_retained_text(&description, "Rhino text style name")?,
             font_description: description,
             font,
         });
@@ -5058,15 +4912,13 @@ fn parse_text_style(
         id: if id.is_nil() {
             index.map_or_else(
                 || {
-                    crate::wire::admitted_format(
-                        ctx,
+                    ctx.format_retained(
                         format_args!("rhino:presentation:text_style#offset-{source_offset}"),
                         "Rhino text style ID",
                     )
                 },
                 |index| {
-                    crate::wire::admitted_format(
-                        ctx,
+                    ctx.format_retained(
                         format_args!(
                             "rhino:presentation:text_style#index-{index}-offset-{source_offset}"
                         ),
@@ -5075,8 +4927,7 @@ fn parse_text_style(
                 },
             )
         } else {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:presentation:text_style#{id}"),
                 "Rhino text style ID",
             )
@@ -5084,13 +4935,7 @@ fn parse_text_style(
         source_offset: source_offset as u64,
         archive_index: index,
         source_uuid: (!id.is_nil())
-            .then(|| {
-                crate::wire::admitted_format(
-                    ctx,
-                    format_args!("{id}"),
-                    "Rhino text style source UUID",
-                )
-            })
+            .then(|| ctx.format_retained(format_args!("{id}"), "Rhino text style source UUID"))
             .transpose()?,
         name,
         font_description,
@@ -5150,12 +4995,7 @@ pub(crate) fn install(
                 object_count_workspace.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(Uuid, usize)>(),
                 ))?;
-                crate::wire::reserve_hash_map(
-                    ctx,
-                    &mut object_id_counts,
-                    1,
-                    "Rhino object identity counts",
-                )?;
+                ctx.reserve_map(&mut object_id_counts, 1, "Rhino object identity counts")?;
                 object_id_counts.insert(identity.object_id, 1);
             }
         }
@@ -5182,7 +5022,7 @@ pub(crate) fn install(
                 {
                     match parse_group(ctx, scan.data, range, record.range.start) {
                         Ok(group) => {
-                            crate::wire::reserve_collection(ctx, &mut groups, 1, "Rhino groups")?;
+                            ctx.reserve_vec(&mut groups, 1, "Rhino groups")?;
                             groups.push(group);
                             parsed = true;
                         }
@@ -5251,23 +5091,16 @@ pub(crate) fn install(
                     ) {
                         Ok(mut material) => {
                             if let Some(instance_id) = legacy_rdk_instance_id {
-                                material.plugin_uuid = crate::wire::admitted_format(
-                                    ctx,
+                                material.plugin_uuid = ctx.format_retained(
                                     format_args!("{UNIVERSAL_RENDER_ENGINE}"),
                                     "Rhino material render-engine UUID",
                                 )?;
-                                material.rdk_instance_uuid = Some(crate::wire::admitted_format(
-                                    ctx,
+                                material.rdk_instance_uuid = Some(ctx.format_retained(
                                     format_args!("{instance_id}"),
                                     "Rhino material instance UUID",
                                 )?);
                             }
-                            crate::wire::reserve_collection(
-                                ctx,
-                                &mut materials,
-                                1,
-                                "Rhino materials",
-                            )?;
+                            ctx.reserve_vec(&mut materials, 1, "Rhino materials")?;
                             materials.push(material);
                             if material_requires_opaque {
                                 push_opaque_record(
@@ -5373,12 +5206,7 @@ pub(crate) fn install(
                         record.range.start,
                     ) {
                         Ok(value) => {
-                            crate::wire::reserve_collection(
-                                ctx,
-                                &mut linetypes,
-                                1,
-                                "Rhino linetypes",
-                            )?;
+                            ctx.reserve_vec(&mut linetypes, 1, "Rhino linetypes")?;
                             linetypes.push(value);
                         }
                         Err(PatternTransferError::Framing(FramingError::Resource(limit))) => {
@@ -5411,12 +5239,7 @@ pub(crate) fn install(
                         record.range.start,
                     ) {
                         Ok(value) => {
-                            crate::wire::reserve_collection(
-                                ctx,
-                                &mut hatch_patterns,
-                                1,
-                                "Rhino hatch patterns",
-                            )?;
+                            ctx.reserve_vec(&mut hatch_patterns, 1, "Rhino hatch patterns")?;
                             hatch_patterns.push(value);
                         }
                         Err(PatternTransferError::Framing(FramingError::Resource(limit))) => {
@@ -5493,12 +5316,7 @@ pub(crate) fn install(
                             record.range.start,
                             extra,
                         ))? {
-                            crate::wire::reserve_collection(
-                                ctx,
-                                &mut dimension_styles,
-                                1,
-                                "Rhino dimension styles",
-                            )?;
+                            ctx.reserve_vec(&mut dimension_styles, 1, "Rhino dimension styles")?;
                             dimension_styles.push(value);
                             if extra_requires_opaque {
                                 push_opaque_record(
@@ -5523,12 +5341,7 @@ pub(crate) fn install(
                         record.range.start,
                     ) {
                         Ok(value) => {
-                            crate::wire::reserve_collection(
-                                ctx,
-                                &mut dimension_styles,
-                                1,
-                                "Rhino dimension styles",
-                            )?;
+                            ctx.reserve_vec(&mut dimension_styles, 1, "Rhino dimension styles")?;
                             dimension_styles.push(value);
                             parsed = true;
                         }
@@ -5553,7 +5366,7 @@ pub(crate) fn install(
                         scan.archive,
                         record.range.start,
                     ))? {
-                        crate::wire::reserve_collection(ctx, &mut images, 1, "Rhino images")?;
+                        ctx.reserve_vec(&mut images, 1, "Rhino images")?;
                         images.push(value);
                         parsed = true;
                     }
@@ -5573,12 +5386,7 @@ pub(crate) fn install(
                             scan.archive,
                             record.range.start,
                         ))? {
-                            crate::wire::reserve_collection(
-                                ctx,
-                                &mut windows_bitmaps,
-                                1,
-                                "Rhino Windows bitmaps",
-                            )?;
+                            ctx.reserve_vec(&mut windows_bitmaps, 1, "Rhino Windows bitmaps")?;
                             windows_bitmaps.push(value);
                             parsed = true;
                         }
@@ -5599,12 +5407,7 @@ pub(crate) fn install(
                         scan.archive,
                         record.range.start,
                     ))? {
-                        crate::wire::reserve_collection(
-                            ctx,
-                            &mut texture_mappings,
-                            1,
-                            "Rhino texture mappings",
-                        )?;
+                        ctx.reserve_vec(&mut texture_mappings, 1, "Rhino texture mappings")?;
                         texture_mappings.push(value.value);
                         if value.cache_requires_opaque {
                             push_presentation_loss(
@@ -5653,12 +5456,7 @@ pub(crate) fn install(
                         &mut losses,
                     ) {
                         Ok(value) => {
-                            crate::wire::reserve_collection(
-                                ctx,
-                                &mut text_styles,
-                                1,
-                                "Rhino text styles",
-                            )?;
+                            ctx.reserve_vec(&mut text_styles, 1, "Rhino text styles")?;
                             text_styles.push(value);
                             parsed = true;
                         }
@@ -5695,17 +5493,11 @@ pub(crate) fn install(
                     group_member_workspace.grow(cadmpeg_core::decode::u64_from_index(
                         std::mem::size_of::<(i32, Vec<String>)>(),
                     ))?;
-                    crate::wire::reserve_hash_map(
-                        ctx,
-                        &mut group_members,
-                        1,
-                        "Rhino group member keys",
-                    )?;
+                    ctx.reserve_map(&mut group_members, 1, "Rhino group member keys")?;
                 }
                 let members = group_members.entry(*group).or_default();
-                crate::wire::reserve_collection(ctx, members, 1, "Rhino group member links")?;
-                members.push(crate::wire::admitted_format(
-                    ctx,
+                ctx.reserve_vec(members, 1, "Rhino group member links")?;
+                members.push(ctx.format_retained(
                     format_args!("rhino:object:record#{source_order:06}"),
                     "Rhino group member link",
                 )?);
@@ -5759,20 +5551,19 @@ pub(crate) fn install(
                 attributes,
                 &object.userdata,
                 &object.attributes_userdata,
-                scan.archive,
-                object.range.start,
-                identity.object_id,
+                ObjectPresentationSource {
+                    archive: scan.archive,
+                    offset: object.range.start,
+                    uuid: identity.object_id,
+                },
                 &mut losses,
             )?;
-            let mut links =
-                crate::wire::admitted_collection(ctx, 1, "Rhino object presentation links")?;
-            links.push(crate::wire::admitted_format(
-                ctx,
+            let mut links = ctx.collection_vec(1, "Rhino object presentation links")?;
+            links.push(ctx.format_retained(
                 format_args!("rhino:object:record#{source_order:06}"),
                 "Rhino object presentation link",
             )?);
-            crate::wire::reserve_collection(
-                ctx,
+            ctx.reserve_vec(
                 &mut object_presentation,
                 1,
                 "Rhino object presentation records",
@@ -5781,14 +5572,12 @@ pub(crate) fn install(
                 id: if identity.object_id.is_nil()
                     || object_id_counts.get(&identity.object_id).copied() != Some(1)
                 {
-                    crate::wire::admitted_format(
-                        ctx,
+                    ctx.format_retained(
                         format_args!("rhino:presentation:object#record-{source_order:06}"),
                         "Rhino object presentation ID",
                     )?
                 } else {
-                    crate::wire::admitted_format(
-                        ctx,
+                    ctx.format_retained(
                         format_args!("rhino:presentation:object#{}", identity.object_id),
                         "Rhino object presentation ID",
                     )?
@@ -5809,12 +5598,7 @@ pub(crate) fn install(
                 layer_count_workspace.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(Uuid, usize)>(),
                 ))?;
-                crate::wire::reserve_hash_map(
-                    ctx,
-                    &mut layer_id_counts,
-                    1,
-                    "Rhino layer identity counts",
-                )?;
+                ctx.reserve_map(&mut layer_id_counts, 1, "Rhino layer identity counts")?;
                 layer_id_counts.insert(id, 1);
             }
         }
@@ -5842,26 +5626,23 @@ pub(crate) fn install(
                 RenderingAttributesPresentation::default()
             }
         };
-        let mut per_viewport_settings = crate::wire::admitted_collection(
-            ctx,
+        let mut per_viewport_settings = ctx.collection_vec(
             layer.per_viewport_settings.len(),
             "Rhino layer presentation viewport settings",
         )?;
         per_viewport_settings.extend_from_slice(&layer.per_viewport_settings);
-        crate::wire::reserve_collection(ctx, &mut layers, 1, "Rhino layer presentation records")?;
+        ctx.reserve_vec(&mut layers, 1, "Rhino layer presentation records")?;
         layers.push(LayerPresentationRecord {
             id: if let Some(id) = layer
                 .id
                 .filter(|id| layer_id_counts.get(id).copied() == Some(1))
             {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!("rhino:presentation:layer#{id}"),
                     "Rhino layer presentation ID",
                 )?
             } else {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!(
                         "rhino:presentation:layer#index-{}-offset-{}",
                         layer.index, layer.source.range.start
@@ -5874,28 +5655,19 @@ pub(crate) fn install(
             source_uuid: layer
                 .id
                 .map(|id| {
-                    crate::wire::admitted_format(
-                        ctx,
+                    ctx.format_retained(
                         format_args!("{id}"),
                         "Rhino layer presentation source UUID",
                     )
                 })
                 .transpose()?,
-            hierarchy: layer.hierarchy,
-            name: crate::wire::copy_retained_string(
-                ctx,
-                &layer.name,
-                "Rhino layer presentation name",
-            )?,
+            hierarchy: LayerHierarchySlot(layer.hierarchy),
+            name: ctx.copy_retained_text(&layer.name, "Rhino layer presentation name")?,
             description: layer
                 .description
                 .as_deref()
                 .map(|description| {
-                    crate::wire::copy_retained_string(
-                        ctx,
-                        description,
-                        "Rhino layer presentation description",
-                    )
+                    ctx.copy_retained_text(description, "Rhino layer presentation description")
                 })
                 .transpose()?,
             iges_level: layer.iges_level,
@@ -5904,13 +5676,12 @@ pub(crate) fn install(
             color: layer.color,
             material_index: layer.render_material_index,
             linetype_index: layer.linetype_index,
-            plot: layer.plot,
+            plot: LayerPlotSlot(layer.plot),
             display_material_uuid: layer
                 .display_material_id
                 .filter(|id| !id.is_nil())
                 .map(|id| {
-                    crate::wire::admitted_format(
-                        ctx,
+                    ctx.format_retained(
                         format_args!("{id}"),
                         "Rhino layer presentation display material UUID",
                     )
@@ -5931,12 +5702,7 @@ pub(crate) fn install(
                 group_index_workspace.grow(cadmpeg_core::decode::u64_from_index(
                     std::mem::size_of::<(i32, usize)>(),
                 ))?;
-                crate::wire::reserve_collection(
-                    ctx,
-                    &mut group_index_counts,
-                    1,
-                    "Rhino group index counts",
-                )?;
+                ctx.reserve_vec(&mut group_index_counts, 1, "Rhino group index counts")?;
                 group_index_counts.insert(position, (group.archive_index, 1));
             }
         }

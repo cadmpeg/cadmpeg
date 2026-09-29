@@ -1250,9 +1250,14 @@ fn extrusion_tensor_preserves_rational_profile_knots_weights_and_transpose() {
     )
     .expect("valid test curve");
     let mut end = start.clone();
-    end.edit_control_points(|point| {
+    end.try_map_control_points(|_, point| {
+        let mut point = point.get();
         point.z = 7.0;
-        Ok(())
+        cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+            cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                "control_points contains a non-finite point".into(),
+            )
+        })
     })
     .expect("valid test curve edit");
     let plain = super::extrusion_nurbs(

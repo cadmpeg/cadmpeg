@@ -101,11 +101,7 @@ pub(crate) fn read_string_region(
     for slot in &mut strings {
         match read_u8_string_span(bytes, cur) {
             Some((value, next)) => {
-                *slot = Some(crate::decode_alloc::copy_string(
-                    ctx,
-                    value,
-                    "retain kernel header product string",
-                )?);
+                *slot = Some(ctx.copy_retained_text(value, "retain kernel header product string")?);
                 cur = next;
             }
             None => break,

@@ -112,8 +112,22 @@ fn push_object_identifier_component(
         ctx.charge_collection_items(1, operation)?;
     }
     numbers.try_reserve(1).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        ),
+        None => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        ),
     })?;
     numbers.push(number);
     Ok(())

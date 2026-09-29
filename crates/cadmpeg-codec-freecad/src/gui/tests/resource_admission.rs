@@ -653,13 +653,13 @@ fn gui_removed_appearance_refuses_at_caller_limit() {
     let mut plan = super::super::AppearancePlan::default();
     let id = cadmpeg_ir::ids::AppearanceId::mint("fcstd:appearance:object#sample")
         .expect("valid appearance identity");
-    let error = crate::resource::insert_hash_set(
-        &ctx,
-        &mut plan.remove_appearances,
-        id,
-        "FCStd GUI removed appearances",
-    )
-    .expect_err("removed appearance must be admitted");
+    let error = &ctx
+        .insert_hash_set(
+            &mut plan.remove_appearances,
+            id,
+            "FCStd GUI removed appearances",
+        )
+        .expect_err("removed appearance must be admitted");
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref failure)
         if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -1194,12 +1194,14 @@ fn y4_2_gui_xml_tree_is_admitted_before_allocation() {
         &ctx,
         &mut cadmpeg_ir::CadIr::empty(),
         xml,
-        &std::collections::BTreeMap::new(),
-        &[],
-        &[],
-        &[],
-        &[],
-        false,
+        &super::super::GuiSources {
+            entries: &std::collections::BTreeMap::new(),
+            objects: &[],
+            properties: &[],
+            payloads: &[],
+            element_maps: &[],
+            requires_alpha_conversion: false,
+        },
     )
     .expect("service profile admits the GUI document");
 
@@ -1211,12 +1213,14 @@ fn y4_2_gui_xml_tree_is_admitted_before_allocation() {
         &ctx,
         &mut cadmpeg_ir::CadIr::empty(),
         xml,
-        &std::collections::BTreeMap::new(),
-        &[],
-        &[],
-        &[],
-        &[],
-        false,
+        &super::super::GuiSources {
+            entries: &std::collections::BTreeMap::new(),
+            objects: &[],
+            properties: &[],
+            payloads: &[],
+            element_maps: &[],
+            requires_alpha_conversion: false,
+        },
     )
     .err()
     .expect("GUI XML node count must be charged before parsing");
@@ -1240,7 +1244,14 @@ fn gui_state_records_refuse_at_caller_limit() {
             .expect("GUI document context");
     assert!(
         matches!(super::super::transfer_schema_one(&ctx, &cadmpeg_ir::CadIr::empty(), text,
-        &xml, None, None, &std::collections::BTreeMap::new(), &[], &[], &[], &[], false),
+        &xml, None, None, &super::super::GuiSources {
+            entries: &std::collections::BTreeMap::new(),
+            objects: &[],
+            properties: &[],
+            payloads: &[],
+            element_maps: &[],
+            requires_alpha_conversion: false,
+        }),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FCStd GUI state records")
     );
@@ -1270,7 +1281,14 @@ fn gui_object_name_index_refuses_at_caller_limit() {
             .expect("GUI document context");
     assert!(
         matches!(super::super::transfer_schema_one(&ctx, &cadmpeg_ir::CadIr::empty(), text,
-        &xml, None, None, &std::collections::BTreeMap::new(), &[object], &[], &[], &[], false),
+        &xml, None, None, &super::super::GuiSources {
+            entries: &std::collections::BTreeMap::new(),
+            objects: &[object],
+            properties: &[],
+            payloads: &[],
+            element_maps: &[],
+            requires_alpha_conversion: false,
+        }),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.operation == "FCStd GUI object names")
     );

@@ -363,6 +363,46 @@ impl Shell {
         }
     }
 
+    /// Construct a shell from a nonempty, already allocated face list.
+    pub fn with_faces(
+        id: ShellId,
+        region: RegionId,
+        faces: Vec<FaceId>,
+    ) -> Result<Self, BodySelectionError> {
+        if faces.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
+        Ok(Self {
+            id,
+            region,
+            members: ShellMembers {
+                faces,
+                wire_edges: Vec::new(),
+                free_vertices: Vec::new(),
+            },
+        })
+    }
+
+    /// Construct a shell from a nonempty, already allocated free-vertex list.
+    pub fn with_free_vertices(
+        id: ShellId,
+        region: RegionId,
+        free_vertices: Vec<VertexId>,
+    ) -> Result<Self, BodySelectionError> {
+        if free_vertices.is_empty() {
+            return Err(BodySelectionError::Empty);
+        }
+        Ok(Self {
+            id,
+            region,
+            members: ShellMembers {
+                faces: Vec::new(),
+                wire_edges: Vec::new(),
+                free_vertices,
+            },
+        })
+    }
+
     /// Faces of the shell.
     pub fn faces(&self) -> &[FaceId] {
         &self.members.faces
@@ -376,6 +416,18 @@ impl Shell {
     /// Vertices belonging directly to the shell.
     pub fn free_vertices(&self) -> &[VertexId] {
         &self.members.free_vertices
+    }
+
+    /// Replace the already allocated face list while preserving other members.
+    pub fn replace_faces(&mut self, faces: Vec<FaceId>) -> Result<(), BodySelectionError> {
+        if faces.is_empty()
+            && self.members.wire_edges.is_empty()
+            && self.members.free_vertices.is_empty()
+        {
+            return Err(BodySelectionError::Empty);
+        }
+        self.members.faces = faces;
+        Ok(())
     }
 
     /// Edits topology members and preserves the shell when admission fails.
@@ -502,9 +554,9 @@ impl FaceLoops {
     }
 
     /// Ordered loop ids: outer first when the face states one.
-    pub fn iter(&self) -> impl Iterator<Item = &LoopId> + '_ {
+    pub fn iter(&self) -> Box<dyn Iterator<Item = &LoopId> + '_> {
         match self {
-            Self::Unspecified { loops } => Box::new(loops.iter()) as Box<dyn Iterator<Item = _>>,
+            Self::Unspecified { loops } => Box::new(loops.iter()),
             Self::Classified { outer, inner } => {
                 Box::new(std::iter::once(outer).chain(inner.iter()))
             }
@@ -711,9 +763,8 @@ impl LoopRing {
         key_prefix: &IdentityKey,
         vertices: NonEmptyMembers<VertexId>,
     ) -> Self {
-        let member_count = vertices.len();
-        let mut coedges = Vec::with_capacity(member_count);
-        let mut vertex_uses = Vec::with_capacity(member_count);
+        let mut coedges = Vec::new();
+        let mut vertex_uses = Vec::new();
         for (ordinal, vertex) in vertices.into_iter().enumerate() {
             let coedge = CoedgeId::compose(namespace, key_prefix.clone().colon(ordinal));
             let vertex_use = AnchoredVertexUse {
@@ -777,9 +828,16 @@ impl LoopRing {
         let count = u64_from_index(coedges.len());
         ctx.charge_collection_items(count, "loop ring members")?;
         let mut members = HashSet::new();
-        members
-            .try_reserve(coedges.len())
-            .map_err(|_| ctx.refuse_codec_limit("loop ring members", 0, count))?;
+        members.try_reserve(coedges.len()).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("loop ring members"),
+                    0,
+                    count,
+                    "loop ring members",
+                ),
+            )
+        })?;
         members.extend(coedges.iter());
         if members.len() != coedges.len() {
             return Ok(Err(LoopRingError(
@@ -1829,6 +1887,23 @@ mod tests {
     }
 
     #[test]
+    fn shell_face_list_construction_and_replacement_keep_members() {
+        let shell_id = super::ShellId::mint("test:model:shell#faces").unwrap();
+        let region_id = super::RegionId::mint("test:model:region#faces").unwrap();
+        let first = super::FaceId::mint("test:model:face#first").unwrap();
+        let second = super::FaceId::mint("test:model:face#second").unwrap();
+        assert!(super::Shell::with_faces(shell_id.clone(), region_id.clone(), Vec::new()).is_err());
+        let mut shell =
+            super::Shell::with_faces(shell_id, region_id, vec![first.clone(), second.clone()])
+                .unwrap();
+        assert_eq!(shell.faces(), &[first.clone(), second.clone()]);
+        assert!(shell.replace_faces(Vec::new()).is_err());
+        assert_eq!(shell.faces(), &[first, second.clone()]);
+        shell.replace_faces(vec![second.clone()]).unwrap();
+        assert_eq!(shell.faces(), &[second]);
+    }
+
+    #[test]
     fn color_rejects_invalid_components_on_construction_and_wire() {
         for invalid in [-1.0, 1.1, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
             for index in 0..4 {
@@ -1920,6 +1995,38 @@ mod tests {
             .iter()
             .zip(ring.coedges())
             .all(|(vertex_use, coedge)| vertex_use.after == *coedge));
+    }
+
+    #[test]
+    fn generated_loop_ring_refuses_member_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let run = |collection_limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = collection_limit;
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            let coedge = super::CoedgeId::mint("catia:standard:coedge#0:0:0").expect("identity");
+            let vertex = super::VertexId::mint("catia:standard:v#1").expect("identity");
+            LoopRing::try_new_for_decode(
+                &ctx,
+                vec![coedge.clone()],
+                vec![super::AnchoredVertexUse {
+                    vertex,
+                    after: coedge,
+                    pcurves: Vec::new(),
+                }],
+            )
+        };
+        assert!(
+            matches!(run(0), Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "loop ring members")
+        );
+        let ring = run(u64::MAX)
+            .expect("service profile admits generated ring")
+            .expect("valid generated ring");
+        assert_eq!(ring.coedges()[0].as_str(), "catia:standard:coedge#0:0:0");
     }
 
     #[test]

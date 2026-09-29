@@ -317,11 +317,7 @@ macro_rules! minter {
                 ctx: impl MintContext<'borrow, 'arena>,
             ) -> Result<$ty, CodecError> {
                 let Some(ctx) = ctx.optional() else { return Ok($name(stem)); };
-                let text = crate::decode_resource::format_retained(
-                    ctx,
-                    format_args!("iges:{}:{}#{stem}", $scope, $kind),
-                    "iges generated identity",
-                )?;
+                let text = ctx.format_retained(format_args!("iges:{}:{}#{stem}", $scope, $kind), "iges generated identity")?;
                 <$ty>::try_from(text)
                     .map_err(|_| CodecError::Malformed("IGES generated identity is invalid".into()))
             }

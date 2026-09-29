@@ -196,21 +196,24 @@ fn native_ambiguity_and_entity_slots_refuse_after_input_indexes() {
         }
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = (scan.lines.len() + 3) as u64;
+        policy.limits.max_collection_items =
+            cadmpeg_core::decode::u64_from_index(scan.lines.len() + 3);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = super::store(
             &mut cadmpeg_ir::CadIr::empty(),
-            &scan,
-            &directory,
-            &assembly.records,
-            &analysis,
-            super::QuarantinedRecords {
-                directory: &quarantined_directory,
-                parameters: &assembly.quarantined,
+            super::NativeStoreInputs {
+                scan: &scan,
+                directory: &directory,
+                parameters: &assembly.records,
+                trailing_pointer_analysis: &analysis,
+                quarantine: super::QuarantinedRecords {
+                    directory: &quarantined_directory,
+                    parameters: &assembly.quarantined,
+                },
+                structure_admitted: None,
+                sequences: &crate::entities::geometry::SourceSequences::default(),
+                boundary_vertex_derivations: &[],
             },
-            None,
-            &crate::entities::geometry::SourceSequences::default(),
-            &[],
             &mut std::collections::BTreeMap::new(),
             &global,
             super::ProductOccurrenceLimits::new(100_000, 64),
@@ -272,21 +275,23 @@ fn native_required_back_pointer_member_refuses_node_limit() {
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = (scan.lines.len() + 6) as u64;
+    policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(scan.lines.len() + 6);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = super::store(
         &mut cadmpeg_ir::CadIr::empty(),
-        &scan,
-        &directory,
-        &assembly.records,
-        &assembly.trailing_pointer_analysis,
-        super::QuarantinedRecords {
-            directory: &quarantined_directory,
-            parameters: &assembly.quarantined,
+        super::NativeStoreInputs {
+            scan: &scan,
+            directory: &directory,
+            parameters: &assembly.records,
+            trailing_pointer_analysis: &assembly.trailing_pointer_analysis,
+            quarantine: super::QuarantinedRecords {
+                directory: &quarantined_directory,
+                parameters: &assembly.quarantined,
+            },
+            structure_admitted: None,
+            sequences: &crate::entities::geometry::SourceSequences::default(),
+            boundary_vertex_derivations: &[],
         },
-        None,
-        &crate::entities::geometry::SourceSequences::default(),
-        &[],
         &mut std::collections::BTreeMap::new(),
         &global,
         super::ProductOccurrenceLimits::new(100_000, 64),
@@ -334,9 +339,12 @@ fn native_input_card_and_lookup_indexes_refuse_collection_limits() {
     };
     for (cap, operation) in [
         (0, "iges native card slots"),
-        (scan.lines.len() as u64, "iges native parameter index"),
         (
-            (scan.lines.len() + assembly.records.len()) as u64,
+            cadmpeg_core::decode::u64_from_index(scan.lines.len()),
+            "iges native parameter index",
+        ),
+        (
+            cadmpeg_core::decode::u64_from_index(scan.lines.len() + assembly.records.len()),
             "iges native directory index",
         ),
     ] {
@@ -643,11 +651,14 @@ fn decode_preserves_native_entities_and_graph() {
 fn absent_native_parameter_record_keeps_empty_wire_fields() {
     #[derive(serde::Serialize)]
     struct Record {
-        #[serde(flatten, serialize_with = "super::serialize_parameter_record")]
-        parameters: Option<super::NativeParameterRecord>,
+        #[serde(flatten)]
+        parameters: super::NativeParameterRecordSlot,
     }
     assert_eq!(
-        serde_json::to_value(Record { parameters: None }).unwrap(),
+        serde_json::to_value(Record {
+            parameters: super::NativeParameterRecordSlot(None)
+        })
+        .unwrap(),
         serde_json::json!({
             "parameter_line_start": null,
             "parameter_line_end": null,

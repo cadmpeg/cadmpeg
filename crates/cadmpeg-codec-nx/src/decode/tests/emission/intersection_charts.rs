@@ -411,7 +411,15 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
         crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
     );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts_with_budget(
+        &ctx,
         &mut ir,
         1,
         &transfer_budget,
@@ -431,6 +439,52 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
         unreachable!()
     };
     assert!(later.sides()[1].pcurve.is_some());
+}
+
+fn opposite_chart_completion_limit_error(
+    policy: &cadmpeg_core::decode::DecodePolicy,
+) -> cadmpeg_core::CodecError {
+    let mut ir = cylinder_plane_transfer_fixture(std::f64::consts::TAU, 0.01);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
+        .expect("test context");
+    let transfer_budget = cadmpeg_core::decode::WorkBudget::new(
+        crate::decode::pcurves::MAX_COMPLETION_TRANSFER_SAMPLES,
+    );
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+        &ctx,
+        cadmpeg_core::decode::u64_from_index(
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+        ),
+    );
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts_with_budget(
+        &ctx,
+        &mut ir,
+        0,
+        &transfer_budget,
+        &geometry_budget,
+    )
+    .expect_err("opposite chart limit refusal")
+}
+
+#[test]
+fn opposite_chart_completion_route_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    assert!(matches!(
+        opposite_chart_completion_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
+}
+
+#[test]
+fn opposite_chart_completion_route_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    assert!(matches!(
+        opposite_chart_completion_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
 }
 
 fn cylinder_plane_transfer_fixture(
@@ -633,7 +687,7 @@ fn blend_contact_transfer_fixture(
         other_support.clone()
     };
     let _attached = ir.model.add_procedural_curve(
-        spine.clone(),
+        &spine,
         ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:entity#synthetic:blend-contact-spine-construction")
                 .expect("identity grammar"),
@@ -726,7 +780,7 @@ fn blend_contact_transfer_fixture(
                 ),
             },
         );
-        ir.model.add_procedural_curve(curve, procedural).unwrap();
+        ir.model.add_procedural_curve(&curve, procedural).unwrap();
     }
     ir
 }
@@ -833,7 +887,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
-        curve.clone(),
+        &curve,
         ProceduralCurve::new(
             construction,
             ProceduralCurveDefinition::Intersection {
@@ -971,7 +1025,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
-        curve.clone(),
+        &curve,
         ProceduralCurve::new(
             construction,
             ProceduralCurveDefinition::TolerantIntersection {
@@ -1230,7 +1284,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
             cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.25).expect("fit tolerance")),
         },
     );
-    ir.model.add_procedural_curve(curve, procedural).unwrap();
+    ir.model.add_procedural_curve(&curve, procedural).unwrap();
 
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
         &mut ir,

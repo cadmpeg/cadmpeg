@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 
 use cadmpeg_core::decode::{
-    ByteRange, DecodeContext, ExpandSpec, ResourceDimension, ResourceFailure, ResourceLimit, View,
+    ByteRange, DecodeContext, ExpandSpec, ResourceDimension, ResourceLimit, View,
 };
 use cadmpeg_core::{CodecError, ContainerEntry};
 use zip::{CompressionMethod, HasZipMetadata};
@@ -126,7 +126,10 @@ impl<'a> ArchiveSnapshot<'a> {
         let mut archive = zip::ZipArchive::new(Cursor::new(root.window()))
             .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
         let archive_central_start = archive.central_directory_start();
-        ctx.charge_collection_items(archive.len() as u64, "ZIP duplicate name set")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(archive.len()),
+            "ZIP duplicate name set",
+        )?;
         let central_entry_count =
             reject_duplicate_central_names(root.window(), archive_central_start)?;
         if central_entry_count != archive.len() {
@@ -135,14 +138,20 @@ impl<'a> ArchiveSnapshot<'a> {
             ));
         }
         let mut names = BTreeSet::new();
-        ctx.charge_collection_items(archive.len() as u64, "ZIP entry records")?;
-        ctx.charge_collection_items(archive.len() as u64, "ZIP decoded name set")?;
-        let mut entries = Vec::with_capacity(archive.len());
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(archive.len()),
+            "ZIP entry records",
+        )?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(archive.len()),
+            "ZIP decoded name set",
+        )?;
+        let mut entries = DecodeContext::admitted_vec(archive.len(), "ZIP entry records")?;
         for index in 0..archive.len() {
             let file = archive.by_index(index).map_err(|error| {
                 CodecError::malformed(format_args!("bad ZIP entry {index}: {error}"))
             })?;
-            let name_len = file.name().len() as u64;
+            let name_len = cadmpeg_core::decode::u64_from_index(file.name().len());
             ctx.charge_retained(name_len, "ZIP entry record name")?;
             ctx.charge_retained(name_len, "ZIP duplicate name")?;
             let name = file.name().to_owned();
@@ -177,7 +186,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 record.data_end()?,
                 record.central_start,
             ] {
-                if offset > root.window().len() as u64 {
+                if offset > cadmpeg_core::decode::u64_from_index(root.window().len()) {
                     return Err(CodecError::malformed(format_args!(
                         "ZIP offset outside archive for {}",
                         record.name
@@ -187,9 +196,15 @@ impl<'a> ArchiveSnapshot<'a> {
             entries.push(record);
         }
         drop(archive);
-        ctx.charge_collection_items(entries.len() as u64, "ZIP name index")?;
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(entries.len()),
+            "ZIP name index",
+        )?;
         for entry in &entries {
-            ctx.charge_retained(entry.name.len() as u64, "ZIP indexed entry name")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(entry.name.len()),
+                "ZIP indexed entry name",
+            )?;
         }
         let by_name = entries
             .iter()
@@ -220,8 +235,7 @@ impl<'a> ArchiveSnapshot<'a> {
             .entry(name)
             .ok_or_else(|| CodecError::malformed(format_args!("ZIP entry {name} is absent")))?;
         let end = entry.data_end()?;
-        let archive_start = u64::try_from(self.root.start())
-            .map_err(|_| CodecError::Malformed("ZIP root offset does not fit u64".into()))?;
+        let archive_start = cadmpeg_core::decode::u64_from_index(self.root.start());
         let absolute_start = archive_start.checked_add(entry.data_start).ok_or_else(|| {
             CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
         })?;
@@ -238,7 +252,8 @@ impl<'a> ArchiveSnapshot<'a> {
                 let source = self.compressed_source(entry, range)?;
                 let mut decoder = flate2::read::DeflateDecoder::new(source.window());
                 let view = Self::open_expanded(ctx, entry, &mut decoder)?;
-                if decoder.total_in() != source.window().len() as u64 {
+                if decoder.total_in() != cadmpeg_core::decode::u64_from_index(source.window().len())
+                {
                     return Err(CodecError::Malformed(
                         "raw-DEFLATE member does not exhaust its declared ZIP payload".into(),
                     ));
@@ -283,7 +298,7 @@ impl<'a> ArchiveSnapshot<'a> {
         range: ByteRange,
     ) -> Result<View<'a>, CodecError> {
         let view = ctx.register_slice(self.root, range)?;
-        if view.window().len() as u64 != entry.uncompressed_size {
+        if cadmpeg_core::decode::u64_from_index(view.window().len()) != entry.uncompressed_size {
             return Err(CodecError::malformed(format_args!(
                 "stored size mismatch for {}",
                 entry.name
@@ -349,7 +364,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 &mut attributes,
             )?;
             output.push(ContainerEntry {
-                name: retained_copy(ctx, &entry.name, "ZIP summary entry name")?,
+                name: ctx.copy_retained_text(&entry.name, "ZIP summary entry name")?,
                 role: classify(&entry.name),
                 storage,
                 attributes,
@@ -453,8 +468,7 @@ fn central_directory_inventory(
             .ok_or_else(|| CodecError::Malformed("ZIP directory offset is truncated".into()))?;
         (u64::from(count), u64::from(size), u64::from(start), end)
     };
-    let directory_end = u64::try_from(directory_end)
-        .map_err(|_| CodecError::Malformed("ZIP directory end exceeds u64".into()))?;
+    let directory_end = cadmpeg_core::decode::u64_from_index(directory_end);
     let canonical_start = directory_end
         .checked_sub(directory_size)
         .ok_or_else(|| CodecError::Malformed("ZIP directory size exceeds archive".into()))?;
@@ -469,16 +483,14 @@ fn central_directory_inventory(
         let search_len = search_end
             .checked_sub(search_start)
             .ok_or_else(|| CodecError::Malformed("ZIP directory search range is invalid".into()))?;
-        let search_work = u64::try_from(search_len)
-            .map_err(|_| CodecError::Malformed("ZIP directory search exceeds u64".into()))?;
+        let search_work = cadmpeg_core::decode::u64_from_index(search_len);
         ctx.charge_work(search_work, "ZIP central header search")?;
         let start = bytes
             .get(search_start..search_end)
             .and_then(|range| range.windows(4).position(|window| window == b"PK\x01\x02"))
             .and_then(|relative| search_start.checked_add(relative))
             .ok_or_else(|| CodecError::Malformed("ZIP central header is absent".into()))?;
-        u64::try_from(start)
-            .map_err(|_| CodecError::Malformed("ZIP directory offset exceeds u64".into()))?
+        cadmpeg_core::decode::u64_from_index(start)
     };
     let mut indexed_name_bytes = 0_u64;
     for _ in 0..count {
@@ -601,7 +613,7 @@ pub enum ZipSpanRole {
 
 impl ZipSpanRole {
     fn copy_with_context(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        let name = |name: &str| retained_copy(ctx, name, "ZIP partition role name");
+        let name = |name: &str| ctx.copy_retained_text(name, "ZIP partition role name");
         Ok(match self {
             Self::LocalSignature(value) => Self::LocalSignature(name(value)?),
             Self::LocalFields(value) => Self::LocalFields(name(value)?),
@@ -689,31 +701,21 @@ fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
         .map(|raw| [raw[0], raw[1], raw[2], raw[3]])
 }
 
-fn collection_allocation_failed(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> CodecError {
-    CodecError::ResourceLimit(ResourceLimit {
-        dimension: ResourceDimension::CollectionItems,
-        reason: ResourceFailure::AllocationFailed,
-        limit: ctx.policy().limits.max_collection_items,
-        used: 0,
-        additional: count as u64,
-        operation,
-    })
-}
-
 fn collection_vec<T>(
     ctx: &DecodeContext<'_>,
     count: usize,
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
-    ctx.charge_collection_items(count as u64, operation)?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
     let mut values = Vec::new();
-    values
-        .try_reserve_exact(count)
-        .map_err(|_| collection_allocation_failed(ctx, count, operation))?;
+    values.try_reserve_exact(count).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+            ResourceDimension::CollectionItems,
+            ctx.policy().limits.max_collection_items,
+            cadmpeg_core::decode::u64_from_index(count),
+            operation,
+        ))
+    })?;
     Ok(values)
 }
 
@@ -723,18 +725,14 @@ fn reserve_vec_item<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| collection_allocation_failed(ctx, 1, operation))
-}
-
-fn retained_copy(
-    ctx: &DecodeContext<'_>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    String::from_utf8(ctx.copy_retained(text.as_bytes(), operation)?)
-        .map_err(|_| CodecError::Malformed("ZIP retained name lost UTF-8 encoding".into()))
+    values.try_reserve(1).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+            ResourceDimension::CollectionItems,
+            ctx.policy().limits.max_collection_items,
+            cadmpeg_core::decode::u64_from_index(1),
+            operation,
+        ))
+    })
 }
 
 fn push_region(
@@ -757,7 +755,7 @@ fn physical_ledger(
     entries: &[EntryRecord],
     central_begin: u64,
 ) -> Result<Vec<PhysicalSpan>, CodecError> {
-    let len = bytes.len() as u64;
+    let len = cadmpeg_core::decode::u64_from_index(bytes.len());
     let mut regions = Vec::new();
     let mut local_order = collection_vec(ctx, entries.len(), "ZIP ledger local order")?;
     local_order.extend(entries.iter());
@@ -791,39 +789,39 @@ fn physical_ledger(
             &mut regions,
             entry.header_start,
             entry.header_start + 4,
-            ZipSpanRole::LocalSignature(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::LocalSignature(
+                ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+            ),
         )?;
         push_region(
             ctx,
             &mut regions,
             entry.header_start + 4,
             fixed_end,
-            ZipSpanRole::LocalFields(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::LocalFields(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
         )?;
         push_region(
             ctx,
             &mut regions,
             fixed_end,
             name_end,
-            ZipSpanRole::LocalName(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::LocalName(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
         )?;
         push_region(
             ctx,
             &mut regions,
             name_end,
             extra_end,
-            ZipSpanRole::LocalExtra(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::LocalExtra(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
         )?;
         push_region(
             ctx,
             &mut regions,
             entry.data_start,
             entry.data_end()?,
-            ZipSpanRole::CompressedPayload(retained_copy(
-                ctx,
-                &entry.name,
-                "ZIP ledger entry name",
-            )?),
+            ZipSpanRole::CompressedPayload(
+                ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+            ),
         )?;
 
         let next = local_order
@@ -844,11 +842,9 @@ fn physical_ledger(
                     &mut regions,
                     entry.data_end()?,
                     descriptor_end,
-                    ZipSpanRole::DataDescriptor(retained_copy(
-                        ctx,
-                        &entry.name,
-                        "ZIP ledger entry name",
-                    )?),
+                    ZipSpanRole::DataDescriptor(
+                        ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+                    ),
                 )?;
                 push_region(
                     ctx,
@@ -856,7 +852,7 @@ fn physical_ledger(
                     descriptor_end,
                     next,
                     ZipSpanRole::Padding {
-                        entry: Some(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+                        entry: Some(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
                     },
                 )?;
             } else {
@@ -866,7 +862,7 @@ fn physical_ledger(
                     entry.data_end()?,
                     next,
                     ZipSpanRole::Padding {
-                        entry: Some(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+                        entry: Some(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
                     },
                 )?;
             }
@@ -902,39 +898,43 @@ fn physical_ledger(
             &mut regions,
             entry.central_start,
             entry.central_start + 4,
-            ZipSpanRole::CentralSignature(retained_copy(
-                ctx,
-                &entry.name,
-                "ZIP ledger entry name",
-            )?),
+            ZipSpanRole::CentralSignature(
+                ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+            ),
         )?;
         push_region(
             ctx,
             &mut regions,
             entry.central_start + 4,
             fixed_end,
-            ZipSpanRole::CentralFields(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::CentralFields(
+                ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+            ),
         )?;
         push_region(
             ctx,
             &mut regions,
             fixed_end,
             name_end,
-            ZipSpanRole::CentralName(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::CentralName(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
         )?;
         push_region(
             ctx,
             &mut regions,
             name_end,
             extra_end,
-            ZipSpanRole::CentralExtra(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::CentralExtra(
+                ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+            ),
         )?;
         push_region(
             ctx,
             &mut regions,
             extra_end,
             record_end,
-            ZipSpanRole::CentralComment(retained_copy(ctx, &entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::CentralComment(
+                ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+            ),
         )?;
         central_end = central_end.max(record_end);
     }
@@ -1205,7 +1205,7 @@ mod tests {
                 .expect("empty ZIP has a complete physical ledger"),
             vec![PhysicalSpan {
                 start: 0,
-                end: bytes.len() as u64,
+                end: cadmpeg_core::decode::u64_from_index(bytes.len()),
                 role: ZipSpanRole::EndRecord,
             }]
         );
@@ -1281,7 +1281,8 @@ mod tests {
                 .expect("archive root");
         let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
         let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = snapshot.entries().len() as u64 - 1;
+        policy.limits.max_collection_items =
+            cadmpeg_core::decode::u64_from_index(snapshot.entries().len()) - 1;
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
         assert!(matches!(snapshot.physical_ledger(&limited),
@@ -1298,7 +1299,8 @@ mod tests {
                 .expect("archive root");
         let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = snapshot.entries()[0].name.len() as u64 - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(snapshot.entries()[0].name.len()) - 1;
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
         assert!(matches!(snapshot.physical_ledger(&limited),
@@ -1315,7 +1317,8 @@ mod tests {
                 .expect("archive root");
         let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
         let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = snapshot.entries().len() as u64 - 1;
+        policy.limits.max_collection_items =
+            cadmpeg_core::decode::u64_from_index(snapshot.entries().len()) - 1;
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
         assert!(
@@ -1334,7 +1337,8 @@ mod tests {
                 .expect("archive root");
         let snapshot = ArchiveSnapshot::new(&setup, root).expect("snapshot");
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = snapshot.entries()[0].name.len() as u64 - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(snapshot.entries()[0].name.len()) - 1;
         let (limited, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited root");
         assert!(
@@ -1691,7 +1695,8 @@ mod tests {
             .position(|window| window == [0x50, 0x4b, 0x01, 0x02])
         {
             let record = at + found;
-            let name_len = u16::from_le_bytes([bytes[record + 28], bytes[record + 29]]) as usize;
+            let name_len =
+                usize::from(u16::from_le_bytes([bytes[record + 28], bytes[record + 29]]));
             let start = record + 46;
             if &bytes[start..start + name_len] == name.as_bytes() {
                 bytes[record + 24..record + 28].copy_from_slice(&size.to_le_bytes());
@@ -1805,8 +1810,10 @@ mod tests {
         let header = usize::try_from(entry.header_start).expect("header fits memory");
         let central = usize::try_from(entry.central_start).expect("central header fits memory")
             + suffix.len();
-        let compressed_size = u32::try_from(entry.compressed_size + suffix.len() as u64)
-            .expect("fixture compressed size fits u32");
+        let compressed_size = u32::try_from(
+            entry.compressed_size + cadmpeg_core::decode::u64_from_index(suffix.len()),
+        )
+        .expect("fixture compressed size fits u32");
         bytes[header + 18..header + 22].copy_from_slice(&compressed_size.to_le_bytes());
         bytes[central + 20..central + 24].copy_from_slice(&compressed_size.to_le_bytes());
         let end = bytes

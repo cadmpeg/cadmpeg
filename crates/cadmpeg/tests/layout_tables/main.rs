@@ -383,7 +383,7 @@ fn rust_byte_array(bytes: &[u8]) -> String {
                 0 => out.push_str("\\0"),
                 b'\\' => out.push_str("\\\\"),
                 b'"' => out.push_str("\\\""),
-                _ => out.push(b as char),
+                _ => out.push(char::from(b)),
             }
         }
         out.push('"');
@@ -475,12 +475,24 @@ fn decode_field_value(raw: &toml::Value, ty: &str, width: Option<u64>) -> Result
         "f32" | "f64" => {
             let n = raw
                 .as_float()
-                .or_else(|| raw.as_integer().map(|i| i as f64))
+                .or_else(|| {
+                    raw.as_integer()
+                        .and_then(cadmpeg_core::convert::f64_from_i64)
+                })
                 .ok_or_else(|| "float value required".to_string())?;
             Ok(format!("{element} = {n:?}"))
         }
         _ => Err(format!("value is not supported on type `{ty}`")),
     }
+}
+
+#[test]
+fn layout_field_refuses_inexact_real_integer() {
+    let inexact = toml::Value::Integer((1_i64 << 53) + 1);
+    assert_eq!(
+        decode_field_value(&inexact, "f64", None),
+        Err("float value required".to_string())
+    );
 }
 
 /// A part of a format that has no tabulatable layout, with the reason.

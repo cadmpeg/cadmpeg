@@ -53,9 +53,16 @@ fn push_topology_vec<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    values.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        )
+    })?;
     values.push(value);
     Ok(())
 }
@@ -78,9 +85,16 @@ fn append_topology_vec<T>(
 ) -> Result<(), CodecError> {
     let count = source.len();
     ctx.charge_collection_items(u64_from_index(count), operation)?;
-    target
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(count)))?;
+    target.try_reserve(count).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                u64_from_index(count),
+                operation,
+            ),
+        )
+    })?;
     target.append(source);
     Ok(())
 }
@@ -120,9 +134,16 @@ fn insert_topology_hash_set<T: Eq + Hash>(
 ) -> Result<(), CodecError> {
     if !values.contains(&value) {
         ctx.charge_collection_items(1, operation)?;
-        values
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        values.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            )
+        })?;
     }
     values.insert(value);
     Ok(())
@@ -147,17 +168,8 @@ fn copy_topology_id<T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
     ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
-    let bytes = ctx.copy_retained(identity.as_bytes(), operation)?;
-    let text = String::from_utf8(bytes).map_err(CodecError::malformed)?;
+    let text = ctx.copy_retained_text(identity, operation)?;
     T::try_from(text).map_err(CodecError::malformed)
-}
-
-fn copy_topology_body_id(
-    body: &BodyId,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<BodyId, CodecError> {
-    copy_topology_id(body.as_str(), ctx, operation)
 }
 
 fn copy_topology_body_ids(
@@ -168,10 +180,17 @@ fn copy_topology_body_ids(
     let mut copies = Vec::new();
     for body in bodies {
         ctx.charge_collection_items(1, operation)?;
-        copies
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-        copies.push(copy_topology_body_id(body, ctx, operation)?);
+        copies.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            )
+        })?;
+        copies.push(body.try_clone_for_decode(ctx, operation)?);
     }
     Ok(copies)
 }
@@ -187,7 +206,7 @@ fn push_topology_body_group(
     if !groups.contains_key(&key) {
         ctx.charge_collection_items(1, group_operation)?;
     }
-    let copy = copy_topology_body_id(body, ctx, member_operation)?;
+    let copy = body.try_clone_for_decode(ctx, member_operation)?;
     push_topology_vec(groups.entry(key).or_default(), copy, ctx, member_operation)
 }
 
@@ -206,7 +225,7 @@ fn insert_topology_body_group(
         ctx.charge_collection_items(1, group_operation)?;
     }
     ctx.charge_collection_items(1, member_operation)?;
-    let copy = copy_topology_body_id(body, ctx, member_operation)?;
+    let copy = body.try_clone_for_decode(ctx, member_operation)?;
     groups.entry(key).or_default().insert(copy);
     Ok(())
 }
@@ -243,17 +262,11 @@ fn topology_commit_error(
     ctx: &DecodeContext<'_>,
 ) -> Result<String, CodecError> {
     match error {
-        DraftError::IdentityCollision(identity) => crate::decode_alloc::charged_format(
-            ctx, "step_topology_commit_error_text",
-            format_args!("{context} conflicts with decoded topology: identity collision at '{identity}': {error}"),
-        ),
+        DraftError::IdentityCollision(identity) => ctx.format_retained(format_args!("{context} conflicts with decoded topology: identity collision at '{identity}': {error}"), "step_topology_commit_error_text"),
         DraftError::UnresolvedReference { .. }
         | DraftError::ReferenceWalk { .. }
         | DraftError::FeatureParents { .. } => {
-            crate::decode_alloc::charged_format(
-                ctx, "step_topology_commit_error_text",
-                format_args!("{context} conflicts with decoded topology: {error}"),
-            )
+            ctx.format_retained(format_args!("{context} conflicts with decoded topology: {error}"), "step_topology_commit_error_text")
         }
     }
 }
@@ -304,8 +317,22 @@ fn admitted_body_clone<'a>(
     values.try_reserve_exact(bodies.len()).map_err(|_| {
         let requested = u64_from_index(bodies.len());
         match ctx {
-            Some(ctx) => ctx.refuse_codec_limit(operation, 0, requested),
-            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, requested),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    requested,
+                    operation,
+                ),
+            ),
+            None => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    requested,
+                    operation,
+                ),
+            ),
         }
     })?;
     values.extend_from_slice(bodies);
@@ -476,17 +503,27 @@ pub(super) fn representation_bodies<'a>(
     bodies.try_reserve_exact(body_ids.len()).map_err(|_| {
         ctx.map_or_else(
             || {
-                cadmpeg_core::decode::refuse_local_limit(
-                    "step_representation_body_output",
-                    0,
-                    u64_from_index(body_ids.len()),
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "step_representation_body_output",
+                        ),
+                        0,
+                        u64_from_index(body_ids.len()),
+                        "step_representation_body_output",
+                    ),
                 )
             },
-            |ctx| {
-                ctx.refuse_codec_limit(
-                    "step_representation_body_output",
-                    0,
-                    u64_from_index(body_ids.len()),
+            |_ctx| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "step_representation_body_output",
+                        ),
+                        0,
+                        u64_from_index(body_ids.len()),
+                        "step_representation_body_output",
+                    ),
                 )
             },
         )
@@ -644,7 +681,7 @@ pub(super) fn decode(
                 .with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
                         crate::dialect::FORMAT,
-                        record.span.start as u64,
+                        u64_from_index(record.span.start),
                     )
                     .with_tag("oriented_shell"),
                 ),
@@ -950,17 +987,19 @@ pub(super) fn decode(
         let outcome = build(
             id,
             record,
-            exchange,
-            commit_session.document(),
-            &vertices,
-            &edges,
-            &oriented,
-            &shells,
-            &decoded_pcurves,
-            point_positions,
+            BuildSources {
+                exchange,
+                ir: commit_session.document(),
+                vdefs: &vertices,
+                edefs: &edges,
+                odefs: &oriented,
+                shell_definitions: &shells,
+                decoded_pcurves: &decoded_pcurves,
+                point_positions,
+                ctx,
+            },
             scope_root,
             &mut losses,
-            ctx,
         )?;
         let (built, failures) = outcome.into_parts();
         let failure_message = failures
@@ -1003,7 +1042,9 @@ pub(super) fn decode(
                 }
                 push_topology_vec(
                     &mut body_ids,
-                    copy_topology_body_id(&built.body_id, ctx, "step_topology_built_bodies")?,
+                    built
+                        .body_id
+                        .try_clone_for_decode(ctx, "step_topology_built_bodies")?,
                     ctx,
                     "step_topology_built_bodies",
                 )?;
@@ -1029,10 +1070,9 @@ pub(super) fn decode(
             if let Some(message) = failure_message {
                 push_topology_vec(
                     &mut result.losses,
-                    StepLossCode::TopologyRootRejected.note(crate::decode_alloc::charged_format(
-                        ctx,
-                        "step_topology_root_rejected_text",
+                    StepLossCode::TopologyRootRejected.note(ctx.format_retained(
                         format_args!("STEP topology root #{id} rejected: {message}"),
+                        "step_topology_root_rejected_text",
                     )?),
                     ctx,
                     "step_topology_losses",
@@ -1065,10 +1105,9 @@ pub(super) fn decode(
                 let detail = failure_message
                     .as_deref()
                     .map(|message| {
-                        crate::decode_alloc::charged_format(
-                            ctx,
-                            "step_topology_root_failure_detail",
+                        ctx.format_retained(
                             format_args!(": {message}"),
+                            "step_topology_root_failure_detail",
                         )
                     })
                     .transpose()?
@@ -1313,13 +1352,12 @@ fn geometric_set_omission_message(
     omitted: &[u64],
     ctx: &DecodeContext<'_>,
 ) -> Result<String, CodecError> {
-    crate::decode_alloc::charged_format(
-        ctx,
-        "step_geometric_set_omission_text",
+    ctx.format_retained(
         format_args!(
             "{representation_type} #{id} omitted unsupported or unresolved member(s): {}",
             OmittedMembers(omitted)
         ),
+        "step_geometric_set_omission_text",
     )
 }
 
@@ -1345,7 +1383,7 @@ impl BuildOutcome {
         }
     }
 
-    fn fail(&mut self, failure: Option<BuildFailure>) {
+    fn fail(&mut self, failure: Option<BuildFailure>) -> Result<(), CodecError> {
         match self {
             Self::Built(built) => {
                 *self = Self::Partial {
@@ -1357,12 +1395,19 @@ impl BuildOutcome {
                 };
             }
             Self::Partial { failures, .. } => {
-                failures.count = failures.count.saturating_add(1);
+                failures.count = failures.count.checked_add(1).ok_or_else(|| {
+                    cadmpeg_core::decode::refuse_local_limit(
+                        "step topology failures",
+                        u64::MAX,
+                        u64::MAX,
+                    )
+                })?;
                 if failures.first.is_none() {
                     failures.first = failure;
                 }
             }
         }
+        Ok(())
     }
 
     fn into_parts(self) -> (Vec<Built>, Option<BuildFailures>) {
@@ -1523,33 +1568,50 @@ fn build_wire(
             id,
             set_id,
             exchange,
-            vdefs,
-            edefs,
-            point_positions,
+            WireSources {
+                vdefs,
+                edefs,
+                point_positions,
+            },
             scoped,
             losses,
             ctx,
         ) {
             Ok(Some(value)) => outcome.push(value, ctx)?,
-            Ok(None) => outcome.fail(None),
+            Ok(None) => outcome.fail(None)?,
             Err(error) => return Err(error),
         }
     }
     Ok(outcome)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct WireSources<'a> {
+    vdefs: &'a BTreeMap<u64, VertexDef>,
+    edefs: &'a BTreeMap<u64, Rc<EdgeDef>>,
+    point_positions: &'a CarrierIndex,
+}
+
+#[derive(Clone, Copy)]
+struct WireScope {
+    scoped: bool,
+    root: bool,
+}
+
 fn build_wire_set(
     id: u64,
     set_id: u64,
     exchange: &Exchange,
-    vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, Rc<EdgeDef>>,
-    point_positions: &CarrierIndex,
+    sources: WireSources<'_>,
     scoped: bool,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Built>, CodecError> {
+    let WireSources {
+        vdefs,
+        edefs,
+        point_positions,
+    } = sources;
     let Some(set) = exchange.records().get(&set_id) else {
         return Ok(None);
     };
@@ -1687,27 +1749,29 @@ fn build_wire_set(
         }
     };
     let staged = staged_topology(
-        typed,
-        built_vertices,
-        built_edges,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        one_topology_vec(shell_value, ctx, "step_wire_shells")?,
-        Region {
-            id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
-            body: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
-            shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
-        },
-        Body {
-            id: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
-            kind: BodyKind::Wire,
-            regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
+        StagedTopologyParts {
+            typed,
+            vertices: built_vertices,
+            edges: built_edges,
+            coedges: Vec::new(),
+            loops: Vec::new(),
+            faces: Vec::new(),
+            surfaces: Vec::new(),
+            shells: one_topology_vec(shell_value, ctx, "step_wire_shells")?,
+            region: Region {
+                id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
+                body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
+                shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
+            },
+            body: Body {
+                id: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
+                kind: BodyKind::Wire,
+                regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
         },
         ctx,
     );
@@ -1767,35 +1831,44 @@ fn build_shell_wire(
             id,
             shell_id,
             exchange,
-            vdefs,
-            edefs,
-            point_positions,
-            scoped,
-            scope_root,
+            WireSources {
+                vdefs,
+                edefs,
+                point_positions,
+            },
+            WireScope {
+                scoped,
+                root: scope_root,
+            },
             losses,
             ctx,
         ) {
             Ok(Some(value)) => outcome.push(value, ctx)?,
-            Ok(None) => outcome.fail(None),
+            Ok(None) => outcome.fail(None)?,
             Err(error) => return Err(error),
         }
     }
     Ok(outcome)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_shell_wire_set(
     id: u64,
     shell_id: u64,
     exchange: &Exchange,
-    vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, Rc<EdgeDef>>,
-    point_positions: &CarrierIndex,
-    scoped: bool,
-    scope_root: bool,
+    sources: WireSources<'_>,
+    scope: WireScope,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Built>, CodecError> {
+    let WireSources {
+        vdefs,
+        edefs,
+        point_positions,
+    } = sources;
+    let WireScope {
+        scoped,
+        root: scope_root,
+    } = scope;
     let Some(shell_record) = exchange.records().get(&shell_id) else {
         return Ok(None);
     };
@@ -2011,27 +2084,29 @@ fn build_shell_wire_set(
         }
     };
     let staged = staged_topology(
-        typed,
-        vertices,
-        edges,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        one_topology_vec(shell_value, ctx, "step_wire_shells")?,
-        Region {
-            id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
-            body: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
-            shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
-        },
-        Body {
-            id: copy_topology_body_id(&body, ctx, "step_wire_body_id_copy")?,
-            kind: BodyKind::Wire,
-            regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
+        StagedTopologyParts {
+            typed,
+            vertices,
+            edges,
+            coedges: Vec::new(),
+            loops: Vec::new(),
+            faces: Vec::new(),
+            surfaces: Vec::new(),
+            shells: one_topology_vec(shell_value, ctx, "step_wire_shells")?,
+            region: Region {
+                id: copy_topology_id(region.as_str(), ctx, "step_wire_region_id_copy")?,
+                body: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
+                shells: one_topology_vec(shell, ctx, "step_wire_region_shells")?,
+            },
+            body: Body {
+                id: body.try_clone_for_decode(ctx, "step_wire_body_id_copy")?,
+                kind: BodyKind::Wire,
+                regions: one_topology_vec(region, ctx, "step_wire_body_regions")?,
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
         },
         ctx,
     );
@@ -2188,27 +2263,29 @@ fn build_geometric_set(
     )
     .map_err(CodecError::malformed)?;
     let staged = staged_topology(
-        typed,
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        faces,
-        Vec::new(),
-        one_topology_vec(shell, ctx, "step_geometric_set_shells")?,
-        Region {
-            id: region.clone(),
-            body: body.clone(),
-            shells: one_topology_vec(shell_id, ctx, "step_geometric_set_region_shells")?,
-        },
-        Body {
-            id: body,
-            kind: BodyKind::Sheet,
-            regions: one_topology_vec(region, ctx, "step_geometric_set_body_regions")?,
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
+        StagedTopologyParts {
+            typed,
+            vertices: Vec::new(),
+            edges: Vec::new(),
+            coedges: Vec::new(),
+            loops: Vec::new(),
+            faces,
+            surfaces: Vec::new(),
+            shells: one_topology_vec(shell, ctx, "step_geometric_set_shells")?,
+            region: Region {
+                id: region.clone(),
+                body: body.clone(),
+                shells: one_topology_vec(shell_id, ctx, "step_geometric_set_region_shells")?,
+            },
+            body: Body {
+                id: body,
+                kind: BodyKind::Sheet,
+                regions: one_topology_vec(region, ctx, "step_geometric_set_body_regions")?,
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
         },
         ctx,
     );
@@ -2726,8 +2803,7 @@ impl From<CodecError> for StageError {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn staged_topology(
+struct StagedTopologyParts {
     typed: HashSet<u64>,
     vertices: Vec<Vertex>,
     edges: Vec<Edge>,
@@ -2738,8 +2814,24 @@ fn staged_topology(
     shells: Vec<Shell>,
     region: Region,
     body: Body,
+}
+
+fn staged_topology(
+    parts: StagedTopologyParts,
     ctx: &DecodeContext<'_>,
 ) -> Result<Built, StageError> {
+    let StagedTopologyParts {
+        typed,
+        vertices,
+        edges,
+        coedges,
+        loops,
+        faces,
+        surfaces,
+        shells,
+        region,
+        body,
+    } = parts;
     let mut draft = ModelDraft::new();
     for vertex in vertices {
         ctx.charge_collection_items(1, "step_staged_vertices")?;
@@ -2923,22 +3015,45 @@ fn root_key(
     }))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct BuildSources<'a, 'b> {
+    exchange: &'a Exchange,
+    ir: &'a CadIr,
+    vdefs: &'a BTreeMap<u64, VertexDef>,
+    edefs: &'a BTreeMap<u64, Rc<EdgeDef>>,
+    odefs: &'a BTreeMap<u64, OrientedDef>,
+    shell_definitions: &'a BTreeMap<u64, ShellDef>,
+    decoded_pcurves: &'a BTreeSet<u64>,
+    point_positions: &'a CarrierIndex,
+    ctx: &'a DecodeContext<'b>,
+}
+
+struct BuildRoot<'a> {
+    shell_steps: &'a [u64],
+    bid: BodyId,
+    rid: &'a RegionId,
+}
+
+#[derive(Clone, Copy)]
+struct BuildScope {
+    faces: bool,
+    edges: bool,
+    root: bool,
+}
+
 fn build(
     id: u64,
     root: &RawRecord,
-    exchange: &Exchange,
-    ir: &CadIr,
-    vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, Rc<EdgeDef>>,
-    odefs: &BTreeMap<u64, OrientedDef>,
-    shell_definitions: &BTreeMap<u64, ShellDef>,
-    decoded_pcurves: &BTreeSet<u64>,
-    point_positions: &CarrierIndex,
+    sources: BuildSources<'_, '_>,
     scope_root: bool,
     losses: &mut Vec<LossNote>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<BuildOutcome, CodecError> {
+    let BuildSources {
+        exchange,
+        shell_definitions,
+        ctx,
+        ..
+    } = sources;
     let Some(shell_steps) = root_shell_steps(root, exchange, shell_definitions, ctx)? else {
         return Ok(BuildOutcome::Partial {
             built: Vec::new(),
@@ -2962,23 +3077,19 @@ fn build(
         let built = build_one(
             id,
             root,
-            exchange,
-            ir,
-            vdefs,
-            edefs,
-            odefs,
-            shell_definitions,
-            decoded_pcurves,
-            point_positions,
-            &shell_steps,
-            body,
-            &region,
-            scope_shell_carriers,
-            scope_shell_carriers,
-            scope_root,
+            sources,
+            BuildRoot {
+                shell_steps: &shell_steps,
+                bid: body,
+                rid: &region,
+            },
+            BuildScope {
+                faces: scope_shell_carriers,
+                edges: scope_shell_carriers,
+                root: scope_root,
+            },
             losses,
             &mut failure,
-            ctx,
         );
         return Ok(match built {
             Ok(built) => {
@@ -3008,7 +3119,7 @@ fn build(
                     outcome.fail(Some(BuildFailure {
                         record_id: shell_reference,
                         carrier_kind: CarrierKind::ShellCarrier,
-                    }));
+                    }))?;
                     continue;
                 }
             }
@@ -3031,26 +3142,22 @@ fn build(
         match build_one(
             id,
             root,
-            exchange,
-            ir,
-            vdefs,
-            edefs,
-            odefs,
-            shell_definitions,
-            decoded_pcurves,
-            point_positions,
-            &[shell_reference],
-            body,
-            &region,
-            scoped || scope_root,
-            scoped || scope_root,
-            scope_root,
+            sources,
+            BuildRoot {
+                shell_steps: &[shell_reference],
+                bid: body,
+                rid: &region,
+            },
+            BuildScope {
+                faces: scoped || scope_root,
+                edges: scoped || scope_root,
+                root: scope_root,
+            },
             losses,
             &mut failure,
-            ctx,
         ) {
             Ok(value) => outcome.push(value, ctx)?,
-            Err(BuildError::Absent) => outcome.fail(failure),
+            Err(BuildError::Absent) => outcome.fail(failure)?,
             Err(BuildError::Resource(error)) => return Err(error),
         }
     }
@@ -3068,28 +3175,36 @@ impl From<CodecError> for BuildError {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_one(
     id: u64,
     root: &RawRecord,
-    exchange: &Exchange,
-    ir: &CadIr,
-    vdefs: &BTreeMap<u64, VertexDef>,
-    edefs: &BTreeMap<u64, Rc<EdgeDef>>,
-    odefs: &BTreeMap<u64, OrientedDef>,
-    shell_definitions: &BTreeMap<u64, ShellDef>,
-    decoded_pcurves: &BTreeSet<u64>,
-    point_positions: &CarrierIndex,
-    shell_steps: &[u64],
-    bid: BodyId,
-    rid: &RegionId,
-    scope_faces: bool,
-    scope_edges: bool,
-    scope_root: bool,
+    sources: BuildSources<'_, '_>,
+    root_parts: BuildRoot<'_>,
+    scope: BuildScope,
     losses: &mut Vec<LossNote>,
     failure: &mut Option<BuildFailure>,
-    ctx: &DecodeContext<'_>,
 ) -> Result<Built, BuildError> {
+    let BuildSources {
+        exchange,
+        ir,
+        vdefs,
+        edefs,
+        odefs,
+        shell_definitions,
+        decoded_pcurves,
+        point_positions,
+        ctx,
+    } = sources;
+    let BuildRoot {
+        shell_steps,
+        bid,
+        rid,
+    } = root_parts;
+    let BuildScope {
+        faces: scope_faces,
+        edges: scope_edges,
+        root: scope_root,
+    } = scope;
     let solid = root.partial("MANIFOLD_SOLID_BREP").is_some()
         || root.partial("BREP_WITH_VOIDS").is_some()
         || root.partial("FACETED_BREP").is_some();
@@ -3244,7 +3359,7 @@ fn build_one(
                     note.with_provenance(
                         cadmpeg_ir::SourceProvenance::root(
                             crate::dialect::FORMAT,
-                            fr.span.start as u64,
+                            u64_from_index(fr.span.start),
                         )
                         .with_tag("face"),
                     ),
@@ -3678,9 +3793,11 @@ fn build_one(
                                 exchange,
                                 surface,
                                 edge,
-                                vdefs,
-                                point_positions,
-                                &associated,
+                                PcurveAssociationSources {
+                                    vdefs,
+                                    point_positions,
+                                    candidates: &associated,
+                                },
                                 ctx,
                             ) {
                                 Ok(selected) => {
@@ -3939,7 +4056,7 @@ fn build_one(
                 note.with_provenance(
                     cadmpeg_ir::SourceProvenance::root(
                         crate::dialect::FORMAT,
-                        sr.span.start as u64,
+                        u64_from_index(sr.span.start),
                     )
                     .with_tag(shell_type.to_ascii_lowercase()),
                 ),
@@ -4186,7 +4303,19 @@ fn build_one(
         }
     }
     let mut built = match staged_topology(
-        typed, vertices, edges, coedges, loops, faces, surfaces, shells, region, body, ctx,
+        StagedTopologyParts {
+            typed,
+            vertices,
+            edges,
+            coedges,
+            loops,
+            faces,
+            surfaces,
+            shells,
+            region,
+            body,
+        },
+        ctx,
     ) {
         Ok(built) => built,
         Err(StageError::Draft(_)) => {
@@ -4340,9 +4469,16 @@ fn push_connected_face_item<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, u64_from_index(values.len()), 1))?;
+    values.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                u64_from_index(values.len()),
+                1,
+                operation,
+            ),
+        )
+    })?;
     values.push(value);
     Ok(())
 }
@@ -4600,7 +4736,9 @@ fn implicit_face_plane(
             .then_with(|| left.y.total_cmp(&right.y))
             .then_with(|| left.z.total_cmp(&right.z))
     });
-    let point_count = points.len() as f64;
+    let Some(point_count) = cadmpeg_core::convert::f64_from_index(points.len()) else {
+        return Ok(None);
+    };
     let origin = Point3::new(
         points.iter().map(|point| point.x).sum::<f64>() / point_count,
         points.iter().map(|point| point.y).sum::<f64>() / point_count,
@@ -4616,7 +4754,9 @@ fn implicit_face_plane(
     }
     let mut loop_normals = Vec::new();
     for loop_points in &loops {
-        let loop_count = loop_points.len() as f64;
+        let Some(loop_count) = cadmpeg_core::convert::f64_from_index(loop_points.len()) else {
+            return Ok(None);
+        };
         let loop_origin = Point3::new(
             loop_points.iter().map(|point| point.x).sum::<f64>() / loop_count,
             loop_points.iter().map(|point| point.y).sum::<f64>() / loop_count,
@@ -4785,17 +4925,26 @@ struct PcurveEndpointFit {
     max_residual: f64,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct PcurveAssociationSources<'a> {
+    vdefs: &'a BTreeMap<u64, VertexDef>,
+    point_positions: &'a CarrierIndex,
+    candidates: &'a [PcurveId],
+}
+
 fn select_associated_pcurve(
     ir: &CadIr,
     exchange: &Exchange,
     surface_step: u64,
     edge: &EdgeDef,
-    vdefs: &BTreeMap<u64, VertexDef>,
-    point_positions: &CarrierIndex,
-    candidates: &[PcurveId],
+    sources: PcurveAssociationSources<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<SelectedPcurve, PcurveSelectionFailure> {
+    let PcurveAssociationSources {
+        vdefs,
+        point_positions,
+        candidates,
+    } = sources;
     let [candidate] = candidates else {
         return Err(PcurveSelectionFailure::NotUnique {
             count: candidates.len(),
@@ -4854,10 +5003,12 @@ fn select_associated_pcurve(
         edge,
         &surface_id,
         geometry,
-        endpoint,
-        curve_start,
-        curve_end,
-        bound,
+        PcurveWitness {
+            endpoint,
+            curve_start,
+            curve_end,
+            bound,
+        },
         ctx,
     )? {
         return Err(PcurveSelectionFailure::Locus);
@@ -4886,21 +5037,29 @@ fn select_associated_pcurve(
 
 const PCURVE_LOCUS_SAMPLE_COUNT: usize = 23;
 
-// Keep the witness inputs explicit: each one names a separate source or
-// admission value in the Part 42 association check.
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct PcurveWitness {
+    endpoint: PcurveEndpointFit,
+    curve_start: Point3,
+    curve_end: Point3,
+    bound: f64,
+}
+
 fn pcurve_locus_witness(
     index: &ModelIndex<'_>,
     exchange: &Exchange,
     edge: &EdgeDef,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
-    endpoint: PcurveEndpointFit,
-    curve_start: Point3,
-    curve_end: Point3,
-    bound: f64,
+    witness: PcurveWitness,
     ctx: &DecodeContext<'_>,
 ) -> Result<bool, PcurveSelectionFailure> {
+    let PcurveWitness {
+        endpoint,
+        curve_start,
+        curve_end,
+        bound,
+    } = witness;
     let Some(curve_step) = edge
         .curve()
         .and_then(|curve| curve_carrier_record(curve, exchange))
@@ -4942,7 +5101,10 @@ fn pcurve_locus_witness(
     for step in 0..PCURVE_LOCUS_SAMPLE_COUNT {
         push_topology_vec(
             &mut fractions,
-            step as f64 / (PCURVE_LOCUS_SAMPLE_COUNT - 1) as f64,
+            cadmpeg_core::convert::f64_from_index(step)
+                .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_locus_fractions", 0, 1))?
+                / cadmpeg_core::convert::f64_from_index(PCURVE_LOCUS_SAMPLE_COUNT - 1)
+                    .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_locus_fractions", 0, 1))?,
             ctx,
             "step_pcurve_locus_fractions",
         )?;
@@ -5429,7 +5591,10 @@ fn pcurve_selection_seeds(
         }
         push_topology_vec(&mut seeds, end, ctx, "step_pcurve_selection_seeds")?;
         for step in 0..=PCURVE_ENDPOINT_GRID_DIVISIONS {
-            let fraction = step as f64 / PCURVE_ENDPOINT_GRID_DIVISIONS as f64;
+            let fraction = cadmpeg_core::convert::f64_from_index(step)
+                .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_selection_seeds", 0, 1))?
+                / cadmpeg_core::convert::f64_from_index(PCURVE_ENDPOINT_GRID_DIVISIONS)
+                    .ok_or_else(|| ctx.refuse_codec_limit("step_pcurve_selection_seeds", 0, 1))?;
             if let Some(seed) = at_fraction(fraction) {
                 push_topology_vec(&mut seeds, seed, ctx, "step_pcurve_selection_seeds")?;
             }

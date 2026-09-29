@@ -67,7 +67,10 @@ fn take_lp_utf8_capped(
         return Ok(None);
     };
     if let Some(ctx) = ctx {
-        ctx.charge_retained(count as u64, "Protein decoded string")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(count),
+            "Protein decoded string",
+        )?;
     }
     let value = value.to_owned();
     *at = end;
@@ -92,16 +95,30 @@ fn read_entry_bounded(
         if read == 0 {
             break;
         }
+        let requested = bytes
+            .len()
+            .checked_add(read)
+            .map(cadmpeg_core::decode::u64_from_index)
+            .ok_or_else(|| {
+                cadmpeg_core::decode::refuse_local_limit(
+                    "Protein schema allocation",
+                    MAX_SCHEMA_BYTES,
+                    u64::MAX,
+                )
+            })?;
         bytes.try_reserve(read).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "Protein schema allocation",
-                MAX_SCHEMA_BYTES,
-                bytes.len().saturating_add(read) as u64,
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("Protein schema allocation"),
+                    MAX_SCHEMA_BYTES,
+                    requested,
+                    "Protein schema allocation",
+                ),
             )
         })?;
         bytes.extend_from_slice(&chunk[..read]);
     }
-    if bytes.len() as u64 > MAX_SCHEMA_BYTES {
+    if cadmpeg_core::decode::u64_from_index(bytes.len()) > MAX_SCHEMA_BYTES {
         return Err(CodecError::malformed(format_args!(
             "Protein schema {name} exceeds the {MAX_SCHEMA_BYTES}-byte limit"
         )));
@@ -249,18 +266,22 @@ fn resolve_inheritance(
             .checked_add(schema.properties.len())
             .ok_or_else(|| CodecError::Malformed("Protein closure size overflows".into()))?;
         if let Some(ctx) = ctx {
-            ctx.charge_work(copied_count as u64, "Protein inherited property closure")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(copied_count),
+                "Protein inherited property closure",
+            )?;
             ctx.charge_collection_items(
-                copied_count as u64 + 1,
+                cadmpeg_core::decode::u64_from_index(copied_count) + 1,
                 "Protein inherited property closure",
             )?;
             let copied_name_bytes = inherited
                 .into_iter()
                 .flat_map(|properties| properties.keys())
                 .chain(schema.properties.keys())
-                .try_fold(current.len() as u64, |total, id| {
-                    total.checked_add(id.len() as u64)
-                })
+                .try_fold(
+                    cadmpeg_core::decode::u64_from_index(current.len()),
+                    |total, id| total.checked_add(cadmpeg_core::decode::u64_from_index(id.len())),
+                )
                 .ok_or_else(|| {
                     CodecError::Malformed("Protein closure names length overflows".into())
                 })?;
@@ -354,9 +375,7 @@ fn decode_frames(
 ) -> Result<DecodeOutcome, CodecError> {
     let mut outcome = DecodeOutcome::default();
     for (ordinal, frame) in frames.iter().enumerate() {
-        let ordinal = u64::try_from(ordinal).map_err(|_| {
-            CodecError::Malformed("Protein logical-record ordinal exceeds u64".into())
-        })?;
+        let ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "Protein record outcome")?;
         }
@@ -367,7 +386,10 @@ fn decode_frames(
             Ok(None) => {
                 const DETAIL: &str = "Protein instance record header is malformed";
                 if let Some(ctx) = ctx {
-                    ctx.charge_retained(DETAIL.len() as u64, "Protein rejected record detail")?;
+                    ctx.charge_retained(
+                        cadmpeg_core::decode::u64_from_index(DETAIL.len()),
+                        "Protein rejected record detail",
+                    )?;
                 }
                 outcome.rejected.push(RejectedRecord {
                     ordinal,
@@ -398,7 +420,7 @@ fn rejection_detail_len(error: &CodecError) -> Result<u64, CodecError> {
         fn write_str(&mut self, text: &str) -> std::fmt::Result {
             self.0 = self
                 .0
-                .checked_add(text.len() as u64)
+                .checked_add(cadmpeg_core::decode::u64_from_index(text.len()))
                 .ok_or(std::fmt::Error)?;
             Ok(())
         }
@@ -459,8 +481,7 @@ fn parse_schema_document(
     schemas: &mut HashMap<String, Schema>,
 ) -> Result<(), CodecError> {
     let _reservation = if let Some(ctx) = ctx {
-        let xml_len = u64::try_from(bytes.len())
-            .map_err(|_| CodecError::Malformed("Protein schema XML length exceeds u64".into()))?;
+        let xml_len = cadmpeg_core::decode::u64_from_index(bytes.len());
         let mut tag_markers = 0_u64;
         let mut attribute_separators = 0_u64;
         for &byte in bytes {
@@ -512,7 +533,10 @@ fn parse_schema_document(
         if node.has_tag_name("Base") {
             if let Some(value) = node.attribute("val") {
                 if let Some(ctx) = ctx {
-                    ctx.charge_retained(value.len() as u64, "Protein schema base name")?;
+                    ctx.charge_retained(
+                        cadmpeg_core::decode::u64_from_index(value.len()),
+                        "Protein schema base name",
+                    )?;
                 }
                 schema.base = Some(value.to_owned());
             }
@@ -534,7 +558,10 @@ fn parse_schema_document(
         };
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "Protein schema property")?;
-            ctx.charge_retained(id.len() as u64, "Protein schema property name")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(id.len()),
+                "Protein schema property name",
+            )?;
         }
         schema.properties.insert(id.to_owned(), property);
     }
@@ -545,7 +572,10 @@ fn parse_schema_document(
     }
     if let Some(ctx) = ctx {
         ctx.charge_collection_items(1, "Protein parsed schema")?;
-        ctx.charge_retained(uid.len() as u64, "Protein schema UID")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(uid.len()),
+            "Protein schema UID",
+        )?;
     }
     schemas.insert(uid.to_owned(), schema);
     Ok(())
@@ -683,7 +713,10 @@ fn decode_record(
         };
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "Protein decoded property")?;
-            ctx.charge_retained(id.len() as u64, "Protein decoded property name")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(id.len()),
+                "Protein decoded property name",
+            )?;
         }
         values.insert(
             id.clone(),
@@ -740,10 +773,11 @@ fn read_property(
         ValueLayout::TextureUri => read_texture_uri(ctx, bytes, at, id),
         ValueLayout::Multiple(carrier) => {
             let count = read_count(bytes, at, id)?;
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(count as u64, "Protein multiple property members")?;
-            }
-            let mut values = Vec::with_capacity(count);
+            let mut values = DecodeContext::collection_vec_optional(
+                ctx,
+                count,
+                "Protein multiple property members",
+            )?;
             for _ in 0..count {
                 values.push(read_value(ctx, bytes, at, carrier, id)?);
             }
@@ -777,10 +811,8 @@ fn read_texture_uri(
         )));
     }
     let count = read_count(bytes, at, id)?;
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(count as u64, "Protein texture URI paths")?;
-    }
-    let mut paths = Vec::with_capacity(count);
+    let mut paths =
+        DecodeContext::collection_vec_optional(ctx, count, "Protein texture URI paths")?;
     for _ in 0..count {
         paths.push(take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(malformed)?);
     }
@@ -894,10 +926,8 @@ fn read_connections(
         )));
     }
     let count = read_count(bytes, at, "connection")?;
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(count as u64, "Protein connected asset GUIDs")?;
-    }
-    let mut connections = Vec::with_capacity(count);
+    let mut connections =
+        DecodeContext::collection_vec_optional(ctx, count, "Protein connected asset GUIDs")?;
     for _ in 0..count {
         connections.push(
             take_lp_utf8_capped(ctx, bytes, at, 1_048_576)?.ok_or_else(|| {
@@ -958,7 +988,8 @@ mod tests {
         let protein = writer.finish().expect("archive finishes").into_inner();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_decompressed_bytes_per_expand = xml.len() as u64 - 1;
+        policy.limits.max_decompressed_bytes_per_expand =
+            cadmpeg_core::decode::u64_from_index(xml.len()) - 1;
         let (ctx, root) = DecodeContext::from_root_bytes(&protein, &arena, &policy)
             .expect("ZIP fits input limit");
         assert!(matches!(
@@ -1044,7 +1075,8 @@ mod tests {
         let xml = br#"<Schema><UID val="Simple"/><String id="comment"/></Schema>"#;
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = xml.len() as u64 * 4 - 1;
+        policy.limits.max_materialized_bytes =
+            cadmpeg_core::decode::u64_from_index(xml.len()) * 4 - 1;
         let (ctx, _) =
             DecodeContext::from_root_bytes(xml, &arena, &policy).expect("XML fits input limit");
         assert!(matches!(
@@ -1065,7 +1097,7 @@ mod tests {
         let xml = br#"<Schema><UID val="Simple"/><String id="a"/><String id="b"/><String id="c"/></Schema>"#;
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = xml.len() as u64 * 4;
+        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(xml.len()) * 4;
         let (ctx, _) =
             DecodeContext::from_root_bytes(xml, &arena, &policy).expect("XML fits input limit");
         assert!(matches!(
@@ -1475,7 +1507,7 @@ mod tests {
             );
             assert_eq!(
                 records[0].properties["targets"].content,
-                match std::num::NonZeroUsize::new(count as usize) {
+                match std::num::NonZeroUsize::new(cadmpeg_core::decode::index_from_u32(count)) {
                     Some(count) => PropertyContent::MultipleReferences {
                         count,
                         targets: vec!["target".into()],
@@ -1739,10 +1771,17 @@ mod tests {
         for value in ["S", "guid", "base", "library"] {
             push_lp(&mut record, value);
         }
-        let mut stream = (PAGE_SIZE as u32).to_le_bytes().to_vec();
+        let mut stream = u32::try_from(PAGE_SIZE)
+            .expect("test page size fits u32")
+            .to_le_bytes()
+            .to_vec();
         stream.resize(STREAM_HEADER_LEN, 0);
         stream.extend_from_slice(TERMINAL_MARKER);
-        stream.extend_from_slice(&(record.len() as u16).to_le_bytes());
+        stream.extend_from_slice(
+            &u16::try_from(record.len())
+                .expect("test record fits u16")
+                .to_le_bytes(),
+        );
         stream.extend_from_slice(&[1, 0]);
         stream.extend_from_slice(&record);
         stream.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
@@ -1757,7 +1796,10 @@ mod tests {
     /// then a marker page, continuation pages, and a terminal page per record.
     fn paged_stream(records: &[&[u8]]) -> Vec<u8> {
         const BODY: usize = PAGE_SIZE - 8;
-        let mut out = (PAGE_SIZE as u32).to_le_bytes().to_vec();
+        let mut out = u32::try_from(PAGE_SIZE)
+            .expect("test page size fits u32")
+            .to_le_bytes()
+            .to_vec();
         out.resize(STREAM_HEADER_LEN, 0);
         let mut page = |header: [u8; 8], body: &[u8]| {
             out.extend_from_slice(&header);
@@ -1775,7 +1817,11 @@ mod tests {
             if record.len() < BODY {
                 let mut header = [0_u8; 8];
                 header[..4].copy_from_slice(TERMINAL_MARKER);
-                header[4..6].copy_from_slice(&(record.len() as u16).to_le_bytes());
+                header[4..6].copy_from_slice(
+                    &u16::try_from(record.len())
+                        .expect("test record fits u16")
+                        .to_le_bytes(),
+                );
                 page(header, record);
                 continue;
             }
@@ -1788,7 +1834,11 @@ mod tests {
                 } else {
                     let mut header = [0_u8; 8];
                     header[0..4].copy_from_slice(TERMINAL_MARKER);
-                    header[4..6].copy_from_slice(&(chunk.len() as u16).to_le_bytes());
+                    header[4..6].copy_from_slice(
+                        &u16::try_from(chunk.len())
+                            .expect("test chunk fits u16")
+                            .to_le_bytes(),
+                    );
                     page(header, chunk);
                 }
             }
@@ -1809,13 +1859,21 @@ mod tests {
     }
 
     fn push_lp(bytes: &mut Vec<u8>, value: &str) {
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(value.len())
+                .expect("test value fits u32")
+                .to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     }
 
     fn push_connections(bytes: &mut Vec<u8>, values: &[&str]) {
         bytes.extend_from_slice(&[1, 1]);
-        bytes.extend_from_slice(&(values.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(values.len())
+                .expect("test count fits u32")
+                .to_le_bytes(),
+        );
         for value in values {
             push_lp(bytes, value);
         }

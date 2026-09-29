@@ -82,12 +82,8 @@ fn sectioned_area_curves_coplanar(
         if active.contains(&curve_id) {
             return Ok(false);
         }
-        let active_id = crate::decode_resource::clone_optional_identity(
-            ctx,
-            &curve_id,
-            "iges section active curve id",
-        )?;
-        crate::decode_resource::insert_optional_btree_set(
+        let active_id = curve_id.try_clone_for_decode(ctx, "iges section active curve id")?;
+        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
             ctx,
             &mut active,
             active_id,
@@ -971,18 +967,28 @@ fn finite_or_omitted(record: &ParameterRecord, index: usize) -> bool {
     }
 }
 
-#[allow(clippy::too_many_arguments)] // the table fields, global_table, placement, and Global tolerances are distinct validation inputs
+#[derive(Clone, Copy)]
+struct SectionedAreaContext {
+    global_table: GlobalTable,
+    transform: Transform,
+    length_factor: f64,
+    resolution: f64,
+}
+
 fn sectioned_area_valid(
     ir: &CadIr,
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     form: i64,
-    global_table: GlobalTable,
-    transform: Transform,
-    length_factor: f64,
-    resolution: f64,
+    context: SectionedAreaContext,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<bool, CodecError> {
+    let SectionedAreaContext {
+        global_table,
+        transform,
+        length_factor,
+        resolution,
+    } = context;
     if !matches!(form, 0 | 1) {
         return Ok(false);
     }
@@ -1057,7 +1063,7 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             ctx,
             &mut records,
             record.directory_sequence,
@@ -1067,7 +1073,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        crate::decode_resource::insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             ctx,
             &mut entries,
             entry.sequence,
@@ -1153,10 +1159,12 @@ pub(super) fn project(
                                         record,
                                         &entries,
                                         entry.form,
-                                        global.global_table(),
-                                        transform,
-                                        global.length_factor_mm(),
-                                        global.minimum_resolution_mm(),
+                                        SectionedAreaContext {
+                                            global_table: global.global_table(),
+                                            transform,
+                                            length_factor: global.length_factor_mm(),
+                                            resolution: global.minimum_resolution_mm(),
+                                        },
                                         ctx,
                                     )?
                                 } else {
@@ -1169,7 +1177,7 @@ pub(super) fn project(
             .transpose()?
             .unwrap_or(false);
         if valid {
-            crate::decode_resource::insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 ctx,
                 &mut decoded,
                 entry.sequence,

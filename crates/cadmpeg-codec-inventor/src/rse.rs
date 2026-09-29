@@ -293,9 +293,7 @@ impl SegmentMetaState<'_> {
         };
         declaration
             .map(|declaration| {
-                let bytes = u64::try_from(declaration.marker.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("Inventor dialect marker length", u64::MAX - 1, u64::MAX)
-                })?;
+                let bytes = cadmpeg_core::decode::u64_from_index(declaration.marker.len());
                 ctx.charge_retained(bytes, "retain Inventor dialect declaration marker")?;
                 Ok(declaration.clone())
             })
@@ -401,9 +399,7 @@ impl DatabaseDescriptor {
                 Ok(Some(DatabaseHeader::unframed_detail(*schema, detail)))
             }
             DatabaseState::Unreadable(detail) => {
-                let bytes = u64::try_from(detail.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("Inventor database issue length", u64::MAX - 1, u64::MAX)
-                })?;
+                let bytes = cadmpeg_core::decode::u64_from_index(detail.len());
                 ctx.charge_retained(bytes, "retain Inventor database issue detail")?;
                 Ok(Some(detail.clone()))
             }
@@ -464,7 +460,8 @@ impl<'a> RseInventory<'a> {
         }
         databases.sort_by_key(|(band, _)| *band);
         ctx.charge_collection_items(databases.len() as u64, "admit RSe database descriptors")?;
-        let mut database_descriptors = Vec::with_capacity(databases.len());
+        let mut database_descriptors =
+            DecodeContext::admitted_vec(databases.len(), "admit RSe database descriptors")?;
         for (band, stream_id) in databases {
             let state = match snapshot.stream_by_id(stream_id) {
                 Some(stream) => match snapshot

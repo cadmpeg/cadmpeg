@@ -6,10 +6,6 @@ use cadmpeg_core::CodecError;
 use std::collections::BTreeSet;
 use std::fmt;
 
-use crate::decode_resource::{
-    format_retained, insert_optional_btree_set, reserve_optional_vec_growth, reserve_vec_growth,
-};
-
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::report::loss::LossNote;
@@ -26,9 +22,12 @@ fn push_attributed_loss(
     code: IgesLossCode,
     message: fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    reserve_vec_growth(ctx, losses, 1, "iges entity loss slots")?;
-    let message = format_retained(ctx, message, "iges entity loss message")?;
-    ctx.charge_retained(4 + code.code().len() as u64, "iges entity loss kind")?;
+    ctx.reserve_vec(losses, 1, "iges entity loss slots")?;
+    let message = ctx.format_retained(message, "iges entity loss message")?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges entity loss kind",
+    )?;
     losses.push(
         code.note(message)
             .with_provenance(entry.admitted_loss_provenance(ctx)?),
@@ -93,11 +92,7 @@ fn non_resource_error(
     match error {
         CodecError::ResourceLimit(_) => Err(error),
         other => match ctx {
-            Some(ctx) => crate::decode_resource::format_retained(
-                ctx,
-                format_args!("{other}"),
-                "iges diagnostic error text",
-            ),
+            Some(ctx) => ctx.format_retained(format_args!("{other}"), "iges diagnostic error text"),
             None => Ok(other.to_string()),
         },
     }
@@ -114,7 +109,12 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     }
     let mut active = BTreeSet::new();
     let mut stack = Vec::new();
-    reserve_optional_vec_growth(ctx, &mut stack, 1, "iges cycle stack")?;
+    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+        ctx,
+        &mut stack,
+        1,
+        "iges cycle stack",
+    )?;
     stack.push((sequence, false));
     while let Some((current, expanded)) = stack.pop() {
         if let Some(ctx) = ctx {
@@ -122,16 +122,31 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
         }
         if expanded {
             active.remove(&current);
-            insert_optional_btree_set(ctx, visited, current, "iges cycle visited")?;
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+                ctx,
+                visited,
+                current,
+                "iges cycle visited",
+            )?;
             continue;
         }
         if visited.contains(&current) {
             continue;
         }
-        if !insert_optional_btree_set(ctx, &mut active, current, "iges cycle active")? {
+        if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
+            ctx,
+            &mut active,
+            current,
+            "iges cycle active",
+        )? {
             return Ok(true);
         }
-        reserve_optional_vec_growth(ctx, &mut stack, 1, "iges cycle stack")?;
+        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+            ctx,
+            &mut stack,
+            1,
+            "iges cycle stack",
+        )?;
         stack.push((current, true));
         for target in successors(current).rev() {
             if let Some(ctx) = ctx {
@@ -141,7 +156,12 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
                 return Ok(true);
             }
             if !visited.contains(&target) {
-                reserve_optional_vec_growth(ctx, &mut stack, 1, "iges cycle stack")?;
+                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
+                    ctx,
+                    &mut stack,
+                    1,
+                    "iges cycle stack",
+                )?;
                 stack.push((target, false));
             }
         }

@@ -4,6 +4,37 @@
 use super::{is_valid_identity, IdentityComponent, IdentityError, IdentityKey, IdentityNamespace};
 
 #[test]
+fn try_clone_for_decode_refuses_before_allocation_and_succeeds_under_service_profile() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let id = super::BodyId::mint("test:model:body#1").unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len() - 1);
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    assert!(matches!(
+        id.try_clone_for_decode(&ctx, "identity test"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default()).unwrap();
+    assert_eq!(id.try_clone_for_decode(&ctx, "identity test").unwrap(), id);
+}
+
+#[test]
+fn optional_identity_copy_without_context_preserves_identity() {
+    let id = super::CurveId::mint("test:model:curve#1").expect("valid identity");
+    let no_context: Option<&cadmpeg_core::decode::DecodeContext<'_>> = None;
+    let copy = id
+        .try_clone_for_decode(no_context, "optional identity copy")
+        .expect("identity copy fits memory");
+    assert_eq!(copy, id);
+}
+
+#[test]
 fn source_key_encoding_preserves_reserved_and_separator_distinctions() {
     let mut seen = std::collections::BTreeSet::new();
     for (source, expected) in [
@@ -295,8 +326,8 @@ fn local_identity_composition_uses_the_admitted_wire_shape() {
 
 #[test]
 // Standard formatting is an independent oracle for the complete byte alphabet.
-#[allow(clippy::format_collect)]
 fn hexadecimal_identity_keys_encode_every_byte_without_collisions() {
+    use std::fmt::Write;
     let bytes = (u8::MIN..=u8::MAX).collect::<Vec<_>>();
     let mut distinct = std::collections::HashSet::new();
     for &byte in &bytes {
@@ -307,10 +338,10 @@ fn hexadecimal_identity_keys_encode_every_byte_without_collisions() {
     let prefix = crate::identity_key!("source-");
     assert_eq!(prefix.clone().with_hex_bytes(&[]), prefix);
     let encoded = prefix.with_hex_bytes(&bytes);
-    let expected = bytes
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let mut expected = String::new();
+    for byte in &bytes {
+        write!(&mut expected, "{byte:02x}").expect("writing to a String succeeds");
+    }
     assert_eq!(encoded.as_str(), format!("source-{expected}"));
     assert_eq!(
         crate::identity_key!("source-")

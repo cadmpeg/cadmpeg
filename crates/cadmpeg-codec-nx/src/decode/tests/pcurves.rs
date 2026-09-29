@@ -89,7 +89,10 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
         (second, BTreeSet::from([8])),
     ]);
 
-    assert!(select_active_body(&mut ir, &body_node_ids, &[7]));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        select_active_body(ctx, &mut ir, &body_node_ids, &[7])
+    })
+    .unwrap());
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.bodies[0].id, first);
     assert_eq!(
@@ -110,12 +113,14 @@ fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
         (second, BTreeSet::from([8, 9])),
     ]);
 
-    let selected = rmfastload_selected_bodies(&body_node_ids, &[7, 8]);
-    assert_eq!(selected, BTreeSet::from([first]));
-    assert_eq!(
-        rmfastload_stream_indices(&selected),
-        Some(BTreeSet::from([3]))
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        let selected = rmfastload_selected_bodies(ctx, &body_node_ids, &[7, 8]).unwrap();
+        assert_eq!(selected, BTreeSet::from([first]));
+        assert_eq!(
+            rmfastload_stream_indices(ctx, &selected).unwrap(),
+            Some(BTreeSet::from([3]))
+        );
+    });
 }
 
 #[test]
@@ -306,7 +311,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     let construction = ProceduralCurveId::mint("test:model:entity#nx:test:closed-intersection")
         .expect("identity grammar");
     let _attached = ir.model.add_procedural_curve(
-        sphere_circle.clone(),
+        &sphere_circle,
         ProceduralCurve::new(
             construction,
             ProceduralCurveDefinition::TolerantIntersection {
@@ -354,9 +359,17 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
 
     let procedural_start = ir.model.procedural_curves.len();
     let mut annotations = AnnotationBuilder::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
     let transfer_budget = WorkBudget::new(usize::MAX);
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(usize::MAX);
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
+        &ctx,
         &mut ir,
         &mut annotations,
         procedural_start,
@@ -372,6 +385,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     };
     assert!(parameterization.is_none());
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
+        &ctx,
         &mut ir,
         &mut annotations,
         0,
@@ -860,14 +874,17 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate)) = &mut candidate else {
         unreachable!();
     };
-    let mut pole_index = 0usize;
     candidate
-        .edit_control_points(|pole| {
-            if pole_index == 2 {
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if index == 2 {
                 pole.z += 0.000_5;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
 
@@ -914,7 +931,11 @@ fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
         controls: vec![-1.0, 1.0],
     };
 
-    assert!(crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget).is_none());
+    assert!(
+        crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget)
+            .expect("test work slice has no decode resource refusal")
+            .is_none()
+    );
     assert!(budget.exhausted());
 }
 
@@ -1176,14 +1197,17 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
     let replacement = (0..3)
         .map(|v| surface.control_grid()[1][v])
         .collect::<Vec<_>>();
-    let mut pole_index = 0usize;
     surface
-        .edit_control_points(|pole| {
-            if let Some(source) = pole_index.checked_sub(6).and_then(|v| replacement.get(v)) {
-                *pole = source.get();
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if let Some(source) = index.checked_sub(6).and_then(|v| replacement.get(v)) {
+                pole = source.get();
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     assert!(certified_offset_cache_fit(
@@ -1201,14 +1225,17 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = &mut support else {
         unreachable!();
     };
-    let mut pole_index = 0usize;
     surface
-        .edit_control_points(|pole| {
-            if (6..9).contains(&pole_index) {
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if (6..9).contains(&index) {
                 pole.x = 0.0;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     assert_eq!(
@@ -1256,13 +1283,23 @@ fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
     let u1 = f64::from_bits(u0.to_bits() + 1);
     let u = u0 + (u1 - u0) * 0.5;
     let mut rectangles = Vec::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(&ctx, 100);
 
     assert!(subdivide_offset_rectangle(
         &mut rectangles,
         [u0, u1, 0.0, 1.0],
         [u, 0.5],
         true,
-    ));
+        &geometry_budget,
+    )
+    .expect("subdivision allocation"));
     assert_eq!(rectangles, vec![[u0, u1, 0.0, 0.5], [u0, u1, 0.5, 1.0]]);
 }
 
@@ -1318,11 +1355,16 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
         unreachable!();
     };
     surface
-        .edit_control_points(|point| {
+        .try_map_control_points(|_, point| {
+            let mut point = point.get();
             point.x += 1.0e12;
             point.y -= 2.0e12;
             point.z += 3.0e12;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     let axis_weights = [1.0, 1.01, 1.02];
@@ -1441,9 +1483,7 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
         ),
         None,
     );
-    ir.model
-        .add_procedural_surface(cache.clone(), procedural)
-        .unwrap();
+    ir.model.add_procedural_surface(&cache, procedural).unwrap();
 
     assert_eq!(surface_offset_lineage(&ir, &cache, 0), Some((support, 4.0)));
 }
@@ -1489,7 +1529,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         },
     );
     ir.model
-        .add_procedural_curve(curve_id.clone(), procedural)
+        .add_procedural_curve(&curve_id, procedural)
         .unwrap();
 
     let start_point = PointId::mint("nx:test:point#0").expect("identity grammar");
@@ -1664,14 +1704,17 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
     else {
         unreachable!()
     };
-    let mut pole_index = 0usize;
     second
-        .edit_control_points(|pole| {
-            if pole_index == 1 {
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if index == 1 {
                 pole.z = 1.0;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     assert!(!coincident_pcurve_pair(
@@ -1911,7 +1954,13 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
             let expected =
                 cadmpeg_ir::eval::nurbs_pcurve_uv(2, &knots, &points, Some(&weights), parameter)
                     .expect("source NURBS evaluation");
-            let actual = homogeneous_residual_distance(&span.controls, parameter, span.domain);
+            let actual = homogeneous_residual_distance(
+                &span.controls,
+                parameter,
+                span.domain,
+                &crate::decode::geometry_work::GeometryWorkBudget::new(100),
+            )
+            .expect("test solver allocation succeeds");
             let expected = expected.as_raw();
             assert!((actual - expected.u.hypot(expected.v)).abs() < 1.0e-12);
         }

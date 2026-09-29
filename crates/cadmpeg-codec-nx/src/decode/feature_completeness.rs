@@ -94,18 +94,13 @@ pub(crate) fn active_configuration_state_is_incomplete(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> bool {
-    let suppressed_features = configuration.suppressed_features().collect::<BTreeSet<_>>();
-    if ir.model.features.iter().any(|feature| {
-        feature
-            .suppressed
-            .is_none_or(|suppressed| suppressed_features.contains(&feature.id) != suppressed)
-    }) {
+    if configuration_suppression_differs(ir, configuration) {
         return true;
     }
     let Some(bodies) = configuration.bodies.as_deref() else {
         return true;
     };
-    let mut required_features = if ir.model.features.is_empty() {
+    let required_features = if ir.model.features.is_empty() {
         BTreeMap::new()
     } else {
         let Ok(active_features) = crate::native::history::active_feature_closure(ir, bodies) else {
@@ -113,55 +108,23 @@ pub(crate) fn active_configuration_state_is_incomplete(
         };
         active_features
     };
-    required_features.extend(
-        ir.model
-            .features
-            .iter()
-            .enumerate()
-            .filter(|(_, feature)| feature.suppressed == Some(true))
-            .map(|(index, feature)| (feature.id.clone(), index)),
-    );
-    if configuration.feature_states.len() != required_features.len() {
-        return true;
-    }
-    if required_features.iter().any(|(id, &index)| {
-        let feature = &ir.model.features[index];
-        let Some(state) = configuration.feature_states.get(id) else {
-            return true;
-        };
-        Some(state.evaluation.is_suppressed()) != feature.suppressed
-            || state.dependencies != feature.dependencies
-            || state.evaluation.outputs() != feature.evaluation.outputs().as_slice()
-            || &state.definition != feature.evaluation.definition()
-    }) {
-        return true;
-    }
-
-    configuration.parameter_values.len() != ir.model.parameters.len()
-        || ir.model.parameters.iter().any(|parameter| {
-            parameter.value.as_ref().is_none_or(|value| {
-                configuration.parameter_values.get(&parameter.id) != Some(value)
-            })
-        })
+    configuration_state_differs(ir, configuration, &required_features)
 }
 
+/// Decode-time form of [`active_configuration_state_is_incomplete`]: the
+/// active-feature closure is charged to the decode budget.
 pub(crate) fn active_configuration_state_is_incomplete_for_decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> Result<bool, cadmpeg_core::CodecError> {
-    let suppressed_features = configuration.suppressed_features().collect::<BTreeSet<_>>();
-    if ir.model.features.iter().any(|feature| {
-        feature
-            .suppressed
-            .is_none_or(|suppressed| suppressed_features.contains(&feature.id) != suppressed)
-    }) {
+    if configuration_suppression_differs(ir, configuration) {
         return Ok(true);
     }
     let Some(bodies) = configuration.bodies.as_deref() else {
         return Ok(true);
     };
-    let mut required_features = if ir.model.features.is_empty() {
+    let required_features = if ir.model.features.is_empty() {
         BTreeMap::new()
     } else {
         let Ok(active_features) =
@@ -171,18 +134,46 @@ pub(crate) fn active_configuration_state_is_incomplete_for_decode(
         };
         active_features
     };
-    required_features.extend(
-        ir.model
-            .features
-            .iter()
-            .enumerate()
-            .filter(|(_, feature)| feature.suppressed == Some(true))
-            .map(|(index, feature)| (feature.id.clone(), index)),
-    );
-    if configuration.feature_states.len() != required_features.len() {
-        return Ok(true);
+    Ok(configuration_state_differs(
+        ir,
+        configuration,
+        &required_features,
+    ))
+}
+
+/// Whether a feature's suppression differs from the configuration's
+/// suppression state, or the feature has no suppression state.
+fn configuration_suppression_differs(
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::DesignConfiguration,
+) -> bool {
+    ir.model.features.iter().any(|feature| {
+        feature.suppressed.is_none_or(|suppressed| {
+            configuration
+                .feature_states
+                .get(&feature.id)
+                .is_some_and(|state| state.evaluation.is_suppressed())
+                != suppressed
+        })
+    })
+}
+
+/// Whether the configuration's feature states and parameter values differ
+/// from the model for the active features and every suppressed feature.
+fn configuration_state_differs(
+    ir: &CadIr,
+    configuration: &cadmpeg_ir::features::DesignConfiguration,
+    required_features: &BTreeMap<cadmpeg_ir::features::FeatureId, usize>,
+) -> bool {
+    let mut suppressed_only = ir.model.features.iter().enumerate().filter(|(_, feature)| {
+        feature.suppressed == Some(true) && !required_features.contains_key(&feature.id)
+    });
+    if configuration.feature_states.len()
+        != required_features.len() + suppressed_only.clone().count()
+    {
+        return true;
     }
-    if required_features.iter().any(|(id, &index)| {
+    let state_is_incomplete = |id: &cadmpeg_ir::features::FeatureId, index: usize| {
         let feature = &ir.model.features[index];
         let Some(state) = configuration.feature_states.get(id) else {
             return true;
@@ -191,17 +182,21 @@ pub(crate) fn active_configuration_state_is_incomplete_for_decode(
             || state.dependencies != feature.dependencies
             || state.evaluation.outputs() != feature.evaluation.outputs().as_slice()
             || &state.definition != feature.evaluation.definition()
-    }) {
-        return Ok(true);
+    };
+    if required_features
+        .iter()
+        .any(|(id, &index)| state_is_incomplete(id, index))
+        || suppressed_only.any(|(index, feature)| state_is_incomplete(&feature.id, index))
+    {
+        return true;
     }
-    Ok(
-        configuration.parameter_values.len() != ir.model.parameters.len()
-            || ir.model.parameters.iter().any(|parameter| {
-                parameter.value.as_ref().is_none_or(|value| {
-                    configuration.parameter_values.get(&parameter.id) != Some(value)
-                })
-            }),
-    )
+
+    configuration.parameter_values.len() != ir.model.parameters.len()
+        || ir.model.parameters.iter().any(|parameter| {
+            parameter.value.as_ref().is_none_or(|value| {
+                configuration.parameter_values.get(&parameter.id) != Some(value)
+            })
+        })
 }
 
 /// Whether an admitted frame misses the NX datum contract: perpendicular
@@ -240,69 +235,96 @@ pub(crate) fn incomplete_expression_parameters(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<BTreeSet<ParameterId>, cadmpeg_core::CodecError> {
-    let parameter_owners = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| parameter.owner.clone())
-        .collect::<BTreeSet<_>>();
+    let mut parameter_owners = BTreeSet::new();
+    for parameter in &ir.model.parameters {
+        if !parameter_owners.contains(&parameter.owner) {
+            ctx.charge_collection_items(1, "nx expression parameter owners")?;
+            parameter_owners.insert(&parameter.owner);
+        }
+    }
     let mut incomplete = BTreeSet::new();
     for owner in parameter_owners {
-        let parameters = ir
+        let mut parameters = Vec::new();
+        for parameter in ir
             .model
             .parameters
             .iter()
-            .filter(|parameter| parameter.owner == owner)
-            .collect::<Vec<_>>();
+            .filter(|parameter| &parameter.owner == owner)
+        {
+            ctx.charge_collection_items(1, "nx owned expression parameters")?;
+            parameters
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx owned expression parameters", 0, 1))?;
+            parameters.push(parameter);
+        }
         let mut ids_by_name = BTreeMap::<(&str, Option<&str>), Vec<&ParameterId>>::new();
         for parameter in &parameters {
-            ids_by_name
-                .entry((
-                    parameter.name.as_str(),
-                    parameter.properties.get("unit").map(String::as_str),
-                ))
-                .or_default()
-                .push(&parameter.id);
+            let ids = match ids_by_name.entry((
+                parameter.name.as_str(),
+                parameter.properties.get("unit").map(String::as_str),
+            )) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "nx expression name index")?;
+                    entry.insert(Vec::new())
+                }
+            };
+            ctx.charge_collection_items(1, "nx expression name identities")?;
+            ids.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("nx expression name identities", 0, 1))?;
+            ids.push(&parameter.id);
         }
-        let expected = parameters
-            .iter()
-            .map(|parameter| {
-                let unit = match parameter.properties.get("unit").map(String::as_str) {
-                    None => None,
-                    Some(unit @ ("millimeter" | "inch" | "degree")) => Some(unit),
-                    Some(_) => return None,
-                };
-                let [_] = ids_by_name
-                    .get(&(parameter.name.as_str(), unit))?
-                    .as_slice()
-                else {
-                    return None;
-                };
-                let mut seen = BTreeSet::new();
-                let dependencies =
-                    crate::native::om::expression_parameter_names(&parameter.expression)
-                        .map(|name| {
-                            let [dependency] = ids_by_name.get(&(name, unit))?.as_slice() else {
-                                return None;
-                            };
-                            Some((*dependency).clone())
-                        })
-                        .collect::<Option<Vec<_>>>()?;
-                Some(
-                    dependencies
-                        .into_iter()
-                        .filter(|dependency| seen.insert(dependency.clone()))
-                        .collect::<Vec<_>>(),
-                )
-            })
-            .collect::<Vec<_>>();
-        let indices = parameters
-            .iter()
-            .enumerate()
-            .map(|(index, parameter)| (&parameter.id, index))
-            .collect::<BTreeMap<_, _>>();
+        let mut expected = ctx.alloc_filled(
+            parameters.len(),
+            None::<Vec<ParameterId>>,
+            "nx expected expression dependencies",
+        )?;
+        for (index, parameter) in parameters.iter().enumerate() {
+            expected[index] =
+                (|| -> Result<Option<Vec<ParameterId>>, cadmpeg_core::CodecError> {
+                    let unit = match parameter.properties.get("unit").map(String::as_str) {
+                        None => None,
+                        Some(unit @ ("millimeter" | "inch" | "degree")) => Some(unit),
+                        Some(_) => return Ok(None),
+                    };
+                    let Some(ids) = ids_by_name.get(&(parameter.name.as_str(), unit)) else {
+                        return Ok(None);
+                    };
+                    let [_] = ids.as_slice() else {
+                        return Ok(None);
+                    };
+                    let mut dependencies = Vec::new();
+                    for name in crate::native::om::expression_parameter_names(&parameter.expression)
+                    {
+                        let Some(ids) = ids_by_name.get(&(name, unit)) else {
+                            return Ok(None);
+                        };
+                        let [dependency] = ids.as_slice() else {
+                            return Ok(None);
+                        };
+                        if dependencies.iter().any(|id| id == *dependency) {
+                            continue;
+                        }
+                        ctx.charge_collection_items(1, "nx expression dependencies")?;
+                        dependencies.try_reserve(1).map_err(|_| {
+                            ctx.refuse_codec_limit("nx expression dependencies", 0, 1)
+                        })?;
+                        dependencies.push(crate::decode::ids::copy_typed_id(
+                            ctx,
+                            dependency.as_str(),
+                            "nx expression dependency identity",
+                        )?);
+                    }
+                    Ok(Some(dependencies))
+                })()?;
+        }
+        let mut indices = BTreeMap::new();
+        for (index, parameter) in parameters.iter().enumerate() {
+            ctx.charge_collection_items(1, "nx expression parameter index")?;
+            indices.insert(&parameter.id, index);
+        }
         let mut emitted = BTreeSet::new();
-        let mut evaluated = BTreeMap::<ParameterId, f64>::new();
+        let mut evaluated = BTreeMap::<&ParameterId, f64>::new();
         while let Some(index) = (0..parameters.len()).find(|index| {
             !emitted.contains(index)
                 && expected[*index].as_ref().is_some_and(|dependencies| {
@@ -354,10 +376,12 @@ pub(crate) fn incomplete_expression_parameters(
                         && stored.is_finite()
                         && (canonical_value - stored).abs() <= tolerance
                     {
-                        evaluated.insert(parameter.id.clone(), native_value);
+                        ctx.charge_collection_items(1, "nx evaluated expression parameters")?;
+                        evaluated.insert(&parameter.id, native_value);
                     }
                 }
             }
+            ctx.charge_collection_items(1, "nx emitted expression parameters")?;
             emitted.insert(index);
         }
         for (index, parameter) in parameters.into_iter().enumerate() {
@@ -365,7 +389,12 @@ pub(crate) fn incomplete_expression_parameters(
                 || !emitted.contains(&index)
                 || !evaluated.contains_key(&parameter.id)
             {
-                incomplete.insert(parameter.id.clone());
+                ctx.charge_collection_items(1, "nx incomplete expression parameters")?;
+                incomplete.insert(crate::decode::ids::copy_typed_id(
+                    ctx,
+                    parameter.id.as_str(),
+                    "nx incomplete expression identity",
+                )?);
             }
         }
     }

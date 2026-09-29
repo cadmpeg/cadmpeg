@@ -1107,7 +1107,8 @@ impl<'a> Cursor<'a> {
             self.u32("graphics reference-list metadata 0")?,
             self.u32("graphics reference-list metadata 1")?,
         ];
-        let mut references = Vec::with_capacity(count);
+        let mut references =
+            DecodeContext::admitted_vec(count, "admit Inventor PmGraphics references")?;
         for _ in 0..count {
             references.push(self.node_reference("graphics reference-list entry")?);
         }

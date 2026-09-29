@@ -426,19 +426,13 @@ impl LossKind {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        fn copy(
-            ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-            value: &str,
-            operation: &'static str,
-        ) -> Result<String, cadmpeg_core::CodecError> {
-            String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
-                .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))
-        }
         match self {
             Self::Shared { kind } => Ok(Self::Shared { kind: *kind }),
             Self::Namespaced(kind) => Ok(Self::Namespaced(NamespacedLossKind {
-                namespace: LossNamespaceName(copy(ctx, kind.namespace.as_str(), operation)?),
-                code: copy(ctx, &kind.code, operation)?,
+                namespace: LossNamespaceName(
+                    ctx.copy_retained_text(kind.namespace.as_str(), operation)?,
+                ),
+                code: ctx.copy_retained_text(&kind.code, operation)?,
                 taxonomy: kind.taxonomy,
                 strict_floor: kind.strict_floor,
             })),
@@ -517,6 +511,22 @@ impl NamespacedLossKind {
         }
     }
 
+    /// Constructs a codec-local kind from strings admitted by the caller.
+    ///
+    /// A decoder can reserve and charge both strings before this move.
+    pub fn new_owned(
+        namespace: String,
+        code: String,
+        taxonomy: LossTaxonomy,
+    ) -> Result<Self, LossNamespaceError> {
+        Ok(Self {
+            namespace: LossNamespaceName::try_from(namespace)?,
+            code,
+            taxonomy,
+            strict_floor: taxonomy.strict_floor(),
+        })
+    }
+
     /// Pins the strict-mode severity floor independently of taxonomy.
     #[must_use]
     pub fn with_strict_floor(mut self, floor: Option<Severity>) -> Self {
@@ -570,8 +580,7 @@ impl LossNote {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        let message = String::from_utf8(ctx.copy_retained(self.message.as_bytes(), operation)?)
-            .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+        let message = ctx.copy_retained_text(&self.message, operation)?;
         Ok(Self {
             code: self.code.clone_admitted(ctx, operation)?,
             severity: self.severity,

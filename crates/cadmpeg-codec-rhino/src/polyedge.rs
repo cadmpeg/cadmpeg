@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent polyedge-reference construction decoding.
-#![deny(clippy::disallowed_methods)]
 
 use crate::loss::Diagnostics;
 use std::io::{self, Write};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{
-    u64_from_index, DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit, View,
-};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceDimension, ResourceLimit, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::units::FiniteVector;
@@ -19,7 +16,8 @@ use crate::mesh::MeshExpand;
 
 use crate::chunks::{chunk_at, ArchiveVersion, FramingError};
 use crate::objects::parse_class_wrapper;
-use crate::wire::{ExactVec, Uuid};
+use crate::wire::Uuid;
+use cadmpeg_core::decode::collect::ExactVec;
 
 const ANONYMOUS: u32 = 0x4000_8000;
 const ITEM_CAP: usize = 1 << 20;
@@ -365,14 +363,12 @@ impl Write for SemanticJsonWriter<'_, '_> {
             .charge_retained(u64_from_index(chunk.len()), SEMANTIC_JSON_OPERATION)
             .and_then(|()| {
                 self.bytes.try_reserve(chunk.len()).map_err(|_| {
-                    CodecError::ResourceLimit(ResourceLimit {
-                        dimension: ResourceDimension::RetainedBytes,
-                        reason: ResourceFailure::AllocationFailed,
-                        limit: u64::MAX,
-                        used: 0,
-                        additional: u64_from_index(chunk.len()),
-                        operation: SEMANTIC_JSON_OPERATION,
-                    })
+                    CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+                        ResourceDimension::RetainedBytes,
+                        u64::MAX,
+                        u64_from_index(chunk.len()),
+                        SEMANTIC_JSON_OPERATION,
+                    ))
                 })
             });
         if let Err(error) = result {

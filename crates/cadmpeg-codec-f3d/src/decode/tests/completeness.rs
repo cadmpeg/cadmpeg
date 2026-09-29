@@ -5,6 +5,10 @@ use super::super::feature_definition_is_incomplete;
 
 #[test]
 fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut report = cadmpeg_ir::codec::DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
         coverage: cadmpeg_ir::report::decode::Coverage::default(),
@@ -13,14 +17,80 @@ fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
         transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
     };
 
-    super::super::report_untyped_material_distances(&mut report, 0);
+    super::super::report_untyped_material_distances(&ctx, &mut report, 0).unwrap();
     assert!(report.losses.is_empty());
-    super::super::report_untyped_material_distances(&mut report, 2);
+    super::super::report_untyped_material_distances(&ctx, &mut report, 2).unwrap();
 
     assert_eq!(report.losses.len(), 1);
     assert_eq!(
         report.losses[0].code.local_code(),
         "material.distance-unit-untyped"
+    );
+}
+
+#[test]
+fn untyped_material_distance_loss_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut report = cadmpeg_ir::codec::DecodeBody::new(
+        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+    );
+    let error = super::super::report_untyped_material_distances(&ctx, &mut report, 1).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D decode losses")
+    );
+}
+
+#[test]
+fn act_component_link_loss_refuses_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut report = cadmpeg_ir::codec::DecodeBody::new(
+        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+    );
+    let error =
+        super::super::report_unretained_act_component_links(&ctx, &mut report, 1).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D decode losses")
+    );
+}
+
+#[test]
+fn configuration_member_loss_refuses_collection_limit() {
+    let configuration = crate::records::configuration::DesignConfiguration::try_new(
+        "table.dsgcfg".into(),
+        crate::records::configuration::DesignConfigurationKind::Table,
+        Vec::new(),
+        serde_json::Map::from_iter([("unknown".into(), serde_json::Value::Bool(true))]),
+    )
+    .unwrap();
+    let native = crate::native::F3dNative {
+        design_configurations: vec![configuration],
+        ..Default::default()
+    };
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut report = cadmpeg_ir::codec::DecodeBody::new(
+        cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
+    );
+    let error =
+        super::super::report_unresolved_configuration_rules(&ctx, &mut report, &native, &ir)
+            .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D decode losses")
     );
 }
 

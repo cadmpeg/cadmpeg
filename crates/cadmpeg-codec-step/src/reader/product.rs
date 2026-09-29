@@ -58,26 +58,23 @@ fn reserve_product_items<T>(
         ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
     }
     values.try_reserve(count).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        ),
+        None => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        ),
     })
-}
-
-fn clone_product_text(
-    value: &str,
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
-    }
-    let mut copy = String::new();
-    copy.try_reserve_exact(value.len()).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
-    })?;
-    copy.push_str(value);
-    Ok(copy)
 }
 
 fn insert_product_map<K: Ord, V>(
@@ -109,8 +106,22 @@ fn join_product_references(
             ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
         }
         text.try_reserve(additional).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            ),
+            None => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            ),
         })?;
         text.push_str(separator);
         text.push_str(&numbered);
@@ -131,8 +142,22 @@ fn join_product_texts<'a>(
             ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
         }
         text.try_reserve(additional).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            ),
+            None => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    0,
+                    1,
+                    operation,
+                ),
+            ),
         })?;
         text.push_str(separator);
         text.push_str(value);
@@ -146,7 +171,7 @@ fn format_product_text(
     arguments: fmt::Arguments<'_>,
 ) -> Result<String, CodecError> {
     match ctx {
-        Some(ctx) => crate::decode_alloc::charged_format(ctx, operation, arguments),
+        Some(ctx) => ctx.format_retained(arguments, operation),
         None => Ok(arguments.to_string()),
     }
 }
@@ -164,8 +189,22 @@ fn claim_product_typed(
         ctx.charge_collection_items(1, OPERATION)?;
     }
     typed.try_reserve(1).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(OPERATION, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(OPERATION, 0, 1),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
+                0,
+                1,
+                OPERATION,
+            ),
+        ),
+        None => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
+                0,
+                1,
+                OPERATION,
+            ),
+        ),
     })?;
     typed.insert(id);
     Ok(())
@@ -222,11 +261,25 @@ pub(super) fn decode(
             ctx.charge_collection_items(1, "step_product_definition_group_members")?;
         }
         grouped.try_reserve(1).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit("step_product_definition_group_members", 0, 1),
-            None => cadmpeg_core::decode::refuse_local_limit(
-                "step_product_definition_group_members",
-                0,
-                1,
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "step_product_definition_group_members",
+                    ),
+                    0,
+                    1,
+                    "step_product_definition_group_members",
+                ),
+            ),
+            None => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "step_product_definition_group_members",
+                    ),
+                    0,
+                    1,
+                    "step_product_definition_group_members",
+                ),
             ),
         })?;
         grouped.push(definition);
@@ -368,14 +421,20 @@ pub(super) fn decode(
             )?;
             let definition_description = definition
                 .and_then(|definition| definition_descriptions.get(&definition))
-                .map(|text| {
-                    clone_product_text(text, ctx, "step_product_definition_description_copy")
+                .map(|text| match ctx {
+                    Some(ctx) => {
+                        ctx.copy_retained_text(text, "step_product_definition_description_copy")
+                    }
+                    None => Ok::<String, CodecError>(text.to_owned()),
                 })
                 .transpose()?;
             let description = if definition_count <= 1 {
                 product_description
                     .as_deref()
-                    .map(|text| clone_product_text(text, ctx, "step_product_description_copy"))
+                    .map(|text| match ctx {
+                        Some(ctx) => ctx.copy_retained_text(text, "step_product_description_copy"),
+                        None => Ok::<String, CodecError>(text.to_owned()),
+                    })
                     .transpose()?
                     .or(definition_description)
             } else {
@@ -383,7 +442,12 @@ pub(super) fn decode(
                     Some(description) => Some(description),
                     None => product_description
                         .as_deref()
-                        .map(|text| clone_product_text(text, ctx, "step_product_description_copy"))
+                        .map(|text| match ctx {
+                            Some(ctx) => {
+                                ctx.copy_retained_text(text, "step_product_description_copy")
+                            }
+                            None => Ok::<String, CodecError>(text.to_owned()),
+                        })
                         .transpose()?,
                 }
             };
@@ -442,18 +506,25 @@ pub(super) fn decode(
                 kind: ProductDefinitionKind::Part,
                 source_name: name
                     .as_deref()
-                    .map(|text| clone_product_text(text, ctx, "step_product_source_name_copy"))
+                    .map(|text| match ctx {
+                        Some(ctx) => ctx.copy_retained_text(text, "step_product_source_name_copy"),
+                        None => Ok::<String, CodecError>(text.to_owned()),
+                    })
                     .transpose()?,
                 label: name
                     .as_deref()
-                    .map(|text| clone_product_text(text, ctx, "step_product_label_copy"))
+                    .map(|text| match ctx {
+                        Some(ctx) => ctx.copy_retained_text(text, "step_product_label_copy"),
+                        None => Ok::<String, CodecError>(text.to_owned()),
+                    })
                     .transpose()?,
                 description,
-                part_number: Some(clone_product_text(
-                    &product_id,
-                    ctx,
-                    "step_product_part_number_copy",
-                )?),
+                part_number: Some(match ctx {
+                    Some(ctx) => {
+                        ctx.copy_retained_text(&product_id, "step_product_part_number_copy")
+                    }
+                    None => Ok::<String, CodecError>(product_id.clone()),
+                }?),
                 bom_properties: BTreeMap::new(),
                 bodies,
                 native_ref: Some(
@@ -575,7 +646,9 @@ pub(super) fn decode(
             native_ref: None,
         });
         admit_occurrence(ctx, ir, admitted_ir_entities)?;
-        root_ordinal = root_ordinal.saturating_add(1);
+        root_ordinal = root_ordinal
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("STEP root occurrence ordinal exceeds u32"))?;
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "step_root_occurrence_path_map")?;
             ctx.charge_collection_items(1, "step_root_occurrence_path_members")?;
@@ -650,10 +723,26 @@ pub(super) fn decode(
             ctx.charge_collection_items(1, "step_product_usage_parent_members")?;
         }
         grouped.try_reserve(1).map_err(|_| match ctx {
-            Some(ctx) => ctx.refuse_codec_limit("step_product_usage_parent_members", 0, 1),
-            None => {
-                cadmpeg_core::decode::refuse_local_limit("step_product_usage_parent_members", 0, 1)
-            }
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "step_product_usage_parent_members",
+                    ),
+                    0,
+                    1,
+                    "step_product_usage_parent_members",
+                ),
+            ),
+            None => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "step_product_usage_parent_members",
+                    ),
+                    0,
+                    1,
+                    "step_product_usage_parent_members",
+                ),
+            ),
         })?;
         grouped.push(usage_id);
     }
@@ -762,14 +851,21 @@ pub(super) fn decode(
                 name: usage
                     .name
                     .as_deref()
-                    .map(|text| clone_product_text(text, ctx, "step_product_occurrence_name_copy"))
+                    .map(|text| match ctx {
+                        Some(ctx) => {
+                            ctx.copy_retained_text(text, "step_product_occurrence_name_copy")
+                        }
+                        None => Ok::<String, CodecError>(text.to_owned()),
+                    })
                     .transpose()?,
                 visible: None,
                 link: None,
                 native_ref: Some(format!("#{usage_id}")),
             });
             admit_occurrence(ctx, ir, admitted_ir_entities)?;
-            *ordinal = ordinal.saturating_add(1);
+            *ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                CodecError::malformed("STEP child occurrence ordinal exceeds u32")
+            })?;
             let mut path = BTreeSet::new();
             if let Some(parent_path) = parent_path {
                 for &definition in parent_path {
@@ -795,7 +891,17 @@ pub(super) fn decode(
             StepLossCode::DecodeWarning.note("assembly occurrence graph has no resolvable root"),
         );
     }
-    apply_body_placements(exchange, geometry, topology, &usages, ir, &mut losses, ctx)?;
+    apply_body_placements(
+        exchange,
+        BodyPlacementSources {
+            geometry,
+            topology,
+            usages: &usages,
+        },
+        ir,
+        &mut losses,
+        ctx,
+    )?;
     for (id, record) in exchange.entities_any(&[
         "APPLICATION_CONTEXT",
         "PRODUCT_CONTEXT",
@@ -858,8 +964,22 @@ fn enqueue_occurrence(
         ctx.charge_collection_items(1, OPERATION)?;
     }
     pending.try_reserve(1).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(OPERATION, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(OPERATION, 0, 1),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
+                0,
+                1,
+                OPERATION,
+            ),
+        ),
+        None => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
+                0,
+                1,
+                OPERATION,
+            ),
+        ),
     })?;
     pending.push_back((definition, id));
     Ok(())
@@ -889,16 +1009,25 @@ fn assembly_depth_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
         .map_or(MAX_ASSEMBLY_DEPTH, |policy| policy.min(MAX_ASSEMBLY_DEPTH))
 }
 
-#[allow(clippy::too_many_arguments)] // session ctx is the eighth decode-policy argument
+#[derive(Clone, Copy)]
+struct BodyPlacementSources<'a> {
+    geometry: &'a GeometryData,
+    topology: &'a TopologyData,
+    usages: &'a BTreeMap<u64, Usage>,
+}
+
 fn apply_body_placements(
     exchange: &Exchange,
-    geometry: &GeometryData,
-    topology: &TopologyData,
-    usages: &BTreeMap<u64, Usage>,
+    sources: BodyPlacementSources<'_>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(), CodecError> {
+    let BodyPlacementSources {
+        geometry,
+        topology,
+        usages,
+    } = sources;
     let mut pds = BTreeMap::new();
     for (id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
         if let Some(definition) =
@@ -1118,8 +1247,22 @@ fn push_drawing_reference(
         ctx.charge_collection_items(1, OPERATION)?;
     }
     references.try_reserve(1).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(OPERATION, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(OPERATION, 0, 1),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
+                0,
+                1,
+                OPERATION,
+            ),
+        ),
+        None => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
+                0,
+                1,
+                OPERATION,
+            ),
+        ),
     })?;
     references.push(id);
     Ok(())

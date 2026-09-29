@@ -190,7 +190,7 @@ fn extract(
             if streams.len() > SHOWN { ", …" } else { "" }
         );
     }
-    let mut matched = Vec::with_capacity(selected.len());
+    let mut matched = Vec::new();
     let mut missing = Vec::new();
     for (id, record) in selected {
         match record.data() {

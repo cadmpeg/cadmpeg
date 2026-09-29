@@ -238,7 +238,14 @@ fn a_nurbs_pcurve_whose_point_or_basis_overflows_reports_the_point_it_reached() 
     let degree = 20;
     let knots = [vec![0.0; degree + 1], vec![1.0; degree + 1]].concat();
     let poles = (0..=degree)
-        .map(|index| Point2::new(crate::scalar::FiniteReal::from_index(index).get(), 0.0))
+        .map(|index| {
+            Point2::new(
+                crate::scalar::FiniteReal::from_index(index)
+                    .expect("test index is exactly representable")
+                    .get(),
+                0.0,
+            )
+        })
         .collect();
     let high_degree = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(20, knots, poles, None, false)
@@ -637,7 +644,7 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
     });
     ir.model
         .add_procedural_curve(
-            curve.clone(),
+            &curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural#intersection")
                     .expect("valid identity"),
@@ -732,7 +739,7 @@ fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
         });
         ir.model
             .add_procedural_curve(
-                replica.clone(),
+                &replica,
                 ProceduralCurve::new(
                     ProceduralCurveId::mint(format!("test:model:procedural#replica-{ordinal}"))
                         .expect("valid identity"),
@@ -778,7 +785,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
     });
     ir.model
         .add_procedural_curve(
-            curve.clone(),
+            &curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural#replica").expect("valid identity"),
                 ProceduralCurveDefinition::Replica {
@@ -795,7 +802,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
     });
     ir.model
         .add_procedural_surface(
-            surface.clone(),
+            &surface,
             ProceduralSurface::new(
                 ProceduralSurfaceId::mint("test:model:procedural#ruled").expect("valid identity"),
                 ProceduralSurfaceDefinition::Ruled {

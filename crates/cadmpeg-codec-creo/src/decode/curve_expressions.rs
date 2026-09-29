@@ -561,7 +561,7 @@ pub(super) fn transfer_curve_expression_features(
             )?;
             source_carriers.admit_procedural_curve(
                 ir,
-                curve_id,
+                &curve_id,
                 ProceduralCurve::new(procedural_id, procedural_definition),
             )?;
         }

@@ -803,10 +803,8 @@ fn insert_property(
     key: impl fmt::Display,
     value: impl fmt::Display,
 ) -> Result<(), CodecError> {
-    let key =
-        crate::wire::admitted_format(ctx, format_args!("{key}"), "Rhino history property key")?;
-    let value =
-        crate::wire::admitted_format(ctx, format_args!("{value}"), "Rhino history property value")?;
+    let key = ctx.format_retained(format_args!("{key}"), "Rhino history property key")?;
+    let value = ctx.format_retained(format_args!("{value}"), "Rhino history property value")?;
     ctx.charge_collection_items(1, "Rhino history property entries")?;
     properties.insert(key, value);
     Ok(())
@@ -846,73 +844,60 @@ fn admitted_named_properties(
 
 fn value_text(ctx: &DecodeContext<'_>, value: &Value) -> Result<Option<String>, CodecError> {
     let text = match value {
-        Value::None => {
-            crate::wire::admitted_format(ctx, format_args!(""), "Rhino history value text")?
-        }
-        Value::Booleans(values) => crate::wire::admitted_format(
-            ctx,
+        Value::None => ctx.format_retained(format_args!(""), "Rhino history value text")?,
+        Value::Booleans(values) => ctx.format_retained(
             format_args!("{}", Joined(values.iter(), ",")),
             "Rhino history value text",
         )?,
-        Value::Integers(values) => crate::wire::admitted_format(
-            ctx,
+        Value::Integers(values) => ctx.format_retained(
             format_args!("{}", Joined(values.iter(), ",")),
             "Rhino history value text",
         )?,
-        Value::Doubles(values) => crate::wire::admitted_format(
-            ctx,
+        Value::Doubles(values) => ctx.format_retained(
             format_args!("{}", Joined(values.iter(), ",")),
             "Rhino history value text",
         )?,
-        Value::Colors(values) => crate::wire::admitted_format(
-            ctx,
+        Value::Colors(values) => ctx.format_retained(
             format_args!(
                 "{}",
                 Joined(values.iter().map(|value| Joined(value.iter(), ",")), ";")
             ),
             "Rhino history value text",
         )?,
-        Value::Points(values) => crate::wire::admitted_format(
-            ctx,
+        Value::Points(values) => ctx.format_retained(
             format_args!(
                 "{}",
                 Joined(values.iter().map(|value| Joined(value.0.iter(), ",")), ";")
             ),
             "Rhino history value text",
         )?,
-        Value::Vectors(values) => crate::wire::admitted_format(
-            ctx,
+        Value::Vectors(values) => ctx.format_retained(
             format_args!(
                 "{}",
                 Joined(values.iter().map(|value| Joined(value.0.iter(), ",")), ";")
             ),
             "Rhino history value text",
         )?,
-        Value::Transforms(values) => crate::wire::admitted_format(
-            ctx,
+        Value::Transforms(values) => ctx.format_retained(
             format_args!(
                 "{}",
                 Joined(values.iter().map(|value| Joined(value.0.iter(), ",")), ";")
             ),
             "Rhino history value text",
         )?,
-        Value::Strings(values) => crate::wire::admitted_format(
-            ctx,
+        Value::Strings(values) => ctx.format_retained(
             format_args!("{}", Joined(values.iter(), "\u{1f}")),
             "Rhino history value text",
         )?,
-        Value::ObjectReferences(values) => crate::wire::admitted_format(
-            ctx,
+        Value::ObjectReferences(values) => ctx.format_retained(
             format_args!("{}", ReferenceList(values)),
             "Rhino history value text",
         )?,
-        Value::Geometries(values) => crate::wire::admitted_format(
-            ctx,
+        Value::Geometries(values) => ctx.format_retained(
             format_args!("{}", Joined(values.iter().map(|value| value.class_id), ",")),
             "Rhino history value text",
         )?,
-        Value::Uuids(values) => crate::wire::admitted_format(
-            ctx,
+        Value::Uuids(values) => ctx.format_retained(
             format_args!("{}", Joined(values.iter(), ",")),
             "Rhino history value text",
         )?,
@@ -996,8 +981,7 @@ fn object_reference_properties(
     )?;
     evaluation_properties(
         ctx,
-        &crate::wire::admitted_format(
-            ctx,
+        &ctx.format_retained(
             format_args!("{prefix}.evaluation"),
             "Rhino history evaluation prefix",
         )?,
@@ -1011,8 +995,7 @@ fn object_reference_properties(
         value.instance_path.len(),
     )?;
     for (index, instance) in value.instance_path.iter().enumerate() {
-        let path = crate::wire::admitted_format(
-            ctx,
+        let path = ctx.format_retained(
             format_args!("{prefix}.instance_{index}"),
             "Rhino history instance prefix",
         )?;
@@ -1049,8 +1032,7 @@ fn object_reference_properties(
             )?;
             evaluation_properties(
                 ctx,
-                &crate::wire::admitted_format(
-                    ctx,
+                &ctx.format_retained(
                     format_args!("{path}.evaluation"),
                     "Rhino history evaluation prefix",
                 )?,
@@ -1658,9 +1640,11 @@ fn extended_geometry_json(
                 expand,
                 data,
                 value.class_data_range.clone(),
-                archive,
-                writer_version,
-                scale,
+                crate::extrusion::ExtrusionFormat {
+                    archive,
+                    writer_version,
+                    scale,
+                },
                 &value.userdata,
                 &mut budget,
             ),
@@ -1932,8 +1916,7 @@ fn structured_value_properties(
         Value::ObjectReferences(values) => {
             insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (index, value) in values.iter().enumerate() {
-                let prefix = crate::wire::admitted_format(
-                    ctx,
+                let prefix = ctx.format_retained(
                     format_args!("{key}.{index}"),
                     "Rhino history reference prefix",
                 )?;
@@ -2010,8 +1993,7 @@ fn structured_value_properties(
                         match semantic {
                             Ok(semantic) => {
                                 ctx.charge_collection_items(1, "Rhino history property entries")?;
-                                let property_key = crate::wire::admitted_format(
-                                    ctx,
+                                let property_key = ctx.format_retained(
                                     format_args!("{key}.{index}.geometry"),
                                     "Rhino history property key",
                                 )?;
@@ -2036,8 +2018,7 @@ fn structured_value_properties(
                         if let Some(semantic) = semantic {
                             sink.untyped += 1;
                             ctx.charge_collection_items(1, "Rhino history property entries")?;
-                            let property_key = crate::wire::admitted_format(
-                                ctx,
+                            let property_key = ctx.format_retained(
                                 format_args!("{key}.{index}.geometry"),
                                 "Rhino history property key",
                             )?;
@@ -2077,8 +2058,7 @@ fn structured_value_properties(
         Value::PolyEdges(values) => {
             insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (edge_index, edge) in values.iter().enumerate() {
-                let edge_key = crate::wire::admitted_format(
-                    ctx,
+                let edge_key = ctx.format_retained(
                     format_args!("{key}.{edge_index}"),
                     "Rhino history edge prefix",
                 )?;
@@ -2101,13 +2081,11 @@ fn structured_value_properties(
                     edge.polyedge.segments.len(),
                 )?;
                 for (segment_index, segment) in edge.polyedge.segments.iter().enumerate() {
-                    let segment_key = crate::wire::admitted_format(
-                        ctx,
+                    let segment_key = ctx.format_retained(
                         format_args!("{edge_key}.segment_{segment_index}"),
                         "Rhino history segment prefix",
                     )?;
-                    let curve_key = crate::wire::admitted_format(
-                        ctx,
+                    let curve_key = ctx.format_retained(
                         format_args!("{segment_key}.curve"),
                         "Rhino history curve prefix",
                     )?;
@@ -2161,11 +2139,8 @@ fn structured_value_properties(
         Value::SubdEdgeChains(values) => {
             insert_property(ctx, properties, format_args!("{key}.count"), values.len())?;
             for (index, chain) in values.iter().enumerate() {
-                let chain_key = crate::wire::admitted_format(
-                    ctx,
-                    format_args!("{key}.{index}"),
-                    "Rhino history chain prefix",
-                )?;
+                let chain_key = ctx
+                    .format_retained(format_args!("{key}.{index}"), "Rhino history chain prefix")?;
                 insert_property(
                     ctx,
                     properties,
@@ -2222,8 +2197,7 @@ pub(crate) fn project(
     let mut native_ids = admitted_vec(ctx, records.len(), "Rhino history native ids")
         .map_err(history_resource_error)?;
     let mut seen_record_ids = HashSet::new();
-    crate::wire::reserve_hash_set(
-        ctx,
+    ctx.reserve_set(
         &mut seen_record_ids,
         records.len(),
         "Rhino history record identities",
@@ -2232,29 +2206,23 @@ pub(crate) fn project(
     for record in records {
         let unique = !record.id.is_nil() && seen_record_ids.insert(record.id);
         let key = if unique {
-            crate::wire::admitted_format(
-                ctx,
-                format_args!("{}", record.id),
-                "Rhino history identity key",
-            )
+            ctx.format_retained(format_args!("{}", record.id), "Rhino history identity key")
         } else {
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("offset-{}", record.source_range.start),
                 "Rhino history identity key",
             )
         }
         .map_err(ProjectionError::Codec)?;
-        let feature_id = crate::wire::admitted_format(
-            ctx,
-            format_args!("rhino:history:feature#{key}"),
-            "Rhino history feature identity",
-        )
-        .map_err(ProjectionError::Codec)?;
+        let feature_id = ctx
+            .format_retained(
+                format_args!("rhino:history:feature#{key}"),
+                "Rhino history feature identity",
+            )
+            .map_err(ProjectionError::Codec)?;
         ids.push(FeatureId::mint(feature_id).map_err(|error| error.to_string())?);
         native_ids.push(
-            crate::wire::admitted_format(
-                ctx,
+            ctx.format_retained(
                 format_args!("rhino:history:record#{key}"),
                 "Rhino history native identity",
             )
@@ -2264,8 +2232,7 @@ pub(crate) fn project(
     let mut producers = HashMap::<Uuid, Option<(usize, FeatureId)>>::new();
     for (index, record) in records.iter().enumerate() {
         let mut record_descendants = HashSet::new();
-        crate::wire::reserve_hash_set(
-            ctx,
+        ctx.reserve_set(
             &mut record_descendants,
             record.descendants.len(),
             "Rhino history unique descendants",
@@ -2281,7 +2248,7 @@ pub(crate) fn project(
             if let Some(producer) = producers.get_mut(descendant) {
                 *producer = None;
             } else {
-                crate::wire::reserve_hash_map(ctx, &mut producers, 1, "Rhino history producers")
+                ctx.reserve_map(&mut producers, 1, "Rhino history producers")
                     .map_err(ProjectionError::Codec)?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(ids[index].as_str().len()),
@@ -2304,8 +2271,7 @@ pub(crate) fn project(
             }
         }
         let mut dependency_seen = HashSet::new();
-        crate::wire::reserve_hash_set(
-            ctx,
+        ctx.reserve_set(
             &mut dependency_seen,
             record.antecedents.len(),
             "Rhino history seen dependencies",
@@ -2333,8 +2299,7 @@ pub(crate) fn project(
         let mut parameters = BTreeMap::new();
         let mut properties = BTreeMap::new();
         let mut value_occurrences = HashMap::<i32, usize>::new();
-        crate::wire::reserve_hash_map(
-            ctx,
+        ctx.reserve_map(
             &mut value_occurrences,
             record.values.len(),
             "Rhino history value occurrences",
@@ -2343,14 +2308,12 @@ pub(crate) fn project(
         for value in &record.values {
             let occurrence = value_occurrences.entry(value.id).or_default();
             let key = if *occurrence == 0 {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!("value_{}", value.id),
                     "Rhino history value key",
                 )
             } else {
-                crate::wire::admitted_format(
-                    ctx,
+                ctx.format_retained(
                     format_args!("value_{}_{}", value.id, occurrence),
                     "Rhino history value key",
                 )
@@ -2449,42 +2412,34 @@ pub(crate) fn project(
             .map_err(ProjectionError::Codec)?;
         let dependencies = cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(dependencies)
             .map_err(std::string::ToString::to_string)?;
-        crate::wire::reserve_collection(
-            ctx,
+        ctx.reserve_vec(
             &mut ir.model.features,
             1,
             "Rhino history projected features",
         )
         .map_err(ProjectionError::Codec)?;
-        let feature_id_text = crate::wire::copy_retained_string(
-            ctx,
-            ids[index].as_str(),
-            "Rhino history projected feature identity",
-        )
-        .map_err(ProjectionError::Codec)?;
+        let feature_id_text = ctx
+            .copy_retained_text(
+                ids[index].as_str(),
+                "Rhino history projected feature identity",
+            )
+            .map_err(ProjectionError::Codec)?;
         let feature_id = FeatureId::mint(feature_id_text).map_err(|error| error.to_string())?;
-        let source_tag = crate::wire::copy_retained_string(
-            ctx,
-            "HistoryRecord",
-            "Rhino history feature source tag",
-        )
-        .map_err(ProjectionError::Codec)?;
-        let kind = crate::wire::admitted_format(
-            ctx,
-            format_args!("{}", record.command_id),
-            "Rhino history feature kind",
-        )
-        .map_err(ProjectionError::Codec)?;
-        let native_ref = crate::wire::copy_retained_string(
-            ctx,
-            &native_ids[index],
-            "Rhino history feature native reference",
-        )
-        .map_err(ProjectionError::Codec)?;
+        let source_tag = ctx
+            .copy_retained_text("HistoryRecord", "Rhino history feature source tag")
+            .map_err(ProjectionError::Codec)?;
+        let kind = ctx
+            .format_retained(
+                format_args!("{}", record.command_id),
+                "Rhino history feature kind",
+            )
+            .map_err(ProjectionError::Codec)?;
+        let native_ref = ctx
+            .copy_retained_text(&native_ids[index], "Rhino history feature native reference")
+            .map_err(ProjectionError::Codec)?;
         ir.model.features.push(Feature {
             id: feature_id,
-            ordinal: u64::try_from(index)
-                .map_err(|_| "history source order exceeds u64".to_string())?,
+            ordinal: cadmpeg_core::decode::u64_from_index(index),
             name: None,
             suppressed: Some(false),
             dependencies,
@@ -2503,8 +2458,7 @@ pub(crate) fn project(
         });
     }
     for record in records {
-        u64::try_from(record.source_range.start)
-            .map_err(|_| "history source offset exceeds u64".to_string())?;
+        cadmpeg_core::decode::u64_from_index(record.source_range.start);
     }
     let native = records
         .iter()

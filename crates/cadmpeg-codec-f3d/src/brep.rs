@@ -9,16 +9,312 @@ use crate::records::{
 use cadmpeg_asm::brep::attributes::attribute_key;
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_asm::brep::{
-    collect_entity_adjacency, collect_owned_ids, decode_with_header, decode_with_purpose,
-    remap_owned_ids, retain_root_entities, AsmBrep, DecodePurpose,
+    decode_with_header, decode_with_purpose, retain_root_entities, AsmBrep, DecodePurpose,
 };
 use cadmpeg_asm::ids::IdFormat;
 use cadmpeg_asm::sab::Record;
-use cadmpeg_core::decode::bounded_len;
+use cadmpeg_core::decode::{bounded_len, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::BodyId;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+mod value_budget;
+
+fn copy_brep_text(
+    ctx: &DecodeContext<'_>,
+    value: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let length =
+        u64::try_from(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(length, operation)?;
+    let mut copy = String::new();
+    copy.try_reserve(value.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
+    copy.push_str(value);
+    Ok(copy)
+}
+
+fn push_brep_item<T>(
+    ctx: &DecodeContext<'_>,
+    items: &mut Vec<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_collection_items(1, operation)?;
+    items
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    items.push(value);
+    Ok(())
+}
+
+fn append_brep_items<T>(
+    ctx: &DecodeContext<'_>,
+    target: &mut Vec<T>,
+    source: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count =
+        u64::try_from(source.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_collection_items(count, operation)?;
+    target
+        .try_reserve(source.len())
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    target.append(source);
+    Ok(())
+}
+
+fn merge_brep_counts(
+    ctx: &DecodeContext<'_>,
+    target: &mut BTreeMap<String, usize>,
+    source: BTreeMap<String, usize>,
+) -> Result<(), CodecError> {
+    use std::collections::btree_map::Entry;
+    for (kind, count) in source {
+        match target.entry(kind) {
+            Entry::Occupied(mut entry) => *entry.get_mut() += count,
+            Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "merge F3D BREP statistic kinds")?;
+                entry.insert(count);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_owned_ids_charged(
+    ctx: &DecodeContext<'_>,
+    value: &serde_value::Value,
+    owned: &mut HashSet<String>,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("walk F3D BREP owned IDs")?;
+    if let Some(id) = cadmpeg_asm::brep::entity_id(value) {
+        if !owned.contains(id) {
+            let key = copy_brep_text(ctx, id, "copy F3D BREP owned ID")?;
+            ctx.charge_collection_items(1, "index F3D BREP owned IDs")?;
+            owned
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D BREP owned IDs", 0, 1))?;
+            owned.insert(key);
+        }
+    }
+    match value {
+        serde_value::Value::Map(fields) => {
+            for (key, item) in fields {
+                collect_owned_ids_charged(ctx, key, owned)?;
+                collect_owned_ids_charged(ctx, item, owned)?;
+            }
+        }
+        serde_value::Value::Seq(items) => {
+            for item in items {
+                collect_owned_ids_charged(ctx, item, owned)?;
+            }
+        }
+        serde_value::Value::Option(Some(item)) | serde_value::Value::Newtype(item) => {
+            collect_owned_ids_charged(ctx, item, owned)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn remap_owned_ids_charged(
+    ctx: &DecodeContext<'_>,
+    value: &mut serde_value::Value,
+    replacements: &HashMap<String, String>,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("remap F3D BREP owned IDs")?;
+    match value {
+        serde_value::Value::String(id) => {
+            if let Some(replacement) = replacements.get(id) {
+                *id = copy_brep_text(ctx, replacement, "copy F3D BREP remapped ID")?;
+            }
+        }
+        serde_value::Value::Seq(items) => {
+            for item in items {
+                remap_owned_ids_charged(ctx, item, replacements)?;
+            }
+        }
+        serde_value::Value::Map(fields) => {
+            let entries = std::mem::take(fields);
+            for (mut key, mut item) in entries {
+                remap_owned_ids_charged(ctx, &mut key, replacements)?;
+                remap_owned_ids_charged(ctx, &mut item, replacements)?;
+                ctx.charge_collection_items(1, "rebuild F3D BREP value map")?;
+                fields.insert(key, item);
+            }
+        }
+        serde_value::Value::Option(Some(item)) | serde_value::Value::Newtype(item) => {
+            remap_owned_ids_charged(ctx, item, replacements)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn insert_brep_string(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashSet<String>,
+    value: String,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if values.contains(&value) {
+        return Ok(());
+    }
+    ctx.charge_collection_items(1, operation)?;
+    values
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    values.insert(value);
+    Ok(())
+}
+
+fn collect_brep_references(
+    ctx: &DecodeContext<'_>,
+    value: &serde_value::Value,
+    owned: &HashSet<String>,
+    references: &mut HashSet<String>,
+) -> Result<(), CodecError> {
+    let _depth = ctx.enter_nested("walk F3D BREP references")?;
+    match value {
+        serde_value::Value::String(id) if owned.contains(id) && !references.contains(id) => {
+            let id = copy_brep_text(ctx, id, "copy F3D BREP adjacency reference")?;
+            insert_brep_string(ctx, references, id, "collect F3D BREP adjacency references")?;
+        }
+        serde_value::Value::Seq(items) => {
+            for item in items {
+                collect_brep_references(ctx, item, owned, references)?;
+            }
+        }
+        serde_value::Value::Map(fields) => {
+            for (key, item) in fields {
+                collect_brep_references(ctx, key, owned, references)?;
+                collect_brep_references(ctx, item, owned, references)?;
+            }
+        }
+        serde_value::Value::Option(Some(item)) | serde_value::Value::Newtype(item) => {
+            collect_brep_references(ctx, item, owned, references)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn insert_brep_adjacency(
+    ctx: &DecodeContext<'_>,
+    adjacency: &mut HashMap<String, HashSet<String>>,
+    source: &str,
+    target: &str,
+) -> Result<(), CodecError> {
+    if !adjacency.contains_key(source) {
+        let source = copy_brep_text(ctx, source, "copy F3D BREP adjacency source")?;
+        ctx.charge_collection_items(1, "index F3D BREP adjacency")?;
+        adjacency
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit("index F3D BREP adjacency", 0, 1))?;
+        adjacency.insert(source, HashSet::new());
+    }
+    if let Some(targets) = adjacency.get_mut(source) {
+        if !targets.contains(target) {
+            let target = copy_brep_text(ctx, target, "copy F3D BREP adjacency target")?;
+            insert_brep_string(ctx, targets, target, "collect F3D BREP adjacent IDs")?;
+        }
+    }
+    Ok(())
+}
+
+fn collect_brep_adjacency(
+    ctx: &DecodeContext<'_>,
+    value: &serde_value::Value,
+    owned: &HashSet<String>,
+) -> Result<HashMap<String, HashSet<String>>, CodecError> {
+    let mut adjacency = HashMap::new();
+    let serde_value::Value::Map(fields) = value else {
+        return Ok(adjacency);
+    };
+    for value in fields.values() {
+        let serde_value::Value::Seq(items) = value else {
+            continue;
+        };
+        for item in items {
+            let Some(id) = cadmpeg_asm::brep::entity_id(item) else {
+                continue;
+            };
+            let mut references = HashSet::new();
+            collect_brep_references(ctx, item, owned, &mut references)?;
+            references.remove(id);
+            for reference in references {
+                insert_brep_adjacency(ctx, &mut adjacency, id, &reference)?;
+                insert_brep_adjacency(ctx, &mut adjacency, &reference, id)?;
+            }
+        }
+    }
+    Ok(adjacency)
+}
+
+fn copy_attribute_target(
+    ctx: &DecodeContext<'_>,
+    target: &AttributeTarget,
+) -> Result<AttributeTarget, CodecError> {
+    macro_rules! copy_id {
+        ($id:ident, $type:ident, $variant:ident) => {
+            AttributeTarget::$variant(
+                cadmpeg_ir::ids::$type::mint(copy_brep_text(
+                    ctx,
+                    $id.as_str(),
+                    "copy F3D BREP attribute target",
+                )?)
+                .map_err(CodecError::malformed)?,
+            )
+        };
+    }
+    Ok(match target {
+        AttributeTarget::Document => AttributeTarget::Document,
+        AttributeTarget::Body(id) => copy_id!(id, BodyId, Body),
+        AttributeTarget::Face(id) => copy_id!(id, FaceId, Face),
+        AttributeTarget::Shell(id) => copy_id!(id, ShellId, Shell),
+        AttributeTarget::Loop(id) => copy_id!(id, LoopId, Loop),
+        AttributeTarget::Coedge(id) => copy_id!(id, CoedgeId, Coedge),
+        AttributeTarget::Edge(id) => copy_id!(id, EdgeId, Edge),
+        AttributeTarget::Vertex(id) => copy_id!(id, VertexId, Vertex),
+    })
+}
+
+pub(crate) fn copy_body_id(ctx: &DecodeContext<'_>, body: &BodyId) -> Result<BodyId, CodecError> {
+    BodyId::mint(copy_brep_text(ctx, body.as_str(), "copy F3D BREP body ID")?)
+        .map_err(CodecError::malformed)
+}
+
+struct BrepFormatLength(usize);
+
+impl std::fmt::Write for BrepFormatLength {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
+        Ok(())
+    }
+}
+
+fn format_brep_text(
+    ctx: &DecodeContext<'_>,
+    args: std::fmt::Arguments<'_>,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let mut length = BrepFormatLength(0);
+    std::fmt::write(&mut length, args)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let count =
+        u64::try_from(length.0).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    ctx.charge_retained(count, operation)?;
+    let mut text = String::new();
+    text.try_reserve(length.0)
+        .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+    std::fmt::write(&mut text, args)
+        .map_err(|_| CodecError::Malformed("F3D BREP identity formatting failed".into()))?;
+    Ok(text)
+}
 
 /// The ASM B-rep graph plus links derived from Fusion attribute records.
 ///
@@ -40,55 +336,82 @@ pub(crate) struct Brep {
 
 impl Brep {
     /// Wrap a decoded ASM graph and derive the Fusion attribute links.
-    fn from_asm(asm: AsmBrep) -> Self {
-        let sketch_curve_links = asm
-            .attributes
-            .iter()
-            .filter_map(sketch_curve_link)
-            .collect();
-        let persistent_design_links = asm
-            .attributes
-            .iter()
-            .flat_map(persistent_design_links)
-            .collect();
-        let persistent_subentity_tags = asm
-            .attributes
-            .iter()
-            .flat_map(persistent_subentity_tags)
-            .collect();
-        let creation_timestamps = asm
-            .attributes
-            .iter()
-            .filter_map(creation_timestamp)
-            .collect();
-        Self {
+    fn from_asm(ctx: &DecodeContext<'_>, asm: AsmBrep) -> Result<Self, CodecError> {
+        let mut sketch_curve_links = Vec::new();
+        let mut persistent_design_links = Vec::new();
+        let mut persistent_subentity_tags = Vec::new();
+        let mut creation_timestamps = Vec::new();
+        for attribute in &asm.attributes {
+            if let Some(link) = sketch_curve_link(ctx, attribute)? {
+                push_brep_item(
+                    ctx,
+                    &mut sketch_curve_links,
+                    link,
+                    "collect F3D sketch curve links",
+                )?;
+            }
+            for link in self::persistent_design_links(ctx, attribute)? {
+                push_brep_item(
+                    ctx,
+                    &mut persistent_design_links,
+                    link,
+                    "collect F3D persistent design links",
+                )?;
+            }
+            for tag in self::persistent_subentity_tags(ctx, attribute)? {
+                push_brep_item(
+                    ctx,
+                    &mut persistent_subentity_tags,
+                    tag,
+                    "collect F3D persistent subentity tags",
+                )?;
+            }
+            if let Some(timestamp) = creation_timestamp(ctx, attribute)? {
+                push_brep_item(
+                    ctx,
+                    &mut creation_timestamps,
+                    timestamp,
+                    "collect F3D creation timestamps",
+                )?;
+            }
+        }
+        Ok(Self {
             asm,
             sketch_curve_links,
             persistent_design_links,
             persistent_subentity_tags,
             creation_timestamps,
-        }
+        })
     }
 
     /// Map solved bodies to the selector used by this blob's Design body map.
-    pub(crate) fn body_selectors(&self) -> HashMap<BodyId, u64> {
+    pub(crate) fn body_selectors(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<HashMap<BodyId, u64>, CodecError> {
         let ordinal_mode = self
             .asm
             .body_native_keys
             .iter()
             .all(|body| body.asm_body_key.is_none());
-        self.asm
-            .body_native_keys
-            .iter()
-            .filter_map(|body| {
-                let selector = if ordinal_mode {
-                    Some(u64::from(body.body_ordinal))
-                } else {
-                    body.asm_body_key
-                }?;
-                Some((body.body.clone(), selector))
-            })
-            .collect()
+        let mut selectors = HashMap::new();
+        for body in &self.asm.body_native_keys {
+            let selector = if ordinal_mode {
+                Some(u64::from(body.body_ordinal))
+            } else {
+                body.asm_body_key
+            };
+            let Some(selector) = selector else {
+                continue;
+            };
+            let id = copy_body_id(ctx, &body.body)?;
+            ctx.charge_collection_items(1, "index F3D BREP body selectors")?;
+            selectors
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D BREP body selectors", 0, 1))?;
+            selectors.insert(id, selector);
+        }
+        Ok(selectors)
     }
 
     /// Resolve the Design selectors present for this blob. An exact native
@@ -96,15 +419,21 @@ impl Brep {
     /// selects the body with the same zero-based ordinal.
     pub(crate) fn body_selectors_for(
         &self,
+        ctx: &DecodeContext<'_>,
         selectors: &HashSet<u64>,
     ) -> Result<HashMap<BodyId, u64>, cadmpeg_core::CodecError> {
-        let body_keys = self.asm.body_native_keys.iter().collect::<Vec<_>>();
         let mut resolved = HashMap::new();
         for selector in selectors {
-            let Some(body) = resolve_body_selector(&body_keys, *selector)? else {
+            let Some(body) = resolve_body_selector(self.asm.body_native_keys.iter(), *selector)?
+            else {
                 continue;
             };
-            if let Some(previous) = resolved.insert(body.clone(), *selector) {
+            let id = copy_body_id(ctx, body)?;
+            ctx.charge_collection_items(1, "index F3D selected BREP bodies")?;
+            resolved
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D selected BREP bodies", 0, 1))?;
+            if let Some(previous) = resolved.insert(id, *selector) {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "F3D body {} is selected by both {previous} and {selector}",
                     body.as_str()
@@ -118,7 +447,7 @@ impl Brep {
     /// for one BREP blob.
     pub(crate) fn retain_body_keys(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         selected_keys: &HashSet<u64>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let annotations = std::mem::take(&mut self.asm.annotation_records);
@@ -126,69 +455,120 @@ impl Brep {
         let persistent_design_links = std::mem::take(&mut self.persistent_design_links);
         let persistent_subentity_tags = std::mem::take(&mut self.persistent_subentity_tags);
         let creation_timestamps = std::mem::take(&mut self.creation_timestamps);
+        let _value_reservation =
+            value_budget::reserve_projection(ctx, &*self, "project F3D retained BREP value")?;
         let mut value = serde_value::to_value(&*self).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
-        collect_owned_ids(ctx, &value, &mut owned)?;
-        let native_body_ids = self
-            .asm
-            .body_native_keys
-            .iter()
-            .map(|native| native.body.as_str())
-            .collect::<HashSet<_>>();
-        let mut roots = self
-            .body_selectors_for(selected_keys)?
-            .into_keys()
-            .map(cadmpeg_ir::ids::BodyId::into_string)
-            .collect::<HashSet<_>>();
+        collect_owned_ids_charged(ctx, &value, &mut owned)?;
+        let mut native_body_ids = HashSet::new();
+        for native in &self.asm.body_native_keys {
+            if !native_body_ids.contains(native.body.as_str()) {
+                ctx.charge_collection_items(1, "index F3D native BREP bodies")?;
+                native_body_ids
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit("index F3D native BREP bodies", 0, 1))?;
+                native_body_ids.insert(native.body.as_str());
+            }
+        }
+        let mut reachable = HashSet::new();
+        for body in self.body_selectors_for(ctx, selected_keys)?.into_keys() {
+            insert_brep_string(
+                ctx,
+                &mut reachable,
+                body.into_string(),
+                "collect F3D selected BREP roots",
+            )?;
+        }
         // A Design body map selects native ASM body records. Neutral roots
         // projected from other saved top-level entities have no ASM body key
         // and remain part of the selected BREP blob.
-        roots.extend(
-            self.asm
-                .bodies
-                .iter()
-                .filter(|body| !native_body_ids.contains(body.id.as_str()))
-                .map(|body| body.id.as_str().to_owned()),
-        );
-        let mut adjacency = HashMap::<String, HashSet<String>>::new();
-        collect_entity_adjacency(ctx, &value, &owned, &mut adjacency)?;
-        let mut reachable = roots;
-        let mut pending = reachable.iter().cloned().collect::<Vec<_>>();
+        for body in &self.asm.bodies {
+            if !native_body_ids.contains(body.id.as_str()) {
+                let id = copy_brep_text(ctx, body.id.as_str(), "copy F3D neutral BREP root")?;
+                insert_brep_string(ctx, &mut reachable, id, "collect F3D neutral BREP roots")?;
+            }
+        }
+        let adjacency = collect_brep_adjacency(ctx, &value, &owned)?;
+        let mut pending = Vec::new();
+        for id in &reachable {
+            let id = copy_brep_text(ctx, id, "copy F3D BREP pending root")?;
+            push_brep_item(ctx, &mut pending, id, "collect F3D BREP pending roots")?;
+        }
         while let Some(id) = pending.pop() {
             for adjacent in adjacency.get(&id).into_iter().flatten() {
-                if reachable.insert(adjacent.clone()) {
-                    pending.push(adjacent.clone());
+                if !reachable.contains(adjacent) {
+                    let reached = copy_brep_text(ctx, adjacent, "copy F3D reachable BREP ID")?;
+                    insert_brep_string(
+                        ctx,
+                        &mut reachable,
+                        reached,
+                        "collect F3D reachable BREP IDs",
+                    )?;
+                    let queued = copy_brep_text(ctx, adjacent, "copy F3D pending BREP ID")?;
+                    push_brep_item(ctx, &mut pending, queued, "collect F3D pending BREP IDs")?;
                 }
             }
         }
         retain_root_entities(&mut value, &reachable);
+        let _rebuild_reservation =
+            value_budget::reserve_projection(ctx, &value, "rebuild F3D retained BREP value")?;
         let mut retained: Self = crate::value_tree::from_value(value).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!(
                 "retained BREP graph is invalid: {error}"
             ))
         })?;
-        retained.asm.annotation_records = annotations
-            .into_iter()
-            .filter(|annotation| reachable.contains(&annotation.id))
-            .collect();
-        retained.sketch_curve_links = sketch_curve_links
-            .into_iter()
-            .filter(|link| retained_attribute_target(&link.target, &reachable))
-            .collect();
-        retained.persistent_design_links = persistent_design_links
-            .into_iter()
-            .filter(|link| retained_attribute_target(&link.target, &reachable))
-            .collect();
-        retained.persistent_subentity_tags = persistent_subentity_tags
-            .into_iter()
-            .filter(|tag| retained_attribute_target(&tag.target, &reachable))
-            .collect();
-        retained.creation_timestamps = creation_timestamps
-            .into_iter()
-            .filter(|timestamp| retained_attribute_target(&timestamp.target, &reachable))
-            .collect();
+        for annotation in annotations {
+            if reachable.contains(&annotation.id) {
+                push_brep_item(
+                    ctx,
+                    &mut retained.asm.annotation_records,
+                    annotation,
+                    "collect F3D retained annotations",
+                )?;
+            }
+        }
+        for link in sketch_curve_links {
+            if retained_attribute_target(&link.target, &reachable) {
+                push_brep_item(
+                    ctx,
+                    &mut retained.sketch_curve_links,
+                    link,
+                    "collect F3D retained sketch links",
+                )?;
+            }
+        }
+        for link in persistent_design_links {
+            if retained_attribute_target(&link.target, &reachable) {
+                push_brep_item(
+                    ctx,
+                    &mut retained.persistent_design_links,
+                    link,
+                    "collect F3D retained design links",
+                )?;
+            }
+        }
+        for tag in persistent_subentity_tags {
+            if retained_attribute_target(&tag.target, &reachable) {
+                push_brep_item(
+                    ctx,
+                    &mut retained.persistent_subentity_tags,
+                    tag,
+                    "collect F3D retained subentity tags",
+                )?;
+            }
+        }
+        for timestamp in creation_timestamps {
+            if retained_attribute_target(&timestamp.target, &reachable) {
+                push_brep_item(
+                    ctx,
+                    &mut retained.creation_timestamps,
+                    timestamp,
+                    "collect F3D retained timestamps",
+                )?;
+            }
+        }
         *self = retained;
         Ok(())
     }
@@ -197,40 +577,58 @@ impl Brep {
     /// coexist in one document model without record-index collisions.
     pub(crate) fn qualify_ids(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         format: IdFormat,
         namespace: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let annotations = std::mem::take(&mut self.asm.annotation_records);
+        let _value_reservation =
+            value_budget::reserve_projection(ctx, &*self, "project F3D qualified BREP value")?;
         let mut value = serde_value::to_value(&*self).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!("BREP serialization failed: {error}"))
         })?;
         let mut owned = HashSet::new();
-        collect_owned_ids(ctx, &value, &mut owned)?;
-        let scheme_prefix = format!("{format}:");
-        let replacements = owned
-            .into_iter()
-            .map(|id| {
-                let replacement = format!(
+        collect_owned_ids_charged(ctx, &value, &mut owned)?;
+        let scheme_prefix = format_brep_text(
+            ctx,
+            format_args!("{format}:"),
+            "retain F3D BREP scheme prefix",
+        )?;
+        let mut replacements = HashMap::new();
+        for id in owned {
+            let replacement = format_brep_text(
+                ctx,
+                format_args!(
                     "{format}:brep/{namespace}/{}",
                     id.strip_prefix(&scheme_prefix).unwrap_or(&id)
-                );
-                (id, replacement)
-            })
-            .collect::<HashMap<_, _>>();
-        remap_owned_ids(ctx, &mut value, &replacements)?;
+                ),
+                "retain F3D qualified BREP ID",
+            )?;
+            ctx.charge_collection_items(1, "index F3D BREP replacements")?;
+            replacements
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("index F3D BREP replacements", 0, 1))?;
+            replacements.insert(id, replacement);
+        }
+        remap_owned_ids_charged(ctx, &mut value, &replacements)?;
+        let _rebuild_reservation =
+            value_budget::reserve_projection(ctx, &value, "rebuild F3D qualified BREP value")?;
         let mut qualified: Self = crate::value_tree::from_value(value).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!("qualified BREP is invalid: {error}"))
         })?;
-        qualified.asm.annotation_records = annotations
-            .into_iter()
-            .map(|mut annotation| {
-                if let Some(id) = replacements.get(&annotation.id) {
-                    annotation.id.clone_from(id);
-                }
-                annotation
-            })
-            .collect();
+        let mut qualified_annotations = Vec::new();
+        for mut annotation in annotations {
+            if let Some(id) = replacements.get(&annotation.id) {
+                annotation.id = copy_brep_text(ctx, id, "copy F3D qualified annotation ID")?;
+            }
+            push_brep_item(
+                ctx,
+                &mut qualified_annotations,
+                annotation,
+                "collect F3D qualified annotations",
+            )?;
+        }
+        qualified.asm.annotation_records = qualified_annotations;
         *self = qualified;
         Ok(())
     }
@@ -238,16 +636,71 @@ impl Brep {
     /// Append a disjoint, already-qualified BREP graph.
     pub(crate) fn append(
         &mut self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        mut other: Self,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        self.asm.append(ctx, other.asm)?;
+        ctx: &DecodeContext<'_>,
+        other: Self,
+    ) -> Result<(), CodecError> {
+        let mut asm = other.asm;
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
-                $(self.$field.append(&mut other.$field);)+
+                $(append_brep_items(ctx, &mut self.asm.$field, &mut asm.$field,
+                    concat!("merge F3D BREP ", stringify!($field)))?;)+
             };
         }
         append_vecs!(
+            bodies,
+            regions,
+            shells,
+            faces,
+            loops,
+            coedges,
+            edges,
+            vertices,
+            points,
+            surfaces,
+            curves,
+            pcurves,
+            procedural_surfaces,
+            procedural_curves,
+            edge_continuities,
+            edge_ownerships,
+            vertex_ownerships,
+            face_sidedness,
+            face_native_keys,
+            tolerant_coedge_parameters,
+            tolerant_edge_tails,
+            tolerant_vertex_tails,
+            mesh_surface_sentinels,
+            transform_hints,
+            body_native_keys,
+            wire_topologies,
+            attributes,
+            unknowns,
+            annotation_records,
+        );
+        self.asm.stats.mesh_surface_faces += asm.stats.mesh_surface_faces;
+        self.asm.stats.nurbs_surfaces += asm.stats.nurbs_surfaces;
+        self.asm.stats.nurbs_curves += asm.stats.nurbs_curves;
+        self.asm.stats.partial_procedural_supports += asm.stats.partial_procedural_supports;
+        macro_rules! merge_count_maps {
+            ($($field:ident),+ $(,)?) => {
+                $(merge_brep_counts(ctx, &mut self.asm.stats.$field, std::mem::take(&mut asm.stats.$field))?;)+
+            };
+        }
+        merge_count_maps!(
+            missing_face_surface_kinds,
+            unknown_surface_kinds,
+            procedural_curve_kinds,
+            undecoded_pcurve_kinds,
+            other_record_kinds,
+        );
+        let mut other = Self { asm, ..other };
+        macro_rules! append_derived {
+            ($($field:ident),+ $(,)?) => {
+                $(append_brep_items(ctx, &mut self.$field, &mut other.$field,
+                    concat!("merge F3D BREP ", stringify!($field)))?;)+
+            };
+        }
+        append_derived!(
             sketch_curve_links,
             persistent_design_links,
             persistent_subentity_tags,
@@ -268,14 +721,10 @@ pub(crate) fn decode(
     stream: &str,
     format: IdFormat,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    Ok(Brep::from_asm(decode_with_purpose(
+    Brep::from_asm(
         ctx,
-        records,
-        bytes,
-        stream,
-        format,
-        DecodePurpose::Model,
-    )?))
+        decode_with_purpose(ctx, records, bytes, stream, format, DecodePurpose::Model)?,
+    )
 }
 
 /// Decode a parsed text stream ([`cadmpeg_asm::sat`]) into the IR B-rep graph.
@@ -291,15 +740,18 @@ pub(crate) fn decode_text(
     entry: &str,
     format: IdFormat,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    Ok(Brep::from_asm(decode_with_header(
+    Brep::from_asm(
         ctx,
-        &stream.records,
-        bytes,
-        Some(stream.header.as_kernel_header(ctx)?),
-        entry,
-        format,
-        DecodePurpose::Model,
-    )?))
+        decode_with_header(
+            ctx,
+            &stream.records,
+            bytes,
+            Some(stream.header.as_kernel_header(ctx)?),
+            entry,
+            format,
+            DecodePurpose::Model,
+        )?,
+    )
 }
 
 /// Decode only the topology and analytic measurements used to bind ASM
@@ -311,47 +763,43 @@ pub(crate) fn decode_history_topology(
     bytes: &[u8],
     format: IdFormat,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    Ok(Brep::from_asm(decode_with_purpose(
+    Brep::from_asm(
         ctx,
-        records,
-        bytes,
-        "history",
-        format,
-        DecodePurpose::History,
-    )?))
+        decode_with_purpose(
+            ctx,
+            records,
+            bytes,
+            "history",
+            format,
+            DecodePurpose::History,
+        )?,
+    )
 }
 
 /// Resolve one Design body selector within one BREP blob. Exact native keys
 /// take precedence; an absent key falls back to the zero-based body ordinal.
-pub(crate) fn resolve_body_selector(
-    body_keys: &[&BodyNativeKey],
+pub(crate) fn resolve_body_selector<'a>(
+    body_keys: impl Iterator<Item = &'a BodyNativeKey> + Clone,
     selector: u64,
-) -> Result<Option<BodyId>, cadmpeg_core::CodecError> {
-    let direct = body_keys
-        .iter()
-        .filter(|body| body.asm_body_key == Some(selector))
-        .map(|body| body.body.clone())
-        .collect::<Vec<_>>();
-    match direct.as_slice() {
-        [body] => return Ok(Some(body.clone())),
-        [] => {}
-        _ => {
+) -> Result<Option<&'a BodyId>, cadmpeg_core::CodecError> {
+    let mut direct = body_keys
+        .clone()
+        .filter(|body| body.asm_body_key == Some(selector));
+    if let Some(body) = direct.next() {
+        if direct.next().is_some() {
             return Err(cadmpeg_core::CodecError::malformed(format_args!(
                 "F3D body selector {selector} matches multiple native body keys"
             )));
         }
+        return Ok(Some(&body.body));
     }
     let Some(ordinal) = u32::try_from(selector).ok() else {
         return Ok(None);
     };
-    let ordinal = body_keys
-        .iter()
-        .filter(|body| body.body_ordinal == ordinal)
-        .map(|body| body.body.clone())
-        .collect::<Vec<_>>();
-    match ordinal.as_slice() {
-        [body] => Ok(Some(body.clone())),
-        [] => Ok(None),
+    let mut matches = body_keys.filter(|body| body.body_ordinal == ordinal);
+    match matches.next() {
+        Some(body) if matches.next().is_none() => Ok(Some(&body.body)),
+        None => Ok(None),
         _ => Err(cadmpeg_core::CodecError::malformed(format_args!(
             "F3D body selector {selector} matches multiple body ordinals"
         ))),
@@ -382,8 +830,25 @@ fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
     };
     match (*form, payload) {
         (3, [AttributeValue::String(field)]) => {
-            let fields = field.split_ascii_whitespace().collect::<Vec<_>>();
-            let [sketch_curve_id, ref_b, sense, "0", role, closure] = fields[..] else {
+            let mut fields = field.split_ascii_whitespace();
+            let (
+                Some(sketch_curve_id),
+                Some(ref_b),
+                Some(sense),
+                Some("0"),
+                Some(role),
+                Some(closure),
+                None,
+            ) = (
+                fields.next(),
+                fields.next(),
+                fields.next(),
+                fields.next(),
+                fields.next(),
+                fields.next(),
+                fields.next(),
+            )
+            else {
                 return None;
             };
             // `ref_b` reaches the full unsigned 64-bit range, so it is read
@@ -414,144 +879,183 @@ fn sketch_link_payload(values: &[AttributeValue]) -> Option<SketchLinkPayload> {
     }
 }
 
-fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
-    let family = attribute.values.iter().position(
+fn sketch_curve_link(
+    ctx: &DecodeContext<'_>,
+    attribute: &SourceAttribute,
+) -> Result<Option<SketchCurveLink>, CodecError> {
+    let Some(family) = attribute.values.iter().position(
         |value| matches!(value, AttributeValue::String(name) if name == "sketch_attrib_def"),
-    )?;
-    let payload = sketch_link_payload(&attribute.values[family + 1..])?;
-    Some(SketchCurveLink {
-        id: format!("f3d:design:sketch-curve-link#{}", attribute_key(attribute)),
-        target: attribute.target.clone(),
+    ) else {
+        return Ok(None);
+    };
+    let Some(payload) = sketch_link_payload(&attribute.values[family + 1..]) else {
+        return Ok(None);
+    };
+    Ok(Some(SketchCurveLink {
+        id: format_brep_text(
+            ctx,
+            format_args!("f3d:design:sketch-curve-link#{}", attribute_key(attribute)),
+            "retain F3D sketch curve link ID",
+        )?,
+        target: copy_attribute_target(ctx, &attribute.target)?,
         sketch_curve_id: payload.sketch_curve_id,
         ref_b: payload.ref_b,
         sense: crate::records::sketch_links::SketchLinkSense::try_from(payload.sense).ok(),
         role: payload.role,
         closure: payload.closure,
-    })
+    }))
 }
 
-fn persistent_design_links(attribute: &SourceAttribute) -> Vec<PersistentDesignLink> {
+fn persistent_design_links(
+    ctx: &DecodeContext<'_>,
+    attribute: &SourceAttribute,
+) -> Result<Vec<PersistentDesignLink>, CodecError> {
     let AttributeTarget::Body(_) = &attribute.target else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some((version, group_count, rest)) = generic_tag_payload(attribute) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let group_width = match version {
         GenericTagVersion::V2 => 4,
         GenericTagVersion::V3 => 5,
     };
-    if rest.len() != group_count.saturating_mul(group_width) {
-        return Vec::new();
+    if group_count.checked_mul(group_width) != Some(rest.len()) {
+        return Ok(Vec::new());
     }
-    let groups = rest
-        .chunks_exact(group_width)
-        .filter_map(|values| match values {
+    let mut links = Vec::new();
+    for values in rest.chunks_exact(group_width) {
+        let (entity_kind, design_id, design_reference) = match values {
             [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0)]
             | [AttributeValue::Integer(entity_kind), AttributeValue::String(design_id), AttributeValue::Integer(design_reference), AttributeValue::Integer(0), AttributeValue::Integer(0)] => {
-                let design_id = crate::records::sketch_links::DesignPersistentIdText::try_from(design_id.clone()).ok()?;
-                Some((*entity_kind, design_id, *design_reference))
+                (*entity_kind, design_id, *design_reference)
             }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if groups.len() != group_count {
-        return Vec::new();
-    }
-    let groups = groups
-        .into_iter()
-        .filter(|(entity_kind, _, _)| *entity_kind == 3)
-        .collect::<Vec<_>>();
-    groups
-        .into_iter()
-        .enumerate()
-        .map(
-            |(ordinal, (_, design_id, design_reference))| PersistentDesignLink {
-                id: format!(
+            _ => return Ok(Vec::new()),
+        };
+        let design_id_text = copy_brep_text(ctx, design_id, "copy F3D persistent design ID")?;
+        let Ok(design_id) =
+            crate::records::sketch_links::DesignPersistentIdText::try_from(design_id_text)
+        else {
+            return Ok(Vec::new());
+        };
+        if entity_kind != 3 {
+            continue;
+        }
+        let ordinal = u32::try_from(links.len()).map_err(|_| {
+            CodecError::Malformed("F3D persistent design link ordinal overflows".into())
+        })?;
+        let link = PersistentDesignLink {
+            id: format_brep_text(
+                ctx,
+                format_args!(
                     "f3d:design:persistent-design-link#{}:{ordinal}",
                     attribute_key(attribute)
                 ),
-                target: attribute.target.clone(),
-                design_id,
-
-                design_reference,
-                ordinal: ordinal as u32,
-            },
-        )
-        .collect()
+                "retain F3D persistent design link ID",
+            )?,
+            target: copy_attribute_target(ctx, &attribute.target)?,
+            design_id,
+            design_reference,
+            ordinal,
+        };
+        push_brep_item(ctx, &mut links, link, "collect F3D attribute design links")?;
+    }
+    Ok(links)
 }
 
-fn persistent_subentity_tags(attribute: &SourceAttribute) -> Vec<PersistentSubentityTag> {
+fn persistent_subentity_tags(
+    ctx: &DecodeContext<'_>,
+    attribute: &SourceAttribute,
+) -> Result<Vec<PersistentSubentityTag>, CodecError> {
     if !matches!(
         attribute.target,
         AttributeTarget::Face(_) | AttributeTarget::Edge(_)
     ) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some((version, group_count, rest)) = generic_tag_payload(attribute) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     // Each group consumes at least four leading attribute values from `rest`.
-    let Some(group_count) = bounded_len(group_count as u64, 4, rest.len()) else {
-        return Vec::new();
+    let Ok(group_count) = u64::try_from(group_count) else {
+        return Ok(Vec::new());
+    };
+    let Some(group_count) = bounded_len(group_count, 4, rest.len()) else {
+        return Ok(Vec::new());
     };
     let mut position: usize = 0;
-    let mut groups = Vec::with_capacity(group_count);
+    let mut groups = Vec::new();
     for ordinal in 0..group_count {
         let Some(
             [AttributeValue::Integer(selector), AttributeValue::String(token), AttributeValue::Integer(0), AttributeValue::Integer(reference_count)],
-        ) = rest.get(position..position.saturating_add(4))
+        ) = rest.get(position..position + 4)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(token) = cadmpeg_core::text::NonBlankString::new(token.clone()) else {
-            return Vec::new();
+        let Some(token) = cadmpeg_core::text::NonBlankString::new(copy_brep_text(
+            ctx,
+            token,
+            "copy F3D persistent subentity token",
+        )?) else {
+            return Ok(Vec::new());
         };
         if *reference_count < 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let Ok(reference_count) = usize::try_from(*reference_count) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let reference_start = position + 4;
-        let reference_end = reference_start.saturating_add(reference_count);
+        let Some(reference_end) = reference_start.checked_add(reference_count) else {
+            return Ok(Vec::new());
+        };
         let Some(reference_values) = rest.get(reference_start..reference_end) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let references = reference_values
-            .iter()
-            .map(|value| match value {
-                AttributeValue::Integer(value) => Some(*value),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(design_references) = references else {
-            return Vec::new();
-        };
+        let mut design_references = Vec::new();
+        for value in reference_values {
+            let AttributeValue::Integer(value) = value else {
+                return Ok(Vec::new());
+            };
+            push_brep_item(
+                ctx,
+                &mut design_references,
+                *value,
+                "collect F3D subentity references",
+            )?;
+        }
         if matches!(version, GenericTagVersion::V3) {
             if !matches!(rest.get(reference_end), Some(AttributeValue::Integer(0))) {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             position = reference_end + 1;
         } else {
             position = reference_end;
         }
-        groups.push(PersistentSubentityTag {
-            id: format!(
-                "f3d:design:persistent-subentity-tag#{}:{ordinal}",
-                attribute_key(attribute)
-            ),
-            target: attribute.target.clone(),
+        let ordinal = u32::try_from(ordinal).map_err(|_| {
+            CodecError::Malformed("F3D persistent subentity ordinal overflows".into())
+        })?;
+        let group = PersistentSubentityTag {
+            id: format_brep_text(
+                ctx,
+                format_args!(
+                    "f3d:design:persistent-subentity-tag#{}:{ordinal}",
+                    attribute_key(attribute)
+                ),
+                "retain F3D persistent subentity tag ID",
+            )?,
+            target: copy_attribute_target(ctx, &attribute.target)?,
             selector: *selector,
             token,
             design_references,
-            ordinal: ordinal as u32,
-        });
+            ordinal,
+        };
+        push_brep_item(ctx, &mut groups, group, "collect F3D subentity tag groups")?;
     }
     if position != rest.len() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    groups
+    Ok(groups)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -601,545 +1105,38 @@ fn retained_attribute_target(target: &AttributeTarget, reachable: &HashSet<Strin
     }
 }
 
-fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> {
-    let family = attribute.values.iter().position(
+fn creation_timestamp(
+    ctx: &DecodeContext<'_>,
+    attribute: &SourceAttribute,
+) -> Result<Option<CreationTimestamp>, CodecError> {
+    let Some(family) = attribute.values.iter().position(
         |value| matches!(value, AttributeValue::String(name) if name == "Timestamp_attrib_def"),
-    )?;
-    let marker = attribute.values.get(family + 1)?;
-    if !matches!(marker, AttributeValue::Integer(1)) {
-        return None;
-    }
-    let AttributeValue::Float(unix_microseconds) = attribute.values.get(family + 2)? else {
-        return None;
+    ) else {
+        return Ok(None);
     };
-    Some(CreationTimestamp {
-        id: format!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
-        target: attribute.target.clone(),
-        record_index: attribute_key(attribute).parse().ok()?,
+    let Some(marker) = attribute.values.get(family + 1) else {
+        return Ok(None);
+    };
+    if !matches!(marker, AttributeValue::Integer(1)) {
+        return Ok(None);
+    }
+    let Some(AttributeValue::Float(unix_microseconds)) = attribute.values.get(family + 2) else {
+        return Ok(None);
+    };
+    let Some(record_index) = attribute_key(attribute).parse().ok() else {
+        return Ok(None);
+    };
+    Ok(Some(CreationTimestamp {
+        id: format_brep_text(
+            ctx,
+            format_args!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
+            "retain F3D creation timestamp ID",
+        )?,
+        target: copy_attribute_target(ctx, &attribute.target)?,
+        record_index,
         unix_microseconds: *unix_microseconds,
-    })
+    }))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{persistent_design_links, persistent_subentity_tags, Brep};
-    use crate::records::recipes::CreationTimestamp;
-    use crate::records::sketch_links::{
-        PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
-    };
-    use cadmpeg_asm::brep::annotations::AnnotationRecord;
-    use cadmpeg_asm::brep::records::BodyNativeKey;
-    use cadmpeg_asm::brep::AsmBrep;
-    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-    use cadmpeg_ir::ids::BodyId;
-    use cadmpeg_ir::ids::{FaceId, RegionId};
-    use cadmpeg_ir::topology::{Body, BodyKind, Region};
-    use std::collections::{HashMap, HashSet};
-
-    fn test_context(
-        arena: &cadmpeg_core::decode::DecodeArena,
-    ) -> cadmpeg_core::decode::DecodeContext<'_> {
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .expect("test decode context")
-        .0
-    }
-
-    fn generic_tag_attribute(
-        target: AttributeTarget,
-        versions: (i64, i64),
-        group_count: i64,
-        groups: Vec<AttributeValue>,
-    ) -> SourceAttribute {
-        SourceAttribute {
-            id: "f3d:brep:attribute#1".try_into().expect("valid identity"),
-            target,
-            name: "ATTRIB_CUSTOM-attrib".into(),
-            values: [
-                AttributeValue::String("generic_tag_attrib_def".into()),
-                AttributeValue::Integer(versions.0),
-                AttributeValue::Integer(versions.1),
-                AttributeValue::Integer(-1),
-                AttributeValue::String("generic_tag_attrib_def ".into()),
-                AttributeValue::Integer(group_count),
-            ]
-            .into_iter()
-            .chain(groups)
-            .collect(),
-        }
-    }
-
-    #[test]
-    fn generic_tag_payload_accepts_both_equal_envelope_versions() {
-        for (version, groups) in [
-            (
-                2,
-                vec![
-                    AttributeValue::Integer(7),
-                    AttributeValue::String("97".into()),
-                    AttributeValue::Integer(0),
-                    AttributeValue::Integer(1),
-                    AttributeValue::Integer(302),
-                ],
-            ),
-            (
-                3,
-                vec![
-                    AttributeValue::Integer(7),
-                    AttributeValue::String("97".into()),
-                    AttributeValue::Integer(0),
-                    AttributeValue::Integer(1),
-                    AttributeValue::Integer(302),
-                    AttributeValue::Integer(0),
-                ],
-            ),
-        ] {
-            let attribute = generic_tag_attribute(
-                AttributeTarget::Face(FaceId::mint("f3d:test:face#1").expect("identity grammar")),
-                (version, version),
-                1,
-                groups,
-            );
-            assert_eq!(persistent_subentity_tags(&attribute).len(), 1);
-            assert_eq!(
-                persistent_subentity_tags(&attribute)[0].design_references,
-                [302]
-            );
-        }
-    }
-
-    #[test]
-    fn generic_tag_payload_rejects_mixed_or_unsupported_envelope_versions() {
-        let groups = vec![
-            AttributeValue::Integer(7),
-            AttributeValue::String("97".into()),
-            AttributeValue::Integer(0),
-            AttributeValue::Integer(0),
-            AttributeValue::Integer(0),
-        ];
-        for versions in [(2, 3), (1, 1), (4, 4)] {
-            let attribute = generic_tag_attribute(
-                AttributeTarget::Face(FaceId::mint("f3d:test:face#1").expect("identity grammar")),
-                versions,
-                1,
-                groups.clone(),
-            );
-            assert!(persistent_subentity_tags(&attribute).is_empty());
-        }
-    }
-
-    #[test]
-    fn generic_tag_payload_binds_modern_body_design_links() {
-        let attribute = generic_tag_attribute(
-            AttributeTarget::Body(BodyId::mint("f3d:test:body#1").expect("identity grammar")),
-            (2, 2),
-            1,
-            vec![
-                AttributeValue::Integer(3),
-                AttributeValue::String("301".into()),
-                AttributeValue::Integer(1),
-                AttributeValue::Integer(0),
-            ],
-        );
-        let links = persistent_design_links(&attribute);
-        assert_eq!(links.len(), 1);
-        assert_eq!(links[0].design_id.as_str(), "301");
-        assert_eq!(links[0].design_reference, 1);
-    }
-
-    #[test]
-    fn generic_tag_payload_binds_legacy_body_design_links() {
-        let attribute = generic_tag_attribute(
-            AttributeTarget::Body(BodyId::mint("f3d:test:body#1").expect("identity grammar")),
-            (3, 3),
-            1,
-            vec![
-                AttributeValue::Integer(3),
-                AttributeValue::String("301".into()),
-                AttributeValue::Integer(1),
-                AttributeValue::Integer(0),
-                AttributeValue::Integer(0),
-            ],
-        );
-        assert_eq!(persistent_design_links(&attribute).len(), 1);
-    }
-
-    #[test]
-    fn brep_qualification_rewrites_owned_ids_and_cross_references() {
-        let body = BodyId::mint("f3d:brep:entity#1").expect("identity grammar");
-        let region = RegionId::mint("f3d:brep:entity#2").expect("identity grammar");
-        let mut brep = Brep {
-            asm: AsmBrep {
-                bodies: vec![Body {
-                    id: body.clone(),
-                    kind: BodyKind::default(),
-                    regions: vec![region.clone()],
-                    transform: None,
-                    name: None,
-                    color: None,
-                    visible: None,
-                }],
-                regions: vec![Region {
-                    id: region,
-                    body: body.clone(),
-                    shells: Vec::new(),
-                }],
-
-                body_native_keys: vec![BodyNativeKey {
-                    source_namespace:
-                        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                            crate::ids::ID_FORMAT,
-                        ),
-                    body,
-                    record_index: 1,
-                    body_ordinal: 0,
-                    source_brep: Some("BREP.source.smbh".into()),
-                    asm_body_key: Some(7),
-                }],
-                annotation_records: vec![AnnotationRecord {
-                    id: "f3d:brep:entity#1".into(),
-                    stream: "asset/BREP.source.smbh".into(),
-                    offset: 10,
-                    tag: cadmpeg_asm::brep::annotations::AnnotationTag::Record("body".into()),
-                    derived_fields: Vec::new(),
-                }],
-                ..AsmBrep::default()
-            },
-            ..Brep::default()
-        };
-
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let ctx = test_context(&arena);
-        brep.qualify_ids(&ctx, crate::ids::ID_FORMAT, "source")
-            .expect("qualify BREP");
-
-        let qualified = BodyId::mint("f3d:brep/source/brep:entity#1").expect("identity grammar");
-        assert_eq!(brep.asm.bodies[0].id, qualified);
-        assert_eq!(brep.asm.regions[0].body, qualified);
-        assert_eq!(brep.asm.body_native_keys[0].body, qualified);
-        assert_eq!(
-            brep.asm
-                .body_native_keys
-                .iter()
-                .find(|record| record.body == qualified)
-                .and_then(|record| record.asm_body_key.as_ref()),
-            Some(&7)
-        );
-        assert_eq!(brep.asm.annotation_records[0].id, qualified.as_str());
-        assert_eq!(
-            brep.asm.body_native_keys[0].source_brep.as_deref(),
-            Some("BREP.source.smbh")
-        );
-    }
-
-    #[test]
-    fn body_key_retention_keeps_only_the_selected_connected_graph() {
-        let body = |index, region| Body {
-            id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
-            kind: BodyKind::default(),
-            regions: vec![
-                RegionId::mint(format!("f3d:brep:entity#{region}")).expect("identity grammar")
-            ],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        };
-        let native_key = |index, key| BodyNativeKey {
-            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                crate::ids::ID_FORMAT,
-            ),
-            body: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
-            record_index: index,
-            body_ordinal: index - 1,
-            source_brep: Some("BREP.source.smbh".into()),
-            asm_body_key: Some(key),
-        };
-        let mut brep = Brep {
-            asm: AsmBrep {
-                bodies: vec![body(1, 2), body(3, 4)],
-                regions: vec![
-                    Region {
-                        id: RegionId::mint("f3d:brep:entity#2").expect("identity grammar"),
-                        body: BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-                        shells: Vec::new(),
-                    },
-                    Region {
-                        id: RegionId::mint("f3d:brep:entity#4").expect("identity grammar"),
-                        body: BodyId::mint("f3d:brep:entity#3").expect("identity grammar"),
-                        shells: Vec::new(),
-                    },
-                ],
-
-                body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
-                ..AsmBrep::default()
-            },
-            ..Brep::default()
-        };
-
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let ctx = test_context(&arena);
-        brep.retain_body_keys(&ctx, &HashSet::from([20]))
-            .expect("retain body graph");
-
-        assert_eq!(brep.asm.bodies.len(), 1);
-        assert_eq!(brep.asm.bodies[0].id.as_str(), "f3d:brep:entity#3");
-        assert_eq!(brep.asm.regions.len(), 1);
-        assert_eq!(brep.asm.regions[0].id.as_str(), "f3d:brep:entity#4");
-        assert_eq!(brep.asm.body_native_keys.len(), 1);
-        assert_eq!(
-            brep.asm
-                .body_native_keys
-                .iter()
-                .filter(|record| record.asm_body_key.is_some())
-                .count(),
-            1
-        );
-    }
-
-    #[test]
-    fn body_key_retention_preserves_derived_links_for_reachable_targets() {
-        let body = |index| Body {
-            id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
-            kind: BodyKind::default(),
-            regions: Vec::new(),
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        };
-        let native_key = |index, key| BodyNativeKey {
-            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                crate::ids::ID_FORMAT,
-            ),
-            body: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
-            record_index: index,
-            body_ordinal: index - 1,
-            source_brep: Some("BREP.source.smbh".into()),
-            asm_body_key: Some(key),
-        };
-        let target = |index| {
-            AttributeTarget::Body(
-                BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
-            )
-        };
-        let mut brep = Brep {
-            asm: AsmBrep {
-                bodies: vec![body(1), body(3)],
-
-                body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
-                ..AsmBrep::default()
-            },
-            sketch_curve_links: vec![
-                SketchCurveLink {
-                    id: "link-retained".into(),
-                    target: target(1),
-                    sketch_curve_id: 1,
-                    ref_b: 0,
-                    sense: None,
-                    role: 0,
-                    closure: 0,
-                },
-                SketchCurveLink {
-                    id: "link-dropped".into(),
-                    target: target(3),
-                    sketch_curve_id: 3,
-                    ref_b: 0,
-                    sense: None,
-                    role: 0,
-                    closure: 0,
-                },
-            ],
-            persistent_design_links: vec![
-                PersistentDesignLink {
-                    id: "design-retained".into(),
-                    target: target(1),
-                    design_id: "301".to_owned().try_into().unwrap(),
-
-                    design_reference: 1,
-                    ordinal: 0,
-                },
-                PersistentDesignLink {
-                    id: "design-dropped".into(),
-                    target: target(3),
-                    design_id: "303".to_owned().try_into().unwrap(),
-
-                    design_reference: 3,
-                    ordinal: 0,
-                },
-            ],
-            persistent_subentity_tags: vec![
-                PersistentSubentityTag {
-                    id: "tag-retained".into(),
-                    target: target(1),
-                    selector: 1,
-                    token: cadmpeg_core::text::NonBlankString::new("97").unwrap(),
-                    design_references: vec![1],
-                    ordinal: 0,
-                },
-                PersistentSubentityTag {
-                    id: "tag-dropped".into(),
-                    target: target(3),
-                    selector: 1,
-                    token: cadmpeg_core::text::NonBlankString::new("97").unwrap(),
-                    design_references: vec![3],
-                    ordinal: 0,
-                },
-            ],
-            creation_timestamps: vec![
-                CreationTimestamp {
-                    id: "time-retained".into(),
-                    target: target(1),
-                    record_index: 1,
-                    unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap(),
-                },
-                CreationTimestamp {
-                    id: "time-dropped".into(),
-                    target: target(3),
-                    record_index: 3,
-                    unix_microseconds: cadmpeg_ir::scalar::FiniteReal::new(3.0).unwrap(),
-                },
-            ],
-        };
-
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let ctx = test_context(&arena);
-        brep.retain_body_keys(&ctx, &HashSet::from([10]))
-            .expect("retain body graph");
-
-        assert_eq!(brep.sketch_curve_links.len(), 1);
-        assert_eq!(brep.persistent_design_links.len(), 1);
-        assert_eq!(brep.persistent_subentity_tags.len(), 1);
-        assert_eq!(brep.creation_timestamps.len(), 1);
-        assert_eq!(brep.persistent_subentity_tags[0].id, "tag-retained");
-    }
-
-    #[test]
-    fn body_key_retention_preserves_selectorless_neutral_roots() {
-        let native_body = BodyId::mint("f3d:brep:entity#1").expect("identity grammar");
-        let projected_body = BodyId::mint("f3d:brep:saved-edge-body#5").expect("identity grammar");
-        let mut brep = Brep {
-            asm: AsmBrep {
-                bodies: vec![
-                    Body {
-                        id: native_body.clone(),
-                        kind: BodyKind::Solid,
-                        regions: Vec::new(),
-                        transform: None,
-                        name: None,
-                        color: None,
-                        visible: None,
-                    },
-                    Body {
-                        id: projected_body.clone(),
-                        kind: BodyKind::Wire,
-                        regions: Vec::new(),
-                        transform: None,
-                        name: None,
-                        color: None,
-                        visible: None,
-                    },
-                ],
-
-                body_native_keys: vec![BodyNativeKey {
-                    source_namespace:
-                        cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                            crate::ids::ID_FORMAT,
-                        ),
-                    body: native_body,
-                    record_index: 1,
-                    body_ordinal: 0,
-                    source_brep: Some("BREP.source.smbh".into()),
-                    asm_body_key: Some(10),
-                }],
-                ..AsmBrep::default()
-            },
-            ..Brep::default()
-        };
-
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let ctx = test_context(&arena);
-        brep.retain_body_keys(&ctx, &HashSet::from([10]))
-            .expect("retain body graph");
-
-        assert_eq!(brep.asm.bodies.len(), 2);
-        assert!(brep.asm.bodies.iter().any(|body| body.id == projected_body));
-    }
-
-    #[test]
-    fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
-        let native_key = |ordinal, key| BodyNativeKey {
-            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                crate::ids::ID_FORMAT,
-            ),
-            body: BodyId::mint(format!("f3d:brep:entity#{ordinal}")).expect("identity grammar"),
-            record_index: ordinal,
-            body_ordinal: ordinal,
-            source_brep: Some("BREP.source.smb".into()),
-            asm_body_key: key,
-        };
-        let mut brep = Brep {
-            asm: AsmBrep {
-                body_native_keys: vec![native_key(0, None), native_key(1, None)],
-                ..AsmBrep::default()
-            },
-            ..Brep::default()
-        };
-
-        assert_eq!(brep.body_selectors().len(), 2);
-        assert_eq!(
-            brep.body_selectors()[&BodyId::mint("f3d:brep:entity#1").expect("identity grammar")],
-            1
-        );
-
-        brep.asm.body_native_keys[1].asm_body_key = Some(7);
-        assert_eq!(
-            brep.body_selectors(),
-            HashMap::from([(
-                BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-                7
-            )])
-        );
-    }
-
-    #[test]
-    fn design_body_selectors_prefer_exact_keys_then_fall_back_to_ordinals() {
-        let native_key = |ordinal, key| BodyNativeKey {
-            source_namespace: cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(
-                crate::ids::ID_FORMAT,
-            ),
-            body: BodyId::mint(format!("f3d:brep:entity#{ordinal}")).expect("identity grammar"),
-            record_index: ordinal,
-            body_ordinal: ordinal,
-            source_brep: Some("BREP.source.smb".into()),
-            asm_body_key: Some(key),
-        };
-        let mut brep = Brep {
-            asm: AsmBrep {
-                body_native_keys: vec![native_key(0, 1), native_key(1, 0)],
-                ..AsmBrep::default()
-            },
-            ..Brep::default()
-        };
-
-        assert_eq!(
-            brep.body_selectors_for(&HashSet::from([0])).unwrap(),
-            HashMap::from([(
-                BodyId::mint("f3d:brep:entity#1").expect("identity grammar"),
-                0
-            )])
-        );
-
-        brep.asm.body_native_keys = vec![native_key(0, 436)];
-        assert_eq!(
-            brep.body_selectors_for(&HashSet::from([0])).unwrap(),
-            HashMap::from([(
-                BodyId::mint("f3d:brep:entity#0").expect("identity grammar"),
-                0
-            )])
-        );
-    }
-}
+mod tests;

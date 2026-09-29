@@ -3,22 +3,338 @@ use crate::families::b5::graph::tests::extended_loop_metadata;
 use crate::families::b5::graph::tests::test_pcurve;
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::graph::{
-    bind_edge_vertices, bind_native_vertices, canonical_point, canonical_surface_id,
-    counted_references, distance_squared, edge_support_pcurve_references, evaluate_pcurve,
-    face_surface_references, incidence_vertex_coordinates, lift_parameter_incidence,
-    loop_chain_closes, loop_metadata, loop_references, loop_references_and_metadata,
-    merge_pcurve_candidate, merge_surface_candidate, parameter_incidence, parse_face,
-    parse_face_record, parse_loop, parse_pcurve, pcurve_endpoints, pcurve_nurbs_knots,
-    pcurve_parameter_domain, point_index, resolve_surface_aliases, resolve_targeted_surface,
-    sphere_great_circle_point, surface_alias_carrier, B5FaceRecord, B5IncidenceLane,
-    B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension, B5OpaquePcurve,
-    B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization, B5Record,
-    B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceLink,
+    canonical_point, canonical_surface_id, counted_references, distance_squared,
+    edge_support_pcurve_references, face_surface_references, incidence_vertex_coordinates,
+    loop_chain_closes, loop_metadata as parse_loop_metadata, loop_references,
+    loop_references_and_metadata, parameter_incidence, parse_face_record, parse_loop,
+    parse_loop_record, pcurve_parameter_domain, sphere_great_circle_point,
+    typed_face_records_from_records, typed_loop_records_from_records, B5FaceRecord,
+    B5IncidenceLane, B5LogicalVertex, B5Loop, B5LoopMetadata, B5LoopMetadataExtension,
+    B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5PcurveContext, B5PcurveParameterization,
+    B5Record, B5SphereGreatCirclePcurve, B5Surface, B5VertexIncidenceLink,
 };
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, ProceduralSurfaceDefinition};
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn parse_face(
+    record: &B5FaceRecord,
+    loops: &BTreeMap<u32, B5Loop>,
+    surfaces: &BTreeMap<u32, B5Surface>,
+    aliases: &BTreeMap<u32, u32>,
+) -> Option<super::super::B5Face> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::parse_face(ctx, record, loops, surfaces, aliases)
+    })
+    .expect("service budget")
+}
+
+fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::evaluate_pcurve(ctx, pcurve, parameter)
+    })
+    .expect("service budget")
+}
+
+fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<cadmpeg_ir::scalar::FiniteReal>> {
+    crate::test_support::with_service_context(|ctx| super::super::pcurve_nurbs_knots(ctx, pcurve))
+        .expect("service budget")
+}
+
+fn pcurve_endpoints(
+    pcurve_id: u32,
+    edge_id: u32,
+    geometry: &B5PcurveContext<'_>,
+) -> Option<[cadmpeg_ir::features::FinitePoint3; 2]> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::pcurve_endpoints(ctx, pcurve_id, edge_id, geometry)
+    })
+    .expect("service budget")
+}
+
+fn lift_parameter_incidence(
+    pcurve_id: u32,
+    parameter: cadmpeg_ir::scalar::FiniteReal,
+    geometry: &B5PcurveContext<'_>,
+) -> Option<cadmpeg_ir::features::FinitePoint3> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::lift_parameter_incidence(ctx, pcurve_id, parameter, geometry)
+    })
+    .expect("service budget")
+}
+
+#[test]
+fn pcurve_knot_expansion_and_evaluation_refuse_the_caller_limit() {
+    let pcurve = test_pcurve(1, 2);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::pcurve_nurbs_knots(ctx, &pcurve)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_expanded_pcurve_knots")
+    );
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::evaluate_pcurve(ctx, &pcurve, 0.5)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_expanded_pcurve_knots")
+    );
+    assert_eq!(evaluate_pcurve(&pcurve, 0.5), Some([0.5, 0.0]));
+    assert_eq!(
+        pcurve_parameter_domain(&pcurve),
+        Some([
+            crate::test_support::test_b5::finite(0.0),
+            crate::test_support::test_b5::finite(1.0),
+        ])
+    );
+}
+
+fn bind_edge_vertices(
+    loops: &BTreeMap<u32, B5Loop>,
+    geometry: &B5PcurveContext<'_>,
+    points: &[cadmpeg_ir::features::FinitePoint3],
+) -> BTreeMap<u32, [usize; 2]> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::bind_edge_vertices(ctx, loops, geometry, points)
+    })
+    .expect("service budget")
+}
+
+fn bind_native_vertices(
+    loops: &BTreeMap<u32, B5Loop>,
+    geometry: &B5PcurveContext<'_>,
+    native_edges: &BTreeMap<u32, [u32; 2]>,
+    geometric_edges: &BTreeMap<u32, [usize; 2]>,
+    native_coordinates: &BTreeMap<u32, cadmpeg_ir::features::FinitePoint3>,
+    points: &[cadmpeg_ir::features::FinitePoint3],
+) -> super::super::BoundNativeVertices {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::bind_native_vertices(
+            ctx,
+            loops,
+            geometry,
+            native_edges,
+            geometric_edges,
+            native_coordinates,
+            points,
+        )
+    })
+    .expect("service budget")
+}
+
+fn point_index(points: &[cadmpeg_ir::features::FinitePoint3]) -> HashMap<[i64; 3], Vec<usize>> {
+    crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, points))
+        .expect("service budget")
+}
+
+#[test]
+fn topology_binding_refuses_the_caller_collection_limit() {
+    let point = crate::test_support::test_b5::point([0.0, 0.0, 0.0]);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::point_index(ctx, &[point])
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_point_index_cells")
+    );
+
+    let loops = BTreeMap::new();
+    let pcurves = BTreeMap::new();
+    let opaque_pcurves = BTreeMap::new();
+    let surfaces = BTreeMap::new();
+    let profiles = BTreeMap::new();
+    let edge_parameter_incidences = BTreeMap::new();
+    let parameter_incidences = BTreeMap::new();
+    let geometry = B5PcurveContext {
+        pcurves: &pcurves,
+        opaque_pcurves: &opaque_pcurves,
+        surfaces: &surfaces,
+        profiles: &profiles,
+        edge_parameter_incidences: &edge_parameter_incidences,
+        parameter_incidences: &parameter_incidences,
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::bind_edge_vertices(ctx, &loops, &geometry, &[point])
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_point_index_cells")
+    );
+
+    let native = BTreeMap::from([(7, [11, 12])]);
+    let geometric = BTreeMap::from([(7, [0, 0])]);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::bind_native_vertices(
+            ctx,
+            &loops,
+            &geometry,
+            &native,
+            &geometric,
+            &BTreeMap::new(),
+            &[point],
+        )
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_vertex_constraints")
+    );
+    assert!(crate::test_support::with_service_context(|ctx| {
+        super::super::bind_native_vertices(
+            ctx,
+            &loops,
+            &geometry,
+            &native,
+            &geometric,
+            &BTreeMap::new(),
+            &[point],
+        )
+    })
+    .is_ok());
+}
+
+fn merge_pcurve_candidate(
+    pcurves: &mut BTreeMap<u32, B5Pcurve>,
+    conflicts: &mut HashSet<u32>,
+    candidate: B5Pcurve,
+) {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::merge_pcurve_candidate(ctx, pcurves, conflicts, candidate)
+    })
+    .expect("service budget");
+}
+
+fn merge_surface_candidate(
+    surfaces: &mut BTreeMap<u32, B5Surface>,
+    conflicts: &mut HashSet<u32>,
+    object_id: u32,
+    candidate: B5Surface,
+) -> bool {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::merge_surface_candidate(ctx, surfaces, conflicts, object_id, candidate)
+    })
+    .expect("service budget")
+}
+
+fn resolve_surface_aliases(
+    records: &[B5Record],
+    by_id: &HashMap<u32, &B5Record>,
+    surfaces: &mut BTreeMap<u32, B5Surface>,
+    conflicts: &mut HashSet<u32>,
+) -> bool {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::resolve_surface_aliases(ctx, records, by_id, surfaces, conflicts)
+    })
+    .expect("service budget")
+}
+
+fn surface_alias_carrier(
+    object_id: u32,
+    by_id: &HashMap<u32, &B5Record>,
+    surfaces: &BTreeMap<u32, B5Surface>,
+) -> Option<B5Surface> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::surface_alias_carrier(ctx, object_id, by_id, surfaces)
+    })
+    .expect("service budget")
+}
+
+fn resolve_targeted_surface(
+    object_id: u32,
+    records: &HashMap<u32, Option<B5Record>>,
+    headers: &HashMap<u32, crate::families::a5a8::records::A8SurfaceHeader>,
+    resolved: &HashMap<u32, Option<B5Surface>>,
+    rolling: &HashMap<u32, Option<B5Surface>>,
+) -> Option<B5Surface> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::resolve_targeted_surface(ctx, object_id, records, headers, resolved, rolling)
+    })
+    .expect("service budget")
+}
+
+#[test]
+fn targeted_surface_records_and_resolution_refuse_caller_limits() {
+    let mut bytes = Vec::new();
+    crate::test_support::test_b5::append_b5_record(&mut bytes, 0x27, 9, &[0x80]);
+    let frames = crate::test_support::with_service_context(|ctx| {
+        super::super::collect_object_stream_frames(ctx, &bytes)
+    })
+    .expect("service budget");
+    let object_ids = HashSet::from([9]);
+    for (limit, operation) in [
+        (1, "catia_b5_targeted_surface_records"),
+        (2, "catia_b5_targeted_surface_visited"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::super::targeted_surfaces_from_frames(
+                ctx,
+                &bytes,
+                &object_ids,
+                &frames,
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
+        });
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation)
+        );
+    }
+    let surface = B5Surface::Unknown {
+        family: 0xb5,
+        class: 0x27,
+        payload: vec![1, 2, 3],
+    };
+    let candidate = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::merge_targeted_surface(ctx, &mut HashMap::new(), 9, surface.clone())
+    });
+    assert!(
+        matches!(candidate, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_targeted_surface_candidates")
+    );
+    let copied = crate::test_support::with_retained_limit(2, |ctx| {
+        super::super::copy_surface(ctx, &surface)
+    });
+    assert!(
+        matches!(copied, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_copied_unknown_surface_payload")
+    );
+    let resolved = HashMap::from([(9, Some(surface.clone()))]);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::resolve_targeted_surface(
+            ctx,
+            9,
+            &HashMap::new(),
+            &HashMap::new(),
+            &resolved,
+            &HashMap::new(),
+        )
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_targeted_surface_visited")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::super::resolve_targeted_surface(
+                ctx,
+                9,
+                &HashMap::new(),
+                &HashMap::new(),
+                &resolved,
+                &HashMap::new(),
+            )
+        })
+        .expect("service budget"),
+        Some(surface)
+    );
+}
+
+fn loop_metadata(bytes: &[u8], edge_count: usize) -> Option<(B5LoopMetadata, Vec<[i16; 3]>)> {
+    crate::test_support::with_service_context(|ctx| {
+        parse_loop_metadata(ctx, bytes, edge_count).expect("service budget")
+    })
+}
 
 #[test]
 fn loop_metadata_accepts_exact_base_and_extended_forms() {
@@ -87,8 +403,10 @@ fn loop_references_require_exact_matching_edge_count_and_metadata() {
             0x01,
         ],
     };
-    let (references, _, edge_controls) =
-        loop_references_and_metadata(&record).expect("exact loop payload");
+    let (references, _, edge_controls) = crate::test_support::with_service_context(|ctx| {
+        loop_references_and_metadata(ctx, &record).expect("service budget")
+    })
+    .expect("exact loop payload");
     assert_eq!(references, [9, 10, 11]);
     assert_eq!(edge_controls, [[1, -1, 1]]);
 
@@ -99,6 +417,45 @@ fn loop_references_require_exact_matching_edge_count_and_metadata() {
     let mut residual = record;
     residual.payload.push(0);
     assert!(loop_references(&residual).is_none());
+}
+
+#[test]
+fn loop_record_nested_collections_refuse_each_limit() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x62,
+        object_id: 400,
+        payload: vec![
+            0x83, 0x89, 0x8a, 0x8b, 0x81, 0x05, 0x05, 0x03, 0x01, 0x00, 0xff, 0xff, 0x01, 0x00,
+            0x01,
+        ],
+    };
+    for (limit, operation) in [
+        (2, "catia_b5_loop_references"),
+        (3, "catia_b5_loop_edge_controls"),
+        (4, "catia_b5_loop_members"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            parse_loop_record(ctx, &record)
+        });
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation)
+        );
+    }
+    let limited_index = crate::test_support::with_collection_limit(5, |ctx| {
+        typed_loop_records_from_records(ctx, std::slice::from_ref(&record))
+    });
+    assert!(
+        matches!(limited_index, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_typed_loop_records")
+    );
+    let parsed = crate::test_support::with_service_context(|ctx| {
+        typed_loop_records_from_records(ctx, &[record])
+    })
+    .expect("service budget");
+    assert_eq!(parsed.get(&400).map(|loop_| loop_.members.len()), Some(1));
 }
 
 #[test]
@@ -179,6 +536,129 @@ fn loop_rejects_a_pcurve_bound_to_another_surface() {
 }
 
 #[test]
+fn b5_candidate_indexes_and_alias_walk_refuse_collection_limits() {
+    let pcurve = test_pcurve(1, 10);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::merge_pcurve_candidate(
+            ctx,
+            &mut BTreeMap::new(),
+            &mut HashSet::new(),
+            pcurve.clone(),
+        )
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_pcurve_candidates")
+    );
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::merge_pcurve_candidate(
+            ctx,
+            &mut BTreeMap::from([(1, pcurve.clone())]),
+            &mut HashSet::new(),
+            test_pcurve(1, 11),
+        )
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_conflicting_pcurves")
+    );
+    let plane = B5Surface::Plane {
+        origin: crate::test_support::test_b5::point([0.0; 3]),
+        frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
+        u_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+        v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::merge_surface_candidate(
+            ctx,
+            &mut BTreeMap::new(),
+            &mut HashSet::new(),
+            1,
+            plane.clone(),
+        )
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_surface_candidates")
+    );
+    let mut other = plane.clone();
+    if let B5Surface::Plane { origin, .. } = &mut other {
+        *origin = crate::test_support::test_b5::point([1.0, 0.0, 0.0]);
+    }
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::merge_surface_candidate(
+            ctx,
+            &mut BTreeMap::from([(1, plane.clone())]),
+            &mut HashSet::new(),
+            1,
+            other.clone(),
+        )
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_conflicting_surfaces")
+    );
+    let surfaces = BTreeMap::from([(
+        1,
+        B5Surface::Unknown {
+            family: 0xb5,
+            class: 0x27,
+            payload: vec![1, 2, 3],
+        },
+    )]);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::surface_alias_carrier(ctx, 1, &HashMap::new(), &surfaces)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_surface_alias_visits")
+    );
+    assert!(crate::test_support::with_service_context(|ctx| {
+        super::super::merge_surface_candidate(
+            ctx,
+            &mut BTreeMap::new(),
+            &mut HashSet::new(),
+            1,
+            plane,
+        )
+    })
+    .expect("service budget"));
+}
+
+#[test]
+fn loop_sense_vectors_refuse_the_caller_collection_limit() {
+    let loop_ = B5Loop {
+        object_id: 1,
+        members: test_loop_members(&[2, 3], &[4, 5]),
+        metadata: test_loop_metadata(),
+        surface: 10,
+    };
+    let edges = crate::test_support::with_collection_limit(1, |ctx| loop_.edge_senses(ctx));
+    assert!(
+        matches!(edges, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_loop_edge_senses")
+    );
+    let pcurves = crate::test_support::with_collection_limit(1, |ctx| loop_.pcurve_senses(ctx));
+    assert!(
+        matches!(pcurves, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_loop_pcurve_senses")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| loop_.edge_senses(ctx))
+            .expect("service budget")
+            .len(),
+        2
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| loop_.pcurve_senses(ctx))
+            .expect("service budget")
+            .len(),
+        2
+    );
+}
+
+#[test]
 fn pcurve_requires_one_complete_clamped_bezier_frame() {
     let payload = crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]);
     let record = |payload| B5Record {
@@ -187,6 +667,10 @@ fn pcurve_requires_one_complete_clamped_bezier_frame() {
         class: 0x21,
         object_id: 2,
         payload,
+    };
+    let parse_pcurve = |record: &B5Record| {
+        crate::test_support::with_service_context(|ctx| super::super::parse_pcurve(ctx, record))
+            .expect("service budget")
     };
     assert_eq!(
         parse_pcurve(&record(payload.clone()))
@@ -241,7 +725,44 @@ fn pcurve_requires_one_complete_clamped_bezier_frame() {
 }
 
 #[test]
+fn class21_pcurve_lanes_and_typed_index_refuse_collection_limit() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x21,
+        object_id: 2,
+        payload: crate::test_support::test_b5::b5_linear_pcurve_payload(1, [0.0, 0.0], [1.0, 0.0]),
+    };
+    for (limit, operation) in [
+        (1, "catia_b5_class21_distinct_knots"),
+        (2, "catia_b5_class21_multiplicities"),
+        (4, "catia_b5_class21_control_points"),
+        (6, "catia_b5_typed_class21_pcurves"),
+    ] {
+        let limited = crate::test_support::with_collection_limit(limit, |ctx| {
+            super::super::typed_class_21_pcurves_from_records(ctx, std::slice::from_ref(&record))
+        });
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+            if error.operation == operation)
+        );
+    }
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            super::super::typed_class_21_pcurves_from_records(ctx, &[record])
+        })
+        .expect("service budget")
+        .len(),
+        1
+    );
+}
+
+#[test]
 fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
+    let parse_pcurve = |record: &B5Record| {
+        crate::test_support::with_service_context(|ctx| super::super::parse_pcurve(ctx, record))
+            .expect("service budget")
+    };
     let payload = crate::test_support::test_b5::b5_linear_pcurve_payload_with_knots(
         7,
         [10.0, 20.0],
@@ -533,6 +1054,36 @@ fn targeted_surface_resolution_validates_an_analytic_offset_carrier() {
         resolve_targeted_surface(9, &records, &HashMap::new(), &resolved, &HashMap::new(),),
         Some(carrier)
     );
+    let mut refused = std::collections::BTreeSet::new();
+    for limit in 0..20 {
+        match crate::test_support::with_collection_limit(limit, |ctx| {
+            super::super::resolve_targeted_surface(
+                ctx,
+                9,
+                &records,
+                &HashMap::new(),
+                &resolved,
+                &HashMap::new(),
+            )
+        }) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(error)) => {
+                refused.insert(error.operation);
+            }
+            Ok(Some(_)) => break,
+            other => panic!("unexpected offset resolution result: {other:?}"),
+        }
+    }
+    for operation in [
+        "catia_b5_targeted_surface_visited",
+        "catia_b5_targeted_visited_copy",
+        "catia_b5_targeted_offset_carrier",
+        "catia_b5_targeted_offset_source",
+    ] {
+        assert!(
+            refused.contains(operation),
+            "missing refusal at {operation}"
+        );
+    }
 
     let mut wrong_distance = offset.clone();
     wrong_distance.payload[3..11].copy_from_slice(&(-0.25f64).to_le_bytes());
@@ -711,7 +1262,9 @@ fn counted_face_references_accept_both_exact_terminal_controls() {
             payload: vec![0x82, 0x81, 0x82, terminal_control],
         };
         assert_eq!(
-            parse_face_record(&record),
+            crate::test_support::with_service_context(|ctx| {
+                parse_face_record(ctx, &record).expect("service budget")
+            }),
             Some(B5FaceRecord {
                 object_id: 3,
                 references: vec![1, 2],
@@ -724,7 +1277,12 @@ fn counted_face_references_accept_both_exact_terminal_controls() {
 
         let mut overlong = record;
         overlong.payload.push(terminal_control);
-        assert_eq!(parse_face_record(&overlong), None);
+        assert_eq!(
+            crate::test_support::with_service_context(|ctx| {
+                parse_face_record(ctx, &overlong).expect("service budget")
+            }),
+            None
+        );
     }
 }
 
@@ -737,13 +1295,77 @@ fn counted_face_references_reject_unknown_terminal_controls() {
         object_id: 3,
         payload: vec![0x82, 0x81, 0x82, 0x04],
     };
-    assert_eq!(parse_face_record(&record), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            parse_face_record(ctx, &record).expect("service budget")
+        }),
+        None
+    );
 
     let mut empty = record;
     empty.payload.clear();
-    assert_eq!(parse_face_record(&empty), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            parse_face_record(ctx, &empty).expect("service budget")
+        }),
+        None
+    );
     empty.payload.extend_from_slice(&[0x80, 0x03]);
-    assert_eq!(parse_face_record(&empty), None);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| {
+            parse_face_record(ctx, &empty).expect("service budget")
+        }),
+        None
+    );
+}
+
+#[test]
+fn counted_face_reference_list_refuses_collection_limit() {
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5f,
+        object_id: 3,
+        payload: vec![0x82, 0x81, 0x82, 0x03],
+    };
+    let limited =
+        crate::test_support::with_collection_limit(1, |ctx| parse_face_record(ctx, &record));
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    let parsed = crate::test_support::with_service_context(|ctx| parse_face_record(ctx, &record))
+        .expect("service budget");
+    assert_eq!(
+        parsed.as_ref().map(|face| face.references.as_slice()),
+        Some([1, 2].as_slice())
+    );
+}
+
+#[test]
+fn typed_face_record_index_refuses_collection_limit() {
+    let records = [B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x5f,
+        object_id: 3,
+        payload: vec![0x82, 0x81, 0x82, 0x03],
+    }];
+    let limited = crate::test_support::with_collection_limit(2, |ctx| {
+        typed_face_records_from_records(ctx, &records)
+    });
+    assert!(matches!(
+        limited,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    let parsed = crate::test_support::with_service_context(|ctx| {
+        typed_face_records_from_records(ctx, &records)
+    })
+    .expect("service budget");
+    assert_eq!(
+        parsed.get(&3).map(|face| face.references.as_slice()),
+        Some([1, 2].as_slice())
+    );
 }
 
 #[test]
@@ -771,6 +1393,14 @@ fn face_references_can_repeat_one_carrier_through_an_alias() {
     )]);
     let surfaces = BTreeMap::from([(10, plane.clone()), (11, plane)]);
     let aliases = BTreeMap::from([(11, 10)]);
+
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::parse_face(ctx, &record, &loops, &surfaces, &aliases)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_face_loop_ids")
+    );
 
     let face = parse_face(&record, &loops, &surfaces, &aliases).expect("aliased face");
     assert_eq!(face.surface, 10);
@@ -1082,411 +1712,4 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
     assert!((mismatched.tolerances[&0].get() - (5.0 + 1.0e-9)).abs() < f64::EPSILON);
 }
 
-#[test]
-fn canonical_point_uses_the_on_carrier_tolerance() {
-    let points = [[0.0, 0.0, 0.0]].map(crate::test_support::test_b5::point);
-    let index = point_index(&points);
-    assert_eq!(canonical_point(&points, &index, [1e-3, 0.0, 0.0]), Some(0));
-    assert_eq!(
-        canonical_point(&points, &index, [1.0001e-3, 0.0, 0.0]),
-        None
-    );
-}
-
-#[test]
-fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
-    let pcurves = BTreeMap::from([(
-        2,
-        B5Pcurve {
-            object_id: 2,
-            surface: 4,
-            degree: 1,
-            distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
-            multiplicities: vec![2, 2],
-            control_points: vec![
-                crate::test_support::test_b5::finite_vector([0.0, 0.0]),
-                crate::test_support::test_b5::finite_vector([10.0, 0.0]),
-            ],
-            weights: None,
-            parameter_range: None,
-            parameterization: B5PcurveParameterization::Native,
-            class_21_suffix_scalar: None,
-            lifted_endpoints: Some(crate::test_support::test_b5::points([
-                [0.0, 0.0, 0.0],
-                [10.0, 0.0, 0.0],
-            ])),
-        },
-    )]);
-    let surfaces = BTreeMap::from([(
-        4,
-        B5Surface::Plane {
-            origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-            frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-            direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
-            u_range: crate::test_support::test_b5::increasing([0.0, 10.0]),
-            v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
-        },
-    )]);
-    let edge_parameter_incidences = BTreeMap::from([(3, [20, 21])]);
-    let parameter_incidences = BTreeMap::from([
-        (
-            20,
-            B5ParameterIncidence {
-                object_id: 20,
-                lanes: vec![B5IncidenceLane {
-                    curve: 2,
-                    parameter: crate::test_support::test_b5::finite(0.25),
-                    control: 1,
-                }],
-            },
-        ),
-        (
-            21,
-            B5ParameterIncidence {
-                object_id: 21,
-                lanes: vec![B5IncidenceLane {
-                    curve: 2,
-                    parameter: crate::test_support::test_b5::finite(0.75),
-                    control: 1,
-                }],
-            },
-        ),
-    ]);
-    let opaque_pcurves = BTreeMap::new();
-    let profiles = BTreeMap::new();
-    let geometry = B5PcurveContext {
-        pcurves: &pcurves,
-        opaque_pcurves: &opaque_pcurves,
-        surfaces: &surfaces,
-        profiles: &profiles,
-        edge_parameter_incidences: &edge_parameter_incidences,
-        parameter_incidences: &parameter_incidences,
-    };
-    let loop_ = B5Loop {
-        object_id: 1,
-        members: test_loop_members(&[2], &[3]),
-        metadata: test_loop_metadata(),
-        surface: 4,
-    };
-
-    assert_eq!(
-        pcurve_endpoints(2, 3, &geometry),
-        Some(crate::test_support::test_b5::points([
-            [2.5, 0.0, 0.0],
-            [7.5, 0.0, 0.0]
-        ]))
-    );
-    assert_eq!(
-        bind_edge_vertices(
-            &BTreeMap::from([(1, loop_)]),
-            &geometry,
-            &crate::test_support::test_b5::points([[2.5, 0.0, 0.0], [7.5, 0.0, 0.0]]),
-        ),
-        BTreeMap::from([(3, [0, 1])])
-    );
-}
-
-#[test]
-fn missing_edge_parameter_incidence_uses_complete_pcurve_domain() {
-    let pcurves = BTreeMap::from([(
-        2,
-        B5Pcurve {
-            object_id: 2,
-            surface: 4,
-            degree: 1,
-            distinct_knots: crate::test_support::test_b5::finite_lane(&[2.0, 8.0]),
-            multiplicities: vec![2, 2],
-            control_points: vec![
-                crate::test_support::test_b5::finite_vector([2.0, 0.0]),
-                crate::test_support::test_b5::finite_vector([8.0, 0.0]),
-            ],
-            weights: None,
-            parameter_range: Some(crate::test_support::test_b5::finite_pair([2.0, 8.0])),
-            parameterization: B5PcurveParameterization::Native,
-            class_21_suffix_scalar: None,
-            lifted_endpoints: None,
-        },
-    )]);
-    let surfaces = BTreeMap::from([(
-        4,
-        B5Surface::Plane {
-            origin: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-            frame: crate::test_support::test_b5::plane_frame([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
-            direction_v: crate::test_support::test_b5::exact_unit([0.0, 1.0, 0.0]),
-            u_range: crate::test_support::test_b5::increasing([0.0, 10.0]),
-            v_range: crate::test_support::test_b5::increasing([-1.0, 1.0]),
-        },
-    )]);
-    let opaque_pcurves = BTreeMap::new();
-    let profiles = BTreeMap::new();
-    let edge_parameter_incidences = BTreeMap::new();
-    let parameter_incidences = BTreeMap::new();
-    let geometry = B5PcurveContext {
-        pcurves: &pcurves,
-        opaque_pcurves: &opaque_pcurves,
-        surfaces: &surfaces,
-        profiles: &profiles,
-        edge_parameter_incidences: &edge_parameter_incidences,
-        parameter_incidences: &parameter_incidences,
-    };
-
-    assert_eq!(
-        pcurve_endpoints(2, 3, &geometry),
-        Some(crate::test_support::test_b5::points([
-            [2.0, 0.0, 0.0],
-            [8.0, 0.0, 0.0]
-        ]))
-    );
-}
-
-#[test]
-fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
-    let chart_scale = 8.0;
-    let parameter = chart_scale * std::f64::consts::FRAC_PI_2;
-    let opaque_pcurves = BTreeMap::from([(
-        2,
-        B5OpaquePcurve {
-            object_id: 2,
-            surface: 4,
-            class: 0x1d,
-            payload: Vec::new(),
-            sphere_great_circle: Some(B5SphereGreatCirclePcurve {
-                u_bounds: crate::test_support::test_b5::increasing([0.0, parameter]),
-                v_bounds: crate::test_support::test_b5::finite_pair([
-                    0.0,
-                    chart_scale * std::f64::consts::TAU,
-                ]),
-                chart_shift: crate::test_support::test_b5::finite(0.0),
-                chart_scale: crate::test_support::test_b5::positive(chart_scale),
-                slope: crate::test_support::test_b5::finite(0.0),
-                phase: crate::test_support::test_b5::finite(0.0),
-            }),
-        },
-    )]);
-    let surfaces = BTreeMap::from([(
-        4,
-        B5Surface::Sphere {
-            center: crate::test_support::test_b5::point([0.0, 0.0, 0.0]),
-            frame: crate::test_support::test_b5::frame([0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
-            direction_y: crate::test_support::test_b5::unit([0.0, 1.0, 0.0]),
-            radius: crate::test_support::test_b5::positive_length(5.0),
-            azimuth_range: crate::test_support::test_b5::increasing([0.0, std::f64::consts::TAU]),
-            latitude_range: crate::test_support::test_b5::increasing([
-                -std::f64::consts::FRAC_PI_2,
-                std::f64::consts::FRAC_PI_2,
-            ]),
-            construction_radius: crate::test_support::test_b5::positive_length(chart_scale),
-            chart_origin: crate::test_support::test_b5::finite(0.0),
-        },
-    )]);
-    let mut incidence_payload = vec![0x81, 0x82, 0x81];
-    incidence_payload.extend_from_slice(&parameter.to_le_bytes());
-    incidence_payload.push(0x01);
-    let mut records = [
-        B5Record {
-            offset: 0,
-            family: 0xb5,
-            class: 0x05,
-            object_id: 20,
-            payload: vec![0x82, 0x9e, 0x9f],
-        },
-        B5Record {
-            offset: 1,
-            family: 0xb5,
-            class: 0x06,
-            object_id: 30,
-            payload: incidence_payload.clone(),
-        },
-        B5Record {
-            offset: 2,
-            family: 0xb5,
-            class: 0x06,
-            object_id: 31,
-            payload: incidence_payload,
-        },
-    ];
-    let by_id = records
-        .iter()
-        .map(|record| (record.object_id, record))
-        .collect::<HashMap<_, _>>();
-    let pcurves = BTreeMap::new();
-    let profiles = BTreeMap::new();
-    let edge_parameter_incidences = BTreeMap::new();
-    let parameter_incidences = BTreeMap::new();
-    let geometry = B5PcurveContext {
-        pcurves: &pcurves,
-        opaque_pcurves: &opaque_pcurves,
-        surfaces: &surfaces,
-        profiles: &profiles,
-        edge_parameter_incidences: &edge_parameter_incidences,
-        parameter_incidences: &parameter_incidences,
-    };
-    assert_eq!(counted_references(&records[0], 0x05), Some(vec![30, 31]));
-    let incidence = parameter_incidence(&records[1]).expect("parameter incidence");
-    assert_eq!(
-        incidence.lanes,
-        [B5IncidenceLane {
-            curve: 2,
-            parameter: crate::test_support::test_b5::finite(parameter),
-            // The compact token 0x01 encodes 4 * 0 + 1.
-            control: 0,
-        }]
-    );
-    assert!(
-        distance_squared(
-            sphere_great_circle_point(
-                opaque_pcurves[&2]
-                    .sphere_great_circle
-                    .as_ref()
-                    .expect("great circle"),
-                &surfaces[&4],
-                crate::test_support::test_b5::finite(parameter),
-            )
-            .map(crate::test_support::test_b5::coordinates)
-            .expect("sphere endpoint"),
-            [0.0, 5.0, 0.0]
-        ) < 1e-24
-    );
-    let coordinates = incidence_vertex_coordinates(
-        &BTreeMap::from([(40, [10, 11])]),
-        &BTreeMap::from([(
-            10,
-            B5VertexIncidenceLink {
-                object_id: 10,
-                incidence: 20,
-                terminal_control: B5VertexIncidenceControl::Control00,
-            },
-        )]),
-        &by_id,
-        &geometry,
-    );
-
-    assert_eq!(coordinates.len(), 1);
-    assert!(
-        distance_squared(
-            crate::test_support::test_b5::coordinates(
-                *coordinates.get(&10).expect("native vertex coordinate")
-            ),
-            [0.0, 5.0, 0.0]
-        ) < 1e-24
-    );
-
-    drop(by_id);
-    records[2].payload[3..11].copy_from_slice(&0.0f64.to_le_bytes());
-    let conflicting_by_id = records
-        .iter()
-        .map(|record| (record.object_id, record))
-        .collect::<HashMap<_, _>>();
-    let conflicting = incidence_vertex_coordinates(
-        &BTreeMap::from([(40, [10, 11])]),
-        &BTreeMap::from([(
-            10,
-            B5VertexIncidenceLink {
-                object_id: 10,
-                incidence: 20,
-                terminal_control: B5VertexIncidenceControl::Control00,
-            },
-        )]),
-        &conflicting_by_id,
-        &geometry,
-    );
-    assert!(conflicting.is_empty());
-
-    drop(conflicting_by_id);
-    records[2].payload[3..11].copy_from_slice(&(parameter + 1.0).to_le_bytes());
-    let out_of_domain_by_id = records
-        .iter()
-        .map(|record| (record.object_id, record))
-        .collect::<HashMap<_, _>>();
-    let out_of_domain = incidence_vertex_coordinates(
-        &BTreeMap::from([(40, [10, 11])]),
-        &BTreeMap::from([(
-            10,
-            B5VertexIncidenceLink {
-                object_id: 10,
-                incidence: 20,
-                terminal_control: B5VertexIncidenceControl::Control00,
-            },
-        )]),
-        &out_of_domain_by_id,
-        &geometry,
-    );
-    assert!(out_of_domain.is_empty());
-}
-
-#[test]
-fn conflicting_geometric_endpoints_defer_one_edge_to_native_identity() {
-    let loops = BTreeMap::from([
-        (
-            1,
-            B5Loop {
-                object_id: 1,
-                members: test_loop_members(&[10], &[20]),
-                metadata: test_loop_metadata(),
-                surface: 30,
-            },
-        ),
-        (
-            2,
-            B5Loop {
-                object_id: 2,
-                members: test_loop_members(&[11], &[20]),
-                metadata: test_loop_metadata(),
-                surface: 31,
-            },
-        ),
-        (
-            3,
-            B5Loop {
-                object_id: 3,
-                members: test_loop_members(&[12], &[21]),
-                metadata: test_loop_metadata(),
-                surface: 32,
-            },
-        ),
-    ]);
-    let pcurve = |object_id, endpoints| B5Pcurve {
-        object_id,
-        surface: object_id + 20,
-        degree: 1,
-        distinct_knots: crate::test_support::test_b5::finite_lane(&[0.0, 1.0]),
-        multiplicities: vec![2, 2],
-        control_points: vec![
-            crate::test_support::test_b5::finite_vector([0.0, 0.0]),
-            crate::test_support::test_b5::finite_vector([1.0, 0.0]),
-        ],
-        weights: None,
-        parameter_range: None,
-        parameterization: B5PcurveParameterization::Native,
-        class_21_suffix_scalar: None,
-        lifted_endpoints: Some(crate::test_support::test_b5::points(endpoints)),
-    };
-    let pcurves = BTreeMap::from([
-        (10, pcurve(10, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])),
-        (11, pcurve(11, [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])),
-        (12, pcurve(12, [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])),
-    ]);
-    let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
-    let opaque_pcurves = BTreeMap::new();
-    let surfaces = BTreeMap::new();
-    let profiles = BTreeMap::new();
-    let edge_parameter_incidences = BTreeMap::new();
-    let parameter_incidences = BTreeMap::new();
-    let geometry = B5PcurveContext {
-        pcurves: &pcurves,
-        opaque_pcurves: &opaque_pcurves,
-        surfaces: &surfaces,
-        profiles: &profiles,
-        edge_parameter_incidences: &edge_parameter_incidences,
-        parameter_incidences: &parameter_incidences,
-    };
-
-    assert_eq!(
-        bind_edge_vertices(
-            &loops,
-            &geometry,
-            &points.map(crate::test_support::test_b5::point)
-        ),
-        BTreeMap::from([(21, [0, 2])])
-    );
-}
+mod incidence_loci;

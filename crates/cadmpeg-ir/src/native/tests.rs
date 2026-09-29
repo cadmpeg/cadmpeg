@@ -189,7 +189,7 @@ fn native_arena_json_copy_refuses_retained_limit_before_materialization() {
         "id": "test:native:record#first",
         "payload": "a retained string"
     });
-    let needed = serde_json::to_vec(&record).unwrap().len() as u64;
+    let needed = cadmpeg_core::decode::u64_from_index(serde_json::to_vec(&record).unwrap().len());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = needed - 1;
@@ -257,16 +257,45 @@ fn native_arena_typed_load_refuses_retained_limit_before_value_clone() {
 }
 
 #[test]
+fn native_arena_typed_load_refuses_collection_limit_before_vec_growth() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let record = serde_json::json!({"id": "test:native:record#first", "payload": "one"});
+    let arena = DecodeArena::new();
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut namespace = crate::native::NativeNamespace::default();
+    namespace
+        .set_arena(&service, "records", std::slice::from_ref(&record))
+        .unwrap();
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    super::TYPED_RECORD_CLONE_COUNT.with(|count| count.set(0));
+    let error = namespace
+        .arena_as_charged::<serde_json::Value>(&limited, "records")
+        .unwrap_err();
+    super::TYPED_RECORD_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "load typed native record"
+    ));
+}
+
+#[test]
 fn native_arena_name_refuses_retained_limit_before_copy() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = "records".len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("records".len()) - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut namespace = crate::native::NativeNamespace::default();
     let error = namespace
-        .set_arena(&limited, "records", &[] as &[serde_json::Value])
+        .set_arena(&limited, "records", &[serde_json::Value::Null; 0])
         .unwrap_err();
     let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
     else {
@@ -279,7 +308,7 @@ fn native_arena_name_refuses_retained_limit_before_copy() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     namespace
-        .set_arena(&service, "records", &[] as &[serde_json::Value])
+        .set_arena(&service, "records", &[serde_json::Value::Null; 0])
         .unwrap();
     assert_eq!(namespace.arenas()["records"].len(), 0);
 }
@@ -323,7 +352,7 @@ fn native_arena_slot_refuses_collection_limit_before_insert() {
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut namespace = crate::native::NativeNamespace::default();
     let error = namespace
-        .set_arena(&limited, "records", &[] as &[serde_json::Value])
+        .set_arena(&limited, "records", &[serde_json::Value::Null; 0])
         .unwrap_err();
     let cadmpeg_core::CodecError::ResourceLimit(limit) = cadmpeg_core::CodecError::from(error)
     else {

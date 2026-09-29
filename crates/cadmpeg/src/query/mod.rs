@@ -507,11 +507,11 @@ const MAX_QUERY_INPUT_BYTES: u64 = 256 * 1024 * 1024;
 fn read_input(path: &Path) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     if path == Path::new("-") {
-        std::io::stdin()
-            .lock()
-            .take(MAX_QUERY_INPUT_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .context("reading standard input")?;
+        std::io::copy(
+            &mut std::io::stdin().lock().take(MAX_QUERY_INPUT_BYTES + 1),
+            &mut bytes,
+        )
+        .context("reading standard input")?;
     } else {
         let file =
             std::fs::File::open(path).with_context(|| format!("reading {}", path.display()))?;
@@ -521,8 +521,7 @@ fn read_input(path: &Path) -> Result<Vec<u8>> {
                 path.display()
             );
         }
-        file.take(MAX_QUERY_INPUT_BYTES + 1)
-            .read_to_end(&mut bytes)
+        std::io::copy(&mut file.take(MAX_QUERY_INPUT_BYTES + 1), &mut bytes)
             .with_context(|| format!("reading {}", path.display()))?;
     }
     if u64::try_from(bytes.len())? > MAX_QUERY_INPUT_BYTES {

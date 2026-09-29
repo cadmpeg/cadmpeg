@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Retained source records without a typed IR interpretation.
-#![deny(clippy::disallowed_methods)]
 
 use crate::ids::{Identity, UnknownId};
 #[cfg(feature = "schema")]

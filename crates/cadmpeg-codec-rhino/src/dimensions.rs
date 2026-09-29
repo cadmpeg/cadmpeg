@@ -469,7 +469,7 @@ fn legacy_annotation_fields(
     let user_text = if !direct_legacy && minor >= 2 {
         utf16_retained(ctx, annotation, "Rhino legacy annotation user text")?
     } else {
-        crate::wire::copy_retained_string(ctx, &rich_text, "Rhino legacy annotation user text")?
+        ctx.copy_retained_text(&rich_text, "Rhino legacy annotation user text")?
     };
     let dimstyle_index = if !direct_legacy && minor >= 3 {
         let text_style_index = annotation.i32()?;
@@ -655,8 +655,7 @@ pub(crate) fn v2_effective_text(
     } else {
         &annotation.user_text
     };
-    crate::wire::copy_retained_string(
-        ctx,
+    ctx.copy_retained_text(
         text.trim_matches(|character: char| character.is_whitespace() || character.is_control()),
         "Rhino V2 effective text",
     )
@@ -1430,10 +1429,10 @@ fn insert_dimension_property(
     value: fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_collection_items(1, "Rhino dimension parameter entries")?;
-    let key = crate::wire::copy_retained_string(ctx, key, "Rhino dimension parameter key")?;
+    let key = ctx.copy_retained_text(key, "Rhino dimension parameter key")?;
     let key = cadmpeg_core::text::NonBlankString::new(key)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("generated dimension key is blank"))?;
-    let value = crate::wire::admitted_format(ctx, value, "Rhino dimension parameter value")?;
+    let value = ctx.format_retained(value, "Rhino dimension parameter value")?;
     parameters.insert(key, value);
     Ok(())
 }
@@ -1716,29 +1715,20 @@ pub(crate) fn project(
             None => Ok(()),
             Some(id) if id.is_nil() => {
                 ctx.charge_collection_items(1, "Rhino dimension reference entries")?;
-                let role =
-                    crate::wire::copy_retained_string(ctx, role, "Rhino dimension reference key")?;
+                let role = ctx.copy_retained_text(role, "Rhino dimension reference key")?;
                 let role = cadmpeg_core::text::NonBlankString::new(role).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed(
                         "generated dimension reference role is blank",
                     )
                 })?;
-                let mut selections = crate::wire::admitted_collection(
-                    ctx,
-                    1,
-                    "Rhino dimension reference selections",
-                )?;
+                let mut selections =
+                    ctx.collection_vec(1, "Rhino dimension reference selections")?;
                 selections.push(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
                 references.insert(role, selections);
                 Ok(())
             }
             Some(_) => {
-                crate::wire::reserve_collection(
-                    ctx,
-                    &mut unresolved,
-                    1,
-                    "Rhino unresolved dimension references",
-                )?;
+                ctx.reserve_vec(&mut unresolved, 1, "Rhino unresolved dimension references")?;
                 unresolved.push(code);
                 Ok(())
             }
@@ -1767,61 +1757,38 @@ pub(crate) fn project(
             })
         })
         .transpose()?;
-    let key = cadmpeg_ir::ids::IdentityKey::try_new(crate::wire::copy_retained_string(
-        ctx,
-        key,
-        "Rhino dimension identity key",
-    )?)
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(
+        ctx.copy_retained_text(key, "Rhino dimension identity key")?,
+    )
     .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
-    let annotation_id = SemanticAnnotationId::try_from(crate::wire::admitted_format(
-        ctx,
+    let annotation_id = SemanticAnnotationId::try_from(ctx.format_retained(
         format_args!("rhino:dimension:annotation#{}", key.as_str()),
         "Rhino dimension annotation identity",
     )?)
     .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
     let mut text = Vec::new();
     if !dimension.user_text.is_empty() {
-        crate::wire::reserve_collection(ctx, &mut text, 1, "Rhino dimension annotation text")?;
-        text.push(crate::wire::copy_retained_string(
-            ctx,
-            &dimension.user_text,
-            "Rhino dimension annotation text copy",
-        )?);
+        ctx.reserve_vec(&mut text, 1, "Rhino dimension annotation text")?;
+        text.push(
+            ctx.copy_retained_text(&dimension.user_text, "Rhino dimension annotation text copy")?,
+        );
     }
     let annotation = SemanticAnnotation {
         id: annotation_id,
-        object: crate::wire::copy_retained_string(
-            ctx,
-            object,
-            "Rhino dimension annotation object",
-        )?,
+        object: ctx.copy_retained_text(object, "Rhino dimension annotation object")?,
         kind: SemanticAnnotationKind::Dimension,
-        runtime_type: crate::wire::copy_retained_string(
-            ctx,
-            runtime_type,
-            "Rhino dimension runtime type",
-        )?,
+        runtime_type: ctx.copy_retained_text(runtime_type, "Rhino dimension runtime type")?,
         order,
         text,
         references,
         value: Some(value),
         format: (!dimension.rich_text.is_empty())
-            .then(|| {
-                crate::wire::copy_retained_string(
-                    ctx,
-                    &dimension.rich_text,
-                    "Rhino dimension format text",
-                )
-            })
+            .then(|| ctx.copy_retained_text(&dimension.rich_text, "Rhino dimension format text"))
             .transpose()?,
         position,
         parameters,
         assets: Vec::new(),
-        native_ref: crate::wire::copy_retained_string(
-            ctx,
-            object,
-            "Rhino dimension native reference",
-        )?,
+        native_ref: ctx.copy_retained_text(object, "Rhino dimension native reference")?,
     };
     Ok((annotation, unresolved))
 }

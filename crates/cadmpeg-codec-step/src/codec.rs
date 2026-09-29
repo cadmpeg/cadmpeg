@@ -116,9 +116,16 @@ fn push_entry(
     entry: ContainerEntry,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "step_inspect_entries")?;
-    entries
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("step_inspect_entries", 0, 1))?;
+    entries.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("step_inspect_entries"),
+                0,
+                1,
+                "step_inspect_entries",
+            ),
+        )
+    })?;
     entries.push(entry);
     Ok(())
 }
@@ -141,9 +148,16 @@ fn append_notes(
 ) -> Result<(), CodecError> {
     for note in additional {
         ctx.charge_collection_items(1, "step_codec_notes")?;
-        notes
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("step_codec_notes", 0, 1))?;
+        notes.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("step_codec_notes"),
+                    0,
+                    1,
+                    "step_codec_notes",
+                ),
+            )
+        })?;
         notes.push(note);
     }
     Ok(())
@@ -231,11 +245,10 @@ fn inspect_parsed_exchange(
             ctx,
             &mut attributes,
             "external_uris",
-            crate::decode_alloc::charged_join(
-                ctx,
-                "step_inspect_external_uris",
+            ctx.join_display_retained(
                 exchange.references().iter().map(|entry| entry.uri.as_str()),
                 ",",
+                "step_inspect_external_uris",
             )?,
         )?;
         push_entry(
@@ -265,13 +278,12 @@ fn inspect_parsed_exchange(
                 }
             }
         }
-        let unknown = crate::decode_alloc::charged_join(
-            ctx,
-            "step_inspect_unknown_entities",
+        let unknown = ctx.join_display_retained(
             counts
                 .iter()
                 .map(|(&name, &count)| CountItem { name, count }),
             ",",
+            "step_inspect_unknown_entities",
         )?;
         let mut attributes = std::collections::BTreeMap::new();
         insert_attribute(
@@ -308,11 +320,10 @@ fn inspect_parsed_exchange(
             ctx,
             &mut attributes,
             "dependencies",
-            crate::decode_alloc::charged_join(
-                ctx,
-                "step_inspect_dependency_text",
+            ctx.join_display_retained(
                 external_dependencies.map(String::as_str),
                 ",",
+                "step_inspect_dependency_text",
             )?,
         )?;
         push_entry(
@@ -337,7 +348,10 @@ fn inspect_parsed_exchange(
                     format!("SIGNATURE[{index}]")
                 },
                 role: ContainerRole::Signature,
-                storage: EntryStorage::verbatim(VerbatimLabel::None, signature.len() as u64),
+                storage: EntryStorage::verbatim(
+                    VerbatimLabel::None,
+                    cadmpeg_core::decode::u64_from_index(signature.len()),
+                ),
                 attributes: BTreeMap::default(),
             },
         )?;
@@ -353,17 +367,15 @@ fn inspect_parsed_exchange(
     append_notes(
         ctx,
         &mut notes,
-        [crate::decode_alloc::charged_format(
-            ctx,
-            "step_inspect_schema_note",
+        [ctx.format_retained(
             format_args!("schema {schema}; dialect {dialect}"),
+            "step_inspect_schema_note",
         )?],
     )?;
     for diagnostic in diagnostics {
-        let note = crate::decode_alloc::charged_format(
-            ctx,
-            "step_inspect_diagnostic_copy",
+        let note = ctx.format_retained(
             format_args!("{}", diagnostic.message),
+            "step_inspect_diagnostic_copy",
         )?;
         append_notes(ctx, &mut notes, [note])?;
     }
@@ -436,11 +448,10 @@ fn inspect_zip(
     let mut inspected = inspect_parsed_exchange(root_bytes, ctx, &mut exchange, &diagnostics)?;
     let resource_notes = resource_notes?;
     let entry_count = archive.entries().len();
-    let logical_entries = crate::decode_alloc::charged_join(
-        ctx,
-        "step_inspect_logical_sections",
+    let logical_entries = ctx.join_display_retained(
         inspected.entries.iter().map(|entry| entry.name.as_str()),
         ",",
+        "step_inspect_logical_sections",
     )?;
     let mut entries = archive.container_entries(ctx, archive::classify_entry)?;
     if let Some(root_entry) = entries

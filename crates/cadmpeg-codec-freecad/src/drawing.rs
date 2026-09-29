@@ -14,10 +14,6 @@ use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 use crate::native::{
     sole_named_property, DrawingRecord, ObjectRecord, PropertyRecord, TechDrawKind, ValueRecord,
 };
-use crate::resource::{
-    collection_allocation_failed, collection_vec, reserve_vec_items, retained_string,
-    retained_strings,
-};
 
 fn drawing_malformed(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
     crate::resource::malformed_charged(ctx, message, "fcstd drawing diagnostic")
@@ -32,17 +28,24 @@ pub(crate) fn transfer(
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
             ctx.charge_collection_items(1, "fcstd drawing owner index")?;
-            by_owner
-                .try_reserve(1)
-                .map_err(|_| collection_allocation_failed(ctx, 1, "fcstd drawing owner index"))?;
+            by_owner.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "fcstd drawing owner index",
+                    ),
+                )
+            })?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
-            reserve_vec_items(ctx, owned, 1, "fcstd drawing owner properties")?;
+            ctx.reserve_vec(owned, 1, "fcstd drawing owner properties")?;
             owned.push(property);
         }
     }
-    let mut drawings = collection_vec(ctx, objects.len(), "fcstd drawing records")?;
+    let mut drawings = ctx.collection_vec(objects.len(), "fcstd drawing records")?;
     for object in objects
         .iter()
         .filter(|object| is_registered_drawing_type(&object.type_name))
@@ -50,22 +53,22 @@ pub(crate) fn transfer(
         let source = by_owner
             .get(object.id.as_str())
             .map_or(&[][..], Vec::as_slice);
-        let mut owned = collection_vec(ctx, source.len(), "fcstd drawing selected properties")?;
+        let mut owned = ctx.collection_vec(source.len(), "fcstd drawing selected properties")?;
         owned.extend_from_slice(source);
         ensure_unique_property_names(ctx, &owned)?;
         let kind = if is_page_type(&object.type_name) {
             let view_links = typed_property(ctx, &owned, "Views", "App::PropertyLinkList")?
                 .map_or(&[][..], PropertyRecord::links);
-            let mut views = collection_vec(ctx, view_links.len(), "fcstd drawing page views")?;
+            let mut views = ctx.collection_vec(view_links.len(), "fcstd drawing page views")?;
             for link in view_links.iter().flatten() {
                 if let Some(name) = link.object() {
-                    views.push(retained_string(ctx, name, "fcstd drawing page view")?);
+                    views.push(ctx.copy_retained_text(name, "fcstd drawing page view")?);
                 }
             }
             let template_link = typed_single_link(ctx, &owned, "Template", "App::PropertyLink")?;
             let template = template_link
                 .and_then(|link| link.object())
-                .map(|name| retained_string(ctx, name, "fcstd drawing page template"))
+                .map(|name| ctx.copy_retained_text(name, "fcstd drawing page template"))
                 .transpose()?;
             TechDrawKind::Page {
                 runtime: if object.type_name == "TechDraw::DrawPage" {
@@ -78,7 +81,7 @@ pub(crate) fn transfer(
             }
         } else {
             TechDrawKind::try_new(
-                retained_string(ctx, &object.type_name, "fcstd drawing runtime type")?,
+                ctx.copy_retained_text(&object.type_name, "fcstd drawing runtime type")?,
                 Vec::new(),
                 None,
             )
@@ -94,16 +97,13 @@ pub(crate) fn transfer(
             "Source3d",
         ] {
             let links = source_links(ctx, &owned, name)?;
-            reserve_vec_items(ctx, &mut sources, links.len(), "fcstd drawing source links")?;
+            ctx.reserve_vec(&mut sources, links.len(), "fcstd drawing source links")?;
             sources.extend(links);
         }
         let mut relationships = BTreeMap::new();
         for property in owned.iter().filter(|property| !property.links().is_empty()) {
-            let mut links = collection_vec(
-                ctx,
-                property.links().len(),
-                "fcstd drawing relationship links",
-            )?;
+            let mut links =
+                ctx.collection_vec(property.links().len(), "fcstd drawing relationship links")?;
             for link in property.links() {
                 links.push(
                     link.as_ref()
@@ -113,20 +113,20 @@ pub(crate) fn transfer(
             }
             ctx.charge_collection_items(1, "fcstd drawing relationships")?;
             relationships.insert(
-                retained_string(ctx, &property.name, "fcstd drawing relationship name")?,
+                ctx.copy_retained_text(&property.name, "fcstd drawing relationship name")?,
                 links,
             );
         }
         let mut side_entries = Vec::new();
         for property in &owned {
             for name in property.side_entries() {
-                reserve_vec_items(ctx, &mut side_entries, 1, "fcstd drawing side entries")?;
-                side_entries.push(retained_string(ctx, name, "fcstd drawing side entry")?);
+                ctx.reserve_vec(&mut side_entries, 1, "fcstd drawing side entries")?;
+                side_entries.push(ctx.copy_retained_text(name, "fcstd drawing side entry")?);
             }
         }
         drawings.push(DrawingRecord {
             id: crate::native::native_id_charged(ctx, "drawing", &object.name)?,
-            object: retained_string(ctx, &object.id, "fcstd drawing object")?,
+            object: ctx.copy_retained_text(&object.id, "fcstd drawing object")?,
             kind,
             sources,
             relationships,
@@ -146,10 +146,13 @@ pub(crate) fn transfer_neutral(
     let mut neutral_ids = HashMap::new();
     ctx.charge_collection_items(records.len() as u64, "fcstd drawing neutral identities")?;
     neutral_ids.try_reserve(records.len()).map_err(|_| {
-        collection_allocation_failed(
-            ctx,
-            records.len() as u64,
-            "fcstd drawing neutral identities",
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                records.len() as u64,
+                "fcstd drawing neutral identities",
+            ),
         )
     })?;
     for record in records {
@@ -169,7 +172,7 @@ pub(crate) fn transfer_neutral(
             .iter()
             .filter(|property| property.owner == record.object)
             .count();
-        let mut owned = collection_vec(ctx, count, "fcstd neutral drawing properties")?;
+        let mut owned = ctx.collection_vec(count, "fcstd neutral drawing properties")?;
         owned.extend(
             properties
                 .iter()
@@ -181,17 +184,19 @@ pub(crate) fn transfer_neutral(
             };
             let target = match (link.document_name(), link.object()) {
                 (Some(document), Some(object)) => ReferenceTarget::External {
-                    document: retained_string(ctx, document, "fcstd drawing external document")?,
-                    object: retained_string(ctx, object, "fcstd drawing external object")?,
+                    document: ctx
+                        .copy_retained_text(document, "fcstd drawing external document")?,
+                    object: ctx.copy_retained_text(object, "fcstd drawing external object")?,
                 },
                 (None, None) => ReferenceTarget::Null,
-                (None, Some(object)) => ReferenceTarget::Local(retained_string(
-                    ctx,
-                    neutral_ids
-                        .get(object)
-                        .map_or(object, cadmpeg_ir::drawings::DrawingId::as_str),
-                    "fcstd drawing local relationship",
-                )?),
+                (None, Some(object)) => ReferenceTarget::Local(
+                    ctx.copy_retained_text(
+                        neutral_ids
+                            .get(object)
+                            .map_or(object, cadmpeg_ir::drawings::DrawingId::as_str),
+                        "fcstd drawing local relationship",
+                    )?,
+                ),
                 _ => {
                     return Err(CodecError::malformed(
                         "drawing relationship has no complete target",
@@ -200,8 +205,7 @@ pub(crate) fn transfer_neutral(
             };
             Ok(ReferenceSelection::new(
                 target,
-                retained_strings(
-                    ctx,
+                ctx.copy_retained_strings(
                     link.subelements(),
                     "fcstd drawing relationship subelements",
                 )?,
@@ -241,13 +245,13 @@ pub(crate) fn transfer_neutral(
         let mut relationships = BTreeMap::new();
         for (role, targets) in &record.relationships {
             let mut selections =
-                collection_vec(ctx, targets.len(), "fcstd drawing neutral relationships")?;
+                ctx.collection_vec(targets.len(), "fcstd drawing neutral relationships")?;
             for link in targets {
                 selections.push(relationship(link)?);
             }
             ctx.charge_collection_items(1, "fcstd drawing relationship roles")?;
             relationships.insert(
-                retained_string(ctx, role, "fcstd drawing relationship role")?,
+                ctx.copy_retained_text(role, "fcstd drawing relationship role")?,
                 selections,
             );
         }
@@ -269,24 +273,22 @@ pub(crate) fn transfer_neutral(
         };
         let template = template_id
             .map(|id| {
-                DrawingId::mint(retained_string(
-                    ctx,
-                    id.as_str(),
-                    "fcstd drawing template identity",
-                )?)
+                DrawingId::mint(
+                    ctx.copy_retained_text(id.as_str(), "fcstd drawing template identity")?,
+                )
                 .map_err(CodecError::malformed)
             })
             .transpose()?;
-        reserve_vec_items(ctx, &mut model.drawings, 1, "fcstd neutral drawings")?;
+        ctx.reserve_vec(&mut model.drawings, 1, "fcstd neutral drawings")?;
         let mut parameters = BTreeMap::new();
         for (name, value) in &record.parameters {
             ctx.charge_collection_items(1, "fcstd drawing neutral parameters")?;
             parameters.insert(
-                retained_string(ctx, name, "fcstd drawing parameter name")?,
-                retained_string(ctx, value, "fcstd drawing parameter value")?,
+                ctx.copy_retained_text(name, "fcstd drawing parameter name")?,
+                ctx.copy_retained_text(value, "fcstd drawing parameter value")?,
             );
         }
-        let mut assets = collection_vec(ctx, record.side_entries.len(), "fcstd drawing assets")?;
+        let mut assets = ctx.collection_vec(record.side_entries.len(), "fcstd drawing assets")?;
         for name in &record.side_entries {
             assets.push(crate::native::native_id_charged(ctx, "entry", name)?);
         }
@@ -300,20 +302,15 @@ pub(crate) fn transfer_neutral(
                     )
                 })
                 .and_then(|id| {
-                    DrawingId::mint(retained_string(
-                        ctx,
-                        id.as_str(),
-                        "fcstd drawing neutral identity",
-                    )?)
+                    DrawingId::mint(
+                        ctx.copy_retained_text(id.as_str(), "fcstd drawing neutral identity")?,
+                    )
                     .map_err(CodecError::malformed)
                 })?,
-            object: retained_string(ctx, &record.object, "fcstd neutral drawing object")?,
+            object: ctx.copy_retained_text(&record.object, "fcstd neutral drawing object")?,
             kind: classify(record.kind.as_str()),
-            runtime_type: retained_string(
-                ctx,
-                record.kind.as_str(),
-                "fcstd drawing neutral runtime type",
-            )?,
+            runtime_type: ctx
+                .copy_retained_text(record.kind.as_str(), "fcstd drawing neutral runtime type")?,
             order: order as u32,
             visible: None,
             relationships: crate::resource::named_entries_charged(
@@ -334,7 +331,7 @@ pub(crate) fn transfer_neutral(
                 "fcstd drawing keyed parameters",
             )?,
             assets,
-            native_ref: retained_string(ctx, &record.id, "fcstd drawing native reference")?,
+            native_ref: ctx.copy_retained_text(&record.id, "fcstd drawing native reference")?,
         });
     }
     Ok(())
@@ -492,8 +489,7 @@ fn source_links(
             format_args!("drawing source {name} has multiple targets"),
         ));
     }
-    let mut links = collection_vec(
-        ctx,
+    let mut links = ctx.collection_vec(
         property.links().len(),
         "fcstd drawing source property links",
     )?;
@@ -628,8 +624,8 @@ fn drawing_parameters(
         })?;
         ctx.charge_collection_items(1, "fcstd drawing parameters")?;
         parameters.insert(
-            retained_string(ctx, name, "fcstd drawing parameter name")?,
-            retained_string(ctx, &value.raw_xml, "fcstd drawing parameter XML")?,
+            ctx.copy_retained_text(name, "fcstd drawing parameter name")?,
+            ctx.copy_retained_text(&value.raw_xml, "fcstd drawing parameter XML")?,
         );
     }
     for name in VALIDATED_ONLY_NAMES {

@@ -2,9 +2,7 @@
 //! Views, drawings, and view-dependent presentation relationships.
 
 use super::geometry::{resolve_transform, ProjectionOutcome};
-use crate::decode_resource::{
-    format_retained, insert_optional_btree_map, insert_optional_btree_set, reserve_vec_growth,
-};
+
 use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
@@ -187,9 +185,12 @@ fn push_drawing_loss(
     code: IgesLossCode,
     message: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    reserve_vec_growth(ctx, losses, 1, "iges drawing loss slots")?;
-    let message = format_retained(ctx, message, "iges drawing loss message")?;
-    ctx.charge_retained(4 + code.code().len() as u64, "iges drawing loss kind")?;
+    ctx.reserve_vec(losses, 1, "iges drawing loss slots")?;
+    let message = ctx.format_retained(message, "iges drawing loss message")?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges drawing loss kind",
+    )?;
     losses.push(
         code.note(message)
             .with_provenance(entry.admitted_loss_provenance(ctx)?),
@@ -225,7 +226,7 @@ pub(super) fn project(
 ) -> Result<ProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut records,
             record.directory_sequence,
@@ -235,7 +236,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        insert_optional_btree_map(
+        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
             Some(ctx),
             &mut entries,
             entry.sequence,
@@ -264,7 +265,7 @@ pub(super) fn project(
                 && record.string(3).is_some_and(|value| !value.is_empty())
         };
         if valid {
-            insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -344,7 +345,7 @@ pub(super) fn project(
         });
         if drawing_directory_valid(entry, global.global_table()) && views_valid && annotations_valid
         {
-            insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -451,7 +452,7 @@ pub(super) fn project(
             && scale_valid
             && form_valid
         {
-            insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -493,7 +494,7 @@ pub(super) fn project(
                     });
                 if view != last_view {
                     if let Some(previous) = last_view {
-                        insert_optional_btree_set(
+                        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                             Some(ctx),
                             &mut closed_views,
                             previous,
@@ -563,7 +564,7 @@ pub(super) fn project(
             false
         };
         if views_visible_directory_valid(entry, global.global_table()) && blocks_valid {
-            insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,
@@ -661,7 +662,7 @@ pub(super) fn project(
             && views_valid
             && entities_valid
         {
-            insert_optional_btree_set(
+            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
                 Some(ctx),
                 &mut decoded,
                 entry.sequence,

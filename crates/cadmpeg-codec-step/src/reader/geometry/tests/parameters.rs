@@ -561,7 +561,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         },
     ]);
     let _attached = ir.model.add_procedural_surface(
-        sweep.clone(),
+        &sweep,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
                 .expect("identity grammar"),
@@ -576,7 +576,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         ),
     );
     let _attached = ir.model.add_procedural_surface(
-        revolution.clone(),
+        &revolution,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#revolution-construction")
                 .expect("identity grammar"),
@@ -732,7 +732,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
-        surface.clone(),
+        &surface,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
                 .expect("identity grammar"),
@@ -790,7 +790,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
-        surface_id.clone(),
+        &surface_id,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#construction")
                 .expect("identity grammar"),
@@ -1014,15 +1014,17 @@ ENDSEC;END-ISO-10303-21;",
     assert!(decode_pcurve_geometry(
         3,
         &exchange,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        1.0,
+        super::super::PcurveSources {
+            points: &BTreeMap::new(),
+            vectors: &BTreeMap::new(),
+            placements: &BTreeMap::new(),
+            transformations: &BTreeMap::new(),
+            angle_scale: 1.0
+        },
         &mut losses,
         &mut active,
         0,
-        &ctx,
+        &ctx
     )
     .expect("no resource refusal")
     .is_none());
@@ -1030,15 +1032,17 @@ ENDSEC;END-ISO-10303-21;",
     assert!(decode_pcurve_geometry(
         6,
         &exchange,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        1.0,
+        super::super::PcurveSources {
+            points: &BTreeMap::new(),
+            vectors: &BTreeMap::new(),
+            placements: &BTreeMap::new(),
+            transformations: &BTreeMap::new(),
+            angle_scale: 1.0
+        },
         &mut losses,
         &mut active,
         0,
-        &ctx,
+        &ctx
     )
     .expect("no resource refusal")
     .is_none());

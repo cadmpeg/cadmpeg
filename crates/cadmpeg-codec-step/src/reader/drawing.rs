@@ -94,9 +94,16 @@ fn reserve_drawing_items<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(u64_from_index(count), operation)?;
-    values
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))
+    values.try_reserve(count).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        )
+    })
 }
 
 fn insert_drawing_set<T: Ord>(
@@ -132,9 +139,16 @@ fn claim_drawing_typed(
     const OPERATION: &str = "step_drawing_typed_claims";
     if !values.contains(&id) {
         ctx.charge_collection_items(1, OPERATION)?;
-        values
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
+        values.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
+                    0,
+                    1,
+                    OPERATION,
+                ),
+            )
+        })?;
         values.insert(id);
     }
     Ok(())
@@ -152,19 +166,6 @@ fn ensure_drawing_relationship_group(
     Ok(())
 }
 
-fn clone_drawing_text(
-    value: &str,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(u64_from_index(value.len()), operation)?;
-    let mut copy = String::new();
-    copy.try_reserve_exact(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    copy.push_str(value);
-    Ok(copy)
-}
-
 fn clone_drawing_identities(
     source: &BTreeSet<String>,
     ctx: &DecodeContext<'_>,
@@ -172,11 +173,7 @@ fn clone_drawing_identities(
     let mut copy = BTreeSet::new();
     for identity in source {
         ctx.charge_collection_items(1, "step_drawing_ambiguous_identity_copy")?;
-        copy.insert(clone_drawing_text(
-            identity,
-            ctx,
-            "step_drawing_ambiguous_identity_text",
-        )?);
+        copy.insert(ctx.copy_retained_text(identity, "step_drawing_ambiguous_identity_text")?);
     }
     Ok(copy)
 }
@@ -307,7 +304,10 @@ pub(super) fn decode(
         let targets = target_identities.entry(candidate.id).or_default();
         insert_drawing_set(
             targets,
-            candidate.identity.as_str().to_owned(),
+            ctx.copy_retained_text(
+                candidate.identity.as_str(),
+                "step_drawing_target_member_text",
+            )?,
             ctx,
             "step_drawing_target_members",
         )?;
@@ -325,7 +325,10 @@ pub(super) fn decode(
         let targets = target_identities.entry(shape_id).or_default();
         insert_drawing_set(
             targets,
-            product_definition_id.as_str().to_owned(),
+            ctx.copy_retained_text(
+                product_definition_id.as_str(),
+                "step_drawing_target_member_text",
+            )?,
             ctx,
             "step_drawing_target_members",
         )?;
@@ -417,8 +420,10 @@ pub(super) fn decode(
         drawings.insert(
             id,
             Drawing {
-                id: DrawingId::from(identity.clone()),
-                object: identity.as_str().to_owned(),
+                id: DrawingId::from(
+                    identity.try_clone_for_decode(ctx, "step_drawing_identity_copy")?,
+                ),
+                object: ctx.copy_retained_text(identity.as_str(), "step_drawing_object_copy")?,
                 kind: drawing_kind(name),
                 runtime_type: name.into(),
                 order,
@@ -563,16 +568,14 @@ fn add_source_typed_targets(
             continue;
         }
         let identity = opaque_record_id(id, record, ctx)?;
-        let copied_identity = clone_drawing_text(
+        let copied_identity = ctx.copy_retained_text(
             identity.as_str(),
-            ctx,
             "step_drawing_native_target_identity_copy",
         )?;
-        let source_type = crate::decode_alloc::charged_join(
-            ctx,
-            "step_drawing_source_type_text",
+        let source_type = ctx.join_display_retained(
             record.partials.iter().map(|partial| partial.name.as_str()),
             "+",
+            "step_drawing_source_type_text",
         )?;
         reserve_drawing_items(
             &mut native_targets,
@@ -781,18 +784,13 @@ fn note_ambiguous_target(
     identities: &BTreeSet<String>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let identities = crate::decode_alloc::charged_join(
-        ctx,
-        "step_drawing_ambiguous_identities_text",
+    let identities = ctx.join_display_retained(
         identities.iter().map(String::as_str),
         ", ",
+        "step_drawing_ambiguous_identities_text",
     )?;
     reserve_drawing_items(losses, 1, ctx, "step_drawing_losses")?;
-    let message = crate::decode_alloc::charged_format(
-        ctx,
-        "step_drawing_ambiguous_loss_text",
-        format_args!("STEP {source} relationship {role} references source record #{target_id} with multiple neutral identities ({identities}); no target was selected and the raw source parameter is retained"),
-    )?;
+    let message = ctx.format_retained(format_args!("STEP {source} relationship {role} references source record #{target_id} with multiple neutral identities ({identities}); no target was selected and the raw source parameter is retained"), "step_drawing_ambiguous_loss_text")?;
     losses.push(StepLossCode::DrawingRelationshipTargetAmbiguous.note(message));
     Ok(())
 }
@@ -1104,18 +1102,16 @@ fn target_resolution(
         .and_then(|identities| identities.first())
     {
         return Ok(TargetResolution::Resolved(ReferenceSelection::new(
-            ReferenceTarget::Local(clone_drawing_text(
-                identity,
-                ctx,
-                "step_drawing_local_target_text",
-            )?),
+            ReferenceTarget::Local(
+                ctx.copy_retained_text(identity, "step_drawing_local_target_text")?,
+            ),
             Vec::new(),
         )));
     }
     if let Some(uri) = external_documents.get(&id) {
         return Ok(TargetResolution::Resolved(ReferenceSelection::new(
             ReferenceTarget::External {
-                document: clone_drawing_text(uri, ctx, "step_drawing_external_target_text")?,
+                document: ctx.copy_retained_text(uri, "step_drawing_external_target_text")?,
                 object: format!("#{id}"),
             },
             Vec::new(),
@@ -1185,11 +1181,9 @@ fn wrapper_target_resolution(
             for target in targets {
                 if !identities.contains(target) {
                     ctx.charge_collection_items(1, "step_drawing_wrapper_identities")?;
-                    identities.insert(clone_drawing_text(
-                        target,
-                        ctx,
-                        "step_drawing_wrapper_identity_text",
-                    )?);
+                    identities.insert(
+                        ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text")?,
+                    );
                 }
             }
             continue;
@@ -1261,9 +1255,9 @@ fn value_text(
         .transpose()?;
     let text = match value {
         Value::Reference(id) => format_value_text(ctx, format_args!("#{id}"))?,
-        Value::ValueReference(id) => format_value_text(ctx, format_args!("@{id}"))?,
+        Value::ExternalReference(id) => format_value_text(ctx, format_args!("@{id}"))?,
         Value::ConstantEntity(name) => format_value_text(ctx, format_args!("#{name}"))?,
-        Value::ConstantValue(name) => format_value_text(ctx, format_args!("@{name}"))?,
+        Value::ExpressValueConstant(name) => format_value_text(ctx, format_args!("@{name}"))?,
         Value::Integer(value) => format_value_text(ctx, format_args!("{value}"))?,
         Value::Real(value) => format_value_text(ctx, format_args!("{value}"))?,
         Value::Enumeration(value) => format_value_text(ctx, format_args!(".{value}."))?,
@@ -1286,10 +1280,26 @@ fn value_text(
                     ctx.charge_retained(2, "step_drawing_value_text")?;
                 }
                 text.try_reserve(2).map_err(|_| match ctx {
-                    Some(ctx) => ctx.refuse_codec_limit("step_drawing_value_text", 0, 2),
-                    None => {
-                        cadmpeg_core::decode::refuse_local_limit("step_drawing_value_text", 0, 2)
-                    }
+                    Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "step_drawing_value_text",
+                            ),
+                            0,
+                            2,
+                            "step_drawing_value_text",
+                        ),
+                    ),
+                    None => cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "step_drawing_value_text",
+                            ),
+                            0,
+                            2,
+                            "step_drawing_value_text",
+                        ),
+                    ),
                 })?;
                 text.push(char::from(HEX[usize::from(byte >> 4)]));
                 text.push(char::from(HEX[usize::from(byte & 0x0f)]));
@@ -1328,7 +1338,7 @@ fn format_value_text(
     arguments: fmt::Arguments<'_>,
 ) -> Result<String, CodecError> {
     match ctx {
-        Some(ctx) => crate::decode_alloc::charged_format(ctx, "step_drawing_value_text", arguments),
+        Some(ctx) => ctx.format_retained(arguments, "step_drawing_value_text"),
         None => Ok(arguments.to_string()),
     }
 }
@@ -1342,13 +1352,21 @@ fn append_value_text(
         ctx.charge_retained(u64_from_index(text.len()), "step_drawing_value_text")?;
     }
     output.try_reserve(text.len()).map_err(|_| match ctx {
-        Some(ctx) => {
-            ctx.refuse_codec_limit("step_drawing_value_text", 0, u64_from_index(text.len()))
-        }
-        None => cadmpeg_core::decode::refuse_local_limit(
-            "step_drawing_value_text",
-            0,
-            u64_from_index(text.len()),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("step_drawing_value_text"),
+                0,
+                u64_from_index(text.len()),
+                "step_drawing_value_text",
+            ),
+        ),
+        None => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("step_drawing_value_text"),
+                0,
+                u64_from_index(text.len()),
+                "step_drawing_value_text",
+            ),
         ),
     })?;
     output.push_str(text);

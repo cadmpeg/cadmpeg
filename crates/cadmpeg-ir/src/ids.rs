@@ -10,6 +10,8 @@
 //! components before `#`). Compose typed IDs from an [`IdentityNamespace`]
 //! and an [`IdentityKey`]; validate existing strings with [`is_valid_identity`].
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::Deserialize;
 
 fn deserialize_local_id<'de, D: serde::Deserializer<'de>>(
@@ -74,6 +76,29 @@ impl schemars::JsonSchema for Identity {
 }
 
 impl Identity {
+    /// Copies an admitted identity with a fallible optional decode budget.
+    pub fn try_clone_for_decode<'ctx, 'arena>(
+        &self,
+        ctx: impl Into<Option<&'ctx DecodeContext<'arena>>>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError>
+    where
+        'arena: 'ctx,
+    {
+        let text = match ctx.into() {
+            Some(ctx) => ctx.copy_retained_text(self.as_str(), operation)?,
+            None => {
+                let bytes = DecodeContext::copy_retained_optional(
+                    None,
+                    self.as_str().as_bytes(),
+                    operation,
+                )?;
+                String::from_utf8(bytes).map_err(CodecError::malformed)?
+            }
+        };
+        Ok(Self(text))
+    }
+
     /// Admit a string matching the entity identity grammar.
     pub fn new(value: impl Into<String>) -> Result<Self, IdentityError> {
         let value = value.into();
@@ -156,25 +181,36 @@ impl Display for Identity {
 const fn decode_scalar(bytes: &[u8], index: usize) -> (u32, usize) {
     let first = bytes[index];
     if first < 0x80 {
-        (first as u32, 1)
+        // endian-exception: reconstructed-scalar
+        (u32::from_be_bytes([0, 0, 0, first]), 1)
     } else if first < 0xe0 {
         (
-            (((first & 0x1f) as u32) << 6) | ((bytes[index + 1] & 0x3f) as u32),
+            // endian-exception: reconstructed-scalar
+            ((u32::from_be_bytes([0, 0, 0, first & 0x1f])) << 6)
+                // endian-exception: reconstructed-scalar
+                | (u32::from_be_bytes([0, 0, 0, bytes[index + 1] & 0x3f])),
             2,
         )
     } else if first < 0xf0 {
         (
-            (((first & 0x0f) as u32) << 12)
-                | (((bytes[index + 1] & 0x3f) as u32) << 6)
-                | ((bytes[index + 2] & 0x3f) as u32),
+            // endian-exception: reconstructed-scalar
+            ((u32::from_be_bytes([0, 0, 0, first & 0x0f])) << 12)
+                // endian-exception: reconstructed-scalar
+                | ((u32::from_be_bytes([0, 0, 0, bytes[index + 1] & 0x3f])) << 6)
+                // endian-exception: reconstructed-scalar
+                | (u32::from_be_bytes([0, 0, 0, bytes[index + 2] & 0x3f])),
             3,
         )
     } else {
         (
-            (((first & 0x07) as u32) << 18)
-                | (((bytes[index + 1] & 0x3f) as u32) << 12)
-                | (((bytes[index + 2] & 0x3f) as u32) << 6)
-                | ((bytes[index + 3] & 0x3f) as u32),
+            // endian-exception: reconstructed-scalar
+            ((u32::from_be_bytes([0, 0, 0, first & 0x07])) << 18)
+                // endian-exception: reconstructed-scalar
+                | ((u32::from_be_bytes([0, 0, 0, bytes[index + 1] & 0x3f])) << 12)
+                // endian-exception: reconstructed-scalar
+                | ((u32::from_be_bytes([0, 0, 0, bytes[index + 2] & 0x3f])) << 6)
+                // endian-exception: reconstructed-scalar
+                | (u32::from_be_bytes([0, 0, 0, bytes[index + 3] & 0x3f])),
             4,
         )
     }
@@ -905,6 +941,18 @@ macro_rules! id_type {
         }
 
         impl $name {
+            /// Copies an admitted identity with a fallible optional decode budget.
+            pub fn try_clone_for_decode<'ctx, 'arena>(
+                &self,
+                ctx: impl Into<Option<&'ctx cadmpeg_core::decode::DecodeContext<'arena>>>,
+                operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError>
+            where
+                'arena: 'ctx,
+            {
+                Ok(Self(self.0.try_clone_for_decode(ctx, operation)?))
+            }
+
             /// Mint an identity that matches `<format>:<scope>:<kind>#<key>`.
             pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
                 $crate::ids::Identity::new(value).map(Self::from)

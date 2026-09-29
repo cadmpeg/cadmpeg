@@ -242,7 +242,7 @@ impl Harness {
     ///
     /// Panics on the first branch whose two runs disagree.
     pub fn check_determinism(&self, branches: &[Branch]) {
-        self.finish_determinism(&self.fixture_inputs(), branches);
+        Self::finish_determinism(&self.fixture_inputs(), branches);
     }
 
     /// Byte-exact determinism check over caller-built inputs.
@@ -256,7 +256,7 @@ impl Harness {
             !inputs.is_empty(),
             "no in-memory golden inputs; the harness would pass vacuously"
         );
-        self.finish_determinism(inputs, branches);
+        Self::finish_determinism(inputs, branches);
     }
 
     fn finish_check(&self, inputs: &[(String, Vec<u8>)], branches: &[Branch], from_files: bool) {
@@ -275,8 +275,7 @@ impl Harness {
         );
     }
 
-    #[allow(clippy::unused_self)] // pair with `finish_check`; paths unused here
-    fn finish_determinism(&self, inputs: &[(String, Vec<u8>)], branches: &[Branch]) {
+    fn finish_determinism(inputs: &[(String, Vec<u8>)], branches: &[Branch]) {
         for (name, bytes) in inputs {
             for branch in branches {
                 let first = (branch.snapshot)(bytes);

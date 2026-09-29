@@ -26,7 +26,6 @@
 //! expect an id to agree with the `version_flag` beside it, and the answer is
 //! wrong for exactly the files whose declarations are wrong.
 
-use crate::decode_resource::format_retained;
 use crate::global::ResolvedGlobal;
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;
@@ -57,31 +56,22 @@ pub(crate) fn dialect_loss(
     let version = global.version_name();
     let names = VerifiedVersionNames;
     let message = match recovery {
-        UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => format_retained(
-            ctx,
-            format_args!(
+        UnverifiedDialectRecovery::UnreadableDeclaration(declaration) => ctx.format_retained(format_args!(
                 "IGES Global field 23 (version flag) is malformed: the declaration {declaration} does not read as an integer, so the specification default {declared} names effective specification version {version}; this decode interpreted the file with the semantics verified for versions {names}",
-            ),
-            "iges dialect loss message",
-        )?,
-        UnverifiedDialectRecovery::Clamped => format_retained(
-            ctx,
-            format_args!(
+            ), "iges dialect loss message")?,
+        UnverifiedDialectRecovery::Clamped => ctx.format_retained(format_args!(
                 "IGES Global version flag {declared} names effective specification version {version} after the clamp to {} that IGES 5.3 section 2.2.4.3.23 requires of a postprocessor; this decode interpreted the file with the semantics verified for versions {names}",
                 global.effective_version_flag(),
-            ),
-            "iges dialect loss message",
-        )?,
-        UnverifiedDialectRecovery::UnverifiedVersion => format_retained(
-            ctx,
-            format_args!(
+            ), "iges dialect loss message")?,
+        UnverifiedDialectRecovery::UnverifiedVersion => ctx.format_retained(format_args!(
                 "IGES Global version flag {declared} names effective specification version {version}; this decode interpreted the file with the semantics verified for versions {names}",
-            ),
-            "iges dialect loss message",
-        )?,
+            ), "iges dialect loss message")?,
     };
     let code = IgesLossCode::SourceDialectUnverified;
-    ctx.charge_retained(4 + code.code().len() as u64, "iges dialect loss kind")?;
+    ctx.charge_retained(
+        4 + cadmpeg_core::decode::u64_from_index(code.code().len()),
+        "iges dialect loss kind",
+    )?;
     Ok(Some(code.note(message)))
 }
 

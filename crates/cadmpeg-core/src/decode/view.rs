@@ -40,7 +40,22 @@ const _: () = assert!(
 /// refusal. A count that must also fit the unread input goes through
 /// [`bounded_len`] instead.
 pub const fn index_from_u32(value: u32) -> usize {
-    value as usize
+    #[cfg(target_pointer_width = "32")]
+    {
+        usize::from_ne_bytes(value.to_ne_bytes())
+    }
+    #[cfg(target_pointer_width = "64")]
+    {
+        let bytes = value.to_ne_bytes();
+        #[cfg(target_endian = "little")]
+        {
+            usize::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3], 0, 0, 0, 0])
+        }
+        #[cfg(target_endian = "big")]
+        {
+            usize::from_ne_bytes([0, 0, 0, 0, bytes[0], bytes[1], bytes[2], bytes[3]])
+        }
+    }
 }
 
 // The proof `u64_from_index` rests on. It justifies that one widening and
@@ -59,7 +74,22 @@ const _: () = assert!(
 /// byte offset or a limit report is stated in. It proves nothing about a
 /// declared count read from input; such a count goes through [`bounded_len`].
 pub const fn u64_from_index(value: usize) -> u64 {
-    value as u64
+    #[cfg(target_pointer_width = "64")]
+    {
+        u64::from_ne_bytes(value.to_ne_bytes())
+    }
+    #[cfg(target_pointer_width = "32")]
+    {
+        let bytes = value.to_ne_bytes();
+        #[cfg(target_endian = "little")]
+        {
+            u64::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3], 0, 0, 0, 0])
+        }
+        #[cfg(target_endian = "big")]
+        {
+            u64::from_ne_bytes([0, 0, 0, 0, bytes[0], bytes[1], bytes[2], bytes[3]])
+        }
+    }
 }
 
 /// Narrows an offset stated in a wire `u64` to an index into bytes held in
@@ -359,7 +389,8 @@ impl<'a> View<'a> {
     /// `None`. Does not advance on failure.
     pub fn utf16_le(&mut self, count: usize) -> Option<String> {
         let mut candidate = *self;
-        let units = candidate.read_counted(u64::try_from(count).ok()?, 2, View::u16_le)?;
+        let units =
+            candidate.read_counted(crate::decode::u64_from_index(count), 2, View::u16_le)?;
         let value = String::from_utf16(&units).ok()?;
         *self = candidate;
         Some(value)
@@ -373,7 +404,7 @@ impl<'a> View<'a> {
     pub fn utf16le_at(bytes: &[u8], offset: usize, count: usize) -> Option<(String, usize)> {
         let mut view = View::over_retained(bytes);
         view.seek(offset)?;
-        let units = view.read_counted(u64::try_from(count).ok()?, 2, View::u16_le)?;
+        let units = view.read_counted(crate::decode::u64_from_index(count), 2, View::u16_le)?;
         Some((String::from_utf16(&units).ok()?, view.position()))
     }
 
@@ -418,19 +449,23 @@ impl<'a> View<'a> {
 }
 
 const fn decode_i16_le(bytes: [u8; 2]) -> i16 {
-    assemble_u16_le(bytes) as i16
+    // endian-exception: reconstructed-scalar
+    i16::from_le_bytes(bytes)
 }
 
 const fn decode_i32_le(bytes: [u8; 4]) -> i32 {
-    assemble_u32_le(bytes) as i32
+    // endian-exception: reconstructed-scalar
+    i32::from_le_bytes(bytes)
 }
 
 const fn decode_i64_le(bytes: [u8; 8]) -> i64 {
-    assemble_u64_le(bytes) as i64
+    // endian-exception: reconstructed-scalar
+    i64::from_le_bytes(bytes)
 }
 
 const fn decode_i16_be(bytes: [u8; 2]) -> i16 {
-    assemble_u16_be(bytes) as i16
+    // endian-exception: reconstructed-scalar
+    i16::from_be_bytes(bytes)
 }
 
 macro_rules! view_readers {
@@ -534,7 +569,10 @@ mod tests {
     #[test]
     fn a_u32_index_widens_to_the_same_value() {
         assert_eq!(index_from_u32(0), 0);
-        assert_eq!(index_from_u32(u32::MAX), u32::MAX as usize);
+        assert_eq!(
+            index_from_u32(u32::MAX),
+            usize::try_from(u32::MAX).expect("u32 fits usize")
+        );
     }
 
     /// The widening is exact at the widest index the target can hold, so the
@@ -544,7 +582,7 @@ mod tests {
         assert_eq!(u64_from_index(0), 0);
         assert_eq!(u64_from_index(1), 1);
         let widest = u64_from_index(usize::MAX);
-        assert_eq!(widest, usize::MAX as u64);
+        assert_eq!(widest, u64::try_from(usize::MAX).expect("usize fits u64"));
         assert_eq!(usize::try_from(widest), Ok(usize::MAX));
     }
 
@@ -760,7 +798,7 @@ mod tests {
         assert_eq!(view.remaining(), 0);
         assert!(view.is_empty());
         assert_eq!(view.read_len(), view.window().len());
-        assert_eq!(view.unread(), &[] as &[u8]);
+        assert!(view.unread().is_empty());
     }
 
     #[test]

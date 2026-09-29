@@ -9,7 +9,6 @@ use cadmpeg_core::CodecError;
 use crate::native::{
     sole_named_property, AttachmentRecord, LinkTarget, ObjectRecord, PropertyRecord,
 };
-use crate::resource::{reserve_vec_items, retained_format, retained_string};
 
 const MAP_MODE_NAMES: &[&str] = &[
     "Deactivated",
@@ -134,15 +133,18 @@ pub(crate) fn transfer(
         if !by_owner.contains_key(owner) {
             ctx.charge_collection_items(1, "FreeCAD attachment owner lookup")?;
             by_owner.try_reserve(1).map_err(|_| {
-                crate::resource::collection_allocation_failed(
-                    ctx,
-                    1,
-                    "FreeCAD attachment owner lookup",
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "FreeCAD attachment owner lookup",
+                    ),
                 )
             })?;
         }
         let owned = by_owner.entry(owner).or_default();
-        reserve_vec_items(ctx, owned, 1, "FreeCAD attachment owner properties")?;
+        ctx.reserve_vec(owned, 1, "FreeCAD attachment owner properties")?;
         owned.push(property);
     }
     let mut records = Vec::new();
@@ -165,7 +167,7 @@ pub(crate) fn transfer(
         }
         let record = AttachmentRecord::try_new(
             crate::native::native_id_charged(ctx, "attachment", &object.name)?,
-            retained_string(ctx, &object.id, "FreeCAD attachment object")?,
+            ctx.copy_retained_text(&object.id, "FreeCAD attachment object")?,
             support
                 .map(|property| support_links(ctx, property))
                 .transpose()?
@@ -176,7 +178,7 @@ pub(crate) fn transfer(
             offset,
         )
         .map_err(CodecError::Malformed)?;
-        reserve_vec_items(ctx, &mut records, 1, "FreeCAD attachment records")?;
+        ctx.reserve_vec(&mut records, 1, "FreeCAD attachment records")?;
         records.push(record);
     }
     Ok(records)
@@ -209,8 +211,7 @@ fn support_links(
     property: &PropertyRecord,
 ) -> Result<Vec<Option<LinkTarget>>, CodecError> {
     if property.type_name != "App::PropertyLinkSubList" {
-        return Err(CodecError::Malformed(retained_format(
-            ctx,
+        return Err(CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "attachment property {} has runtime type {}, expected App::PropertyLinkSubList",
                 property.id, property.type_name
@@ -226,8 +227,7 @@ fn support_links(
             .iter()
             .any(|value| value.tag != "Link")
     {
-        return Err(CodecError::Malformed(retained_format(
-            ctx,
+        return Err(CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "attachment property {} requires one LinkSubList value",
                 property.id
@@ -235,11 +235,8 @@ fn support_links(
             "FreeCAD attachment support value error",
         )?));
     }
-    let mut links = crate::resource::collection_vec(
-        ctx,
-        property.links().len(),
-        "FreeCAD attachment support links",
-    )?;
+    let mut links =
+        ctx.collection_vec(property.links().len(), "FreeCAD attachment support links")?;
     for link in property.links() {
         links.push(
             link.as_ref()
@@ -255,8 +252,7 @@ fn map_mode_value(
     property: &PropertyRecord,
 ) -> Result<MapModeIndex, CodecError> {
     if property.type_name != "App::PropertyEnumeration" {
-        return Err(CodecError::Malformed(retained_format(
-            ctx,
+        return Err(CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "attachment property {} has runtime type {}, expected App::PropertyEnumeration",
                 property.id, property.type_name
@@ -265,8 +261,7 @@ fn map_mode_value(
         )?));
     }
     let [value] = property.values() else {
-        return Err(CodecError::Malformed(retained_format(
-            ctx,
+        return Err(CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "attachment property {} requires one Integer value",
                 property.id
@@ -275,8 +270,7 @@ fn map_mode_value(
         )?));
     };
     if value.tag != "Integer" {
-        return Err(CodecError::Malformed(retained_format(
-            ctx,
+        return Err(CodecError::Malformed(ctx.format_retained(
             format_args!(
                 "attachment property {} requires an Integer value",
                 property.id
@@ -285,23 +279,20 @@ fn map_mode_value(
         )?));
     }
     let Some(index) = value.attributes.get("value") else {
-        return Err(CodecError::Malformed(retained_format(
-            ctx,
+        return Err(CodecError::Malformed(ctx.format_retained(
             format_args!("attachment property {} has no enum index", property.id),
             "FreeCAD attachment missing map-mode index",
         )?));
     };
     let mode = match index.parse::<usize>() {
         Ok(index) => MapModeIndex::try_new(index),
-        Err(_) => Err(retained_format(
-            ctx,
+        Err(_) => Err(ctx.format_retained(
             format_args!("map_mode {index:?} is not an index"),
             "FreeCAD attachment invalid map-mode index",
         )?),
     };
     mode.or_else(|error| {
-        Err(CodecError::Malformed(retained_format(
-            ctx,
+        Err(CodecError::Malformed(ctx.format_retained(
             format_args!("attachment property {}: {error}", property.id),
             "FreeCAD attachment map-mode error",
         )?))

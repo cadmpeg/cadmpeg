@@ -16,7 +16,7 @@ use crate::chunks::{
     chunk_at, verify_checksum, verify_checksum_ranges, ArchiveVersion, BoundedReader,
     ChecksumStatus, Chunk, FramingError,
 };
-use crate::curves::{charged_vec, error, reserve_collection, GeometryError};
+use crate::curves::{charged_vec, error, GeometryError};
 use crate::objects::{
     parse_class_wrapper, parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor,
 };
@@ -1331,7 +1331,7 @@ fn parse_legacy_major2(
                     })?
                     .domain;
                 if trims.len() >= trim_count {
-                    reserve_collection(ctx, &mut trims, 1, "Rhino legacy Brep trims")?;
+                    ctx.reserve_vec(&mut trims, 1, "Rhino legacy Brep trims")?;
                 }
                 trims.push(RawBrepTrim {
                     index: trim_index,
@@ -1357,7 +1357,7 @@ fn parse_legacy_major2(
                 loop_trim_indexes.push(trim_index);
             }
             if loops.len() >= loop_count {
-                reserve_collection(ctx, &mut loops, 1, "Rhino legacy Brep loops")?;
+                ctx.reserve_vec(&mut loops, 1, "Rhino legacy Brep loops")?;
             }
             loops.push(RawBrepLoop {
                 index: loop_index,
@@ -1396,7 +1396,7 @@ fn parse_legacy_major2(
     for (trim_index, trim) in trims.iter().enumerate() {
         if let Some(edge_index) = position(trim.edge).filter(|index| *index < edge_count) {
             let group = &mut edge_trim_indexes[edge_index];
-            reserve_collection(ctx, group, 1, "Rhino legacy Brep edge-trim indexes")?;
+            ctx.reserve_vec(group, 1, "Rhino legacy Brep edge-trim indexes")?;
             group.push(trim_index);
         }
     }
@@ -1462,7 +1462,7 @@ fn parse_legacy_major2(
                 let position_in_array = vertices.len();
                 let index = i32::try_from(position_in_array)
                     .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?;
-                reserve_collection(ctx, &mut vertices, 1, "Rhino legacy Brep vertices")?;
+                ctx.reserve_vec(&mut vertices, 1, "Rhino legacy Brep vertices")?;
                 root_vertices[root] = Some(position_in_array);
                 vertices.push(LegacyVertex {
                     vertex: RawBrepVertex {
@@ -1560,8 +1560,7 @@ fn parse_legacy_major2(
     for edge in &edges {
         for vertex in edge.vertices {
             let vertex = slot(vertex, vertices.len(), "legacy Brep edge vertex")?;
-            reserve_collection(
-                ctx,
+            ctx.reserve_vec(
                 &mut vertices[vertex].edges,
                 1,
                 "Rhino legacy Brep vertex edges",
@@ -1822,7 +1821,7 @@ fn legacy_vertex(
     let index = vertices.len();
     let stored_index =
         i32::try_from(index).map_err(|_| error(position, "legacy Brep vertex index overflow"))?;
-    reserve_collection(ctx, vertices, 1, "Rhino legacy Brep vertices")?;
+    ctx.reserve_vec(vertices, 1, "Rhino legacy Brep vertices")?;
     vertices.push(LegacyVertex {
         vertex: RawBrepVertex {
             index: stored_index,
@@ -2058,7 +2057,7 @@ fn unstamped_legacy_layout(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), GeometryError> {
     if archive.value() >= 3 && writer_version.is_none() && count > 0 {
-        crate::wire::reserve_collection(ctx, losses, 1, "Rhino Brep unstamped layout losses")?;
+        ctx.reserve_vec(losses, 1, "Rhino Brep unstamped layout losses")?;
         losses.push(crate::wire::admitted_loss(
             ctx,
             crate::loss::RhinoLossCode::SourceWriterStampUnverified,
@@ -2317,10 +2316,14 @@ fn read_mesh_sides(
                 let object = chunk_at(bytes, start, child.end(), archive, false)?;
                 ctx.charge_collection_items(1, "Rhino Brep mesh cache child ranges")?;
                 children.try_reserve(1).map_err(|_| {
-                    crate::curves::collection_allocation_failed(
-                        "Rhino Brep mesh cache child ranges",
-                        1,
-                    )
+                    crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                            u64::MAX,
+                            cadmpeg_core::decode::u64_from_index(1),
+                            "Rhino Brep mesh cache child ranges",
+                        ),
+                    ))
                 })?;
                 children.push(object.range());
                 let class = parse_class_wrapper_with_userdata(
@@ -2434,7 +2437,7 @@ fn read_regions(
             &[sides_range, regions_range],
             warnings,
         )?;
-        if sides.len() != face_count.saturating_mul(2) {
+        if face_count.checked_mul(2) != Some(sides.len()) {
             return Err(error(
                 outer.position(),
                 "redundant Brep region face-side count mismatch",
@@ -2512,7 +2515,7 @@ fn read_region_topology_userdata(
             format_args!("Brep region-topology userdata skipped {skipped} trailing bytes"),
         )?;
     }
-    if sides.len() != face_count.saturating_mul(2) {
+    if face_count.checked_mul(2) != Some(sides.len()) {
         return Err(error(
             extra.range.start,
             "redundant Brep region face-side count mismatch",
@@ -2715,7 +2718,7 @@ fn validate_regions(
     ctx: &DecodeContext<'_>,
     raw: &RawBrep,
 ) -> Result<Vec<ResolvedFaceSide>, GeometryError> {
-    if raw.face_sides.len() != raw.faces.len().saturating_mul(2) {
+    if raw.faces.len().checked_mul(2) != Some(raw.face_sides.len()) {
         return Err(error(
             raw.source_range.start,
             "region side count is invalid",
@@ -2776,7 +2779,14 @@ fn validate_regions(
             if !listed_sides.contains(&side) {
                 ctx.charge_collection_items(1, "Rhino Brep listed region sides")?;
                 listed_sides.try_reserve(1).map_err(|_| {
-                    crate::curves::collection_allocation_failed("Rhino Brep listed region sides", 1)
+                    crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                            u64::MAX,
+                            cadmpeg_core::decode::u64_from_index(1),
+                            "Rhino Brep listed region sides",
+                        ),
+                    ))
                 })?;
             }
             if !listed_sides.insert(side) || sides[side].region != Some(index) {
@@ -2974,7 +2984,14 @@ fn unique(ctx: &DecodeContext<'_>, values: &[i32], label: &str) -> Result<(), Ge
         }
         ctx.charge_collection_items(1, "Rhino Brep unique references")?;
         seen.try_reserve(1).map_err(|_| {
-            crate::curves::collection_allocation_failed("Rhino Brep unique references", 1)
+            crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    u64::MAX,
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "Rhino Brep unique references",
+                ),
+            ))
         })?;
         seen.insert(*value);
     }

@@ -87,10 +87,10 @@ impl Record {
 
     /// One counted length, which is a decimal parameter already.
     fn count(&mut self, value: usize) {
-        self.unsigned(value as u64);
+        self.unsigned(cadmpeg_core::decode::u64_from_index(value));
     }
 
-    fn real(&mut self, thousandths: i64) {
+    fn real(&mut self, thousandths: i64) -> Result<(), &'static str> {
         let magnitude = thousandths.unsigned_abs();
         self.0.push(',');
         if thousandths < 0 {
@@ -102,15 +102,18 @@ impl Record {
         // written digit by digit rather than padded by a formatter.
         let thousandths = magnitude % 1000;
         for place in [100, 10, 1] {
-            self.0
-                .push(char::from(b'0' + (thousandths / place % 10) as u8));
+            let digit =
+                u8::try_from(thousandths / place % 10).map_err(|_| "decimal digit exceeds u8")?;
+            self.0.push(char::from(b'0' + digit));
         }
+        Ok(())
     }
 
-    fn reals(&mut self, values: &[i64]) {
+    fn reals(&mut self, values: &[i64]) -> Result<(), &'static str> {
         for value in values {
-            self.real(*value);
+            self.real(*value)?;
         }
+        Ok(())
     }
 
     fn verbatim(&mut self, value: &str) {
@@ -167,37 +170,39 @@ impl Scale {
     }
 }
 
-fn right_aligned(field: &mut [u8], value: u64) {
+fn right_aligned(field: &mut [u8], value: u64) -> Result<(), &'static str> {
     field.fill(b' ');
     let mut index = field.len();
     let mut rest = value;
     loop {
         assert!(index > 0, "value does not fit the fixed field width");
         index -= 1;
-        field[index] = b'0' + (rest % 10) as u8;
+        let digit = u8::try_from(rest % 10).map_err(|_| "decimal digit exceeds u8")?;
+        field[index] = b'0' + digit;
         rest /= 10;
         if rest == 0 {
             break;
         }
     }
+    Ok(())
 }
 
-fn card(out: &mut Vec<u8>, data: &[u8], section: u8, sequence: u64) {
+fn card(out: &mut Vec<u8>, data: &[u8], section: u8, sequence: u64) -> Result<(), &'static str> {
     assert!(
         data.len() <= CARD_DATA_COLUMNS,
         "card data exceeds the seventy-two data columns"
     );
-    let start = out.len();
     out.extend_from_slice(data);
-    out.resize(start + CARD_DATA_COLUMNS, b' ');
+    out.extend(std::iter::repeat_with(|| b' ').take(CARD_DATA_COLUMNS - data.len()));
     out.push(section);
     let mut field = [b' '; SEQUENCE_COLUMNS];
-    right_aligned(&mut field, sequence);
+    right_aligned(&mut field, sequence)?;
     out.extend_from_slice(&field);
     out.push(b'\n');
+    Ok(())
 }
 
-fn directory_card(out: &mut Vec<u8>, fields: [&str; 9], sequence: u64) {
+fn directory_card(out: &mut Vec<u8>, fields: [&str; 9], sequence: u64) -> Result<(), &'static str> {
     let mut data = [b' '; CARD_DATA_COLUMNS];
     for (index, field) in fields.iter().enumerate() {
         assert!(
@@ -207,18 +212,23 @@ fn directory_card(out: &mut Vec<u8>, fields: [&str; 9], sequence: u64) {
         let end = index * DIRECTORY_FIELD_COLUMNS + DIRECTORY_FIELD_COLUMNS;
         data[end - field.len()..end].copy_from_slice(field.as_bytes());
     }
-    card(out, &data, b'D', sequence);
+    card(out, &data, b'D', sequence)
 }
 
-fn parameter_card(out: &mut Vec<u8>, data: &[u8], owner: u64, sequence: u64) {
+fn parameter_card(
+    out: &mut Vec<u8>,
+    data: &[u8],
+    owner: u64,
+    sequence: u64,
+) -> Result<(), &'static str> {
     assert!(
         data.len() <= PARAMETER_COLUMNS,
         "parameter fragment exceeds the sixty-four data columns"
     );
     let mut payload = [b' '; CARD_DATA_COLUMNS];
     payload[..data.len()].copy_from_slice(data);
-    right_aligned(&mut payload[PARAMETER_COLUMNS..], owner);
-    card(out, &payload, b'P', sequence);
+    right_aligned(&mut payload[PARAMETER_COLUMNS..], owner)?;
+    card(out, &payload, b'P', sequence)
 }
 
 /// The Directory sequence of the entity at `index`: odd and one-based.
@@ -227,16 +237,16 @@ fn parameter_card(out: &mut Vec<u8>, data: &[u8], owner: u64, sequence: u64) {
 /// target, so the sequence needs no range check. `right_aligned` refuses a
 /// sequence that does not fit its fixed card field.
 fn directory_sequence(index: usize) -> u64 {
-    (index * 2 + 1) as u64
+    cadmpeg_core::decode::u64_from_index(index * 2 + 1)
 }
 
-fn assemble(start_text: &str, entities: &[Item]) -> Vec<u8> {
+fn assemble(start_text: &str, entities: &[Item]) -> Result<Vec<u8>, &'static str> {
     let mut bytes = Vec::new();
-    card(&mut bytes, start_text.as_bytes(), b'S', 1);
+    card(&mut bytes, start_text.as_bytes(), b'S', 1)?;
     let mut global_cards: u64 = 0;
     for chunk in GLOBAL.as_bytes().chunks(CARD_DATA_COLUMNS) {
         global_cards += 1;
-        card(&mut bytes, chunk, b'G', global_cards);
+        card(&mut bytes, chunk, b'G', global_cards)?;
     }
     let mut parameter_start: u64 = 1;
     for (index, entry) in entities.iter().enumerate() {
@@ -245,7 +255,9 @@ fn assemble(start_text: &str, entities: &[Item]) -> Vec<u8> {
             "every entity owns at least one parameter card"
         );
         let sequence = directory_sequence(index);
-        let line_count = entry.parameters.len().div_ceil(PARAMETER_COLUMNS) as u64;
+        let line_count = cadmpeg_core::decode::u64_from_index(
+            entry.parameters.len().div_ceil(PARAMETER_COLUMNS),
+        );
         let entity_type = entry.entity_type.to_string();
         let form = entry.form.to_string();
         let start_field = parameter_start.to_string();
@@ -264,7 +276,7 @@ fn assemble(start_text: &str, entities: &[Item]) -> Vec<u8> {
                 entry.status,
             ],
             sequence,
-        );
+        )?;
         directory_card(
             &mut bytes,
             [
@@ -279,14 +291,14 @@ fn assemble(start_text: &str, entities: &[Item]) -> Vec<u8> {
                 "0",
             ],
             sequence + 1,
-        );
+        )?;
         parameter_start += line_count;
     }
     let mut parameter_sequence: u64 = 1;
     for (index, entry) in entities.iter().enumerate() {
         let owner = directory_sequence(index);
         for chunk in entry.parameters.as_bytes().chunks(PARAMETER_COLUMNS) {
-            parameter_card(&mut bytes, chunk, owner, parameter_sequence);
+            parameter_card(&mut bytes, chunk, owner, parameter_sequence)?;
             parameter_sequence += 1;
         }
     }
@@ -295,37 +307,37 @@ fn assemble(start_text: &str, entities: &[Item]) -> Vec<u8> {
         entities.len() * 2,
         parameter_sequence - 1
     );
-    card(&mut bytes, terminate.as_bytes(), b'T', 1);
-    bytes
+    card(&mut bytes, terminate.as_bytes(), b'T', 1)?;
+    Ok(bytes)
 }
 
-fn chain_vertex(index: usize) -> [i64; 3] {
-    let step = index as i64;
-    [step * 125, (step * step) % 977 * 37, 0]
+fn chain_vertex(index: usize) -> Result<[i64; 3], &'static str> {
+    let step = i64::try_from(index).map_err(|_| "chain vertex index exceeds i64")?;
+    Ok([step * 125, (step * step) % 977 * 37, 0])
 }
 
-fn chain_segment(index: usize) -> Item {
-    let start = chain_vertex(index);
-    let end = chain_vertex(index + 1);
-    if index.is_multiple_of(2) {
+fn chain_segment(index: usize) -> Result<Item, &'static str> {
+    let start = chain_vertex(index)?;
+    let end = chain_vertex(index + 1)?;
+    Ok(if index.is_multiple_of(2) {
         let mut record = Record::new(110);
-        record.reals(&start);
-        record.reals(&end);
+        record.reals(&start)?;
+        record.reals(&end)?;
         item(110, 0, "CHAINLIN", PHYSICALLY_DEPENDENT, record.finish())
     } else {
         let mut record = Record::new(126);
         record.integers(&[1, 1, 1, 0, 1, 0]);
         record.integers(&[0, 0, 1, 1]);
         record.integers(&[1, 1]);
-        record.reals(&start);
-        record.reals(&end);
+        record.reals(&start)?;
+        record.reals(&end)?;
         record.integers(&[0, 1]);
         record.integers(&[0, 0, 1]);
         item(126, 0, "CHAINNUR", PHYSICALLY_DEPENDENT, record.finish())
-    }
+    })
 }
 
-fn composite_chains(scale: Scale) -> Vec<u8> {
+fn composite_chains(scale: Scale) -> Result<Vec<u8>, &'static str> {
     let pool = scale.pick(12_000, 400);
     let children = scale.pick(240, 24);
     let overlapping = scale.pick(1_000, 40);
@@ -333,9 +345,9 @@ fn composite_chains(scale: Scale) -> Vec<u8> {
     let nest_size = 8;
     let tiles = pool / children;
     assert!(tiles > nest_size, "the chain holds at least one nested run");
-    let mut entities = Vec::with_capacity(pool + tiles + overlapping + nests);
+    let mut entities = Vec::new();
     for index in 0..pool {
-        entities.push(chain_segment(index));
+        entities.push(chain_segment(index)?);
     }
     let tile_base = entities.len();
     for tile in 0..tiles {
@@ -383,49 +395,53 @@ fn unit_square(scale: i64, offset: i64) -> [[i64; 2]; 5] {
     ]
 }
 
-fn closed_polyline(common: i64, corners: [[i64; 2]; 5]) -> String {
+fn closed_polyline(common: i64, corners: [[i64; 2]; 5]) -> Result<String, &'static str> {
     let mut record = Record::new(106);
     record.integers(&[1, 5]);
-    record.real(common);
+    record.real(common)?;
     for corner in corners {
-        record.reals(&corner);
+        record.reals(&corner)?;
     }
-    record.finish()
+    Ok(record.finish())
 }
 
-fn bilinear_patch(height: i64) -> String {
+fn bilinear_patch(height: i64) -> Result<String, &'static str> {
     let mut record = Record::new(128);
     record.integers(&[1, 1, 1, 1, 0, 0, 1, 0, 0]);
     record.integers(&[0, 0, 1, 1]);
     record.integers(&[0, 0, 1, 1]);
     record.integers(&[1, 1, 1, 1]);
     for corner in [[0, 0], [1000, 0], [0, 1000], [1000, 1000]] {
-        record.reals(&[corner[0], corner[1], height]);
+        record.reals(&[corner[0], corner[1], height])?;
     }
     record.integers(&[0, 1, 0, 1]);
-    record.finish()
+    Ok(record.finish())
 }
 
-fn trimmed_surfaces(scale: Scale) -> Vec<u8> {
+fn trimmed_surfaces(scale: Scale) -> Result<Vec<u8>, &'static str> {
     let blocks = scale.pick(1_400, 30);
     let inner_loops = 3;
-    let mut entities = Vec::with_capacity(blocks * (inner_loops * 3 + 5));
+    let mut entities = Vec::new();
     for block in 0..blocks {
         let base = entities.len();
-        let height = (block as i64 % 200) * 5;
+        let height = (i64::try_from(block).map_err(|_| "stress index exceeds i64")? % 200) * 5;
         entities.push(item(
             128,
             0,
             "PATCH",
             PHYSICALLY_DEPENDENT,
-            bilinear_patch(height),
+            bilinear_patch(height)?,
         ));
-        let mut boundaries = Vec::with_capacity(inner_loops + 1);
+        let mut boundaries = Vec::new();
         for loop_index in 0..=inner_loops {
             let corners = if loop_index == 0 {
                 unit_square(1000, 0)
             } else {
-                unit_square(150, 100 + 250 * (loop_index as i64 - 1))
+                unit_square(
+                    150,
+                    100 + 250
+                        * (i64::try_from(loop_index).map_err(|_| "stress index exceeds i64")? - 1),
+                )
             };
             let model = entities.len();
             entities.push(item(
@@ -433,7 +449,7 @@ fn trimmed_surfaces(scale: Scale) -> Vec<u8> {
                 63,
                 "LOOPMODL",
                 PHYSICALLY_DEPENDENT,
-                closed_polyline(height, corners),
+                closed_polyline(height, corners)?,
             ));
             let pcurve = entities.len();
             entities.push(item(
@@ -441,7 +457,7 @@ fn trimmed_surfaces(scale: Scale) -> Vec<u8> {
                 63,
                 "LOOPPCUR",
                 PARAMETRIC_DEPENDENT,
-                closed_polyline(0, corners),
+                closed_polyline(0, corners)?,
             ));
             let mut record = Record::new(142);
             record.integer(0);
@@ -474,7 +490,7 @@ fn trimmed_surfaces(scale: Scale) -> Vec<u8> {
     )
 }
 
-fn counted_lists(scale: Scale) -> Vec<u8> {
+fn counted_lists(scale: Scale) -> Result<Vec<u8>, &'static str> {
     let points = scale.pick(2_000, 100);
     let group_members = scale.pick(1_500, 60);
     let groups = scale.pick(150, 6);
@@ -487,9 +503,9 @@ fn counted_lists(scale: Scale) -> Vec<u8> {
     let mut seed = Lcg::new(0x1963_0503_1120_0001);
     let mut entities = Vec::new();
     for index in 0..points {
-        let step = index as i64;
+        let step = i64::try_from(index).map_err(|_| "stress index exceeds i64")?;
         let mut record = Record::new(116);
-        record.reals(&[step * 7, step * 13 % 4001, step * 3 % 907]);
+        record.reals(&[step * 7, step * 13 % 4001, step * 3 % 907])?;
         record.integer(0);
         entities.push(item(116, 0, "SITE", INDEPENDENT, record.finish()));
     }
@@ -505,9 +521,9 @@ fn counted_lists(scale: Scale) -> Vec<u8> {
     for index in 0..level_properties {
         let mut record = Record::new(406);
         record.count(levels);
-        let base = (index * levels) as i64;
+        let base = i64::try_from(index * levels).map_err(|_| "stress index exceeds i64")?;
         for level in 0..levels {
-            record.integer(base + level as i64);
+            record.integer(base + i64::try_from(level).map_err(|_| "stress index exceeds i64")?);
         }
         entities.push(item(406, 1, "LEVELS", INDEPENDENT, record.finish()));
     }
@@ -517,24 +533,28 @@ fn counted_lists(scale: Scale) -> Vec<u8> {
         record.count(triples);
         let defaulted_tail = index % 2 == 1;
         for tuple in 0..triples {
-            let step = (index * triples + tuple) as i64;
-            record.real(step % 9973 * 3);
-            record.real(step % 8971 * 5);
+            let step =
+                i64::try_from(index * triples + tuple).map_err(|_| "stress index exceeds i64")?;
+            record.real(step % 9973 * 3)?;
+            record.real(step % 8971 * 5)?;
             if !defaulted_tail || tuple + 1 < triples {
-                record.real(step % 7963 * 7);
+                record.real(step % 7963 * 7)?;
             }
         }
         entities.push(item(106, 2, "TUPLES", INDEPENDENT, record.finish()));
     }
     for index in 0..arrays {
-        let base = seed.below(points as u64) as usize;
+        let base = cadmpeg_core::decode::index_from_u64(
+            seed.below(cadmpeg_core::decode::u64_from_index(points)),
+        )
+        .ok_or("random point index exceeds usize")?;
         let mut record = Record::new(412);
         record.unsigned(directory_sequence(base));
-        record.real(1_000);
-        record.reals(&[0, 0, 0]);
+        record.real(1_000)?;
+        record.reals(&[0, 0, 0])?;
         record.integers(&[8, 8]);
-        record.reals(&[2_000, 2_000]);
-        record.real(0);
+        record.reals(&[2_000, 2_000])?;
+        record.real(0)?;
         record.count(positions);
         record.integer(0);
         for position in 0..positions {
@@ -548,7 +568,7 @@ fn counted_lists(scale: Scale) -> Vec<u8> {
     )
 }
 
-fn trailing_groups(scale: Scale) -> Vec<u8> {
+fn trailing_groups(scale: Scale) -> Result<Vec<u8>, &'static str> {
     let points = scale.pick(240, 24);
     let associations = scale.pick(64, 8);
     let properties = scale.pick(64, 8);
@@ -557,9 +577,9 @@ fn trailing_groups(scale: Scale) -> Vec<u8> {
     let property_depth = scale.pick(180, 12);
     let mut entities = Vec::new();
     for index in 0..points {
-        let step = index as i64;
+        let step = i64::try_from(index).map_err(|_| "stress index exceeds i64")?;
         let mut record = Record::new(116);
-        record.reals(&[step * 11, step * 17 % 3001, step * 5 % 1009]);
+        record.reals(&[step * 11, step * 17 % 3001, step * 5 % 1009])?;
         record.integer(0);
         entities.push(item(116, 0, "ANCHOR", INDEPENDENT, record.finish()));
     }
@@ -576,7 +596,7 @@ fn trailing_groups(scale: Scale) -> Vec<u8> {
     for index in 0..properties {
         let mut record = Record::new(406);
         record.integer(3);
-        let base = (index * 3) as i64;
+        let base = i64::try_from(index * 3).map_err(|_| "stress index exceeds i64")?;
         record.integers(&[base, base + 1, base + 2]);
         entities.push(item(406, 1, "PROPERTY", INDEPENDENT, record.finish()));
     }
@@ -593,25 +613,25 @@ fn trailing_groups(scale: Scale) -> Vec<u8> {
         }
     };
     for index in 0..carriers {
-        let step = index as i64;
+        let step = i64::try_from(index).map_err(|_| "stress index exceeds i64")?;
         match index % 3 {
             0 => {
                 let mut record = Record::new(110);
-                record.reals(&[step * 9, step * 3 % 5003, 0]);
-                record.reals(&[step * 9 + 1_000, step * 3 % 5003, 0]);
+                record.reals(&[step * 9, step * 3 % 5003, 0])?;
+                record.reals(&[step * 9 + 1_000, step * 3 % 5003, 0])?;
                 append_groups(&mut record, index);
                 entities.push(item(110, 0, "CARRYLIN", INDEPENDENT, record.finish()));
             }
             1 => {
                 let mut record = Record::new(116);
-                record.reals(&[step * 4, step * 6 % 4003, step * 2 % 2003]);
+                record.reals(&[step * 4, step * 6 % 4003, step * 2 % 2003])?;
                 record.integer(0);
                 append_groups(&mut record, index);
                 entities.push(item(116, 0, "CARRYPNT", INDEPENDENT, record.finish()));
             }
             _ => {
                 let mut record = Record::new(123);
-                record.reals(&[0, 0, 1_000]);
+                record.reals(&[0, 0, 1_000])?;
                 append_groups(&mut record, index);
                 entities.push(item(
                     123,
@@ -629,17 +649,20 @@ fn trailing_groups(scale: Scale) -> Vec<u8> {
     )
 }
 
-fn text_run(seed: &mut Lcg, length: usize) -> String {
+fn text_run(seed: &mut Lcg, length: usize) -> Result<String, &'static str> {
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:+*/#";
     let mut text = String::with_capacity(length);
     for _ in 0..length {
-        let pick = seed.below(ALPHABET.len() as u64) as usize;
+        let pick = cadmpeg_core::decode::index_from_u64(
+            seed.below(cadmpeg_core::decode::u64_from_index(ALPHABET.len())),
+        )
+        .ok_or("random character index exceeds usize")?;
         text.push(char::from(ALPHABET[pick]));
     }
-    text
+    Ok(text)
 }
 
-fn annotation_runs(scale: Scale) -> Vec<u8> {
+fn annotation_runs(scale: Scale) -> Result<Vec<u8>, &'static str> {
     let general_notes = scale.pick(400, 12);
     let general_strings = scale.pick(60, 8);
     let new_notes = scale.pick(200, 8);
@@ -651,41 +674,49 @@ fn annotation_runs(scale: Scale) -> Vec<u8> {
         record.count(general_strings);
         for string in 0..general_strings {
             let length = 40 + (index + string) % 41;
-            let text = text_run(&mut seed, length);
+            let text = text_run(&mut seed, length)?;
             record.count(text.len());
-            record.reals(&[3_000, 2_000]);
+            record.reals(&[3_000, 2_000])?;
             record.integer(1);
             record.verbatim(RIGHT_ANGLE);
-            record.real(0);
+            record.real(0)?;
             record.integers(&[0, 0]);
-            record.reals(&[(index as i64 % 97) * 250, (string as i64 % 89) * 250, 0]);
+            record.reals(&[
+                (i64::try_from(index).map_err(|_| "stress index exceeds i64")? % 97) * 250,
+                (i64::try_from(string).map_err(|_| "stress index exceeds i64")? % 89) * 250,
+                0,
+            ])?;
             record.hollerith(&text);
         }
         entities.push(item(212, 0, "NOTE", INDEPENDENT, record.finish()));
     }
     for index in 0..new_notes {
         let mut record = Record::new(213);
-        record.reals(&[40_000, 20_000]);
+        record.reals(&[40_000, 20_000])?;
         record.integer(2);
-        record.reals(&[0, 20_000, 0, 0, 0, 18_000, 0, -5_000]);
+        record.reals(&[0, 20_000, 0, 0, 0, 18_000, 0, -5_000])?;
         record.count(new_strings);
         for string in 0..new_strings {
             let length = 32 + (index + string) % 49;
-            let style = text_run(&mut seed, 4);
-            let text = text_run(&mut seed, length);
+            let style = text_run(&mut seed, 4)?;
+            let text = text_run(&mut seed, length)?;
             record.integer(0);
-            record.reals(&[2_000, 3_000, -500]);
-            record.real(0);
+            record.reals(&[2_000, 3_000, -500])?;
+            record.real(0)?;
             record.integer(18);
-            record.real(0);
+            record.real(0)?;
             record.hollerith(&style);
             record.count(text.len());
-            record.reals(&[12_000, 3_000]);
+            record.reals(&[12_000, 3_000])?;
             record.integer(1);
             record.verbatim(RIGHT_ANGLE);
-            record.real(0);
+            record.real(0)?;
             record.integers(&[0, 0]);
-            record.reals(&[(index as i64 % 83) * 250, (string as i64 % 79) * 250, 0]);
+            record.reals(&[
+                (i64::try_from(index).map_err(|_| "stress index exceeds i64")? % 83) * 250,
+                (i64::try_from(string).map_err(|_| "stress index exceeds i64")? % 79) * 250,
+                0,
+            ])?;
             record.hollerith(&text);
         }
         entities.push(item(213, 0, "NEWNOTE", INDEPENDENT, record.finish()));
@@ -696,28 +727,28 @@ fn annotation_runs(scale: Scale) -> Vec<u8> {
     )
 }
 
-fn free_curve_soup(scale: Scale) -> Vec<u8> {
+fn free_curve_soup(scale: Scale) -> Result<Vec<u8>, &'static str> {
     let curves = scale.pick(20_000, 400);
     let path_points = scale.pick(24, 6);
-    let mut entities = Vec::with_capacity(curves);
+    let mut entities = Vec::new();
     for index in 0..curves {
-        let step = index as i64;
+        let step = i64::try_from(index).map_err(|_| "stress index exceeds i64")?;
         let plane = step % 61 * 250;
         match index % 5 {
             0 => {
                 let mut record = Record::new(110);
-                record.reals(&[step * 3 % 7001, step * 5 % 6007, plane]);
-                record.reals(&[step * 3 % 7001 + 1_500, step * 5 % 6007 + 750, plane]);
+                record.reals(&[step * 3 % 7001, step * 5 % 6007, plane])?;
+                record.reals(&[step * 3 % 7001 + 1_500, step * 5 % 6007 + 750, plane])?;
                 entities.push(item(110, 0, "FREELINE", INDEPENDENT, record.finish()));
             }
             1 => {
                 let radius = 500 + step % 47 * 125;
                 let centre = [step * 7 % 8009, step * 11 % 8011];
                 let mut record = Record::new(100);
-                record.real(plane);
-                record.reals(&centre);
-                record.reals(&[centre[0] + radius, centre[1]]);
-                record.reals(&[centre[0], centre[1] + radius]);
+                record.real(plane)?;
+                record.reals(&centre)?;
+                record.reals(&[centre[0] + radius, centre[1]])?;
+                record.reals(&[centre[0], centre[1] + radius])?;
                 entities.push(item(100, 0, "FREEARC", INDEPENDENT, record.finish()));
             }
             2 => {
@@ -725,8 +756,8 @@ fn free_curve_soup(scale: Scale) -> Vec<u8> {
                 record.integers(&[1, 1, 1, 0, 1, 0]);
                 record.integers(&[0, 0, 1, 1]);
                 record.integers(&[1, 1]);
-                record.reals(&[step * 13 % 5003, step * 17 % 5009, plane]);
-                record.reals(&[step * 13 % 5003 + 2_000, step * 17 % 5009 + 1_000, plane]);
+                record.reals(&[step * 13 % 5003, step * 17 % 5009, plane])?;
+                record.reals(&[step * 13 % 5003 + 2_000, step * 17 % 5009 + 1_000, plane])?;
                 record.integers(&[0, 1]);
                 record.integers(&[0, 0, 1]);
                 entities.push(item(126, 0, "FREENURB", INDEPENDENT, record.finish()));
@@ -736,18 +767,18 @@ fn free_curve_soup(scale: Scale) -> Vec<u8> {
                 record.integer(2);
                 record.count(path_points);
                 for point in 0..path_points {
-                    let along = point as i64;
+                    let along = i64::try_from(point).map_err(|_| "stress index exceeds i64")?;
                     record.reals(&[
                         step * 2 % 4001 + along * 300,
                         step * 6 % 4003 + along * along * 25,
                         plane,
-                    ]);
+                    ])?;
                 }
                 entities.push(item(106, 12, "FREEPATH", INDEPENDENT, record.finish()));
             }
             _ => {
                 let mut record = Record::new(116);
-                record.reals(&[step * 19 % 9001, step * 23 % 9007, plane]);
+                record.reals(&[step * 19 % 9001, step * 23 % 9007, plane])?;
                 record.integer(0);
                 entities.push(item(116, 0, "FREEPNT", INDEPENDENT, record.finish()));
             }
@@ -756,15 +787,15 @@ fn free_curve_soup(scale: Scale) -> Vec<u8> {
     assemble("cadmpeg IGES stress: free-curve soup", &entities)
 }
 
-fn generate(scale: Scale) -> Vec<(&'static str, Vec<u8>)> {
-    vec![
-        ("stress-composite-chains.igs", composite_chains(scale)),
-        ("stress-trimmed-surfaces.igs", trimmed_surfaces(scale)),
-        ("stress-counted-lists.igs", counted_lists(scale)),
-        ("stress-trailing-groups.igs", trailing_groups(scale)),
-        ("stress-annotation-runs.igs", annotation_runs(scale)),
-        ("stress-free-curve-soup.igs", free_curve_soup(scale)),
-    ]
+fn generate(scale: Scale) -> Result<Vec<(&'static str, Vec<u8>)>, &'static str> {
+    Ok(vec![
+        ("stress-composite-chains.igs", composite_chains(scale)?),
+        ("stress-trimmed-surfaces.igs", trimmed_surfaces(scale)?),
+        ("stress-counted-lists.igs", counted_lists(scale)?),
+        ("stress-trailing-groups.igs", trailing_groups(scale)?),
+        ("stress-annotation-runs.igs", annotation_runs(scale)?),
+        ("stress-free-curve-soup.igs", free_curve_soup(scale)?),
+    ])
 }
 
 fn usage() -> ExitCode {
@@ -791,7 +822,14 @@ fn main() -> ExitCode {
         eprintln!("create {}: {error}", directory.display());
         return ExitCode::from(2);
     }
-    for (name, bytes) in generate(scale) {
+    let generated = match generate(scale) {
+        Ok(generated) => generated,
+        Err(error) => {
+            eprintln!("generate IGES stress input: {error}");
+            return ExitCode::from(2);
+        }
+    };
+    for (name, bytes) in generated {
         let path = directory.join(name);
         if let Err(error) = fs::write(&path, &bytes) {
             eprintln!("write {}: {error}", path.display());
@@ -804,6 +842,14 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn chain_vertex_refuses_index_above_i64_range() {
+        assert_eq!(
+            super::chain_vertex(usize::MAX),
+            Err("chain vertex index exceeds i64")
+        );
+    }
     use super::{generate, Scale, CARD_DATA_COLUMNS, SEQUENCE_COLUMNS};
     use cadmpeg_ir::hash::sha256_hex;
 
@@ -917,7 +963,7 @@ mod tests {
     }
 
     fn scale_matches_pins(scale: Scale, pins: [(&str, usize, &str); 6]) {
-        let generated = generate(scale);
+        let generated = generate(scale).expect("stress fixture counts fit i64");
         assert_eq!(generated.len(), pins.len());
         for ((name, bytes), (expected_name, expected_length, expected_digest)) in
             generated.into_iter().zip(pins)
@@ -941,8 +987,10 @@ mod tests {
 
     #[test]
     fn repeated_generation_is_byte_identical() {
-        for ((first_name, first), (second_name, second)) in
-            generate(Scale::Fast).into_iter().zip(generate(Scale::Fast))
+        for ((first_name, first), (second_name, second)) in generate(Scale::Fast)
+            .expect("stress fixture counts fit i64")
+            .into_iter()
+            .zip(generate(Scale::Fast).expect("stress fixture counts fit i64"))
         {
             assert_eq!(first_name, second_name);
             assert_eq!(first, second, "{first_name}");
