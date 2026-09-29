@@ -8549,46 +8549,43 @@ fn project_surface_trim(
 /// canonical inside/outside shorthand and must remain explicit when it is not
 /// reducible to one of those two regions.
 pub(crate) fn bind_surface_trim_cell_selections(
+    ctx: Option<&DecodeContext<'_>>,
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     operations: &[DesignSurfaceTrimOperation],
-) {
+) -> Result<(), CodecError> {
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let Some(native_ref) = feature.native_ref.as_deref() else {
-                break 'feature_edit;
-            };
-            let Some(scope) = scopes.iter().find(|scope| scope.id == native_ref) else {
-                break 'feature_edit;
-            };
-            let Some(operation) = operations.iter().find(|operation| {
-                operation.scope_record_index == scope.record_index
-                    && native_stream(&operation.id) == native_stream(&scope.id)
-            }) else {
-                break 'feature_edit;
-            };
-            let Some(selection) = cadmpeg_ir::features::TrimCellSelection::new(
-                operation
-                    .cell_entries()
-                    .iter()
-                    .map(|entry| entry.ordinal)
-                    .collect(),
-                u64::from(operation.trailing_value),
-            ) else {
-                break 'feature_edit;
-            };
+        if !matches!(feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::TrimSurface {
+                    keep: cadmpeg_ir::features::TrimRegion::Unresolved, ..
+                }
+            )) {
+            continue;
+        }
+        let Some(native_ref) = feature.native_ref.as_deref() else { continue; };
+        let Some(scope) = scopes.iter().find(|scope| scope.id == native_ref) else { continue; };
+        let Some(operation) = operations.iter().find(|operation| {
+            operation.scope_record_index == scope.record_index
+                && native_stream(&operation.id) == native_stream(&scope.id)
+        }) else { continue; };
+        let mut removed = Vec::new();
+        for entry in operation.cell_entries() {
+            push_feature_item(ctx, &mut removed, entry.ordinal,
+                "f3d SurfaceTrim selected cell")?;
+        }
+        let Some(selection) = cadmpeg_ir::features::TrimCellSelection::new(
+            removed, u64::from(operation.trailing_value)
+        ) else { continue; };
+        feature.evaluation.edit(|definition, _| {
             if let cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::TrimSurface { keep, .. },
-            ) = &mut definition
-            {
-                if matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved) {
-                    *keep = cadmpeg_ir::features::TrimRegion::Cells(selection);
-                }
+            ) = definition {
+                *keep = cadmpeg_ir::features::TrimRegion::Cells(selection);
             }
-        }
-        feature.evaluation.set_definition(definition);
+        });
     }
+    Ok(())
 }
 
 pub(super) fn project_split(

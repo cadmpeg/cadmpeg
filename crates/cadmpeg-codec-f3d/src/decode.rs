@@ -2484,10 +2484,11 @@ impl<'a> F3dDecodeSession<'a> {
                 },
             )?;
         crate::design::feature_project::bind_surface_trim_cell_selections(
+            Some(self.ctx),
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.design_surface_trim_operations,
-        );
+        )?;
         if let SessionPath::Geometry(geometry_path) = path {
             let geometry = &geometry_path.index;
             bind_mesh_feature_definitions(
