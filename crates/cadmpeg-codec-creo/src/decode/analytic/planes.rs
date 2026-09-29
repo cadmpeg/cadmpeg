@@ -616,7 +616,7 @@ fn stored_parameter_origin_sign_candidates(base: PlaneCandidate) -> ([PlaneCandi
 fn stored_parameter_normal_candidates_with_origin_branches(
     frame: &crate::surface::PlaneLocalSystem,
     include_origin_z_branches: bool,
-) -> Option<Vec<PlaneCandidate>> {
+) -> Option<([PlaneCandidate; 4], usize)> {
     if frame.classification == crate::surface::LocalSystemClassification::Simple {
         return None;
     }
@@ -624,7 +624,9 @@ fn stored_parameter_normal_candidates_with_origin_branches(
     if slots[3..6].iter().any(|value| *value != 0.0) {
         return None;
     }
-    let mut candidates = Vec::new();
+    let first = stored_parameter_normal_candidate(frame, false, false)?;
+    let mut candidates = [first; 4];
+    let mut count = 0;
     let origin_branches: &[bool] = if include_origin_z_branches {
         &[false, true]
     } else {
@@ -633,20 +635,21 @@ fn stored_parameter_normal_candidates_with_origin_branches(
     for mirror_z in [false, true] {
         for mirror_origin_z in origin_branches {
             let candidate = stored_parameter_normal_candidate(frame, mirror_z, *mirror_origin_z)?;
-            if !candidates
+            if !candidates[..count]
                 .iter()
                 .any(|known| plane_candidates_equivalent(*known, candidate))
             {
-                candidates.push(candidate);
+                candidates[count] = candidate;
+                count += 1;
             }
         }
     }
-    (candidates.len() > 1).then_some(candidates)
+    (count > 1).then_some((candidates, count))
 }
 
 fn stored_parameter_normal_candidates(
     frame: &crate::surface::PlaneLocalSystem,
-) -> Option<Vec<PlaneCandidate>> {
+) -> Option<([PlaneCandidate; 4], usize)> {
     stored_parameter_normal_candidates_with_origin_branches(frame, false)
 }
 
@@ -698,17 +701,13 @@ fn pcurve_candidate_endpoint_witness(
     if dot(cross_normals, cross_normals) <= EPS_ORTHO * EPS_ORTHO {
         return false;
     }
-    let Some(points) = endpoints
-        .map(|uv| plane_chart_point(candidate, uv))
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-    else {
+    let [Some(first), Some(second)] = endpoints.map(|uv| plane_chart_point(candidate, uv)) else {
         return false;
     };
-    if model_points_agree(points[0], points[1]) {
+    if model_points_agree(first, second) {
         return false;
     }
-    points.into_iter().all(|point| {
+    [first, second].into_iter().all(|point| {
         point_on_carrier(
             <[f64; 3]>::from(point.get()),
             CarrierEquation::Plane(adjacent.equation),
@@ -1051,7 +1050,7 @@ fn fc05_tangent_plane_score(
                 .iter()
                 .filter(|frame| frame.surface_id == *plane_id)
                 .filter_map(stored_parameter_normal_candidates)
-                .flatten()
+                .flat_map(|(candidates, count)| candidates.into_iter().take(count))
                 .any(|candidate| plane_candidate_is_fc05_tangent(candidate, cylinder))
         })
         .count()
@@ -1193,15 +1192,15 @@ fn select_stored_frame_branches(
     let mut variable_domains = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     let mut origin_domains = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     for frame in &scan.planes.local_systems {
-        let Some(options) = stored_parameter_normal_candidates(frame) else {
+        let Some((options, option_count)) = stored_parameter_normal_candidates(frame) else {
             continue;
         };
         if cylinder_witnesses.contains_key(&frame.surface_id) {
-            if let Some(origin_options) =
+            if let Some((origin_options, origin_count)) =
                 stored_parameter_normal_candidates_with_origin_branches(frame, true)
             {
                 let known = origin_domains.entry(frame.surface_id).or_default();
-                for option in origin_options {
+                for option in origin_options.into_iter().take(origin_count) {
                     if !known
                         .iter()
                         .any(|candidate| plane_candidates_equivalent(*candidate, option))
@@ -1212,7 +1211,7 @@ fn select_stored_frame_branches(
             }
         }
         let known = variable_domains.entry(frame.surface_id).or_default();
-        for option in options {
+        for option in options.into_iter().take(option_count) {
             if !known
                 .iter()
                 .any(|candidate| plane_candidates_equivalent(*candidate, option))
