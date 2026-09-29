@@ -11,6 +11,7 @@ mod dump;
 mod relations;
 mod rows;
 mod scan;
+mod text_function_admission;
 
 fn evaluate_expression_program(
     lines: &[CurveExpressionLine],
