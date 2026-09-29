@@ -99,12 +99,11 @@ struct HoleShapeWire {
 }
 
 impl HoleShape {
-    /// Admit treatments whose diameters exceed the bore diameter.
-    pub fn new(
-        construction: HoleConstruction,
-        exit_kind: Option<HoleKind>,
+    fn diameter_is_compatible(
+        construction: &HoleConstruction,
+        exit_kind: Option<&HoleKind>,
         diameter: Option<PositiveLength>,
-    ) -> Result<Self, &'static str> {
+    ) -> bool {
         let valid_kind = |kind: &HoleKind| match diameter {
             Some(bore) => treatment_exceeds_bore(kind, bore),
             None => matches!(
@@ -116,13 +115,22 @@ impl HoleShape {
                     | HoleKind::SimpleDrilled { .. }
             ),
         };
-        let valid = match &construction {
+        let valid = match construction {
             HoleConstruction::Form { kind, .. } => valid_kind(kind),
             HoleConstruction::NativeThread { major_diameter, .. } => {
                 diameter.is_some_and(|bore| major_diameter.get() > bore.get())
             }
         };
-        if !valid || exit_kind.as_ref().is_some_and(|kind| !valid_kind(kind)) {
+        valid && exit_kind.is_none_or(valid_kind)
+    }
+
+    /// Admit treatments whose diameters exceed the bore diameter.
+    pub fn new(
+        construction: HoleConstruction,
+        exit_kind: Option<HoleKind>,
+        diameter: Option<PositiveLength>,
+    ) -> Result<Self, &'static str> {
+        if !Self::diameter_is_compatible(&construction, exit_kind.as_ref(), diameter) {
             return Err(
                 "construction and exit_kind treatment diameters must exceed the bore diameter",
             );
@@ -147,6 +155,20 @@ impl HoleShape {
     /// Return the bore diameter.
     pub const fn diameter(&self) -> Option<PositiveLength> {
         self.diameter
+    }
+
+    /// Change the bore diameter after validating the retained treatments.
+    pub fn try_set_diameter(
+        &mut self,
+        diameter: Option<PositiveLength>,
+    ) -> Result<(), &'static str> {
+        if !Self::diameter_is_compatible(&self.construction, self.exit_kind.as_ref(), diameter) {
+            return Err(
+                "construction and exit_kind treatment diameters must exceed the bore diameter",
+            );
+        }
+        self.diameter = diameter;
+        Ok(())
     }
 
     /// Map length fields without changing the hole's bore presence, treatment
@@ -958,6 +980,27 @@ mod length_mapping_tests {
                 .expect("valid mapped hole without bore"),
             without_bore
         );
+    }
+
+    #[test]
+    fn hole_diameter_edit_preserves_treatment_constraints() {
+        let mut hole = HoleShape::new(
+            HoleConstruction::form(HoleKind::Counterbore {
+                diameter: positive(4.0),
+                depth: positive(3.0),
+            }),
+            None,
+            Some(positive(2.0)),
+        )
+        .expect("valid counterbore");
+        assert_eq!(
+            hole.try_set_diameter(Some(positive(4.0))),
+            Err("construction and exit_kind treatment diameters must exceed the bore diameter")
+        );
+        assert_eq!(hole.diameter(), Some(positive(2.0)));
+        hole.try_set_diameter(Some(positive(3.0)))
+            .expect("smaller bore remains valid");
+        assert_eq!(hole.diameter(), Some(positive(3.0)));
     }
 }
 

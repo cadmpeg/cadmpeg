@@ -3411,20 +3411,21 @@ pub(crate) fn project_topological_hole_constructions(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let bore_faces = cylindrical_bore_face_spans(ctx, topology)?;
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
+        let mut result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            result = (|| -> Result<(), CodecError> {
             let FeatureDefinition::Operation(FeatureOperation::Hole {
                 placements,
                 shape,
                 extent,
                 ..
-            }) = &mut definition
+            }) = definition
             else {
-                break 'feature_edit;
+                return Ok(());
             };
             let mut diameter = shape.diameter();
             let Some(placements) = placements.as_deref() else {
-                break 'feature_edit;
+                return Ok(());
             };
             if placements.is_empty()
                 || (diameter.is_some()
@@ -3432,7 +3433,7 @@ pub(crate) fn project_topological_hole_constructions(
                         .as_ref()
                         .is_some_and(|extent| !matches!(extent, LinearTermination::Unresolved {})))
             {
-                break 'feature_edit;
+                return Ok(());
             }
             let mut common = None::<Vec<(f64, f64)>>;
             for placement in placements {
@@ -3492,7 +3493,7 @@ pub(crate) fn project_topological_hole_constructions(
                 });
             }
             let Some([(radius, depth)]) = common.as_deref() else {
-                break 'feature_edit;
+                return Ok(());
             };
             if diameter.is_none() {
                 diameter = Some(
@@ -3503,23 +3504,30 @@ pub(crate) fn project_topological_hole_constructions(
                     })?,
                 );
             }
-            shape
-                .try_edit(|_, _, slot| *slot = diameter)
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            if extent
+            let new_extent = if extent
                 .as_ref()
                 .is_none_or(|extent| matches!(extent, LinearTermination::Unresolved {}))
             {
-                *extent = Some(LinearTermination::Blind {
+                Some(LinearTermination::Blind {
                     length: cadmpeg_ir::scalar::NonZeroLength::new(*depth).ok_or_else(|| {
                         cadmpeg_core::CodecError::Malformed(
                             "SolidWorks projected length must be finite".into(),
                         )
                     })?,
-                });
+                })
+            } else {
+                None
+            };
+            shape
+                .try_set_diameter(diameter)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+            if let Some(new_extent) = new_extent {
+                *extent = Some(new_extent);
             }
-        }
-        feature.evaluation.set_definition(definition);
+            Ok(())
+            })();
+        });
+        result?;
     }
 
     Ok(())
