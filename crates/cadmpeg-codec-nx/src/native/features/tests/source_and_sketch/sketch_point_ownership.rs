@@ -15,6 +15,56 @@ use crate::native::features::FeatureSketchReference;
 use crate::native::features::OffsetStoreNamedPoint;
 use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 
+fn sketch_point_groups(points: &[FeatureSketchPoint]) -> Vec<crate::native::features::FeatureSketchPointGroup> {
+    crate::test_support::with_decode_context(|ctx| feature_sketch_point_groups(ctx, points))
+        .expect("sketch point groups")
+}
+
+fn sketch_group_limit(dimension: cadmpeg_core::decode::ResourceDimension) {
+    let point = FeatureSketchPoint {
+        id: "nx:feature-history:sketch-point#0-0".into(),
+        operation_label: "operation".into(),
+        named_record: "record".into(),
+        name: "Point1".into(),
+        coordinates: cadmpeg_ir::units::FiniteVector::new([1.0, 2.0]).expect("finite point"),
+        scalar_fields: ["scalar-a".into(), "scalar-b".into()],
+    };
+    assert_eq!(sketch_point_groups(std::slice::from_ref(&point)).len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    match dimension {
+        cadmpeg_core::decode::ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes => policy.limits.max_materialized_bytes = 0,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+        _ => panic!("unsupported sketch group test dimension"),
+    }
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    let error = feature_sketch_point_groups(&ctx, &[point]).expect_err("sketch group resource limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+}
+
+#[test]
+fn sketch_point_group_route_refuses_collection_limit() {
+    sketch_group_limit(cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn sketch_point_group_route_refuses_retained_limit() {
+    sketch_group_limit(cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn sketch_point_group_route_refuses_scoped_limit() {
+    sketch_group_limit(cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+}
+
+#[test]
+fn sketch_point_group_route_refuses_work_limit() {
+    sketch_group_limit(cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}
+
 #[test]
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     let payload = FeatureConstructionPayload {
@@ -267,7 +317,7 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
     second_block_use.reference_ordinal = 1;
     second_block_use.source_offset = 301;
 
-    let groups = feature_sketch_point_groups(std::slice::from_ref(&point));
+    let groups = sketch_point_groups(std::slice::from_ref(&point));
     let uses = feature_sketch_point_uses(
         &groups,
         std::slice::from_ref(&named_point),
@@ -299,7 +349,7 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
     different.coordinates =
         cadmpeg_ir::units::FiniteVector::new([1.0, f64::from_bits(2.0_f64.to_bits() + 1)])
             .expect("finite coordinates");
-    let different_groups = feature_sketch_point_groups(std::slice::from_ref(&different));
+    let different_groups = sketch_point_groups(std::slice::from_ref(&different));
     assert!(feature_sketch_point_uses(
         &different_groups,
         std::slice::from_ref(&named_point),
@@ -308,7 +358,7 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
     .is_empty());
     let mut duplicate = point.clone();
     duplicate.id = "payload-point-2".to_string();
-    let duplicate_groups = feature_sketch_point_groups(&[point.clone(), duplicate.clone()]);
+    let duplicate_groups = sketch_point_groups(&[point.clone(), duplicate.clone()]);
     assert_eq!(duplicate_groups[0].points, [point.id.clone(), duplicate.id]);
     let uses = feature_sketch_point_uses(
         &duplicate_groups,
@@ -316,7 +366,7 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
         std::slice::from_ref(&block_use),
     );
     assert_eq!(uses[0].sketch_point_group, duplicate_groups[0].id);
-    let conflicting_groups = feature_sketch_point_groups(&[point, different]);
+    let conflicting_groups = sketch_point_groups(&[point, different]);
     assert!(conflicting_groups.is_empty());
     assert!(
         feature_sketch_point_uses(&conflicting_groups, &[named_point], &[block_use]).is_empty()
