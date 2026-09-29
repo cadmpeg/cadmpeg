@@ -7,7 +7,7 @@ use super::{
     AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, HashMap,
 };
 use crate::history::resolve_pattern_face_by_surface_radius;
-use crate::history::{collect_reference_edge_sets, face_boundary_edges, faces_in_topology, terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces};
+use crate::history::{boundary_edges_in_changes, collect_reference_edge_sets, face_boundary_edges, faces_in_topology, recipe_selector_candidates, terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces};
 use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalSurfaceRadius};
 use std::collections::HashSet;
 
@@ -327,4 +327,50 @@ fn boundary_face_index_refuses_collection_limit() {
     .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D boundary faces"));
+}
+
+#[test]
+fn boundary_change_slots_refuse_collection_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = boundary_edges_in_changes(Some(&ctx), &[3], &[3]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "collect F3D boundary edges in changes"));
+}
+
+#[test]
+fn edge_recipe_selector_index_refuses_collection_limit() {
+    use crate::records::topology::edge_recipe::{
+        DesignEdgeRecipeStructure, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
+        DesignTopologyRecipeTriplet,
+    };
+    let triplet = DesignTopologyRecipeTriplet {
+        outer: std::num::NonZeroU32::new(1).unwrap(),
+        middle: 0,
+        incident: None,
+    };
+    let structure = DesignEdgeRecipeStructure {
+        root: 2,
+        sides: vec![DesignTopologyRecipeSide {
+            header_value: 0,
+            scalars: Vec::new(),
+            payload_prefix: Vec::new(),
+            entries: vec![DesignTopologyRecipeEntry {
+                selector: 1,
+                boundary_edge_count: std::num::NonZeroU32::new(1).unwrap(),
+                topology_triplets: [triplet, triplet],
+            }],
+        }],
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .unwrap();
+    let error = recipe_selector_candidates(Some(&ctx), Some(&structure), &[]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "index F3D edge recipe selectors"));
 }
