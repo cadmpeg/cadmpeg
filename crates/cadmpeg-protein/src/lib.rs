@@ -93,7 +93,14 @@ fn read_entry_bounded(
             break;
         }
         bytes.try_reserve(read).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("Protein schema allocation"), MAX_SCHEMA_BYTES, bytes.len().saturating_add(read) as u64, "Protein schema allocation"))
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("Protein schema allocation"),
+                    MAX_SCHEMA_BYTES,
+                    bytes.len().saturating_add(read) as u64,
+                    "Protein schema allocation",
+                ),
+            )
         })?;
         bytes.extend_from_slice(&chunk[..read]);
     }

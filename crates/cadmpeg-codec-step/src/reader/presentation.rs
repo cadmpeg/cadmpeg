@@ -1232,7 +1232,10 @@ fn clone_presentation_identity<T: From<Identity>>(
     ctx: Option<&DecodeContext<'_>>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
-    let copy = match ctx { Some(ctx) => ctx.copy_retained_text(value, operation), None => crate::parse::copy_unmetered_text(value, operation) }?;
+    let copy = match ctx {
+        Some(ctx) => ctx.copy_retained_text(value, operation),
+        None => crate::parse::copy_unmetered_text(value, operation),
+    }?;
     Identity::new(copy)
         .map(T::from)
         .map_err(|_| CodecError::malformed("presentation identity is invalid"))
@@ -1248,8 +1251,22 @@ fn push_presentation_vec<T>(
         ctx.charge_collection_items(1, operation)?;
     }
     values.try_reserve(1).map_err(|_| match ctx {
-        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
-        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        ),
+        None => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        ),
     })?;
     values.push(value);
     Ok(())
@@ -1265,10 +1282,26 @@ fn claim_presentation_typed(
             ctx.charge_collection_items(1, "step_presentation_typed_claims")?;
         }
         typed.try_reserve(1).map_err(|_| match ctx {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_presentation_typed_claims"), 0, 1, "step_presentation_typed_claims")),
-            None => {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_presentation_typed_claims"), 0, 1, "step_presentation_typed_claims"))
-            }
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "step_presentation_typed_claims",
+                    ),
+                    0,
+                    1,
+                    "step_presentation_typed_claims",
+                ),
+            ),
+            None => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "step_presentation_typed_claims",
+                    ),
+                    0,
+                    1,
+                    "step_presentation_typed_claims",
+                ),
+            ),
         })?;
         typed.insert(id);
     }
@@ -1306,8 +1339,26 @@ fn push_scalar_candidate(
             ctx.charge_collection_items(1, "step_presentation_scalar_color_groups")?;
         }
         candidates.try_reserve(1).map_err(|_| match ctx {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_presentation_scalar_color_groups"), 0, 1, "step_presentation_scalar_color_groups")),
-            None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_presentation_scalar_color_groups"), 0, 1, "step_presentation_scalar_color_groups")),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "step_presentation_scalar_color_groups",
+                    ),
+                    0,
+                    1,
+                    "step_presentation_scalar_color_groups",
+                ),
+            ),
+            None => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "step_presentation_scalar_color_groups",
+                    ),
+                    0,
+                    1,
+                    "step_presentation_scalar_color_groups",
+                ),
+            ),
         })?;
         candidates.insert(key, Vec::new());
     }
@@ -1336,7 +1387,10 @@ fn collect_identity_indices<'a>(
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, operation)?;
         }
-        let copy = match ctx { Some(ctx) => ctx.copy_retained_text(identity, operation), None => crate::parse::copy_unmetered_text(identity, operation) }?;
+        let copy = match ctx {
+            Some(ctx) => ctx.copy_retained_text(identity, operation),
+            None => crate::parse::copy_unmetered_text(identity, operation),
+        }?;
         result.insert(copy, index);
     }
     Ok(result)
@@ -1556,7 +1610,10 @@ fn clone_color_resolution(
                 name: candidate
                     .name
                     .as_deref()
-                    .map(|name| match ctx { Some(ctx) => ctx.copy_retained_text(name, operation), None => crate::parse::copy_unmetered_text(name, operation) })
+                    .map(|name| match ctx {
+                        Some(ctx) => ctx.copy_retained_text(name, operation),
+                        None => crate::parse::copy_unmetered_text(name, operation),
+                    })
                     .transpose()?,
             }))
         }

@@ -105,7 +105,14 @@ fn wire_records<'a>(
         if !by_owner.contains_key(owner) {
             ctx.charge_collection_items(1, "FreeCAD application owner lookup")?;
             by_owner.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FreeCAD application owner lookup"))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "FreeCAD application owner lookup",
+                    ),
+                )
             })?;
         }
         let owned = by_owner.entry(owner).or_default();
@@ -117,7 +124,14 @@ fn wire_records<'a>(
         if !entry_index.contains_key(entry.name.as_str()) {
             ctx.charge_collection_items(1, "FreeCAD application entry lookup")?;
             entry_index.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FreeCAD application entry lookup"))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "FreeCAD application entry lookup",
+                    ),
+                )
             })?;
         }
         entry_index.insert(entry.name.as_str(), entry);

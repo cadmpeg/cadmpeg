@@ -2207,7 +2207,8 @@ fn loft_spl_sur(
             )),
             Token::Str(_) => {
                 let value = cur.take_str()?;
-                let value = propagate_resource!(ctx.copy_retained_text(value, "ASM loft bridge text"));
+                let value =
+                    propagate_resource!(ctx.copy_retained_text(value, "ASM loft bridge text"));
                 propagate_resource!(crate::decode_alloc::push_vec(
                     ctx,
                     &mut bridge,
@@ -2809,7 +2810,8 @@ fn law_expression_resolving(
                     resolver
                 )?));
             }
-            let operator = propagate_resource!(ctx.copy_retained_text(operator, "ASM law operator"));
+            let operator =
+                propagate_resource!(ctx.copy_retained_text(operator, "ASM law operator"));
             Some(Ok(EmbeddedLawExpression::Algebraic { operator, operands }))
         }
     }
@@ -4721,14 +4723,16 @@ fn t_spline_subtransform(
     match cur.take_ident()? {
         "t_spl_subtrans_object" => {
             let program_text = cur.take_str()?;
-            let program = propagate_resource!(ctx.copy_retained_text(program_text, "ASM t spline program"));
+            let program =
+                propagate_resource!(ctx.copy_retained_text(program_text, "ASM t spline program"));
             let separator = if matches!(cur.peek(), Some(Token::Str(_))) {
                 None
             } else {
                 Some(cur.take_bool()?)
             };
             let values_text = cur.take_str()?;
-            let values = propagate_resource!(ctx.copy_retained_text(values_text, "ASM t spline values"));
+            let values =
+                propagate_resource!(ctx.copy_retained_text(values_text, "ASM t spline values"));
             Some(Ok(EmbeddedTSplineSubtransform::Inline {
                 program,
                 separator,

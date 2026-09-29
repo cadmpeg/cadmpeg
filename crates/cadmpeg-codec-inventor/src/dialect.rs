@@ -111,8 +111,6 @@ fn retained_format(
     Ok(value.to_string())
 }
 
-
-
 fn join(
     ctx: &DecodeContext<'_>,
     values: impl IntoIterator<Item = Result<String, CodecError>>,
@@ -370,7 +368,9 @@ impl DialectRecovery {
         if self.schemas.is_empty() {
             ctx.charge_collection_items(1, "collect Inventor dialect reasons")?;
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index("no RSe database stream declares a schema".len()),
+                cadmpeg_core::decode::u64_from_index(
+                    "no RSe database stream declares a schema".len(),
+                ),
                 "retain Inventor absent schema reason",
             )?;
             reasons.push("no RSe database stream declares a schema".to_owned());
@@ -437,7 +437,9 @@ impl DialectRecovery {
         if self.meta_streams.is_empty() {
             ctx.charge_collection_items(1, "collect Inventor dialect reasons")?;
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index("no RSe segment metadata stream declares a marker and version".len()),
+                cadmpeg_core::decode::u64_from_index(
+                    "no RSe segment metadata stream declares a marker and version".len(),
+                ),
                 "retain Inventor absent metadata reason",
             )?;
             reasons.push("no RSe segment metadata stream declares a marker and version".to_owned());
@@ -510,7 +512,9 @@ impl DialectRecovery {
         ctx.charge_collection_items(1, "collect Inventor dialect loss")?;
         ctx.charge_retained(8, "retain Inventor dialect loss namespace")?;
         ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(InventorLossCode::SourceDialectUnverified.code().len()),
+            cadmpeg_core::decode::u64_from_index(
+                InventorLossCode::SourceDialectUnverified.code().len(),
+            ),
             "retain Inventor dialect loss code",
         )?;
         Ok(
@@ -677,7 +681,9 @@ pub(crate) fn kernel_dialect_loss(
             ctx.charge_collection_items(1, "collect Inventor kernel dialect loss")?;
             ctx.charge_retained(8, "retain Inventor kernel loss namespace")?;
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(InventorLossCode::KernelCarrierUnparseable.code().len()),
+                cadmpeg_core::decode::u64_from_index(
+                    InventorLossCode::KernelCarrierUnparseable.code().len(),
+                ),
                 "retain Inventor kernel loss code",
             )?;
             ctx.charge_retained(
@@ -695,7 +701,9 @@ pub(crate) fn kernel_dialect_loss(
             ctx.charge_collection_items(1, "collect Inventor kernel dialect loss")?;
             ctx.charge_retained(8, "retain Inventor kernel loss namespace")?;
             ctx.charge_retained(
-                cadmpeg_core::decode::u64_from_index(InventorLossCode::KernelDialectUnverified.code().len()),
+                cadmpeg_core::decode::u64_from_index(
+                    InventorLossCode::KernelDialectUnverified.code().len(),
+                ),
                 "retain Inventor kernel loss code",
             )?;
             let declared = match (

@@ -803,7 +803,8 @@ pub(crate) fn external_reference_views(
                 format_args!("catia:outer:external-reference#{}", views.len()),
                 "catia_native_external_reference_id",
             )?;
-            let segment_id = ctx.copy_retained_text(&segment.id, "catia_native_external_reference_segment")?;
+            let segment_id =
+                ctx.copy_retained_text(&segment.id, "catia_native_external_reference_segment")?;
             crate::resource::push(
                 ctx,
                 &mut views,
@@ -1016,7 +1017,8 @@ pub(crate) fn value_schema_selections(
             CatiaValueSchemaSelectionKind::Selected(CatiaValueSchemaSelectionValue {
                 class: CatiaDesignClass {
                     entry: ctx.copy_retained_text(&entry.id, "catia_value_selection_class_id")?,
-                    name: ctx.copy_retained_text(&entry.value, "catia_value_selection_class_name")?,
+                    name: ctx
+                        .copy_retained_text(&entry.value, "catia_value_selection_class_name")?,
                 },
                 encoded_value,
             })
@@ -1028,8 +1030,7 @@ pub(crate) fn value_schema_selections(
             format_args!("catia:outer:value-selection#{byte_offset:010}"),
             "catia_value_selection_id",
         )?;
-        let parent =
-            ctx.copy_retained_text(block_id, "catia_value_selection_parent")?;
+        let parent = ctx.copy_retained_text(block_id, "catia_value_selection_parent")?;
         crate::resource::push(
             ctx,
             &mut selections,
@@ -1065,9 +1066,7 @@ impl CatiaValueBlock {
             id,
             byte_offset,
             object_graph: object_graph
-                .map(|graph| {
-                    ctx.copy_retained_text(&graph.id, "catia_value_block_graph_id")
-                })
+                .map(|graph| ctx.copy_retained_text(&graph.id, "catia_value_block_graph_id"))
                 .transpose()?,
             catalog: ctx.copy_retained_text(&catalog.id, "catia_value_block_catalog_id")?,
             payload: block.payload,
@@ -1278,7 +1277,8 @@ pub(crate) fn native_object_graph(
                 "catia_native_entity_id",
             )?,
             object_graph: ctx.copy_retained_text(&id, "catia_native_entity_graph")?,
-            object_record: ctx.copy_retained_text(&object_record.id, "catia_native_entity_object")?,
+            object_record: ctx
+                .copy_retained_text(&object_record.id, "catia_native_entity_object")?,
             ordinal: ordinal as u64,
             byte_offset: entity.pos as u64,
             lead: entity.lead,
@@ -1322,9 +1322,12 @@ impl CatiaOuterContainerBinding {
         Ok(Self {
             data_offset: declaration.data_offset as u64,
             ordinal: declaration.ordinal,
-            class_name: ctx.copy_retained_text(&declaration.class_name, "catia_native_outer_class")?,
-            base_class: ctx.copy_retained_text(&declaration.base_class, "catia_native_outer_base_class")?,
-            stream_name: ctx.copy_retained_text(&declaration.stream_name, "catia_native_outer_stream_name")?,
+            class_name: ctx
+                .copy_retained_text(&declaration.class_name, "catia_native_outer_class")?,
+            base_class: ctx
+                .copy_retained_text(&declaration.base_class, "catia_native_outer_base_class")?,
+            stream_name: ctx
+                .copy_retained_text(&declaration.stream_name, "catia_native_outer_stream_name")?,
         })
     }
 }

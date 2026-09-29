@@ -30,14 +30,17 @@ fn copy_retained_text_refuses_before_allocation_and_succeeds_under_service_profi
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default()).unwrap();
-    assert_eq!(ctx.copy_retained_text("hello", "retained text test").unwrap(), "hello");
+    assert_eq!(
+        ctx.copy_retained_text("hello", "retained text test")
+            .unwrap(),
+        "hello"
+    );
 }
 
 #[test]
 fn allocation_failed_constructor_sets_refusal_fields() {
-    let limit = super::ResourceLimit::allocation_failed(
-        ResourceDimension::Codec("test"), 12, 5, "test",
-    );
+    let limit =
+        super::ResourceLimit::allocation_failed(ResourceDimension::Codec("test"), 12, 5, "test");
     assert_eq!(limit.dimension, ResourceDimension::Codec("test"));
     assert_eq!(limit.reason, super::ResourceFailure::AllocationFailed);
     assert_eq!(limit.limit, 12);

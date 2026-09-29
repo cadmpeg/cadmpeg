@@ -153,7 +153,9 @@ pub(super) fn emit_annotation_records(
                 id: entity_id,
                 stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
                 offset: record.offset as u64,
-                tag: AnnotationTag::Record(ctx.copy_retained_text(&record.name, "ASM annotation record name")?),
+                tag: AnnotationTag::Record(
+                    ctx.copy_retained_text(&record.name, "ASM annotation record name")?,
+                ),
                 derived_fields,
             });
         }
@@ -168,7 +170,9 @@ pub(super) fn emit_annotation_records(
                 id: attribute_id,
                 stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
                 offset: record.offset as u64,
-                tag: AnnotationTag::Record(ctx.copy_retained_text(&record.name, "ASM annotation record name")?),
+                tag: AnnotationTag::Record(
+                    ctx.copy_retained_text(&record.name, "ASM annotation record name")?,
+                ),
                 derived_fields: Vec::new(),
             });
         }
@@ -183,7 +187,9 @@ pub(super) fn emit_annotation_records(
                 id: unknown_id.into_string(),
                 stream: ctx.copy_retained_text(stream, "ASM annotation stream")?,
                 offset: record.offset as u64,
-                tag: AnnotationTag::Record(ctx.copy_retained_text(&record.name, "ASM annotation record name")?),
+                tag: AnnotationTag::Record(
+                    ctx.copy_retained_text(&record.name, "ASM annotation record name")?,
+                ),
                 derived_fields: Vec::new(),
             });
         }

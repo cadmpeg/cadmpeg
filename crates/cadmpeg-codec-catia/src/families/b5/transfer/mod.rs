@@ -1747,8 +1747,7 @@ fn annotate(
     exactness: Exactness,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let id = crate::resource::format_retained(ctx, format_args!("{id}"), "catia_b5_annotation_id")?;
-    let exactness_id =
-        ctx.copy_retained_text(&id, "catia_b5_annotation_exactness_id")?;
+    let exactness_id = ctx.copy_retained_text(&id, "catia_b5_annotation_exactness_id")?;
     let stream_name = crate::resource::format_retained(
         ctx,
         format_args!("catia:{stream}"),

@@ -2208,10 +2208,7 @@ fn zero_entity_surface_isocurve(
         (varying_count, "catia_zero_isocurve_sums"),
         (knots.len(), "catia_zero_isocurve_knots"),
     ] {
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(count),
-            operation,
-        )?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
     }
     if let cadmpeg_ir::geometry::nurbs::NurbsPoleGrid::Rational { rows } = surface.pole_grid() {
         ctx.charge_collection_items(

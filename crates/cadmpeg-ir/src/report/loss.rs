@@ -429,7 +429,9 @@ impl LossKind {
         match self {
             Self::Shared { kind } => Ok(Self::Shared { kind: *kind }),
             Self::Namespaced(kind) => Ok(Self::Namespaced(NamespacedLossKind {
-                namespace: LossNamespaceName(ctx.copy_retained_text(kind.namespace.as_str(), operation)?),
+                namespace: LossNamespaceName(
+                    ctx.copy_retained_text(kind.namespace.as_str(), operation)?,
+                ),
                 code: ctx.copy_retained_text(&kind.code, operation)?,
                 taxonomy: kind.taxonomy,
                 strict_floor: kind.strict_floor,

@@ -314,8 +314,6 @@ pub(crate) fn session_ceiling(limit: u64, ceiling: usize) -> usize {
     }
 }
 
-
-
 fn reserve_transaction_vec<T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     values: &mut Vec<T>,
@@ -323,9 +321,16 @@ fn reserve_transaction_vec<T>(
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_collection_items(u64_from_index(additional), operation)?;
-    values
-        .try_reserve(additional)
-        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(additional), operation)))
+    values.try_reserve(additional).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                u64::MAX,
+                cadmpeg_core::decode::u64_from_index(additional),
+                operation,
+            ),
+        )
+    })
 }
 
 fn reserve_transaction_map<K: Eq + std::hash::Hash, V>(
@@ -335,9 +340,16 @@ fn reserve_transaction_map<K: Eq + std::hash::Hash, V>(
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_collection_items(u64_from_index(additional), operation)?;
-    values
-        .try_reserve(additional)
-        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(additional), operation)))
+    values.try_reserve(additional).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                u64::MAX,
+                cadmpeg_core::decode::u64_from_index(additional),
+                operation,
+            ),
+        )
+    })
 }
 
 struct InstanceLinkSnapshot<'a> {
@@ -385,7 +397,14 @@ fn snapshot_instance_links<'a>(
         for link in record.links() {
             let mut copy = String::new();
             copy.try_reserve_exact(link.len()).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, u64::MAX, u64_from_index(link.len()), BYTES))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                        u64::MAX,
+                        u64_from_index(link.len()),
+                        BYTES,
+                    ),
+                )
             })?;
             copy.push_str(link);
             row.push(copy);
@@ -665,7 +684,10 @@ impl<'a> DecodeContext<'a> {
         {
             return Ok(true);
         }
-        let copy = self.expand.ctx().copy_retained_text(link, "Rhino unknown record link copy")?;
+        let copy = self
+            .expand
+            .ctx()
+            .copy_retained_text(link, "Rhino unknown record link copy")?;
         append_link_to_record(self.expand.ctx(), record, copy)
     }
 
@@ -1156,7 +1178,10 @@ impl<'a> DecodeContext<'a> {
                             ),
                         )?;
                     }
-                    let links = [self.expand.ctx().copy_retained_text(annotation.id.as_str(), "Rhino annotation link")?];
+                    let links = [self
+                        .expand
+                        .ctx()
+                        .copy_retained_text(annotation.id.as_str(), "Rhino annotation link")?];
                     let result = self.validate_candidate(|candidate, _annotations| {
                         candidate.model.semantic_annotations.push(annotation);
                     });
@@ -2791,10 +2816,8 @@ impl<'a> DecodeContext<'a> {
                 });
             if !phase_families.contains_key(family) {
                 ctx.charge_collection_items(1, "Rhino warning family groups")?;
-                let family_key =
-                    ctx.copy_retained_text(family, "Rhino warning family key")?;
-                let first_detail =
-                    ctx.copy_retained_text(detail, "Rhino warning family detail")?;
+                let family_key = ctx.copy_retained_text(family, "Rhino warning family key")?;
+                let first_detail = ctx.copy_retained_text(detail, "Rhino warning family detail")?;
                 phase_families.insert(family_key, (0, first_detail));
             }
             let entry = phase_families.get_mut(family).ok_or_else(|| {
@@ -3226,7 +3249,14 @@ impl<'a> DecodeContext<'a> {
                 self.charge_session_collections(points.len(), "Rhino point-cloud vertices")?;
                 let mut vertices = Vec::new();
                 vertices.try_reserve_exact(points.len()).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(points.len()), "Rhino point-cloud vertices"))
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                            u64::MAX,
+                            cadmpeg_core::decode::u64_from_index(points.len()),
+                            "Rhino point-cloud vertices",
+                        ),
+                    )
                 })?;
                 for (index, position) in points.into_iter().enumerate() {
                     let point_key = key.clone().then(cadmpeg_ir::identity_key!(".")).then(index);
@@ -4349,9 +4379,7 @@ fn stage_extrusion_caps(
         name: association
             .name
             .as_deref()
-            .map(|name| {
-                ctx.copy_retained_text(name, "Rhino extrusion cap body name")
-            })
+            .map(|name| ctx.copy_retained_text(name, "Rhino extrusion cap body name"))
             .transpose()?,
         color: association.color,
         visible: association.visible,
@@ -5330,7 +5358,9 @@ fn finish_brep_fallback(
         )
     {
         crate::wire::reserve_collection(ctx, &mut staged.links, 1, "Rhino Brep fallback links")?;
-        staged.links.push(ctx.copy_retained_text(id, "Rhino Brep fallback link text")?);
+        staged
+            .links
+            .push(ctx.copy_retained_text(id, "Rhino Brep fallback link text")?);
     }
     Ok(staged.free_carrier_fallback(ctx, cause)?)
 }
@@ -5593,7 +5623,14 @@ fn stage_curve_tree(
             )?;
             let mut parameters = Vec::new();
             parameters.try_reserve_exact(parameter_count).map_err(|_| {
-                crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(parameter_count), "Rhino Brep curve tree parameters")))
+                crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        u64::MAX,
+                        cadmpeg_core::decode::u64_from_index(parameter_count),
+                        "Rhino Brep curve tree parameters",
+                    ),
+                ))
             })?;
             ctx.charge_collection_items(
                 u64_from_index(children.len()),
@@ -5601,7 +5638,14 @@ fn stage_curve_tree(
             )?;
             let mut components = Vec::new();
             components.try_reserve_exact(children.len()).map_err(|_| {
-                crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(children.len()), "Rhino Brep curve tree components")))
+                crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        u64::MAX,
+                        cadmpeg_core::decode::u64_from_index(children.len()),
+                        "Rhino Brep curve tree components",
+                    ),
+                ))
             })?;
             for (index, (parameter, child)) in children.into_iter().enumerate() {
                 let parameter = parameter.get();
@@ -5698,9 +5742,16 @@ fn clone_pcurve_nurbs(
         .checked_add(nurbs.pole_count())
         .ok_or_else(|| crate::curves::GeometryError::unpositioned("C2 curve size overflow"))?;
     ctx.charge_collection_items(u64_from_index(items), operation)?;
-    nurbs
-        .try_clone()
-        .map_err(|_| crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(items), operation))))
+    nurbs.try_clone().map_err(|_| {
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                u64::MAX,
+                cadmpeg_core::decode::u64_from_index(items),
+                operation,
+            ),
+        ))
+    })
 }
 
 fn decode_pcurves(
@@ -5715,20 +5766,21 @@ fn decode_pcurves(
     let mut ids = HashMap::new();
     let mut values = Vec::new();
     let mut warnings = Diagnostics::new();
-    let key = match IdentityKey::try_new(ctx.copy_retained_text(key, "Rhino Brep pcurve source key")?) {
-        Ok(key) => key,
-        Err(error) => {
-            warnings.push_admitted(
-                ctx,
-                format_args!("Brep pcurve identity key is invalid: {error}"),
-            )?;
-            return Ok(DecodedPcurves {
-                ids,
-                values,
-                warnings,
-            });
-        }
-    };
+    let key =
+        match IdentityKey::try_new(ctx.copy_retained_text(key, "Rhino Brep pcurve source key")?) {
+            Ok(key) => key,
+            Err(error) => {
+                warnings.push_admitted(
+                    ctx,
+                    format_args!("Brep pcurve identity key is invalid: {error}"),
+                )?;
+                return Ok(DecodedPcurves {
+                    ids,
+                    values,
+                    warnings,
+                });
+            }
+        };
     let mut decoded_slots = HashMap::<usize, Option<NurbsCurve>>::new();
     for (index, trim) in raw.trims.iter().enumerate() {
         if trim.trim_type == crate::brep::RawTrimKind::PointOnSurface {
@@ -5777,7 +5829,16 @@ fn decode_pcurves(
                         clone_pcurve_nurbs(ctx, &joined.curve, "Rhino Brep cached C2 curve")?;
                     ctx.charge_collection_items(1, "Rhino Brep decoded C2 slots")?;
                     decoded_slots.try_reserve(1).map_err(|_| {
-                        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(1), "Rhino Brep decoded C2 slots")))
+                        crate::curves::GeometryError::Codec(
+                            cadmpeg_core::CodecError::ResourceLimit(
+                                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                                    u64::MAX,
+                                    cadmpeg_core::decode::u64_from_index(1),
+                                    "Rhino Brep decoded C2 slots",
+                                ),
+                            ),
+                        )
                     })?;
                     decoded_slots.insert(trim_curve, Some(cached));
                     joined.curve
@@ -5791,7 +5852,16 @@ fn decode_pcurves(
                     )?;
                     ctx.charge_collection_items(1, "Rhino Brep decoded C2 slots")?;
                     decoded_slots.try_reserve(1).map_err(|_| {
-                        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(1), "Rhino Brep decoded C2 slots")))
+                        crate::curves::GeometryError::Codec(
+                            cadmpeg_core::CodecError::ResourceLimit(
+                                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                                    u64::MAX,
+                                    cadmpeg_core::decode::u64_from_index(1),
+                                    "Rhino Brep decoded C2 slots",
+                                ),
+                            ),
+                        )
                     })?;
                     decoded_slots.insert(trim_curve, None);
                     continue;
@@ -5857,7 +5927,14 @@ fn decode_pcurves(
             "Rhino Brep pcurve knots",
         )?;
         let knots = nurbs.knots().try_clone().map_err(|_| {
-            crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(nurbs.knots().len()), "Rhino Brep pcurve knots")))
+            crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    u64::MAX,
+                    cadmpeg_core::decode::u64_from_index(nurbs.knots().len()),
+                    "Rhino Brep pcurve knots",
+                ),
+            ))
         })?;
         let nurbs =
             match PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic()) {
@@ -5881,8 +5958,16 @@ fn decode_pcurves(
             ),
         });
         ctx.charge_collection_items(1, "Rhino Brep pcurve IDs")?;
-        ids.try_reserve(1)
-            .map_err(|_| crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(1), "Rhino Brep pcurve IDs"))))?;
+        ids.try_reserve(1).map_err(|_| {
+            crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    u64::MAX,
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "Rhino Brep pcurve IDs",
+                ),
+            ))
+        })?;
         ids.insert(index, id);
     }
     Ok(DecodedPcurves {
@@ -6022,7 +6107,14 @@ fn brep_free_vertex_indices(
     ctx.charge_collection_items(free_count as u64, "Rhino Brep free vertices")?;
     let mut free = Vec::new();
     free.try_reserve_exact(free_count).map_err(|_| {
-        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(free_count), "Rhino Brep free vertices")))
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                u64::MAX,
+                cadmpeg_core::decode::u64_from_index(free_count),
+                "Rhino Brep free vertices",
+            ),
+        ))
     })?;
     for (index, attached) in attached.into_iter().enumerate() {
         if !attached {
@@ -6152,13 +6244,27 @@ fn push_group_face<K: Eq + std::hash::Hash>(
     if !groups.contains_key(&key) {
         ctx.charge_collection_items(1, "Rhino Brep shell group keys")?;
         groups.try_reserve(1).map_err(|_| {
-            crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(1), "Rhino Brep shell group keys")))
+            crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    u64::MAX,
+                    cadmpeg_core::decode::u64_from_index(1),
+                    "Rhino Brep shell group keys",
+                ),
+            ))
         })?;
     }
     ctx.charge_collection_items(1, "Rhino Brep shell group faces")?;
     let faces = groups.entry(key).or_default();
     faces.try_reserve(1).map_err(|_| {
-        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(1), "Rhino Brep shell group faces")))
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                u64::MAX,
+                cadmpeg_core::decode::u64_from_index(1),
+                "Rhino Brep shell group faces",
+            ),
+        ))
     })?;
     faces.push(face);
     Ok(())
@@ -6182,7 +6288,14 @@ fn shell_slots(
     ctx.charge_collection_items(count as u64, "Rhino Brep shell groups")?;
     let mut shells = Vec::new();
     shells.try_reserve_exact(count).map_err(|_| {
-        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(count), "Rhino Brep shell groups")))
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                u64::MAX,
+                cadmpeg_core::decode::u64_from_index(count),
+                "Rhino Brep shell groups",
+            ),
+        ))
     })?;
     Ok(shells)
 }
@@ -6248,7 +6361,14 @@ fn commit_curve_tree(
             )?;
             let mut parameters = Vec::new();
             parameters.try_reserve_exact(parameter_count).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(parameter_count), "Rhino committed curve tree parameters"))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        u64::MAX,
+                        cadmpeg_core::decode::u64_from_index(parameter_count),
+                        "Rhino committed curve tree parameters",
+                    ),
+                )
             })?;
             ctx.charge_collection_items(
                 u64_from_index(children.len()),
@@ -6256,7 +6376,14 @@ fn commit_curve_tree(
             )?;
             let mut components = Vec::new();
             components.try_reserve_exact(children.len()).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(children.len()), "Rhino committed curve tree components"))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        u64::MAX,
+                        cadmpeg_core::decode::u64_from_index(children.len()),
+                        "Rhino committed curve tree components",
+                    ),
+                )
             })?;
             for (index, (parameter, child)) in children.into_iter().enumerate() {
                 let parameter = parameter.get();
@@ -6645,9 +6772,7 @@ fn source_association(
     let object_id = cadmpeg_core::text::NonBlankString::new(object_id)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("Rhino object UUID is blank"))?;
     let name = (!identity.name.is_empty())
-        .then(|| {
-            ctx.copy_retained_text(&identity.name, "Rhino source association name")
-        })
+        .then(|| ctx.copy_retained_text(&identity.name, "Rhino source association name"))
         .transpose()?;
     let layer = identity
         .layer
@@ -6667,7 +6792,8 @@ fn source_association(
         "Rhino source association instance path",
     )?;
     for segment in instance_path {
-        admitted_path.push(ctx.copy_retained_text(segment, "Rhino source association instance ID")?);
+        admitted_path
+            .push(ctx.copy_retained_text(segment, "Rhino source association instance ID")?);
     }
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,

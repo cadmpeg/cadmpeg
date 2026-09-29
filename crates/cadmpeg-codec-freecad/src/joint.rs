@@ -5,9 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::native::joint::{JointBody, JointConnectorRecord, JointRecord, PairedJointFamily};
 use crate::native::{sole_named_property, LinkTarget, ObjectRecord, PropertyRecord};
-use crate::resource::{
-    collection_vec, materialized_bytes, reserve_vec_items,
-    };
+use crate::resource::{collection_vec, materialized_bytes, reserve_vec_items};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
@@ -24,9 +22,16 @@ pub(crate) fn transfer(
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
             ctx.charge_collection_items(1, "fcstd joint owner index")?;
-            by_owner
-                .try_reserve(1)
-                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "fcstd joint owner index")))?;
+            by_owner.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "fcstd joint owner index",
+                    ),
+                )
+            })?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
@@ -176,7 +181,14 @@ pub(crate) fn transfer_neutral(
     let mut occurrence_by_native = HashMap::new();
     ctx.charge_collection_items(count as u64, "fcstd joint occurrence index")?;
     occurrence_by_native.try_reserve(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, count as u64, "fcstd joint occurrence index"))
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                count as u64,
+                "fcstd joint occurrence index",
+            ),
+        )
     })?;
     for occurrence in occurrences {
         if let Some(native) = occurrence.native_ref.as_deref() {
@@ -252,7 +264,10 @@ pub(crate) fn transfer_neutral(
             }
             Ok(Some(match occurrence_by_native.get(name).copied() {
                 Some(occurrence) => {
-                    let identity = cadmpeg_ir::ids::OccurrenceId::mint(ctx.copy_retained_text(occurrence.as_str(), "fcstd joint occurrence identity")?)
+                    let identity = cadmpeg_ir::ids::OccurrenceId::mint(ctx.copy_retained_text(
+                        occurrence.as_str(),
+                        "fcstd joint occurrence identity",
+                    )?)
                     .map_err(CodecError::malformed)?;
                     JointOperand::occurrence(identity, object, subelements)
                 }
@@ -349,7 +364,8 @@ pub(crate) fn transfer_neutral(
             }
         };
         joint.suppressed = bool_value("Suppressed").is_some_and(|value| value);
-        joint.native_ref = Some(ctx.copy_retained_text(&record.id, "fcstd joint native reference")?);
+        joint.native_ref =
+            Some(ctx.copy_retained_text(&record.id, "fcstd joint native reference")?);
         reserve_vec_items(ctx, &mut output, 1, "fcstd neutral joints")?;
         output.push(joint);
     }
@@ -671,7 +687,10 @@ fn scalar_parameter(
             "fcstd joint diagnostic",
         ));
     }
-    Ok(Some(ctx.copy_retained_text(value, "fcstd joint scalar parameter")?))
+    Ok(Some(ctx.copy_retained_text(
+        value,
+        "fcstd joint scalar parameter",
+    )?))
 }
 
 fn connector(

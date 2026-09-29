@@ -72,8 +72,7 @@ pub(crate) fn transfer_native_sketch_entities(
             SketchId::mint,
             "catia_sketch_entity_sketch_id",
         )?;
-        let native_ref =
-            ctx.copy_retained_text(native_ref, "catia_sketch_entity_sketch_ref")?;
+        let native_ref = ctx.copy_retained_text(native_ref, "catia_sketch_entity_sketch_ref")?;
         resource::push(
             ctx,
             &mut sketches,
@@ -159,7 +158,8 @@ pub(crate) fn transfer_native_sketch_entities(
                 SketchId::mint,
                 "catia_sketch_entity_owner_id",
             )?;
-            let field_copy = ctx.copy_retained_text(&geometry_field.id, "catia_sketch_entity_native_ref")?;
+            let field_copy =
+                ctx.copy_retained_text(&geometry_field.id, "catia_sketch_entity_native_ref")?;
             resource::push(
                 ctx,
                 &mut ir.model.sketch_entities,
@@ -171,7 +171,8 @@ pub(crate) fn transfer_native_sketch_entities(
                 .with_native_ref(Some(field_copy)),
                 "catia_sketch_entities",
             )?;
-            let transferred_id = ctx.copy_retained_text(&geometry_field.id, "catia_sketch_entity_transferred_id")?;
+            let transferred_id =
+                ctx.copy_retained_text(&geometry_field.id, "catia_sketch_entity_transferred_id")?;
             resource::insert_set(
                 ctx,
                 &mut transferred,
@@ -297,8 +298,7 @@ pub(crate) fn transfer_native_sketch_constraints(
             let Some(native_ref) = entity.native_ref.as_deref() else {
                 continue;
             };
-            let key =
-                ctx.copy_retained_text(native_ref, "catia_sketch_constraint_entity_key")?;
+            let key = ctx.copy_retained_text(native_ref, "catia_sketch_constraint_entity_key")?;
             let id = resource::copy_id(
                 ctx,
                 entity.id().as_str(),
@@ -415,7 +415,8 @@ pub(crate) fn transfer_native_sketch_constraints(
                             "catia_sketch_candidate_entities",
                         )?;
                     }
-                    let field = ctx.copy_retained_text(&geometry_field.id, "catia_sketch_candidate_field")?;
+                    let field =
+                        ctx.copy_retained_text(&geometry_field.id, "catia_sketch_candidate_field")?;
                     resource::push(
                         ctx,
                         &mut candidate.incidences,
@@ -530,11 +531,17 @@ pub(crate) fn transfer_native_sketch_constraints(
                 format_args!("{}", incidence.reference_offset),
             )?;
         }
-        let field_id = ctx.copy_retained_text(&candidate.target_record.id, "catia_sketch_constraint_field_name")?;
+        let field_id = ctx.copy_retained_text(
+            &candidate.target_record.id,
+            "catia_sketch_constraint_field_name",
+        )?;
         let Some(field_name) = cadmpeg_core::text::NonBlankString::new(field_id) else {
             continue;
         };
-        let operand_ref = ctx.copy_retained_text(&candidate.target_entity_record.id, "catia_sketch_constraint_operand_ref")?;
+        let operand_ref = ctx.copy_retained_text(
+            &candidate.target_entity_record.id,
+            "catia_sketch_constraint_operand_ref",
+        )?;
         let definition = cadmpeg_ir::sketches::SketchConstraintDefinition::native_with_operand(
             cadmpeg_core::nonblank_literal!("ConstraintDYS"),
             native_properties,
@@ -550,7 +557,10 @@ pub(crate) fn transfer_native_sketch_constraints(
             },
         );
         ctx.charge_entities(1, "admit CATIA sketch constraint")?;
-        let neutral_ref = ctx.copy_retained_text(&candidate.target_entity_record.id, "catia_sketch_constraint_native_ref")?;
+        let neutral_ref = ctx.copy_retained_text(
+            &candidate.target_entity_record.id,
+            "catia_sketch_constraint_native_ref",
+        )?;
         resource::push(
             ctx,
             &mut ir.model.sketch_constraints,
@@ -571,7 +581,10 @@ pub(crate) fn transfer_native_sketch_constraints(
             },
             "catia_sketch_constraints",
         )?;
-        let transferred_id = ctx.copy_retained_text(&candidate.target_record.id, "catia_sketch_constraint_transferred_id")?;
+        let transferred_id = ctx.copy_retained_text(
+            &candidate.target_record.id,
+            "catia_sketch_constraint_transferred_id",
+        )?;
         resource::insert_set(
             ctx,
             &mut transferred,
@@ -839,7 +852,10 @@ pub(crate) fn transfer_constraint_ranges(
         }) {
             continue;
         }
-        let constraint_kind = ctx.copy_retained_text(&range.constraint.value, "catia_sketch_range_constraint_kind")?;
+        let constraint_kind = ctx.copy_retained_text(
+            &range.constraint.value,
+            "catia_sketch_range_constraint_kind",
+        )?;
         let mut bound_entities = Vec::new();
         if let Some(entity_id) = binding.entity {
             resource::push(
@@ -858,8 +874,7 @@ pub(crate) fn transfer_constraint_ranges(
             binding.operand,
         );
         ctx.charge_entities(1, "admit CATIA sketch constraint")?;
-        let native_ref =
-            ctx.copy_retained_text(&entity.id, "catia_sketch_range_native_ref")?;
+        let native_ref = ctx.copy_retained_text(&entity.id, "catia_sketch_range_native_ref")?;
         resource::push(
             ctx,
             &mut ir.model.sketch_constraints,
@@ -880,7 +895,8 @@ pub(crate) fn transfer_constraint_ranges(
             },
             "catia_sketch_range_constraints",
         )?;
-        let range_record = ctx.copy_retained_text(&entity.object_record, "catia_sketch_range_record_id")?;
+        let range_record =
+            ctx.copy_retained_text(&entity.object_record, "catia_sketch_range_record_id")?;
         resource::insert_set(
             ctx,
             &mut transferred,
@@ -1060,14 +1076,14 @@ fn constraint_binding(
         }
         None => cadmpeg_core::nonblank_literal!("record"),
     };
-    let field_id =
-        ctx.copy_retained_text(&source_record.id, "catia_sketch_range_field_name")?;
+    let field_id = ctx.copy_retained_text(&source_record.id, "catia_sketch_range_field_name")?;
     let Some(field_name) = cadmpeg_core::text::NonBlankString::new(field_id) else {
         return Ok(None);
     };
     let source_object_record =
         ctx.copy_retained_text(&source_record.id, "catia_sketch_range_source_record")?;
-    let native_ref = ctx.copy_retained_text(&source_entity_record.id, "catia_sketch_range_operand_ref")?;
+    let native_ref =
+        ctx.copy_retained_text(&source_entity_record.id, "catia_sketch_range_operand_ref")?;
     Ok(Some(ConstraintBinding {
         sketch,
         source_object_record,

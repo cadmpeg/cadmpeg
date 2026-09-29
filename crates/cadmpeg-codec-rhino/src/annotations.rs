@@ -685,7 +685,12 @@ fn reserve_record_count<T>(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
     records.try_reserve(count).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, cadmpeg_core::decode::u64_from_index(count), operation))
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            u64::MAX,
+            cadmpeg_core::decode::u64_from_index(count),
+            operation,
+        ))
     })
 }
 

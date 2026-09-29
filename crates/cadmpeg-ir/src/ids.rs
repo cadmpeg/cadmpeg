@@ -10,9 +10,9 @@
 //! components before `#`). Compose typed IDs from an [`IdentityNamespace`]
 //! and an [`IdentityKey`]; validate existing strings with [`is_valid_identity`].
 
-use serde::Deserialize;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use serde::Deserialize;
 
 fn deserialize_local_id<'de, D: serde::Deserializer<'de>>(
     deserializer: D,

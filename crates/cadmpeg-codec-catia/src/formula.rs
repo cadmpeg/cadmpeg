@@ -349,8 +349,14 @@ pub(crate) fn transfer_parameters(
                             }
                         };
                         if accepted {
-                            let relation_entity = ctx.copy_retained_text(&formula_entity.id, "catia_formula_program_relation")?;
-                            let expression_entity_id = ctx.copy_retained_text(&expression_entity.id, "catia_formula_program_expression")?;
+                            let relation_entity = ctx.copy_retained_text(
+                                &formula_entity.id,
+                                "catia_formula_program_relation",
+                            )?;
+                            let expression_entity_id = ctx.copy_retained_text(
+                                &expression_entity.id,
+                                "catia_formula_program_expression",
+                            )?;
                             let program_output = resource::copy_id(
                                 ctx,
                                 output_id.as_str(),
@@ -384,14 +390,32 @@ pub(crate) fn transfer_parameters(
                                         "catia_formula_output_dependencies",
                                     )?;
                                     output_dependencies.try_reserve(1).map_err(|_| {
-                                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("catia_formula_output_dependencies"), cadmpeg_core::decode::u64_from_index(0), cadmpeg_core::decode::u64_from_index(1), "catia_formula_output_dependencies"))
+                                        cadmpeg_core::CodecError::ResourceLimit(
+                                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                                cadmpeg_core::decode::ResourceDimension::Codec(
+                                                    "catia_formula_output_dependencies",
+                                                ),
+                                                cadmpeg_core::decode::u64_from_index(0),
+                                                cadmpeg_core::decode::u64_from_index(1),
+                                                "catia_formula_output_dependencies",
+                                            ),
+                                        )
                                     })?;
                                     output_dependencies.insert(dependency);
                                 }
                             }
-                            let output_name = ctx.copy_retained_text(&output_value.name.value, "catia_formula_output_name")?;
-                            let output_expression = ctx.copy_retained_text(&expression.expression.value, "catia_formula_output_expression")?;
-                            let output_native_ref = ctx.copy_retained_text(&output.id, "catia_formula_output_native_ref")?;
+                            let output_name = ctx.copy_retained_text(
+                                &output_value.name.value,
+                                "catia_formula_output_name",
+                            )?;
+                            let output_expression = ctx.copy_retained_text(
+                                &expression.expression.value,
+                                "catia_formula_output_expression",
+                            )?;
+                            let output_native_ref = ctx.copy_retained_text(
+                                &output.id,
+                                "catia_formula_output_native_ref",
+                            )?;
                             resource::push(
                                 ctx,
                                 &mut transferred,
@@ -1045,10 +1069,8 @@ fn collect_legacy_parameters(
                 ParameterId::mint,
                 "catia_legacy_scalar_parameter_id",
             )?;
-            let parameter_name =
-                ctx.copy_retained_text(name, "catia_legacy_scalar_name")?;
-            let native_ref =
-                ctx.copy_retained_text(&run.id, "catia_legacy_scalar_native_ref")?;
+            let parameter_name = ctx.copy_retained_text(name, "catia_legacy_scalar_name")?;
+            let native_ref = ctx.copy_retained_text(&run.id, "catia_legacy_scalar_native_ref")?;
             let candidate = FormulaParameterCandidate {
                 parameter: DesignParameter {
                     id: parameter_id,
@@ -1106,17 +1128,17 @@ fn collect_legacy_parameters(
                 continue;
             }
             ctx.charge_entities(1, "admit CATIA formula candidate")?;
-            let value = ParameterValue::String(ctx.copy_retained_text(&string.value, "catia_legacy_string_value")?);
+            let value = ParameterValue::String(
+                ctx.copy_retained_text(&string.value, "catia_legacy_string_value")?,
+            );
             let parameter_id = resource::copy_id(
                 ctx,
                 id.as_str(),
                 ParameterId::mint,
                 "catia_legacy_string_parameter_id",
             )?;
-            let parameter_name =
-                ctx.copy_retained_text(name, "catia_legacy_string_name")?;
-            let native_ref =
-                ctx.copy_retained_text(&run.id, "catia_legacy_string_native_ref")?;
+            let parameter_name = ctx.copy_retained_text(name, "catia_legacy_string_name")?;
+            let native_ref = ctx.copy_retained_text(&run.id, "catia_legacy_string_native_ref")?;
             let candidate = FormulaParameterCandidate {
                 parameter: DesignParameter {
                     id: parameter_id,
@@ -1181,10 +1203,8 @@ fn collect_legacy_parameters(
                 ParameterId::mint,
                 "catia_legacy_integer_parameter_id",
             )?;
-            let parameter_name =
-                ctx.copy_retained_text(name, "catia_legacy_integer_name")?;
-            let native_ref =
-                ctx.copy_retained_text(&run.id, "catia_legacy_integer_native_ref")?;
+            let parameter_name = ctx.copy_retained_text(name, "catia_legacy_integer_name")?;
+            let native_ref = ctx.copy_retained_text(&run.id, "catia_legacy_integer_native_ref")?;
             let candidate = FormulaParameterCandidate {
                 parameter: DesignParameter {
                     id: parameter_id,
@@ -1259,13 +1279,23 @@ fn collect_legacy_parameters(
                     continue;
                 }
             }
-            let expression = ctx.copy_retained_text(evaluation.expression, "catia_legacy_formula_expression")?;
+            let expression =
+                ctx.copy_retained_text(evaluation.expression, "catia_legacy_formula_expression")?;
             let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
             for id in evaluation.dependencies {
                 if !dependencies.contains(&id) {
                     ctx.charge_collection_items(1, "catia_legacy_formula_dependencies")?;
                     dependencies.try_reserve(1).map_err(|_| {
-                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("catia_legacy_formula_dependencies"), cadmpeg_core::decode::u64_from_index(0), cadmpeg_core::decode::u64_from_index(1), "catia_legacy_formula_dependencies"))
+                        cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::Codec(
+                                    "catia_legacy_formula_dependencies",
+                                ),
+                                cadmpeg_core::decode::u64_from_index(0),
+                                cadmpeg_core::decode::u64_from_index(1),
+                                "catia_legacy_formula_dependencies",
+                            ),
+                        )
                     })?;
                     dependencies.insert(id);
                 }
@@ -1355,9 +1385,11 @@ fn legacy_relation_evaluation<'a>(
             return Ok(None);
         };
         let evaluated = match value {
-            ParameterValue::String(value) => EvaluatedFormulaValue::String(
-                EvaluatedFormulaString::known(ctx.copy_retained_text(value, "catia_legacy_formula_binding_string")?),
-            ),
+            ParameterValue::String(value) => {
+                EvaluatedFormulaValue::String(EvaluatedFormulaString::known(
+                    ctx.copy_retained_text(value, "catia_legacy_formula_binding_string")?,
+                ))
+            }
             _ => EvaluatedFormulaValue::from_parameter_value_charged(ctx, value)?,
         };
         crate::resource::insert_btree_map(
@@ -1563,7 +1595,8 @@ fn typed_entity_parameter_candidate(
         Err(error) => return Err(error),
     };
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
-    let name = ctx.copy_retained_text(&parameter.name.value, "catia_formula_typed_parameter_name")?;
+    let name =
+        ctx.copy_retained_text(&parameter.name.value, "catia_formula_typed_parameter_name")?;
     let native_ref =
         ctx.copy_retained_text(&entity.id, "catia_formula_typed_parameter_native_ref")?;
     let (expression, value) = match evaluation {
@@ -1884,15 +1917,33 @@ fn relation_program_output_candidate(
         ParameterId::mint,
         "catia_relation_program_candidate_id",
     )?;
-    let output_name = ctx.copy_retained_text(&output_value.name.value, "catia_relation_program_output_name")?;
-    let output_expression = ctx.copy_retained_text(&expression.expression.value, "catia_relation_program_output_expression")?;
-    let output_native_ref = ctx.copy_retained_text(&output_entity.id, "catia_relation_program_output_native_ref")?;
+    let output_name = ctx.copy_retained_text(
+        &output_value.name.value,
+        "catia_relation_program_output_name",
+    )?;
+    let output_expression = ctx.copy_retained_text(
+        &expression.expression.value,
+        "catia_relation_program_output_expression",
+    )?;
+    let output_native_ref = ctx.copy_retained_text(
+        &output_entity.id,
+        "catia_relation_program_output_native_ref",
+    )?;
     let mut output_dependencies = cadmpeg_ir::features::DistinctMembers::default();
     for dependency in &dependencies {
         if !output_dependencies.contains(dependency) {
             ctx.charge_collection_items(1, "catia_relation_program_output_dependencies")?;
             output_dependencies.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("catia_relation_program_output_dependencies"), cadmpeg_core::decode::u64_from_index(0), cadmpeg_core::decode::u64_from_index(1), "catia_relation_program_output_dependencies"))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "catia_relation_program_output_dependencies",
+                        ),
+                        cadmpeg_core::decode::u64_from_index(0),
+                        cadmpeg_core::decode::u64_from_index(1),
+                        "catia_relation_program_output_dependencies",
+                    ),
+                )
             })?;
             output_dependencies.insert(resource::copy_id(
                 ctx,
@@ -1929,8 +1980,12 @@ fn relation_program_output_candidate(
     };
     Ok(Some((
         FormulaProgramCandidate {
-            relation_entity: ctx.copy_retained_text(&relation_entity.id, "catia_relation_program_relation_id")?,
-            expression_entity: ctx.copy_retained_text(&expression_entity.id, "catia_relation_program_expression_id")?,
+            relation_entity: ctx
+                .copy_retained_text(&relation_entity.id, "catia_relation_program_relation_id")?,
+            expression_entity: ctx.copy_retained_text(
+                &expression_entity.id,
+                "catia_relation_program_expression_id",
+            )?,
             output: output_id,
             inputs: dependencies,
             input_parameters,
@@ -2036,7 +2091,9 @@ fn copy_parameter_value(
     value: &ParameterValue,
 ) -> Result<ParameterValue, cadmpeg_core::CodecError> {
     Ok(match value {
-        ParameterValue::String(text) => ParameterValue::String(ctx.copy_retained_text(text, "catia_formula_parameter_value_copy")?),
+        ParameterValue::String(text) => ParameterValue::String(
+            ctx.copy_retained_text(text, "catia_formula_parameter_value_copy")?,
+        ),
         other => other.clone(),
     })
 }
@@ -2071,7 +2128,16 @@ fn copy_design_parameter(
         ctx.charge_collection_items(source.dependencies.len() as u64, operation)?;
         dependencies
             .try_reserve(source.dependencies.len())
-            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), cadmpeg_core::decode::u64_from_index(0), cadmpeg_core::decode::u64_from_index(source.dependencies.len()), operation)))?;
+            .map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                        cadmpeg_core::decode::u64_from_index(0),
+                        cadmpeg_core::decode::u64_from_index(source.dependencies.len()),
+                        operation,
+                    ),
+                )
+            })?;
         for dependency in &source.dependencies {
             dependencies.insert(resource::copy_id(
                 ctx,
@@ -2093,7 +2159,9 @@ fn copy_design_parameter(
         Some(pmi) => {
             let subtype = match &pmi.subtype {
                 cadmpeg_ir::features::PmiDimensionSubtype::Native(kind) => {
-                    cadmpeg_ir::features::PmiDimensionSubtype::Native(ctx.copy_retained_text(kind, operation)?)
+                    cadmpeg_ir::features::PmiDimensionSubtype::Native(
+                        ctx.copy_retained_text(kind, operation)?,
+                    )
                 }
                 other => other.clone(),
             };
@@ -2455,7 +2523,9 @@ impl EvaluatedFormulaValue {
             Self::Scalar(value) => Self::Scalar(*value),
             Self::Boolean(value) => Self::Boolean(*value),
             Self::String(EvaluatedFormulaString::Known(value)) => {
-                Self::String(EvaluatedFormulaString::Known(ctx.copy_retained_text(value, "catia_formula_evaluated_value_copy")?))
+                Self::String(EvaluatedFormulaString::Known(
+                    ctx.copy_retained_text(value, "catia_formula_evaluated_value_copy")?,
+                ))
             }
             Self::String(EvaluatedFormulaString::Unknown) => {
                 Self::String(EvaluatedFormulaString::Unknown)
@@ -2802,7 +2872,9 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
             (EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => {
                 Some(EvaluatedFormulaValue::String(
                     if left.is_known() && right.is_known() && left.value() == right.value() {
-                        let result = self.ctx.copy_retained_text(left.value(), "catia_formula_static_string_merge");
+                        let result = self
+                            .ctx
+                            .copy_retained_text(left.value(), "catia_formula_static_string_merge");
                         EvaluatedFormulaString::known(self.admit(result)?)
                     } else {
                         EvaluatedFormulaString::unknown()
@@ -3423,7 +3495,10 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
                         let end = start.checked_add(length)?;
                         let start = Self::string_boundary(value.value(), start)?;
                         let end = Self::string_boundary(value.value(), end)?;
-                        let copied = self.ctx.copy_retained_text(&value.value()[start..end], "catia_formula_string_extract");
+                        let copied = self.ctx.copy_retained_text(
+                            &value.value()[start..end],
+                            "catia_formula_string_extract",
+                        );
                         self.admit(copied)?
                     } else {
                         String::new()
@@ -3501,8 +3576,9 @@ impl FormulaExpressionParser<'_, '_, '_, '_> {
         while let Some(character) = self.source.get(self.at..)?.chars().next() {
             if character == '"' {
                 let source = self.source.get(start..self.at)?;
-                let copied =
-                    self.ctx.copy_retained_text(source, "catia_formula_literal_text");
+                let copied = self
+                    .ctx
+                    .copy_retained_text(source, "catia_formula_literal_text");
                 let value = self.admit(copied)?;
                 self.at += character.len_utf8();
                 return Some(value);

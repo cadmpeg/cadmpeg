@@ -1073,9 +1073,9 @@ fn parse_layer_extensions(
             other => FramingError::structural(outer_reader.position(), other.to_string()),
         })?;
     let retained_bytes = count_u64
-        .checked_mul(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<LayerPerViewportSettings>()),
-        )
+        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            LayerPerViewportSettings,
+        >()))
         .ok_or(FramingError::Overflow {
             offset: outer_reader.position(),
         })?;
@@ -1086,7 +1086,12 @@ fn parse_layer_extensions(
         })?;
     let mut values = Vec::new();
     values.try_reserve_exact(count).map_err(|_| {
-        FramingError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, ctx.policy().limits.max_retained_bytes, retained_bytes, "Rhino layer extension capacity"))
+        FramingError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            ctx.policy().limits.max_retained_bytes,
+            retained_bytes,
+            "Rhino layer extension capacity",
+        ))
     })?;
     for _ in 0..count {
         let entry = chunk_at(

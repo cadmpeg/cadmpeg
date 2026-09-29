@@ -142,12 +142,17 @@ fn decode_container<'a>(
                 charge_retained_len(ctx, 32, "retain Inventor property-set CLSID")?;
                 property_sets.push(PropertySetRecord {
                     id,
-                    path: ctx.copy_retained_text(&descriptor.path, "retain Inventor property-set path")?,
+                    path: ctx.copy_retained_text(
+                        &descriptor.path,
+                        "retain Inventor property-set path",
+                    )?,
                     directory_id: descriptor.stream.directory_id(),
                     version: property_set.version,
                     system_identifier: property_set.system_identifier,
                     clsid: hex(&property_set.clsid),
-                    section_count: cadmpeg_core::decode::u64_from_index(property_set.sections.len()),
+                    section_count: cadmpeg_core::decode::u64_from_index(
+                        property_set.sections.len(),
+                    ),
                 });
                 for (section_ordinal, section) in property_set.sections.iter().enumerate() {
                     let set_name = property_set_name(ctx, section)?;
@@ -172,7 +177,10 @@ fn decode_container<'a>(
                         )?;
                         property_set_issues.push(PropertySetIssueRecord {
                             id,
-                            path: ctx.copy_retained_text(&descriptor.path, "retain Inventor property-set identity issue path")?,
+                            path: ctx.copy_retained_text(
+                                &descriptor.path,
+                                "retain Inventor property-set identity issue path",
+                            )?,
                             directory_id: descriptor.stream.directory_id(),
                             detail: "embedded property-set name does not match its FMTID".into(),
                         });
@@ -189,7 +197,10 @@ fn decode_container<'a>(
                     charge_retained_len(ctx, 32, "retain Inventor property section FMTID")?;
                     property_sections.push(PropertySectionRecord {
                         id: section_id,
-                        set_path: ctx.copy_retained_text(&descriptor.path, "retain Inventor property section path")?,
+                        set_path: ctx.copy_retained_text(
+                            &descriptor.path,
+                            "retain Inventor property section path",
+                        )?,
                         ordinal: record_ordinal(
                             ctx,
                             section_ordinal,
@@ -198,8 +209,12 @@ fn decode_container<'a>(
                         fmtid: hex(&section.fmtid),
                         code_page: section.code_page,
                         offsets_ordered: section.offsets_ordered,
-                        dictionary_entries: cadmpeg_core::decode::u64_from_index(section.dictionary_entries),
-                        property_count: cadmpeg_core::decode::u64_from_index(section.properties.len()),
+                        dictionary_entries: cadmpeg_core::decode::u64_from_index(
+                            section.dictionary_entries,
+                        ),
+                        property_count: cadmpeg_core::decode::u64_from_index(
+                            section.properties.len(),
+                        ),
                     });
                     for property in &section.properties {
                         admit_native_items(ctx, 1)?;
@@ -263,7 +278,10 @@ fn decode_container<'a>(
                         )?;
                         properties.push(PropertyRecord {
                             id: native_id,
-                            set_path: ctx.copy_retained_text(&descriptor.path, "retain Inventor property value path")?,
+                            set_path: ctx.copy_retained_text(
+                                &descriptor.path,
+                                "retain Inventor property value path",
+                            )?,
                             section_ordinal: record_ordinal(
                                 ctx,
                                 section_ordinal,
@@ -274,7 +292,9 @@ fn decode_container<'a>(
                             name: property_name,
                             value_kind: property_value_kind(&property.value),
                             scalar_value,
-                            raw_len: cadmpeg_core::decode::u64_from_index(property.raw.window().len()),
+                            raw_len: cadmpeg_core::decode::u64_from_index(
+                                property.raw.window().len(),
+                            ),
                             raw_sha256: crate::native::digest::Sha256Hex::digest(
                                 property.raw.window(),
                             ),
@@ -414,7 +434,10 @@ fn decode_container<'a>(
                         "retain Inventor registry entry id",
                     )?,
                     ordinal: record_ordinal(ctx, ordinal, "Inventor registry ordinal")?,
-                    display_name: ctx.copy_retained_text(&entry.display_name, "retain Inventor registry display name")?,
+                    display_name: ctx.copy_retained_text(
+                        &entry.display_name,
+                        "retain Inventor registry display name",
+                    )?,
                     segment_id: retained_hex(
                         ctx,
                         &entry.segment_id,
@@ -425,7 +448,10 @@ fn decode_container<'a>(
                         &entry.revision_id,
                         "retain Inventor registry revision GUID",
                     )?,
-                    type_name: ctx.copy_retained_text(&entry.type_name, "retain Inventor registry type name")?,
+                    type_name: ctx.copy_retained_text(
+                        &entry.type_name,
+                        "retain Inventor registry type name",
+                    )?,
                     object_count: cadmpeg_core::decode::u64_from_index(entry.objects.len()),
                     node_count: cadmpeg_core::decode::u64_from_index(entry.nodes.len()),
                 })
@@ -622,7 +648,8 @@ fn decode_container<'a>(
                 }
             },
             Err(detail) => {
-                geometry_failure = Some(ctx.copy_retained_text(detail, "retain Inventor kernel header failure")?);
+                geometry_failure =
+                    Some(ctx.copy_retained_text(detail, "retain Inventor kernel header failure")?);
                 None
             }
         },
@@ -657,7 +684,10 @@ fn decode_container<'a>(
         ActiveCarrierState::Selected(_)
     ) && geometry_failure.is_none()
     {
-        geometry_failure = Some(ctx.copy_retained_text("the active kernel carrier decoded no surfaces, points, or faces", "retain Inventor empty carrier failure")?);
+        geometry_failure = Some(ctx.copy_retained_text(
+            "the active kernel carrier decoded no surfaces, points, or faces",
+            "retain Inventor empty carrier failure",
+        )?);
     }
     let presentation_projection = crate::presentation::project_bindings(
         ctx,
@@ -724,13 +754,19 @@ fn decode_container<'a>(
         let detail = match geometry_failure {
             Some(detail) => detail,
             None => match &container.rse.active_carrier {
-                ActiveCarrierState::Selected(_) => ctx.copy_retained_text("The typed active kernel carrier has not been transferred.", "retain Inventor untransferred carrier detail")?,
+                ActiveCarrierState::Selected(_) => ctx.copy_retained_text(
+                    "The typed active kernel carrier has not been transferred.",
+                    "retain Inventor untransferred carrier detail",
+                )?,
                 ActiveCarrierState::Unavailable(detail) => retained_format(
                     ctx,
                     format_args!("The active Inventor kernel carrier is unavailable: {detail}"),
                     "retain Inventor unavailable carrier detail",
                 )?,
-                ActiveCarrierState::NotApplicable => ctx.copy_retained_text("Inventor geometry is not available for this document kind.", "retain Inventor missing geometry detail")?,
+                ActiveCarrierState::NotApplicable => ctx.copy_retained_text(
+                    "Inventor geometry is not available for this document kind.",
+                    "retain Inventor missing geometry detail",
+                )?,
             },
         };
         losses.push(admitted_loss(
@@ -1270,8 +1306,6 @@ fn charge_items(
     ctx.charge_collection_items(count, operation)
 }
 
-
-
 fn decimal_digits(value: usize) -> usize {
     value
         .checked_ilog10()
@@ -1295,8 +1329,6 @@ fn charge_retained_len(
     let bytes = cadmpeg_core::decode::u64_from_index(bytes);
     ctx.charge_retained(bytes, operation)
 }
-
-
 
 fn retained_format(
     ctx: &DecodeContext<'_>,
@@ -1644,7 +1676,10 @@ fn project_protein_state(
     state: &ProteinState<'_>,
 ) -> Result<ProteinRecord, CodecError> {
     admit_native_items(ctx, 1)?;
-    let id = ctx.copy_retained_text("inventor:protein:state#root", "retain Inventor Protein state id")?;
+    let id = ctx.copy_retained_text(
+        "inventor:protein:state#root",
+        "retain Inventor Protein state id",
+    )?;
     Ok(match state {
         ProteinState::Absent => ProteinRecord::Absent { id },
         ProteinState::Empty { stream } => ProteinRecord::Empty {
@@ -1671,7 +1706,10 @@ fn project_protein_state(
                             "retain Inventor Protein entry id",
                         )?,
                         ordinal: record_ordinal(ctx, ordinal, "Inventor Protein entry ordinal")?,
-                        name: ctx.copy_retained_text(&entry.name, "retain Inventor Protein entry name")?,
+                        name: ctx.copy_retained_text(
+                            &entry.name,
+                            "retain Inventor Protein entry name",
+                        )?,
                         compression: entry.compression,
                         crc32: entry.crc32,
                         compressed_size: entry.compressed_size,
@@ -1716,7 +1754,10 @@ fn project_protein_records(
                 format_args!("inventor:protein:asset#{}-{}", entry_digest, asset.ordinal),
                 "retain Inventor Protein asset id",
             )?;
-            let entry_name = ctx.copy_retained_text(&instance.entry_name, "retain Inventor Protein asset entry name")?;
+            let entry_name = ctx.copy_retained_text(
+                &instance.entry_name,
+                "retain Inventor Protein asset entry name",
+            )?;
             let wire = ProteinAssetRecordWire {
                 id,
                 entry_name,
@@ -1736,7 +1777,10 @@ fn project_protein_records(
                 ),
                 "retain Inventor Protein rejection id",
             )?;
-            let entry_name = ctx.copy_retained_text(&instance.entry_name, "retain Inventor Protein rejection entry name")?;
+            let entry_name = ctx.copy_retained_text(
+                &instance.entry_name,
+                "retain Inventor Protein rejection entry name",
+            )?;
             let wire = ProteinRejectionRecordWire {
                 id,
                 entry_name,
@@ -1763,10 +1807,12 @@ fn project_ufrx_state(
     admit_native_items(ctx, 1)?;
     Ok(match state {
         UfrxState::Absent => UfrxRecord::Absent {
-            id: ctx.copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
+            id: ctx
+                .copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
         },
         UfrxState::Malformed { stream, detail } => UfrxRecord::Malformed {
-            id: ctx.copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
+            id: ctx
+                .copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
             directory_id: stream.directory_id(),
             detail: ctx.copy_retained_text(detail, "retain Inventor UFRx state detail")?,
         },
@@ -1783,7 +1829,10 @@ fn project_ufrx_state(
                 "copy Inventor UFRx section versions",
             )?;
             UfrxRecord::Unsupported {
-                id: ctx.copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
+                id: ctx.copy_retained_text(
+                    "inventor:ufrx:state#root",
+                    "retain Inventor UFRx state id",
+                )?,
                 directory_id: stream.directory_id(),
                 schema: *schema,
                 section_versions: section_versions.clone(),
@@ -1832,7 +1881,10 @@ fn project_ufrx_state(
                 .transpose()?
                 .flatten();
             UfrxRecord::ParsedPrefix {
-                id: ctx.copy_retained_text("inventor:ufrx:state#root", "retain Inventor UFRx state id")?,
+                id: ctx.copy_retained_text(
+                    "inventor:ufrx:state#root",
+                    "retain Inventor UFRx state id",
+                )?,
                 directory_id: document.stream.directory_id(),
                 schema: document.schema,
                 section_versions: {
@@ -1843,14 +1895,20 @@ fn project_ufrx_state(
                     )?;
                     document.section_versions.clone()
                 },
-                original_file_name: ctx.copy_retained_text(&document.original_file_name, "retain Inventor UFRx original file name")?,
-                caption: ctx.copy_retained_text(&document.caption, "retain Inventor UFRx caption")?,
+                original_file_name: ctx.copy_retained_text(
+                    &document.original_file_name,
+                    "retain Inventor UFRx original file name",
+                )?,
+                caption: ctx
+                    .copy_retained_text(&document.caption, "retain Inventor UFRx caption")?,
                 representation,
                 model_states,
                 external_references: references,
                 embedded_references: embedded,
                 occurrences,
-                tail_len: cadmpeg_core::decode::u64_from_index(document.unparsed_tail.window().len()),
+                tail_len: cadmpeg_core::decode::u64_from_index(
+                    document.unparsed_tail.window().len(),
+                ),
                 tail_sha256: retained_native_sha256(
                     ctx,
                     document.unparsed_tail.window(),
@@ -1885,11 +1943,13 @@ fn project_ufrx_model_state(
             ctx.charge_collection_items(1, "copy Inventor UFRx state parameters")?;
             ctx.charge_entities(1, "admit Inventor UFRx state parameter")?;
             Ok(UfrxModelStateParameterRecord {
-                name: ctx.copy_retained_text(&parameter.name, "retain Inventor UFRx parameter name")?,
+                name: ctx
+                    .copy_retained_text(&parameter.name, "retain Inventor UFRx parameter name")?,
                 tag: parameter.tag,
                 kind: parameter.kind,
                 state: parameter.state,
-                value: ctx.copy_retained_text(&parameter.value, "retain Inventor UFRx parameter value")?,
+                value: ctx
+                    .copy_retained_text(&parameter.value, "retain Inventor UFRx parameter value")?,
                 trailer: parameter.trailer,
             })
         })
@@ -1953,8 +2013,14 @@ fn project_ufrx_external_reference(
         ordinal: record_ordinal(ctx, ordinal, "Inventor UFRx external ordinal")?,
         path: ctx.copy_retained_text(&reference.path, "retain Inventor UFRx external path")?,
         library_id: reference.library_id,
-        library_name: ctx.copy_retained_text(&reference.library_name, "retain Inventor UFRx external library name")?,
-        display_name: ctx.copy_retained_text(&reference.display_name, "retain Inventor UFRx external display name")?,
+        library_name: ctx.copy_retained_text(
+            &reference.library_name,
+            "retain Inventor UFRx external library name",
+        )?,
+        display_name: ctx.copy_retained_text(
+            &reference.display_name,
+            "retain Inventor UFRx external display name",
+        )?,
         state_groups: reference.state_groups.clone(),
         state: reference.state,
         document_id: Some(retained_hex(
@@ -1973,7 +2039,9 @@ fn project_ufrx_external_reference(
         flags: reference.flags,
     });
     let _scope_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index("ufrx-external-reference-".len() + decimal_digits(ordinal)),
+        cadmpeg_core::decode::u64_from_index(
+            "ufrx-external-reference-".len() + decimal_digits(ordinal),
+        ),
         "format Inventor UFRx external issue scope",
     )?;
     let scope = format!("ufrx-external-reference-{ordinal}");
@@ -1986,7 +2054,9 @@ fn project_ufrx_embedded_reference(
     reference: &crate::external_reference::InventorEmbeddedReference<'_>,
     issues: &mut Vec<StructuralIssueRecord>,
 ) -> Result<Option<EmbeddedReferenceRecord>, CodecError> {
-    if embedded_reference_issue(cadmpeg_core::decode::u64_from_index(reference.source.window().len()))
+    if embedded_reference_issue(cadmpeg_core::decode::u64_from_index(
+        reference.source.window().len(),
+    ))
     .is_some()
     {
         charge_retained_len(
@@ -2009,9 +2079,15 @@ fn project_ufrx_embedded_reference(
         value_2: reference.value_2,
         path: ctx.copy_retained_text(&reference.path, "retain Inventor UFRx embedded path")?,
         library_id: reference.library_id,
-        library_name: ctx.copy_retained_text(&reference.library_name, "retain Inventor UFRx embedded library name")?,
+        library_name: ctx.copy_retained_text(
+            &reference.library_name,
+            "retain Inventor UFRx embedded library name",
+        )?,
         state: reference.state,
-        display_name: ctx.copy_retained_text(&reference.display_name, "retain Inventor UFRx embedded display name")?,
+        display_name: ctx.copy_retained_text(
+            &reference.display_name,
+            "retain Inventor UFRx embedded display name",
+        )?,
         state_values: reference.state_values,
         record_len: cadmpeg_core::decode::u64_from_index(reference.source.window().len()),
         record_sha256: retained_sha256(
@@ -2021,7 +2097,9 @@ fn project_ufrx_embedded_reference(
         )?,
     });
     let _scope_reservation = ctx.reserve_scoped(
-        cadmpeg_core::decode::u64_from_index("ufrx-embedded-reference-".len() + decimal_digits(ordinal)),
+        cadmpeg_core::decode::u64_from_index(
+            "ufrx-embedded-reference-".len() + decimal_digits(ordinal),
+        ),
         "format Inventor UFRx embedded issue scope",
     )?;
     let scope = format!("ufrx-embedded-reference-{ordinal}");
@@ -2113,7 +2191,10 @@ fn project_ufrx_representation(
         active_representation,
         active_representation_kind,
         secondary_active_lod_state: state.secondary_active_lod_state,
-        active_model_state: ctx.copy_retained_text(&state.active_model_state, "retain Inventor UFRx active model state")?,
+        active_model_state: ctx.copy_retained_text(
+            &state.active_model_state,
+            "retain Inventor UFRx active model state",
+        )?,
         active_model_state_state: state.active_model_state_state,
     };
     admit_ufrx_record(
@@ -2171,7 +2252,10 @@ fn index_projected_colors<'b>(
     let mut output = HashMap::new();
     for (id, color) in entries {
         ctx.charge_collection_items(1, "index Inventor projected appearance colors")?;
-        output.insert(id.try_clone_for_decode(ctx, "retain Inventor projected appearance color id")?, color);
+        output.insert(
+            id.try_clone_for_decode(ctx, "retain Inventor projected appearance color id")?,
+            color,
+        );
     }
     Ok(output)
 }
@@ -2183,7 +2267,10 @@ fn index_face_colors<'b>(
     let mut output = HashMap::new();
     for (id, color) in entries {
         ctx.charge_collection_items(1, "index Inventor face colors")?;
-        output.insert(id.try_clone_for_decode(ctx, "retain Inventor face color id")?, color);
+        output.insert(
+            id.try_clone_for_decode(ctx, "retain Inventor face color id")?,
+            color,
+        );
     }
     Ok(output)
 }
@@ -2195,7 +2282,10 @@ fn index_asm_face_keys<'b>(
     let mut output = HashMap::new();
     for (id, key) in entries {
         ctx.charge_collection_items(1, "index Inventor ASM face keys")?;
-        output.insert(id.try_clone_for_decode(ctx, "retain Inventor ASM face key id")?, key);
+        output.insert(
+            id.try_clone_for_decode(ctx, "retain Inventor ASM face key id")?,
+            key,
+        );
     }
     Ok(output)
 }

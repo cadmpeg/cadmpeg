@@ -855,7 +855,12 @@ fn list_checksum_children(
     })?;
     let mut children = Vec::new();
     children.try_reserve_exact(child_count).map_err(|_| {
-        FramingError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, u64::MAX, total_bytes, "Rhino view checksum ranges"))
+        FramingError::Resource(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            u64::MAX,
+            total_bytes,
+            "Rhino view checksum ranges",
+        ))
     })?;
     offset = first_child_offset;
     for _ in 0..child_count {

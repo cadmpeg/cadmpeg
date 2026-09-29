@@ -15,10 +15,7 @@ use crate::native::{
     sole_named_property, AnnotationRuntimeType, DrawingRecord, ObjectRecord, PropertyRecord,
     SemanticAnnotationRecord,
 };
-use crate::resource::{
-    collection_vec, reserve_vec_items,
-    retained_strings,
-};
+use crate::resource::{collection_vec, reserve_vec_items, retained_strings};
 
 fn annotation_malformed(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
     crate::resource::malformed_charged(ctx, message, "fcstd annotation diagnostic")
@@ -34,7 +31,14 @@ pub(crate) fn transfer(
         if !by_owner.contains_key(property.owner.as_str()) {
             ctx.charge_collection_items(1, "fcstd annotation owner index")?;
             by_owner.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "fcstd annotation owner index"))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "fcstd annotation owner index",
+                    ),
+                )
             })?;
             by_owner.insert(&property.owner, Vec::new());
         }
@@ -57,12 +61,16 @@ pub(crate) fn transfer(
             let mut references = BTreeMap::new();
             let mut parameters = BTreeMap::new();
             for property in &owned {
-                let name = ctx.copy_retained_text(&property.name, "fcstd annotation property name")?;
+                let name =
+                    ctx.copy_retained_text(&property.name, "fcstd annotation property name")?;
                 ctx.charge_collection_items(1, "fcstd annotation property map")?;
                 if property.links().is_empty() {
                     parameters.insert(
                         name,
-                        ctx.copy_retained_text(property.xml.text(), "fcstd annotation parameter XML")?,
+                        ctx.copy_retained_text(
+                            property.xml.text(),
+                            "fcstd annotation parameter XML",
+                        )?,
                     );
                 } else {
                     let mut links =
@@ -131,7 +139,14 @@ pub(crate) fn transfer_neutral(
     let mut drawing_ids = HashMap::new();
     ctx.charge_collection_items(drawings.len() as u64, "fcstd annotation drawing index")?;
     drawing_ids.try_reserve(drawings.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, drawings.len() as u64, "fcstd annotation drawing index"))
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                drawings.len() as u64,
+                "fcstd annotation drawing index",
+            ),
+        )
     })?;
     for drawing in drawings {
         drawing_ids.insert(
@@ -158,11 +173,15 @@ pub(crate) fn transfer_neutral(
             };
             let target = match (link.document_name(), link.object()) {
                 (Some(document), Some(object)) => ReferenceTarget::External {
-                    document: ctx.copy_retained_text(document, "fcstd annotation external document")?,
+                    document: ctx
+                        .copy_retained_text(document, "fcstd annotation external document")?,
                     object: ctx.copy_retained_text(object, "fcstd annotation external object")?,
                 },
                 (None, None) => ReferenceTarget::Null,
-                (None, Some(object)) => ReferenceTarget::Local(ctx.copy_retained_text(drawing_ids.get(object).map_or(object, String::as_str), "fcstd annotation local reference")?),
+                (None, Some(object)) => ReferenceTarget::Local(ctx.copy_retained_text(
+                    drawing_ids.get(object).map_or(object, String::as_str),
+                    "fcstd annotation local reference",
+                )?),
                 _ => {
                     return Err(CodecError::malformed(
                         "semantic annotation reference has no complete target",
@@ -215,7 +234,8 @@ pub(crate) fn transfer_neutral(
             .map_err(CodecError::malformed)?,
             object: ctx.copy_retained_text(&record.object, "fcstd neutral annotation object")?,
             kind: schema.kind.clone(),
-            runtime_type: ctx.copy_retained_text(record.kind.as_str(), "fcstd annotation runtime type")?,
+            runtime_type: ctx
+                .copy_retained_text(record.kind.as_str(), "fcstd annotation runtime type")?,
             order: order as u32,
             text: retained_strings(ctx, &record.text, "fcstd annotation neutral text")?,
             references: crate::resource::named_entries_charged(

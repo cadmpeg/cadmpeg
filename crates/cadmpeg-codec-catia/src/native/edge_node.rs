@@ -342,8 +342,14 @@ pub(super) fn edge_node_wires_charged(
     let mut wires = Vec::new();
     for node in nodes {
         let vertices = [
-            ctx.copy_retained_text(joined_vertex_charged(ctx, &node, 0, &index)?, "catia_native_edge_wire_vertex_id")?,
-            ctx.copy_retained_text(joined_vertex_charged(ctx, &node, 1, &index)?, "catia_native_edge_wire_vertex_id")?,
+            ctx.copy_retained_text(
+                joined_vertex_charged(ctx, &node, 0, &index)?,
+                "catia_native_edge_wire_vertex_id",
+            )?,
+            ctx.copy_retained_text(
+                joined_vertex_charged(ctx, &node, 1, &index)?,
+                "catia_native_edge_wire_vertex_id",
+            )?,
         ];
         crate::resource::push(
             ctx,
@@ -465,7 +471,8 @@ pub(super) fn consolidated_vertex_identities(
                 )?;
             }
             if vertex.incident_edge_nodes.last() != Some(&node.id) {
-                let edge_id = ctx.copy_retained_text(&node.id, "catia_native_vertex_incident_edge_id")?;
+                let edge_id =
+                    ctx.copy_retained_text(&node.id, "catia_native_vertex_incident_edge_id")?;
                 crate::resource::push(
                     ctx,
                     &mut vertex.incident_edge_nodes,

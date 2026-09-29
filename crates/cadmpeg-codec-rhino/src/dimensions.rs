@@ -655,7 +655,10 @@ pub(crate) fn v2_effective_text(
     } else {
         &annotation.user_text
     };
-    ctx.copy_retained_text(text.trim_matches(|character: char| character.is_whitespace() || character.is_control()), "Rhino V2 effective text")
+    ctx.copy_retained_text(
+        text.trim_matches(|character: char| character.is_whitespace() || character.is_control()),
+        "Rhino V2 effective text",
+    )
 }
 
 enum LegacyDimensionFields {
@@ -1712,8 +1715,7 @@ pub(crate) fn project(
             None => Ok(()),
             Some(id) if id.is_nil() => {
                 ctx.charge_collection_items(1, "Rhino dimension reference entries")?;
-                let role =
-                    ctx.copy_retained_text(role, "Rhino dimension reference key")?;
+                let role = ctx.copy_retained_text(role, "Rhino dimension reference key")?;
                 let role = cadmpeg_core::text::NonBlankString::new(role).ok_or_else(|| {
                     cadmpeg_core::CodecError::malformed(
                         "generated dimension reference role is blank",
@@ -1763,7 +1765,9 @@ pub(crate) fn project(
             })
         })
         .transpose()?;
-    let key = cadmpeg_ir::ids::IdentityKey::try_new(ctx.copy_retained_text(key, "Rhino dimension identity key")?)
+    let key = cadmpeg_ir::ids::IdentityKey::try_new(
+        ctx.copy_retained_text(key, "Rhino dimension identity key")?,
+    )
     .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
     let annotation_id = SemanticAnnotationId::try_from(crate::wire::admitted_format(
         ctx,
@@ -1774,7 +1778,9 @@ pub(crate) fn project(
     let mut text = Vec::new();
     if !dimension.user_text.is_empty() {
         crate::wire::reserve_collection(ctx, &mut text, 1, "Rhino dimension annotation text")?;
-        text.push(ctx.copy_retained_text(&dimension.user_text, "Rhino dimension annotation text copy")?);
+        text.push(
+            ctx.copy_retained_text(&dimension.user_text, "Rhino dimension annotation text copy")?,
+        );
     }
     let annotation = SemanticAnnotation {
         id: annotation_id,
@@ -1786,9 +1792,7 @@ pub(crate) fn project(
         references,
         value: Some(value),
         format: (!dimension.rich_text.is_empty())
-            .then(|| {
-                ctx.copy_retained_text(&dimension.rich_text, "Rhino dimension format text")
-            })
+            .then(|| ctx.copy_retained_text(&dimension.rich_text, "Rhino dimension format text"))
             .transpose()?,
         position,
         parameters,

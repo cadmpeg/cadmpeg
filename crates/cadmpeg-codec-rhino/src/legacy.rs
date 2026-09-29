@@ -680,7 +680,9 @@ fn admit_v1_values<T>(
 ) -> Result<u64, CodecError> {
     let count = cadmpeg_core::decode::u64_from_index(count);
     let bytes = count
-        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()))
+        .checked_mul(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<T>(),
+        ))
         .ok_or_else(|| {
             CodecError::NotImplemented("Rhino V1 collection exceeds address space".to_string())
         })?;
@@ -697,7 +699,12 @@ fn v1_values<T>(
     let bytes = admit_v1_values::<T>(ctx, count, operation)?;
     let mut values = Vec::new();
     values.try_reserve_exact(count).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, ctx.policy().limits.max_retained_bytes, bytes, operation))
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            ctx.policy().limits.max_retained_bytes,
+            bytes,
+            operation,
+        ))
     })?;
     Ok(values)
 }
@@ -743,7 +750,12 @@ fn v1_temporary_values<T>(
     let bytes = admit_v1_temporary_items::<T>(ctx, workspace, count, operation)?;
     let mut values = Vec::new();
     values.try_reserve_exact(count).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, ctx.policy().limits.max_materialized_bytes, bytes, operation))
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            ctx.policy().limits.max_materialized_bytes,
+            bytes,
+            operation,
+        ))
     })?;
     Ok(values)
 }
@@ -2337,7 +2349,14 @@ fn append_legacy_brep(
                     "Rhino V1 pcurve knots",
                 )?;
                 let pcurve_knots = trim.pcurve.knots().try_clone().map_err(|_| {
-                    CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, ctx.policy().limits.max_retained_bytes, pcurve_knot_bytes, "Rhino V1 pcurve knots"))
+                    CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                            ctx.policy().limits.max_retained_bytes,
+                            pcurve_knot_bytes,
+                            "Rhino V1 pcurve knots",
+                        ),
+                    )
                 })?;
                 let mut pcurve_points = v1_values::<cadmpeg_ir::units::FinitePoint2>(
                     ctx,
@@ -2528,7 +2547,9 @@ fn append_legacy_brep(
     let mut coedge_positions = BTreeMap::new();
     for (index, coedge) in model.coedges.iter().enumerate() {
         ctx.charge_collection_items(1, "Rhino V1 Brep radial positions")?;
-        let id = cadmpeg_ir::ids::CoedgeId::try_from(ctx.copy_retained_text(coedge.id.as_str(), "Rhino V1 Brep radial position ID")?)
+        let id = cadmpeg_ir::ids::CoedgeId::try_from(
+            ctx.copy_retained_text(coedge.id.as_str(), "Rhino V1 Brep radial position ID")?,
+        )
         .map_err(|error| CodecError::malformed(error.to_string()))?;
         coedge_positions.insert(id, index);
     }
@@ -2937,7 +2958,12 @@ fn evaluate_nurbs(
     let _workspace = ctx.reserve_scoped(bytes, "Rhino V1 curve evaluation")?;
     let mut values = Vec::new();
     values.try_reserve_exact(count).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, ctx.policy().limits.max_materialized_bytes, bytes, "Rhino V1 curve evaluation"))
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+            ctx.policy().limits.max_materialized_bytes,
+            bytes,
+            "Rhino V1 curve evaluation",
+        ))
     })?;
     let poles = curve.pole_rows();
     for j in 0..count {

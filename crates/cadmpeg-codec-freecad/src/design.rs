@@ -45,8 +45,7 @@ use cadmpeg_ir::{
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 use crate::resource::{
-    collection_vec, insert_hash_map, reserve_vec_items, reserved_vec,
-    retained_format,
+    collection_vec, insert_hash_map, reserve_vec_items, reserved_vec, retained_format,
 };
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
@@ -142,7 +141,9 @@ pub(crate) fn transfer(
     let mut body_ids = collection_vec(ctx, ir.model.bodies.len(), "fcstd design body ids")?;
     for body in &ir.model.bodies {
         body_ids.push(
-            cadmpeg_ir::ids::BodyId::mint(ctx.copy_retained_text(body.id.as_str(), "fcstd design body id")?)
+            cadmpeg_ir::ids::BodyId::mint(
+                ctx.copy_retained_text(body.id.as_str(), "fcstd design body id")?,
+            )
             .map_err(CodecError::malformed)?,
         );
     }
@@ -198,13 +199,18 @@ pub(crate) fn transfer(
         } else if is_sketch(&object.type_name) {
             let decoded = parse_sketch(ctx, object, &owned)?;
             let sketch = decoded.sketch;
-            let sketch_id = SketchId::mint(ctx.copy_retained_text(sketch.id.as_str(), "fcstd design sketch identity")?)
+            let sketch_id = SketchId::mint(
+                ctx.copy_retained_text(sketch.id.as_str(), "fcstd design sketch identity")?,
+            )
             .map_err(CodecError::malformed)?;
             insert_hash_map(
                 ctx,
                 &mut sketch_ids,
                 object.id.as_str(),
-                SketchId::mint(ctx.copy_retained_text(sketch_id.as_str(), "fcstd design sketch index identity")?)
+                SketchId::mint(ctx.copy_retained_text(
+                    sketch_id.as_str(),
+                    "fcstd design sketch index identity",
+                )?)
                 .map_err(CodecError::malformed)?,
                 "fcstd design sketch ids",
             )?;
@@ -316,12 +322,18 @@ pub(crate) fn transfer(
                         .find_map(|name| property(&owned, name))
                         .map_or_else(
                             || {
-                                ctx.copy_retained_text(&object.id, "fcstd unresolved profile identity")
+                                ctx.copy_retained_text(
+                                    &object.id,
+                                    "fcstd unresolved profile identity",
+                                )
                                 .map(|id| ProfileRef::Planar(PlanarProfileRef::Unresolved(id)))
                             },
                             |property| {
-                                ctx.copy_retained_text(&property.id, "fcstd native profile identity")
-                                    .map(|id| ProfileRef::Planar(PlanarProfileRef::Native(id)))
+                                ctx.copy_retained_text(
+                                    &property.id,
+                                    "fcstd native profile identity",
+                                )
+                                .map(|id| ProfileRef::Planar(PlanarProfileRef::Native(id)))
                             },
                         )?
                 }
@@ -404,7 +416,10 @@ pub(crate) fn transfer(
                         "fcstd design pattern dependencies",
                     )?;
                     semantic_dependencies.push(
-                        FeatureId::mint(ctx.copy_retained_text(feature.as_str(), "fcstd design pattern dependency")?)
+                        FeatureId::mint(ctx.copy_retained_text(
+                            feature.as_str(),
+                            "fcstd design pattern dependency",
+                        )?)
                         .map_err(CodecError::malformed)?,
                     );
                 }
@@ -430,7 +445,9 @@ pub(crate) fn transfer(
             {
                 reserve_vec_items(ctx, &mut outputs, 1, "fcstd design feature outputs")?;
                 outputs.push(
-                    cadmpeg_ir::ids::BodyId::mint(ctx.copy_retained_text(body.as_str(), "fcstd design output body")?)
+                    cadmpeg_ir::ids::BodyId::mint(
+                        ctx.copy_retained_text(body.as_str(), "fcstd design output body")?,
+                    )
                     .map_err(CodecError::malformed)?,
                 );
             }
@@ -488,7 +505,10 @@ pub(crate) fn transfer(
                             "fcstd design feature dependencies",
                         )?;
                         dependencies.push(
-                            FeatureId::mint(ctx.copy_retained_text(feature.as_str(), "fcstd design feature dependency")?)
+                            FeatureId::mint(ctx.copy_retained_text(
+                                feature.as_str(),
+                                "fcstd design feature dependency",
+                            )?)
                             .map_err(CodecError::malformed)?,
                         );
                     }
@@ -524,7 +544,9 @@ pub(crate) fn transfer(
             suppressed: bool_property(&owned, "Suppressed"),
             dependencies: (dependencies).into_iter().collect(),
             source_properties: feature_state(ctx, &object.id, &owned)?,
-            source_tag: Some(ctx.copy_retained_text(&object.type_name, "fcstd feature source type")?),
+            source_tag: Some(
+                ctx.copy_retained_text(&object.type_name, "fcstd feature source type")?,
+            ),
             source_text: None,
             source_content: FeatureContent::default(),
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
@@ -555,7 +577,8 @@ pub(crate) fn transfer(
             continue;
         }
         ctx.charge_collection_items(1, "fcstd design parameter cycle objects")?;
-        cycle_affected.insert(ctx.copy_retained_text(&object.id, "fcstd design parameter cycle identity")?);
+        cycle_affected
+            .insert(ctx.copy_retained_text(&object.id, "fcstd design parameter cycle identity")?);
         if let Some(feature) = ir
             .model
             .features
@@ -611,7 +634,10 @@ fn body_definition(
             if let Some(feature) = feature_ids.get(target) {
                 reserve_vec_items(ctx, &mut children, 1, "fcstd body member features")?;
                 children.push(
-                    FeatureId::mint(ctx.copy_retained_text(feature.as_str(), "fcstd body member feature identity")?)
+                    FeatureId::mint(ctx.copy_retained_text(
+                        feature.as_str(),
+                        "fcstd body member feature identity",
+                    )?)
                     .map_err(CodecError::malformed)?,
                 );
             }
@@ -661,10 +687,15 @@ fn body_tip(
                 return Ok(BodyTipResolution::Valid(None));
             };
             match feature_ids.get(target) {
-                Some(feature) => BodyTipResolution::Valid(Some(
-                    FeatureId::mint(ctx.copy_retained_text(feature.as_str(), "fcstd body tip feature identity")?)
-                    .map_err(CodecError::malformed)?,
-                )),
+                Some(feature) => {
+                    BodyTipResolution::Valid(Some(
+                        FeatureId::mint(ctx.copy_retained_text(
+                            feature.as_str(),
+                            "fcstd body tip feature identity",
+                        )?)
+                        .map_err(CodecError::malformed)?,
+                    ))
+                }
                 None => BodyTipResolution::Invalid,
             }
         }
@@ -696,12 +727,27 @@ fn feature_ordinals<'a>(
         (&mut object_by_name, "fcstd design name index"),
     ] {
         ctx.charge_collection_items(count as u64, operation)?;
-        map.try_reserve(count)
-            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, count as u64, operation)))?;
+        map.try_reserve(count).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    ctx.policy().limits.max_collection_items,
+                    count as u64,
+                    operation,
+                ),
+            )
+        })?;
     }
     ctx.charge_collection_items(count as u64, "fcstd design feature index")?;
     object_by_feature.try_reserve(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, count as u64, "fcstd design feature index"))
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                count as u64,
+                "fcstd design feature index",
+            ),
+        )
     })?;
     let mut source_ordinals = collection_vec(ctx, count, "fcstd design source ordinals")?;
     for object in &design_objects {
@@ -801,7 +847,8 @@ fn feature_ordinals<'a>(
                 .filter(|object| !emitted.contains(object.id.as_str()))
             {
                 ctx.charge_collection_items(1, "fcstd design cycle affected objects")?;
-                cycle_affected.insert(ctx.copy_retained_text(&object.id, "fcstd design cycle object")?);
+                cycle_affected
+                    .insert(ctx.copy_retained_text(&object.id, "fcstd design cycle object")?);
             }
             design_objects
                 .iter()
@@ -818,9 +865,16 @@ fn feature_ordinals<'a>(
         ctx.charge_collection_items(1, "fcstd design emitted objects")?;
         emitted.insert(next.id.as_str());
         ctx.charge_collection_items(1, "fcstd design ordinals")?;
-        ordinals
-            .try_reserve(1)
-            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "fcstd design ordinals")))?;
+        ordinals.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    ctx.policy().limits.max_collection_items,
+                    1,
+                    "fcstd design ordinals",
+                ),
+            )
+        })?;
         ordinals.insert(next.id.as_str(), ordinal);
     }
 
@@ -1038,7 +1092,9 @@ fn append_spreadsheet(
         .map_err(CodecError::malformed)?;
         cell_ids.push(SpreadsheetCell {
             address: cell_address,
-            parameter: ParameterId::mint(ctx.copy_retained_text(id.as_str(), "fcstd spreadsheet cell parameter")?)
+            parameter: ParameterId::mint(
+                ctx.copy_retained_text(id.as_str(), "fcstd spreadsheet cell parameter")?,
+            )
             .map_err(CodecError::malformed)?,
         });
         if let Some(range) = merged_range(cell)? {
@@ -1075,7 +1131,10 @@ fn append_spreadsheet(
             dependencies: DistinctMembers::default(),
             properties: retained,
             pmi: None,
-            native_ref: Some(ctx.copy_retained_text(&property.id, "fcstd spreadsheet parameter native reference")?),
+            native_ref: Some(ctx.copy_retained_text(
+                &property.id,
+                "fcstd spreadsheet parameter native reference",
+            )?),
         });
     }
     let column_widths = spreadsheet_dimensions(
@@ -1377,7 +1436,9 @@ fn append_operation_parameters(
             )?)
             .map_err(CodecError::malformed)?,
             owner: Some(
-                FeatureId::mint(ctx.copy_retained_text(owner.as_str(), "fcstd operation parameter owner")?)
+                FeatureId::mint(
+                    ctx.copy_retained_text(owner.as_str(), "fcstd operation parameter owner")?,
+                )
                 .map_err(CodecError::malformed)?,
             ),
             ordinal: property.order as u32,
@@ -1392,7 +1453,9 @@ fn append_operation_parameters(
             dependencies: DistinctMembers::default(),
             properties: retained,
             pmi: None,
-            native_ref: Some(ctx.copy_retained_text(&property.id, "fcstd operation parameter native reference")?),
+            native_ref: Some(
+                ctx.copy_retained_text(&property.id, "fcstd operation parameter native reference")?,
+            ),
         });
     }
     Ok(())
@@ -1695,7 +1758,9 @@ fn parse_sketch(
                         "fcstd sketch geometry identity",
                     )?)
                     .map_err(CodecError::malformed)?,
-                    SketchId::mint(ctx.copy_retained_text(id.as_str(), "fcstd sketch entity parent")?)
+                    SketchId::mint(
+                        ctx.copy_retained_text(id.as_str(), "fcstd sketch entity parent")?,
+                    )
                     .map_err(CodecError::malformed)?,
                     geometry_value,
                 )
@@ -1703,7 +1768,9 @@ fn parse_sketch(
                     child.has_tag_name("Construction")
                         && child.attribute("value").is_some_and(|value| value != "0")
                 }))
-                .with_native_ref(Some(ctx.copy_retained_text(&geometry.id, "fcstd sketch geometry native reference")?)),
+                .with_native_ref(Some(
+                    ctx.copy_retained_text(&geometry.id, "fcstd sketch geometry native reference")?,
+                )),
             );
         }
     }
@@ -1794,16 +1861,24 @@ fn parse_sketch(
                         "fcstd sketch external geometry identity",
                     )?)
                     .map_err(CodecError::malformed)?,
-                    SketchId::mint(ctx.copy_retained_text(id.as_str(), "fcstd sketch entity parent")?)
+                    SketchId::mint(
+                        ctx.copy_retained_text(id.as_str(), "fcstd sketch entity parent")?,
+                    )
                     .map_err(CodecError::malformed)?,
                     geometry,
                 )
                 .with_construction(true)
-                .with_native_ref(Some(ctx.copy_retained_text(&external_geometry.id, "fcstd external geometry native reference")?))
+                .with_native_ref(Some(ctx.copy_retained_text(
+                    &external_geometry.id,
+                    "fcstd external geometry native reference",
+                )?))
                 .with_geometry_ref(
                     references
                         .map(|property| {
-                            ctx.copy_retained_text(&property.id, "fcstd external geometry reference property")
+                            ctx.copy_retained_text(
+                                &property.id,
+                                "fcstd external geometry reference property",
+                            )
                         })
                         .transpose()?,
                 )
@@ -1857,7 +1932,9 @@ fn parse_sketch(
                         "fcstd sketch external link identity",
                     )?)
                     .map_err(CodecError::malformed)?,
-                    SketchId::mint(ctx.copy_retained_text(id.as_str(), "fcstd sketch entity parent")?)
+                    SketchId::mint(
+                        ctx.copy_retained_text(id.as_str(), "fcstd sketch entity parent")?,
+                    )
                     .map_err(CodecError::malformed)?,
                     SketchGeometry::try_from(SketchGeometryDefinition::ExternalReference {
                         document: reference
@@ -1866,7 +1943,9 @@ fn parse_sketch(
                                 ctx.copy_retained_text(name, "fcstd sketch external document")
                             })
                             .transpose()?,
-                        object: cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(target_object, "fcstd sketch external object")?)
+                        object: cadmpeg_core::text::NonBlankString::new(
+                            ctx.copy_retained_text(target_object, "fcstd sketch external object")?,
+                        )
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed("object must not be empty")
                         })?,
@@ -1879,8 +1958,14 @@ fn parse_sketch(
                     .map_err(CodecError::malformed)?,
                 )
                 .with_construction(true)
-                .with_native_ref(Some(ctx.copy_retained_text(&references.id, "fcstd sketch external native reference")?))
-                .with_geometry_ref(Some(ctx.copy_retained_text(&references.id, "fcstd sketch external geometry reference")?))
+                .with_native_ref(Some(ctx.copy_retained_text(
+                    &references.id,
+                    "fcstd sketch external native reference",
+                )?))
+                .with_geometry_ref(Some(ctx.copy_retained_text(
+                    &references.id,
+                    "fcstd sketch external geometry reference",
+                )?))
                 .with_endpoint_refs(crate::resource::retained_strings(
                     ctx,
                     reference.subelements(),
@@ -1903,7 +1988,7 @@ fn parse_sketch(
                 )?)
                 .map_err(CodecError::malformed)?,
                 SketchId::mint(ctx.copy_retained_text(id.as_str(), "fcstd sketch entity parent")?)
-                .map_err(CodecError::malformed)?,
+                    .map_err(CodecError::malformed)?,
                 SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(1.0, 0.0),
@@ -1911,7 +1996,9 @@ fn parse_sketch(
                 .map_err(CodecError::malformed)?,
             )
             .with_construction(true)
-            .with_native_ref(Some(ctx.copy_retained_text(&object.id, "fcstd sketch axis native reference")?)),
+            .with_native_ref(Some(
+                ctx.copy_retained_text(&object.id, "fcstd sketch axis native reference")?,
+            )),
         );
     }
     if vertical_axis {
@@ -1927,7 +2014,7 @@ fn parse_sketch(
                 )?)
                 .map_err(CodecError::malformed)?,
                 SketchId::mint(ctx.copy_retained_text(id.as_str(), "fcstd sketch entity parent")?)
-                .map_err(CodecError::malformed)?,
+                    .map_err(CodecError::malformed)?,
                 SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(0.0, 1.0),
@@ -1935,7 +2022,9 @@ fn parse_sketch(
                 .map_err(CodecError::malformed)?,
             )
             .with_construction(true)
-            .with_native_ref(Some(ctx.copy_retained_text(&object.id, "fcstd sketch axis native reference")?)),
+            .with_native_ref(Some(
+                ctx.copy_retained_text(&object.id, "fcstd sketch axis native reference")?,
+            )),
         );
     }
     if root_point {
@@ -1951,14 +2040,16 @@ fn parse_sketch(
                 )?)
                 .map_err(CodecError::malformed)?,
                 SketchId::mint(ctx.copy_retained_text(id.as_str(), "fcstd sketch entity parent")?)
-                .map_err(CodecError::malformed)?,
+                    .map_err(CodecError::malformed)?,
                 SketchGeometry::try_from(SketchGeometryDefinition::Point {
                     position: Point2::new(0.0, 0.0),
                 })
                 .map_err(CodecError::malformed)?,
             )
             .with_construction(true)
-            .with_native_ref(Some(ctx.copy_retained_text(&object.id, "fcstd sketch axis native reference")?)),
+            .with_native_ref(Some(
+                ctx.copy_retained_text(&object.id, "fcstd sketch axis native reference")?,
+            )),
         );
     }
     let (constraints, parameters) = parse_constraints(ctx, object, properties, &id, &entities)?;
@@ -2482,7 +2573,10 @@ fn parse_constraints(
                 resolved.insert(
                     0,
                     SketchLocus::Entity(
-                        SketchEntityId::mint(ctx.copy_retained_text(root.id().as_str(), "fcstd constraint root entity")?)
+                        SketchEntityId::mint(ctx.copy_retained_text(
+                            root.id().as_str(),
+                            "fcstd constraint root entity",
+                        )?)
                         .map_err(CodecError::malformed)?,
                     ),
                 );
@@ -2525,7 +2619,10 @@ fn parse_constraints(
                     ctx.charge_collection_items(1, "fcstd constraint parameter properties")?;
                     parameter_properties.insert(
                         cadmpeg_core::nonblank_literal!("is_driving"),
-                        ctx.copy_retained_text(node.attribute("IsDriving").unwrap_or("1"), "fcstd constraint driving flag")?,
+                        ctx.copy_retained_text(
+                            node.attribute("IsDriving").unwrap_or("1"),
+                            "fcstd constraint driving flag",
+                        )?,
                     );
                     if let Some(name) = node.attribute("Name").filter(|name| !name.is_empty()) {
                         ctx.charge_collection_items(1, "fcstd constraint parameter properties")?;
@@ -2538,16 +2635,25 @@ fn parse_constraints(
                         ctx.charge_collection_items(1, "fcstd constraint parameter properties")?;
                         parameter_properties.insert(
                             cadmpeg_core::nonblank_literal!("expression_native_ref"),
-                            ctx.copy_retained_text(native_ref, "fcstd constraint expression reference")?,
+                            ctx.copy_retained_text(
+                                native_ref,
+                                "fcstd constraint expression reference",
+                            )?,
                         );
                     }
                     reserve_vec_items(ctx, &mut parameters, 1, "fcstd constraint parameters")?;
                     let expression = match expression {
                         Some((_, expression)) => expression,
-                        None => ctx.copy_retained_text(node.attribute("Value").unwrap_or_default(), "fcstd constraint expression")?,
+                        None => ctx.copy_retained_text(
+                            node.attribute("Value").unwrap_or_default(),
+                            "fcstd constraint expression",
+                        )?,
                     };
                     parameters.push(DesignParameter {
-                        id: ParameterId::mint(ctx.copy_retained_text(id.as_str(), "fcstd constraint parameter identity")?)
+                        id: ParameterId::mint(ctx.copy_retained_text(
+                            id.as_str(),
+                            "fcstd constraint parameter identity",
+                        )?)
                         .map_err(CodecError::malformed)?,
                         owner: Some(feature_id(ctx, object)?),
                         ordinal: index as u32,
@@ -2562,7 +2668,10 @@ fn parse_constraints(
                         dependencies: DistinctMembers::default(),
                         properties: parameter_properties,
                         pmi: None,
-                        native_ref: Some(ctx.copy_retained_text(&property.id, "fcstd constraint parameter native reference")?),
+                        native_ref: Some(ctx.copy_retained_text(
+                            &property.id,
+                            "fcstd constraint parameter native reference",
+                        )?),
                     });
                     Ok::<_, CodecError>(id)
                 })
@@ -2736,7 +2845,9 @@ fn parse_constraints(
                 "fcstd sketch constraint identity",
             )?)
             .map_err(CodecError::malformed)?,
-            sketch: SketchId::mint(ctx.copy_retained_text(sketch.as_str(), "fcstd constraint sketch identity")?)
+            sketch: SketchId::mint(
+                ctx.copy_retained_text(sketch.as_str(), "fcstd constraint sketch identity")?,
+            )
             .map_err(CodecError::malformed)?,
             definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -2751,7 +2862,9 @@ fn parse_constraints(
             label_distance: label_attr(node, "LabelDistance"),
             label_position: label_attr(node, "LabelPosition"),
             metadata: nonempty_attr(ctx, node, "MetaData")?,
-            native_ref: Some(ctx.copy_retained_text(&property.id, "fcstd constraint native reference")?),
+            native_ref: Some(
+                ctx.copy_retained_text(&property.id, "fcstd constraint native reference")?,
+            ),
         });
     }
     Ok((constraints, parameters))
@@ -2804,7 +2917,9 @@ fn midpoint_constraint(
         }
         return Ok(Some(SketchConstraintDefinitionInput::Midpoint {
             point,
-            entity: cadmpeg_ir::sketches::SketchEntityId::mint(ctx.copy_retained_text(bounded.id().as_str(), "fcstd midpoint line identity")?)
+            entity: cadmpeg_ir::sketches::SketchEntityId::mint(
+                ctx.copy_retained_text(bounded.id().as_str(), "fcstd midpoint line identity")?,
+            )
             .map_err(CodecError::malformed)?,
         }));
     }
@@ -2902,13 +3017,20 @@ fn bind_parameter_dependencies(
             names.push(ctx.copy_retained_text(source_name, "fcstd parameter source name")?);
         }
         candidates.push((
-            ParameterId::mint(ctx.copy_retained_text(parameter.id.as_str(), "fcstd parameter candidate identity")?)
+            ParameterId::mint(
+                ctx.copy_retained_text(
+                    parameter.id.as_str(),
+                    "fcstd parameter candidate identity",
+                )?,
+            )
             .map_err(CodecError::malformed)?,
             parameter
                 .owner
                 .as_ref()
                 .map(|owner| {
-                    FeatureId::mint(ctx.copy_retained_text(owner.as_str(), "fcstd parameter candidate owner")?)
+                    FeatureId::mint(
+                        ctx.copy_retained_text(owner.as_str(), "fcstd parameter candidate owner")?,
+                    )
                     .map_err(CodecError::malformed)
                 })
                 .transpose()?,
@@ -2921,20 +3043,31 @@ fn bind_parameter_dependencies(
         let Some(owner) = owner else { continue };
         for name in names {
             let key = (
-                FeatureId::mint(ctx.copy_retained_text(owner.as_str(), "fcstd local candidate owner")?)
+                FeatureId::mint(
+                    ctx.copy_retained_text(owner.as_str(), "fcstd local candidate owner")?,
+                )
                 .map_err(CodecError::malformed)?,
                 ctx.copy_retained_text(name, "fcstd local candidate name")?,
             );
             if !local_candidates.contains_key(&key) {
                 ctx.charge_collection_items(1, "fcstd local candidate keys")?;
                 local_candidates.try_reserve(1).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "fcstd local candidate keys"))
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                            ctx.policy().limits.max_collection_items,
+                            1,
+                            "fcstd local candidate keys",
+                        ),
+                    )
                 })?;
             }
             let bucket = local_candidates.entry(key).or_default();
             reserve_vec_items(ctx, bucket, 1, "fcstd local candidate identities")?;
             bucket.push(
-                ParameterId::mint(ctx.copy_retained_text(id.as_str(), "fcstd local candidate identity")?)
+                ParameterId::mint(
+                    ctx.copy_retained_text(id.as_str(), "fcstd local candidate identity")?,
+                )
                 .map_err(CodecError::malformed)?,
             );
             if let Some(object) = object_names.get(owner) {
@@ -2946,13 +3079,22 @@ fn bind_parameter_dependencies(
                 if !qualified_candidates.contains_key(&key) {
                     ctx.charge_collection_items(1, "fcstd qualified candidate keys")?;
                     qualified_candidates.try_reserve(1).map_err(|_| {
-                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "fcstd qualified candidate keys"))
+                        cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                                ctx.policy().limits.max_collection_items,
+                                1,
+                                "fcstd qualified candidate keys",
+                            ),
+                        )
                     })?;
                 }
                 let bucket = qualified_candidates.entry(key).or_default();
                 reserve_vec_items(ctx, bucket, 1, "fcstd qualified candidate identities")?;
                 bucket.push(
-                    ParameterId::mint(ctx.copy_retained_text(id.as_str(), "fcstd qualified candidate identity")?)
+                    ParameterId::mint(
+                        ctx.copy_retained_text(id.as_str(), "fcstd qualified candidate identity")?,
+                    )
                     .map_err(CodecError::malformed)?,
                 );
             }
@@ -2993,7 +3135,9 @@ fn bind_parameter_dependencies(
                 Some(qualified)
             } else if let Some(owner) = parameter.owner.as_ref() {
                 local.get(&(
-                    FeatureId::mint(ctx.copy_retained_text(owner.as_str(), "fcstd dependency lookup owner")?)
+                    FeatureId::mint(
+                        ctx.copy_retained_text(owner.as_str(), "fcstd dependency lookup owner")?,
+                    )
                     .map_err(CodecError::malformed)?,
                     ctx.copy_retained_text(identifier, "fcstd dependency lookup name")?,
                 ))
@@ -3004,7 +3148,10 @@ fn bind_parameter_dependencies(
                 if !dependencies.contains(dependency) {
                     ctx.charge_collection_items(1, "fcstd parameter dependencies")?;
                     dependencies.insert(
-                        ParameterId::mint(ctx.copy_retained_text(dependency.as_str(), "fcstd parameter dependency identity")?)
+                        ParameterId::mint(ctx.copy_retained_text(
+                            dependency.as_str(),
+                            "fcstd parameter dependency identity",
+                        )?)
                         .map_err(CodecError::malformed)?,
                     );
                 }
@@ -3036,15 +3183,24 @@ fn bind_parameter_dependencies(
             .owner
             .as_ref()
             .map(|owner| {
-                FeatureId::mint(ctx.copy_retained_text(owner.as_str(), "fcstd ordinal owner identity")?)
+                FeatureId::mint(
+                    ctx.copy_retained_text(owner.as_str(), "fcstd ordinal owner identity")?,
+                )
                 .map_err(CodecError::malformed)
             })
             .transpose()?;
         if !owner_ordinals.contains_key(&owner) {
             ctx.charge_collection_items(1, "fcstd ordinal owner groups")?;
-            owner_ordinals
-                .try_reserve(1)
-                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "fcstd ordinal owner groups")))?;
+            owner_ordinals.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "fcstd ordinal owner groups",
+                    ),
+                )
+            })?;
         }
         let ordinals = owner_ordinals.entry(owner).or_default();
         reserve_vec_items(ctx, ordinals, 1, "fcstd owner ordinals")?;
@@ -3073,14 +3229,21 @@ fn bind_parameter_dependencies(
             .as_ref()
             .map(|owner| {
                 FeatureId::mint(ctx.copy_retained_text(owner.as_str(), "fcstd next ordinal owner")?)
-                .map_err(CodecError::malformed)
+                    .map_err(CodecError::malformed)
             })
             .transpose()?;
         if !next_ordinal.contains_key(&owner) {
             ctx.charge_collection_items(1, "fcstd next ordinal owners")?;
-            next_ordinal
-                .try_reserve(1)
-                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "fcstd next ordinal owners")))?;
+            next_ordinal.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "fcstd next ordinal owners",
+                    ),
+                )
+            })?;
         }
         let index = next_ordinal.entry(owner).or_default();
         parameter.ordinal = owner_ordinals[&parameter.owner][*index];
@@ -3098,7 +3261,12 @@ fn order_parameters_by_dependencies(
         if !known.contains(&parameter.id) {
             ctx.charge_collection_items(1, "fcstd known parameter identities")?;
             known.insert(
-                ParameterId::mint(ctx.copy_retained_text(parameter.id.as_str(), "fcstd known parameter identity")?)
+                ParameterId::mint(
+                    ctx.copy_retained_text(
+                        parameter.id.as_str(),
+                        "fcstd known parameter identity",
+                    )?,
+                )
                 .map_err(CodecError::malformed)?,
             );
         }
@@ -3124,7 +3292,10 @@ fn order_parameters_by_dependencies(
                 if !cycle_features.contains(owner) {
                     ctx.charge_collection_items(1, "fcstd parameter cycle owners")?;
                     cycle_features.insert(
-                        FeatureId::mint(ctx.copy_retained_text(owner.as_str(), "fcstd parameter cycle owner identity")?)
+                        FeatureId::mint(ctx.copy_retained_text(
+                            owner.as_str(),
+                            "fcstd parameter cycle owner identity",
+                        )?)
                         .map_err(CodecError::malformed)?,
                     );
                 }
@@ -3141,7 +3312,9 @@ fn order_parameters_by_dependencies(
         let parameter = remaining.remove(index);
         ctx.charge_collection_items(1, "fcstd emitted parameter identities")?;
         emitted.insert(
-            ParameterId::mint(ctx.copy_retained_text(parameter.id.as_str(), "fcstd emitted parameter identity")?)
+            ParameterId::mint(
+                ctx.copy_retained_text(parameter.id.as_str(), "fcstd emitted parameter identity")?,
+            )
             .map_err(CodecError::malformed)?,
         );
         reserve_vec_items(ctx, parameters, 1, "fcstd reordered parameters")?;
@@ -3187,14 +3360,18 @@ fn neutral_constraint(
         };
         Ok(Some((first, second)))
     };
-    let parameter = || {
-        parameter
-            .map(|id| {
-                ParameterId::mint(ctx.copy_retained_text(id.as_str(), "fcstd constraint parameter identity copy")?)
-                .map_err(CodecError::malformed)
-            })
-            .transpose()
-    };
+    let parameter =
+        || {
+            parameter
+                .map(|id| {
+                    ParameterId::mint(ctx.copy_retained_text(
+                        id.as_str(),
+                        "fcstd constraint parameter identity copy",
+                    )?)
+                    .map_err(CodecError::malformed)
+                })
+                .transpose()
+        };
     Ok(Some(match kind {
         0 => SketchConstraintDefinitionInput::Disabled {},
         1 => SketchConstraintDefinitionInput::CoincidentLoci {
@@ -3625,8 +3802,8 @@ fn resolve_operand(
             .find(|candidate| candidate.id().as_str().ends_with(suffix))
             .map(|candidate| {
                 ctx.copy_retained_text(candidate.id().as_str(), "fcstd resolved operand identity")
-                .and_then(|id| SketchEntityId::mint(id).map_err(CodecError::malformed))
-                .map(SketchLocus::Entity)
+                    .and_then(|id| SketchEntityId::mint(id).map_err(CodecError::malformed))
+                    .map(SketchLocus::Entity)
             })
             .transpose()
     };
@@ -3671,7 +3848,9 @@ fn sketch_locus(
     if !matches!(position, 0..=3) {
         return Ok(None);
     }
-    let id = SketchEntityId::mint(ctx.copy_retained_text(entity.id().as_str(), "fcstd resolved operand identity")?)
+    let id = SketchEntityId::mint(
+        ctx.copy_retained_text(entity.id().as_str(), "fcstd resolved operand identity")?,
+    )
     .map_err(CodecError::malformed)?;
     if matches!(
         *entity.geometry.definition(),
@@ -3701,7 +3880,9 @@ fn copy_constraint_entity(
     ctx: &DecodeContext<'_>,
     entity: &SketchEntityId,
 ) -> Result<SketchEntityId, CodecError> {
-    SketchEntityId::mint(ctx.copy_retained_text(entity.as_str(), "fcstd constraint entity identity")?)
+    SketchEntityId::mint(
+        ctx.copy_retained_text(entity.as_str(), "fcstd constraint entity identity")?,
+    )
     .map_err(CodecError::malformed)
 }
 
@@ -3767,7 +3948,9 @@ fn sketch_geometry(
     }
     let number = |name: &str| attributes.get(name).and_then(|value| value.parse().ok());
     let native = || -> Result<SketchGeometry, CodecError> {
-        let native_kind = cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(kind, "fcstd native sketch geometry kind")?)
+        let native_kind = cadmpeg_core::text::NonBlankString::new(
+            ctx.copy_retained_text(kind, "fcstd native sketch geometry kind")?,
+        )
         .ok_or_else(|| CodecError::malformed("native_kind must not be empty"))?;
         Ok(SketchGeometry::native(native_kind))
     };
@@ -4013,11 +4196,23 @@ fn build_profiles(
         ctx.charge_work(1, "FCStd profile chain construction")?;
         ctx.charge_collection_items(1, "FCStd profile uses")?;
         let mut chain = VecDeque::new();
-        chain
-            .try_reserve(1)
-            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd profile uses")))?;
+        chain.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    ctx.policy().limits.max_collection_items,
+                    1,
+                    "FCStd profile uses",
+                ),
+            )
+        })?;
         chain.push_back(SketchEntityUse {
-            entity: SketchEntityId::mint(ctx.copy_retained_text(entities[first].id().as_str(), "FCStd profile use identity")?)
+            entity: SketchEntityId::mint(
+                ctx.copy_retained_text(
+                    entities[first].id().as_str(),
+                    "FCStd profile use identity",
+                )?,
+            )
             .map_err(CodecError::malformed)?,
             reversed: false,
         });
@@ -4065,11 +4260,21 @@ fn build_profiles(
             };
             unused.remove(&candidate.entity);
             ctx.charge_collection_items(1, "FCStd profile uses")?;
-            chain
-                .try_reserve(1)
-                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd profile uses")))?;
+            chain.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "FCStd profile uses",
+                    ),
+                )
+            })?;
             chain.push_back(SketchEntityUse {
-                entity: SketchEntityId::mint(ctx.copy_retained_text(entities[candidate.entity].id().as_str(), "FCStd profile use identity")?)
+                entity: SketchEntityId::mint(ctx.copy_retained_text(
+                    entities[candidate.entity].id().as_str(),
+                    "FCStd profile use identity",
+                )?)
                 .map_err(CodecError::malformed)?,
                 reversed,
             });
@@ -4101,11 +4306,21 @@ fn build_profiles(
             };
             unused.remove(&candidate.entity);
             ctx.charge_collection_items(1, "FCStd profile uses")?;
-            chain
-                .try_reserve(1)
-                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd profile uses")))?;
+            chain.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "FCStd profile uses",
+                    ),
+                )
+            })?;
             chain.push_front(SketchEntityUse {
-                entity: SketchEntityId::mint(ctx.copy_retained_text(entities[candidate.entity].id().as_str(), "FCStd profile use identity")?)
+                entity: SketchEntityId::mint(ctx.copy_retained_text(
+                    entities[candidate.entity].id().as_str(),
+                    "FCStd profile use identity",
+                )?)
                 .map_err(CodecError::malformed)?,
                 reversed,
             });
@@ -4374,10 +4589,14 @@ fn profile_ref(
     };
     Ok(ProfileRef::Planar(match sketches.get(target) {
         Some(sketch) => PlanarProfileRef::Sketch(
-            cadmpeg_ir::sketches::SketchId::mint(ctx.copy_retained_text(sketch.as_str(), "fcstd sketch profile reference")?)
+            cadmpeg_ir::sketches::SketchId::mint(
+                ctx.copy_retained_text(sketch.as_str(), "fcstd sketch profile reference")?,
+            )
             .map_err(CodecError::malformed)?,
         ),
-        None => PlanarProfileRef::Native(ctx.copy_retained_text(&property.id, "fcstd native profile reference")?),
+        None => PlanarProfileRef::Native(
+            ctx.copy_retained_text(&property.id, "fcstd native profile reference")?,
+        ),
     }))
 }
 
@@ -4496,7 +4715,9 @@ fn revolution_definition(
                 };
                 RevolveExtent::OneSided {
                     termination: AngularTermination::ToFace {
-                        face: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(&face.id, "fcstd revolution terminal face")?),
+                        face: cadmpeg_ir::features::FaceSelection::Native(
+                            ctx.copy_retained_text(&face.id, "fcstd revolution terminal face")?,
+                        ),
                         offset: None,
                     },
                 }
@@ -4545,7 +4766,10 @@ fn revolution_definition(
                 if singular_reference_link(property).is_none() {
                     return Ok(None);
                 }
-                Some(PathRef::Native(ctx.copy_retained_text(&property.id, "fcstd revolution axis reference")?))
+                Some(PathRef::Native(ctx.copy_retained_text(
+                    &property.id,
+                    "fcstd revolution axis reference",
+                )?))
             } else {
                 None
             }
@@ -4742,7 +4966,9 @@ fn part_construction_geometry_definition(
         };
         return Ok(Some(FeatureDefinition::Operation(
             FeatureOperation::FaceFromShapes {
-                sources: BodySelection::Native(ctx.copy_retained_text(&sources.id, "fcstd face source selection")?),
+                sources: BodySelection::Native(
+                    ctx.copy_retained_text(&sources.id, "fcstd face source selection")?,
+                ),
                 face_maker,
             },
         )));
@@ -5060,44 +5286,48 @@ fn extrusion_shape(
         let raw_direction = vector_property(properties, "Dir");
         let direction_magnitude = raw_direction.map(|direction| direction.get().norm());
         let direction_mode = required!(enumeration_selector(properties, "DirMode", 0));
-        let (mut direction, direction_source) = match direction_mode {
-            0 => (
-                required!(cadmpeg_ir::units::UnitVector3::normalized(
-                    required!(raw_direction).get()
-                )),
-                ExtrusionDirectionSource::Custom {},
-            ),
-            1 => {
-                let reference = required!(property(properties, "DirLink"));
-                if reference.links().len() != 1 {
-                    return Ok(None);
-                }
-                (
+        let (mut direction, direction_source) =
+            match direction_mode {
+                0 => (
                     required!(cadmpeg_ir::units::UnitVector3::normalized(
                         required!(raw_direction).get()
                     )),
-                    ExtrusionDirectionSource::Edge {
-                        reference: PathRef::Native(ctx.copy_retained_text(&reference.id, "fcstd extrusion direction link")?),
-                    },
-                )
-            }
-            2 => {
-                let normal = required!(match &profile {
-                    ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)) => sketches
-                        .iter()
-                        .find(|sketch| sketch.id == *sketch_id)
-                        .and_then(Sketch::resolved_placement)
-                        .map(|(_, normal, _)| normal.get())
-                        .or(profile_normal),
-                    _ => profile_normal,
-                });
-                (
-                    required!(cadmpeg_ir::units::UnitVector3::normalized(normal)),
-                    ExtrusionDirectionSource::ProfileNormal {},
-                )
-            }
-            _ => return Ok(None),
-        };
+                    ExtrusionDirectionSource::Custom {},
+                ),
+                1 => {
+                    let reference = required!(property(properties, "DirLink"));
+                    if reference.links().len() != 1 {
+                        return Ok(None);
+                    }
+                    (
+                        required!(cadmpeg_ir::units::UnitVector3::normalized(
+                            required!(raw_direction).get()
+                        )),
+                        ExtrusionDirectionSource::Edge {
+                            reference: PathRef::Native(ctx.copy_retained_text(
+                                &reference.id,
+                                "fcstd extrusion direction link",
+                            )?),
+                        },
+                    )
+                }
+                2 => {
+                    let normal = required!(match &profile {
+                        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch_id)) => sketches
+                            .iter()
+                            .find(|sketch| sketch.id == *sketch_id)
+                            .and_then(Sketch::resolved_placement)
+                            .map(|(_, normal, _)| normal.get())
+                            .or(profile_normal),
+                        _ => profile_normal,
+                    });
+                    (
+                        required!(cadmpeg_ir::units::UnitVector3::normalized(normal)),
+                        ExtrusionDirectionSource::ProfileNormal {},
+                    )
+                }
+                _ => return Ok(None),
+            };
         let signed_length = |name| match scalar_named(properties, name) {
             Some(value) => Some(value),
             None => Some(FiniteReal::ZERO),
@@ -5265,11 +5495,17 @@ fn extrusion_shape(
             1 => Some(LinearTermination::ToLast {}),
             2 => Some(LinearTermination::ToFirst {}),
             3 => Some(LinearTermination::ToFace {
-                face: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(&required!(singular_operand(properties, &face_name)).id, "fcstd extrusion face termination")?),
+                face: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(
+                    &required!(singular_operand(properties, &face_name)).id,
+                    "fcstd extrusion face termination",
+                )?),
                 offset,
             }),
             5 => Some(LinearTermination::ToShape {
-                target: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(&required!(singular_operand(properties, &shape_name)).id, "fcstd extrusion shape termination")?),
+                target: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(
+                    &required!(singular_operand(properties, &shape_name)).id,
+                    "fcstd extrusion shape termination",
+                )?),
             }),
             _ => None,
         })
@@ -5341,7 +5577,9 @@ fn extrusion_shape(
                 )
             )),
             source: Some(ExtrusionDirectionSource::Edge {
-                reference: PathRef::Native(ctx.copy_retained_text(&reference_axis.id, "fcstd extrusion reference axis")?),
+                reference: PathRef::Native(
+                    ctx.copy_retained_text(&reference_axis.id, "fcstd extrusion reference axis")?,
+                ),
             }),
         }
     } else {
@@ -5417,7 +5655,9 @@ fn dress_up_edge_selection(
         return Ok(Some(EdgeSelection::All));
     }
     Ok(Some(match property(properties, "Base") {
-        Some(property) => EdgeSelection::Native(ctx.copy_retained_text(&property.id, "fcstd dress-up edge selection")?),
+        Some(property) => EdgeSelection::Native(
+            ctx.copy_retained_text(&property.id, "fcstd dress-up edge selection")?,
+        ),
         None => EdgeSelection::Unresolved,
     }))
 }
@@ -5454,7 +5694,9 @@ fn scale_definition(
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Scale {
-            bodies: BodySelection::Native(ctx.copy_retained_text(&base.id, "fcstd scale base selection")?),
+            bodies: BodySelection::Native(
+                ctx.copy_retained_text(&base.id, "fcstd scale base selection")?,
+            ),
             center: Some(ScaleCenter::ModelOrigin),
             factors,
         },
@@ -5660,7 +5902,9 @@ fn thickness_definition(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Shell {
             bodies: None,
-            removed_faces: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(&selection.id, "fcstd thickness faces identity")?),
+            removed_faces: cadmpeg_ir::features::FaceSelection::Native(
+                ctx.copy_retained_text(&selection.id, "fcstd thickness faces identity")?,
+            ),
             thickness: Some(thickness),
             outward: Some(if kind == "Part::Thickness" {
                 outward
@@ -5701,7 +5945,9 @@ fn offset_shape_definition(
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::OffsetShape {
-            source: BodySelection::Native(ctx.copy_retained_text(&source.id, "fcstd offset source identity")?),
+            source: BodySelection::Native(
+                ctx.copy_retained_text(&source.id, "fcstd offset source identity")?,
+            ),
             distance,
             mode,
             join,
@@ -5730,7 +5976,9 @@ fn derived_shape_definition(
             }
             Ok(Some(FeatureDefinition::Operation(
                 FeatureOperation::Compound {
-                    members: BodySelection::Native(ctx.copy_retained_text(&links.id, "fcstd compound members identity")?),
+                    members: BodySelection::Native(
+                        ctx.copy_retained_text(&links.id, "fcstd compound members identity")?,
+                    ),
                 },
             )))
         }
@@ -5741,7 +5989,9 @@ fn derived_shape_definition(
             if source.links().len() != 1 {
                 return Ok(None);
             }
-            let source = BodySelection::Native(ctx.copy_retained_text(&source.id, "fcstd derived source identity")?);
+            let source = BodySelection::Native(
+                ctx.copy_retained_text(&source.id, "fcstd derived source identity")?,
+            );
             Ok(Some(if kind == "Part::Refine" {
                 FeatureDefinition::Operation(FeatureOperation::RefineShape { source })
             } else {
@@ -5779,8 +6029,12 @@ fn ruled_surface_definition(
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::RuledBetweenCurves {
-            first: PathRef::Native(ctx.copy_retained_text(&first.id, "fcstd ruled first curve identity")?),
-            second: PathRef::Native(ctx.copy_retained_text(&second.id, "fcstd ruled second curve identity")?),
+            first: PathRef::Native(
+                ctx.copy_retained_text(&first.id, "fcstd ruled first curve identity")?,
+            ),
+            second: PathRef::Native(
+                ctx.copy_retained_text(&second.id, "fcstd ruled second curve identity")?,
+            ),
             orientation,
         },
     )))
@@ -5798,8 +6052,10 @@ fn section_shape_definition(
     else {
         return Ok(None);
     };
-    let base = BodySelection::Native(ctx.copy_retained_text(&base.id, "fcstd section base identity")?);
-    let tool = BodySelection::Native(ctx.copy_retained_text(&tool.id, "fcstd section tool identity")?);
+    let base =
+        BodySelection::Native(ctx.copy_retained_text(&base.id, "fcstd section base identity")?);
+    let tool =
+        BodySelection::Native(ctx.copy_retained_text(&tool.id, "fcstd section tool identity")?);
     Ok(cadmpeg_ir::features::SectionOperands::new(base, tool)
         .ok()
         .map(|operands| {
@@ -5842,7 +6098,9 @@ fn mirror_shape_definition(
         .transpose()?;
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::MirrorShape {
-            source: BodySelection::Native(ctx.copy_retained_text(&source.id, "fcstd mirror source identity")?),
+            source: BodySelection::Native(
+                ctx.copy_retained_text(&source.id, "fcstd mirror source identity")?,
+            ),
             plane_origin: origin.as_point(),
             plane_normal,
             plane_reference,
@@ -5900,8 +6158,12 @@ fn project_on_surface_definition(
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::ProjectOnSurface {
-            sources: PathRef::Native(ctx.copy_retained_text(&sources.id, "fcstd projection sources identity")?),
-            support_face: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(&support.id, "fcstd projection support identity")?),
+            sources: PathRef::Native(
+                ctx.copy_retained_text(&sources.id, "fcstd projection sources identity")?,
+            ),
+            support_face: cadmpeg_ir::features::FaceSelection::Native(
+                ctx.copy_retained_text(&support.id, "fcstd projection support identity")?,
+            ),
             direction,
             mode,
             height,
@@ -5946,9 +6208,16 @@ fn draft_definition(
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Draft {
-            faces: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(&faces.id, "fcstd draft faces identity")?),
+            faces: cadmpeg_ir::features::FaceSelection::Native(
+                ctx.copy_retained_text(&faces.id, "fcstd draft faces identity")?,
+            ),
             anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
-                plane: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(&neutral_plane.id, "fcstd draft neutral plane identity")?),
+                plane: cadmpeg_ir::features::FaceSelection::Native(
+                    ctx.copy_retained_text(
+                        &neutral_plane.id,
+                        "fcstd draft neutral plane identity",
+                    )?,
+                ),
                 pull: pull_direction.map(|direction| cadmpeg_ir::features::DraftPull {
                     direction: cadmpeg_ir::features::FeatureDirection3::from(direction),
                     plane: None,
@@ -6173,7 +6442,9 @@ fn native_parameters(
         }) else {
             continue;
         };
-        let Some(name) = NonBlankString::new(ctx.copy_retained_text(&property.name, "fcstd native parameter name")?) else {
+        let Some(name) = NonBlankString::new(
+            ctx.copy_retained_text(&property.name, "fcstd native parameter name")?,
+        ) else {
             continue;
         };
         let value = value?;
@@ -6191,7 +6462,9 @@ fn native_definition(
     properties: &[&PropertyRecord],
 ) -> Result<FeatureDefinition, CodecError> {
     Ok(FeatureDefinition::Operation(FeatureOperation::Native {
-        kind: ctx.copy_retained_text(kind, "fcstd native feature kind")?.into(),
+        kind: ctx
+            .copy_retained_text(kind, "fcstd native feature kind")?
+            .into(),
         parameters: native_parameters(ctx, properties)?,
     }))
 }
@@ -6359,8 +6632,12 @@ fn boolean_definition(
                 return Ok(None);
             };
             (
-                BodySelection::Native(ctx.copy_retained_text(&base.id, "fcstd boolean base feature identity")?),
-                BodySelection::Native(ctx.copy_retained_text(&group.id, "fcstd boolean group identity")?),
+                BodySelection::Native(
+                    ctx.copy_retained_text(&base.id, "fcstd boolean base feature identity")?,
+                ),
+                BodySelection::Native(
+                    ctx.copy_retained_text(&group.id, "fcstd boolean group identity")?,
+                ),
             )
         } else {
             let last = group.links().len() - 1;
@@ -6437,10 +6714,14 @@ fn loft_definition(
     for object in linked_objects() {
         let profile = match sketches.get(object) {
             Some(sketch) => PlanarProfileRef::Sketch(
-                SketchId::mint(ctx.copy_retained_text(sketch.as_str(), "fcstd loft sketch identity")?)
+                SketchId::mint(
+                    ctx.copy_retained_text(sketch.as_str(), "fcstd loft sketch identity")?,
+                )
                 .map_err(CodecError::malformed)?,
             ),
-            None => PlanarProfileRef::Native(ctx.copy_retained_text(object, "fcstd loft native profile identity")?),
+            None => PlanarProfileRef::Native(
+                ctx.copy_retained_text(object, "fcstd loft native profile identity")?,
+            ),
         };
         profiles.push(ProfileRef::Planar(profile));
     }
@@ -6525,10 +6806,14 @@ fn sweep_definition(
     for object in linked_objects() {
         let profile = match sketches.get(object) {
             Some(sketch) => PlanarProfileRef::Sketch(
-                SketchId::mint(ctx.copy_retained_text(sketch.as_str(), "fcstd sweep sketch identity")?)
+                SketchId::mint(
+                    ctx.copy_retained_text(sketch.as_str(), "fcstd sweep sketch identity")?,
+                )
                 .map_err(CodecError::malformed)?,
             ),
-            None => PlanarProfileRef::Native(ctx.copy_retained_text(object, "fcstd sweep native profile identity")?),
+            None => PlanarProfileRef::Native(
+                ctx.copy_retained_text(object, "fcstd sweep native profile identity")?,
+            ),
         };
         profiles.push(ProfileRef::Planar(profile));
     }
@@ -6605,7 +6890,10 @@ fn sweep_definition(
                     return Ok(None);
                 };
                 SweepOrientation::Auxiliary {
-                    path: PathRef::Native(ctx.copy_retained_text(&auxiliary.id, "fcstd sweep auxiliary spine identity")?),
+                    path: PathRef::Native(ctx.copy_retained_text(
+                        &auxiliary.id,
+                        "fcstd sweep auxiliary spine identity",
+                    )?),
                     tangent: auxiliary_spine_tangent,
                     curvilinear: auxiliary_curvilinear,
                 }
@@ -6686,7 +6974,10 @@ fn sweep_definition(
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Sweep {
             shape,
-            path: Some(PathRef::Native(ctx.copy_retained_text(&path_property.id, "fcstd sweep path identity")?)),
+            path: Some(PathRef::Native(ctx.copy_retained_text(
+                &path_property.id,
+                "fcstd sweep path identity",
+            )?)),
             orientation: Some(orientation),
             transition: Some(transition),
             transformation: Some(transformation),
@@ -7068,7 +7359,9 @@ fn binder_definition(
             "fcstd binder subelements",
         )?;
         for selector in link_selectors(link) {
-            let Some(selector) = cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(selector, "fcstd binder subelement selector")?) else {
+            let Some(selector) = cadmpeg_core::text::NonBlankString::new(
+                ctx.copy_retained_text(selector, "fcstd binder subelement selector")?,
+            ) else {
                 return Ok(None);
             };
             subelements.push(selector);
@@ -7215,21 +7508,29 @@ fn binder_target(
         return Ok(None);
     };
     if let Some(document) = link.document() {
-        let Some(document) = cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(document.as_str(), "fcstd external binder document")?) else {
+        let Some(document) = cadmpeg_core::text::NonBlankString::new(
+            ctx.copy_retained_text(document.as_str(), "fcstd external binder document")?,
+        ) else {
             return Ok(None);
         };
-        let Some(object) = cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(object, "fcstd external binder object")?) else {
+        let Some(object) = cadmpeg_core::text::NonBlankString::new(
+            ctx.copy_retained_text(object, "fcstd external binder object")?,
+        ) else {
             return Ok(None);
         };
         return Ok(Some(BinderTarget::External { document, object }));
     }
     Ok(Some(match features.get(object) {
         Some(feature) => BinderTarget::Feature {
-            feature: FeatureId::mint(ctx.copy_retained_text(feature.as_str(), "fcstd binder feature target")?)
+            feature: FeatureId::mint(
+                ctx.copy_retained_text(feature.as_str(), "fcstd binder feature target")?,
+            )
             .map_err(CodecError::malformed)?,
         },
         None => BinderTarget::Native {
-            reference: match cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(object, "fcstd binder native target")?) {
+            reference: match cadmpeg_core::text::NonBlankString::new(
+                ctx.copy_retained_text(object, "fcstd binder native target")?,
+            ) {
                 Some(reference) => reference,
                 None => return Ok(None),
             },
@@ -7372,7 +7673,9 @@ fn pattern_definition(
         for target in linked_objects() {
             if let Some(feature) = features.get(target) {
                 seeds.push(
-                    FeatureId::mint(ctx.copy_retained_text(feature.as_str(), "fcstd pattern seed identity")?)
+                    FeatureId::mint(
+                        ctx.copy_retained_text(feature.as_str(), "fcstd pattern seed identity")?,
+                    )
                     .map_err(CodecError::malformed)?,
                 );
             }
@@ -7390,7 +7693,9 @@ fn pattern_definition(
         };
         let mut seeds = collection_vec(ctx, 1, "fcstd implicit pattern seed")?;
         seeds.push(
-            FeatureId::mint(ctx.copy_retained_text(feature.as_str(), "fcstd implicit pattern seed identity")?)
+            FeatureId::mint(
+                ctx.copy_retained_text(feature.as_str(), "fcstd implicit pattern seed identity")?,
+            )
             .map_err(CodecError::malformed)?,
         );
         seeds
@@ -7501,7 +7806,12 @@ fn multi_transform_stage_seeds(
                 continue;
             };
             seeds.push(
-                FeatureId::mint(ctx.copy_retained_text(feature.as_str(), "fcstd multi-transform seed identity")?)
+                FeatureId::mint(
+                    ctx.copy_retained_text(
+                        feature.as_str(),
+                        "fcstd multi-transform seed identity",
+                    )?,
+                )
                 .map_err(CodecError::malformed)?,
             );
         }
@@ -7558,7 +7868,9 @@ fn pattern_kind<C: cadmpeg_ir::features::patterns::CompositeStages>(
             return Ok(None);
         };
         return Ok(PatternKind::new(PatternTransform::MirrorReference {
-            plane: cadmpeg_ir::features::FaceSelection::Native(ctx.copy_retained_text(&plane.id, "fcstd mirrored pattern plane identity")?),
+            plane: cadmpeg_ir::features::FaceSelection::Native(
+                ctx.copy_retained_text(&plane.id, "fcstd mirrored pattern plane identity")?,
+            ),
         })
         .ok());
     }
@@ -8170,7 +8482,9 @@ fn feature_base_definition(
     };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::DerivedGeometry {
-            source: FeatureId::mint(ctx.copy_retained_text(feature.as_str(), "fcstd feature base source identity")?)
+            source: FeatureId::mint(
+                ctx.copy_retained_text(feature.as_str(), "fcstd feature base source identity")?,
+            )
             .map_err(CodecError::malformed)?,
         },
     )))
@@ -8462,7 +8776,8 @@ pub(crate) fn census(
             )?,
             object: ctx.copy_retained_text(&object.id, "FreeCAD design census object")?,
             type_name: ctx.copy_retained_text(&object.type_name, "FreeCAD design census type")?,
-            feature: ctx.copy_retained_text(feature.id.as_str(), "FreeCAD design census feature")?,
+            feature: ctx
+                .copy_retained_text(feature.id.as_str(), "FreeCAD design census feature")?,
             semantic_kind,
             post_processed,
         });

@@ -94,9 +94,16 @@ fn reserve_drawing_items<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(u64_from_index(count), operation)?;
-    values
-        .try_reserve(count)
-        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)))
+    values.try_reserve(count).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        )
+    })
 }
 
 fn insert_drawing_set<T: Ord>(
@@ -132,9 +139,16 @@ fn claim_drawing_typed(
     const OPERATION: &str = "step_drawing_typed_claims";
     if !values.contains(&id) {
         ctx.charge_collection_items(1, OPERATION)?;
-        values
-            .try_reserve(1)
-            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(OPERATION), 0, 1, OPERATION)))?;
+        values.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(OPERATION),
+                    0,
+                    1,
+                    OPERATION,
+                ),
+            )
+        })?;
         values.insert(id);
     }
     Ok(())
@@ -151,8 +165,6 @@ fn ensure_drawing_relationship_group(
     }
     Ok(())
 }
-
-
 
 fn clone_drawing_identities(
     source: &BTreeSet<String>,
@@ -292,7 +304,10 @@ pub(super) fn decode(
         let targets = target_identities.entry(candidate.id).or_default();
         insert_drawing_set(
             targets,
-            ctx.copy_retained_text(candidate.identity.as_str(), "step_drawing_target_member_text")?,
+            ctx.copy_retained_text(
+                candidate.identity.as_str(),
+                "step_drawing_target_member_text",
+            )?,
             ctx,
             "step_drawing_target_members",
         )?;
@@ -310,7 +325,10 @@ pub(super) fn decode(
         let targets = target_identities.entry(shape_id).or_default();
         insert_drawing_set(
             targets,
-            ctx.copy_retained_text(product_definition_id.as_str(), "step_drawing_target_member_text")?,
+            ctx.copy_retained_text(
+                product_definition_id.as_str(),
+                "step_drawing_target_member_text",
+            )?,
             ctx,
             "step_drawing_target_members",
         )?;
@@ -402,7 +420,9 @@ pub(super) fn decode(
         drawings.insert(
             id,
             Drawing {
-                id: DrawingId::from(identity.try_clone_for_decode(ctx, "step_drawing_identity_copy")?),
+                id: DrawingId::from(
+                    identity.try_clone_for_decode(ctx, "step_drawing_identity_copy")?,
+                ),
                 object: ctx.copy_retained_text(identity.as_str(), "step_drawing_object_copy")?,
                 kind: drawing_kind(name),
                 runtime_type: name.into(),
@@ -548,7 +568,10 @@ fn add_source_typed_targets(
             continue;
         }
         let identity = opaque_record_id(id, record, ctx)?;
-        let copied_identity = ctx.copy_retained_text(identity.as_str(), "step_drawing_native_target_identity_copy")?;
+        let copied_identity = ctx.copy_retained_text(
+            identity.as_str(),
+            "step_drawing_native_target_identity_copy",
+        )?;
         let source_type = crate::decode_alloc::charged_join(
             ctx,
             "step_drawing_source_type_text",
@@ -1085,7 +1108,9 @@ fn target_resolution(
         .and_then(|identities| identities.first())
     {
         return Ok(TargetResolution::Resolved(ReferenceSelection::new(
-            ReferenceTarget::Local(ctx.copy_retained_text(identity, "step_drawing_local_target_text")?),
+            ReferenceTarget::Local(
+                ctx.copy_retained_text(identity, "step_drawing_local_target_text")?,
+            ),
             Vec::new(),
         )));
     }
@@ -1162,7 +1187,9 @@ fn wrapper_target_resolution(
             for target in targets {
                 if !identities.contains(target) {
                     ctx.charge_collection_items(1, "step_drawing_wrapper_identities")?;
-                    identities.insert(ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text")?);
+                    identities.insert(
+                        ctx.copy_retained_text(target, "step_drawing_wrapper_identity_text")?,
+                    );
                 }
             }
             continue;
@@ -1259,10 +1286,26 @@ fn value_text(
                     ctx.charge_retained(2, "step_drawing_value_text")?;
                 }
                 text.try_reserve(2).map_err(|_| match ctx {
-                    Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_drawing_value_text"), 0, 2, "step_drawing_value_text")),
-                    None => {
-                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_drawing_value_text"), 0, 2, "step_drawing_value_text"))
-                    }
+                    Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "step_drawing_value_text",
+                            ),
+                            0,
+                            2,
+                            "step_drawing_value_text",
+                        ),
+                    ),
+                    None => cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "step_drawing_value_text",
+                            ),
+                            0,
+                            2,
+                            "step_drawing_value_text",
+                        ),
+                    ),
                 })?;
                 text.push(char::from(HEX[usize::from(byte >> 4)]));
                 text.push(char::from(HEX[usize::from(byte & 0x0f)]));
@@ -1315,10 +1358,22 @@ fn append_value_text(
         ctx.charge_retained(u64_from_index(text.len()), "step_drawing_value_text")?;
     }
     output.try_reserve(text.len()).map_err(|_| match ctx {
-        Some(_ctx) => {
-            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_drawing_value_text"), 0, u64_from_index(text.len()), "step_drawing_value_text"))
-        }
-        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_drawing_value_text"), 0, u64_from_index(text.len()), "step_drawing_value_text")),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("step_drawing_value_text"),
+                0,
+                u64_from_index(text.len()),
+                "step_drawing_value_text",
+            ),
+        ),
+        None => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("step_drawing_value_text"),
+                0,
+                u64_from_index(text.len()),
+                "step_drawing_value_text",
+            ),
+        ),
     })?;
     output.push_str(text);
     Ok(())
