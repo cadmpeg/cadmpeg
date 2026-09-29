@@ -7,9 +7,11 @@ use crate::native::features::feature_operation_body_identity_segment_uses;
 use crate::native::features::feature_operation_body_image_segment_uses;
 use crate::native::features::feature_operation_body_partition_uses;
 use crate::native::features::feature_operation_body_writes;
+use crate::native::features::feature_operation_common_frames;
 use crate::native::features::feature_operation_labels;
 use crate::native::features::feature_operation_object_references;
 use crate::native::features::feature_operation_records;
+use crate::native::features::feature_operation_terminal_frames;
 use crate::native::features::feature_unlabeled_operation_records;
 use crate::native::features::feature_operation_state_journal_uses;
 use crate::native::features::operation_record::FeatureOperationRecord;
@@ -720,6 +722,88 @@ fn operation_object_reference_route_refuses_work_limit() {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
 }
+
+fn operation_common_frame_refusal(
+    terminal: bool,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let frame = [
+        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00,
+        0x00, 0x00, 0x81, 0x23, 0x81, 0x23, 0xff, 0x00,
+    ];
+    let payload = composed_feature_history_payload(&[(&[0xff; 4], "FSET", frame.to_vec())], &[]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]))
+    }).expect("synthetic common-frame container");
+    let common = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_common_frames(ctx, &container)
+    }).expect("admitted operation common frames");
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        if terminal {
+            feature_operation_terminal_frames(ctx, &container, &common).map(|records| records.len())
+        } else {
+            feature_operation_common_frames(ctx, &container).map(|records| records.len())
+        }
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted operation frame route");
+    assert_eq!(admitted, 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("operation frame resource limit")
+}
+
+macro_rules! operation_frame_limit_tests {
+    ($collection:ident, $retained:ident, $scoped:ident, $work:ident, $terminal:expr) => {
+        #[test]
+        fn $collection() {
+            let error = operation_common_frame_refusal($terminal,
+                |policy| policy.limits.max_collection_items = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        }
+        #[test]
+        fn $retained() {
+            let error = operation_common_frame_refusal($terminal,
+                |policy| policy.limits.max_retained_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        }
+        #[test]
+        fn $scoped() {
+            let error = operation_common_frame_refusal($terminal,
+                |policy| policy.limits.max_materialized_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+        }
+        #[test]
+        fn $work() {
+            let error = operation_common_frame_refusal($terminal,
+                |policy| policy.limits.max_work_units = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        }
+    };
+}
+
+operation_frame_limit_tests!(
+    common_frame_route_refuses_collection_limit,
+    common_frame_route_refuses_retained_limit,
+    common_frame_route_refuses_scoped_limit,
+    common_frame_route_refuses_work_limit,
+    false
+);
+operation_frame_limit_tests!(
+    terminal_frame_route_refuses_collection_limit,
+    terminal_frame_route_refuses_retained_limit,
+    terminal_frame_route_refuses_scoped_limit,
+    terminal_frame_route_refuses_work_limit,
+    true
+);
 
 fn operation_body_write_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),

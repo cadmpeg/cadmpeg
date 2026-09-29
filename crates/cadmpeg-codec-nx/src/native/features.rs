@@ -4667,37 +4667,39 @@ pub(super) fn feature_operation_common_frames(
             if failure.is_some() {
                 return;
             }
-            let decoded = match crate::om::operation_common_frames(ctx, record.payload_view()) {
-                Ok(decoded) => decoded,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
+            let result = (|| -> Result<(), CodecError> {
+                let decoded = crate::om::operation_common_frames(ctx, record.payload_view())?;
+                for (ordinal, frame) in decoded.into_iter().enumerate() {
+                    let Some(offset) = u64::try_from(frame.offset()).ok()
+                        .and_then(|offset| entry_offset.checked_add(offset)) else { continue; };
+                    let Some(ordinal_u32) = u32::try_from(ordinal).ok() else { continue; };
+                    ctx.charge_work(1, "resolve NX operation common frame")?;
+                    let target = match frame.suffix().object_index() {
+                        Some(index) => charged_unique_offset_data_block(ctx, &indexed, index)?,
+                        None => None,
+                    };
+                    let Some(frame) = crate::om::common_frame::CommonFrame::<u64, Option<String>>::new(
+                        frame.prefix(), frame.state(),
+                        (*frame.suffix()).map_target(|_, ()| target), offset,
+                    ) else { continue; };
+                    ctx.charge_collection_items(1, "NX operation common frames")?;
+                    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<FeatureOperationCommonFrame>()),
+                        "NX operation common frames")?;
+                    frames.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "allocate NX operation common frames", 0, 1))?;
+                    frames.push(FeatureOperationCommonFrame {
+                        id: format_feature_history_id(ctx, "operation-common-frame", section_key,
+                            operation_ordinal, Some(ordinal))?,
+                        operation_record: format_feature_history_id(ctx, "operation-record", section_key,
+                            operation_ordinal, None)?,
+                        ordinal: ordinal_u32,
+                        frame,
+                    });
                 }
-            };
-            let operation_record = format!(
-                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
-            );
-            for (ordinal, frame) in decoded.into_iter().enumerate() {
-                let Some(offset) = entry_offset.checked_add(frame.offset() as u64) else {
-                    continue;
-                };
-                let Some(frame) = crate::om::common_frame::CommonFrame::<u64, Option<String>>::new(
-                    frame.prefix(),
-                    frame.state(),
-                    (*frame.suffix())
-                        .map_target(|index, ()| unique_offset_data_block(&indexed, index)),
-                    offset,
-                ) else {
-                    continue;
-                };
-                frames.push(FeatureOperationCommonFrame {
-                    id: format!(
-                        "nx:feature-history:operation-common-frame#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                    ),
-                    operation_record: operation_record.clone(), ordinal: ordinal as u32,
-                    frame,
-                });
-            }
+                Ok(())
+            })();
+            if let Err(error) = result { failure = Some(error); }
         },
     )?;
     if let Some(error) = failure {
@@ -4722,42 +4724,51 @@ pub(super) fn feature_operation_terminal_frames(
             if failure.is_some() {
                 return;
             }
-            let frame = match crate::om::operation_terminal_frame(ctx, record.payload_view()) {
-                Ok(Some(frame)) => frame,
-                Ok(None) => return,
-                Err(error) => {
-                    failure = Some(error);
-                    return;
-                }
-            };
-            let operation_record = format!(
-                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
-            );
-            let immediate_common_frame = frame.immediate_common_frame_offset.and_then(|offset| {
-                let offset = entry_offset.checked_add(offset as u64)?;
-                let mut matches = common_frames.iter().filter(|common| {
-                    common.operation_record == operation_record && common.frame.offset() == offset
+            let result = (|| -> Result<(), CodecError> {
+                let Some(decoded) = crate::om::operation_terminal_frame(ctx, record.payload_view())?
+                    else { return Ok(()); };
+                let operation_record = format_feature_history_id(ctx, "operation-record", section_key,
+                    operation_ordinal, None)?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(common_frames.len()),
+                    "resolve NX operation terminal common frame")?;
+                let immediate_common_frame = decoded.immediate_common_frame_offset
+                    .and_then(|offset| u64::try_from(offset).ok())
+                    .and_then(|offset| entry_offset.checked_add(offset))
+                    .and_then(|offset| {
+                        let mut matches = common_frames.iter().filter(|common| {
+                            common.operation_record == operation_record
+                                && common.frame.offset() == offset
+                        });
+                        let common = matches.next()?;
+                        matches.next().is_none().then_some(common.id.as_str())
+                    });
+                let Some(offset) = u64::try_from(decoded.frame.offset()).ok()
+                    .and_then(|offset| entry_offset.checked_add(offset)) else { return Ok(()); };
+                let target = match decoded.frame.suffix().object_index() {
+                    Some(index) => charged_unique_offset_data_block(ctx, &indexed, index)?,
+                    None => None,
+                };
+                let Some(frame) = crate::om::common_frame::TerminalFrame::<u64, Option<String>>::new(
+                    (*decoded.frame.suffix()).map_target(|_, ()| target), offset,
+                ) else { return Ok(()); };
+                ctx.charge_collection_items(1, "NX operation terminal frames")?;
+                ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureOperationTerminalFrame>()),
+                    "NX operation terminal frames")?;
+                frames.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                    "allocate NX operation terminal frames", 0, 1))?;
+                frames.push(FeatureOperationTerminalFrame {
+                    id: format_feature_history_id(ctx, "operation-terminal-frame", section_key,
+                        operation_ordinal, None)?,
+                    operation_record,
+                    immediate_common_frame: immediate_common_frame.map(|id| copy_operation_text(ctx,
+                        id, "NX operation immediate common frame identity"))
+                        .transpose()?,
+                    frame,
                 });
-                let common = matches.next()?;
-                matches.next().is_none().then(|| common.id.clone())
-            });
-            let Some(offset) = entry_offset.checked_add(frame.frame.offset() as u64) else {
-                return;
-            };
-            let Some(frame) = crate::om::common_frame::TerminalFrame::<u64, Option<String>>::new(
-                (*frame.frame.suffix())
-                    .map_target(|index, ()| unique_offset_data_block(&indexed, index)),
-                offset,
-            ) else {
-                return;
-            };
-            frames.push(FeatureOperationTerminalFrame {
-                id: format!(
-                    "nx:feature-history:operation-terminal-frame#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_record, immediate_common_frame,
-                frame,
-            });
+                Ok(())
+            })();
+            if let Err(error) = result { failure = Some(error); }
         },
     )?;
     if let Some(error) = failure {
