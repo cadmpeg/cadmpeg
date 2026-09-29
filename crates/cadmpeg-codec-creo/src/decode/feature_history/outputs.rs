@@ -275,16 +275,17 @@ pub(in super::super) fn evaluated_sweep_body_kind(
     family: &str,
     feature_id: u32,
 ) -> Option<BodyKind> {
-    let namespace = match family {
-        "extrusion" => &crate::identity::FEATURE_EXTRUSION,
-        "revolution" => &crate::identity::FEATURE_REVOLUTION,
+    let prefix = match family {
+        "extrusion" => "creo:feature:extrusion#",
+        "revolution" => "creo:feature:revolution#",
         _ => return None,
     };
-    let id = BodyId::compose(
-        namespace,
-        cadmpeg_ir::ids::IdentityKey::from(feature_id).colon(cadmpeg_ir::identity_key!("body")),
-    );
-    exactly_one(ir.model.bodies.iter().filter(|body| body.id == id)).map(|body| body.kind)
+    exactly_one(ir.model.bodies.iter().filter(|body| {
+        body.id.as_str().strip_suffix(":body").is_some_and(|candidate| {
+            crate::identity::matches_numbered_identity(candidate, prefix, feature_id)
+        })
+    }))
+    .map(|body| body.kind)
 }
 
 pub(in super::super) fn new_sheet_output_surface_id(

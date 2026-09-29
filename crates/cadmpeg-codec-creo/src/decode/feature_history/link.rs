@@ -32,7 +32,10 @@ pub(in super::super) fn link_feature_sketch_history(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        let owner = IrFeatureId::compose(&crate::identity::MODEL_FEATURE, feature_id);
+        let (owner, _owner_reservation) = crate::identity::compose_scoped::<IrFeatureId>(
+            ctx, &crate::identity::MODEL_FEATURE, feature_id,
+            "creo linked feature lookup identity",
+        )?;
         let Some(definition) =
             unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {

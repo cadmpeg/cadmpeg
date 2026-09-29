@@ -76,7 +76,7 @@ fn placed_carrier_collection_error(
 fn assert_placed_carrier_refusal(error: CodecError, operation: &'static str) {
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::CollectionItems
-            && resource.operation == operation));
+            && resource.operation == operation), "{operation}: {error:?}");
 }
 
 #[test]
@@ -205,7 +205,7 @@ fn topology_bound_curve_collection_error(limit: u64) -> CodecError {
 #[test]
 fn topology_bound_plane_refuses_unique_surface_count_node() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(2),
+        topology_bound_curve_collection_error(9),
         "creo unique-row count nodes",
     );
 }
@@ -213,7 +213,7 @@ fn topology_bound_plane_refuses_unique_surface_count_node() {
 #[test]
 fn topology_bound_plane_refuses_unique_surface_projection() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(3),
+        topology_bound_curve_collection_error(10),
         "creo unique-row projection",
     );
 }
@@ -221,7 +221,7 @@ fn topology_bound_plane_refuses_unique_surface_projection() {
 #[test]
 fn topology_bound_plane_refuses_unique_curve_count_node() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(4),
+        topology_bound_curve_collection_error(11),
         "creo unique-row count nodes",
     );
 }
@@ -229,7 +229,7 @@ fn topology_bound_plane_refuses_unique_curve_count_node() {
 #[test]
 fn topology_bound_plane_refuses_unique_curve_projection() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(5),
+        topology_bound_curve_collection_error(12),
         "creo unique-row projection",
     );
 }
@@ -237,7 +237,7 @@ fn topology_bound_plane_refuses_unique_curve_projection() {
 #[test]
 fn topology_bound_plane_refuses_unique_curve_id_node() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(6),
+        topology_bound_curve_collection_error(13),
         "creo topology-bound unique curve IDs",
     );
 }
@@ -245,7 +245,7 @@ fn topology_bound_plane_refuses_unique_curve_id_node() {
 #[test]
 fn topology_bound_plane_refuses_boundary_curve_vector() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(7),
+        topology_bound_curve_collection_error(14),
         "creo topology-bound boundary curves",
     );
 }
@@ -253,7 +253,7 @@ fn topology_bound_plane_refuses_boundary_curve_vector() {
 #[test]
 fn topology_bound_plane_refuses_curve_plane_vector() {
     assert_placed_carrier_refusal(
-        topology_bound_curve_collection_error(8),
+        topology_bound_curve_collection_error(15),
         "creo topology-bound curve planes",
     );
 }
@@ -819,10 +819,33 @@ fn a_geometry_section_holds_every_offset_up_to_its_end_and_none_past_it() {
 
     // The last byte the section states is inside it; the byte one past its end
     // is not, and no other section states it either.
-    assert!(super::geometry_section_record(&scan, end - 1).is_some());
-    assert!(super::geometry_section_record(&scan, end).is_none());
-    assert!(super::geometry_section_record(&scan, 15).is_none());
-    assert!(super::geometry_section_record(&scan, 16).is_some());
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(super::geometry_section_record(ctx, &scan, end - 1)?.is_some());
+        assert!(super::geometry_section_record(ctx, &scan, end)?.is_none());
+        assert!(super::geometry_section_record(ctx, &scan, 15)?.is_none());
+        assert!(super::geometry_section_record(ctx, &scan, 16)?.is_some());
+        Ok::<(), CodecError>(())
+    }).expect("service section identity admitted");
+}
+
+#[test]
+fn geometry_section_record_refuses_retained_identity_limit() {
+    let mut scan = crate::container::scan_bytes_ok(Vec::new());
+    scan.framing.sections.push(
+        crate::container::Section::scan("VisibGeom".to_string(), 16, 48, None, &[0u8; 48])
+            .expect("section extent")
+            .section,
+    );
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
+    let error = super::geometry_section_record(&ctx, &scan, 16)
+        .expect_err("section identity exceeds retained limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo geometry section record identity"));
 }
 
 mod predicates;

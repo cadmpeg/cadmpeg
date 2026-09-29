@@ -173,6 +173,22 @@ mod tests {
         ).expect_err("product exceeds the configured resource limit")
     }
 
+    fn product_identity_and_annotation_bytes() -> u64 {
+        let product_id_len = cadmpeg_ir::ids::ProductDefinitionId::compose(
+            &crate::identity::MODEL_PRODUCT_DEFINITION,
+            cadmpeg_ir::identity_key!("root"),
+        ).as_str().len() as u64;
+        let occurrence_id_len = cadmpeg_ir::ids::OccurrenceId::compose(
+            &crate::identity::MODEL_OCCURRENCE,
+            cadmpeg_ir::identity_key!("root"),
+        ).as_str().len() as u64;
+        product_id_len * 2
+            + occurrence_id_len * 3
+            + ("creo:archive_header".len() * 2) as u64
+            + "part_product".len() as u64
+            + "part_product_occurrence".len() as u64
+    }
+
     #[test]
     fn part_product_refuses_before_model_vector_growth() {
         let error = limited_product(&named_scan(), 0, u64::MAX, false);
@@ -194,23 +210,48 @@ mod tests {
             (product_id_len + 10, "creo product part number"),
             (product_id_len + 15, "creo occurrence name"),
         ] {
-            let error = limited_product(&named_scan(), u64::MAX, limit, false);
+            let error = limited_product(&named_scan(), u64::MAX, product_identity_and_annotation_bytes() + limit, false);
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
                 if resource.dimension == ResourceDimension::RetainedBytes
-                    && resource.operation == operation), "{operation}: {error}");
+                    && resource.operation == operation), "{operation}: {error:?}");
         }
     }
 
     #[test]
-    fn part_product_refuses_before_body_reference_rows_and_ids() {
-        let error = limited_product(&named_scan(), 0, u64::MAX, true);
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
-            if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == "creo product body references"));
-        let error = limited_product(&named_scan(), u64::MAX, 0, true);
+    fn part_product_identities_refuse_before_allocation() {
+        let error = limited_product(&named_scan(), u64::MAX, 0, false);
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
-                && resource.operation == "creo product body IDs"));
+                && resource.operation == "creo occurrence identity"));
+
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_materialized_bytes = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root admitted");
+        let error = transfer_part_product(
+            &ctx,
+            &named_scan(),
+            &mut cadmpeg_ir::document::CadIr::empty(),
+            &mut cadmpeg_ir::AnnotationBuilder::new(),
+            &crate::decode::source_carriers::SourceUnitCarriers::default(),
+        )
+        .expect_err("product identity exceeds temporary-byte limit");
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::MaterializedBytes
+                && resource.operation == "creo product identity"));
+    }
+
+    #[test]
+    fn part_product_refuses_before_body_reference_rows_and_ids() {
+        let error = limited_product(&named_scan(), 6, u64::MAX, true);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo product body references"), "{error:?}");
+        let error = limited_product(&named_scan(), u64::MAX, product_identity_and_annotation_bytes(), true);
+        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::RetainedBytes
+                && resource.operation == "creo product body IDs"), "{error:?}");
     }
 
     #[test]
@@ -273,14 +314,12 @@ pub(super) fn transfer_part_product(
     };
     let model_name_offset = model_name.offset;
     let model_name = &model_name.name;
-    let product_id = ProductDefinitionId::compose(
-        &crate::identity::MODEL_PRODUCT_DEFINITION,
-        cadmpeg_ir::identity_key!("root"),
-    );
-    let occurrence_id = OccurrenceId::compose(
-        &crate::identity::MODEL_OCCURRENCE,
-        cadmpeg_ir::identity_key!("root"),
-    );
+    let (product_id, _product_id_reservation) = crate::identity::compose_scoped::<ProductDefinitionId>(
+        ctx, &crate::identity::MODEL_PRODUCT_DEFINITION, "root", "creo product identity",
+    )?;
+    let occurrence_id = crate::identity::compose_checked::<OccurrenceId>(
+        ctx, &crate::identity::MODEL_OCCURRENCE, "root", "creo occurrence identity",
+    )?;
     annotate(ctx,
         annotations,
         &product_id,

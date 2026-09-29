@@ -89,7 +89,9 @@ pub(super) fn preserve_passthrough_sections(
         };
         let namespace = cadmpeg_ir::ids::IdentityNamespace::new("creo", section.name(), "section")
             .map_err(CodecError::malformed)?;
-        let id = UnknownId::compose(&namespace, offset);
+        let id = crate::identity::compose_checked::<UnknownId>(
+            ctx, &namespace, offset, "creo passthrough section identity",
+        )?;
         annotate(ctx,
             annotations,
             &id,

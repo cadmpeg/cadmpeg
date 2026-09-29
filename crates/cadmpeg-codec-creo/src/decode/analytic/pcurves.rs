@@ -1594,7 +1594,9 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             .map(|(_, offset)| *offset)
             .min()
             .unwrap_or(*offset);
-        let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, curve_id);
+        let id = crate::identity::compose_checked::<CurveId>(
+            ctx, &crate::identity::VISIBGEOM_CURVE, curve_id, "creo decoded model identity",
+        )?;
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
         }
