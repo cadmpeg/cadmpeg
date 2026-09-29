@@ -1863,22 +1863,22 @@ fn owner_scoped_angular_dimension_definition(
     {
         return None;
     }
-    let lines = entities
-        .iter()
-        .filter(|entity| {
-            &entity.sketch == sketch
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Line { .. }
-                )
-        })
-        .collect::<Vec<_>>();
     let mut matched = None;
-    for first in 0..lines.len() {
-        for second in first + 1..lines.len() {
+    for (first_index, first) in entities.iter().enumerate() {
+        if &first.sketch != sketch
+            || !matches!(*first.geometry.definition(), SketchGeometryDefinition::Line { .. })
+        {
+            continue;
+        }
+        for second in entities.iter().skip(first_index + 1) {
+            if &second.sketch != sketch
+                || !matches!(*second.geometry.definition(), SketchGeometryDefinition::Line { .. })
+            {
+                continue;
+            }
             if !line_angle_matches(
-                &lines[first].geometry,
-                &lines[second].geometry,
+                &first.geometry,
+                &second.geometry,
                 parameter.evaluated_value().get(),
             ) {
                 continue;
@@ -1886,7 +1886,7 @@ fn owner_scoped_angular_dimension_definition(
             if matched.is_some() {
                 return None;
             }
-            matched = Some((lines[first], lines[second]));
+            matched = Some((first, second));
         }
     }
     let (first, second) = matched?;
