@@ -33,7 +33,7 @@ impl Serialize for ParasolidDeltasTerminalNullReferences {
             id: &self.id,
             stream_ordinal: self.stream_ordinal,
             references: self.form.references(),
-            byte_len: self.form.raw().len() as u64,
+            byte_len: cadmpeg_core::decode::u64_from_index(self.form.raw().len()),
             sha256: LowerHex(&sha256(self.form.raw())),
             inflated_offset: self.inflated_offset,
         }
@@ -48,7 +48,7 @@ impl From<ParasolidDeltasTerminalNullReferences> for NullTailWire {
             id: value.id,
             stream_ordinal: value.stream_ordinal,
             references: value.form.references().to_vec(),
-            byte_len: value.form.raw().len() as u64,
+            byte_len: cadmpeg_core::decode::u64_from_index(value.form.raw().len()),
             sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(value.form.raw()),
             inflated_offset: value.inflated_offset,
         }
@@ -58,7 +58,7 @@ impl TryFrom<NullTailWire> for ParasolidDeltasTerminalNullReferences {
     type Error = &'static str;
     fn try_from(wire: NullTailWire) -> Result<Self, Self::Error> {
         let form = NullTailForm::from_references(&wire.references)?;
-        if wire.byte_len != form.raw().len() as u64 {
+        if wire.byte_len != cadmpeg_core::decode::u64_from_index(form.raw().len()) {
             return Err("byte_len: does not match null-reference encoding");
         }
         if wire.sha256 != cadmpeg_ir::hash::digest::Sha256Digest::digest(form.raw()) {
@@ -107,7 +107,7 @@ impl Serialize for ParasolidDeltasTermUseNumericTail {
             term_use_xmt: self.term_use_xmt,
             term_use_count: self.values.term_use_count(),
             values: self.values.values(),
-            byte_len: self.values.byte_len() as u64,
+            byte_len: cadmpeg_core::decode::u64_from_index(self.values.byte_len()),
             sha256: LowerHex(&sha256(&bytes[..len])),
             inflated_offset: self.inflated_offset,
         }
@@ -118,7 +118,7 @@ impl Serialize for ParasolidDeltasTermUseNumericTail {
 #[cfg(test)]
 impl From<ParasolidDeltasTermUseNumericTail> for NumericTailWire {
     fn from(value: ParasolidDeltasTermUseNumericTail) -> Self {
-        let byte_len = value.values.byte_len() as u64;
+        let byte_len = cadmpeg_core::decode::u64_from_index(value.values.byte_len());
         let sha256 = cadmpeg_ir::hash::digest::Sha256Digest::digest(&value.values.bytes());
         Self {
             id: value.id,
@@ -136,7 +136,7 @@ impl TryFrom<NumericTailWire> for ParasolidDeltasTermUseNumericTail {
     type Error = &'static str;
     fn try_from(wire: NumericTailWire) -> Result<Self, Self::Error> {
         let values = NumericTailValues::new(wire.term_use_count, wire.values)?;
-        if wire.byte_len != values.byte_len() as u64 {
+        if wire.byte_len != cadmpeg_core::decode::u64_from_index(values.byte_len()) {
             return Err("byte_len: does not match numeric-tail encoding");
         }
         let (bytes, len) = values.encoded_bytes();

@@ -523,7 +523,8 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].object_id.0, 0x101);
     assert_eq!(
-        records[0].object_id.1 as usize,
+        cadmpeg_core::decode::index_from_u64(records[0].object_id.1)
+            .expect("fixture offset fits usize"),
         sections[0].object_id_table_offset + 8
     );
     assert_eq!(
@@ -532,7 +533,8 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
     );
     assert_eq!(records[1].object_id.0, 0x102);
     assert_eq!(
-        records[1].object_id.1 as usize,
+        cadmpeg_core::decode::index_from_u64(records[1].object_id.1)
+            .expect("fixture offset fits usize"),
         sections[0].object_id_table_offset + 12
     );
     assert!(sections[0].as_offset_only().is_none());

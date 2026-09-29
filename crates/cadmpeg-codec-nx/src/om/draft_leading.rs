@@ -24,7 +24,7 @@ impl<T, O> DraftLeadingLane<T, O> {
             .indices
             .as_slice()
             .iter()
-            .map(|token| token.atom.raw().len() as u16)
+            .map(|token| u16::from(token.atom.byte_len()))
             .sum::<u16>()
     }
 }
@@ -38,7 +38,7 @@ impl<T, O: Copy + Add<Output = O> + From<u16>> DraftLeadingLane<T, O> {
                 target: &token.target,
                 offset,
             };
-            offset = offset + O::from(token.atom.raw().len() as u16);
+            offset = offset + O::from(u16::from(token.atom.byte_len()));
             positioned
         })
     }
@@ -63,7 +63,10 @@ checked_origin!(u64);
 
 impl DraftLeadingLane<(), usize> {
     pub(crate) fn into_absolute(self, base: u64) -> Option<DraftLeadingLane<(), u64>> {
-        DraftLeadingLane::<(), u64>::new(self.indices, base.checked_add(self.offset as u64)?)
+        DraftLeadingLane::<(), u64>::new(
+            self.indices,
+            base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?,
+        )
     }
 }
 
@@ -229,7 +232,7 @@ mod tests {
                 0xff,
                 0xff,
                 1,
-                (count + 1) as u8,
+                u8::try_from(count + 1).expect("fixture value fits u8"),
             ];
             let mut positions = Vec::new();
             for slot in 0..count {
@@ -254,7 +257,7 @@ mod tests {
                     .collect::<Vec<_>>(),
                 positions
             );
-            let base = u64::MAX - 100 - bytes.len() as u64;
+            let base = u64::MAX - 100 - cadmpeg_core::decode::u64_from_index(bytes.len());
             let absolute = frame.clone().into_absolute(base).unwrap();
             assert_eq!(
                 absolute
@@ -263,7 +266,7 @@ mod tests {
                     .collect::<Vec<_>>(),
                 positions
                     .iter()
-                    .map(|offset| base + *offset as u64)
+                    .map(|offset| base + cadmpeg_core::decode::u64_from_index(*offset))
                     .collect::<Vec<_>>()
             );
             assert!(frame.clone().into_absolute(base + 1).is_none());

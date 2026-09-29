@@ -76,7 +76,7 @@ impl From<ExtrefHandles> for HandlesWire {
         Self {
             handles: value.values().to_vec(),
             closing_duplicate: value.closing_duplicate(),
-            prefix_byte_len: value.prefix_byte_len() as u64,
+            prefix_byte_len: cadmpeg_core::decode::u64_from_index(value.prefix_byte_len()),
         }
     }
 }
@@ -96,7 +96,7 @@ impl TryFrom<HandlesWire> for ExtrefHandles {
         if value.closing_duplicate() != wire.closing_duplicate {
             return Err("closing_duplicate: must match the final encoded handle pair");
         }
-        if value.prefix_byte_len() as u64 != wire.prefix_byte_len {
+        if cadmpeg_core::decode::u64_from_index(value.prefix_byte_len()) != wire.prefix_byte_len {
             return Err("prefix_byte_len: must match the encoded handle count");
         }
         Ok(value)

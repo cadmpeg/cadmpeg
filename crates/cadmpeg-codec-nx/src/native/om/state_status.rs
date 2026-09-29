@@ -74,7 +74,7 @@ impl OmOperationStateStatus {
         self.source_offset
     }
     fn end_offset(&self) -> u64 {
-        self.source_offset + self.body.byte_len() as u64
+        self.source_offset + cadmpeg_core::decode::u64_from_index(self.body.byte_len())
     }
     #[cfg(test)]
     pub(super) fn body(&self) -> &StateStatus<String, Vec<u8>> {

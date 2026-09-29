@@ -995,7 +995,7 @@ pub(in crate::native) fn feature_simple_hole_repeated_scalar_lanes(
                 scalar: token.scalar,
                 witness_offsets: token
                     .witness_offsets
-                    .map(|offset| entry_offset + offset as u64),
+                    .map(|offset| entry_offset + cadmpeg_core::decode::u64_from_index(offset)),
             }) {
                 Ok(values) => values,
                 Err(error) => {

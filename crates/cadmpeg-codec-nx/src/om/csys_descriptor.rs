@@ -149,7 +149,9 @@ impl LocatedCsysDescriptor {
         source_offset: u64,
     ) -> Result<Self, &'static str> {
         source_offset
-            .checked_add(descriptor.prefix.len() as u64)
+            .checked_add(cadmpeg_core::decode::u64_from_index(
+                descriptor.prefix.len(),
+            ))
             .ok_or("source_offset overflows identity_source_offset")?;
         Ok(Self {
             descriptor,
@@ -163,7 +165,7 @@ impl LocatedCsysDescriptor {
         self.source_offset
     }
     pub(crate) fn identity_source_offset(&self) -> u64 {
-        self.source_offset + self.descriptor.prefix.len() as u64
+        self.source_offset + cadmpeg_core::decode::u64_from_index(self.descriptor.prefix.len())
     }
 }
 
@@ -189,7 +191,11 @@ impl TryFrom<u8> for CsysDescriptorSlot {
 }
 impl From<CsysDescriptorSlot> for u8 {
     fn from(value: CsysDescriptorSlot) -> Self {
-        value as Self
+        match value {
+            CsysDescriptorSlot::Five => 5,
+            CsysDescriptorSlot::Six => 6,
+            CsysDescriptorSlot::Seven => 7,
+        }
     }
 }
 

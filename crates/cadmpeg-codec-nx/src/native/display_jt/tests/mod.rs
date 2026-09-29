@@ -379,7 +379,8 @@ fn display_jt_index_requires_every_declared_header() {
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder.write_all(&inflated).expect("required invariant");
     let compressed = encoder.finish().expect("required invariant");
-    let segment_byte_len = 24 + 9 + compressed.len() as u32;
+    let segment_byte_len =
+        24 + 9 + u32::try_from(compressed.len()).expect("fixture value fits u32");
     let mut data = Vec::new();
     data.extend_from_slice(&9_u32.to_le_bytes());
     data.extend_from_slice(&1_u32.to_le_bytes());
@@ -404,11 +405,13 @@ fn display_jt_index_requires_every_declared_header() {
     data.extend_from_slice(&1_u32.to_le_bytes());
     data.extend_from_slice(&segment_byte_len.to_le_bytes());
     data.extend_from_slice(&2_u32.to_le_bytes());
-    data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
+    data.extend_from_slice(
+        &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 1).to_le_bytes(),
+    );
     data.push(2);
     data.extend_from_slice(&compressed);
-    let physical_size = data.len() as u64;
-    let data_len = data.len() as u64;
+    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
+    let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
         data: data.clone().into(),
         physical_size,
@@ -462,11 +465,11 @@ fn display_jt_index_requires_every_declared_header() {
         .expect("required invariant");
     assert_eq!(
         super::DisplayJtCompressionWire::from(compression.clone()).compressed_data_byte_len,
-        compressed.len() as u32 + 1
+        u32::try_from(compressed.len()).expect("fixture value fits u32") + 1
     );
     assert_eq!(
         compression.envelope.compressed_byte_len,
-        compressed.len() as u32
+        u32::try_from(compressed.len()).expect("fixture value fits u32")
     );
     assert_eq!(
         compression.inflated_sha256,
@@ -511,8 +514,9 @@ fn display_jt_index_requires_every_declared_header() {
     assert_eq!(sequences[0].tail, [6, 5]);
 
     let mut malformed_compression = container.clone();
-    malformed_compression.data.to_mut()[193..197]
-        .copy_from_slice(&(compressed.len() as u32 + 2).to_le_bytes());
+    malformed_compression.data.to_mut()[193..197].copy_from_slice(
+        &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 2).to_le_bytes(),
+    );
     assert!(
         with_jt_budget(&malformed_compression, |budget| super::display_jt_segments(
             budget,
@@ -549,8 +553,8 @@ fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
     data.extend_from_slice(&16_u32.to_le_bytes());
     data.extend_from_slice(&[0xff; 16]);
     data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
-    let physical_size = data.len() as u64;
-    let data_len = data.len() as u64;
+    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
+    let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
         data: data.into(),
         physical_size,
@@ -641,11 +645,15 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
 
     let key = "JT_LLPROP_SHAPEIMPL";
     let mut string_body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
-    string_body.extend_from_slice(&(key.len() as u32).to_le_bytes());
+    string_body.extend_from_slice(
+        &(u32::try_from(key.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for unit in key.encode_utf16() {
         string_body.extend_from_slice(&unit.to_le_bytes());
     }
-    inflated.extend_from_slice(&(21_u32 + string_body.len() as u32).to_le_bytes());
+    inflated.extend_from_slice(
+        &(21_u32 + u32::try_from(string_body.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     inflated.extend_from_slice(&[
         0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -667,8 +675,8 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
     let compressed = encoder.finish().expect("required invariant");
     let mut data = vec![0; 33];
     data.extend_from_slice(&compressed);
-    let physical_size = data.len() as u64;
-    let data_len = data.len() as u64;
+    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
+    let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
         data: data.into(),
         physical_size,
@@ -691,7 +699,7 @@ fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
         toc_entry: "scene-entry".into(),
         segment_id: [1; 16],
         segment_type: 1,
-        segment_byte_len: (33 + compressed.len()) as u32,
+        segment_byte_len: u32::try_from(33 + compressed.len()).expect("fixture value fits u32"),
         payload_sha256: Sha256Digest::digest(&[]),
         compression: None,
         source_offset: 0,
@@ -1781,10 +1789,15 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
     body.extend_from_slice(&1_u16.to_le_bytes());
     body.extend_from_slice(&representation);
     let source_offset = 64_u64;
-    let mut data = vec![0; source_offset as usize + 25];
+    let mut data = vec![
+        0;
+        cadmpeg_core::decode::index_from_u64(source_offset)
+            .expect("fixture offset fits usize")
+            + 25
+    ];
     data.extend_from_slice(&body);
-    let physical_size = data.len() as u64;
-    let data_len = data.len() as u64;
+    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
+    let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = crate::container::Container {
         data: data.into(),
         physical_size,
@@ -1810,7 +1823,7 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
             0x59, 0x97,
         ],
         object_id: 1,
-        body_byte_len: body.len() as u32,
+        body_byte_len: u32::try_from(body.len()).expect("fixture value fits u32"),
         body_sha256: Sha256Digest::digest(&[]),
         source_offset,
     }];

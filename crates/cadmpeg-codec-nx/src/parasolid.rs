@@ -632,8 +632,8 @@ pub(crate) fn extract_streams<'a>(
     let part_view = ctx.register_slice(
         root,
         ByteRange {
-            start: start as u64,
-            end: end as u64,
+            start: cadmpeg_core::decode::u64_from_index(start),
+            end: cadmpeg_core::decode::u64_from_index(end),
         },
     )?;
     let part = part_view.window();

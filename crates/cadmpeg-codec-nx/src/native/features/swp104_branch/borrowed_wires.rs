@@ -24,12 +24,12 @@ impl Serialize for MembersView<'_> {
         let mut at = branch.source_offset + branch.members_offset();
         for (ordinal, reference) in branch.members.as_slice().iter().enumerate() {
             sequence.serialize_element(&ReferenceView {
-                ordinal: ordinal as u32,
+                ordinal: u32::try_from(ordinal).map_err(serde::ser::Error::custom)?,
                 token: &reference.token,
                 data_block: reference.data_block.as_deref(),
                 source_offset: at,
             })?;
-            at += reference.token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(reference.token.raw().len());
         }
         sequence.end()
     }
@@ -60,14 +60,14 @@ impl Serialize for FeatureSwp104LeadingBranch {
                 .members
                 .as_slice()
                 .iter()
-                .map(|reference| reference.token.raw().len() as u64)
+                .map(|reference| cadmpeg_core::decode::u64_from_index(reference.token.raw().len()))
                 .sum::<u64>()
             + self.state_len()
             + 3;
         wire.serialize_entry(
             "terminal",
             &ReferenceView {
-                ordinal: self.members.len() as u32,
+                ordinal: u32::from(self.members.declared_count() - 1),
                 token: &self.terminal.token,
                 data_block: self.terminal.data_block.as_deref(),
                 source_offset: terminal_offset,

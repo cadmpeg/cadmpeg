@@ -360,7 +360,7 @@ fn unique_feature_body_references_require_one_field_per_operation() {
         operation_label: operation_label.to_string(),
         body: crate::om::reference_index::FeatureReferenceToken::from_wire(
             body_object_index,
-            &[body_object_index as u8],
+            &[u8::try_from(body_object_index).expect("fixture value fits u8")],
         )
         .unwrap(),
         source_offset: 0,
@@ -507,7 +507,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     ];
     let mut block_bytes = Vec::new();
     let object_id_offset = block_bytes.len();
-    block_bytes.push(reference.body.value() as u8);
+    block_bytes.push(u8::try_from(reference.body.value()).expect("fixture value fits u8"));
     block_bytes.extend_from_slice(&discriminator);
     let parsed_frames = crate::test_support::with_decode_context(|ctx| {
         crate::om::data_block_object_frames(ctx, &block_bytes)
@@ -752,7 +752,7 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
         input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
         object: crate::om::reference_index::FeatureReferenceToken::from_wire(
             object_index,
-            &[object_index as u8],
+            &[u8::try_from(object_index).expect("fixture value fits u8")],
         )
         .unwrap(),
         data_block: data_block.into(),

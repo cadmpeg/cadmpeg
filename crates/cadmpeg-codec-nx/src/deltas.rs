@@ -3517,7 +3517,7 @@ fn compact_tombstone(stream: &[u8], offset: usize) -> Option<u32> {
         return (quotient == 1)
             .then_some(u32::from(quotient) * 32_767 + u32::from(first.unsigned_abs()));
     }
-    (stream.get(offset + 4..offset + 6)? == [0, 1]).then_some(first as u32)
+    (stream.get(offset + 4..offset + 6)? == [0, 1]).then_some(u32::try_from(first).ok()?)
 }
 
 fn plausible_next(stream: &[u8], offset: usize) -> bool {
@@ -5040,9 +5040,13 @@ mod transmit_header_tests {
         let description = b": TRANSMIT FILE (deltas) created by modeller version 3501171";
         let schema = b"SCH_3501171_35102_13006";
         let mut bytes = b"PS".to_vec();
-        bytes.extend_from_slice(&(description.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(description.len()).expect("fixture value fits u32")).to_be_bytes(),
+        );
         bytes.extend_from_slice(description);
-        bytes.extend_from_slice(&(schema.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(schema.len()).expect("fixture value fits u32")).to_be_bytes(),
+        );
         bytes.extend_from_slice(schema);
         bytes.extend_from_slice(&[0, 0xe7, 0, 0, 0, 0, 0, 3, 0xff]);
         bytes.extend_from_slice(references);

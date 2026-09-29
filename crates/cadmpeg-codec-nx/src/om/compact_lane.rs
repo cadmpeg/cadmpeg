@@ -9,6 +9,8 @@ use std::ops::Add;
 pub(crate) mod scan;
 
 const COUNTED_PREFIX: u16 = 2;
+const COUNTED_TERMINATOR_LEN: u16 = 2;
+const ABR_TERMINATOR_LEN: u16 = 7;
 const COUNTED_TERMINATOR: [u8; 2] = [0x01, 0x11];
 const ABR_TERMINATOR: [u8; 7] = [0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03];
 
@@ -25,14 +27,14 @@ impl<T, O> CountedLane<T, O> {
     }
     fn byte_len(&self) -> u16 {
         COUNTED_PREFIX
-            + self.anchor.atom.raw().len() as u16
+            + u16::from(self.anchor.atom.byte_len())
             + self
                 .members
                 .as_slice()
                 .iter()
-                .map(|index| index.atom.raw().len() as u16)
+                .map(|index| u16::from(index.atom.byte_len()))
                 .sum::<u16>()
-            + COUNTED_TERMINATOR.len() as u16
+            + COUNTED_TERMINATOR_LEN
     }
 }
 
@@ -48,14 +50,14 @@ impl<T, O: Copy + Add<Output = O> + From<u16>> CountedLane<T, O> {
         }
     }
     pub(crate) fn members(&self) -> impl Iterator<Item = PositionedIndex<'_, T, O>> + Clone {
-        let mut offset = self.anchor().offset + O::from(self.anchor.atom.raw().len() as u16);
+        let mut offset = self.anchor().offset + O::from(u16::from(self.anchor.atom.byte_len()));
         self.members.as_slice().iter().map(move |index| {
             let position = PositionedIndex {
                 atom: index.atom,
                 target: &index.target,
                 offset,
             };
-            offset = offset + O::from(index.atom.raw().len() as u16);
+            offset = offset + O::from(u16::from(index.atom.byte_len()));
             position
         })
     }
@@ -66,7 +68,7 @@ impl<T> CountedLane<T, usize> {
         CountedLane::<T, u64>::new(
             self.anchor,
             self.members,
-            base.checked_add(self.offset as u64)?,
+            base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?,
         )
     }
 }
@@ -138,10 +140,10 @@ impl<T, O> AbrLane<T, O> {
             .iter()
             .map(|slot| {
                 slot.as_ref()
-                    .map_or(1, |index| index.atom.raw().len() as u16)
+                    .map_or(1, |index| u16::from(index.atom.byte_len()))
             })
             .sum::<u16>()
-            + ABR_TERMINATOR.len() as u16
+            + ABR_TERMINATOR_LEN
     }
 }
 
@@ -159,7 +161,7 @@ impl<T, O: Copy + Add<Output = O> + From<u16>> AbrLane<T, O> {
             offset = offset
                 + O::from(
                     slot.as_ref()
-                        .map_or(1, |index| index.atom.raw().len() as u16),
+                        .map_or(1, |index| u16::from(index.atom.byte_len())),
                 );
             position
         })
@@ -168,7 +170,10 @@ impl<T, O: Copy + Add<Output = O> + From<u16>> AbrLane<T, O> {
 
 impl<T> AbrLane<T, usize> {
     pub(crate) fn into_absolute(self, base: u64) -> Option<AbrLane<T, u64>> {
-        AbrLane::<T, u64>::new(self.slots, base.checked_add(self.offset as u64)?)
+        AbrLane::<T, u64>::new(
+            self.slots,
+            base.checked_add(cadmpeg_core::decode::u64_from_index(self.offset))?,
+        )
     }
 }
 

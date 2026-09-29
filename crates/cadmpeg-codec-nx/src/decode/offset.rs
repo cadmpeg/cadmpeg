@@ -520,7 +520,12 @@ impl HomogeneousSurfaceNet {
                     controls.push([0.0; 4]);
                     continue;
                 }
-                let factor = degree as f64 / denominator;
+                let factor = {
+                    let Some(value) = cadmpeg_core::convert::f64_from_index(degree) else {
+                        return Ok(None);
+                    };
+                    value
+                } / denominator;
                 controls.push(std::array::from_fn(|axis| {
                     factor * (second[axis] - first[axis])
                 }));
@@ -1560,14 +1565,36 @@ pub(super) fn coarse_model_surface_parameters(
             let Some(u) = cadmpeg_ir::math::interpolate(
                 u_domain[0],
                 u_domain[1],
-                ui as f64 / u_samples.intervals() as f64,
+                {
+                    let Some(value) = cadmpeg_core::convert::f64_from_index(ui) else {
+                        return Ok(None);
+                    };
+                    value
+                } / {
+                    let Some(value) = cadmpeg_core::convert::f64_from_index(u_samples.intervals())
+                    else {
+                        return Ok(None);
+                    };
+                    value
+                },
             ) else {
                 return Ok(None);
             };
             let Some(v) = cadmpeg_ir::math::interpolate(
                 v_domain[0],
                 v_domain[1],
-                vi as f64 / v_samples.intervals() as f64,
+                {
+                    let Some(value) = cadmpeg_core::convert::f64_from_index(vi) else {
+                        return Ok(None);
+                    };
+                    value
+                } / {
+                    let Some(value) = cadmpeg_core::convert::f64_from_index(v_samples.intervals())
+                    else {
+                        return Ok(None);
+                    };
+                    value
+                },
             ) else {
                 return Ok(None);
             };

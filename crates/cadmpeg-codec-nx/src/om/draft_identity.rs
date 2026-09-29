@@ -189,7 +189,7 @@ impl DraftIdentityFrame {
             return Err("identity must contain nonempty lowercase hexadecimal digits");
         }
         offset
-            .checked_add(parsed.byte_len() as u64)
+            .checked_add(cadmpeg_core::decode::u64_from_index(parsed.byte_len()))
             .ok_or("payload_offset overflows identity_payload_offset")?;
         Ok(Self {
             prefix: parsed,
@@ -215,7 +215,7 @@ impl DraftIdentityFrame {
         &self.identity
     }
     pub(crate) fn identity_offset(&self) -> u64 {
-        self.offset + self.prefix.byte_len() as u64
+        self.offset + cadmpeg_core::decode::u64_from_index(self.prefix.byte_len())
     }
 }
 
@@ -253,7 +253,10 @@ mod tests {
             )
             .unwrap();
             assert_eq!(frame.prefix(), prefix);
-            assert_eq!(frame.identity_offset(), 10 + prefix.len() as u64);
+            assert_eq!(
+                frame.identity_offset(),
+                10 + cadmpeg_core::decode::u64_from_index(prefix.len())
+            );
             let mut bytes = prefix.to_vec();
             bytes.extend_from_slice(b"0af?");
             let parsed = crate::test_support::with_decode_context(|ctx| {
@@ -263,7 +266,7 @@ mod tests {
             .unwrap();
             assert_eq!(parsed.prefix(), prefix);
             assert_eq!(parsed.form(), frame.form());
-            let limit = u64::MAX - prefix.len() as u64;
+            let limit = u64::MAX - cadmpeg_core::decode::u64_from_index(prefix.len());
             assert_eq!(
                 DraftIdentityFrame::from_wire(prefix, frame.form(), "0".into(), limit)
                     .unwrap()

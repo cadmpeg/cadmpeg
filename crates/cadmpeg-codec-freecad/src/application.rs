@@ -102,17 +102,7 @@ fn wire_records<'a>(
     for property in properties {
         let owner = property.owner.as_str();
         if !by_owner.contains_key(owner) {
-            ctx.charge_collection_items(1, "FreeCAD application owner lookup")?;
-            by_owner.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "FreeCAD application owner lookup",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut by_owner, 1, "FreeCAD application owner lookup")?;
         }
         let owned = by_owner.entry(owner).or_default();
         ctx.reserve_vec(owned, 1, "FreeCAD application owner properties")?;
@@ -121,17 +111,7 @@ fn wire_records<'a>(
     let mut entry_index = HashMap::new();
     for entry in entries {
         if !entry_index.contains_key(entry.name.as_str()) {
-            ctx.charge_collection_items(1, "FreeCAD application entry lookup")?;
-            entry_index.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "FreeCAD application entry lookup",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut entry_index, 1, "FreeCAD application entry lookup")?;
         }
         entry_index.insert(entry.name.as_str(), entry);
     }

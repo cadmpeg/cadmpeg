@@ -453,7 +453,10 @@ impl<'a> Container<'a> {
                         )?;
                         blocks.insert(
                             offset_block_key(ctx, section_ordinal, 0)?,
-                            (control.bytes, entry_offset + control.offset as u64),
+                            (
+                                control.bytes,
+                                entry_offset + cadmpeg_core::decode::u64_from_index(control.offset),
+                            ),
                         );
                         for (record_ordinal, block) in records.iter().enumerate() {
                             let ordinal = record_ordinal.checked_add(1).ok_or_else(|| {
@@ -470,7 +473,11 @@ impl<'a> Container<'a> {
                             )?;
                             blocks.insert(
                                 offset_block_key(ctx, section_ordinal, ordinal)?,
-                                (block.bytes, entry_offset + block.offset as u64),
+                                (
+                                    block.bytes,
+                                    entry_offset
+                                        + cadmpeg_core::decode::u64_from_index(block.offset),
+                                ),
                             );
                         }
                     }
@@ -895,7 +902,10 @@ fn parse_extref_records(
             return Ok(None);
         };
         let prefix_byte_len = handles.prefix_byte_len();
-        if bytes.get(prefix_byte_len - 1) != Some(&(count as u8)) {
+        let Ok(count) = u8::try_from(count) else {
+            return Ok(None);
+        };
+        if bytes.get(prefix_byte_len - 1) != Some(&count) {
             return Ok(None);
         }
         Ok(Some(ExtrefRecord {
@@ -1387,7 +1397,7 @@ pub(crate) fn scan_bytes<'a>(
             "counted FOOTER directory is not followed by exactly four bytes".to_string(),
         ));
     };
-    let physical_size = data.len() as u64;
+    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
 
     let mut container = Container {
         data,
@@ -1504,7 +1514,7 @@ pub(crate) fn scan_legacy<'a>(
     let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
     let mut container = Container {
         data: Cow::Borrowed(logical_data.window()),
-        physical_size: root.window().len() as u64,
+        physical_size: cadmpeg_core::decode::u64_from_index(root.window().len()),
         layout: ContainerLayout::LegacyCfb { version },
         entries,
         fastload_table: None,
@@ -1636,10 +1646,16 @@ fn try_entry(
         (Some(off), Some(size)) => {
             let end = off.checked_add(size);
             match end {
-                Some(e) if size > 0 && e <= data.len() as u64 && off >= 8 => DirEntryBody::File {
-                    offset: off,
-                    len: size,
-                },
+                Some(e)
+                    if size > 0
+                        && e <= cadmpeg_core::decode::u64_from_index(data.len())
+                        && off >= 8 =>
+                {
+                    DirEntryBody::File {
+                        offset: off,
+                        len: size,
+                    }
+                }
                 _ => DirEntryBody::Directory,
             }
         }

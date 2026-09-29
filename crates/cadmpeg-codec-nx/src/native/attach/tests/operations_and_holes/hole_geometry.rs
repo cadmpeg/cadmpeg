@@ -484,7 +484,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    Point3::new(ordinal as f64, 0.0, 0.0),
+                    Point3::new(f64::from(ordinal), 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     2.55,
@@ -524,7 +524,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        Point3::new(ordinal as f64, boundary as f64, 0.0),
+                        Point3::new(f64::from(ordinal), f64::from(boundary), 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                         2.55,
@@ -1075,7 +1075,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                     cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                        Point3::new(bore as f64, end as f64, 0.0),
+                        Point3::new(f64::from(bore), f64::from(end), 0.0),
                         Vector3::new(0.0, if end == 0 { 1.0 } else { -1.0 }, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                         0.0,
@@ -1114,7 +1114,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
                     id: curve.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                            Point3::new(bore as f64, end as f64, 0.0),
+                            Point3::new(f64::from(bore), f64::from(end), 0.0),
                             Vector3::new(0.0, 1.0, 0.0),
                             Vector3::new(1.0, 0.0, 0.0),
                             radius,

@@ -1241,7 +1241,7 @@ pub(in crate::native) fn feature_pattern_construction_strings(
             .into_iter()
             .enumerate()
         {
-            let payload_offset = value.offset as u64;
+            let payload_offset = cadmpeg_core::decode::u64_from_index(value.offset);
             let Some(source_offset) = joined.source_offset(payload_offset) else {
                 continue;
             };
@@ -1346,9 +1346,9 @@ pub(in crate::native) fn feature_pattern_transform_lanes(
                 ctx,
                 |selector| crate::om::compact::LocatedCompactIndex {
                     atom: selector.atom,
-                    offset: entry_offset + selector.offset as u64,
+                    offset: entry_offset + cadmpeg_core::decode::u64_from_index(selector.offset),
                 },
-                |offset| entry_offset + offset as u64,
+                |offset| entry_offset + cadmpeg_core::decode::u64_from_index(offset),
             ) {
                 Ok(rows) => rows,
                 Err(error) => {
@@ -1393,7 +1393,7 @@ pub(in crate::native) fn feature_pattern_transform_lanes(
                 operation_label,
                 row_schema_index: lane.row_schema_index,
                 rows,
-                source_offset: entry_offset + lane.offset as u64,
+                source_offset: entry_offset + cadmpeg_core::decode::u64_from_index(lane.offset),
             });
         },
     )?;
@@ -1426,10 +1426,9 @@ pub(in crate::native) fn feature_multi_instance_output_lanes(
                         return;
                     }
                 };
-            let outputs = match lane
-                .outputs
-                .map_offsets(ctx, |offset| entry_offset + offset as u64)
-            {
+            let outputs = match lane.outputs.map_offsets(ctx, |offset| {
+                entry_offset + cadmpeg_core::decode::u64_from_index(offset)
+            }) {
                 Ok(outputs) => outputs,
                 Err(error) => {
                     failure = Some(error);
@@ -1472,7 +1471,7 @@ pub(in crate::native) fn feature_multi_instance_output_lanes(
                 id,
                 operation_label,
                 outputs,
-                source_offset: entry_offset + lane.offset as u64,
+                source_offset: entry_offset + cadmpeg_core::decode::u64_from_index(lane.offset),
             });
         },
     )?;
@@ -1512,7 +1511,7 @@ pub(in crate::native) fn feature_identical_instance_output_lanes(
             let selectors = match lane.selectors.map_charged(ctx, |token| {
                 Ok(crate::om::compact::LocatedCompactIndex {
                     atom: token.atom,
-                    offset: entry_offset + token.offset as u64,
+                    offset: entry_offset + cadmpeg_core::decode::u64_from_index(token.offset),
                 })
             }) {
                 Ok(selectors) => selectors,
@@ -1559,7 +1558,7 @@ pub(in crate::native) fn feature_identical_instance_output_lanes(
                 leading_schema_index: lane.leading_schema_index,
                 count_schema_index: lane.count_schema_index,
                 selectors,
-                source_offset: entry_offset + lane.offset as u64,
+                source_offset: entry_offset + cadmpeg_core::decode::u64_from_index(lane.offset),
             });
         },
     )?;

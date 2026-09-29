@@ -289,8 +289,8 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
             std::array::from_fn(|slot| {
                 (
                     crate::om::reference_index::PayloadIndexToken::from_wire(
-                        slot as u32,
-                        &[0xf0, slot as u8],
+                        u32::try_from(slot).expect("fixture value fits u32"),
+                        &[0xf0, u8::try_from(slot).expect("fixture value fits u8")],
                     )
                     .unwrap(),
                     format!("block#{slot}"),

@@ -273,7 +273,7 @@ pub(super) fn summarize(
                 }
             }
         }
-        let inflated_len = stream.inflated.len() as u64;
+        let inflated_len = cadmpeg_core::decode::u64_from_index(stream.inflated.len());
         let storage = match scan.container.layout {
             container::ContainerLayout::Modern { .. } => EntryStorage::Compressed {
                 method: CompressionMethod::Zlib,

@@ -111,7 +111,10 @@ pub(in crate::native) fn feature_projected_curve_references(
                 .into_references()
                 .into_iter()
                 .map(|reference| {
-                    Some((reference.token, base.checked_add(reference.offset as u64)?))
+                    Some((
+                        reference.token,
+                        base.checked_add(cadmpeg_core::decode::u64_from_index(reference.offset))?,
+                    ))
                 })
                 .collect()
         })
@@ -448,12 +451,12 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
             expected_section.len()
                 == section
                     .checked_ilog10()
-                    .map_or(1, |digits| digits as usize + 1)
+                    .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1)
         }) && block_ordinal.is_some_and(|block| {
             expected_block.len()
                 == block
                     .checked_ilog10()
-                    .map_or(1, |digits| digits as usize + 1)
+                    .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1)
         });
         if !canonical || block_ordinal != Some(target_ordinal) {
             continue;
@@ -495,12 +498,18 @@ pub(in crate::native) fn feature_point_construction_scalar_lanes(
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         let Some(first_source_offset) = entry_offset
-            .checked_add(preceding.offset as u64)
-            .and_then(|base| base.checked_add(lane.value_offsets()[0] as u64))
+            .checked_add(cadmpeg_core::decode::u64_from_index(preceding.offset))
+            .and_then(|base| {
+                base.checked_add(cadmpeg_core::decode::u64_from_index(
+                    lane.value_offsets()[0],
+                ))
+            })
         else {
             continue;
         };
-        let Some(target_source_offset) = entry_offset.checked_add(target.offset as u64) else {
+        let Some(target_source_offset) =
+            entry_offset.checked_add(cadmpeg_core::decode::u64_from_index(target.offset))
+        else {
             continue;
         };
         let Ok(positions) = PointScalarPositions::new(first_source_offset, target_source_offset)
@@ -2759,7 +2768,7 @@ pub(super) fn data_block_object_frame_id(
             length.checked_add(
                 ordinal
                     .checked_ilog10()
-                    .map_or(1, |digits| digits as usize + 1),
+                    .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
             )
         })
         .ok_or_else(|| ctx.refuse_codec_limit("retain NX data block object frame id", 0, 1))?;
@@ -2796,7 +2805,11 @@ pub(super) fn format_offset_data_block_id(
     section_ordinal: usize,
     object_index: u32,
 ) -> Result<String, CodecError> {
-    let digits = |value: usize| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+    let digits = |value: usize| {
+        value
+            .checked_ilog10()
+            .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1)
+    };
     let section_digits = digits(section_ordinal);
     let object_digits = digits(usize::try_from(object_index).map_err(|_| {
         ctx.refuse_codec_limit("NX source block index", 0, u64::from(object_index))

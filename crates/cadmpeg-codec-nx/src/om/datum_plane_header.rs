@@ -151,7 +151,7 @@ impl<B> DatumPlaneBranch<B> {
                     + form.suffix().len()
             }
         };
-        10 + length as u64
+        10 + cadmpeg_core::decode::u64_from_index(length)
     }
 }
 
@@ -200,8 +200,8 @@ impl<B> DatumPlaneFrame<B> {
                     &object.1,
                     self.origin
                         + 10
-                        + descriptor.0.raw().len() as u64
-                        + form.separator().len() as u64,
+                        + cadmpeg_core::decode::u64_from_index(descriptor.0.raw().len())
+                        + cadmpeg_core::decode::u64_from_index(form.separator().len()),
                 )),
                 None,
             ],
@@ -213,7 +213,10 @@ impl<B> DatumPlaneFrame<B> {
                 Some((
                     &second.0,
                     &second.1,
-                    self.origin + 10 + first.0.raw().len() as u64 + form.separator().len() as u64,
+                    self.origin
+                        + 10
+                        + cadmpeg_core::decode::u64_from_index(first.0.raw().len())
+                        + cadmpeg_core::decode::u64_from_index(form.separator().len()),
                 )),
             ],
         };
@@ -307,7 +310,7 @@ pub(crate) fn datum_plane_descriptor_reference_branch(
     at += object_index.raw().len();
     (record.payload().get(at..at + suffix.len()) == Some(suffix)).then_some(())?;
     DatumPlaneFrame::new(
-        record.payload_offset() as u64,
+        cadmpeg_core::decode::u64_from_index(record.payload_offset()),
         DatumPlaneBranch::Single {
             form,
             descriptor: (descriptor, ()),
@@ -333,7 +336,7 @@ pub(crate) fn datum_plane_double_reference_branch(
     let suffix = form.suffix();
     (record.payload().get(at..at + suffix.len()) == Some(suffix)).then_some(())?;
     DatumPlaneFrame::new(
-        record.payload_offset() as u64,
+        cadmpeg_core::decode::u64_from_index(record.payload_offset()),
         DatumPlaneBranch::Double {
             form,
             objects: [(first_index, ()), (second_index, ())],
