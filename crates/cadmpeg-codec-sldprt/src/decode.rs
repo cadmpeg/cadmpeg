@@ -2753,8 +2753,16 @@ fn build_geometry_ir(
     )?;
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
-    let mut sketch_lanes = lanes.clone();
-    sketch_lanes.extend(supplemental_config_lanes.clone());
+    let base_lane_count = lanes.len();
+    ctx.reserve_precharged_vec(
+        &mut lanes,
+        supplemental_config_lanes.len(),
+        "merge SLDPRT feature input lanes",
+    )?;
+    lanes.extend(supplemental_config_lanes);
+    let all_lanes = lanes;
+    let lanes = &all_lanes[..base_lane_count];
+    let sketch_lanes = all_lanes.as_slice();
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::markers::spatial_sketches(
             ctx,
@@ -2865,15 +2873,9 @@ fn build_geometry_ir(
     attributes.extend(crate::history::project::custom_property_attributes(
         &histories,
     ));
-    ctx.reserve_precharged_vec(
-        &mut lanes,
-        supplemental_config_lanes.len(),
-        "merge SLDPRT feature input lanes",
-    )?;
-    lanes.extend(supplemental_config_lanes);
     let mut native = crate::native::SldprtNative {
         feature_histories: histories.clone(),
-        feature_input_lanes: lanes,
+        feature_input_lanes: all_lanes,
         pmi_dimensions,
     };
     ir.model.attributes = attributes;
@@ -4058,8 +4060,16 @@ fn build_metadata_ir(
     )?;
     // Marker-backed sketches can originate in either lane family. Their
     // geometry and constraints must use the same complete lane set.
-    let mut sketch_lanes = lanes.clone();
-    sketch_lanes.extend(supplemental_config_lanes.clone());
+    let base_lane_count = lanes.len();
+    ctx.reserve_precharged_vec(
+        &mut lanes,
+        supplemental_config_lanes.len(),
+        "merge SLDPRT feature input lanes",
+    )?;
+    lanes.extend(supplemental_config_lanes);
+    let all_lanes = lanes;
+    let lanes = &all_lanes[..base_lane_count];
+    let sketch_lanes = all_lanes.as_slice();
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::markers::spatial_sketches(
             ctx,
@@ -4272,15 +4282,9 @@ fn build_metadata_ir(
     crate::history::configuration::inherit_configuration_reference_plane_states(&mut ir);
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(&mut ir)?;
-    ctx.reserve_precharged_vec(
-        &mut lanes,
-        supplemental_config_lanes.len(),
-        "merge SLDPRT feature input lanes",
-    )?;
-    lanes.extend(supplemental_config_lanes);
     let native = crate::native::SldprtNative {
         feature_histories: histories.clone(),
-        feature_input_lanes: lanes,
+        feature_input_lanes: all_lanes,
         pmi_dimensions,
     };
     ctx.admit_entities(
