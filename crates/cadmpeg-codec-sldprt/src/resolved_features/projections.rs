@@ -1406,7 +1406,7 @@ pub(crate) fn project_compact_surface_selections(
                         ) {
                             break 'feature_edit;
                         }
-                        let native = compact_surface_selection_set_value(feature_selections);
+                        let native = compact_surface_selection_set_value(ctx, feature_selections)?;
                         let mut faces = Vec::new();
                         let mut complete = true;
                         for selection in feature_selections {
@@ -2130,20 +2130,103 @@ fn draft_face_selection(
     }
 }
 
-fn compact_surface_selection_set_value(selections: &[&FeatureInputSurfaceSelection]) -> String {
-    let mut values = selections
-        .iter()
-        .map(|selection| compact_surface_selection_value(&selection.components))
-        .collect::<Vec<_>>();
-    let mut seen = HashSet::new();
-    values.retain(|value| seen.insert(value.clone()));
-    if let [value] = values.as_slice() {
-        return value.clone();
+fn compact_surface_selection_set_value(
+    ctx: &DecodeContext<'_>,
+    selections: &[&FeatureInputSurfaceSelection],
+) -> Result<String, cadmpeg_core::CodecError> {
+    use std::fmt::Write;
+
+    const OPERATION: &str = "format SLDPRT surface selection set";
+    const PATH_PREFIX: &str = "sldprt:feature-input:surface-component-ids:";
+    const SET_PREFIX: &str = "sldprt:feature-input:surface-selection-vectors:";
+    let same_ids = |left: &[crate::records::FeatureInputComponentPathEntry],
+                    right: &[crate::records::FeatureInputComponentPathEntry]|
+     -> Result<bool, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, OPERATION)?;
+        if left.len() != right.len() {
+            return Ok(false);
+        }
+        for (left, right) in left.iter().zip(right) {
+            ctx.charge_work(1, OPERATION)?;
+            if left.local_id != right.local_id {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    };
+    let mut unique_count = 0usize;
+    let mut path_bytes = 0usize;
+    for (index, selection) in selections.iter().enumerate() {
+        let mut duplicate = false;
+        for previous in &selections[..index] {
+            if same_ids(&previous.components, &selection.components)? {
+                duplicate = true;
+                break;
+            }
+        }
+        if duplicate {
+            continue;
+        }
+        unique_count = unique_count.checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        let mut bytes = PATH_PREFIX.len();
+        for (component_index, component) in selection.components.iter().enumerate() {
+            ctx.charge_work(1, OPERATION)?;
+            let digits = match component.local_id {
+                Some(0) | None => 1,
+                Some(local_id) => usize::try_from(local_id.ilog10())
+                    .ok()
+                    .and_then(|log| log.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+            };
+            let separator = usize::from(component_index != 0);
+            bytes = bytes.checked_add(separator).and_then(|sum| sum.checked_add(digits))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        path_bytes = path_bytes.checked_add(bytes)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
-    format!(
-        "sldprt:feature-input:surface-selection-vectors:{}",
-        values.join(";")
-    )
+    let set_bytes = if unique_count == 1 { 0 } else {
+        let separators = if unique_count == 0 { 0 } else { unique_count - 1 };
+        SET_PREFIX.len().checked_add(separators)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?
+    };
+    let total_bytes = path_bytes.checked_add(set_bytes)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let mut value = String::new();
+    ctx.reserve_retained_string(&mut value, total_bytes, OPERATION)?;
+    if unique_count != 1 {
+        value.push_str(SET_PREFIX);
+    }
+    let mut emitted = 0usize;
+    for (index, selection) in selections.iter().enumerate() {
+        let mut duplicate = false;
+        for previous in &selections[..index] {
+            if same_ids(&previous.components, &selection.components)? {
+                duplicate = true;
+                break;
+            }
+        }
+        if duplicate {
+            continue;
+        }
+        if emitted != 0 {
+            value.push(';');
+        }
+        value.push_str(PATH_PREFIX);
+        for (component_index, component) in selection.components.iter().enumerate() {
+            if component_index != 0 {
+                value.push(',');
+            }
+            match component.local_id {
+                Some(local_id) => write!(value, "{local_id}")
+                    .map_err(|_| cadmpeg_core::CodecError::malformed("cannot format SLDPRT surface selection"))?,
+                None => value.push('_'),
+            }
+        }
+        emitted += 1;
+    }
+    Ok(value)
 }
 
 fn surface_selection_consensus<'a>(
