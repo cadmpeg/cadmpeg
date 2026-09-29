@@ -113,7 +113,7 @@ impl Serialize for FamilyTableItem {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            source_object_id: String,
+            source_object_id: legacy::SerializedOffsetId,
             offset: &'a usize,
             item_id: &'a i32,
             type_code: &'a i32,
@@ -121,7 +121,7 @@ impl Serialize for FamilyTableItem {
             name: &'a legacy::StringValue,
         }
         Wire {
-            source_object_id: legacy::object_node_id(self.offset),
+            source_object_id: legacy::serialized_object_node_id(self.offset),
             offset: &self.offset,
             item_id: &self.item_id,
             type_code: &self.type_code,
@@ -136,7 +136,7 @@ impl Serialize for FamilyTableInstance {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            source_object_id: String,
+            source_object_id: legacy::SerializedOffsetId,
             offset: &'a usize,
             name: &'a String,
             attributes: &'a i32,
@@ -145,7 +145,7 @@ impl Serialize for FamilyTableInstance {
             values: &'a Vec<FamilyTableValue>,
         }
         Wire {
-            source_object_id: legacy::object_node_id(self.offset),
+            source_object_id: legacy::serialized_object_node_id(self.offset),
             offset: &self.offset,
             name: &self.name,
             attributes: &self.attributes,
@@ -638,8 +638,8 @@ impl Serialize for FamilyTable {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            id: String,
-            root_object_id: String,
+            id: legacy::SerializedOffsetId,
+            root_object_id: legacy::SerializedOffsetId,
             root_parent_id: &'a str,
             root_parent_name: &'a str,
             offset: usize,
@@ -651,7 +651,7 @@ impl Serialize for FamilyTable {
         }
         Wire {
             id: self.id(),
-            root_object_id: legacy::object_node_id(self.offset),
+            root_object_id: legacy::serialized_object_node_id(self.offset),
             root_parent_id: &self.root_parent_id,
             root_parent_name: &self.root_parent_name,
             offset: self.offset,
@@ -665,8 +665,12 @@ impl Serialize for FamilyTable {
 
 impl FamilyTable {
     /// Native identity derived from the root offset.
-    pub(crate) fn id(&self) -> String {
-        format!("creo:legacy_family:driver_table#{}", self.offset)
+    pub(crate) fn id(&self) -> legacy::SerializedOffsetId {
+        legacy::SerializedOffsetId {
+            namespace: "legacy_family",
+            kind: "driver_table",
+            offset: self.offset,
+        }
     }
 }
 

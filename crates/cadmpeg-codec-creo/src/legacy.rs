@@ -1023,8 +1023,35 @@ fn continuation_numeric_runs<T>(
     Ok(Some(runs))
 }
 
+#[cfg(test)]
 pub(crate) fn object_node_id(offset: usize) -> String {
     format!("creo:legacy_ascii:object#{offset}")
+}
+
+pub(crate) struct SerializedOffsetId {
+    pub(crate) namespace: &'static str,
+    pub(crate) kind: &'static str,
+    pub(crate) offset: usize,
+}
+
+impl std::fmt::Display for SerializedOffsetId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "creo:{}:{}#{}", self.namespace, self.kind, self.offset)
+    }
+}
+
+impl Serialize for SerializedOffsetId {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+pub(crate) fn serialized_object_node_id(offset: usize) -> SerializedOffsetId {
+    SerializedOffsetId {
+        namespace: "legacy_ascii",
+        kind: "object",
+        offset,
+    }
 }
 
 pub(crate) fn checked_object_node_id(
@@ -1685,12 +1712,12 @@ pub(crate) fn scan(
 
 impl<K: LegacyCode> ValueRecord<K> {
     /// Native identity derived from the source offset.
-    pub(crate) fn id(&self) -> String {
-        format!(
-            "creo:legacy_ascii:{}#{}",
-            K::CODE.identity_token(),
-            self.offset
-        )
+    pub(crate) fn id(&self) -> SerializedOffsetId {
+        SerializedOffsetId {
+            namespace: "legacy_ascii",
+            kind: K::CODE.identity_token(),
+            offset: self.offset,
+        }
     }
 }
 
@@ -1704,7 +1731,7 @@ where
         wire.serialize_field("name", &self.name)?;
         wire.serialize_field("attribute_id", &self.attribute_id)?;
         wire.serialize_field("scope_offset", &self.scope_offset)?;
-        wire.serialize_field("parent", &self.parent.map(object_node_id))?;
+        wire.serialize_field("parent", &self.parent.map(serialized_object_node_id))?;
         wire.serialize_field("depth", &self.depth)?;
         wire.serialize_field("payload", &self.payload)?;
         wire.serialize_field("offset", &self.offset)?;
@@ -1714,8 +1741,8 @@ where
 
 impl ObjectRecord {
     /// Native identity derived from the source offset.
-    pub(crate) fn id(&self) -> String {
-        object_node_id(self.offset)
+    pub(crate) fn id(&self) -> SerializedOffsetId {
+        serialized_object_node_id(self.offset)
     }
 }
 
@@ -1726,7 +1753,7 @@ impl Serialize for ObjectRecord {
         wire.serialize_field("name", &self.name)?;
         wire.serialize_field("attribute_id", &self.attribute_id)?;
         wire.serialize_field("scope_offset", &self.scope_offset)?;
-        wire.serialize_field("parent", &self.parent.map(object_node_id))?;
+        wire.serialize_field("parent", &self.parent.map(serialized_object_node_id))?;
         wire.serialize_field("depth", &self.depth)?;
         wire.serialize_field("payload", &self.payload)?;
         wire.serialize_field("offset", &self.offset)?;
