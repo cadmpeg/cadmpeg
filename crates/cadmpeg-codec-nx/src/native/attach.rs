@@ -2685,12 +2685,14 @@ fn attach_feature_operations(
                 );
             }
         }
-        source_properties.extend(operation_source_properties(
+        operation_source_properties(
+            ctx,
+            &mut source_properties,
             &label.id,
             operation_records,
             operation_common_frames,
             operation_terminal_frames,
-        ));
+        )?;
         if let Some(stable_identity) = &label.stable_identity {
             source_properties.insert(
                 "operation_stable_identity".to_string(),
@@ -4958,49 +4960,83 @@ fn records_by_operation<'a, 'ctx, T>(
 }
 
 fn operation_source_properties(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
     operation_label: &str,
     records: &[crate::native::features::operation_record::FeatureOperationRecord],
     common_frames: &[crate::native::features::FeatureOperationCommonFrame],
     terminal_frames: &[crate::native::features::FeatureOperationTerminalFrame],
-) -> BTreeMap<String, String> {
+) -> Result<(), CodecError> {
     let mut matching_records = records
         .iter()
         .filter(|record| record.operation_label == operation_label);
     let Some(record) = matching_records.next() else {
-        return BTreeMap::new();
+        return Ok(());
     };
     if matching_records.next().is_some() {
-        return BTreeMap::new();
+        return Ok(());
     }
 
-    let mut properties = BTreeMap::from([("operation_record".to_string(), record.id.clone())]);
-    let matching_common_frames = common_frames
+    insert_operation_source_property(ctx, properties, "operation_record", &record.id)?;
+    let contiguous_common_frames = common_frames
         .iter()
         .filter(|frame| frame.operation_record == record.id)
-        .collect::<Vec<_>>();
-    if matching_common_frames
-        .iter()
         .enumerate()
-        .all(|(ordinal, frame)| frame.ordinal == ordinal as u32)
+        .all(|(ordinal, frame)| u64::from(frame.ordinal) == cadmpeg_core::decode::u64_from_index(ordinal));
+    if contiguous_common_frames
     {
-        for frame in matching_common_frames {
-            properties.insert(
-                format!("operation_common_frame.{}", frame.ordinal),
-                frame.id.clone(),
-            );
+        for frame in common_frames.iter().filter(|frame| frame.operation_record == record.id) {
+            const PREFIX: &str = "operation_common_frame.";
+            let key_len = PREFIX.len().checked_add(10).ok_or_else(|| ctx.refuse_codec_limit("NX operation source property key", 0, 10))?;
+            let retained_bytes = std::mem::size_of::<(String, String)>()
+                .checked_add(key_len)
+                .and_then(|bytes| bytes.checked_add(frame.id.len()))
+                .ok_or_else(|| ctx.refuse_codec_limit("NX operation source property", 0, cadmpeg_core::decode::u64_from_index(frame.id.len())))?;
+            ctx.charge_collection_items(1, "NX operation source properties")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(retained_bytes), "NX operation source property")?;
+            let mut key = String::new();
+            key.try_reserve(key_len).map_err(|_| ctx.refuse_codec_limit("allocate NX operation source property key", 0, cadmpeg_core::decode::u64_from_index(key_len)))?;
+            std::fmt::Write::write_fmt(&mut key, format_args!("{PREFIX}{}", frame.ordinal))
+                .map_err(|_| CodecError::InvalidInput("NX operation source property key formatting failed".to_string()))?;
+            let mut value = String::new();
+            value.try_reserve(frame.id.len()).map_err(|_| ctx.refuse_codec_limit("allocate NX operation source property value", 0, cadmpeg_core::decode::u64_from_index(frame.id.len())))?;
+            value.push_str(&frame.id);
+            properties.insert(key, value);
         }
     }
     let mut matching_frames = terminal_frames
         .iter()
         .filter(|frame| frame.operation_record == record.id);
     let Some(frame) = matching_frames.next() else {
-        return properties;
+        return Ok(());
     };
     if matching_frames.next().is_some() {
-        return properties;
+        return Ok(());
     }
-    properties.insert("operation_terminal_frame".to_string(), frame.id.clone());
-    properties
+    insert_operation_source_property(ctx, properties, "operation_terminal_frame", &frame.id)?;
+    Ok(())
+}
+
+fn insert_operation_source_property(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
+    key: &str,
+    value: &str,
+) -> Result<(), CodecError> {
+    let retained_bytes = std::mem::size_of::<(String, String)>()
+        .checked_add(key.len())
+        .and_then(|bytes| bytes.checked_add(value.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX operation source property", 0, cadmpeg_core::decode::u64_from_index(value.len())))?;
+    ctx.charge_collection_items(1, "NX operation source properties")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(retained_bytes), "NX operation source property")?;
+    let mut owned_key = String::new();
+    owned_key.try_reserve(key.len()).map_err(|_| ctx.refuse_codec_limit("allocate NX operation source property key", 0, cadmpeg_core::decode::u64_from_index(key.len())))?;
+    owned_key.push_str(key);
+    let mut owned_value = String::new();
+    owned_value.try_reserve(value.len()).map_err(|_| ctx.refuse_codec_limit("allocate NX operation source property value", 0, cadmpeg_core::decode::u64_from_index(value.len())))?;
+    owned_value.push_str(value);
+    properties.insert(owned_key, owned_value);
+    Ok(())
 }
 
 struct ParasolidStringAttributeSources<'a> {
