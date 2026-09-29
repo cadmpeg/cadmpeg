@@ -2,7 +2,7 @@
 //! Native column rows retain one checked source frame with resolved targets.
 
 use super::{
-    column_storage_block_at, control_index_data_block, copy_om_retained_text, retained_om_index_id,
+    column_storage_block_at, control_index_data_block, retained_om_index_id,
 };
 use crate::container::Container;
 use crate::om::column_row::{IndexRow, LinkedRow, TargetRow};
@@ -287,7 +287,7 @@ fn project_column_rows<R, F, T>(
                 block_offset,
             );
             let source_entry =
-                copy_om_retained_text(ctx, &entry.name, "NX column row source entry")?;
+                ctx.copy_retained_text(&entry.name, "NX column row source entry")?;
             result.push(project(
                 section_ordinal,
                 section_number,

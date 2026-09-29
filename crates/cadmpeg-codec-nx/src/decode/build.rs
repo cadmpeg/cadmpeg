@@ -3,7 +3,7 @@
 
 use super::emit::{
     annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology,
-    render_retained_text, retain_unknown_stream_data, retain_unresolved_topology_carriers,
+    retain_unknown_stream_data, retain_unresolved_topology_carriers,
     source_meta, surface_tag, unknown_stream_metadata,
 };
 use super::geometry_work::{
@@ -372,22 +372,14 @@ pub(super) fn try_decode_geometry(
                 .try_reserve(1)
                 .map_err(|_| ctx.refuse_codec_limit("nx carrier refusal losses", 0, 1))?;
             super::charge_loss_code(ctx, NxLossCode::CarrierLanesUnpaired)?;
-            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(render_retained_text(
-                ctx,
-                format_args!(
+            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(ctx.format_retained(format_args!(
                     "parasolid#{si} {} at byte {} states no carrier: {}",
                     refusal.family, refusal.pos, refusal.error
-                ),
-                "nx carrier refusal loss text",
-            )?));
+                ), "nx carrier refusal loss text")?));
         }
         let view = parsed.stream(si).view_for_geometry();
         let semantic = parsed.semantic_bytes(si);
-        let stream_name = render_retained_text(
-            ctx,
-            format_args!("nx:parasolid#{si}:{}", stream.kind().label()),
-            "nx geometry stream name",
-        )?;
+        let stream_name = ctx.format_retained(format_args!("nx:parasolid#{si}:{}", stream.kind().label()), "nx geometry stream name")?;
         ctx.charge_collection_items(1, "nx geometry stream handles")?;
         let source_stream = StreamHandle::new(
             cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?,
@@ -584,11 +576,7 @@ pub(super) fn try_decode_geometry(
                     },
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Nx,
-                        object_id: cadmpeg_core::text::NonBlankString::new(render_retained_text(
-                            ctx,
-                            format_args!("nx:s{si}:offset-surface-record#{}", offset.xmt),
-                            "nx offset source object identity",
-                        )?)
+                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(format_args!("nx:s{si}:offset-surface-record#{}", offset.xmt), "nx offset source object identity")?)
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -679,11 +667,7 @@ pub(super) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: cadmpeg_core::text::NonBlankString::new(render_retained_text(
-                        ctx,
-                        format_args!("nx:s{si}:blend-surface-record#{}", blend.xmt),
-                        "nx blend source object identity",
-                    )?)
+                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(format_args!("nx:s{si}:blend-surface-record#{}", blend.xmt), "nx blend source object identity")?)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -1074,11 +1058,7 @@ pub(super) fn try_decode_geometry(
                 },
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: cadmpeg_core::text::NonBlankString::new(render_retained_text(
-                        ctx,
-                        format_args!("nx:s{si}:intersection-record#{}", construction.xmt),
-                        "nx intersection source object identity",
-                    )?)
+                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(format_args!("nx:s{si}:intersection-record#{}", construction.xmt), "nx intersection source object identity")?)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -2202,7 +2182,7 @@ fn insert_body_selection_attribute(
     key: cadmpeg_core::text::NonBlankString,
     value: impl std::fmt::Display,
 ) -> Result<(), CodecError> {
-    let value = render_retained_text(ctx, value, "nx body selection attribute")?;
+    let value = ctx.format_retained(format_args!("{}", value), "nx body selection attribute")?;
     ctx.charge_collection_items(1, "nx body selection attributes")?;
     attributes.insert(key, value);
     Ok(())

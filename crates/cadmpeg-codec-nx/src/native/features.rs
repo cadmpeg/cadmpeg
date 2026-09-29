@@ -3795,24 +3795,6 @@ fn assign_operation_header_identities(
     Ok(())
 }
 
-fn copy_operation_text(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
-    let mut text = String::new();
-    text.try_reserve_exact(value.len()).map_err(|_| {
-        ctx.refuse_codec_limit(
-            operation,
-            0,
-            cadmpeg_core::decode::u64_from_index(value.len()),
-        )
-    })?;
-    text.push_str(value);
-    Ok(text)
-}
-
 fn copy_payload_source_blocks<'a>(
     ctx: &'a DecodeContext<'_>,
     blocks: impl IntoIterator<Item = &'a str>,
@@ -4008,17 +3990,9 @@ pub(super) fn feature_operation_labels(
                 .ok_or_else(|| ctx.refuse_codec_limit("NX feature operation label offset", 0, 1))?;
             labels.push(FeatureOperationLabel {
                 id,
-                section_link: copy_operation_text(
-                    ctx,
-                    &link.id,
-                    "retain NX feature operation section link",
-                )?,
+                section_link: ctx.copy_retained_text(&link.id, "retain NX feature operation section link")?,
                 ordinal: ordinal_u32,
-                value: copy_operation_text(
-                    ctx,
-                    label.value,
-                    "retain NX feature operation label text",
-                )?,
+                value: ctx.copy_retained_text(label.value, "retain NX feature operation label text")?,
                 objects: label.header.objects(),
                 stable_identity: None,
                 source_offset,
@@ -4538,21 +4512,9 @@ pub(super) fn feature_operation_body_image_segment_uses(
                 "operation-body-image-segment-use",
                 "NX body-image segment use identity",
             )?,
-            operation_body_write: copy_operation_text(
-                ctx,
-                &write.id,
-                "NX body-image write identity",
-            )?,
-            body_image_data_block: copy_operation_text(
-                ctx,
-                body_image_data_block,
-                "NX body-image data block identity",
-            )?,
-            segment_body_binding: copy_operation_text(
-                ctx,
-                &binding.id,
-                "NX body-image segment binding identity",
-            )?,
+            operation_body_write: ctx.copy_retained_text(&write.id, "NX body-image write identity")?,
+            body_image_data_block: ctx.copy_retained_text(body_image_data_block, "NX body-image data block identity")?,
+            segment_body_binding: ctx.copy_retained_text(&binding.id, "NX body-image segment binding identity")?,
         };
         ctx.charge_collection_items(1, "NX body-image segment uses")?;
         ctx.charge_retained(
@@ -4607,17 +4569,9 @@ pub(super) fn feature_operation_body_identity_segment_uses(
                 "operation-body-identity-segment-use",
                 "NX body-identity segment use identity",
             )?,
-            operation_body_write: copy_operation_text(
-                ctx,
-                &write.id,
-                "NX body-identity write identity",
-            )?,
+            operation_body_write: ctx.copy_retained_text(&write.id, "NX body-identity write identity")?,
             body_identity: write.frame.body_identity(),
-            segment_body_binding: copy_operation_text(
-                ctx,
-                &binding.id,
-                "NX body-identity segment binding identity",
-            )?,
+            segment_body_binding: ctx.copy_retained_text(&binding.id, "NX body-identity segment binding identity")?,
         };
         ctx.charge_collection_items(1, "NX body-identity segment uses")?;
         ctx.charge_retained(
@@ -4781,11 +4735,7 @@ pub(super) fn feature_operation_body_partition_uses(
             parasolid_group_records.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("allocate NX body partition group records", 0, 1)
             })?;
-            parasolid_group_records.push(copy_operation_text(
-                ctx,
-                &group.id,
-                "NX body partition group record identity",
-            )?);
+            parasolid_group_records.push(ctx.copy_retained_text(&group.id, "NX body partition group record identity")?);
         }
         let mut parasolid_group_members = Vec::new();
         for member in group_members.iter().filter(|member| {
@@ -4800,11 +4750,7 @@ pub(super) fn feature_operation_body_partition_uses(
             parasolid_group_members.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("allocate NX body partition group members", 0, 1)
             })?;
-            parasolid_group_members.push(copy_operation_text(
-                ctx,
-                &member.id,
-                "NX body partition group member identity",
-            )?);
+            parasolid_group_members.push(ctx.copy_retained_text(&member.id, "NX body partition group member identity")?);
         }
         let item = FeatureOperationBodyPartitionUse {
             id: replace_operation_text(
@@ -4814,21 +4760,9 @@ pub(super) fn feature_operation_body_partition_uses(
                 "operation-body-partition-use",
                 "NX body partition use identity",
             )?,
-            operation_body_write: copy_operation_text(
-                ctx,
-                &write.id,
-                "NX body partition write identity",
-            )?,
-            body_image_segment_use: copy_operation_text(
-                ctx,
-                &image_use.id,
-                "NX body partition image use identity",
-            )?,
-            segment_body_binding: copy_operation_text(
-                ctx,
-                &binding.id,
-                "NX body partition binding identity",
-            )?,
+            operation_body_write: ctx.copy_retained_text(&write.id, "NX body partition write identity")?,
+            body_image_segment_use: ctx.copy_retained_text(&image_use.id, "NX body partition image use identity")?,
+            segment_body_binding: ctx.copy_retained_text(&binding.id, "NX body partition binding identity")?,
             partition_stream_ordinal,
             group_node: write.frame.group_node().value(),
             parasolid_group_records,
@@ -4909,11 +4843,7 @@ pub(super) fn feature_body_write_group_partition_uses(
             parasolid_group_records.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("allocate NX body-write group records", 0, 1)
             })?;
-            parasolid_group_records.push(copy_operation_text(
-                ctx,
-                &group.id,
-                "NX body-write group record identity",
-            )?);
+            parasolid_group_records.push(ctx.copy_retained_text(&group.id, "NX body-write group record identity")?);
         }
         let mut parasolid_group_members = Vec::new();
         for member in group_members.iter().filter(|member| {
@@ -4928,11 +4858,7 @@ pub(super) fn feature_body_write_group_partition_uses(
             parasolid_group_members.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("allocate NX body-write group members", 0, 1)
             })?;
-            parasolid_group_members.push(copy_operation_text(
-                ctx,
-                &member.id,
-                "NX body-write group member identity",
-            )?);
+            parasolid_group_members.push(ctx.copy_retained_text(&member.id, "NX body-write group member identity")?);
         }
         let use_record = FeatureBodyWriteGroupPartitionUse {
             id: replace_operation_text(
@@ -4942,7 +4868,7 @@ pub(super) fn feature_body_write_group_partition_uses(
                 "body-write-group-partition-use",
                 "NX body-write group use identity",
             )?,
-            body_write: copy_operation_text(ctx, id, "NX body-write group write identity")?,
+            body_write: ctx.copy_retained_text(id, "NX body-write group write identity")?,
             body_identity: write.frame.body_identity(),
             group_node,
             partition_stream_ordinal,
@@ -5232,11 +5158,7 @@ pub(super) fn feature_operation_terminal_frames(
                     operation_record,
                     immediate_common_frame: immediate_common_frame
                         .map(|id| {
-                            copy_operation_text(
-                                ctx,
-                                id,
-                                "NX operation immediate common frame identity",
-                            )
+                            ctx.copy_retained_text(id, "NX operation immediate common frame identity")
                         })
                         .transpose()?,
                     frame,
@@ -5367,31 +5289,11 @@ pub(super) fn feature_operation_state_journal_uses(
             .map_err(|_| ctx.refuse_codec_limit("allocate NX operation journal uses", 0, 1))?;
         uses.push(FeatureOperationStateJournalUse {
             id,
-            section_link: copy_operation_text(
-                ctx,
-                &label.section_link,
-                "NX operation journal section link",
-            )?,
-            operation_label: copy_operation_text(
-                ctx,
-                &label.id,
-                "NX operation journal label identity",
-            )?,
-            operation_record: copy_operation_text(
-                ctx,
-                &frame.operation_record,
-                "NX operation journal record identity",
-            )?,
-            operation_terminal_frame: copy_operation_text(
-                ctx,
-                &frame.id,
-                "NX operation journal terminal identity",
-            )?,
-            journal_group: copy_operation_text(
-                ctx,
-                &group.id,
-                "NX operation journal group identity",
-            )?,
+            section_link: ctx.copy_retained_text(&label.section_link, "NX operation journal section link")?,
+            operation_label: ctx.copy_retained_text(&label.id, "NX operation journal label identity")?,
+            operation_record: ctx.copy_retained_text(&frame.operation_record, "NX operation journal record identity")?,
+            operation_terminal_frame: ctx.copy_retained_text(&frame.id, "NX operation journal terminal identity")?,
+            journal_group: ctx.copy_retained_text(&group.id, "NX operation journal group identity")?,
             journal_row_ordinal,
             state_ordinal: row.ordinal().value(),
             operation_source_offset: frame.frame.offset(),
@@ -5437,11 +5339,7 @@ pub(super) fn feature_payload_strings(
                     strings.try_reserve(1).map_err(|_| {
                         ctx.refuse_codec_limit("allocate NX feature payload strings", 0, 1)
                     })?;
-                    let text = copy_operation_text(
-                        ctx,
-                        value.value.as_str(),
-                        "NX feature payload string text",
-                    )?;
+                    let text = ctx.copy_retained_text(value.value.as_str(), "NX feature payload string text")?;
                     strings.push(FeaturePayloadString {
                         id: format_feature_history_id(
                             ctx,
@@ -6009,12 +5907,8 @@ pub(super) fn feature_body_data_block_uses(
             .map_err(|_| ctx.refuse_codec_limit("allocate NX feature body block uses", 0, 1))?;
         uses.push(FeatureBodyDataBlockUse {
             id,
-            feature_body_reference: copy_operation_text(
-                ctx,
-                &reference.id,
-                "retain NX feature body reference id",
-            )?,
-            data_block: copy_operation_text(ctx, &block.id, "retain NX feature body block id")?,
+            feature_body_reference: ctx.copy_retained_text(&reference.id, "retain NX feature body reference id")?,
+            data_block: ctx.copy_retained_text(&block.id, "retain NX feature body block id")?,
         });
     }
     Ok(uses)
@@ -6189,16 +6083,8 @@ pub(super) fn feature_input_block_identity_groups(
                 ctx.refuse_codec_limit("allocate NX input block identity members", 0, 1)
             })?;
             retained_members.push(FeatureInputBlockIdentityMember {
-                input_block: copy_operation_text(
-                    ctx,
-                    &member.id,
-                    "NX input block identity member",
-                )?,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &member.operation_label,
-                    "NX input block member operation label",
-                )?,
+                input_block: ctx.copy_retained_text(&member.id, "NX input block identity member")?,
+                operation_label: ctx.copy_retained_text(&member.operation_label, "NX input block member operation label")?,
                 input_slot: member.input_slot,
                 source_offset: member.source_offset,
             });
@@ -6236,7 +6122,7 @@ pub(super) fn feature_input_block_identity_groups(
             .map_err(|_| ctx.refuse_codec_limit("allocate NX input block identity groups", 0, 1))?;
         output.push(FeatureInputBlockIdentityGroup {
             id,
-            data_block: copy_operation_text(ctx, data_block, "NX grouped input data block")?,
+            data_block: ctx.copy_retained_text(data_block, "NX grouped input data block")?,
             members: retained_members,
         });
     }
@@ -6405,28 +6291,16 @@ pub(super) fn feature_input_column_row_uses(
                         row_kind,
                         ordinal,
                     )?,
-                    input_block: copy_operation_text(
-                        ctx,
-                        &input.id,
-                        "NX input column row input identity",
-                    )?,
-                    operation_label: copy_operation_text(
-                        ctx,
-                        &input.operation_label,
-                        "NX input column row operation label",
-                    )?,
+                    input_block: ctx.copy_retained_text(&input.id, "NX input column row input identity")?,
+                    operation_label: ctx.copy_retained_text(&input.operation_label, "NX input column row operation label")?,
                     input_slot: input.input_slot,
                     row_kind,
-                    column_row: copy_operation_text(ctx, row, "NX input column row identity")?,
+                    column_row: ctx.copy_retained_text(row, "NX input column row identity")?,
                     column_table: table
-                        .map(|id| copy_operation_text(ctx, id, "NX input column table identity"))
+                        .map(|id| ctx.copy_retained_text(id, "NX input column table identity"))
                         .transpose()?,
                     row_slot: slot,
-                    data_block: copy_operation_text(
-                        ctx,
-                        &input.data_block,
-                        "NX input column data block",
-                    )?,
+                    data_block: ctx.copy_retained_text(&input.data_block, "NX input column data block")?,
                     source_offset,
                 });
                 ordinal = ordinal.checked_add(1).ok_or_else(|| {
@@ -6488,34 +6362,18 @@ pub(super) fn feature_datum_csys_column_row_uses(
                             row_kind,
                             ordinal,
                         )?,
-                        construction: copy_operation_text(
-                            ctx,
-                            &construction.id,
-                            "NX datum CSYS column construction identity",
-                        )?,
-                        operation_label: copy_operation_text(
-                            ctx,
-                            &construction.operation_label,
-                            "NX datum CSYS column operation label",
-                        )?,
+                        construction: ctx.copy_retained_text(&construction.id, "NX datum CSYS column construction identity")?,
+                        operation_label: ctx.copy_retained_text(&construction.operation_label, "NX datum CSYS column operation label")?,
                         construction_slot,
                         row_kind,
-                        column_row: copy_operation_text(
-                            ctx,
-                            row,
-                            "NX datum CSYS column row identity",
-                        )?,
+                        column_row: ctx.copy_retained_text(row, "NX datum CSYS column row identity")?,
                         column_table: table
                             .map(|id| {
-                                copy_operation_text(ctx, id, "NX datum CSYS column table identity")
+                                ctx.copy_retained_text(id, "NX datum CSYS column table identity")
                             })
                             .transpose()?,
                         row_slot,
-                        data_block: copy_operation_text(
-                            ctx,
-                            data_block,
-                            "NX datum CSYS column data block",
-                        )?,
+                        data_block: ctx.copy_retained_text(data_block, "NX datum CSYS column data block")?,
                         construction_source_offset: source_offset,
                         row_source_offset,
                     });
@@ -6579,11 +6437,7 @@ pub(super) fn feature_input_column_targets(
                         continue;
                     }
                     let [first, second, third] = row.frame.indices().map(|token| {
-                        copy_operation_text(
-                            ctx,
-                            token.target,
-                            "NX input column target field data block",
-                        )
+                        ctx.copy_retained_text(token.target, "NX input column target field data block")
                     });
                     (
                         FeatureInputColumnTargetRow::Linked {
@@ -6607,11 +6461,7 @@ pub(super) fn feature_input_column_targets(
                         continue;
                     }
                     let [first, second, third] = row.frame.indices().map(|token| {
-                        copy_operation_text(
-                            ctx,
-                            token.target,
-                            "NX input column target field data block",
-                        )
+                        ctx.copy_retained_text(token.target, "NX input column target field data block")
                     });
                     (
                         FeatureInputColumnTargetRow::Target,
@@ -6649,37 +6499,17 @@ pub(super) fn feature_input_column_targets(
             .map_err(|_| ctx.refuse_codec_limit("allocate NX input column targets", 0, 1))?;
         output.push(FeatureInputColumnTarget {
             id,
-            input_block: copy_operation_text(
-                ctx,
-                &input.id,
-                "NX input column target input identity",
-            )?,
-            operation_label: copy_operation_text(
-                ctx,
-                &input.operation_label,
-                "NX input column target operation label",
-            )?,
+            input_block: ctx.copy_retained_text(&input.id, "NX input column target input identity")?,
+            operation_label: ctx.copy_retained_text(&input.operation_label, "NX input column target operation label")?,
             input_slot: input.input_slot,
-            column_row: copy_operation_text(
-                ctx,
-                &target.column_row,
-                "NX input column target row identity",
-            )?,
+            column_row: ctx.copy_retained_text(&target.column_row, "NX input column target row identity")?,
             row,
             field_indices,
             field_data_blocks,
             field_source_offsets,
             mode,
-            column_table: copy_operation_text(
-                ctx,
-                column_table,
-                "NX input column target table identity",
-            )?,
-            data_block: copy_operation_text(
-                ctx,
-                &input.data_block,
-                "NX input column target data block",
-            )?,
+            column_table: ctx.copy_retained_text(column_table, "NX input column target table identity")?,
+            data_block: ctx.copy_retained_text(&input.data_block, "NX input column target data block")?,
             source_offset: target.source_offset,
         });
     }
@@ -6834,13 +6664,9 @@ pub(super) fn feature_datum_plane_payloads(
         })?;
         id.push_str(prefix);
         id.push_str(key);
-        let operation_label = copy_operation_text(
-            ctx,
-            &header.operation_label,
-            "NX datum plane payload operation label",
-        )?;
+        let operation_label = ctx.copy_retained_text(&header.operation_label, "NX datum plane payload operation label")?;
         let datum_plane_header =
-            copy_operation_text(ctx, &header.id, "NX datum plane payload header identity")?;
+            ctx.copy_retained_text(&header.id, "NX datum plane payload header identity")?;
         ctx.charge_collection_items(1, "NX datum plane payloads")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureDatumPlanePayload>()),
@@ -6899,16 +6725,8 @@ pub(super) fn feature_datum_csys_payloads(
             "datum-csys-payload",
             "NX datum CSYS payload identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &construction.operation_label,
-            "NX datum CSYS payload operation label",
-        )?;
-        let construction_id = copy_operation_text(
-            ctx,
-            &construction.id,
-            "NX datum CSYS payload construction identity",
-        )?;
+        let operation_label = ctx.copy_retained_text(&construction.operation_label, "NX datum CSYS payload operation label")?;
+        let construction_id = ctx.copy_retained_text(&construction.id, "NX datum CSYS payload construction identity")?;
         ctx.charge_collection_items(1, "NX datum CSYS payloads")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureDatumCsysPayload>()),
@@ -6998,17 +6816,9 @@ pub(super) fn feature_datum_csys_payload_scalar_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar pair ordinal", 0, 1))?;
             Ok(Some(FeaturePayloadScalarPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX datum CSYS scalar pair label",
-                )?,
+                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX datum CSYS scalar pair label")?,
                 payload: FeatureScalarPairPayload::DatumCsys {
-                    datum_csys_payload: copy_operation_text(
-                        ctx,
-                        &payload.id,
-                        "NX datum CSYS scalar pair payload",
-                    )?,
+                    datum_csys_payload: ctx.copy_retained_text(&payload.id, "NX datum CSYS scalar pair payload")?,
                     frame,
                 },
                 ordinal,
@@ -7047,16 +6857,8 @@ pub(super) fn feature_datum_csys_payload_fixed_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS fixed pair ordinal", 0, 1))?;
             Ok(Some(FeatureDatumCsysPayloadFixedPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX datum CSYS fixed pair label",
-                )?,
-                datum_csys_payload: copy_operation_text(
-                    ctx,
-                    &payload.id,
-                    "NX datum CSYS fixed pair payload",
-                )?,
+                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX datum CSYS fixed pair label")?,
+                datum_csys_payload: ctx.copy_retained_text(&payload.id, "NX datum CSYS fixed pair payload")?,
                 ordinal,
                 values: pair.values,
                 position,
@@ -7088,17 +6890,9 @@ pub(super) fn feature_datum_csys_payload_scalars(
                 .map_err(|_| ctx.refuse_codec_limit("NX datum CSYS scalar ordinal", 0, 1))?;
             Ok(Some(FeaturePayloadScalar {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX datum CSYS scalar label",
-                )?,
+                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX datum CSYS scalar label")?,
                 payload: FeatureScalarPayload::DatumCsys {
-                    datum_csys_payload: copy_operation_text(
-                        ctx,
-                        &payload.id,
-                        "NX datum CSYS scalar payload",
-                    )?,
+                    datum_csys_payload: ctx.copy_retained_text(&payload.id, "NX datum CSYS scalar payload")?,
                 },
                 ordinal,
                 field_code: scalar.field_code,
@@ -7141,18 +6935,10 @@ pub(super) fn feature_datum_csys_descriptors(
                 format_args!("{}-descriptor-{reference_ordinal}", construction.id),
                 "NX datum CSYS descriptor identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &construction.operation_label,
-                "NX datum CSYS descriptor operation label",
-            )?;
-            let construction_id = copy_operation_text(
-                ctx,
-                &construction.id,
-                "NX datum CSYS descriptor construction identity",
-            )?;
+            let operation_label = ctx.copy_retained_text(&construction.operation_label, "NX datum CSYS descriptor operation label")?;
+            let construction_id = ctx.copy_retained_text(&construction.id, "NX datum CSYS descriptor construction identity")?;
             let data_block =
-                copy_operation_text(ctx, data_block, "NX datum CSYS descriptor data block")?;
+                ctx.copy_retained_text(data_block, "NX datum CSYS descriptor data block")?;
             ctx.charge_collection_items(1, "NX datum CSYS descriptors")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(
@@ -7205,21 +6991,17 @@ pub(super) fn feature_datum_plane_csys_identity_uses(
                 ),
                 "NX datum descriptor identity use",
             )?;
-            let identity_text = copy_operation_text(
-                ctx,
-                csys.descriptor.descriptor().identity().as_str(),
-                "NX datum descriptor shared identity",
-            )?;
+            let identity_text = ctx.copy_retained_text(csys.descriptor.descriptor().identity().as_str(), "NX datum descriptor shared identity")?;
             let identity = CsysIdentity::try_from(identity_text)
                 .map_err(|error| CodecError::Malformed(error.to_owned()))?;
             let datum_plane_descriptor =
-                copy_operation_text(ctx, &plane.id, "NX datum identity plane descriptor")?;
+                ctx.copy_retained_text(&plane.id, "NX datum identity plane descriptor")?;
             let datum_plane_operation_label =
-                copy_operation_text(ctx, &plane.operation_label, "NX datum identity plane label")?;
+                ctx.copy_retained_text(&plane.operation_label, "NX datum identity plane label")?;
             let datum_csys_descriptor =
-                copy_operation_text(ctx, &csys.id, "NX datum identity CSYS descriptor")?;
+                ctx.copy_retained_text(&csys.id, "NX datum identity CSYS descriptor")?;
             let datum_csys_operation_label =
-                copy_operation_text(ctx, &csys.operation_label, "NX datum identity CSYS label")?;
+                ctx.copy_retained_text(&csys.operation_label, "NX datum identity CSYS label")?;
             ctx.charge_collection_items(1, "NX datum descriptor identity uses")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
@@ -7272,17 +7054,9 @@ pub(super) fn feature_datum_plane_payload_scalar_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX datum plane scalar pair ordinal", 0, 1))?;
             Ok(Some(FeaturePayloadScalarPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX datum plane scalar pair label",
-                )?,
+                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX datum plane scalar pair label")?,
                 payload: FeatureScalarPairPayload::DatumPlane {
-                    datum_plane_payload: copy_operation_text(
-                        ctx,
-                        &payload.id,
-                        "NX datum plane scalar pair payload",
-                    )?,
+                    datum_plane_payload: ctx.copy_retained_text(&payload.id, "NX datum plane scalar pair payload")?,
                     frame,
                 },
                 ordinal,
@@ -7317,17 +7091,13 @@ pub(super) fn feature_datum_plane_descriptors(
                 format_args!("{}-descriptor-{ordinal:010}", header.id),
                 "NX datum plane descriptor identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &header.operation_label,
-                "NX datum plane descriptor operation label",
-            )?;
+            let operation_label = ctx.copy_retained_text(&header.operation_label, "NX datum plane descriptor operation label")?;
             let datum_plane_header =
-                copy_operation_text(ctx, &header.id, "NX datum plane descriptor header identity")?;
+                ctx.copy_retained_text(&header.id, "NX datum plane descriptor header identity")?;
             let ordinal = u32::try_from(ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX datum plane descriptor ordinal", 0, 1))?;
             let data_block =
-                copy_operation_text(ctx, data_block, "NX datum plane descriptor data block")?;
+                ctx.copy_retained_text(data_block, "NX datum plane descriptor data block")?;
             ctx.charge_collection_items(1, "NX datum plane descriptors")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
@@ -7386,27 +7156,15 @@ pub(super) fn feature_datum_plane_block_uses(
                         "nx:feature-history:datum-plane-block-use#{construction_key}-{lane_key}-{reference_ordinal}-{input_key}-{}",
                         input.input_slot), "NX datum plane block use identity")?;
                     let datum_plane_header =
-                        copy_operation_text(ctx, &header.id, "NX datum plane block use header")?;
-                    let construction_operation_label = copy_operation_text(
-                        ctx,
-                        &header.operation_label,
-                        "NX datum plane block use construction label",
-                    )?;
+                        ctx.copy_retained_text(&header.id, "NX datum plane block use header")?;
+                    let construction_operation_label = ctx.copy_retained_text(&header.operation_label, "NX datum plane block use construction label")?;
                     let reference_ordinal = u32::try_from(reference_ordinal).map_err(|_| {
                         ctx.refuse_codec_limit("NX datum plane block use ordinal", 0, 1)
                     })?;
-                    let data_block = copy_operation_text(
-                        ctx,
-                        data_block,
-                        "NX datum plane block use data block",
-                    )?;
+                    let data_block = ctx.copy_retained_text(data_block, "NX datum plane block use data block")?;
                     let input_binding =
-                        copy_operation_text(ctx, &input.id, "NX datum plane block use input")?;
-                    let input_operation_label = copy_operation_text(
-                        ctx,
-                        &input.operation_label,
-                        "NX datum plane block use input label",
-                    )?;
+                        ctx.copy_retained_text(&input.id, "NX datum plane block use input")?;
+                    let input_operation_label = ctx.copy_retained_text(&input.operation_label, "NX datum plane block use input label")?;
                     ctx.charge_collection_items(1, "NX datum plane block uses")?;
                     ctx.charge_retained(
                         cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
@@ -7468,25 +7226,13 @@ pub(super) fn feature_datum_csys_block_uses(
                 let id = format_charged_text(ctx, format_args!(
                     "nx:feature-history:datum-csys-block-use#{construction_key}-{reference_ordinal}-{input_key}-{}",
                     input.input_slot), "NX datum CSYS block use identity")?;
-                let construction_id = copy_operation_text(
-                    ctx,
-                    &construction.id,
-                    "NX datum CSYS block use construction",
-                )?;
-                let construction_operation_label = copy_operation_text(
-                    ctx,
-                    &construction.operation_label,
-                    "NX datum CSYS block use construction label",
-                )?;
+                let construction_id = ctx.copy_retained_text(&construction.id, "NX datum CSYS block use construction")?;
+                let construction_operation_label = ctx.copy_retained_text(&construction.operation_label, "NX datum CSYS block use construction label")?;
                 let data_block =
-                    copy_operation_text(ctx, data_block, "NX datum CSYS block use data block")?;
+                    ctx.copy_retained_text(data_block, "NX datum CSYS block use data block")?;
                 let input_binding =
-                    copy_operation_text(ctx, &input.id, "NX datum CSYS block use input")?;
-                let input_operation_label = copy_operation_text(
-                    ctx,
-                    &input.operation_label,
-                    "NX datum CSYS block use input label",
-                )?;
+                    ctx.copy_retained_text(&input.id, "NX datum CSYS block use input")?;
+                let input_operation_label = ctx.copy_retained_text(&input.operation_label, "NX datum CSYS block use input label")?;
                 ctx.charge_collection_items(1, "NX datum CSYS block uses")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
@@ -7581,7 +7327,7 @@ pub(super) fn feature_sketch_records(
 
         let mut input_ids = Vec::new();
         for input in input_blocks {
-            let id = copy_operation_text(ctx, &input.id, "NX sketch input identity")?;
+            let id = ctx.copy_retained_text(&input.id, "NX sketch input identity")?;
             ctx.charge_collection_items(1, "NX sketch input identities")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
@@ -7595,7 +7341,7 @@ pub(super) fn feature_sketch_records(
         drop(input_reservation);
         let mut reference_ids = Vec::new();
         for reference in payload_references {
-            let id = copy_operation_text(ctx, &reference.id, "NX sketch reference identity")?;
+            let id = ctx.copy_retained_text(&reference.id, "NX sketch reference identity")?;
             ctx.charge_collection_items(1, "NX sketch reference identities")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
@@ -7615,9 +7361,9 @@ pub(super) fn feature_sketch_records(
             "NX sketch record identity",
         )?;
         let operation_label =
-            copy_operation_text(ctx, &label.id, "NX sketch record operation label")?;
+            ctx.copy_retained_text(&label.id, "NX sketch record operation label")?;
         let operation_record =
-            copy_operation_text(ctx, &record.id, "NX sketch operation record identity")?;
+            ctx.copy_retained_text(&record.id, "NX sketch operation record identity")?;
         ctx.charge_collection_items(1, "NX sketch records")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSketchRecord>()),
@@ -7699,16 +7445,12 @@ pub(super) fn feature_sketch_construction_inputs(
         };
         let mut member_rows = Vec::new();
         for reference in members {
-            let reference_id = copy_operation_text(
-                ctx,
-                &reference.id,
-                "NX sketch construction member reference",
-            )?;
+            let reference_id = ctx.copy_retained_text(&reference.id, "NX sketch construction member reference")?;
             let Some(data_block) = reference.data_block.as_ref() else {
                 continue;
             };
             let data_block =
-                copy_operation_text(ctx, data_block, "NX sketch construction member block")?;
+                ctx.copy_retained_text(data_block, "NX sketch construction member block")?;
             ctx.charge_collection_items(1, "NX sketch construction members")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(
@@ -7731,23 +7473,11 @@ pub(super) fn feature_sketch_construction_inputs(
             "sketch-construction-inputs",
             "NX sketch construction input identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &sketch.operation_label,
-            "NX sketch construction input label",
-        )?;
+        let operation_label = ctx.copy_retained_text(&sketch.operation_label, "NX sketch construction input label")?;
         let sketch_record =
-            copy_operation_text(ctx, &sketch.id, "NX sketch construction sketch record")?;
-        let terminal_reference = copy_operation_text(
-            ctx,
-            &terminal.id,
-            "NX sketch construction terminal reference",
-        )?;
-        let terminal_data_block = copy_operation_text(
-            ctx,
-            terminal_data_block,
-            "NX sketch construction terminal block",
-        )?;
+            ctx.copy_retained_text(&sketch.id, "NX sketch construction sketch record")?;
+        let terminal_reference = ctx.copy_retained_text(&terminal.id, "NX sketch construction terminal reference")?;
+        let terminal_data_block = ctx.copy_retained_text(terminal_data_block, "NX sketch construction terminal block")?;
         drop(field);
         drop(field_reservation);
         ctx.charge_collection_items(1, "NX sketch construction inputs")?;
@@ -7803,16 +7533,8 @@ pub(super) fn feature_sketch_construction_payloads(
             "sketch-construction-payload",
             "NX sketch construction payload identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &construction.operation_label,
-            "NX sketch construction payload label",
-        )?;
-        let construction_inputs = copy_operation_text(
-            ctx,
-            &construction.id,
-            "NX sketch construction payload input identity",
-        )?;
+        let operation_label = ctx.copy_retained_text(&construction.operation_label, "NX sketch construction payload label")?;
+        let construction_inputs = ctx.copy_retained_text(&construction.id, "NX sketch construction payload input identity")?;
         ctx.charge_collection_items(1, "NX sketch construction payloads")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureConstructionPayload>()),
@@ -7861,17 +7583,9 @@ pub(super) fn feature_sketch_payload_coordinate_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch coordinate pair ordinal", 0, 1))?;
             Ok(Some(FeaturePayloadScalarPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX sketch coordinate pair label",
-                )?,
+                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX sketch coordinate pair label")?,
                 payload: FeatureScalarPairPayload::Construction {
-                    construction_payload: copy_operation_text(
-                        ctx,
-                        &payload.id,
-                        "NX sketch coordinate pair payload",
-                    )?,
+                    construction_payload: ctx.copy_retained_text(&payload.id, "NX sketch coordinate pair payload")?,
                     frame,
                 },
                 ordinal,
@@ -7910,16 +7624,8 @@ pub(super) fn feature_sketch_payload_fixed_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch fixed pair ordinal", 0, 1))?;
             Ok(Some(FeatureSketchPayloadFixedPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX sketch fixed pair label",
-                )?,
-                construction_payload: copy_operation_text(
-                    ctx,
-                    &payload.id,
-                    "NX sketch fixed pair payload",
-                )?,
+                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX sketch fixed pair label")?,
+                construction_payload: ctx.copy_retained_text(&payload.id, "NX sketch fixed pair payload")?,
                 ordinal,
                 values: pair.values,
                 position,
@@ -7958,16 +7664,8 @@ pub(super) fn feature_sketch_payload_mixed_pairs(
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch mixed pair ordinal", 0, 1))?;
             Ok(Some(FeatureSketchPayloadMixedPair {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX sketch mixed pair label",
-                )?,
-                construction_payload: copy_operation_text(
-                    ctx,
-                    &payload.id,
-                    "NX sketch mixed pair payload",
-                )?,
+                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX sketch mixed pair label")?,
+                construction_payload: ctx.copy_retained_text(&payload.id, "NX sketch mixed pair payload")?,
                 ordinal,
                 scalars: pair.scalars,
                 position,
@@ -8128,11 +7826,7 @@ pub(super) fn feature_sketch_payload_scalars(
                 format_args!("nx:feature-history:sketch-payload-scalar#{key}-{ordinal:010}"),
                 "NX sketch payload scalar identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &construction.operation_label,
-                "NX sketch payload scalar operation label",
-            )?;
+            let operation_label = ctx.copy_retained_text(&construction.operation_label, "NX sketch payload scalar operation label")?;
             ctx.charge_collection_items(1, "NX sketch payload scalars")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeaturePayloadScalar>()),
@@ -8187,16 +7881,8 @@ pub(super) fn feature_sketch_payload_scalar_lanes(
                 .map_err(|_| ctx.refuse_codec_limit("NX sketch scalar lane ordinal", 0, 1))?;
             Ok(Some(FeatureSketchPayloadScalarLane {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX sketch scalar lane label",
-                )?,
-                construction_payload: copy_operation_text(
-                    ctx,
-                    &payload.id,
-                    "NX sketch scalar lane payload",
-                )?,
+                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX sketch scalar lane label")?,
+                construction_payload: ctx.copy_retained_text(&payload.id, "NX sketch scalar lane payload")?,
                 ordinal,
                 lane,
                 source_offset: header_source,
@@ -8268,7 +7954,7 @@ pub(super) fn feature_sketch_payload_names(
             id.push_str(&construction.id[end..]);
             id
         } else {
-            copy_operation_text(ctx, &construction.id, "NX sketch payload identity")?
+            ctx.copy_retained_text(&construction.id, "NX sketch payload identity")?
         };
         let key = construction_payload
             .rsplit_once('#')
@@ -8297,16 +7983,8 @@ pub(super) fn feature_sketch_payload_names(
                 .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch payload names", 0, 1))?;
             names.push(FeaturePayloadName {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &construction.operation_label,
-                    "NX sketch payload name label",
-                )?,
-                construction_payload: copy_operation_text(
-                    ctx,
-                    &construction_payload,
-                    "NX sketch payload name owner",
-                )?,
+                operation_label: ctx.copy_retained_text(&construction.operation_label, "NX sketch payload name label")?,
+                construction_payload: ctx.copy_retained_text(&construction_payload, "NX sketch payload name owner")?,
                 ordinal: ordinal_u32,
                 frame,
                 source_offset,
@@ -8386,11 +8064,7 @@ fn copy_sketch_record_ids<T>(
         )
     })?;
     for reference in references {
-        ids.push(copy_operation_text(
-            ctx,
-            id(reference),
-            "NX sketch payload record ID",
-        )?);
+        ids.push(ctx.copy_retained_text(id(reference), "NX sketch payload record ID")?);
     }
     Ok(ids)
 }
@@ -8465,17 +8139,9 @@ pub(super) fn feature_sketch_payload_named_records(
             })?;
             records.push(FeatureSketchPayloadNamedRecord {
                 id,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &payload.operation_label,
-                    "NX sketch payload record label",
-                )?,
-                construction_payload: copy_operation_text(
-                    ctx,
-                    &payload.id,
-                    "NX sketch payload record owner",
-                )?,
-                name_field: copy_operation_text(ctx, &name.id, "NX sketch payload record name")?,
+                operation_label: ctx.copy_retained_text(&payload.operation_label, "NX sketch payload record label")?,
+                construction_payload: ctx.copy_retained_text(&payload.id, "NX sketch payload record owner")?,
+                name_field: ctx.copy_retained_text(&name.id, "NX sketch payload record name")?,
                 scalar_fields,
                 fixed_pairs,
                 mixed_pairs,
@@ -8538,15 +8204,11 @@ pub(super) fn feature_sketch_points(
             format_args!("nx:feature-history:sketch-point#{key}"),
             "NX sketch point identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &record.operation_label,
-            "NX sketch point operation label",
-        )?;
-        let named_record = copy_operation_text(ctx, &record.id, "NX sketch point named record")?;
-        let name = copy_operation_text(ctx, name.frame.value(), "NX sketch point name")?;
-        let first_id = copy_operation_text(ctx, &first.id, "NX sketch point first scalar")?;
-        let second_id = copy_operation_text(ctx, &second.id, "NX sketch point second scalar")?;
+        let operation_label = ctx.copy_retained_text(&record.operation_label, "NX sketch point operation label")?;
+        let named_record = ctx.copy_retained_text(&record.id, "NX sketch point named record")?;
+        let name = ctx.copy_retained_text(name.frame.value(), "NX sketch point name")?;
+        let first_id = ctx.copy_retained_text(&first.id, "NX sketch point first scalar")?;
+        let second_id = ctx.copy_retained_text(&second.id, "NX sketch point second scalar")?;
         ctx.charge_collection_items(1, "NX sketch points")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSketchPoint>()),
@@ -8640,15 +8302,11 @@ pub(super) fn feature_sketch_fixed_points(
             "sketch-fixed-point",
             "NX sketch fixed point identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &record.operation_label,
-            "NX sketch fixed point operation label",
-        )?;
+        let operation_label = ctx.copy_retained_text(&record.operation_label, "NX sketch fixed point operation label")?;
         let named_record =
-            copy_operation_text(ctx, &record.id, "NX sketch fixed point named record")?;
-        let name = copy_operation_text(ctx, name.frame.value(), "NX sketch fixed point name")?;
-        let fixed_pair = copy_operation_text(ctx, &pair.id, "NX sketch fixed point pair")?;
+            ctx.copy_retained_text(&record.id, "NX sketch fixed point named record")?;
+        let name = ctx.copy_retained_text(name.frame.value(), "NX sketch fixed point name")?;
+        let fixed_pair = ctx.copy_retained_text(&pair.id, "NX sketch fixed point pair")?;
         ctx.charge_collection_items(1, "NX sketch fixed points")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSketchFixedPoint>()),
@@ -8726,11 +8384,7 @@ pub(super) fn feature_sketch_point_groups(
             )
         })?;
         for witness in points.iter().filter(&matches) {
-            members.push(copy_operation_text(
-                ctx,
-                &witness.id,
-                "NX sketch point group member",
-            )?);
+            members.push(ctx.copy_retained_text(&witness.id, "NX sketch point group member")?);
         }
         let prefix = "nx:feature-history:sketch-point-group#";
         let key = point.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
@@ -8757,12 +8411,8 @@ pub(super) fn feature_sketch_point_groups(
             .map_err(|_| ctx.refuse_codec_limit("allocate NX sketch point groups", 0, 1))?;
         groups.push(FeatureSketchPointGroup {
             id,
-            operation_label: copy_operation_text(
-                ctx,
-                &point.operation_label,
-                "NX sketch point group label",
-            )?,
-            name: copy_operation_text(ctx, &point.name, "NX sketch point group name")?,
+            operation_label: ctx.copy_retained_text(&point.operation_label, "NX sketch point group label")?,
+            name: ctx.copy_retained_text(&point.name, "NX sketch point group name")?,
             points: members,
             coordinates: point.coordinates,
         });
@@ -8898,23 +8548,11 @@ pub(super) fn feature_sketch_named_point_block_uses(
             let id = format_charged_text(ctx, format_args!(
                 "nx:feature-history:sketch-named-point-block-use#{operation_key}-{}-{point_key}-{point_block_ordinal}",
                 reference.position.ordinal()), "NX sketch named point block use identity")?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &reference.operation_label,
-                "NX sketch named point block use label",
-            )?;
-            let sketch_reference = copy_operation_text(
-                ctx,
-                &reference.id,
-                "NX sketch named point block use reference",
-            )?;
+            let operation_label = ctx.copy_retained_text(&reference.operation_label, "NX sketch named point block use label")?;
+            let sketch_reference = ctx.copy_retained_text(&reference.id, "NX sketch named point block use reference")?;
             let named_point =
-                copy_operation_text(ctx, &point.id, "NX sketch named point block use point")?;
-            let data_block = copy_operation_text(
-                ctx,
-                data_block,
-                "NX sketch named point block use data block",
-            )?;
+                ctx.copy_retained_text(&point.id, "NX sketch named point block use point")?;
+            let data_block = ctx.copy_retained_text(data_block, "NX sketch named point block use data block")?;
             let point_block_ordinal = u32::try_from(point_block_ordinal)
                 .map_err(|_| ctx.refuse_codec_limit("NX named point block ordinal", 0, 1))?;
             ctx.charge_collection_items(1, "NX sketch named point block uses")?;
@@ -9050,22 +8688,14 @@ pub(super) fn feature_sketch_preceding_named_point_uses(
             ),
             "NX preceding named-point use identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            operation_label,
-            "NX preceding named-point operation label",
-        )?;
-        let first_sketch_reference = copy_operation_text(
-            ctx,
-            &first_reference.id,
-            "NX preceding named-point first reference",
-        )?;
-        let named_point = copy_operation_text(ctx, &point.id, "NX preceding named-point identity")?;
+        let operation_label = ctx.copy_retained_text(operation_label, "NX preceding named-point operation label")?;
+        let first_sketch_reference = ctx.copy_retained_text(&first_reference.id, "NX preceding named-point first reference")?;
+        let named_point = ctx.copy_retained_text(&point.id, "NX preceding named-point identity")?;
         let following_data_block =
-            copy_operation_text(ctx, first_block, "NX preceding named-point following block")?;
+            ctx.copy_retained_text(first_block, "NX preceding named-point following block")?;
         let mut point_data_blocks = Vec::new();
         for block in &point.data_blocks {
-            let block = copy_operation_text(ctx, block, "NX preceding named-point source block")?;
+            let block = ctx.copy_retained_text(block, "NX preceding named-point source block")?;
             ctx.charge_collection_items(1, "NX preceding named-point source blocks")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<String>()),
@@ -9190,20 +8820,12 @@ pub(super) fn feature_sketch_point_uses(
             "sketch-point-use",
             "NX sketch point use identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &block_use.operation_label,
-            "NX sketch point use operation label",
-        )?;
+        let operation_label = ctx.copy_retained_text(&block_use.operation_label, "NX sketch point use operation label")?;
         let mut references = Vec::new();
         for block_use in &point_block_uses {
-            let sketch_reference = copy_operation_text(
-                ctx,
-                &block_use.sketch_reference,
-                "NX sketch point use reference",
-            )?;
+            let sketch_reference = ctx.copy_retained_text(&block_use.sketch_reference, "NX sketch point use reference")?;
             let block_use_id =
-                copy_operation_text(ctx, &block_use.id, "NX sketch point use block identity")?;
+                ctx.copy_retained_text(&block_use.id, "NX sketch point use block identity")?;
             ctx.charge_collection_items(1, "NX sketch point use references")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
@@ -9223,9 +8845,9 @@ pub(super) fn feature_sketch_point_uses(
         drop(point_block_uses);
         drop(order_reservation);
         let sketch_point_group =
-            copy_operation_text(ctx, &point_group.id, "NX sketch point use group identity")?;
+            ctx.copy_retained_text(&point_group.id, "NX sketch point use group identity")?;
         let named_point =
-            copy_operation_text(ctx, &named_point.id, "NX sketch point use named point")?;
+            ctx.copy_retained_text(&named_point.id, "NX sketch point use named point")?;
         ctx.charge_collection_items(1, "NX sketch point uses")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<FeatureSketchPointUse>()),
@@ -9386,7 +9008,7 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
                     && scalar.source_offset == value.source_offset
             }) {
                 let datum_csys_scalar =
-                    copy_operation_text(ctx, &scalar.id, "NX sketch datum scalar identity")?;
+                    ctx.copy_retained_text(&scalar.id, "NX sketch datum scalar identity")?;
                 ctx.charge_collection_items(1, "NX sketch datum scalar aliases")?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
@@ -9408,20 +9030,12 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
         }
         let block_relation = match block_relation {
             BorrowedRelation::Shared(data_block) => FeatureSketchDatumCsysBlockRelation::Shared {
-                data_block: copy_operation_text(ctx, data_block, "NX sketch datum shared block")?,
+                data_block: ctx.copy_retained_text(data_block, "NX sketch datum shared block")?,
             },
             BorrowedRelation::Consecutive(point_data_block, construction_data_block) => {
                 FeatureSketchDatumCsysBlockRelation::Consecutive {
-                    point_data_block: copy_operation_text(
-                        ctx,
-                        point_data_block,
-                        "NX sketch datum point block",
-                    )?,
-                    construction_data_block: copy_operation_text(
-                        ctx,
-                        construction_data_block,
-                        "NX sketch datum construction block",
-                    )?,
+                    point_data_block: ctx.copy_retained_text(point_data_block, "NX sketch datum point block")?,
+                    construction_data_block: ctx.copy_retained_text(construction_data_block, "NX sketch datum construction block")?,
                 }
             }
         };
@@ -9432,20 +9046,12 @@ pub(super) fn feature_sketch_datum_csys_dependencies(
             "sketch-datum-csys-dependency",
             "NX sketch datum dependency identity",
         )?;
-        let sketch_operation_label = copy_operation_text(
-            ctx,
-            &point_use.operation_label,
-            "NX sketch datum producer label",
-        )?;
-        let datum_csys_operation_label = copy_operation_text(
-            ctx,
-            &construction.operation_label,
-            "NX sketch datum consumer label",
-        )?;
+        let sketch_operation_label = ctx.copy_retained_text(&point_use.operation_label, "NX sketch datum producer label")?;
+        let datum_csys_operation_label = ctx.copy_retained_text(&construction.operation_label, "NX sketch datum consumer label")?;
         let sketch_point_use =
-            copy_operation_text(ctx, &point_use.id, "NX sketch datum point use")?;
+            ctx.copy_retained_text(&point_use.id, "NX sketch datum point use")?;
         let datum_csys_construction =
-            copy_operation_text(ctx, &construction.id, "NX sketch datum construction")?;
+            ctx.copy_retained_text(&construction.id, "NX sketch datum construction")?;
         ctx.charge_collection_items(1, "NX sketch datum dependencies")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
@@ -9600,18 +9206,10 @@ pub(super) fn feature_parameter_bindings(
                 ),
                 "NX parameter binding identity",
             )?;
-            let operation_label = copy_operation_text(
-                ctx,
-                &input.operation_label,
-                "NX parameter binding operation",
-            )?;
+            let operation_label = ctx.copy_retained_text(&input.operation_label, "NX parameter binding operation")?;
             let input_block =
-                copy_operation_text(ctx, &input.data_block, "NX parameter binding input block")?;
-            let declaration = copy_operation_text(
-                ctx,
-                expression_declaration,
-                "NX parameter binding declaration",
-            )?;
+                ctx.copy_retained_text(&input.data_block, "NX parameter binding input block")?;
+            let declaration = ctx.copy_retained_text(expression_declaration, "NX parameter binding declaration")?;
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(expressions.len()),
                 "scan NX parameter binding expressions",
@@ -9620,11 +9218,7 @@ pub(super) fn feature_parameter_bindings(
                 expression.declaration.as_deref() == Some(expression_declaration.as_str())
             });
             let expression = match (matches.next(), matches.next()) {
-                (Some(expression), None) => Some(copy_operation_text(
-                    ctx,
-                    &expression.id,
-                    "NX parameter binding expression",
-                )?),
+                (Some(expression), None) => Some(ctx.copy_retained_text(&expression.id, "NX parameter binding expression")?),
                 _ => None,
             };
             ctx.charge_collection_items(1, "NX parameter bindings")?;
@@ -9687,14 +9281,14 @@ pub(super) fn feature_parameter_uses(
             "NX parameter use identity",
         )?;
         let operation_label =
-            copy_operation_text(ctx, &binding.operation_label, "NX parameter use operation")?;
-        let expression_id = copy_operation_text(ctx, expression, "NX parameter use expression")?;
+            ctx.copy_retained_text(&binding.operation_label, "NX parameter use operation")?;
+        let expression_id = ctx.copy_retained_text(expression, "NX parameter use expression")?;
         let mut occurrences = Vec::new();
         for candidate in bindings.iter().filter(|candidate| {
             candidate.operation_label == binding.operation_label
                 && candidate.expression.as_deref() == Some(expression)
         }) {
-            let binding_id = copy_operation_text(ctx, &candidate.id, "NX parameter use binding")?;
+            let binding_id = ctx.copy_retained_text(&candidate.id, "NX parameter use binding")?;
             ctx.charge_collection_items(1, "NX parameter use bindings")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(

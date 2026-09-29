@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved counted and ABR compact-index lanes.
 
-use super::{control_index_data_block, copy_om_retained_text, retained_om_index_id};
+use super::{control_index_data_block, retained_om_index_id};
 use crate::container::Container;
 use crate::om::compact_lane::scan::{abr_lanes, counted_lanes};
 use crate::om::compact_lane::{AbrLane, CountedLane};
@@ -195,7 +195,7 @@ pub(in crate::native) fn data_block_abr_reference_lanes(
                 section_ordinal: section_number,
                 ordinal: row_ordinal,
                 frame,
-                source_entry: copy_om_retained_text(ctx, &entry.name, "NX ABR lane source entry")?,
+                source_entry: ctx.copy_retained_text(&entry.name, "NX ABR lane source entry")?,
             });
             ordinal = ordinal
                 .checked_add(1)

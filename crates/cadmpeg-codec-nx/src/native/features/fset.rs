@@ -3,7 +3,7 @@
 
 use super::payload_content::FeaturePayloadContent;
 use super::{
-    charged_unique_offset_data_block, copy_operation_text, format_feature_history_id,
+    charged_unique_offset_data_block, format_feature_history_id,
     offset_data_block_bytes, visit_feature_history_operation_records, FeatureConstructionOwner,
     FeatureConstructionPayload,
 };
@@ -393,13 +393,9 @@ fn fset_construction_payload_from_group(
         .map_err(|_| ctx.refuse_codec_limit("write NX FSET construction identity", 0, 1))?;
     Ok(Some(FeatureConstructionPayload {
         id,
-        operation_label: copy_operation_text(
-            ctx,
-            &graph.operation_label,
-            "NX FSET construction operation",
-        )?,
+        operation_label: ctx.copy_retained_text(&graph.operation_label, "NX FSET construction operation")?,
         owner: FeatureConstructionOwner::Fset {
-            reference_graph: copy_operation_text(ctx, &graph.id, "NX FSET construction reference")?,
+            reference_graph: ctx.copy_retained_text(&graph.id, "NX FSET construction reference")?,
             group,
         },
         content,

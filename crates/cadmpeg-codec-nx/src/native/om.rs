@@ -329,9 +329,9 @@ pub(super) fn audit_trail_rows(
                 ordinal,
                 "NX audit trail row id",
             )?;
-            let section_link = copy_om_retained_text(ctx, &link.id, "NX audit trail section link")?;
+            let section_link = ctx.copy_retained_text(&link.id, "NX audit trail section link")?;
             let source_entry =
-                copy_om_retained_text(ctx, &entry.name, "NX audit trail source entry")?;
+                ctx.copy_retained_text(&entry.name, "NX audit trail source entry")?;
             let Some(result) =
                 OmAuditTrailRow::new(id, section_link, record, source_entry, source_offset)
             else {
@@ -402,18 +402,10 @@ pub(super) fn operation_state_counters(
                     ordinal,
                     "NX operation state counter id",
                 )?,
-                section_link: copy_om_retained_text(
-                    ctx,
-                    &link.id,
-                    "NX state counter section link",
-                )?,
+                section_link: ctx.copy_retained_text(&link.id, "NX state counter section link")?,
                 ordinal,
                 frame,
-                source_entry: copy_om_retained_text(
-                    ctx,
-                    &entry.name,
-                    "NX state counter source entry",
-                )?,
+                source_entry: ctx.copy_retained_text(&entry.name, "NX state counter source entry")?,
             });
         }
     }
@@ -477,18 +469,10 @@ pub(super) fn operation_state_journal_groups(
                     ordinal,
                     "NX operation state journal group id",
                 )?,
-                section_link: copy_om_retained_text(
-                    ctx,
-                    &link.id,
-                    "NX state journal section link",
-                )?,
+                section_link: ctx.copy_retained_text(&link.id, "NX state journal section link")?,
                 ordinal,
                 frame,
-                source_entry: copy_om_retained_text(
-                    ctx,
-                    &entry.name,
-                    "NX state journal source entry",
-                )?,
+                source_entry: ctx.copy_retained_text(&entry.name, "NX state journal source entry")?,
             });
         }
     }
@@ -608,18 +592,10 @@ pub(super) fn operation_state_messages(
                     ordinal,
                     "NX operation state message id",
                 )?,
-                section_link: copy_om_retained_text(
-                    ctx,
-                    &link.id,
-                    "NX state message section link",
-                )?,
+                section_link: ctx.copy_retained_text(&link.id, "NX state message section link")?,
                 ordinal,
                 body,
-                source_entry: copy_om_retained_text(
-                    ctx,
-                    &entry.name,
-                    "NX state message source entry",
-                )?,
+                source_entry: ctx.copy_retained_text(&entry.name, "NX state message source entry")?,
                 source_offset,
             });
         }
@@ -690,10 +666,10 @@ pub(super) fn operation_state_statuses(
                     ordinal,
                     "NX operation state status id",
                 )?,
-                copy_om_retained_text(ctx, &link.id, "NX state status section link")?,
+                ctx.copy_retained_text(&link.id, "NX state status section link")?,
                 ordinal,
                 body,
-                copy_om_retained_text(ctx, &entry.name, "NX state status source entry")?,
+                ctx.copy_retained_text(&entry.name, "NX state status source entry")?,
                 source_offset,
             ) else {
                 continue;
@@ -782,14 +758,10 @@ pub(super) fn operation_state_slot_lanes(
                     ordinal,
                     "NX operation state slot lane id",
                 )?,
-                section_link: copy_om_retained_text(ctx, &link.id, "NX state slot section link")?,
+                section_link: ctx.copy_retained_text(&link.id, "NX state slot section link")?,
                 ordinal,
                 frame,
-                source_entry: copy_om_retained_text(
-                    ctx,
-                    &entry.name,
-                    "NX state slot source entry",
-                )?,
+                source_entry: ctx.copy_retained_text(&entry.name, "NX state slot source entry")?,
             });
         }
     }
@@ -820,7 +792,7 @@ impl ExpressionUnit {
             Self::Degree => "degree",
             Self::Native(unit) => unit.as_str(),
         };
-        copy_om_retained_text(ctx, name, "NX expression unit property")
+        ctx.copy_retained_text(name, "NX expression unit property")
     }
 }
 
@@ -3288,36 +3260,12 @@ fn parse_material_texture_catalog(
                 cadmpeg_core::decode::u64_from_index(ordinal),
                 "NX material catalog entry id",
             )?,
-            texture_asset: copy_om_retained_text(
-                ctx,
-                &asset.id,
-                "NX material catalog texture asset",
-            )?,
-            storage_path: copy_om_retained_text(
-                ctx,
-                storage_path,
-                "NX material catalog storage path",
-            )?,
-            material_path: copy_om_retained_text(
-                ctx,
-                material_path,
-                "NX material catalog material path",
-            )?,
-            create_time: copy_om_retained_text(
-                ctx,
-                create_time,
-                "NX material catalog create time",
-            )?,
-            modify_time: copy_om_retained_text(
-                ctx,
-                modify_time,
-                "NX material catalog modify time",
-            )?,
-            source_entry: copy_om_retained_text(
-                ctx,
-                source_entry,
-                "NX material catalog source entry",
-            )?,
+            texture_asset: ctx.copy_retained_text(&asset.id, "NX material catalog texture asset")?,
+            storage_path: ctx.copy_retained_text(storage_path, "NX material catalog storage path")?,
+            material_path: ctx.copy_retained_text(material_path, "NX material catalog material path")?,
+            create_time: ctx.copy_retained_text(create_time, "NX material catalog create time")?,
+            modify_time: ctx.copy_retained_text(modify_time, "NX material catalog modify time")?,
+            source_entry: ctx.copy_retained_text(source_entry, "NX material catalog source entry")?,
             source_offset,
         });
     }
@@ -3467,11 +3415,7 @@ pub(super) fn external_reference_records(
             id_slots: record.id_slots,
             handles: record.handles,
             tail_byte_len: cadmpeg_core::decode::u64_from_index(record.tail_byte_len),
-            source_entry: copy_om_retained_text(
-                ctx,
-                &entry.name,
-                "nx native external reference source entry",
-            )?,
+            source_entry: ctx.copy_retained_text(&entry.name, "nx native external reference source entry")?,
             source_offset,
         });
     }
@@ -3564,7 +3508,7 @@ pub(super) fn external_reference_indexed_records(
             .get(&(entry.name.as_str(), record.record_id))
             .and_then(|record| *record)
             .map(|record| {
-                copy_om_retained_text(ctx, &record.id, "nx external reference handle-set link")
+                ctx.copy_retained_text(&record.id, "nx external reference handle-set link")
             })
             .transpose()?;
         output.push(ExternalReferenceIndexedRecord {
@@ -3577,11 +3521,7 @@ pub(super) fn external_reference_indexed_records(
                 "nx external reference indexed digest",
             )?,
             handle_set_record,
-            source_entry: copy_om_retained_text(
-                ctx,
-                &entry.name,
-                "nx native external reference indexed source entry",
-            )?,
+            source_entry: ctx.copy_retained_text(&entry.name, "nx native external reference indexed source entry")?,
             source_offset,
         });
     }
@@ -3642,11 +3582,7 @@ pub(super) fn external_reference_empty_records(
         }
         output.push(ExternalReferenceEmptyRecord {
             id,
-            indexed_record: copy_om_retained_text(
-                ctx,
-                &record.id,
-                "nx native external reference empty record link",
-            )?,
+            indexed_record: ctx.copy_retained_text(&record.id, "nx native external reference empty record link")?,
             closing_marker,
         });
     }
@@ -3720,11 +3656,7 @@ pub(super) fn external_reference_tail_reference_pairs(
                 })?;
             out.push(ExternalReferenceTailReferencePair {
                 id,
-                handle_set_record: copy_om_retained_text(
-                    ctx,
-                    &record.id,
-                    "nx native external reference tail pair link",
-                )?,
+                handle_set_record: ctx.copy_retained_text(&record.id, "nx native external reference tail pair link")?,
                 ordinal,
                 persistent_handle,
                 tagged_reference,
@@ -3828,18 +3760,10 @@ pub(super) fn external_reference_record_string_uses(
                     })?;
             output.push(ExternalReferenceRecordStringUse {
                 id,
-                external_record: copy_om_retained_text(
-                    ctx,
-                    &record.id,
-                    "nx native external reference string use record",
-                )?,
+                external_record: ctx.copy_retained_text(&record.id, "nx native external reference string use record")?,
                 slot,
                 string_index: record.id_slots[slot.index()],
-                external_reference: copy_om_retained_text(
-                    ctx,
-                    &reference.id,
-                    "nx native external reference string use target",
-                )?,
+                external_reference: ctx.copy_retained_text(&reference.id, "nx native external reference string use target")?,
                 source_offset,
             });
         }
@@ -3956,21 +3880,9 @@ pub(super) fn external_reference_record_children(
             .map_err(|_| ctx.refuse_codec_limit("nx native external reference child id", 0, 1))?;
         output.push(ExternalReferenceRecordChild {
             id,
-            external_record: copy_om_retained_text(
-                ctx,
-                &record.id,
-                "nx external reference child record",
-            )?,
-            name_reference: copy_om_retained_text(
-                ctx,
-                &name.id,
-                "nx external reference child name",
-            )?,
-            directory_reference: copy_om_retained_text(
-                ctx,
-                &directory.id,
-                "nx external reference child directory",
-            )?,
+            external_record: ctx.copy_retained_text(&record.id, "nx external reference child record")?,
+            name_reference: ctx.copy_retained_text(&name.id, "nx external reference child name")?,
+            directory_reference: ctx.copy_retained_text(&directory.id, "nx external reference child directory")?,
         });
     }
     Ok(output)
@@ -4085,9 +3997,9 @@ pub(super) fn configurations(
                 cadmpeg_core::decode::u64_from_index(ordinal),
                 "nx arrangement configuration id",
             )?,
-            name: copy_om_retained_text(ctx, name, "nx arrangement configuration name")?,
+            name: ctx.copy_retained_text(name, "nx arrangement configuration name")?,
             is_default,
-            source_entry: copy_om_retained_text(ctx, &entry.name, "nx arrangement source entry")?,
+            source_entry: ctx.copy_retained_text(&entry.name, "nx arrangement source entry")?,
             source_offset,
         });
     }
@@ -4134,18 +4046,10 @@ pub(super) fn configuration_attribute_uses(
         .try_reserve_exact(1)
         .map_err(|_| ctx.refuse_codec_limit("nx active configuration attribute uses", 0, 1))?;
     output.push(ConfigurationAttributeUse {
-        id: copy_om_retained_text(
-            ctx,
-            "nx:arrangements:active-attribute-use#0",
-            "nx active configuration attribute use id",
-        )?,
-        configuration: copy_om_retained_text(
-            ctx,
-            &configuration.id,
-            "nx active configuration link",
-        )?,
-        part_attribute: copy_om_retained_text(ctx, &attribute.id, "nx active attribute link")?,
-        name: copy_om_retained_text(ctx, &configuration.name, "nx active configuration name")?,
+        id: ctx.copy_retained_text("nx:arrangements:active-attribute-use#0", "nx active configuration attribute use id")?,
+        configuration: ctx.copy_retained_text(&configuration.id, "nx active configuration link")?,
+        part_attribute: ctx.copy_retained_text(&attribute.id, "nx active attribute link")?,
+        name: ctx.copy_retained_text(&configuration.name, "nx active configuration name")?,
     });
     Ok(output)
 }
@@ -4275,17 +4179,13 @@ fn parse_part_attributes(
                 cadmpeg_core::decode::u64_from_index(ordinal),
                 "nx native part attribute id",
             )?,
-            owner: copy_om_retained_text(ctx, owner, "nx part attribute owner")?,
-            title: copy_om_retained_text(ctx, title, "nx part attribute title")?,
-            value: copy_om_retained_text(ctx, value, "nx part attribute value")?,
-            value_type: copy_om_retained_text(ctx, value_type, "nx part attribute type")?,
+            owner: ctx.copy_retained_text(owner, "nx part attribute owner")?,
+            title: ctx.copy_retained_text(title, "nx part attribute title")?,
+            value: ctx.copy_retained_text(value, "nx part attribute value")?,
+            value_type: ctx.copy_retained_text(value_type, "nx part attribute type")?,
             pdm_based,
             version,
-            source_entry: copy_om_retained_text(
-                ctx,
-                source_entry,
-                "nx part attribute source entry",
-            )?,
+            source_entry: ctx.copy_retained_text(source_entry, "nx part attribute source entry")?,
             source_offset,
         });
     }
@@ -4422,16 +4322,12 @@ fn registry_definitions<T>(
                         cadmpeg_core::decode::u64_from_index(offset),
                         "nx registry definition id",
                     )?,
-                    name: copy_om_retained_text(ctx, name, "nx registry definition name")?,
+                    name: ctx.copy_retained_text(name, "nx registry definition name")?,
                     ordinal,
                     trailing_code,
                     registry_suffix: ctx.copy_retained(registry_suffix, "nx registry suffix")?,
                     section_offset,
-                    source_entry: copy_om_retained_text(
-                        ctx,
-                        &entry.name,
-                        "nx registry source entry",
-                    )?,
+                    source_entry: ctx.copy_retained_text(&entry.name, "nx registry source entry")?,
                     source_offset,
                 }),
             );
@@ -4677,11 +4573,7 @@ pub(super) fn object_records(
                     dependents.get(&record_ordinal),
                     section_ordinal,
                 )?,
-                source_entry: copy_om_retained_text(
-                    ctx,
-                    &entry.name,
-                    "NX object record source entry",
-                )?,
+                source_entry: ctx.copy_retained_text(&entry.name, "NX object record source entry")?,
                 source_offset,
             });
         }
@@ -5266,19 +5158,6 @@ fn retained_om_three_number_id(
     Ok(id)
 }
 
-fn copy_om_retained_text(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
-    let mut copy = String::new();
-    copy.try_reserve_exact(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    copy.push_str(value);
-    Ok(copy)
-}
-
 fn copy_om_retained_texts(
     ctx: &DecodeContext<'_>,
     values: &[&str],
@@ -5298,7 +5177,7 @@ fn copy_om_retained_texts(
         .try_reserve_exact(values.len())
         .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
     for value in values {
-        output.push(copy_om_retained_text(ctx, value, operation)?);
+        output.push(ctx.copy_retained_text(value, operation)?);
     }
     Ok(output)
 }
@@ -5350,11 +5229,7 @@ pub(super) fn data_block_control_values(
                 u64::from(ordinal),
                 "retain NX control value id",
             )?;
-            let block_reference = copy_om_retained_text(
-                ctx,
-                &data_block.id,
-                "retain NX control value block reference",
-            )?;
+            let block_reference = ctx.copy_retained_text(&data_block.id, "retain NX control value block reference")?;
             ctx.charge_entities(1, "NX data block control value")?;
             ctx.charge_collection_items(1, "NX data block control values")?;
             ctx.charge_retained(
@@ -5478,7 +5353,7 @@ pub(super) fn data_block_control_class_references(
                             cadmpeg_core::decode::u64_from_index(definition.offset),
                             "NX control class definition id",
                         )?,
-                        name: copy_om_retained_text(ctx, definition.name, "NX control class name")?,
+                        name: ctx.copy_retained_text(definition.name, "NX control class name")?,
                     })
                 })
                 .transpose()?;
@@ -5568,11 +5443,7 @@ pub(super) fn data_block_control_index_values(
                 u64::from(ordinal),
                 "retain NX control index value id",
             )?;
-            let block_reference = copy_om_retained_text(
-                ctx,
-                &data_block.id,
-                "retain NX control index value block reference",
-            )?;
+            let block_reference = ctx.copy_retained_text(&data_block.id, "retain NX control index value block reference")?;
             let target_data_block = if usize::try_from(value)
                 .ok()
                 .is_some_and(|target| target < block_count)
@@ -5689,11 +5560,7 @@ pub(super) fn data_block_control_references(
                 cadmpeg_core::decode::u64_from_index(reference.offset),
                 "retain NX control reference id",
             )?;
-            let block_reference = copy_om_retained_text(
-                ctx,
-                &data_block.id,
-                "retain NX control reference block reference",
-            )?;
+            let block_reference = ctx.copy_retained_text(&data_block.id, "retain NX control reference block reference")?;
             ctx.charge_entities(1, "NX data block control reference")?;
             ctx.charge_collection_items(1, "NX data block control references")?;
             ctx.charge_retained(
@@ -5792,17 +5659,9 @@ pub(super) fn data_block_control_handle_pairs(
                     "retain NX control handle pair id",
                 )?;
                 let data_block =
-                    copy_om_retained_text(ctx, data_block, "retain NX control handle pair block")?;
-                let first_reference = copy_om_retained_text(
-                    ctx,
-                    &first.id,
-                    "retain NX control handle first reference",
-                )?;
-                let second_reference = copy_om_retained_text(
-                    ctx,
-                    &second.id,
-                    "retain NX control handle second reference",
-                )?;
+                    ctx.copy_retained_text(data_block, "retain NX control handle pair block")?;
+                let first_reference = ctx.copy_retained_text(&first.id, "retain NX control handle first reference")?;
+                let second_reference = ctx.copy_retained_text(&second.id, "retain NX control handle second reference")?;
                 ctx.charge_entities(1, "NX control handle pair")?;
                 ctx.charge_collection_items(1, "NX control handle pairs")?;
                 ctx.charge_retained(
@@ -5950,7 +5809,7 @@ pub(super) fn data_block_references(
                         let Some([target]) = candidates.map(Vec::as_slice) else {
                             return Ok(None);
                         };
-                        copy_om_retained_text(ctx, target, "NX data block reference target")
+                        ctx.copy_retained_text(target, "NX data block reference target")
                             .map(Some)
                     };
                 let source_offset = entry_offset
@@ -6073,11 +5932,7 @@ pub(super) fn part_color_tables(
                 u64::from(color_index.value()),
                 "NX part color definition id",
             )?;
-            definition_ids.push(copy_om_retained_text(
-                ctx,
-                &id,
-                "NX part color table definition link",
-            )?);
+            definition_ids.push(ctx.copy_retained_text(&id, "NX part color table definition link")?);
             let [a, b, c] = definition.components.map(|(component, offset)| {
                 source_base
                     .checked_add(cadmpeg_core::decode::u64_from_index(offset))
@@ -6090,13 +5945,9 @@ pub(super) fn part_color_tables(
                 .ok_or_else(|| ctx.refuse_codec_limit("NX part color definition offset", 0, 1))?;
             parsed_definitions.push(PartColorDefinition {
                 id,
-                color_table: copy_om_retained_text(
-                    ctx,
-                    &table_id,
-                    "NX part color definition table link",
-                )?,
+                color_table: ctx.copy_retained_text(&table_id, "NX part color definition table link")?,
                 color_index,
-                name: copy_om_retained_text(ctx, definition.name, "NX part color name")?,
+                name: ctx.copy_retained_text(definition.name, "NX part color name")?,
                 components,
                 source_offset,
             });
@@ -6138,7 +5989,7 @@ pub(super) fn part_color_tables(
             )?,
             background,
             definitions: definition_ids,
-            source_entry: copy_om_retained_text(ctx, &entry.name, "NX part color source entry")?,
+            source_entry: ctx.copy_retained_text(&entry.name, "NX part color source entry")?,
             source_offset,
         });
     }
@@ -6285,11 +6136,7 @@ pub(super) fn data_block_column_index_tables(
             target_ids.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("allocate NX column index target rows", 0, 1)
             })?;
-            target_ids.push(copy_om_retained_text(
-                ctx,
-                &row.id,
-                "NX column index target row id",
-            )?);
+            target_ids.push(ctx.copy_retained_text(&row.id, "NX column index target row id")?);
         }
         let mut suffix_ids = Vec::new();
         for row in suffix {
@@ -6301,11 +6148,7 @@ pub(super) fn data_block_column_index_tables(
             suffix_ids.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("allocate NX column index linked rows", 0, 1)
             })?;
-            suffix_ids.push(copy_om_retained_text(
-                ctx,
-                &row.id,
-                "NX column index linked row id",
-            )?);
+            suffix_ids.push(ctx.copy_retained_text(&row.id, "NX column index linked row id")?);
         }
         let Ok(rows) = ColumnIndexRows::new(
             opening.frame.target_index().atom.value(),
@@ -6330,17 +6173,9 @@ pub(super) fn data_block_column_index_tables(
                 "NX column index table id",
             )?,
             section_ordinal,
-            opening_linked_row: copy_om_retained_text(
-                ctx,
-                &opening.id,
-                "NX column index opening row id",
-            )?,
+            opening_linked_row: ctx.copy_retained_text(&opening.id, "NX column index opening row id")?,
             rows,
-            source_entry: copy_om_retained_text(
-                ctx,
-                &opening.source_entry,
-                "NX column index source entry",
-            )?,
+            source_entry: ctx.copy_retained_text(&opening.source_entry, "NX column index source entry")?,
             source_offset: opening.frame.offset(),
         });
     }
@@ -6396,7 +6231,7 @@ pub(super) fn store_headers(
             )?,
             section_ordinal: section_ordinal_u32,
             version: version.value.try_into_owned_for_decode(ctx)?,
-            source_entry: copy_om_retained_text(ctx, &entry.name, "NX store header source entry")?,
+            source_entry: ctx.copy_retained_text(&entry.name, "NX store header source entry")?,
             source_offset,
         };
         output.push(match object_id {
@@ -6436,7 +6271,7 @@ pub(super) fn string_values(
                     .checked_add(cadmpeg_core::decode::u64_from_index(value.offset))
                     .ok_or_else(|| ctx.refuse_codec_limit("NX string value source offset", 0, 1))?;
                 let text =
-                    copy_om_retained_text(ctx, value.value.as_str(), "NX string value text")?;
+                    ctx.copy_retained_text(value.value.as_str(), "NX string value text")?;
                 let text = PrintableString::new(text)
                     .map_err(|_| ctx.refuse_codec_limit("validate NX string value", 0, 1))?;
                 ctx.charge_collection_items(1, "NX native string values")?;
@@ -6461,11 +6296,7 @@ pub(super) fn string_values(
                     object_id: record.object_id.0,
                     ordinal: value_ordinal,
                     value: text,
-                    source_entry: copy_om_retained_text(
-                        ctx,
-                        &entry.name,
-                        "NX string value source entry",
-                    )?,
+                    source_entry: ctx.copy_retained_text(&entry.name, "NX string value source entry")?,
                     source_offset,
                 });
             }
@@ -6546,11 +6377,7 @@ pub(super) fn object_references(
                     object_id: record.object_id.0,
                     ordinal: reference_ordinal,
                     reference: reference_value,
-                    source_entry: copy_om_retained_text(
-                        ctx,
-                        &entry.name,
-                        "NX object reference source entry",
-                    )?,
+                    source_entry: ctx.copy_retained_text(&entry.name, "NX object reference source entry")?,
                     source_offset,
                 });
             }
@@ -6626,18 +6453,10 @@ pub(super) fn object_record_handle_pairs(
                         first.source_offset,
                         "NX record handle pair id",
                     )?,
-                    record: copy_om_retained_text(ctx, record, "NX record handle pair record")?,
+                    record: ctx.copy_retained_text(record, "NX record handle pair record")?,
                     object_id: first.object_id,
-                    first_reference: copy_om_retained_text(
-                        ctx,
-                        &first.id,
-                        "NX first handle reference",
-                    )?,
-                    second_reference: copy_om_retained_text(
-                        ctx,
-                        &second.id,
-                        "NX second handle reference",
-                    )?,
+                    first_reference: ctx.copy_retained_text(&first.id, "NX first handle reference")?,
+                    second_reference: ctx.copy_retained_text(&second.id, "NX second handle reference")?,
                     first_handle: *first_handle,
                     second_handle: *second_handle,
                     source_offset: first.source_offset,
@@ -6857,12 +6676,12 @@ pub(super) fn expression_declarations(
                 })
                 .ok_or_else(|| ctx.refuse_codec_limit("NX declaration source offset", 0, 1))?;
             let name =
-                copy_om_retained_text(ctx, declaration.name.as_str(), "NX declaration name")?;
+                ctx.copy_retained_text(declaration.name.as_str(), "NX declaration name")?;
             let name = ParameterName::<String, u32>::parse(name)
                 .ok_or_else(|| ctx.refuse_codec_limit("validate NX declaration name", 0, 1))?;
             let literal = declaration
                 .literal
-                .map(|literal| copy_om_retained_text(ctx, literal, "NX declaration literal"))
+                .map(|literal| ctx.copy_retained_text(literal, "NX declaration literal"))
                 .transpose()?;
             ctx.charge_collection_items(1, "NX expression declarations")?;
             ctx.charge_retained(
@@ -6892,11 +6711,7 @@ pub(super) fn expression_declarations(
                 )?,
                 name,
                 literal,
-                source_entry: copy_om_retained_text(
-                    ctx,
-                    &entry.name,
-                    "NX declaration source entry",
-                )?,
+                source_entry: ctx.copy_retained_text(&entry.name, "NX declaration source entry")?,
                 source_offset,
             });
         }
@@ -7060,31 +6875,19 @@ pub(super) fn expressions(
                     .transpose()?,
                 declaration: declaration
                     .map(|declaration| {
-                        copy_om_retained_text(ctx, &declaration.id, "NX expression declaration id")
+                        ctx.copy_retained_text(&declaration.id, "NX expression declaration id")
                     })
                     .transpose()?,
-                name: ParameterName::new(copy_om_retained_text(
-                    ctx,
-                    expression.name.as_str(),
-                    "NX expression name",
-                )?),
+                name: ParameterName::new(ctx.copy_retained_text(expression.name.as_str(), "NX expression name")?),
                 unit: match expression.unit {
                     crate::om::ExpressionUnit::Millimeter => ExpressionUnit::Millimeter,
                     crate::om::ExpressionUnit::Inch => ExpressionUnit::Inch,
                     crate::om::ExpressionUnit::Degree => ExpressionUnit::Degree,
                     crate::om::ExpressionUnit::Native(unit) => ExpressionUnit::Native(unit),
                 },
-                expression: copy_om_retained_text(
-                    ctx,
-                    expression.expression,
-                    "NX expression formula",
-                )?,
+                expression: ctx.copy_retained_text(expression.expression, "NX expression formula")?,
                 value,
-                source_entry: copy_om_retained_text(
-                    ctx,
-                    &entry.name,
-                    "NX expression source entry",
-                )?,
+                source_entry: ctx.copy_retained_text(&entry.name, "NX expression source entry")?,
                 source_table,
                 source_offset,
             });

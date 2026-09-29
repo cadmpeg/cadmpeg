@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-report losses for NX decode.
 
-use super::emit::render_retained_text;
 use super::feature_completeness::operands::{
     body_selection_is_incomplete, face_selection_is_incomplete, path_ref_is_incomplete,
     pattern_feature_is_incomplete,
@@ -48,7 +47,7 @@ fn push_report_loss(
     code: NxLossCode,
     message: fmt::Arguments<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let message = render_retained_text(ctx, message, "nx geometry report loss text")?;
+    let message = ctx.format_retained(format_args!("{}", message), "nx geometry report loss text")?;
     ctx.charge_retained(
         cadmpeg_core::decode::u64_from_index("nx".len()),
         "nx geometry report loss namespace",

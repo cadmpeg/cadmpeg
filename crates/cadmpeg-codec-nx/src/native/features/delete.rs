@@ -3,7 +3,7 @@
 
 use super::payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 use super::{
-    charged_unique_offset_data_block, copy_operation_text, format_feature_history_id,
+    charged_unique_offset_data_block, format_feature_history_id,
     offset_data_block_bytes, visit_feature_history_operation_records,
 };
 use crate::container::Container;
@@ -348,12 +348,8 @@ fn delete_construction_payload_from_field(
         .map_err(|_| ctx.refuse_codec_limit("write NX DELETE construction identity", 0, 1))?;
     Ok(Some(FeatureDeleteConstructionPayload {
         id,
-        operation_label: copy_operation_text(
-            ctx,
-            &field.operation_label,
-            "NX DELETE construction operation",
-        )?,
-        reference_field: copy_operation_text(ctx, &field.id, "NX DELETE construction reference")?,
+        operation_label: ctx.copy_retained_text(&field.operation_label, "NX DELETE construction operation")?,
+        reference_field: ctx.copy_retained_text(&field.id, "NX DELETE construction reference")?,
         content,
     }))
 }

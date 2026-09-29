@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Holes construction records and extraction.
 
-use super::copy_operation_text;
+
 use super::feature_input_blocks;
 use super::format_feature_history_id;
 
@@ -710,12 +710,8 @@ fn owned_symbolic_thread(
             operation_ordinal,
             Some(ordinal),
         )?;
-        let owner = copy_operation_text(ctx, &id, "NX symbolic thread text frame owner")?;
-        let value = copy_operation_text(
-            ctx,
-            frame.value.as_str(),
-            "NX symbolic thread text frame value",
-        )?;
+        let owner = ctx.copy_retained_text(&id, "NX symbolic thread text frame owner")?;
+        let value = ctx.copy_retained_text(frame.value.as_str(), "NX symbolic thread text frame value")?;
         text_frames.push(FeatureSymbolicThreadTextFrame {
             id: frame_id,
             symbolic_thread: owner,
@@ -812,7 +808,7 @@ fn copy_replaced_id(
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     let Some(start) = source.find(marker) else {
-        return copy_operation_text(ctx, source, operation);
+        return ctx.copy_retained_text(source, operation);
     };
     let end = start
         .checked_add(marker.len())
@@ -943,16 +939,8 @@ pub(in crate::native) fn feature_simple_hole_templates(
                     "simple-hole-template",
                     "NX simple hole template identity",
                 )?,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &label.id,
-                    "NX simple hole template label",
-                )?,
-                payload_string: copy_operation_text(
-                    ctx,
-                    &string.id,
-                    "NX simple hole template source",
-                )?,
+                operation_label: ctx.copy_retained_text(&label.id, "NX simple hole template label")?,
+                payload_string: ctx.copy_retained_text(&string.id, "NX simple hole template source")?,
                 family: SimpleHoleFamily::GeneralHole,
                 form,
                 extent,
@@ -988,16 +976,8 @@ pub(in crate::native) fn feature_threaded_hole_templates(
                     "threaded-hole-template",
                     "NX threaded hole template identity",
                 )?,
-                operation_label: copy_operation_text(
-                    ctx,
-                    &label.id,
-                    "NX threaded hole template label",
-                )?,
-                payload_string: copy_operation_text(
-                    ctx,
-                    &string.id,
-                    "NX threaded hole template source",
-                )?,
+                operation_label: ctx.copy_retained_text(&label.id, "NX threaded hole template label")?,
+                payload_string: ctx.copy_retained_text(&string.id, "NX threaded hole template source")?,
                 family,
                 extent,
                 source_offset: string.source_offset,
@@ -1131,7 +1111,7 @@ fn simple_hole_block_reference(
         return Ok(None);
     };
     Ok(Some(SimpleHoleBlockReference {
-        data_block: copy_operation_text(ctx, &block.id, "NX simple hole block reference")?,
+        data_block: ctx.copy_retained_text(&block.id, "NX simple hole block reference")?,
         source_offset,
     }))
 }
@@ -1462,15 +1442,11 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         }
         let mut members = Vec::new();
         for (_, _, reference, lane) in positioned {
-            let operation_label = copy_operation_text(
-                ctx,
-                &reference.operation_label,
-                "NX simple hole group operation",
-            )?;
+            let operation_label = ctx.copy_retained_text(&reference.operation_label, "NX simple hole group operation")?;
             let scalar_lane =
-                copy_operation_text(ctx, &lane.id, "NX simple hole group scalar lane")?;
+                ctx.copy_retained_text(&lane.id, "NX simple hole group scalar lane")?;
             let block_reference =
-                copy_operation_text(ctx, &reference.id, "NX simple hole group block reference")?;
+                ctx.copy_retained_text(&reference.id, "NX simple hole group block reference")?;
             ctx.charge_collection_items(1, "NX simple hole group members")?;
             ctx.charge_retained(
                 cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
@@ -1515,12 +1491,12 @@ pub(in crate::native) fn feature_simple_hole_construction_groups(
         let members = SimpleHoleConstructionMembers::new(members)
             .map_err(|error| cadmpeg_core::CodecError::Malformed(error.to_owned()))?;
         let first_data_blocks = [
-            copy_operation_text(ctx, key.0[0], "NX simple hole first block")?,
-            copy_operation_text(ctx, key.0[1], "NX simple hole first block")?,
+            ctx.copy_retained_text(key.0[0], "NX simple hole first block")?,
+            ctx.copy_retained_text(key.0[1], "NX simple hole first block")?,
         ];
         let second_data_blocks = [
-            copy_operation_text(ctx, key.1[0], "NX simple hole second block")?,
-            copy_operation_text(ctx, key.1[1], "NX simple hole second block")?,
+            ctx.copy_retained_text(key.1[0], "NX simple hole second block")?,
+            ctx.copy_retained_text(key.1[1], "NX simple hole second block")?,
         ];
         ctx.charge_collection_items(1, "NX simple hole construction groups")?;
         ctx.charge_retained(
@@ -1745,15 +1721,11 @@ pub(in crate::native) fn feature_hole_package_construction_group_uses(
             "hole-package-construction-group-use",
             "NX hole package group use identity",
         )?;
-        let operation_label = copy_operation_text(
-            ctx,
-            &lane.operation_label,
-            "NX hole package group use label",
-        )?;
+        let operation_label = ctx.copy_retained_text(&lane.operation_label, "NX hole package group use label")?;
         let construction_group_lane =
-            copy_operation_text(ctx, &lane.id, "NX hole package group use lane")?;
+            ctx.copy_retained_text(&lane.id, "NX hole package group use lane")?;
         let simple_hole_construction_group =
-            copy_operation_text(ctx, &group.id, "NX hole package group use group")?;
+            ctx.copy_retained_text(&group.id, "NX hole package group use group")?;
         ctx.charge_collection_items(1, "NX hole package group uses")?;
         ctx.charge_retained(
             cadmpeg_core::decode::u64_from_index(std::mem::size_of::<

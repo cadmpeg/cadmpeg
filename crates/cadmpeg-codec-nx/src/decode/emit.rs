@@ -792,13 +792,9 @@ pub(super) fn emit_topology(
                 .map_err(|_| ctx.refuse_codec_limit("nx topology losses", 0, 1))?;
             super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyLoopRingUnresolved)?;
             topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                render_retained_text(
-                    ctx,
-                    format_args!(
+                ctx.format_retained(format_args!(
                         "parasolid#{stream_index} LOOP {loop_xmt} of {face_ref} states no resolvable coedge ring: loop {id} is omitted from its face"
-                    ),
-                    "nx unresolved loop loss text",
-                )?,
+                    ), "nx unresolved loop loss text")?,
             ));
             continue;
         }
@@ -1231,13 +1227,9 @@ pub(super) fn emit_topology(
                     .map_err(|_| ctx.refuse_codec_limit("nx topology losses", 0, 1))?;
                 super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyLoopRingUnresolved)?;
                 topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
-                    render_retained_text(
-                        ctx,
-                        format_args!(
+                    ctx.format_retained(format_args!(
                             "parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"
-                        ),
-                        "nx unresolved loop loss text",
-                    )?,
+                        ), "nx unresolved loop loss text")?,
                 ));
                 continue;
             };
@@ -1274,14 +1266,10 @@ pub(super) fn emit_topology(
                 .map_err(|_| ctx.refuse_codec_limit("nx topology losses", 0, 1))?;
             super::charge_loss_code(ctx, crate::loss::NxLossCode::TopologyFaceLoopUnresolved)?;
             topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
-                render_retained_text(
-                    ctx,
-                    format_args!(
+                ctx.format_retained(format_args!(
                         "parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
                         pending.xmt
-                    ),
-                    "nx unresolved face loss text",
-                )?,
+                    ), "nx unresolved face loss text")?,
             ));
         }
         let loops = face_loops.remove(&pending.id).unwrap_or_default();
@@ -1846,11 +1834,7 @@ fn unknown_stream_record(
     stream: &Stream,
     data: Option<Vec<u8>>,
 ) -> Result<UnknownRecord, CodecError> {
-    let id = render_retained_text(
-        ctx,
-        format_args!("nx:container:parasolid#{si}"),
-        "nx unknown stream id",
-    )?;
+    let id = ctx.format_retained(format_args!("nx:container:parasolid#{si}"), "nx unknown stream id")?;
     let id = UnknownId::mint(id).map_err(|error| CodecError::Malformed(error.to_string()))?;
     let offset = stream.file_offset as u64;
     match data {
@@ -1860,11 +1844,7 @@ fn unknown_stream_record(
                 cadmpeg_core::decode::u64_from_index(stream.inflated.len()),
                 "hash NX unknown stream",
             )?;
-            let digest = render_retained_text(
-                ctx,
-                HexDigest(sha256(&stream.inflated)),
-                "nx unknown stream digest",
-            )?;
+            let digest = ctx.format_retained(format_args!("{}", HexDigest(sha256(&stream.inflated))), "nx unknown stream digest")?;
             Ok(UnknownRecord::unavailable(
                 id,
                 offset,
@@ -2172,21 +2152,6 @@ impl Display for HexDigest {
         }
         Ok(())
     }
-}
-
-pub(super) fn render_retained_text(
-    ctx: &DecodeContext<'_>,
-    value: impl Display,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let mut count = CountBytes(0);
-    write!(&mut count, "{value}").map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(count.0), operation)?;
-    let mut text = String::new();
-    text.try_reserve_exact(count.0)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    write!(&mut text, "{value}").map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(text)
 }
 
 fn insert_source_attribute(
