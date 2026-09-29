@@ -147,7 +147,6 @@ fn native_radial_record_for_marker(
             marker.id() == marker_id && marker.feature_ref.as_deref() == Some(feature)
         })?;
         radial_circle_records(&lane.native_payload)
-            .into_iter()
             .find(|(offset, ..)| usize::try_from(marker.offset()).ok() == Some(*offset))
             .map(|(_, radial_index, construction)| (radial_index, construction))
             .or_else(|| {
@@ -1082,9 +1081,9 @@ pub(super) fn compact_legacy_radial_circle_index(payload: &[u8], offset: usize) 
         .flatten()
 }
 
-fn radial_circle_records(payload: &[u8]) -> Vec<(usize, usize, bool)> {
+fn radial_circle_records(payload: &[u8]) -> impl Iterator<Item = (usize, usize, bool)> + '_ {
     (0..payload.len().saturating_sub(LEGACY_SKETCH_MARKER.len() - 1))
-        .filter_map(|offset| {
+        .filter_map(move |offset| {
             let radial = compact_radial_circle_index(payload, offset)
                 .or_else(|| extended_terminal_repeated_radial_circle_index(payload, offset))?;
             Some((
@@ -1093,7 +1092,6 @@ fn radial_circle_records(payload: &[u8]) -> Vec<(usize, usize, bool)> {
                 marker_profile_curve_role(payload, offset) == Some(2),
             ))
         })
-        .collect()
 }
 
 fn extended_terminal_repeated_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
@@ -1331,7 +1329,7 @@ pub(crate) fn project_marker_dimensioned_circles(
         .map(|lane| {
             (
                 lane.id.as_str(),
-                radial_circle_records(&lane.native_payload),
+                radial_circle_records(&lane.native_payload).collect::<Vec<_>>(),
             )
         })
         .collect::<HashMap<_, _>>();
