@@ -9047,7 +9047,7 @@ fn consolidated_owner_packets(
                     *stored_targets = identity_targets
                         .remove(&(source_index, pos))
                         .unwrap_or_default();
-                    *owner_chart = owner_charts.get(&(source_index, pos)).cloned();
+                    *owner_chart = owner_charts.remove(&(source_index, pos));
                     *boundary_cycle = boundary_cycles.get(&(source_index, pos)).copied();
                 }
                 output.push(CatiaConsolidatedOwnerPacket {
