@@ -7567,6 +7567,39 @@ fn hole_operations_are_unique(
     Ok(true)
 }
 
+fn charge_hole_map_entry<T>(
+    ctx: &DecodeContext<'_>,
+    key: &str,
+    nested_bytes: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let bytes = std::mem::size_of::<(String, T)>()
+        .checked_add(key.len())
+        .and_then(|bytes| bytes.checked_add(nested_bytes))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(key.len())))?;
+    ctx.charge_collection_items(1, operation)?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), operation)?;
+    ctx.charge_work(1, operation)
+}
+
+fn insert_hole_output_body(
+    ctx: &DecodeContext<'_>,
+    outputs: &mut BTreeMap<String, Vec<BodyId>>,
+    operation: &str,
+    body: &BodyId,
+) -> Result<(), CodecError> {
+    let nested_bytes = std::mem::size_of::<BodyId>()
+        .checked_add(body.as_str().len())
+        .ok_or_else(|| ctx.refuse_codec_limit("NX hole output body", 0, cadmpeg_core::decode::u64_from_index(body.as_str().len())))?;
+    ctx.charge_collection_items(1, "NX hole output body")?;
+    charge_hole_map_entry::<Vec<BodyId>>(ctx, operation, nested_bytes, "NX hole output map")?;
+    let mut bodies = Vec::new();
+    reserve_attach_vec(ctx, &mut bodies, 1, "NX hole output body")?;
+    bodies.push(body.clone());
+    outputs.insert(operation.to_owned(), bodies);
+    Ok(())
+}
+
 fn hole_body_projection(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -7601,10 +7634,11 @@ fn hole_body_projection(
             return Ok(None);
         }
         for operation in operations {
-            projected_outputs.insert(operation.clone(), vec![body.clone()]);
+            insert_hole_output_body(ctx, &mut projected_outputs, &operation, &body)?;
             let Some(diameter) = Length::new(radius * 2.0) else {
                 return Ok(None);
             };
+            charge_hole_map_entry::<Length>(ctx, &operation, 0, "NX hole diameter map")?;
             diameters.insert(operation, diameter);
         }
     }
@@ -7648,10 +7682,11 @@ fn counterbore_body_projection(
         let [witness] = witnesses.as_slice() else {
             return Ok(None);
         };
-        projected_outputs.insert(operation.clone(), vec![body.clone()]);
+        insert_hole_output_body(ctx, &mut projected_outputs, operation, &body)?;
         let Some(diameter) = Length::new(witness.bore_radius * 2.0) else {
             return Ok(None);
         };
+        charge_hole_map_entry::<Length>(ctx, operation, 0, "NX counterbore diameter map")?;
         diameters.insert(operation.clone(), diameter);
         let (Some(diameter), Some(depth)) = (
             cadmpeg_ir::scalar::PositiveLength::new(witness.counterbore_radius * 2.0),
@@ -7659,6 +7694,7 @@ fn counterbore_body_projection(
         ) else {
             return Ok(None);
         };
+        charge_hole_map_entry::<CounterboreDimensions>(ctx, operation, 0, "NX counterbore dimension map")?;
         counterbores.insert(operation.clone(), CounterboreDimensions { diameter, depth });
     }
     Ok(Some(HoleBodyProjection {
@@ -7698,14 +7734,16 @@ fn blind_hole_body_projection(
         let [witness] = witnesses.as_slice() else {
             return Ok(None);
         };
-        projected_outputs.insert(operation.clone(), vec![body.clone()]);
+        insert_hole_output_body(ctx, &mut projected_outputs, operation, &body)?;
         let Some(diameter) = Length::new(witness.bore_radius * 2.0) else {
             return Ok(None);
         };
+        charge_hole_map_entry::<Length>(ctx, operation, 0, "NX blind hole diameter map")?;
         diameters.insert(operation.clone(), diameter);
         let Some(depth) = cadmpeg_ir::scalar::NonZeroLength::new(witness.depth) else {
             return Ok(None);
         };
+        charge_hole_map_entry::<cadmpeg_ir::scalar::NonZeroLength>(ctx, operation, 0, "NX blind hole depth map")?;
         blind_depths.insert(
             operation.clone(),
             depth,
@@ -7746,6 +7784,7 @@ fn hole_axis_placements_for_operations(
         if body_placements.len() != 1 {
             continue;
         }
+        charge_hole_map_entry::<HolePlacement>(ctx, operation, 0, "NX hole placement map")?;
         placements.insert(operation.clone(), body_placements.remove(0));
     }
     Ok(placements)
@@ -7784,6 +7823,7 @@ fn counterbore_axis_placements_for_operations(
         ) else {
             return Ok(BTreeMap::new());
         };
+        charge_hole_map_entry::<HolePlacement>(ctx, operation, 0, "NX counterbore placement map")?;
         placements.insert(
             operation.clone(),
             HolePlacement::Axis {
@@ -7828,6 +7868,7 @@ fn blind_hole_axis_placements_for_operations(
         ) else {
             return Ok(BTreeMap::new());
         };
+        charge_hole_map_entry::<HolePlacement>(ctx, operation, 0, "NX blind hole placement map")?;
         placements.insert(
             operation.clone(),
             HolePlacement::Directed {
