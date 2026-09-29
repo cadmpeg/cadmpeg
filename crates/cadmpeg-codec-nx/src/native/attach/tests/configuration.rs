@@ -342,6 +342,80 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     assert!(projection.outputs.is_empty());
 }
 
+fn hole_package_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    use crate::native::features::holes::{
+        FeatureHolePackageConstructionGroupUse, FeatureSimpleHoleConstructionGroup,
+        FeatureSimpleHoleConstructionMember, FeatureSimpleHoleTemplate,
+        SimpleHoleConstructionMembers, SimpleHoleEndTreatment, SimpleHoleExtent,
+        SimpleHoleFamily, SimpleHoleForm,
+    };
+    let operations = ["simple-a".to_string(), "simple-b".to_string()];
+    let templates = operations.clone().map(|operation| FeatureSimpleHoleTemplate {
+        id: operation.clone(),
+        operation_label: operation.clone(),
+        payload_string: operation,
+        family: SimpleHoleFamily::GeneralHole,
+        form: SimpleHoleForm::Simple,
+        extent: SimpleHoleExtent::Through,
+        start_treatment: SimpleHoleEndTreatment::None,
+        end_treatment: SimpleHoleEndTreatment::None,
+    });
+    let group = FeatureSimpleHoleConstructionGroup {
+        id: "group".into(),
+        first_data_blocks: ["a".into(), "b".into()],
+        second_data_blocks: ["c".into(), "d".into()],
+        members: SimpleHoleConstructionMembers::new(operations.clone().map(|operation| FeatureSimpleHoleConstructionMember {
+            operation_label: operation,
+            scalar_lane: "lane".into(),
+            block_reference: "blocks".into(),
+        }).into_iter().collect()).unwrap(),
+    };
+    let use_ = FeatureHolePackageConstructionGroupUse {
+        id: "use".into(),
+        operation_label: "package".into(),
+        construction_group_lane: "package-lane".into(),
+        simple_hole_construction_group: group.id.clone(),
+        source_offset: 0,
+    };
+    let body = cadmpeg_ir::ids::BodyId::mint("test:model:entity#package-body").unwrap();
+    let outputs = BTreeMap::from(operations.clone().map(|operation| (operation, vec![body.clone()])));
+    let diameters = BTreeMap::from(operations.map(|operation| (operation, cadmpeg_ir::scalar::Length::new(5.1).unwrap())));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let projection = hole_package_projection(
+        &ctx, &cadmpeg_ir::document::CadIr::empty(), &templates,
+        std::slice::from_ref(&group), std::slice::from_ref(&use_),
+        &outputs, &diameters, &BTreeMap::new(),
+    )?;
+    assert_eq!(projection.outputs["package"], [body]);
+    Ok(())
+}
+
+#[test]
+fn hole_package_refuses_collection_limit() {
+    let error = hole_package_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn hole_package_refuses_retained_limit() {
+    let error = hole_package_result(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn hole_package_refuses_work_limit() {
+    let error = hole_package_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 #[test]
 fn active_configuration_retains_complete_evaluated_parameter_state() {
     let parameter = |id: &str, ordinal, value, dependencies: Vec<ParameterId>| DesignParameter {

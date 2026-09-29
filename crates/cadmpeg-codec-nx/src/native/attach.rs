@@ -7397,26 +7397,16 @@ fn hole_package_projection(
     chamfers: &BTreeMap<String, HoleKind>,
 ) -> Result<HolePackageProjection, CodecError> {
     let mut projection = HolePackageProjection::default();
-    let package_counts = uses
-        .iter()
-        .fold(BTreeMap::<&str, usize>::new(), |mut counts, use_| {
-            *counts.entry(use_.operation_label.as_str()).or_default() += 1;
-            counts
-        });
-    let group_counts = uses
-        .iter()
-        .fold(BTreeMap::<&str, usize>::new(), |mut counts, use_| {
-            *counts
-                .entry(use_.simple_hole_construction_group.as_str())
-                .or_default() += 1;
-            counts
-        });
     for use_ in uses {
-        if package_counts.get(use_.operation_label.as_str()) != Some(&1)
-            || group_counts.get(use_.simple_hole_construction_group.as_str()) != Some(&1)
+        let use_scans = uses.len().checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit("NX hole package use uniqueness", 0, cadmpeg_core::decode::u64_from_index(uses.len())))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(use_scans), "NX hole package use uniqueness")?;
+        if uses.iter().filter(|candidate| candidate.operation_label == use_.operation_label).count() != 1
+            || uses.iter().filter(|candidate| candidate.simple_hole_construction_group == use_.simple_hole_construction_group).count() != 1
         {
             continue;
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(groups.len()), "NX hole package group lookup")?;
         let Some(group) = groups
             .iter()
             .find(|group| group.id == use_.simple_hole_construction_group)
@@ -7431,37 +7421,42 @@ fn hole_package_projection(
         {
             continue;
         }
-        let child_templates = group
-            .members
-            .iter()
-            .map(|member| &member.operation_label)
-            .map(|operation| {
-                templates
-                    .iter()
-                    .filter(|template| template.operation_label == *operation)
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        if child_templates.iter().any(|matches| {
-            !matches!(matches.as_slice(), [template]
-                if template.form == crate::native::features::holes::SimpleHoleForm::Simple
-                    && template.extent == crate::native::features::holes::SimpleHoleExtent::Through)
-        }) {
+        let template_scans = group.members.len().checked_mul(templates.len())
+            .and_then(|count| count.checked_mul(2))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX hole package template lookup", 0, cadmpeg_core::decode::u64_from_index(group.members.len())))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(template_scans), "NX hole package template lookup")?;
+        let mut requests_chamfer = true;
+        let mut requests_no_treatment = true;
+        let mut complete_templates = true;
+        for member in group.members.iter() {
+            let mut matches = templates.iter().filter(|template| template.operation_label == member.operation_label);
+            let Some(template) = matches.next() else {
+                complete_templates = false;
+                break;
+            };
+            if matches.next().is_some()
+                || template.form != crate::native::features::holes::SimpleHoleForm::Simple
+                || template.extent != crate::native::features::holes::SimpleHoleExtent::Through
+            {
+                complete_templates = false;
+                break;
+            }
+            requests_chamfer &= template.start_treatment == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
+                && template.end_treatment == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer;
+            requests_no_treatment &= template.start_treatment == crate::native::features::holes::SimpleHoleEndTreatment::None
+                && template.end_treatment == crate::native::features::holes::SimpleHoleEndTreatment::None;
+        }
+        if !complete_templates {
             continue;
         }
-        let child_outputs = group
-            .members
-            .iter()
-            .map(|member| &member.operation_label)
-            .filter_map(|operation| outputs.get(operation))
-            .collect::<Vec<_>>();
-        let Some([body]) = child_outputs.first().map(|bodies| bodies.as_slice()) else {
+        let Some(body) = group.members.first()
+            .and_then(|member| outputs.get(&member.operation_label))
+            .and_then(|bodies| bodies.as_slice().first().filter(|_| bodies.len() == 1))
+        else {
             continue;
         };
-        if child_outputs.len() != group.members.len()
-            || child_outputs
-                .iter()
-                .any(|candidate| candidate.as_slice() != [body.clone()])
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(group.members.len()), "NX hole package output lookup")?;
+        if group.members.iter().any(|member| !matches!(outputs.get(&member.operation_label).map(Vec::as_slice), Some([candidate]) if candidate == body))
         {
             continue;
         }
@@ -7482,19 +7477,6 @@ fn hole_package_projection(
         {
             continue;
         }
-        let requests_chamfer = child_templates.iter().all(|matches| {
-            let template = matches[0];
-            template.start_treatment
-                == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
-                && template.end_treatment
-                    == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
-        });
-        let requests_no_treatment = child_templates.iter().all(|matches| {
-            let template = matches[0];
-            template.start_treatment == crate::native::features::holes::SimpleHoleEndTreatment::None
-                && template.end_treatment
-                    == crate::native::features::holes::SimpleHoleEndTreatment::None
-        });
         if !requests_chamfer && !requests_no_treatment {
             continue;
         }
@@ -7520,28 +7502,29 @@ fn hole_package_projection(
         } else {
             None
         };
-        projection.internal_operations.extend(
-            group
-                .members
-                .iter()
-                .map(|member| member.operation_label.clone()),
-        );
-        projection
-            .outputs
-            .insert(use_.operation_label.clone(), vec![body.clone()]);
-        projection
-            .diameters
-            .insert(use_.operation_label.clone(), diameter);
+        for member in group.members.iter() {
+            ctx.charge_work(1, "NX hole package internal operation")?;
+            if projection.internal_operations.contains(&member.operation_label) {
+                continue;
+            }
+            ctx.charge_collection_items(1, "NX hole package internal operations")?;
+            let bytes = std::mem::size_of::<String>()
+                .checked_add(member.operation_label.len())
+                .ok_or_else(|| ctx.refuse_codec_limit("NX hole package internal operations", 0, cadmpeg_core::decode::u64_from_index(member.operation_label.len())))?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX hole package internal operations")?;
+            projection.internal_operations.insert(member.operation_label.clone());
+        }
+        insert_hole_output_body(ctx, &mut projection.outputs, &use_.operation_label, body)?;
+        charge_hole_map_entry::<Length>(ctx, &use_.operation_label, 0, "NX hole package diameter map")?;
+        projection.diameters.insert(use_.operation_label.clone(), diameter);
         if let Some(chamfer) = chamfer {
-            projection
-                .chamfers
-                .insert(use_.operation_label.clone(), chamfer);
+            charge_hole_map_entry::<HoleKind>(ctx, &use_.operation_label, 0, "NX hole package chamfer map")?;
+            projection.chamfers.insert(use_.operation_label.clone(), chamfer);
         }
         let placements = hole_axis_placements_for_body(ctx, ir, body)?;
         if placements.len() == group.members.len() {
-            projection
-                .placements
-                .insert(use_.operation_label.clone(), placements);
+            charge_hole_map_entry::<Vec<HolePlacement>>(ctx, &use_.operation_label, 0, "NX hole package placement map")?;
+            projection.placements.insert(use_.operation_label.clone(), placements);
         }
     }
     Ok(projection)
