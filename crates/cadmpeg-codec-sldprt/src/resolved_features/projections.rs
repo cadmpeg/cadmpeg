@@ -1714,10 +1714,31 @@ pub(crate) fn project_draft_operands(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let feature_ids_by_native = features
-        .iter()
-        .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
-        .collect::<HashMap<_, _>>();
+    const INDEX_OPERATION: &str = "index SLDPRT draft feature identities";
+    let mut feature_ids_by_native = HashMap::new();
+    for feature in features.iter() {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        ctx.charge_work(1, INDEX_OPERATION)?;
+        let mut id = String::new();
+        ctx.reserve_retained_string(&mut id, feature.id.as_str().len(), INDEX_OPERATION)?;
+        id.push_str(feature.id.as_str());
+        let id = cadmpeg_ir::features::FeatureId::mint(id)
+            .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT draft feature id"))?;
+        if let Some(previous) = feature_ids_by_native.get_mut(native_ref) {
+            *previous = id;
+            continue;
+        }
+        ctx.charge_collection_items(1, INDEX_OPERATION)?;
+        feature_ids_by_native.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX)
+        })?;
+        let mut native = String::new();
+        ctx.reserve_retained_string(&mut native, native_ref.len(), INDEX_OPERATION)?;
+        native.push_str(native_ref);
+        feature_ids_by_native.insert(native, id);
+    }
     let mut candidates = HashMap::<String, Vec<DraftOperands>>::new();
     for lane in lanes {
         for (feature, operands) in draft_operand_candidates(ctx, histories, lane)? {
