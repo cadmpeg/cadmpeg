@@ -1734,14 +1734,13 @@ where
                 mesh_feature_id_charged(ctx, &stream, scope_offset)?,
                 scope.scope,
                 collection.collection,
-                DesignMeshTextureTable::new_charged(ctx, texture_table.identity, textures).map_err(
-                    |error| match error {
+                DesignMeshTextureTable::new_charged(ctx, texture_table.identity, textures)
+                    .map_err(|error| match error {
                         CodecError::Malformed(message) => {
                             malformed_mesh_graph(ctx, &stream, &message)
                         }
                         other => other,
-                    },
-                )?,
+                    })?,
                 collection_owner.owner,
                 feature_bodies,
             )
