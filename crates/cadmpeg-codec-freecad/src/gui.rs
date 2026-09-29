@@ -5286,7 +5286,8 @@ mod shape_association_tests {
         let payloads = [shape_payload("payload", "property")];
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(ir.model.bodies[0].id.as_str().len()) - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(ir.model.bodies[0].id.as_str().len()) - 1;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         let error = displayed_shape_bodies(&ctx, &ir, "object", &properties, &payloads)

@@ -730,9 +730,16 @@ fn decode_standard_does_not_promote_unbound_consolidated_pcurve() {
 fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
     let exact_x = 1.000_000_01_f64;
     let mut surf = surf_stream();
-    for (index, value) in [cadmpeg_core::convert::f32_from_f64(exact_x).expect("fixture value fits f32"), 2.0_f32, 3.0_f32, 1.0_f32, 0.0_f32, 2.0_f32]
-        .into_iter()
-        .enumerate()
+    for (index, value) in [
+        cadmpeg_core::convert::f32_from_f64(exact_x).expect("fixture value fits f32"),
+        2.0_f32,
+        3.0_f32,
+        1.0_f32,
+        0.0_f32,
+        2.0_f32,
+    ]
+    .into_iter()
+    .enumerate()
     {
         surf[8 + 4 * index..12 + 4 * index].copy_from_slice(&be_f32(value));
     }
@@ -832,7 +839,10 @@ fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
         ];
         records.extend_from_slice(&[0x05, 0x08, 0x01]);
         for value in point {
-            records.extend_from_slice(&(cadmpeg_core::convert::f32_from_f64(value).expect("fixture value fits f32")).to_le_bytes());
+            records.extend_from_slice(
+                &(cadmpeg_core::convert::f32_from_f64(value).expect("fixture value fits f32"))
+                    .to_le_bytes(),
+            );
         }
     }
     let mut file = standard_catpart();

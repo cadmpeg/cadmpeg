@@ -80,7 +80,7 @@ fn reconstructed_mesh_copies_refuse_retained_bytes_before_growth() {
         handles: vec![7],
         boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
     };
-    let selected = [] as [MeshFaceBoundaryAssignment; 0];
+    let selected: [MeshFaceBoundaryAssignment; 0] = [];
     assert!(matches!(
         with_zero_retained(|ctx| reconstruct_mesh_selection(ctx, std::slice::from_ref(&row), &[], &selected, &[])),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "catia_mesh_selection_handle_copy"

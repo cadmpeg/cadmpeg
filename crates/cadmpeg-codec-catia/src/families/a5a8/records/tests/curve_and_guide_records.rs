@@ -351,7 +351,9 @@ fn a5_nurbs_curve_stream() -> Vec<u8> {
     payload.extend_from_slice(&[0x00, 0x07]);
     assert_eq!(payload.len(), 280);
     let mut record = vec![0xa5, 0x13, 0x16];
-    record.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
+    record.extend_from_slice(
+        &(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     record.push(0x0d);
     record.extend(payload);
     record
@@ -380,7 +382,9 @@ fn a5_nurbs_curve_stream_with_knot_count(knot_count: usize) -> Vec<u8> {
     }
     payload.extend_from_slice(&[0x00, 0x07]);
     let mut record = vec![0xa5, 0x13, 0x16];
-    record.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
+    record.extend_from_slice(
+        &(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     record.push(0x0d);
     record.extend(payload);
     record

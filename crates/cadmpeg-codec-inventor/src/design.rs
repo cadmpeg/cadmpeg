@@ -2194,8 +2194,9 @@ mod tests {
         );
 
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(parameter.expression.len() + parameter.name.len() + parameter.id.as_str().len() - 1);
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            parameter.expression.len() + parameter.name.len() + parameter.id.as_str().len() - 1,
+        );
         assert!(matches!(
             project_single_parameter(policy),
             Err(CodecError::ResourceLimit(limit))
@@ -2203,12 +2204,13 @@ mod tests {
                     && limit.operation == "retain Inventor parameter id"
         ));
 
-        policy.limits.max_retained_bytes += 1 + cadmpeg_core::decode::u64_from_index(parameter
-            .native_ref
-            .as_deref()
-            .expect("native reference")
-            .len())
-            - 1;
+        policy.limits.max_retained_bytes += 1 + cadmpeg_core::decode::u64_from_index(
+            parameter
+                .native_ref
+                .as_deref()
+                .expect("native reference")
+                .len(),
+        ) - 1;
         assert!(matches!(
             project_single_parameter(policy),
             Err(CodecError::ResourceLimit(limit))
@@ -2611,8 +2613,9 @@ mod tests {
         assert_eq!(admitted.0, "x");
         assert_eq!(admitted.1.len(), 1);
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(admitted.0.len() + admitted.1[0].as_str().len() - 1);
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            admitted.0.len() + admitted.1[0].as_str().len() - 1,
+        );
         assert!(matches!(
             render_graph(&policy, vec![reference_leaf()], 1),
             Err(CodecError::ResourceLimit(limit))

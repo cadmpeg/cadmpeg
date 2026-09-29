@@ -361,7 +361,12 @@ fn a8_class21_scan_ignores_marker_shaped_nested_payload() {
 #[test]
 fn object_stream_frame_walk_descends_only_into_a8_b5_children() {
     let b5 = |class: u8, object_id: u32, payload: &[u8]| {
-        let mut frame = vec![0xb5, 0x03, class, u8::try_from(payload.len()).expect("fixture value fits u8")];
+        let mut frame = vec![
+            0xb5,
+            0x03,
+            class,
+            u8::try_from(payload.len()).expect("fixture value fits u8"),
+        ];
         frame.extend_from_slice(&object_id.to_le_bytes());
         frame.extend_from_slice(payload);
         frame
@@ -657,7 +662,12 @@ fn framed_records_ignore_marker_shaped_bytes_inside_b5_payloads() {
     nested_a8.extend_from_slice(&0u32.to_le_bytes());
     nested_a8.extend_from_slice(&7u32.to_le_bytes());
 
-    let mut bytes = vec![0xb5, 0x03, 0x5f, u8::try_from(nested_a8.len()).expect("fixture value fits u8")];
+    let mut bytes = vec![
+        0xb5,
+        0x03,
+        0x5f,
+        u8::try_from(nested_a8.len()).expect("fixture value fits u8"),
+    ];
     bytes.extend_from_slice(&8u32.to_le_bytes());
     bytes.extend_from_slice(&nested_a8);
     bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0x01]);

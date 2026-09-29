@@ -201,11 +201,14 @@ fn entry_referencing_property_refuses_at_collection_limit() {
             xml: crate::native::RetainedXml::from_text("<Property/>".into(), 0)
                 .expect("valid XML span"),
         };
-        collection_context(cadmpeg_core::decode::u64_from_index(scan.entries.len()), |ctx| {
-            assert!(matches!(super::entry_records(ctx, scan, &[property]),
+        collection_context(
+            cadmpeg_core::decode::u64_from_index(scan.entries.len()),
+            |ctx| {
+                assert!(matches!(super::entry_records(ctx, scan, &[property]),
                 Err(cadmpeg_core::CodecError::ResourceLimit(limit))
                     if limit.operation == "FCStd entry referencing properties"));
-        });
+            },
+        );
     });
 }
 
@@ -231,7 +234,8 @@ fn entry_referencing_identity_refuses_at_retained_limit() {
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(property.id.len()) - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(property.id.len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         assert!(matches!(super::entry_records(&ctx, scan, &[property]),
@@ -246,7 +250,8 @@ fn entry_identity_refuses_at_retained_limit() {
         let name = &scan.entries[0].name;
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(crate::native::native_id("entry", name).len()) - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(crate::native::native_id("entry", name).len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         assert!(matches!(super::entry_records(&ctx, scan, &[]),
@@ -261,8 +266,9 @@ fn entry_name_copy_refuses_at_retained_limit() {
         let name = &scan.entries[0].name;
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(crate::native::native_id("entry", name).len() + name.len()) - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            crate::native::native_id("entry", name).len() + name.len(),
+        ) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         assert!(matches!(super::entry_records(&ctx, scan, &[]),
@@ -278,8 +284,9 @@ fn entry_data_copy_refuses_at_retained_limit() {
         let byte_len = scan.data.get(name).expect("entry data").window().len();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(crate::native::native_id("entry", name).len() + name.len() + byte_len) - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            crate::native::native_id("entry", name).len() + name.len() + byte_len,
+        ) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root is within policy");
         assert!(matches!(super::entry_records(&ctx, scan, &[]),

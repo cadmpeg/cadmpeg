@@ -115,7 +115,8 @@ fn modern_linetype_record(archive: ArchiveVersion, always_model_distance: bool) 
     component.extend(utf16_bytes("modern dash"));
     component.extend(crc32fast::hash(&component).to_le_bytes());
     let mut attributes = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
-    attributes.extend((i64::try_from(component.len()).expect("fixture value fits i64")).to_le_bytes());
+    attributes
+        .extend((i64::try_from(component.len()).expect("fixture value fits i64")).to_le_bytes());
     attributes.extend(component);
 
     let mut body = attributes;
@@ -182,7 +183,8 @@ fn modern_hatch_pattern_record(
     component.extend(utf16_bytes("modern hatch"));
     component.extend(crc32fast::hash(&component).to_le_bytes());
     let mut component_chunk = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
-    component_chunk.extend((i64::try_from(component.len()).expect("fixture value fits i64")).to_le_bytes());
+    component_chunk
+        .extend((i64::try_from(component.len()).expect("fixture value fits i64")).to_le_bytes());
     component_chunk.extend(component);
 
     let mut body = component_chunk;
@@ -464,7 +466,8 @@ fn modern_linetype(always_model_distance: bool) -> Vec<u8> {
     component.extend(utf16_bytes("modern dash"));
     component.extend(crc32fast::hash(&component).to_le_bytes());
     let mut attributes = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
-    attributes.extend((i64::try_from(component.len()).expect("fixture value fits i64")).to_le_bytes());
+    attributes
+        .extend((i64::try_from(component.len()).expect("fixture value fits i64")).to_le_bytes());
     attributes.extend(component);
 
     let mut body = attributes;
@@ -999,7 +1002,9 @@ fn modern_hatch_pattern_reads_nested_line_chunks() {
     let mut component_payload = component.clone();
     component_payload.extend(crc32fast::hash(&component_payload).to_le_bytes());
     let mut component_chunk = MODEL_ATTRIBUTES.to_le_bytes().to_vec();
-    component_chunk.extend((i64::try_from(component_payload.len()).expect("fixture value fits i64")).to_le_bytes());
+    component_chunk.extend(
+        (i64::try_from(component_payload.len()).expect("fixture value fits i64")).to_le_bytes(),
+    );
     component_chunk.extend(component_payload);
 
     let mut body = component_chunk;

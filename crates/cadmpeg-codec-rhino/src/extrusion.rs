@@ -1183,13 +1183,19 @@ pub(crate) mod tests {
         }
         let point_count = points.len();
         let mut payload = vec![0x10];
-        push_i32(&mut payload, i32::try_from(point_count).expect("fixture value fits i32"));
+        push_i32(
+            &mut payload,
+            i32::try_from(point_count).expect("fixture value fits i32"),
+        );
         for point in points {
             for value in point {
                 push_f64(&mut payload, value);
             }
         }
-        push_i32(&mut payload, i32::try_from(point_count).expect("fixture value fits i32"));
+        push_i32(
+            &mut payload,
+            i32::try_from(point_count).expect("fixture value fits i32"),
+        );
         for value in 0..point_count {
             push_f64(
                 &mut payload,
@@ -1420,7 +1426,12 @@ pub(crate) mod tests {
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                 NurbsCurve::from_lanes(
                     1,
-                    (0..count + 2).map(|value| cadmpeg_core::convert::f64_from_index(value).expect("fixture index is exactly representable")).collect(),
+                    (0..count + 2)
+                        .map(|value| {
+                            cadmpeg_core::convert::f64_from_index(value)
+                                .expect("fixture index is exactly representable")
+                        })
+                        .collect(),
                     points,
                     None,
                     false,
@@ -1742,21 +1753,22 @@ pub(crate) mod tests {
     fn extrusion_transformed_nurbs_refuses_collection_limit() {
         let curve = polygon_nurbs();
         let needed = curve.knots().len() + curve.pole_count();
-        let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-            transform_nurbs(
-                ctx,
-                &curve,
-                &super::ProfileFrame {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    xaxis: Vector3::new(1.0, 0.0, 0.0),
-                    yaxis: Vector3::new(0.0, 1.0, 0.0),
-                    zaxis: Vector3::new(0.0, 0.0, 1.0),
-                    miter: None,
-                },
-                0,
-            )
-        })
-        .expect_err("curve copy exceeds collection limit");
+        let refusal =
+            with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
+                transform_nurbs(
+                    ctx,
+                    &curve,
+                    &super::ProfileFrame {
+                        origin: Point3::new(0.0, 0.0, 0.0),
+                        xaxis: Vector3::new(1.0, 0.0, 0.0),
+                        yaxis: Vector3::new(0.0, 1.0, 0.0),
+                        zaxis: Vector3::new(0.0, 0.0, 1.0),
+                        miter: None,
+                    },
+                    0,
+                )
+            })
+            .expect_err("curve copy exceeds collection limit");
         assert!(matches!(
             refusal,
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1799,10 +1811,11 @@ pub(crate) mod tests {
     fn extrusion_start_curve_copy_refuses_collection_limit() {
         let curve = polygon_nurbs();
         let needed = curve.knots().len() + curve.pole_count();
-        let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-            curve.try_clone_for_decode(ctx, "Rhino extrusion start curve")
-        })
-        .expect_err("start curve copy exceeds collection limit");
+        let refusal =
+            with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
+                curve.try_clone_for_decode(ctx, "Rhino extrusion start curve")
+            })
+            .expect_err("start curve copy exceeds collection limit");
         assert!(matches!(
             refusal,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1842,9 +1855,10 @@ pub(crate) mod tests {
             0,
         )
         .expect("unit cap frame");
-        let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(curve.pole_count() - 1), |ctx| {
-            cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
-        })
+        let refusal = with_collection_limit(
+            cadmpeg_core::decode::u64_from_index(curve.pole_count() - 1),
+            |ctx| cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0),
+        )
         .expect_err("cap points exceed collection limit");
         assert!(matches!(
             refusal,
@@ -1865,10 +1879,11 @@ pub(crate) mod tests {
         )
         .expect("unit cap frame");
         let needed = curve.pole_count() + curve.knots().len();
-        let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-            cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
-        })
-        .expect_err("cap knots exceed collection limit");
+        let refusal =
+            with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
+                cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
+            })
+            .expect_err("cap knots exceed collection limit");
         assert!(matches!(
             refusal,
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -1895,10 +1910,11 @@ pub(crate) mod tests {
         )
         .expect("unit cap frame");
         let needed = curve.pole_count() * 2 + curve.knots().len();
-        let refusal = with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
-            cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
-        })
-        .expect_err("cap weights exceed collection limit");
+        let refusal =
+            with_collection_limit(cadmpeg_core::decode::u64_from_index(needed - 1), |ctx| {
+                cap_pcurve(ctx, &curve, Point3::new(0.0, 0.0, 0.0), frame, 0)
+            })
+            .expect_err("cap weights exceed collection limit");
         assert!(matches!(
             refusal,
             GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))

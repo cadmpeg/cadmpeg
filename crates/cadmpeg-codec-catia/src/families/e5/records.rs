@@ -1320,7 +1320,11 @@ mod tests {
         for reference in [0x0102_0304, 0x0506, 0x0708, 0x090a, 0x0b0c] {
             if reference > 0xff {
                 payload.push(0x18);
-                payload.extend_from_slice(&(u16::try_from(reference).expect("fixture value fits u16")).to_le_bytes());
+                payload.extend_from_slice(
+                    &(u16::try_from(reference & 0xffff)
+                        .expect("fixture stores the low 16 reference bits"))
+                    .to_le_bytes(),
+                );
             } else {
                 payload.push(0x80 + u8::try_from(reference).expect("fixture value fits u8"));
             }

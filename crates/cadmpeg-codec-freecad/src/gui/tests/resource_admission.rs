@@ -1142,7 +1142,8 @@ fn y4_2_decode_refuses_unadmitted_gui_text_copy() {
     let mut options = DecodeOptions::default();
     // The ZIP snapshot retains four copies of each decoded central-directory name.
     let zip_names = 4 * ("Document.xml".len() + "GuiDocument.xml".len());
-    options.policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(zip_names + document.len() + gui.len());
+    options.policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(zip_names + document.len() + gui.len());
     let mut error = None;
     for _ in 0..256 {
         let refused = FcstdCodec
@@ -1495,8 +1496,9 @@ fn gui_asset_identity_refuses_at_retained_limit() {
     };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index(document_id.len() + "Other".len() + crate::native::native_id("entry", "asset").len() - 1);
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        document_id.len() + "Other".len() + crate::native::native_id("entry", "asset").len() - 1,
+    );
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
     assert!(matches!(super::super::transfer_neutral_presentation(&ctx,
@@ -1511,11 +1513,13 @@ fn gui_state_identity_refuses_at_retained_limit() {
     let document = roxmltree::Document::parse(xml).expect("GUI state XML");
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("Camera".len()
-        + xml.len()
-        + "Camera:0".len()
-        + crate::native::native_id("gui-state", "Camera:0").len()
-        - 1);
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        "Camera".len()
+            + xml.len()
+            + "Camera:0".len()
+            + crate::native::native_id("gui-state", "Camera:0").len()
+            - 1,
+    );
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(xml.as_bytes(), &arena, &policy)
             .expect("GUI state context");

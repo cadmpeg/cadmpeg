@@ -150,7 +150,8 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
 
 #[test]
 fn standard_f32_frames_canonicalize_to_orthonormal_ir() {
-    let component = cadmpeg_core::convert::f32_from_f64((0.5_f64 + 4.0e-6).sqrt()).expect("fixture value fits f32");
+    let component = cadmpeg_core::convert::f32_from_f64((0.5_f64 + 4.0e-6).sqrt())
+        .expect("fixture value fits f32");
     let mut bytes = vec![0x00, 0x33, 0x33];
     for value in [0.0_f32, 0.0, 0.0, component, component, 5.0] {
         bytes.extend_from_slice(&value.to_be_bytes());
@@ -380,7 +381,11 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     bytes.extend_from_slice(&[0x01, 0x06, 4]);
     for index in 0..4 {
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-        for value in [cadmpeg_core::convert::f32_from_f64(f64::from(index)).expect("fixture index fits f32"), 0.0, 0.0] {
+        for value in [
+            cadmpeg_core::convert::f32_from_f64(f64::from(index)).expect("fixture index fits f32"),
+            0.0,
+            0.0,
+        ] {
             bytes.extend_from_slice(&le_f32(value));
         }
     }
@@ -509,7 +514,7 @@ fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
             .expect("FBB-only edge endpoints"),
         ports
             .into_iter()
-            .map(|pair| pair.map(|identity| cadmpeg_core::decode::index_from_u32(identity)))
+            .map(|pair| pair.map(cadmpeg_core::decode::index_from_u32))
             .collect::<Vec<_>>()
     );
 }
@@ -557,7 +562,11 @@ fn fbb_topology_reads_u16_mesh_and_edge_handles() {
     bytes.extend_from_slice(&[0x01, 0x06, 4]);
     for index in 0..4 {
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-        for value in [cadmpeg_core::convert::f32_from_f64(f64::from(index)).expect("fixture index fits f32"), 0.0, 0.0] {
+        for value in [
+            cadmpeg_core::convert::f32_from_f64(f64::from(index)).expect("fixture index fits f32"),
+            0.0,
+            0.0,
+        ] {
             bytes.extend_from_slice(&le_f32(value));
         }
     }
@@ -594,7 +603,11 @@ fn fbb_topology_reads_u8_mesh_and_edge_handles() {
     bytes.extend_from_slice(&[0x01, 0x06, 4]);
     for index in 0..4 {
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-        for value in [cadmpeg_core::convert::f32_from_f64(f64::from(index)).expect("fixture index fits f32"), 0.0, 0.0] {
+        for value in [
+            cadmpeg_core::convert::f32_from_f64(f64::from(index)).expect("fixture index fits f32"),
+            0.0,
+            0.0,
+        ] {
             bytes.extend_from_slice(&le_f32(value));
         }
     }
@@ -718,7 +731,11 @@ fn standard_topology_matches_edge_interiors_and_collapses_endpoint_ports() {
     bytes.extend_from_slice(&[0x01, 0x06, 3]);
     for index in 0..3 {
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-        for value in [cadmpeg_core::convert::f32_from_f64(f64::from(index)).expect("fixture index fits f32"), 0.0, 0.0] {
+        for value in [
+            cadmpeg_core::convert::f32_from_f64(f64::from(index)).expect("fixture index fits f32"),
+            0.0,
+            0.0,
+        ] {
             bytes.extend_from_slice(&le_f32(value));
         }
     }
@@ -762,7 +779,11 @@ fn standard_legacy_two_strip_packet_recovers_two_face_boundaries() {
     bytes.extend_from_slice(&[0x01, 0x06, 6]);
     for index in 0..6 {
         bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
-        for value in [cadmpeg_core::convert::f32_from_f64(f64::from(index)).expect("fixture index fits f32"), 0.0, 0.0] {
+        for value in [
+            cadmpeg_core::convert::f32_from_f64(f64::from(index)).expect("fixture index fits f32"),
+            0.0,
+            0.0,
+        ] {
             bytes.extend_from_slice(&le_f32(value));
         }
     }
@@ -831,7 +852,10 @@ fn standard_two_strip_packet_treats_ff_length_as_raw_u8_at_three_byte_width() {
     })
     .expect("service resource budget")
     .expect("raw 0xff strip length");
-    assert_eq!(record.packet.handles().len(), cadmpeg_core::decode::index_from_u32(handle_count));
+    assert_eq!(
+        record.packet.handles().len(),
+        cadmpeg_core::decode::index_from_u32(handle_count)
+    );
     assert_eq!(record.packet.strip_lengths(), [255, 1]);
     assert!(record.packet.fan_lengths().is_empty());
 }

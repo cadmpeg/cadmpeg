@@ -139,7 +139,8 @@ pub(crate) fn polyline_payload(points: &[[f64; 3]], parameters: &[f64]) -> Vec<u
             .flatten()
             .flat_map(|value| value.to_le_bytes()),
     );
-    payload.extend((i32::try_from(parameters.len()).expect("fixture value fits i32")).to_le_bytes());
+    payload
+        .extend((i32::try_from(parameters.len()).expect("fixture value fits i32")).to_le_bytes());
     payload.extend(parameters.iter().flat_map(|value| value.to_le_bytes()));
     payload.extend(3_i32.to_le_bytes());
     payload
@@ -151,7 +152,8 @@ pub(crate) fn polycurve_payload(parameters: &[f64], children: &[([u8; 16], Vec<u
     payload.extend(0_i32.to_le_bytes());
     payload.extend(0_i32.to_le_bytes());
     payload.extend([0_u8; 48]);
-    payload.extend((i32::try_from(parameters.len()).expect("fixture value fits i32")).to_le_bytes());
+    payload
+        .extend((i32::try_from(parameters.len()).expect("fixture value fits i32")).to_le_bytes());
     payload.extend(parameters.iter().flat_map(|value| value.to_le_bytes()));
     for (uuid, child) in children {
         payload.extend(class_wrapper(*uuid, child));
@@ -160,7 +162,9 @@ pub(crate) fn polycurve_payload(parameters: &[f64], children: &[([u8; 16], Vec<u
 }
 
 fn mesh_buffer(bytes: &[u8]) -> Vec<u8> {
-    let mut result = (u32::try_from(bytes.len()).expect("fixture value fits u32")).to_le_bytes().to_vec();
+    let mut result = (u32::try_from(bytes.len()).expect("fixture value fits u32"))
+        .to_le_bytes()
+        .to_vec();
     if !bytes.is_empty() {
         result.extend(crc32fast::hash(bytes).to_le_bytes());
         result.push(0);
@@ -294,7 +298,9 @@ fn packed_array(records: &[Vec<u8>]) -> Vec<u8> {
 }
 
 fn indexes(values: &[i32]) -> Vec<u8> {
-    let mut bytes = (i32::try_from(values.len()).expect("fixture value fits i32")).to_le_bytes().to_vec();
+    let mut bytes = (i32::try_from(values.len()).expect("fixture value fits i32"))
+        .to_le_bytes()
+        .to_vec();
     bytes.extend(values.iter().flat_map(|value| value.to_le_bytes()));
     bytes
 }
@@ -432,7 +438,9 @@ fn brep_payload_with_topology(singular_seam: bool, malformed: bool, is_solid: i3
     .into_iter()
     .enumerate()
     .map(|(index, (point, edges))| {
-        let mut record = (i32::try_from(index).expect("fixture value fits i32")).to_le_bytes().to_vec();
+        let mut record = (i32::try_from(index).expect("fixture value fits i32"))
+            .to_le_bytes()
+            .to_vec();
         record.extend(point.into_iter().flat_map(f64::to_le_bytes));
         record.extend(indexes(&edges));
         record.extend(0.02_f64.to_le_bytes());
@@ -454,7 +462,9 @@ fn brep_payload_with_topology(singular_seam: bool, malformed: bool, is_solid: i3
         .iter()
         .enumerate()
         .map(|(index, (vertices, trims))| {
-            let mut record = (i32::try_from(index).expect("fixture value fits i32")).to_le_bytes().to_vec();
+            let mut record = (i32::try_from(index).expect("fixture value fits i32"))
+                .to_le_bytes()
+                .to_vec();
             record.extend(
                 (if malformed && !singular_seam && index == 0 {
                     7_i32
@@ -494,7 +504,9 @@ fn brep_payload_with_topology(singular_seam: bool, malformed: bool, is_solid: i3
         .enumerate()
         .map(
             |(index, (curve, edge, vertices, reversed_3d, trim_type, iso))| {
-                let mut record = (i32::try_from(index).expect("fixture value fits i32")).to_le_bytes().to_vec();
+                let mut record = (i32::try_from(index).expect("fixture value fits i32"))
+                    .to_le_bytes()
+                    .to_vec();
                 record.extend(curve.to_le_bytes());
                 record.extend([0.0_f64, 1.0].into_iter().flat_map(f64::to_le_bytes));
                 record.extend(edge.to_le_bytes());
@@ -638,7 +650,11 @@ fn archive_version_unit_with_user(
     }
     let eof_offset = bytes.len();
     bytes.extend(test_dump::long_chunk(CHUNKS, TCODE_ENDOFFILE, &[0; 8]));
-    let eof = test_dump::long_chunk(CHUNKS, TCODE_ENDOFFILE, &(cadmpeg_core::decode::u64_from_index(bytes.len())).to_le_bytes());
+    let eof = test_dump::long_chunk(
+        CHUNKS,
+        TCODE_ENDOFFILE,
+        &(cadmpeg_core::decode::u64_from_index(bytes.len())).to_le_bytes(),
+    );
     bytes[eof_offset..].copy_from_slice(&eof);
     bytes
 }

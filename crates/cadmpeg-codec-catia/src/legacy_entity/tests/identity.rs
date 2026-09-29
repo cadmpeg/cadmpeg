@@ -85,7 +85,10 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .schema_program
         .as_ref()
         .expect("complete compact schema program");
-    assert_eq!(schema_program.byte_offset, cadmpeg_core::decode::u64_from_index(schema_program_offset));
+    assert_eq!(
+        schema_program.byte_offset,
+        cadmpeg_core::decode::u64_from_index(schema_program_offset)
+    );
     assert_eq!(
         schema_program.boundary_byte_offset,
         cadmpeg_core::decode::u64_from_index(schema_footer_offset)
@@ -353,7 +356,9 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
     let run = native
         .legacy_entity_runs
         .iter()
-        .find(|run| run.byte_offset == stream_offset + cadmpeg_core::decode::u64_from_index(legacy_offset))
+        .find(|run| {
+            run.byte_offset == stream_offset + cadmpeg_core::decode::u64_from_index(legacy_offset)
+        })
         .expect("declared-stream legacy run");
     assert_eq!(
         run.outer_container.as_ref(),

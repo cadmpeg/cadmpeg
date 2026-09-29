@@ -359,7 +359,9 @@ fn rejects_malformed_polygon_vector_list_side_streams() {
 </Properties></Object></ObjectData></Document>"#;
     let encode = |points: &[(f64, f64, f64)]| {
         let mut bytes = Vec::with_capacity(4 + points.len() * 24);
-        bytes.extend_from_slice(&(u32::try_from(points.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(points.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for (x, y, z) in points {
             bytes.extend_from_slice(&x.to_le_bytes());
             bytes.extend_from_slice(&y.to_le_bytes());

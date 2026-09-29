@@ -4119,7 +4119,9 @@ mod tests {
 
     fn v1_string(value: &str) -> Vec<u8> {
         let bytes = value.as_bytes();
-        let mut result = (i32::try_from(bytes.len()).expect("fixture value fits i32")).to_le_bytes().to_vec();
+        let mut result = (i32::try_from(bytes.len()).expect("fixture value fits i32"))
+            .to_le_bytes()
+            .to_vec();
         result.extend(bytes);
         result
     }
@@ -4417,7 +4419,9 @@ mod tests {
 
     fn legacy_face_archive_with(corners: &[[f64; 3]], trim_flags: &[u8], glue: &[u16]) -> Vec<u8> {
         assert_eq!(corners.len(), trim_flags.len());
-        let mut boundary = (i32::try_from(corners.len()).expect("fixture value fits i32")).to_le_bytes().to_vec();
+        let mut boundary = (i32::try_from(corners.len()).expect("fixture value fits i32"))
+            .to_le_bytes()
+            .to_vec();
         boundary.extend(0_i32.to_le_bytes());
         for value in [0.0_f64, 0.0, 1.0, 1.0] {
             boundary.extend(value.to_le_bytes());
@@ -4771,7 +4775,10 @@ mod tests {
         let retained = result.source_fidelity().retained_records();
         assert_eq!(retained.len(), 1);
         let record = retained.values().next().expect("typed source boundary");
-        assert_eq!(record.offset(), cadmpeg_core::decode::u64_from_index(point_offset));
+        assert_eq!(
+            record.offset(),
+            cadmpeg_core::decode::u64_from_index(point_offset)
+        );
         assert_eq!(record.data(), Some(point.as_slice()));
     }
 
@@ -4820,8 +4827,14 @@ mod tests {
             .iter()
             .find(|(id, _)| id.as_str().starts_with("rhino:legacy:record#00200004-"))
             .expect("the malformed direct record is retained under its typecode");
-        assert_eq!(malformed.offset(), cadmpeg_core::decode::u64_from_index(record_offset));
-        assert_eq!(malformed.byte_len(), cadmpeg_core::decode::u64_from_index(record.len()));
+        assert_eq!(
+            malformed.offset(),
+            cadmpeg_core::decode::u64_from_index(record_offset)
+        );
+        assert_eq!(
+            malformed.byte_len(),
+            cadmpeg_core::decode::u64_from_index(record.len())
+        );
         assert_eq!(malformed.data(), Some(record.as_slice()));
         assert_eq!(malformed.stream(), "rhino");
         assert!(malformed_id

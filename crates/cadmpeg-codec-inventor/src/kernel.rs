@@ -416,7 +416,8 @@ mod tests {
         let bytes = carrier_fixture(&empty_asm_fixture(), 23);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("Inventor".len()) - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("Inventor".len()) - 1;
         let (limited, view) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
@@ -514,7 +515,8 @@ mod tests {
                 if limit.dimension == ResourceDimension::WorkUnits
                     && limit.operation == "scan Inventor kernel carrier segments"
         ));
-        policy.limits.max_work_units = cadmpeg_core::decode::u64_from_index(inventory.segments.len());
+        policy.limits.max_work_units =
+            cadmpeg_core::decode::u64_from_index(inventory.segments.len());
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(
@@ -551,8 +553,9 @@ mod tests {
         .flatten()
         .map(String::len)
         .sum::<usize>();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(header_strings + carrier.segment_token.as_str().len() - 1);
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            header_strings + carrier.segment_token.as_str().len() - 1,
+        );
         let (limited_ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("limited context");
         assert!(matches!(

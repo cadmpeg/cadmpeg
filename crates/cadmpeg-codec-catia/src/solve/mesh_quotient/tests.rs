@@ -17,7 +17,10 @@ fn direction_work_estimate_states_no_figure_the_work_counter_cannot_hold() {
         direction_work_estimate([widest].into_iter()),
         Some(1usize << widest)
     );
-    for unknown in [cadmpeg_core::decode::index_from_u32(usize::BITS), usize::MAX] {
+    for unknown in [
+        cadmpeg_core::decode::index_from_u32(usize::BITS),
+        usize::MAX,
+    ] {
         assert_eq!(direction_work_estimate([unknown].into_iter()), None);
     }
     assert_eq!(direction_work_estimate([widest, widest].into_iter()), None);
@@ -79,7 +82,9 @@ fn a_face_the_work_counter_cannot_estimate_exhausts_the_search() {
         matches!(search.outcome, SearchOutcome::Exhausted)
     };
 
-    assert!(outcome_for(cadmpeg_core::decode::index_from_u32(usize::BITS)));
+    assert!(outcome_for(cadmpeg_core::decode::index_from_u32(
+        usize::BITS
+    )));
     assert!(!outcome_for(2));
 }
 

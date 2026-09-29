@@ -320,7 +320,9 @@ fn append_e5_test_record(bytes: &mut Vec<u8>, id: u32) {
 fn append_e5_test_record_with_payload(bytes: &mut Vec<u8>, id: u32, payload: &[u8]) {
     bytes.extend_from_slice(super::E5_MARKER);
     bytes.extend_from_slice(&[0xfe, 0x00]);
-    bytes.extend_from_slice(&(u16::try_from(payload.len()).expect("fixture value fits u16")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u16::try_from(payload.len()).expect("fixture value fits u16")).to_le_bytes(),
+    );
     bytes.extend_from_slice(&[0x00, 0x00]);
     bytes.extend_from_slice(&id.to_le_bytes());
     bytes.extend_from_slice(payload);
@@ -331,8 +333,12 @@ fn outer_with_preamble(body: &[u8]) -> Vec<u8> {
     let directory_offset = 512usize;
     let mut bytes = vec![0u8; directory_length];
     bytes[..super::OUTER_MAGIC.len()].copy_from_slice(super::OUTER_MAGIC);
-    bytes[8..12].copy_from_slice(&(u32::try_from(directory_offset).expect("fixture value fits u32")).to_be_bytes());
-    bytes[12..16].copy_from_slice(&(u32::try_from(directory_length).expect("fixture value fits u32")).to_be_bytes());
+    bytes[8..12].copy_from_slice(
+        &(u32::try_from(directory_offset).expect("fixture value fits u32")).to_be_bytes(),
+    );
+    bytes[12..16].copy_from_slice(
+        &(u32::try_from(directory_length).expect("fixture value fits u32")).to_be_bytes(),
+    );
     bytes.extend_from_slice(body);
     bytes.resize(directory_offset + directory_length, 0);
     bytes
@@ -594,8 +600,12 @@ fn e5_stream_and_finjpl_inventory_exclude_the_trailing_directory() {
     let directory_offset = 512usize;
     let mut bytes = vec![0u8; directory_length];
     bytes[..super::OUTER_MAGIC.len()].copy_from_slice(super::OUTER_MAGIC);
-    bytes[8..12].copy_from_slice(&(u32::try_from(directory_offset).expect("fixture value fits u32")).to_be_bytes());
-    bytes[12..16].copy_from_slice(&(u32::try_from(directory_length).expect("fixture value fits u32")).to_be_bytes());
+    bytes[8..12].copy_from_slice(
+        &(u32::try_from(directory_offset).expect("fixture value fits u32")).to_be_bytes(),
+    );
+    bytes[12..16].copy_from_slice(
+        &(u32::try_from(directory_length).expect("fixture value fits u32")).to_be_bytes(),
+    );
     bytes.resize(directory_offset, 0);
 
     let mut directory = vec![0u8; super::DIR_MAGIC.len()];
@@ -806,16 +816,22 @@ fn directory_parser_accepts_a_structurally_bounded_extent_roster_above_64() {
     let directory_end = extent_count_offset + 4 + extent_count * 20;
     let mut directory = vec![0u8; directory_end];
     directory[..super::DIR_MAGIC.len()].copy_from_slice(super::DIR_MAGIC);
-    directory[descriptor_start + 0x0c..descriptor_start + 0x10]
-        .copy_from_slice(&(u32::try_from(extent_count).expect("fixture value fits u32")).to_be_bytes());
-    directory[extent_count_offset..extent_count_offset + 4]
-        .copy_from_slice(&(u32::try_from(extent_count).expect("fixture value fits u32")).to_be_bytes());
+    directory[descriptor_start + 0x0c..descriptor_start + 0x10].copy_from_slice(
+        &(u32::try_from(extent_count).expect("fixture value fits u32")).to_be_bytes(),
+    );
+    directory[extent_count_offset..extent_count_offset + 4].copy_from_slice(
+        &(u32::try_from(extent_count).expect("fixture value fits u32")).to_be_bytes(),
+    );
     for index in 0..extent_count {
         let extent = extent_count_offset + 4 + index * 20;
-        directory[extent..extent + 4].copy_from_slice(&(u32::try_from(index).expect("fixture value fits u32")).to_be_bytes());
+        directory[extent..extent + 4].copy_from_slice(
+            &(u32::try_from(index).expect("fixture value fits u32")).to_be_bytes(),
+        );
         directory[extent + 4..extent + 8].copy_from_slice(&1u32.to_be_bytes());
         directory[extent + 8..extent + 12].copy_from_slice(&1u32.to_be_bytes());
-        directory[extent + 12..extent + 16].copy_from_slice(&(u32::try_from(index).expect("fixture value fits u32")).to_be_bytes());
+        directory[extent + 12..extent + 16].copy_from_slice(
+            &(u32::try_from(index).expect("fixture value fits u32")).to_be_bytes(),
+        );
     }
 
     let parsed = parse_directory_region_service(&directory, 0, 0, directory.len())
@@ -825,7 +841,10 @@ fn directory_parser_accepts_a_structurally_bounded_extent_roster_above_64() {
         .iter()
         .find(|descriptor| descriptor.desc_offset == descriptor_start)
         .expect("descriptor at synthesized header");
-    assert_eq!(descriptor.logical_length(), cadmpeg_core::decode::u64_from_index(extent_count));
+    assert_eq!(
+        descriptor.logical_length(),
+        cadmpeg_core::decode::u64_from_index(extent_count)
+    );
     assert_eq!(descriptor.extents.len(), extent_count);
 }
 

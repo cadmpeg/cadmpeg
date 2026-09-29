@@ -489,7 +489,9 @@ fn bitmap_header(
 }
 
 fn stored_bitmap_buffer(bytes: &[u8]) -> Vec<u8> {
-    let mut buffer = (u32::try_from(bytes.len()).expect("fixture value fits u32")).to_le_bytes().to_vec();
+    let mut buffer = (u32::try_from(bytes.len()).expect("fixture value fits u32"))
+        .to_le_bytes()
+        .to_vec();
     if !bytes.is_empty() {
         buffer.extend(crc32fast::hash(bytes).to_le_bytes());
         buffer.push(0);
@@ -502,7 +504,9 @@ fn compressed_bitmap_buffer(bytes: &[u8]) -> Vec<u8> {
     let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(bytes).expect("bitmap zlib input");
     let compressed = encoder.finish().expect("bitmap zlib output");
-    let mut buffer = (u32::try_from(bytes.len()).expect("fixture value fits u32")).to_le_bytes().to_vec();
+    let mut buffer = (u32::try_from(bytes.len()).expect("fixture value fits u32"))
+        .to_le_bytes()
+        .to_vec();
     buffer.extend(crc32fast::hash(bytes).to_le_bytes());
     buffer.push(1);
     buffer.extend(crate::test_support::test_dump::crc_chunk(
@@ -697,7 +701,13 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
         WINDOWS_BITMAP,
         0,
         "",
-        bitmap_header(3, 2, 24, i32::try_from(image.len()).expect("fixture value fits i32"), 0),
+        bitmap_header(
+            3,
+            2,
+            24,
+            i32::try_from(image.len()).expect("fixture value fits i32"),
+            0,
+        ),
         &[stored_bitmap_buffer(&image)],
         &[0xaa, 0xbb],
     );
@@ -714,7 +724,8 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
     assert_eq!(contiguous_record.height_pixels, 2);
     assert_eq!(contiguous_record.pixel_buffer_offset, 40);
     assert_eq!(
-        cadmpeg_core::decode::index_from_u64(contiguous_record.pixel_buffer_byte_len).expect("fixture offset fits usize"),
+        cadmpeg_core::decode::index_from_u64(contiguous_record.pixel_buffer_byte_len)
+            .expect("fixture offset fits usize"),
         contiguous.len() - 42
     );
 
@@ -724,7 +735,13 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
         WINDOWS_BITMAP,
         0,
         "",
-        bitmap_header(2, 2, 8, i32::try_from(pixels.len()).expect("fixture value fits i32"), 0),
+        bitmap_header(
+            2,
+            2,
+            8,
+            i32::try_from(pixels.len()).expect("fixture value fits i32"),
+            0,
+        ),
         &[
             compressed_bitmap_buffer(&palette),
             stored_bitmap_buffer(&pixels),
@@ -743,7 +760,8 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
     assert_eq!(split_record.bits_per_pixel, 8);
     assert_eq!(split_record.colors_used, 0);
     assert_eq!(
-        cadmpeg_core::decode::index_from_u64(split_record.pixel_buffer_byte_len).expect("fixture offset fits usize"),
+        cadmpeg_core::decode::index_from_u64(split_record.pixel_buffer_byte_len)
+            .expect("fixture offset fits usize"),
         split.len() - 42
     );
 
@@ -751,7 +769,13 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
         WINDOWS_BITMAP_EX,
         5,
         "relative/example.bmp",
-        bitmap_header(2, 2, 24, i32::try_from(pixels.len()).expect("fixture value fits i32"), 0),
+        bitmap_header(
+            2,
+            2,
+            24,
+            i32::try_from(pixels.len()).expect("fixture value fits i32"),
+            0,
+        ),
         &[stored_bitmap_buffer(&pixels)],
         &[0xee, 0xff],
     );
@@ -766,7 +790,8 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
     .expect("minor-five Windows bitmap Ex");
     assert_eq!(ex_record.file_path, "relative/example.bmp");
     assert_eq!(
-        cadmpeg_core::decode::index_from_u64(ex_record.pixel_buffer_byte_len).expect("fixture offset fits usize"),
+        cadmpeg_core::decode::index_from_u64(ex_record.pixel_buffer_byte_len)
+            .expect("fixture offset fits usize"),
         ex.len() - 47 - 40 - 2
     );
 }
@@ -804,7 +829,13 @@ fn windows_bitmap_rejects_a_buffer_size_that_disagrees_with_header() {
         WINDOWS_BITMAP,
         0,
         "",
-        bitmap_header(3, 2, 24, i32::try_from(image.len()).expect("fixture value fits i32"), 0),
+        bitmap_header(
+            3,
+            2,
+            24,
+            i32::try_from(image.len()).expect("fixture value fits i32"),
+            0,
+        ),
         &[stored_bitmap_buffer(&image[..1])],
         &[],
     );
@@ -1715,7 +1746,10 @@ fn texture_file_reference_checksum_warning_is_located() {
         .provenance
         .as_ref()
         .expect("texture checksum loss is located");
-    assert_eq!(provenance.offset, cadmpeg_core::decode::u64_from_index(reference_start));
+    assert_eq!(
+        provenance.offset,
+        cadmpeg_core::decode::u64_from_index(reference_start)
+    );
     assert_eq!(
         provenance.tag.as_deref(),
         Some("PRESENTATION/TEXTURE/FILE_REFERENCE")

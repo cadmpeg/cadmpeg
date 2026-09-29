@@ -1943,14 +1943,17 @@ mod tests {
 
     fn chunk(body: &[u8]) -> Vec<u8> {
         let mut result = 0x4000_8000_u32.to_le_bytes().to_vec();
-        result.extend((i64::try_from(body.len() + 4).expect("fixture value fits i64")).to_le_bytes());
+        result
+            .extend((i64::try_from(body.len() + 4).expect("fixture value fits i64")).to_le_bytes());
         result.extend(body);
         result.extend(crc32fast::hash(body).to_le_bytes());
         result
     }
 
     fn buffer(value: &[u8], method: u8) -> Vec<u8> {
-        let mut result = (u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes().to_vec();
+        let mut result = (u32::try_from(value.len()).expect("fixture value fits u32"))
+            .to_le_bytes()
+            .to_vec();
         result.extend(crc32fast::hash(value).to_le_bytes());
         result.push(method);
         if method == 0 {
@@ -2928,7 +2931,9 @@ mod tests {
             for index in [0_u32, 1, 2, 2] {
                 match width {
                     1 => bytes.push(u8::try_from(index).expect("fixture value fits u8")),
-                    2 => bytes.extend((u16::try_from(index).expect("fixture value fits u16")).to_le_bytes()),
+                    2 => bytes.extend(
+                        (u16::try_from(index).expect("fixture value fits u16")).to_le_bytes(),
+                    ),
                     4 => bytes.extend(index.to_le_bytes()),
                     _ => unreachable!(),
                 }
