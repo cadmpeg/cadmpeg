@@ -1371,3 +1371,104 @@ fn predecessor_visited_scope_refuses_collection_limit() {
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d predecessor visited scope"));
 }
+
+fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (scopes, timeline) = authored_ordinal_limit_fixture();
+    let mut parameter = parse_design_parameter_record(&parameter_record(
+        Some(40), "1 mm", "FeatureInput", Some("mm"), "InternalValue", 0.1,
+    )).unwrap();
+    parameter.id = "f3d:Design/BulkStream.dat:design-parameter#41".to_owned();
+    parameter.record_index = 41;
+    parameter.try_set_source(crate::records::parameters::DesignParameterSource::new(
+        parameter.source_kind().to_owned(), Some(40), parameter.family_discriminator(),
+    ).unwrap()).unwrap();
+    let owner = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
+            id: "f3d:Design/BulkStream.dat:design-parameter-owner#40".to_owned(),
+            byte_offset: 0,
+            frame_length: 103,
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
+            record_index: 40,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 0.1,
+            evaluated_value_offset: 40,
+            parameter_record_index: 41,
+            owned_ordinal: 0,
+            variant: None,
+            companion_record_index: 42,
+        },
+    ).unwrap();
+    for limit in 0..512 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if retained { policy.limits.max_retained_bytes = limit; }
+        else { policy.limits.max_collection_items = limit; }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = project_parameter_design_with_edge_identities(
+            Some(&ctx),
+            &crate::design::feature_project::ProjectInputs {
+                native: std::slice::from_ref(&parameter),
+                owners: std::slice::from_ref(&owner),
+                scopes: &scopes,
+                timelines: std::slice::from_ref(&timeline),
+                construction_groups: &[],
+                fillet_radius_groups: &[],
+                edge_operands: &[],
+                edge_identity_operands: &[],
+                edge_treatment_vertex_operands: &[],
+                entity_selection_operands: &[],
+                curve_identities: &[],
+                face_operands: &[],
+                body_recipe_operands: &[],
+                legacy_loft_body_carriers: &[],
+                placements: &[],
+                body_bindings: &[],
+                component_naming_spaces: &[],
+                histories: &[],
+            },
+        );
+        match result {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension == (if retained { ResourceDimension::RetainedBytes }
+                        else { ResourceDimension::CollectionItems }) => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn projected_scope_id_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d projected scope id index", false);
+}
+
+#[test]
+fn projected_parameter_owner_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d projected parameter owner index", false);
+}
+
+#[test]
+fn projected_scope_parameter_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d projected scope parameter", false);
+}
+
+#[test]
+fn projected_feature_output_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d projected feature output", false);
+}
+
+#[test]
+fn projected_feature_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected feature id", true);
+}
+
+#[test]
+fn projected_feature_native_ref_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected feature native reference", true);
+}

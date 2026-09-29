@@ -136,6 +136,15 @@ fn copy_feature_text(
         .map_err(|_| CodecError::malformed("validated feature text is not UTF-8"))
 }
 
+fn copy_feature_id(
+    ctx: Option<&DecodeContext<'_>>,
+    id: &cadmpeg_ir::features::FeatureId,
+    operation: &'static str,
+) -> Result<cadmpeg_ir::features::FeatureId, CodecError> {
+    cadmpeg_ir::features::FeatureId::try_from(copy_feature_text(ctx, id.as_str(), operation)?)
+        .map_err(CodecError::malformed)
+}
+
 /// Design record slices projected together into the neutral construction
 /// history: the parameter, owner, and scope tables plus the construction
 /// operand, fillet-radius, edge, edge-identity, face, and whole-body recipe
@@ -755,19 +764,24 @@ pub(crate) fn project_parameter_design_with_edge_identities(
 
     let source_ordinals = authored_scope_ordinals(ctx, scopes, timelines)?;
 
-    let scope_ids = scopes
-        .iter()
-        .filter_map(|scope| {
-            let stream = native_stream(&scope.id)?;
-            source_ordinals
-                .contains_key(&(stream, scope.record_index))
-                .then(|| ((stream, scope.record_index), neutral_feature_id(scope)))
-        })
-        .collect::<HashMap<_, _>>();
-    let owners_by_index = owners
-        .iter()
-        .filter_map(|owner| Some(((native_stream(owner.id())?, owner.record_index()), owner)))
-        .collect::<HashMap<_, _>>();
+    let mut scope_ids = HashMap::new();
+    for scope in scopes {
+        let Some(stream) = native_stream(&scope.id) else { continue; };
+        if source_ordinals.contains_key(&(stream, scope.record_index)) {
+            // discarded-value: duplicate scope keys retain the last feature ID.
+            let _ = insert_feature_map(ctx, &mut scope_ids,
+                (stream, scope.record_index), neutral_feature_id(scope),
+                "f3d projected scope id index")?;
+        }
+    }
+    let mut owners_by_index = HashMap::new();
+    for owner in owners {
+        let Some(stream) = native_stream(owner.id()) else { continue; };
+        // discarded-value: duplicate owner keys retain the last source record.
+        let _ = insert_feature_map(ctx, &mut owners_by_index,
+            (stream, owner.record_index()), owner,
+            "f3d projected parameter owner index")?;
+    }
     let native_scope_properties = |scope: &DesignParameterScope, native_scope: &str| {
         scope_properties(scope, native_scope, placements)
     };
@@ -777,24 +791,22 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
             source_ordinals.contains_key(&(stream, scope.record_index))
         })
-        .map(|scope| {
+        .map(|scope| -> Result<Feature, CodecError> {
             let native_scope = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
-            let parameters = owners
-                .iter()
-                .filter(|owner| {
-                    native_stream(owner.id()) == Some(native_scope)
-                        && owner.scope_record_index() == scope.record_index
-                })
-                .filter_map(|owner| {
-                    native
-                        .iter()
-                        .find(|parameter| {
-                            native_stream(&parameter.id) == Some(native_scope)
-                                && parameter.record_index == owner.parameter_record_index()
-                        })
-                        .map(|parameter| (owner.local_ordinal(), parameter))
-                })
-                .collect::<Vec<_>>();
+            let mut parameters = Vec::new();
+            for owner in owners.iter().filter(|owner| {
+                native_stream(owner.id()) == Some(native_scope)
+                    && owner.scope_record_index() == scope.record_index
+            }) {
+                if let Some(parameter) = native.iter().find(|parameter| {
+                    native_stream(&parameter.id) == Some(native_scope)
+                        && parameter.record_index == owner.parameter_record_index()
+                }) {
+                    push_feature_item(ctx, &mut parameters,
+                        (owner.local_ordinal(), parameter),
+                        "f3d projected scope parameter")?;
+                }
+            }
             let family = design_feature_family(&scope.kind());
             let mut inserted_bodies: Vec<cadmpeg_ir::ids::BodyId> = Vec::new();
             let definition = match family {
@@ -1344,7 +1356,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             };
             let outputs = inserted_bodies;
             Ok(Feature {
-                id: scope_ids[&(native_scope, scope.record_index)].clone(),
+                id: copy_feature_id(ctx, &scope_ids[&(native_scope, scope.record_index)],
+                    "f3d projected feature id")?,
                 ordinal: source_ordinals[&(native_scope, scope.record_index)],
                 name: Some(format!("{} {}", scope.kind(), scope.feature_ordinal)),
                 suppressed: Some(
@@ -1374,10 +1387,15 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         .try_into()
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
-                native_ref: Some(scope.id.clone()),
+                native_ref: Some(copy_feature_text(ctx, &scope.id,
+                    "f3d projected feature native reference")?),
             })
         })
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
+        .try_fold(Vec::new(), |mut features, feature| {
+            push_feature_item(ctx, &mut features, feature?,
+                "f3d projected feature output")?;
+            Ok::<_, CodecError>(features)
+        })?;
     let scope_history = ScopeHistoryGraph::new(
         ctx,
         scopes,
