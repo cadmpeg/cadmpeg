@@ -24,7 +24,7 @@ impl<T, O> DraftLeadingLane<T, O> {
             .indices
             .as_slice()
             .iter()
-            .map(|token| token.atom.raw().len() as u16)
+            .map(|token| u16::from(token.atom.byte_len()))
             .sum::<u16>()
     }
 }
@@ -38,7 +38,7 @@ impl<T, O: Copy + Add<Output = O> + From<u16>> DraftLeadingLane<T, O> {
                 target: &token.target,
                 offset,
             };
-            offset = offset + O::from(token.atom.raw().len() as u16);
+            offset = offset + O::from(u16::from(token.atom.byte_len()));
             positioned
         })
     }

@@ -9,7 +9,7 @@ enum Encoding {
 
 /// Exact compact-index encoding, excluding the `ff` null token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct CompactIndexAtom(Encoding);
+pub(crate) struct CompactIndexAtom(Encoding, u8);
 
 /// Serialize one retained compact token as its exact byte sequence.
 #[derive(Clone, Copy)]
@@ -37,8 +37,8 @@ pub(crate) fn row_indices<const N: usize>(
 impl CompactIndexAtom {
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
         match bytes.first().copied()? {
-            value @ 0..=0x7f => Some(Self(Encoding::Direct(value))),
-            _ => ExtendedCompactIndex::read(bytes).map(|index| Self(Encoding::Extended(index))),
+            value @ 0..=0x7f => Some(Self(Encoding::Direct(value), 1)),
+            _ => ExtendedCompactIndex::read(bytes).map(|index| Self(Encoding::Extended(index), 2)),
         }
     }
 
@@ -48,6 +48,8 @@ impl CompactIndexAtom {
             Encoding::Extended(index) => index.value(),
         }
     }
+
+    pub(crate) fn byte_len(self) -> u8 { self.1 }
 
     pub(crate) fn raw(&self) -> &[u8] {
         match &self.0 {
@@ -194,7 +196,7 @@ impl NullableCompactIndex {
 
 /// Nonempty members of a byte-counted lane reserving entries for its framing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CountedIndexMembers<T, const RESERVED: u8 = 2>(Vec<T>);
+pub(crate) struct CountedIndexMembers<T, const RESERVED: u8 = 2>(Vec<T>, u8);
 
 impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
     pub(crate) fn map_charged<U>(
@@ -208,7 +210,7 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         for member in self.0 {
             mapped.push(map(member)?);
         }
-        Ok(CountedIndexMembers(mapped))
+        Ok(CountedIndexMembers(mapped, self.1))
     }
     pub(super) fn try_map_charged<U>(
         self,
@@ -224,17 +226,18 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
             };
             mapped.push(value);
         }
-        Ok(Some(CountedIndexMembers(mapped)))
+        Ok(Some(CountedIndexMembers(mapped, self.1)))
     }
     pub(crate) fn new(members: Vec<T>) -> Result<Self, &'static str> {
         if !(1..=usize::from(u8::MAX - RESERVED)).contains(&members.len()) {
             return Err("members: must be nonempty and fit the declared byte count");
         }
-        Ok(Self(members))
+        let count = u8::try_from(members.len() + usize::from(RESERVED)).map_err(|_| "members: must be nonempty and fit the declared byte count")?;
+        Ok(Self(members, count))
     }
 
     pub(crate) fn declared_count(&self) -> u8 {
-        (self.0.len() + usize::from(RESERVED)) as u8
+        self.1
     }
 
     pub(crate) fn as_slice(&self) -> &[T] {
@@ -243,7 +246,7 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
 
     #[cfg(test)]
     pub(crate) fn map<U>(self, f: impl FnMut(T) -> U) -> CountedIndexMembers<U, RESERVED> {
-        CountedIndexMembers(self.0.into_iter().map(f).collect())
+        CountedIndexMembers(self.0.into_iter().map(f).collect(), self.1)
     }
 
     pub(super) fn try_map<U>(
@@ -252,6 +255,7 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
     ) -> Option<CountedIndexMembers<U, RESERVED>> {
         Some(CountedIndexMembers(
             self.0.into_iter().map(f).collect::<Option<Vec<_>>>()?,
+            self.1,
         ))
     }
 }

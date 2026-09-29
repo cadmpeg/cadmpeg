@@ -12,14 +12,14 @@ enum Encoding {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(try_from = "ReferenceIndexWire")]
-pub(crate) struct ReferenceIndexToken(Encoding);
+pub(crate) struct ReferenceIndexToken(Encoding, u8);
 
 impl ReferenceIndexToken {
     pub(super) fn read_payload(bytes: &[u8]) -> Option<Self> {
         match bytes {
-            [0xf0, value, ..] => Some(Self(Encoding::PayloadByte([0xf0, *value]))),
+            [0xf0, value, ..] => Some(Self(Encoding::PayloadByte([0xf0, *value]), 2)),
             [0xf1, high, low, ..] if *high != 0 => {
-                Some(Self(Encoding::PayloadWord([0xf1, *high, *low])))
+                Some(Self(Encoding::PayloadWord([0xf1, *high, *low]), 3))
             }
             _ => None,
         }
@@ -27,9 +27,9 @@ impl ReferenceIndexToken {
 
     pub(super) fn read_feature(bytes: &[u8]) -> Option<Self> {
         match bytes {
-            [value @ 0..=0x7f, ..] => Some(Self(Encoding::Direct(*value))),
-            [high @ 0x80..=0x8f, low, ..] => Some(Self(Encoding::Compact([*high, *low]))),
-            [0x90, high, low, ..] => Some(Self(Encoding::Word([0x90, *high, *low]))),
+            [value @ 0..=0x7f, ..] => Some(Self(Encoding::Direct(*value), 1)),
+            [high @ 0x80..=0x8f, low, ..] => Some(Self(Encoding::Compact([*high, *low]), 2)),
+            [0x90, high, low, ..] => Some(Self(Encoding::Word([0x90, *high, *low]), 3)),
             _ => None,
         }
     }
@@ -55,6 +55,8 @@ impl ReferenceIndexToken {
         }
     }
 
+    pub(crate) fn byte_len(self) -> u8 { self.1 }
+
     pub(crate) fn raw(&self) -> &[u8] {
         match &self.0 {
             Encoding::Direct(value) => std::slice::from_ref(value),
@@ -76,12 +78,12 @@ impl FeatureReferenceToken {
 
     pub(crate) fn with_width(value: u32, width: u64) -> Option<Self> {
         let encoding = match (value, width) {
-            (0..=0x7f, 1) => Encoding::Direct(value as u8),
-            (0..=0xfff, 2) => Encoding::Compact([0x80 | (value >> 8) as u8, value as u8]),
-            (0..=0xffff, 3) => Encoding::Word([0x90, (value >> 8) as u8, value as u8]),
+            (0..=0x7f, 1) => Encoding::Direct(u8::try_from(value).ok()?),
+            (0..=0xfff, 2) => Encoding::Compact([0x80 | u8::try_from(value >> 8).ok()?, u8::try_from(value & 0xff).ok()?]),
+            (0..=0xffff, 3) => Encoding::Word([0x90, u8::try_from(value >> 8).ok()?, u8::try_from(value & 0xff).ok()?]),
             _ => return None,
         };
-        Some(Self(ReferenceIndexToken(encoding)))
+        Some(Self(ReferenceIndexToken(encoding, u8::try_from(width).ok()?)))
     }
 
     pub(crate) fn from_wire(value: u32, raw: &[u8]) -> Result<Self, &'static str> {
@@ -95,6 +97,8 @@ impl FeatureReferenceToken {
     pub(crate) fn value(self) -> u32 {
         self.0.value()
     }
+    pub(crate) fn byte_len(self) -> u8 { self.0.byte_len() }
+
     pub(crate) fn raw(&self) -> &[u8] {
         self.0.raw()
     }
@@ -145,6 +149,8 @@ impl CanonicalFeatureReferenceToken {
     pub(crate) fn value(self) -> u32 {
         self.0.value()
     }
+    pub(crate) fn byte_len(self) -> u8 { self.0.byte_len() }
+
     pub(crate) fn raw(&self) -> &[u8] {
         self.0.raw()
     }

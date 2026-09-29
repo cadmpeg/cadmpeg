@@ -9,7 +9,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct StateMessageText<S>(PrintableString<S>);
+pub(crate) struct StateMessageText<S>(PrintableString<S>, u8);
 
 impl<S: AsRef<str>> StateMessageText<S> {
     pub(super) fn new(text: S) -> Result<Self, &'static str> {
@@ -18,11 +18,12 @@ impl<S: AsRef<str>> StateMessageText<S> {
         if text.as_str().len() > usize::from(u8::MAX) - 2 {
             return Err("text: length plus two must fit declared_length");
         }
-        Ok(Self(text))
+        let count = u8::try_from(text.as_str().len()).map_err(|_| "text: length plus two must fit declared_length")? + 2;
+        Ok(Self(text, count))
     }
 
     pub(super) fn declared_length(&self) -> u8 {
-        self.0.as_str().len() as u8 + 2
+        self.1
     }
 
     pub(crate) fn as_str(&self) -> &str {
@@ -40,6 +41,7 @@ impl StateMessageText<&str> {
         owned.push_str(text);
         Ok(StateMessageText(
             PrintableString::new(owned).map_err(CodecError::malformed)?,
+            self.1,
         ))
     }
 }

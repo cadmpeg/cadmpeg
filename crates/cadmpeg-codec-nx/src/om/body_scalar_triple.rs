@@ -75,7 +75,7 @@ pub(crate) fn operation_body_scalar_triples(
             };
             let scalars = ScalarTriple::new(origin, [read()?, read()?, read()?])?;
             Some(OperationBodyScalarTriple {
-                body_reference_ordinal: ordinal as u32,
+                body_reference_ordinal: u32::try_from(ordinal).ok()?,
                 body_object_index: reference.object_index.value(),
                 branch,
                 scalars,

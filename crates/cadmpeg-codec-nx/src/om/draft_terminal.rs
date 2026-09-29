@@ -8,7 +8,7 @@ use std::ops::Add;
 const FIXED: [u8; 11] = [
     0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00,
 ];
-const BYTE_LEN: u16 = 4 + FIXED.len() as u16 + 4;
+const BYTE_LEN: u16 = 4 + 11 + 4;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DraftTerminalLane<O = usize> {

@@ -45,6 +45,7 @@ impl SupportUvPacking {
 pub(crate) struct SupportUvValues {
     packing: SupportUvPacking,
     values: Vec<FiniteReal>,
+    count: u32,
 }
 impl SupportUvValues {
     pub(crate) fn new_charged(
@@ -52,8 +53,8 @@ impl SupportUvValues {
         packing: SupportUvPacking,
         values: Vec<f64>,
     ) -> Result<Option<Self>, CodecError> {
-        if u32::try_from(values.len()).is_err()
-            || values.len() < packing.width() * 2
+        let Ok(wire_count) = u32::try_from(values.len()) else { return Ok(None); };
+        if values.len() < packing.width() * 2
             || !values.len().is_multiple_of(packing.width())
         {
             return Ok(None);
@@ -70,10 +71,11 @@ impl SupportUvValues {
         Ok(Some(Self {
             packing,
             values: finite,
+            count: wire_count,
         }))
     }
     pub(crate) fn new(packing: SupportUvPacking, values: Vec<f64>) -> Result<Self, &'static str> {
-        u32::try_from(values.len()).map_err(|_| "values: scalar count exceeds u32")?;
+        let count = u32::try_from(values.len()).map_err(|_| "values: scalar count exceeds u32")?;
         if values.len() < packing.width() * 2 || !values.len().is_multiple_of(packing.width()) {
             return Err("values: must contain at least two complete tuples for marker");
         }
@@ -81,11 +83,11 @@ impl SupportUvValues {
             .into_iter()
             .map(|value| FiniteReal::new(value).ok_or("values: scalars must be finite"))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self { packing, values })
+        Ok(Self { packing, values, count })
     }
 
     pub(crate) fn count(&self) -> u32 {
-        self.values.len() as u32
+        self.count
     }
     pub(crate) fn marker(&self) -> u8 {
         self.packing.marker()

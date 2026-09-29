@@ -31,7 +31,7 @@ const TARGET_MIDDLE: [u8; 4] = [0xff, 0xff, 0x90, 0xfe];
 pub(crate) const ROW_SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
 
 fn width(atom: CompactIndexAtom) -> u8 {
-    atom.raw().len() as u8
+    atom.byte_len()
 }
 
 fn positions<T, O: Copy + Add<Output = O> + From<u8>, const N: usize>(
@@ -60,7 +60,7 @@ pub(crate) struct IndexRow<T = (), O = usize> {
 
 impl<T, O> IndexRow<T, O> {
     fn indices_start(&self) -> u8 {
-        INDEX_PREFIX.len() as u8 + width(self.first_index) + INDEX_MIDDLE.len() as u8 + 1
+        INDEX_PREFIX_LEN + width(self.first_index) + INDEX_MIDDLE_LEN + 1
     }
     fn byte_len(&self) -> u8 {
         self.indices_start()
@@ -69,7 +69,7 @@ impl<T, O> IndexRow<T, O> {
                 .iter()
                 .map(|index| width(index.atom))
                 .sum::<u8>()
-            + INDEX_SUFFIX.len() as u8
+            + INDEX_SUFFIX_LEN
     }
     pub(crate) fn flag(&self) -> LinkedIndexFlag {
         self.flag
@@ -83,7 +83,7 @@ impl<T, O: Copy + Add<Output = O> + From<u8>> IndexRow<T, O> {
     pub(crate) fn first_index(&self) -> LocatedCompactIndex<O> {
         LocatedCompactIndex {
             atom: self.first_index,
-            offset: self.offset + O::from(INDEX_PREFIX.len() as u8),
+            offset: self.offset + O::from(INDEX_PREFIX_LEN),
         }
     }
     pub(crate) fn indices(&self) -> [PositionedIndex<'_, T, O>; 4] {
@@ -131,12 +131,12 @@ pub(crate) struct LinkedRow<T = (), O = usize> {
 
 impl<T, O> LinkedRow<T, O> {
     fn indices_start(&self) -> u8 {
-        LINKED_PREFIX.len() as u8
+        LINKED_PREFIX_LEN
             + width(self.first_index)
-            + LINKED_MIDDLE.len() as u8
+            + LINKED_MIDDLE_LEN
             + 1
             + width(self.target_index.atom)
-            + TARGET_MIDDLE.len() as u8
+            + TARGET_MIDDLE_LEN
     }
     fn byte_len(&self) -> u8 {
         self.indices_start()
@@ -146,7 +146,7 @@ impl<T, O> LinkedRow<T, O> {
                 .map(|index| width(index.atom))
                 .sum::<u8>()
             + 4
-            + ROW_SUFFIX.len() as u8
+            + ROW_SUFFIX_LEN
     }
     pub(crate) fn discriminator(&self) -> LinkedIndexDiscriminator {
         self.discriminator
@@ -166,7 +166,7 @@ impl<T, O: Copy + Add<Output = O> + From<u8>> LinkedRow<T, O> {
     pub(crate) fn first_index(&self) -> LocatedCompactIndex<O> {
         LocatedCompactIndex {
             atom: self.first_index,
-            offset: self.offset + O::from(LINKED_PREFIX.len() as u8),
+            offset: self.offset + O::from(LINKED_PREFIX_LEN),
         }
     }
     pub(crate) fn target_index(&self) -> PositionedIndex<'_, T, O> {
@@ -175,9 +175,9 @@ impl<T, O: Copy + Add<Output = O> + From<u8>> LinkedRow<T, O> {
             target: &self.target_index.target,
             offset: self.offset
                 + O::from(
-                    LINKED_PREFIX.len() as u8
+                    LINKED_PREFIX_LEN
                         + width(self.first_index)
-                        + LINKED_MIDDLE.len() as u8
+                        + LINKED_MIDDLE_LEN
                         + 1,
                 ),
         }
@@ -239,7 +239,7 @@ pub(crate) struct TargetRow<T = (), O = usize> {
 
 impl<T, O> TargetRow<T, O> {
     fn indices_start(&self) -> u8 {
-        TARGET_PREFIX.len() as u8 + width(self.target_index.atom) + TARGET_MIDDLE.len() as u8
+        TARGET_PREFIX_LEN + width(self.target_index.atom) + TARGET_MIDDLE_LEN
     }
     fn byte_len(&self) -> u8 {
         self.indices_start()
@@ -249,7 +249,7 @@ impl<T, O> TargetRow<T, O> {
                 .map(|index| width(index.atom))
                 .sum::<u8>()
             + 4
-            + ROW_SUFFIX.len() as u8
+            + ROW_SUFFIX_LEN
     }
     pub(crate) fn mode(&self) -> IndexRowMode {
         self.mode
@@ -264,7 +264,7 @@ impl<T, O: Copy + Add<Output = O> + From<u8>> TargetRow<T, O> {
         PositionedIndex {
             atom: self.target_index.atom,
             target: &self.target_index.target,
-            offset: self.offset + O::from(TARGET_PREFIX.len() as u8),
+            offset: self.offset + O::from(TARGET_PREFIX_LEN),
         }
     }
     pub(crate) fn indices(&self) -> [PositionedIndex<'_, T, O>; 3] {
@@ -369,3 +369,19 @@ checked_origins!(u64);
 
 #[cfg(test)]
 mod tests;
+
+const INDEX_PREFIX_LEN: u8 = 3;
+
+const INDEX_MIDDLE_LEN: u8 = 2;
+
+const INDEX_SUFFIX_LEN: u8 = 9;
+
+const LINKED_PREFIX_LEN: u8 = 2;
+
+const LINKED_MIDDLE_LEN: u8 = 2;
+
+const TARGET_PREFIX_LEN: u8 = 5;
+
+const TARGET_MIDDLE_LEN: u8 = 4;
+
+const ROW_SUFFIX_LEN: u8 = 5;

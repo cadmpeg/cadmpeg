@@ -23,8 +23,8 @@ impl<T> StateSlots<T> {
     pub(crate) fn iter(&self) -> impl Iterator<Item = (u32, &T)> {
         self.0
             .iter()
-            .enumerate()
-            .map(|(ordinal, slot)| (ordinal as u32, slot))
+            .zip(0u32..=u32::MAX)
+            .map(|(slot, ordinal)| (ordinal, slot))
     }
 
     #[cfg(test)]
@@ -39,8 +39,8 @@ impl<T> StateSlots<T> {
         Ok(StateSlots(
             self.0
                 .into_iter()
-                .enumerate()
-                .map(|(ordinal, slot)| map(ordinal as u32, slot))
+                .zip(0u32..=u32::MAX)
+                .map(|(slot, ordinal)| map(ordinal, slot))
                 .collect::<Result<_, _>>()?,
         ))
     }
