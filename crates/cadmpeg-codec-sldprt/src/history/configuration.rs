@@ -122,7 +122,7 @@ pub(crate) fn enrich_history_semantic(
     crate::pmi::enrich_history_parameters(ctx, histories, pmi_dimensions)?;
     apply_evaluated_parameters(histories);
     crate::resolved_features::reference_geometry::enrich_history_reference_axes(ctx, histories, lanes)?;
-    crate::resolved_features::axes::enrich_history_revolution_inputs(histories, lanes);
+    crate::resolved_features::axes::enrich_history_revolution_inputs(ctx, histories, lanes)?;
     Ok(())
 }
 

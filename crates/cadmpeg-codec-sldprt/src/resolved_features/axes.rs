@@ -849,18 +849,51 @@ pub(super) fn temporary_axis_reference(
         .then_some(first)
 }
 
+fn push_revolution_vote<T>(
+    ctx: &DecodeContext<'_>,
+    votes: &mut HashMap<String, Vec<T>>,
+    id: &str,
+    value: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_work(1, operation)?;
+    if let Some(values) = votes.get_mut(id) {
+        ctx.reserve_collection_vec(values, 1, operation)?;
+        values.push(value);
+        return Ok(());
+    }
+    ctx.charge_collection_items(1, operation)?;
+    votes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    let id = ctx.format_retained(format_args!("{id}"), "retain SLDPRT revolution vote ID")?;
+    let mut values = Vec::new();
+    ctx.reserve_collection_vec(&mut values, 1, operation)?;
+    values.push(value);
+    votes.insert(id, values);
+    Ok(())
+}
+
 /// Add profile ownership and placed axes carried by revolution reference records.
 pub(crate) fn enrich_history_revolution_inputs(
+    ctx: &DecodeContext<'_>,
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
-) {
-    let name_counts = histories.iter().flat_map(|history| &history.features).fold(
-        HashMap::<String, usize>::new(),
-        |mut counts, feature| {
-            *counts.entry(feature.name.clone()).or_default() += 1;
-            counts
-        },
-    );
+) -> Result<(), CodecError> {
+    let mut name_counts = HashMap::<String, usize>::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, "count SLDPRT revolution feature names")?;
+        if let Some(count) = name_counts.get_mut(feature.name.as_str()) {
+            *count = count.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("count SLDPRT revolution feature names", u64::MAX - 1, u64::MAX)
+            })?;
+        } else {
+            ctx.charge_collection_items(1, "index SLDPRT revolution feature names")?;
+            name_counts.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT revolution feature names", u64::MAX - 1, u64::MAX)
+            })?;
+            let name = ctx.format_retained(format_args!("{}", feature.name), "retain SLDPRT revolution feature name")?;
+            name_counts.insert(name, 1);
+        }
+    }
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
@@ -869,32 +902,52 @@ pub(crate) fn enrich_history_revolution_inputs(
         if name_counts.get(feature.name.as_str()) != Some(&1) {
             continue;
         }
-        let mut object_ids = lanes
-            .iter()
-            .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value())
-            .collect::<Vec<_>>();
+        let mut object_ids = Vec::new();
+        for lane in lanes {
+            ctx.charge_work(1, "find SLDPRT revolution profile source")?;
+            if let Some(id) = feature_object_name(feature, lane).and_then(|name| name.object_id?.value()) {
+                ctx.reserve_collection_vec(&mut object_ids, 1, "collect SLDPRT revolution profile sources")?;
+                object_ids.push(id);
+            }
+        }
         object_ids.sort_unstable();
         object_ids.dedup();
         if let [object_id] = object_ids.as_slice() {
             feature.source_id = FeatureSource::from_value(*object_id);
         }
     }
-    let mut profile_sources = HashMap::<String, HashSet<u32>>::new();
-    for history in histories.iter() {
-        let sources = history
-            .features
-            .iter()
-            .filter(|feature| is_profile_feature_object(feature))
-            .flat_map(|feature| {
-                feature.source_value().into_iter().chain(
-                    lanes
-                        .iter()
-                        .filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value()),
-                )
-            })
-            .collect::<HashSet<_>>();
+    let mut profile_sources = Vec::new();
+    let mut profile_source_owner = HashMap::<String, usize>::new();
+    for (history_index, history) in histories.iter().enumerate() {
+        let mut sources = HashSet::new();
+        for feature in history.features.iter().filter(|feature| is_profile_feature_object(feature)) {
+            for source in feature.source_value().into_iter().chain(
+                lanes.iter().filter_map(|lane| feature_object_name(feature, lane)?.object_id?.value()),
+            ) {
+                ctx.charge_work(1, "index SLDPRT revolution profile sources")?;
+                if !sources.contains(&source) {
+                    ctx.charge_collection_items(1, "index SLDPRT revolution profile sources")?;
+                    sources.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit("index SLDPRT revolution profile sources", u64::MAX - 1, u64::MAX)
+                    })?;
+                    sources.insert(source);
+                }
+            }
+        }
+        ctx.reserve_collection_vec(&mut profile_sources, 1, "collect SLDPRT revolution profile sets")?;
+        profile_sources.push(sources);
         for feature in &history.features {
-            profile_sources.insert(feature.id.clone(), sources.clone());
+            ctx.charge_work(1, "index SLDPRT revolution profile owners")?;
+            if let Some(owner) = profile_source_owner.get_mut(feature.id.as_str()) {
+                *owner = history_index;
+            } else {
+                ctx.charge_collection_items(1, "index SLDPRT revolution profile owners")?;
+                profile_source_owner.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT revolution profile owners", u64::MAX - 1, u64::MAX)
+                })?;
+                let id = ctx.format_retained(format_args!("{}", feature.id), "retain SLDPRT revolution profile owner")?;
+                profile_source_owner.insert(id, history_index);
+            }
         }
     }
     let mut profiles = HashMap::<String, Vec<Option<u32>>>::new();
@@ -902,11 +955,14 @@ pub(crate) fn enrich_history_revolution_inputs(
         HashMap::<String, Vec<Option<(cadmpeg_ir::features::FinitePoint3, UnitVector3)>>>::new();
     for lane in lanes {
         for history in histories.iter() {
-            let mut objects = history
-                .features
-                .iter()
-                .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
-                .collect::<Vec<_>>();
+            let mut objects = Vec::new();
+            for feature in &history.features {
+                ctx.charge_work(1, "scan SLDPRT revolution feature objects")?;
+                if let Some(name) = feature_object_name(feature, lane) {
+                    ctx.reserve_collection_vec(&mut objects, 1, "collect SLDPRT revolution feature objects")?;
+                    objects.push((name.offset, feature));
+                }
+            }
             objects.sort_unstable_by_key(|(offset, _)| *offset);
             for (index, &(start, feature)) in objects.iter().enumerate() {
                 if !matches!(
@@ -921,7 +977,9 @@ pub(crate) fn enrich_history_revolution_inputs(
                     .map(|(_, feature)| *feature)
                     .filter(|feature| is_profile_feature_object(feature))
                     .and_then(|feature| feature_object_name(feature, lane)?.object_id?.value());
-                let Some(known_profiles) = profile_sources.get(&feature.id) else {
+                let Some(known_profiles) = profile_source_owner
+                    .get(feature.id.as_str())
+                    .and_then(|owner| profile_sources.get(*owner)) else {
                     continue;
                 };
                 let Some(start) = usize::try_from(start).ok() else {
@@ -940,32 +998,35 @@ pub(crate) fn enrich_history_revolution_inputs(
                 let placed_axis = line_reference
                     .map(|(_, origin, direction)| (origin, direction))
                     .or_else(|| temporary_axis_reference(&lane.native_payload, start, end));
-                profiles
-                    .entry(feature.id.clone())
-                    .or_default()
-                    .push(immediate_profile.or_else(|| line_reference.map(|input| input.0)));
-                inputs
-                    .entry(feature.id.clone())
-                    .or_default()
-                    .push(placed_axis);
+                push_revolution_vote(
+                    ctx, &mut profiles, &feature.id,
+                    immediate_profile.or_else(|| line_reference.map(|input| input.0)),
+                    "collect SLDPRT revolution profile votes",
+                )?;
+                push_revolution_vote(
+                    ctx, &mut inputs, &feature.id, placed_axis,
+                    "collect SLDPRT revolution axis votes",
+                )?;
             }
         }
     }
-    for feature in histories
-        .iter_mut()
-        .flat_map(|history| &mut history.features)
-    {
+    for history in histories.iter_mut() {
+      for feature in &mut history.features {
+        ctx.charge_work(1, "resolve SLDPRT revolution votes")?;
         if !feature.properties.contains_key("Profile") {
             if let Some(votes) = profiles.get(&feature.id) {
                 if let Some(Some(first)) = votes.first() {
                     if votes.iter().all(|vote| vote == &Some(*first))
-                        && profile_sources
-                            .get(&feature.id)
+                        && profile_source_owner
+                            .get(feature.id.as_str())
+                            .and_then(|owner| profile_sources.get(*owner))
                             .is_some_and(|sources| sources.contains(first))
                     {
+                        ctx.charge_collection_items(1, "insert SLDPRT revolution profile property")?;
+                        let value = ctx.format_retained(format_args!("{first}"), "retain SLDPRT revolution profile property")?;
                         feature.properties.insert(
                             cadmpeg_core::nonblank_literal!("Profile"),
-                            first.to_string(),
+                            value,
                         );
                     }
                 }
@@ -983,26 +1044,27 @@ pub(crate) fn enrich_history_revolution_inputs(
         if !feature.properties.contains_key("AxisOrigin")
             && !feature.properties.contains_key("AxisDirection")
         {
+            ctx.charge_collection_items(2, "insert SLDPRT revolution axis properties")?;
+            let origin = ctx.format_retained(
+                format_args!("{}mm,{}mm,{}mm", first.0.get().x, first.0.get().y, first.0.get().z),
+                "retain SLDPRT revolution axis origin",
+            )?;
+            let direction = ctx.format_retained(
+                format_args!("{},{},{}", first.1.as_raw().x, first.1.as_raw().y, first.1.as_raw().z),
+                "retain SLDPRT revolution axis direction",
+            )?;
             feature.properties.insert(
                 cadmpeg_core::nonblank_literal!("AxisOrigin"),
-                format!(
-                    "{}mm,{}mm,{}mm",
-                    first.0.get().x,
-                    first.0.get().y,
-                    first.0.get().z
-                ),
+                origin,
             );
             feature.properties.insert(
                 cadmpeg_core::nonblank_literal!("AxisDirection"),
-                format!(
-                    "{},{},{}",
-                    first.1.as_raw().x,
-                    first.1.as_raw().y,
-                    first.1.as_raw().z
-                ),
+                direction,
             );
         }
+      }
     }
+    Ok(())
 }
 
 /// Bind revolution axes from profile records or complete coaxial generated geometry.
