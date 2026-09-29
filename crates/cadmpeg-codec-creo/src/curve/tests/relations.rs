@@ -15,9 +15,15 @@ use crate::curve::CurveExpressionQuantity;
 use crate::curve::CurveExpressionSystemSymbolFamily;
 use crate::curve::CurveExpressionTarget;
 use crate::curve::CurveExpressionValue;
+use crate::curve::DimensionEquality;
+use crate::curve::DimensionProbeKind;
+use crate::curve::DimensionProbeValue;
 use crate::curve::ExpressionValue;
 use crate::curve::ExternalRelationSymbols;
 use crate::curve::RelationEvaluationContext;
+use crate::curve::RelationDimension;
+use crate::curve::SimultaneousAffineValue;
+use crate::curve::SymbolicRelationDimension;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
@@ -37,9 +43,9 @@ fn parse_relation_expression<V: ExpressionValue>(
     .expect("service profile admits relation expression")
 }
 
-fn relation_parse_limit_error(
+fn relation_parse_limit_error<V: ExpressionValue + std::fmt::Debug>(
     expression: &str,
-    values: &BTreeMap<String, CurveExpressionValue>,
+    values: &BTreeMap<String, V>,
     configure: impl FnOnce(&mut DecodePolicy),
 ) -> CodecError {
     let arena = DecodeArena::new();
@@ -56,8 +62,110 @@ fn relation_parse_limit_error(
 }
 
 #[test]
+fn relation_referenced_string_refuses_retained_clone() {
+    let values = BTreeMap::from([(
+        "driver".to_owned(),
+        CurveExpressionValue::String("abc".to_owned()),
+    )]);
+    let error = relation_parse_limit_error("driver", &values, |policy| {
+        policy.limits.max_retained_bytes = 2;
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo relation referenced string value"));
+}
+
+fn affine_probe_values() -> BTreeMap<String, SimultaneousAffineValue> {
+    BTreeMap::from([(
+        "driver".to_owned(),
+        SimultaneousAffineValue {
+            dimension: RelationDimension::default(),
+            constant: 0.0,
+            coefficients: BTreeMap::from([("x".to_owned(), 1.0)]),
+        },
+    )])
+}
+
+#[test]
+fn relation_affine_reference_refuses_coefficient_node() {
+    let error = relation_parse_limit_error("driver", &affine_probe_values(), |policy| {
+        policy.limits.max_collection_items = 0;
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo relation affine clone coefficient nodes"));
+}
+
+#[test]
+fn relation_affine_reference_refuses_coefficient_name() {
+    let error = relation_parse_limit_error("driver", &affine_probe_values(), |policy| {
+        policy.limits.max_retained_bytes = 0;
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo relation affine clone coefficient names"));
+}
+
+#[test]
+fn relation_dimension_reference_refuses_variable_node() {
+    let values = BTreeMap::from([("driver".to_owned(), DimensionProbeValue::variable("x"))]);
+    let error = relation_parse_limit_error("driver", &values, |policy| {
+        policy.limits.max_collection_items = 0;
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo relation dimension clone variable nodes"));
+}
+
+#[test]
+fn relation_dimension_reference_refuses_variable_name() {
+    let values = BTreeMap::from([("driver".to_owned(), DimensionProbeValue::variable("x"))]);
+    let error = relation_parse_limit_error("driver", &values, |policy| {
+        policy.limits.max_retained_bytes = 0;
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo relation dimension clone variable names"));
+}
+
+#[test]
+fn relation_dimension_reference_refuses_text_clone() {
+    let values = BTreeMap::from([(
+        "driver".to_owned(),
+        DimensionProbeValue::text(Some("abc".to_owned())),
+    )]);
+    let error = relation_parse_limit_error("driver", &values, |policy| {
+        policy.limits.max_retained_bytes = 2;
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "creo relation dimension clone text"));
+}
+
+#[test]
+fn relation_dimension_reference_refuses_constraint_vector() {
+    let values = BTreeMap::from([(
+        "driver".to_owned(),
+        DimensionProbeValue {
+            dimension: SymbolicRelationDimension::default(),
+            kind: DimensionProbeKind::Numeric(None),
+            constraints: vec![DimensionEquality {
+                left: SymbolicRelationDimension::default(),
+                right: SymbolicRelationDimension::default(),
+            }],
+        },
+    )]);
+    let error = relation_parse_limit_error("driver", &values, |policy| {
+        policy.limits.max_collection_items = 0;
+    });
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo relation dimension clone constraints"));
+}
+
+#[test]
 fn relation_literal_text_refuses_retained_copy() {
-    let error = relation_parse_limit_error("'abc'", &BTreeMap::new(), |policy| {
+    let error = relation_parse_limit_error("'abc'", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
         policy.limits.max_retained_bytes = 2;
     });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -78,7 +186,7 @@ fn relation_lookup_refuses_scoped_key_copy() {
 
 #[test]
 fn relation_function_refuses_argument_vector() {
-    let error = relation_parse_limit_error("sin(1)", &BTreeMap::new(), |policy| {
+    let error = relation_parse_limit_error("sin(1)", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
         policy.limits.max_collection_items = 0;
     });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -88,7 +196,7 @@ fn relation_function_refuses_argument_vector() {
 
 #[test]
 fn relation_function_refuses_recursive_step() {
-    let error = relation_parse_limit_error("sin(1)", &BTreeMap::new(), |policy| {
+    let error = relation_parse_limit_error("sin(1)", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
         policy.limits.max_recursion_depth = 0;
     });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -98,7 +206,7 @@ fn relation_function_refuses_recursive_step() {
 
 #[test]
 fn relation_group_refuses_recursive_step() {
-    let error = relation_parse_limit_error("(1)", &BTreeMap::new(), |policy| {
+    let error = relation_parse_limit_error("(1)", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
         policy.limits.max_recursion_depth = 0;
     });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -108,7 +216,7 @@ fn relation_group_refuses_recursive_step() {
 
 #[test]
 fn relation_function_refuses_work() {
-    let error = relation_parse_limit_error("sin(1)", &BTreeMap::new(), |policy| {
+    let error = relation_parse_limit_error("sin(1)", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
         policy.limits.max_work_units = 0;
     });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -118,7 +226,7 @@ fn relation_function_refuses_work() {
 
 #[test]
 fn relation_exponent_refuses_recursive_step() {
-    let error = relation_parse_limit_error("2^3", &BTreeMap::new(), |policy| {
+    let error = relation_parse_limit_error("2^3", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
         policy.limits.max_recursion_depth = 0;
     });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -128,7 +236,7 @@ fn relation_exponent_refuses_recursive_step() {
 
 #[test]
 fn relation_exponent_refuses_work() {
-    let error = relation_parse_limit_error("2^3", &BTreeMap::new(), |policy| {
+    let error = relation_parse_limit_error("2^3", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
         policy.limits.max_work_units = 0;
     });
     assert!(matches!(error, CodecError::ResourceLimit(resource)
@@ -138,7 +246,7 @@ fn relation_exponent_refuses_work() {
 
 #[test]
 fn relation_group_refuses_work() {
-    let error = relation_parse_limit_error("(1)", &BTreeMap::new(), |policy| {
+    let error = relation_parse_limit_error("(1)", &BTreeMap::<String, CurveExpressionValue>::new(), |policy| {
         policy.limits.max_work_units = 0;
     });
     assert!(matches!(error, CodecError::ResourceLimit(resource)

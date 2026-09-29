@@ -2578,6 +2578,10 @@ fn multiplicative_relation_unit_symbol(symbol: &str) -> Option<(f64, RelationDim
 }
 
 trait ExpressionValue: Clone {
+    fn clone_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError>;
     fn number(value: f64) -> Self;
     fn reserved(name: &str) -> Option<Self> {
         reserved_relation_scalar(name).map(Self::number)
@@ -2606,6 +2610,13 @@ trait ExpressionValue: Clone {
 }
 
 impl ExpressionValue for f64 {
+    fn clone_admitted(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(*self)
+    }
+
     fn number(value: f64) -> Self {
         value
     }
@@ -2676,6 +2687,13 @@ struct AffineValue {
 }
 
 impl ExpressionValue for AffineValue {
+    fn clone_admitted(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(*self)
+    }
+
     fn number(value: f64) -> Self {
         Self {
             constant: value,
@@ -2840,6 +2858,25 @@ impl SimultaneousAffineValue {
 }
 
 impl ExpressionValue for SimultaneousAffineValue {
+    fn clone_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut coefficients = BTreeMap::new();
+        for (name, value) in &self.coefficients {
+            ctx.charge_collection_items(1, "creo relation affine clone coefficient nodes")?;
+            coefficients.insert(
+                ctx.copy_retained_text(name, "creo relation affine clone coefficient names")?,
+                *value,
+            );
+        }
+        Ok(Self {
+            dimension: self.dimension,
+            constant: self.constant,
+            coefficients,
+        })
+    }
+
     fn number(value: f64) -> Self {
         Self::constant(value, RelationDimension::default())
     }
@@ -3122,6 +3159,21 @@ struct DimensionForm {
 }
 
 impl DimensionForm {
+    fn copy_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut variables = BTreeMap::new();
+        for (name, value) in &self.variables {
+            ctx.charge_collection_items(1, "creo relation dimension clone variable nodes")?;
+            variables.insert(
+                ctx.copy_retained_text(name, "creo relation dimension clone variable names")?,
+                *value,
+            );
+        }
+        Ok(Self { constant: self.constant, variables })
+    }
+
     fn constant(value: i8) -> Self {
         Self {
             constant: DimensionRational::integer(value),
@@ -3182,6 +3234,21 @@ struct SymbolicRelationDimension {
 }
 
 impl SymbolicRelationDimension {
+    fn copy_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            axes: [
+                self.axes[0].copy_admitted(ctx)?,
+                self.axes[1].copy_admitted(ctx)?,
+                self.axes[2].copy_admitted(ctx)?,
+                self.axes[3].copy_admitted(ctx)?,
+                self.axes[4].copy_admitted(ctx)?,
+            ],
+        })
+    }
+
     fn from_relation_dimension(dimension: RelationDimension) -> Self {
         Self {
             axes: [
@@ -3248,6 +3315,18 @@ fn dimension_variable_key(name: &str, axis: usize) -> String {
 struct DimensionEquality {
     left: SymbolicRelationDimension,
     right: SymbolicRelationDimension,
+}
+
+impl DimensionEquality {
+    fn copy_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        Ok(Self {
+            left: self.left.copy_admitted(ctx)?,
+            right: self.right.copy_admitted(ctx)?,
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -3412,6 +3491,33 @@ impl DimensionProbeValue {
 }
 
 impl ExpressionValue for DimensionProbeValue {
+    fn clone_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let kind = match &self.kind {
+            DimensionProbeKind::Numeric(value) => DimensionProbeKind::Numeric(*value),
+            DimensionProbeKind::Text(Some(value)) => DimensionProbeKind::Text(Some(
+                ctx.copy_retained_text(value, "creo relation dimension clone text")?,
+            )),
+            DimensionProbeKind::Text(None) => DimensionProbeKind::Text(None),
+        };
+        let mut constraints = Vec::new();
+        ctx.try_reserve_items(
+            &mut constraints,
+            self.constraints.len(),
+            "creo relation dimension clone constraints",
+        )?;
+        for constraint in &self.constraints {
+            constraints.push(constraint.copy_admitted(ctx)?);
+        }
+        Ok(Self {
+            dimension: self.dimension.copy_admitted(ctx)?,
+            kind,
+            constraints,
+        })
+    }
+
     fn number(value: f64) -> Self {
         Self::numeric(Some(value))
     }
@@ -4150,6 +4256,13 @@ impl ExpressionValue for DimensionProbeValue {
 }
 
 impl ExpressionValue for CurveExpressionValue {
+    fn clone_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        copy_expression_value(ctx, self, "creo relation referenced string value")
+    }
+
     fn number(value: f64) -> Self {
         Self::Number(value)
     }
@@ -4621,7 +4734,8 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             let (mut key, _reservation) =
                 self.admit(self.ctx.copy_scoped_text(name, "creo relation lookup key"))?;
             key.make_ascii_lowercase();
-            return self.values.get(&key).cloned();
+            let copied = self.values.get(&key)?.clone_admitted(self.ctx);
+            return self.admit(copied);
         }
         (self.nesting < MAX_EXPRESSION_NESTING).then_some(())?;
         let (function, scope) = creo_relation_function(name)?;
