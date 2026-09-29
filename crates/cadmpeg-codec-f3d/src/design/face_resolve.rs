@@ -1650,34 +1650,31 @@ fn bounded_face_candidate_by_boundary_cardinality(
     header_value: usize,
     contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
 ) -> Option<Vec<i64>> {
-    let mut candidates = contexts
-        .iter()
-        .filter_map(|context| {
-            let boundaries = valid_preceding_face_boundaries(context)?;
-            let boundary_edge_count = boundary_edge_count(&boundaries)?;
-            let faces = boundaries
-                .iter()
-                .map(|boundary| boundary.face_slot)
-                .collect::<Vec<_>>();
-            (boundary_edge_count == header_value).then_some(faces)
-        })
-        .collect::<Vec<_>>();
+    let same_faces = |first: &[&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext],
+                      second: &[&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext]| {
+        first.iter().map(|boundary| boundary.face_slot)
+            .eq(second.iter().map(|boundary| boundary.face_slot))
+    };
+    let mut selected: Option<Vec<&crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>> = None;
+    for context in contexts {
+        let Some(boundaries) = valid_preceding_face_boundaries(context) else { continue; };
+        if boundary_edge_count(&boundaries) != Some(header_value) {
+            continue;
+        }
+        if selected.as_ref().is_some_and(|first| !same_faces(first, &boundaries)) {
+            return None;
+        }
+        selected.get_or_insert(boundaries);
+    }
     if let Some(boundaries) = unique_preceding_face_boundaries(contexts) {
         if boundary_edge_count(&boundaries) == Some(header_value) {
-            candidates.push(
-                boundaries
-                    .iter()
-                    .map(|boundary| boundary.face_slot)
-                    .collect(),
-            );
+            if selected.as_ref().is_some_and(|first| !same_faces(first, &boundaries)) {
+                return None;
+            }
+            selected.get_or_insert(boundaries);
         }
     }
-    candidates.sort_unstable();
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    Some(selected?.iter().map(|boundary| boundary.face_slot).collect())
 }
 
 fn valid_preceding_face_boundaries(
