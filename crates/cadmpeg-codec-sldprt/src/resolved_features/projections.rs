@@ -744,22 +744,32 @@ pub(crate) fn project_compact_edge_selections(
                 if let Some(radius_groups) =
                     variable_fillet_radius_groups(native_ref, histories, lanes, edge_selections)
                 {
-                    if matches!(existing_edges, EdgeSelection::Unresolved)
-                        || radius_groups.len() == 1
-                    {
+                    let unresolved_edges = matches!(existing_edges, EdgeSelection::Unresolved);
+                    if unresolved_edges || radius_groups.len() == 1 {
+                        let mut carried_edges = match &mut definition {
+                            FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
+                                if !unresolved_edges => groups
+                                    .iter_mut()
+                                    .next()
+                                    .map(|group| std::mem::replace(&mut group.edges, EdgeSelection::Unresolved)),
+                            _ => None,
+                        };
                         definition = FeatureDefinition::Operation(FeatureOperation::Fillet {
                             groups: radius_groups
                                 .into_iter()
-                                .map(|(radius, selections)| FilletGroup {
-                                    edges: if matches!(existing_edges, EdgeSelection::Unresolved) {
+                                .map(|(radius, selections)| {
+                                    let edges = if unresolved_edges {
                                         projected_edges(&selections)
                                     } else {
-                                        (*existing_edges).clone()
-                                    },
-                                    radius,
-                                    tangency_weight,
+                                        carried_edges.take().ok_or_else(|| {
+                                            cadmpeg_core::CodecError::malformed(
+                                                "SLDPRT fillet replacement has no carried edges",
+                                            )
+                                        })?
+                                    };
+                                    Ok(FilletGroup { edges, radius, tangency_weight })
                                 })
-                                .collect::<Vec<_>>()
+                                .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?
                                 .try_into()
                                 .map_err(cadmpeg_core::CodecError::malformed)?,
                         });

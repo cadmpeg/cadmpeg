@@ -1418,7 +1418,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         object_id: ObjectId::try_from(object_id).ok(),
         value: value.into(),
     };
-    let lane = FeatureInputLane {
+    let mut lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
         native_payload: payload,
@@ -1466,8 +1466,13 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         terminal_feature_ref: None,
     };
 
-    let groups = variable_fillet_radius_groups("variable", &[history], &[lane], &[&selection])
-        .expect("vertex join");
+    let groups = variable_fillet_radius_groups(
+        "variable",
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&lane),
+        &[&selection],
+    )
+    .expect("vertex join");
     assert!(matches!(
         groups.as_slice(),
         [(RadiusSpec::Variable { points }, selections)]
@@ -1475,6 +1480,46 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
                 VariableRadius { parameter: first_parameter, radius: actual_radius },
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
             ] if first_parameter.get() == 0.0 && second_parameter.get() == 1.0 && actual_radius.get() == 2.0 && actual_radius_2.get() == 3.0) && selections.len() == 1
+    ));
+    lane.edge_selections.push(selection);
+    let mut projected = [cadmpeg_ir::features::Feature {
+        id: FeatureId::mint("synthetic:test:id#variable").expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::Fillet {
+                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                    cadmpeg_ir::features::edge_treatments::FilletGroup {
+                        edges: cadmpeg_ir::features::EdgeSelection::Native("native-edges".into()),
+                        radius: RadiusSpec::Unresolved { form: None },
+                        tangency_weight: None,
+                    },
+                ),
+            }),
+        ),
+        native_ref: Some("variable".into()),
+    }];
+    super::project_compact_edge_selections(
+        &mut projected,
+        std::slice::from_ref(&history),
+        std::slice::from_ref(&lane),
+    )
+    .expect("fillet projection");
+    assert!(matches!(
+        projected[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
+            if matches!(groups.as_slice(),
+                [cadmpeg_ir::features::edge_treatments::FilletGroup {
+                    edges: cadmpeg_ir::features::EdgeSelection::Native(native),
+                    radius: RadiusSpec::Variable { .. },
+                    ..
+                }] if native == "native-edges")
     ));
 }
 
