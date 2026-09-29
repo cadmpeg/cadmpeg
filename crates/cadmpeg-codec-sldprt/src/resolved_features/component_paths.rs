@@ -637,6 +637,91 @@ pub(crate) fn compact_edge_selection_set_value(
     value
 }
 
+fn append_compact_edge_path_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &mut String,
+    selection: &FeatureInputEdgeSelection,
+) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "format SLDPRT compact edge path";
+    if selection.components.is_empty() || !selection.references.is_empty() {
+        for (index, edge_id) in selection.local_edge_ids.iter().enumerate() {
+            ctx.charge_work(1, OPERATION)?;
+            if index != 0 {
+                ctx.reserve_retained_string(value, 1, OPERATION)?;
+                value.push(',');
+            }
+            let digits = edge_id.to_string();
+            ctx.reserve_retained_string(value, digits.len(), OPERATION)?;
+            value.push_str(&digits);
+        }
+    } else {
+        for (index, component) in selection.components.iter().enumerate() {
+            ctx.charge_work(1, OPERATION)?;
+            if index != 0 {
+                ctx.reserve_retained_string(value, 1, OPERATION)?;
+                value.push(',');
+            }
+            if let Some(id) = component.local_id {
+                let digits = id.to_string();
+                ctx.reserve_retained_string(value, digits.len(), OPERATION)?;
+                value.push_str(&digits);
+            } else {
+                ctx.reserve_retained_string(value, 1, OPERATION)?;
+                value.push('_');
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn compact_edge_path_value_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    selection: &FeatureInputEdgeSelection,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let mut value = String::new();
+    append_compact_edge_path_charged(ctx, &mut value, selection)?;
+    Ok(value)
+}
+
+pub(crate) fn compact_edge_selection_set_value_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    selections: &[&FeatureInputEdgeSelection],
+) -> Result<String, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "format SLDPRT compact edge selection";
+    let prefix = if selections.len() == 1 {
+        "sldprt:feature-input:edge-ids:"
+    } else {
+        "sldprt:feature-input:edge-selection-vectors:"
+    };
+    let mut value = String::new();
+    ctx.reserve_retained_string(&mut value, prefix.len(), OPERATION)?;
+    value.push_str(prefix);
+    if let [selection] = selections {
+        if selection.components.iter().all(|component| component.local_id.is_some()) {
+            for (index, edge_id) in selection.local_edge_ids.iter().enumerate() {
+                ctx.charge_work(1, OPERATION)?;
+                if index != 0 {
+                    ctx.reserve_retained_string(&mut value, 1, OPERATION)?;
+                    value.push(',');
+                }
+                let digits = edge_id.to_string();
+                ctx.reserve_retained_string(&mut value, digits.len(), OPERATION)?;
+                value.push_str(&digits);
+            }
+            return Ok(value);
+        }
+    }
+    for (index, selection) in selections.iter().enumerate() {
+        ctx.charge_work(1, OPERATION)?;
+        if index != 0 {
+            ctx.reserve_retained_string(&mut value, 1, OPERATION)?;
+            value.push(';');
+        }
+        append_compact_edge_path_charged(ctx, &mut value, selection)?;
+    }
+    Ok(value)
+}
+
 pub(crate) fn compact_body_selection_value(local_body_ids: &[u32]) -> String {
     let mut value = String::from("sldprt:feature-input:body-ids:");
     for (index, body_id) in local_body_ids.iter().enumerate() {
