@@ -45,7 +45,15 @@ fn type114_entity_table_boundary_uses_segment_dimensions() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+        let analysis = crate::test_support::with_service_context(&[], |ctx| {
+            analyze_trailing_pointer_groups_for_global_table_with_context(
+                &record,
+                &directory,
+                crate::global::GlobalTable::V5Later,
+                ctx,
+            )
+            .expect("test-only trailing pointer analysis")
+        });
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -90,7 +98,15 @@ fn type114_entity_table_boundary_precedes_valid_generic_alternative() {
         comment: Vec::new(),
     };
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+    let analysis = crate::test_support::with_service_context(&[], |ctx| {
+        analyze_trailing_pointer_groups_for_global_table_with_context(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+            ctx,
+        )
+        .expect("test-only trailing pointer analysis")
+    });
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -135,7 +151,15 @@ fn type114_malformed_segment_dimensions_do_not_enable_generic_recovery() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+        let analysis = crate::test_support::with_service_context(&[], |ctx| {
+            analyze_trailing_pointer_groups_for_global_table_with_context(
+                &record,
+                &directory,
+                crate::global::GlobalTable::V5Later,
+                ctx,
+            )
+            .expect("test-only trailing pointer analysis")
+        });
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
@@ -234,7 +258,15 @@ fn type128_entity_table_boundary_uses_surface_indices() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+        let analysis = crate::test_support::with_service_context(&[], |ctx| {
+            analyze_trailing_pointer_groups_for_global_table_with_context(
+                &record,
+                &directory,
+                crate::global::GlobalTable::V5Later,
+                ctx,
+            )
+            .expect("test-only trailing pointer analysis")
+        });
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -273,7 +305,15 @@ fn type128_entity_table_boundary_precedes_valid_generic_alternative() {
         comment: Vec::new(),
     };
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+    let analysis = crate::test_support::with_service_context(&[], |ctx| {
+        analyze_trailing_pointer_groups_for_global_table_with_context(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+            ctx,
+        )
+        .expect("test-only trailing pointer analysis")
+    });
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -316,7 +356,15 @@ fn type128_malformed_indices_do_not_enable_generic_recovery() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+        let analysis = crate::test_support::with_service_context(&[], |ctx| {
+            analyze_trailing_pointer_groups_for_global_table_with_context(
+                &record,
+                &directory,
+                crate::global::GlobalTable::V5Later,
+                ctx,
+            )
+            .expect("test-only trailing pointer analysis")
+        });
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0,
@@ -416,7 +464,15 @@ fn type144_entity_table_boundary_uses_inner_boundary_count() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+        let analysis = crate::test_support::with_service_context(&[], |ctx| {
+            analyze_trailing_pointer_groups_for_global_table_with_context(
+                &record,
+                &directory,
+                crate::global::GlobalTable::V5Later,
+                ctx,
+            )
+            .expect("test-only trailing pointer analysis")
+        });
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -451,7 +507,15 @@ fn type144_entity_table_boundary_precedes_valid_generic_alternative() {
         comment: Vec::new(),
     };
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+    let analysis = crate::test_support::with_service_context(&[], |ctx| {
+        analyze_trailing_pointer_groups_for_global_table_with_context(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+            ctx,
+        )
+        .expect("test-only trailing pointer analysis")
+    });
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -489,7 +553,15 @@ fn type144_malformed_inner_counts_do_not_enable_generic_recovery() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+        let analysis = crate::test_support::with_service_context(&[], |ctx| {
+            analyze_trailing_pointer_groups_for_global_table_with_context(
+                &record,
+                &directory,
+                crate::global::GlobalTable::V5Later,
+                ctx,
+            )
+            .expect("test-only trailing pointer analysis")
+        });
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0
@@ -624,7 +696,15 @@ fn type143_entity_table_boundary_uses_boundary_count() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+        let analysis = crate::test_support::with_service_context(&[], |ctx| {
+            analyze_trailing_pointer_groups_for_global_table_with_context(
+                &record,
+                &directory,
+                crate::global::GlobalTable::V5Later,
+                ctx,
+            )
+            .expect("test-only trailing pointer analysis")
+        });
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             1
@@ -659,7 +739,15 @@ fn type143_entity_table_boundary_precedes_valid_generic_alternative() {
         comment: Vec::new(),
     };
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+    let analysis = crate::test_support::with_service_context(&[], |ctx| {
+        analyze_trailing_pointer_groups_for_global_table_with_context(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+            ctx,
+        )
+        .expect("test-only trailing pointer analysis")
+    });
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -697,7 +785,15 @@ fn type143_malformed_boundary_counts_do_not_enable_generic_recovery() {
             comment: Vec::new(),
         };
 
-        let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+        let analysis = crate::test_support::with_service_context(&[], |ctx| {
+            analyze_trailing_pointer_groups_for_global_table_with_context(
+                &record,
+                &directory,
+                crate::global::GlobalTable::V5Later,
+                ctx,
+            )
+            .expect("test-only trailing pointer analysis")
+        });
         assert_eq!(
             analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
             0
@@ -715,7 +811,15 @@ fn type140_form0_follows_five_primary_fields() {
     let directory = BTreeMap::from([(1, &association), (5, &property), (9, &source)]);
     let record = integer_parameter_record(9, &[140, 0, 0, 1, 2, 3, 1, 1, 1, 5]);
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+    let analysis = crate::test_support::with_service_context(&[], |ctx| {
+        analyze_trailing_pointer_groups_for_global_table_with_context(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+            ctx,
+        )
+        .expect("test-only trailing pointer analysis")
+    });
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -740,17 +844,31 @@ fn type140_table_boundary_precedes_valid_generic_alternative() {
         (9, &source),
     ]);
     let record = integer_parameter_record(9, &[140, 0, 0, 1, 2, 2, 1, 3, 1, 5]);
-    let valid_starts = crate::test_support::with_service_context(&[], |ctx| structural_pointer_group_candidates_with_context(&record, ctx).expect("test-only pointer candidate allocation"))
-        .into_iter()
-        .filter(|candidate| {
-            crate::test_support::with_service_context(&[], |ctx| groups_for_candidate_with_context(&record, &directory, *candidate, ctx).expect("test-only trailing pointer allocation"))
-                .is_some_and(|groups| groups.fully_valid().is_some())
+    let valid_starts = crate::test_support::with_service_context(&[], |ctx| {
+        structural_pointer_group_candidates_with_context(&record, ctx)
+            .expect("test-only pointer candidate allocation")
+    })
+    .into_iter()
+    .filter(|candidate| {
+        crate::test_support::with_service_context(&[], |ctx| {
+            groups_for_candidate_with_context(&record, &directory, *candidate, ctx)
+                .expect("test-only trailing pointer allocation")
         })
-        .map(|candidate| candidate.token_start)
-        .collect::<Vec<_>>();
+        .is_some_and(|groups| groups.fully_valid().is_some())
+    })
+    .map(|candidate| candidate.token_start)
+    .collect::<Vec<_>>();
     assert_eq!(valid_starts, vec![5, 6]);
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+    let analysis = crate::test_support::with_service_context(&[], |ctx| {
+        analyze_trailing_pointer_groups_for_global_table_with_context(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+            ctx,
+        )
+        .expect("test-only trailing pointer analysis")
+    });
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1
@@ -783,7 +901,15 @@ fn type140_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
             5.into(),
         ],
     );
-    let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&wrong_field, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+    let analysis = crate::test_support::with_service_context(&[], |ctx| {
+        analyze_trailing_pointer_groups_for_global_table_with_context(
+            &wrong_field,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+            ctx,
+        )
+        .expect("test-only trailing pointer analysis")
+    });
     assert_eq!(
         analysis.candidate_count(&wrong_field, entity_primary_end(&wrong_field, &directory)),
         1
@@ -792,8 +918,15 @@ fn type140_complete_wrong_fields_keep_boundary_and_truncated_spans_do_not_recove
     assert_eq!(analysis.groups().expect("Type 140 boundary").token_start, 6);
 
     for values in [vec![140, 0, 0, 1, 2], vec![140, 0, 0, 1, 2, 3, 1, 1, 1]] {
-        let analysis =
-            crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&integer_parameter_record(9, &values), &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+        let analysis = crate::test_support::with_service_context(&[], |ctx| {
+            analyze_trailing_pointer_groups_for_global_table_with_context(
+                &integer_parameter_record(9, &values),
+                &directory,
+                crate::global::GlobalTable::V5Later,
+                ctx,
+            )
+            .expect("test-only trailing pointer analysis")
+        });
         assert_eq!(
             analysis.candidate_count(
                 &integer_parameter_record(9, &values),
@@ -825,7 +958,15 @@ fn type308_form0_entity_table_boundary_follows_member_count() {
         values.extend(members.into_iter().map(TokenValue::from));
         values.extend([1.into(), 1.into(), 1.into(), 5.into()]);
         let analysis_record = token_parameter_record(11, values);
-        let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&analysis_record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+        let analysis = crate::test_support::with_service_context(&[], |ctx| {
+            analyze_trailing_pointer_groups_for_global_table_with_context(
+                &analysis_record,
+                &directory,
+                crate::global::GlobalTable::V5Later,
+                ctx,
+            )
+            .expect("test-only trailing pointer analysis")
+        });
         assert_eq!(
             analysis.candidate_count(
                 &analysis_record,
@@ -877,17 +1018,31 @@ fn type308_table_boundary_precedes_valid_generic_alternative() {
             5.into(),
         ],
     );
-    let valid_starts = crate::test_support::with_service_context(&[], |ctx| structural_pointer_group_candidates_with_context(&record, ctx).expect("test-only pointer candidate allocation"))
-        .into_iter()
-        .filter(|candidate| {
-            crate::test_support::with_service_context(&[], |ctx| groups_for_candidate_with_context(&record, &directory, *candidate, ctx).expect("test-only trailing pointer allocation"))
-                .is_some_and(|groups| groups.fully_valid().is_some())
+    let valid_starts = crate::test_support::with_service_context(&[], |ctx| {
+        structural_pointer_group_candidates_with_context(&record, ctx)
+            .expect("test-only pointer candidate allocation")
+    })
+    .into_iter()
+    .filter(|candidate| {
+        crate::test_support::with_service_context(&[], |ctx| {
+            groups_for_candidate_with_context(&record, &directory, *candidate, ctx)
+                .expect("test-only trailing pointer allocation")
         })
-        .map(|candidate| candidate.token_start)
-        .collect::<Vec<_>>();
+        .is_some_and(|groups| groups.fully_valid().is_some())
+    })
+    .map(|candidate| candidate.token_start)
+    .collect::<Vec<_>>();
     assert_eq!(valid_starts, vec![5, 6]);
 
-    let analysis = crate::test_support::with_service_context(&[], |ctx| analyze_trailing_pointer_groups_for_global_table_with_context(&record, &directory, crate::global::GlobalTable::V5Later, ctx).expect("test-only trailing pointer analysis"));
+    let analysis = crate::test_support::with_service_context(&[], |ctx| {
+        analyze_trailing_pointer_groups_for_global_table_with_context(
+            &record,
+            &directory,
+            crate::global::GlobalTable::V5Later,
+            ctx,
+        )
+        .expect("test-only trailing pointer analysis")
+    });
     assert_eq!(
         analysis.candidate_count(&record, entity_primary_end(&record, &directory)),
         1

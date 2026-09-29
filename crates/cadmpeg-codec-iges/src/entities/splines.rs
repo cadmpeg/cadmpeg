@@ -188,7 +188,7 @@ fn add_edge(
     let curve = crate::ids::curve_admitted(&stem, ctx)?;
     let edge = crate::ids::edge_admitted(&stem, ctx)?;
     ctx.reserve_vec(&mut ir.model.points, 2, "iges spline neutral point slots")?;
-    ctx.charge_entities( 2, "iges_geometry_splines")?;
+    ctx.charge_entities(2, "iges_geometry_splines")?;
     ir.model.points.extend([
         Point::new(
             start_point.try_clone_for_decode(ctx, "iges splines identity copy")?,
@@ -206,7 +206,7 @@ fn add_edge(
         2,
         "iges spline neutral vertex slots",
     )?;
-    ctx.charge_entities( 2, "iges_geometry_splines")?;
+    ctx.charge_entities(2, "iges_geometry_splines")?;
     ir.model.vertices.extend([
         Vertex {
             id: start_vertex.try_clone_for_decode(ctx, "iges splines identity copy")?,
@@ -221,7 +221,7 @@ fn add_edge(
     ]);
     sequences.record_curve(&curve, entry.sequence, ctx)?;
     ctx.reserve_vec(&mut ir.model.curves, 1, "iges spline neutral curve slots")?;
-    ctx.charge_entities( 1, "iges_geometry_splines")?;
+    ctx.charge_entities(1, "iges_geometry_splines")?;
     ir.model.curves.push(Curve {
         id: curve.try_clone_for_decode(ctx, "iges splines identity copy")?,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
@@ -234,7 +234,7 @@ fn add_edge(
         }),
     });
     ctx.reserve_vec(&mut ir.model.edges, 1, "iges spline neutral edge slots")?;
-    ctx.charge_entities( 1, "iges_geometry_splines")?;
+    ctx.charge_entities(1, "iges_geometry_splines")?;
     ir.model.edges.push(Edge {
         id: edge.try_clone_for_decode(ctx, "iges splines identity copy")?,
         carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_range.into()),
@@ -413,12 +413,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_entity_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!("{message}"),
-                )?;
+                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
@@ -915,12 +910,7 @@ pub(super) fn project(
             Ok(transform) => transform,
             Err(error) => {
                 let message = error.non_resource()?;
-                super::push_entity_loss(
-                    ctx,
-                    &mut losses,
-                    entry,
-                    format_args!("{message}"),
-                )?;
+                super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                 continue;
             }
         };
@@ -1118,7 +1108,7 @@ pub(super) fn project(
             1,
             "iges spline neutral surface slots",
         )?;
-        ctx.charge_entities( 1, "iges_geometry_splines")?;
+        ctx.charge_entities(1, "iges_geometry_splines")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),

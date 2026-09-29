@@ -58,18 +58,12 @@ pub fn parameters(data: &[u8]) {
     let Ok((global, _)) = crate::global::parse(&scan, &ctx) else {
         return;
     };
-    let Ok((directory, quarantined)) =
-        crate::directory::parse(&scan, global.global_table(), &ctx)
+    let Ok((directory, quarantined)) = crate::directory::parse(&scan, global.global_table(), &ctx)
     else {
         return;
     };
-    let _probe = crate::parameter::assemble_with_context(
-        &scan,
-        &directory,
-        &quarantined,
-        &global,
-        &ctx,
-    );
+    let _probe =
+        crate::parameter::assemble_with_context(&scan, &directory, &quarantined, &global, &ctx);
 }
 
 #[cfg(test)]

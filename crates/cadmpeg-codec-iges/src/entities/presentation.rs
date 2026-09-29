@@ -168,10 +168,7 @@ fn appearance(
             1,
             "iges neutral appearance slots",
         )?;
-        ctx.charge_entities(
-            1,
-            "iges_geometry_presentation",
-        )?;
+        ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearances.push(Appearance {
             id,
             name,
@@ -306,13 +303,12 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
-        let cyclic =
-            super::directed_cycle(entry.sequence, &mut visited_fonts, ctx, |sequence| {
-                text_fonts
-                    .get(&sequence)
-                    .and_then(|font| font.supersedes)
-                    .into_iter()
-            })?;
+        let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, ctx, |sequence| {
+            text_fonts
+                .get(&sequence)
+                .and_then(|font| font.supersedes)
+                .into_iter()
+        })?;
         let target_valid = text_fonts.get(&entry.sequence).is_some_and(|font| {
             font.supersedes
                 .is_none_or(|target| text_fonts.contains_key(&target))
@@ -694,10 +690,7 @@ pub(super) fn project(
             1,
             "iges appearance binding slots",
         )?;
-        ctx.charge_entities(
-            1,
-            "iges_geometry_presentation",
-        )?;
+        ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding_admitted(
                 &crate::ids::Stem::word_directory(crate::ids::Word::Body, sequence),
@@ -793,10 +786,7 @@ pub(super) fn project(
             1,
             "iges appearance binding slots",
         )?;
-        ctx.charge_entities(
-            1,
-            "iges_geometry_presentation",
-        )?;
+        ctx.charge_entities(1, "iges_geometry_presentation")?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding_admitted(
                 &crate::ids::Stem::word_directory(crate::ids::Word::Face, sequence),

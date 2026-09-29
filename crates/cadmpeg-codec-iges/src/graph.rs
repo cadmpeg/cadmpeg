@@ -612,11 +612,7 @@ fn cyclic_transform_nodes(
             }
             if let Some(position) = active.get(&current).copied() {
                 for node in path[position..].iter().copied() {
-                    ctx.insert_btree_set(
-                        &mut cyclic,
-                        node,
-                        "iges cyclic transform references",
-                    )?;
+                    ctx.insert_btree_set(&mut cyclic, node, "iges cyclic transform references")?;
                 }
                 break;
             }
@@ -635,11 +631,7 @@ fn cyclic_transform_nodes(
         }
         for node in path {
             active.remove(&node);
-            ctx.insert_btree_set(
-                &mut completed,
-                node,
-                "iges completed transform references",
-            )?;
+            ctx.insert_btree_set(&mut completed, node, "iges completed transform references")?;
         }
     }
     Ok(cyclic)

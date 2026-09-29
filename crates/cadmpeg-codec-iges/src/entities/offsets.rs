@@ -33,10 +33,7 @@ fn admit_offset_controls(
     controls: Vec<Point3>,
     operation: &'static str,
 ) -> Result<Option<Vec<FinitePoint3>>, CodecError> {
-    let mut admitted = ctx.collection_vec(
-        controls.len(),
-        operation,
-    )?;
+    let mut admitted = ctx.collection_vec(controls.len(), operation)?;
     for point in controls {
         let Some(point) = FinitePoint3::new(point) else {
             return Ok(None);
@@ -496,12 +493,7 @@ pub(super) fn project(
                 Ok(transform) => transform,
                 Err(error) => {
                     let message = error.non_resource()?;
-                    super::push_entity_loss(
-                        ctx,
-                        &mut losses,
-                        entry,
-                        format_args!("{message}"),
-                    )?;
+                    super::push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                     continue;
                 }
             };
@@ -807,18 +799,12 @@ pub(super) fn project(
                     )?;
                     continue;
                 };
-                let mut controls = ctx.collection_vec(
-                    2,
-                    "iges linear-offset controls",
-                )?;
+                let mut controls = ctx.collection_vec(2, "iges linear-offset controls")?;
                 controls.extend([
                     source_start.translated(offset_direction, evaluate_distance(start)),
                     source_end.translated(offset_direction, evaluate_distance(end)),
                 ]);
-                let mut knots = ctx.collection_vec(
-                    4,
-                    "iges linear-offset knots",
-                )?;
+                let mut knots = ctx.collection_vec(4, "iges linear-offset knots")?;
                 knots.extend([start, start, end, end]);
                 let law = CurveOffsetDistanceLaw::linear(basis, distances, control_range);
                 let Some(controls) =
@@ -1013,10 +999,8 @@ pub(super) fn project(
                     CurveOffsetLawBasis::Parameter => independent,
                 };
                 let offset_direction = normal_direction.cross(direction);
-                let mut controls = ctx.collection_vec(
-                    function_nurbs.pole_count(),
-                    "iges function-offset controls",
-                )?;
+                let mut controls = ctx
+                    .collection_vec(function_nurbs.pole_count(), "iges function-offset controls")?;
                 for index in 0..function_nurbs.pole_count() {
                     let Some(function_control) = function_nurbs.pole_rows().point_at(index) else {
                         controls.clear();
@@ -1058,10 +1042,8 @@ pub(super) fn project(
                     )?;
                     continue;
                 }
-                let mut knots = ctx.collection_vec(
-                    function_nurbs.knots().len(),
-                    "iges function-offset knots",
-                )?;
+                let mut knots =
+                    ctx.collection_vec(function_nurbs.knots().len(), "iges function-offset knots")?;
                 knots.extend(
                     function_nurbs
                         .knots()
@@ -1236,12 +1218,8 @@ pub(super) fn project(
                 }
             };
             sequences.record_curve(&offset_source_id, entry.sequence, ctx)?;
-            ctx.reserve_vec(
-                &mut ir.model.curves,
-                1,
-                "iges offset source curve slots",
-            )?;
-            ctx.charge_entities( 1, "iges_geometry_offsets")?;
+            ctx.reserve_vec(&mut ir.model.curves, 1, "iges offset source curve slots")?;
+            ctx.charge_entities(1, "iges_geometry_offsets")?;
             ir.model.curves.push(Curve {
                 id: offset_source_id
                     .try_clone_for_decode(ctx, "iges offset placed source identity")?,
@@ -1260,12 +1238,8 @@ pub(super) fn project(
                 }),
             });
         }
-        ctx.reserve_vec(
-            &mut ir.model.points,
-            2,
-            "iges offset neutral point slots",
-        )?;
-        ctx.charge_entities( 2, "iges_geometry_offsets")?;
+        ctx.reserve_vec(&mut ir.model.points, 2, "iges offset neutral point slots")?;
+        ctx.charge_entities(2, "iges_geometry_offsets")?;
         ir.model.points.extend([
             Point::new(
                 start_point.try_clone_for_decode(ctx, "iges offset start point identity")?,
@@ -1283,7 +1257,7 @@ pub(super) fn project(
             2,
             "iges offset neutral vertex slots",
         )?;
-        ctx.charge_entities( 2, "iges_geometry_offsets")?;
+        ctx.charge_entities(2, "iges_geometry_offsets")?;
         ir.model.vertices.extend([
             Vertex {
                 id: start_vertex.try_clone_for_decode(ctx, "iges offset start vertex identity")?,
@@ -1297,12 +1271,8 @@ pub(super) fn project(
             },
         ]);
         sequences.record_curve(&curve_id, entry.sequence, ctx)?;
-        ctx.reserve_vec(
-            &mut ir.model.curves,
-            1,
-            "iges offset neutral curve slots",
-        )?;
-        ctx.charge_entities( 1, "iges_geometry_offsets")?;
+        ctx.reserve_vec(&mut ir.model.curves, 1, "iges offset neutral curve slots")?;
+        ctx.charge_entities(1, "iges_geometry_offsets")?;
         ir.model.curves.push(Curve {
             id: curve_id.try_clone_for_decode(ctx, "iges offset curve identity")?,
             geometry,
@@ -1329,12 +1299,8 @@ pub(super) fn project(
                 continue;
             }
         };
-        ctx.reserve_vec(
-            &mut ir.model.edges,
-            1,
-            "iges offset neutral edge slots",
-        )?;
-        ctx.charge_entities( 1, "iges_geometry_offsets")?;
+        ctx.reserve_vec(&mut ir.model.edges, 1, "iges offset neutral edge slots")?;
+        ctx.charge_entities(1, "iges_geometry_offsets")?;
         ir.model.edges.push(Edge {
             id: edge_id.try_clone_for_decode(ctx, "iges offset edge identity")?,
             carrier,
@@ -1347,13 +1313,9 @@ pub(super) fn project(
             1,
             "iges offset procedural curve slots",
         )?;
-        ctx.charge_entities( 1, "iges_geometry_offsets")?;
+        ctx.charge_entities(1, "iges_geometry_offsets")?;
         let _attached = ir.model.add_procedural_curve(&curve_id, procedural);
-        ctx.reserve_vec(
-            &mut wire_edges,
-            1,
-            "iges offset wire edge slots",
-        )?;
+        ctx.reserve_vec(&mut wire_edges, 1, "iges offset wire edge slots")?;
         wire_edges.push(edge_id);
         ctx.insert_btree_set(
             &mut decoded,

@@ -74,12 +74,8 @@ fn add_bounded_curve(
     let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
     let curve = crate::ids::curve_admitted(&stem, ctx)?;
     let edge = crate::ids::edge_admitted(&stem, ctx)?;
-    ctx.reserve_vec(
-        &mut ir.model.points,
-        2,
-        "iges conic neutral points",
-    )?;
-    ctx.charge_entities( 2, "iges_geometry_conics")?;
+    ctx.reserve_vec(&mut ir.model.points, 2, "iges conic neutral points")?;
+    ctx.charge_entities(2, "iges_geometry_conics")?;
     ir.model.points.extend([
         Point::new(
             start_point.try_clone_for_decode(ctx, "iges conics identity copy")?,
@@ -92,12 +88,8 @@ fn add_bounded_curve(
             None,
         ),
     ]);
-    ctx.reserve_vec(
-        &mut ir.model.vertices,
-        2,
-        "iges conic neutral vertices",
-    )?;
-    ctx.charge_entities( 2, "iges_geometry_conics")?;
+    ctx.reserve_vec(&mut ir.model.vertices, 2, "iges conic neutral vertices")?;
+    ctx.charge_entities(2, "iges_geometry_conics")?;
     ir.model.vertices.extend([
         Vertex {
             id: start_vertex.try_clone_for_decode(ctx, "iges conics identity copy")?,
@@ -111,23 +103,15 @@ fn add_bounded_curve(
         },
     ]);
     sequences.record_curve(&curve, entry.sequence, ctx)?;
-    ctx.reserve_vec(
-        &mut ir.model.curves,
-        1,
-        "iges conic neutral curves",
-    )?;
-    ctx.charge_entities( 1, "iges_geometry_conics")?;
+    ctx.reserve_vec(&mut ir.model.curves, 1, "iges conic neutral curves")?;
+    ctx.charge_entities(1, "iges_geometry_conics")?;
     ir.model.curves.push(Curve {
         id: curve.try_clone_for_decode(ctx, "iges conics identity copy")?,
         geometry,
         source_object: Some(source_object(entry, ctx)?),
     });
-    ctx.reserve_vec(
-        &mut ir.model.edges,
-        1,
-        "iges conic neutral edges",
-    )?;
-    ctx.charge_entities( 1, "iges_geometry_conics")?;
+    ctx.reserve_vec(&mut ir.model.edges, 1, "iges conic neutral edges")?;
+    ctx.charge_entities(1, "iges_geometry_conics")?;
     ir.model.edges.push(Edge {
         id: edge.try_clone_for_decode(ctx, "iges conics identity copy")?,
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range))
@@ -726,17 +710,9 @@ pub(super) fn project(
                 continue;
             }
         };
-        ctx.reserve_vec(
-            &mut wire_edges,
-            1,
-            "iges conic wire edges",
-        )?;
+        ctx.reserve_vec(&mut wire_edges, 1, "iges conic wire edges")?;
         wire_edges.push(edge);
-        ctx.insert_btree_set(
-            &mut decoded,
-            entry.sequence,
-            "iges conic decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges conic decoded sequences")?;
     }
 
     Ok(WireProjectionOutcome {

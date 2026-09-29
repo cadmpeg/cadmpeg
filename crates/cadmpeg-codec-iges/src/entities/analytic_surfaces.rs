@@ -344,12 +344,7 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_entity_loss(
-                            ctx,
-                            &mut losses,
-                            entry,
-                            format_args!("{message}"),
-                        )?;
+                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -364,12 +359,7 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_entity_loss(
-                            ctx,
-                            &mut losses,
-                            entry,
-                            format_args!("{message}"),
-                        )?;
+                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -401,12 +391,7 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_entity_loss(
-                            ctx,
-                            &mut losses,
-                            entry,
-                            format_args!("{message}"),
-                        )?;
+                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -430,12 +415,7 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_entity_loss(
-                            ctx,
-                            &mut losses,
-                            entry,
-                            format_args!("{message}"),
-                        )?;
+                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -478,12 +458,7 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_entity_loss(
-                            ctx,
-                            &mut losses,
-                            entry,
-                            format_args!("{message}"),
-                        )?;
+                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -521,12 +496,7 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_entity_loss(
-                            ctx,
-                            &mut losses,
-                            entry,
-                            format_args!("{message}"),
-                        )?;
+                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -588,12 +558,7 @@ pub(super) fn project(
                 let axis = match axis {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_entity_loss(
-                            ctx,
-                            &mut losses,
-                            entry,
-                            format_args!("{message}"),
-                        )?;
+                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -608,12 +573,7 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_entity_loss(
-                            ctx,
-                            &mut losses,
-                            entry,
-                            format_args!("{message}"),
-                        )?;
+                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -649,12 +609,7 @@ pub(super) fn project(
                 ) {
                     Ok(axis) => axis,
                     Err(message) => {
-                        push_entity_loss(
-                            ctx,
-                            &mut losses,
-                            entry,
-                            format_args!("{message}"),
-                        )?;
+                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -689,12 +644,7 @@ pub(super) fn project(
                 ) {
                     Ok(candidate) => candidate,
                     Err(message) => {
-                        push_entity_loss(
-                            ctx,
-                            &mut losses,
-                            entry,
-                            format_args!("{message}"),
-                        )?;
+                        push_entity_loss(ctx, &mut losses, entry, format_args!("{message}"))?;
                         continue;
                     }
                 };
@@ -755,12 +705,8 @@ pub(super) fn project(
             entry.sequence,
             ctx,
         )?;
-        ctx.reserve_vec(
-            &mut ir.model.surfaces,
-            1,
-            "iges analytic-surface slots",
-        )?;
-        ctx.charge_entities( 1, "iges_geometry_analytic_surfaces")?;
+        ctx.reserve_vec(&mut ir.model.surfaces, 1, "iges analytic-surface slots")?;
+        ctx.charge_entities(1, "iges_geometry_analytic_surfaces")?;
         ir.model.surfaces.push(Surface {
             id: crate::ids::surface_admitted(&crate::ids::Stem::directory(entry.sequence), ctx)?,
             geometry: result,

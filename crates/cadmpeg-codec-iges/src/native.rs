@@ -2209,10 +2209,6 @@ impl OccurrenceExpansion<'_, '_> {
     }
 }
 
-fn charge_native_entities(ctx: &DecodeContext<'_>, count: u64) -> Result<(), CodecError> {
-    ctx.charge_entities(count, "iges_native_entities")
-}
-
 fn copy_native_tokens(ctx: &DecodeContext<'_>, tokens: &[Token]) -> Result<Vec<Token>, CodecError> {
     let mut copies = ctx.collection_vec(tokens.len(), "iges native token slots")?;
     for token in tokens {
@@ -2420,7 +2416,7 @@ pub(crate) fn store(
         sequences,
         boundary_vertex_derivations,
     } = inputs;
-    charge_native_entities(ctx, cadmpeg_core::decode::u64_from_index(scan.lines.len()))?;
+    ctx.charge_entities(cadmpeg_core::decode::u64_from_index(scan.lines.len()), "iges_native_entities")?;
     let NativeInputIndexes {
         quarantined_directory_records,
         quarantined_parameter_records,
@@ -2610,7 +2606,7 @@ pub(crate) fn store(
             ambiguity,
         });
     }
-    charge_native_entities(ctx, cadmpeg_core::decode::u64_from_index(directory.len()))?;
+    ctx.charge_entities(cadmpeg_core::decode::u64_from_index(directory.len()), "iges_native_entities")?;
     let mut entities =
         ctx.collect_indexed_vec(directory.len(), "iges native entity slots", |index| {
             let entry = &directory[index];

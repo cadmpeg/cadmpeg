@@ -75,11 +75,7 @@ fn boolean_tree_is_valid(
     if let Some(valid) = memo.get(&sequence) {
         return Ok(*valid);
     }
-    if !ctx.insert_btree_set(
-        path,
-        sequence,
-        "iges boolean validation path",
-    )? {
+    if !ctx.insert_btree_set(path, sequence, "iges boolean validation path")? {
         return Ok(false);
     }
     let Some(entry) = entries.get(&sequence) else {
@@ -101,7 +97,7 @@ fn boolean_tree_is_valid(
     });
     let mut operands_valid = true;
     for term in terms {
-            ctx.charge_work(1, "iges boolean term validation")?;
+        ctx.charge_work(1, "iges boolean term validation")?;
         let valid = match term {
             BooleanTerm::Operation => true,
             BooleanTerm::Operand(target_sequence) => match entries.get(target_sequence) {
@@ -132,12 +128,7 @@ fn boolean_tree_is_valid(
     }
     let valid = operands_valid && has_direct_brep == (entry.form == 1);
     path.remove(&sequence);
-    ctx.insert_btree_map(
-        memo,
-        sequence,
-        valid,
-        "iges boolean validity memo",
-    )?;
+    ctx.insert_btree_map(memo, sequence, valid, "iges boolean validity memo")?;
     Ok(valid)
 }
 
@@ -341,11 +332,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_set(
-            &mut decoded,
-            entry.sequence,
-            "iges csg decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
     for entry in directory.iter().filter(|entry| {
@@ -467,11 +454,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_set(
-            &mut decoded,
-            entry.sequence,
-            "iges csg decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
     let mut boolean_definitions = BTreeMap::new();
@@ -497,10 +480,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        let mut terms = ctx.collection_vec(
-            count,
-            "iges Boolean postfix terms",
-        )?;
+        let mut terms = ctx.collection_vec(count, "iges Boolean postfix terms")?;
         let mut terms_valid = true;
         for index in 0..count {
             let term = (|| {
@@ -613,11 +593,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_set(
-            &mut decoded,
-            *sequence,
-            "iges csg decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, *sequence, "iges csg decoded sequences")?;
     }
 
     for entry in directory
@@ -679,11 +655,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        ctx.insert_btree_set(
-            &mut decoded,
-            entry.sequence,
-            "iges csg decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
     Ok(ProjectionOutcome { decoded, losses })

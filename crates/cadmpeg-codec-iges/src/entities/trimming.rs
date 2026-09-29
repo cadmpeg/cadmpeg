@@ -245,13 +245,13 @@ fn create_boundary_vertices(
         )?;
         sequences.record_point(&point_id, stem, ctx)?;
         let vertex_id = crate::ids::vertex_admitted(&stem.slot(boundary).slot(index), ctx)?;
-        ctx.charge_entities( 1, "iges_geometry_trimming")?;
+        ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.model_mut().points.push(Point::new(
             point_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             cluster.representative,
             None,
         ));
-        ctx.charge_entities( 1, "iges_geometry_trimming")?;
+        ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.model_mut().vertices.push(Vertex {
             id: vertex_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             point: point_id,
@@ -450,20 +450,16 @@ pub(super) fn pcurve_geometry(
     let (degree, knots, poles, periodic) = nurbs.into_parts();
     let poles = match poles {
         NurbsPoles3::Polynomial { points } => {
-            let mut mapped = ctx.collection_vec(
-                points.len(),
-                "iges pcurve mapped polynomial poles",
-            )?;
+            let mut mapped =
+                ctx.collection_vec(points.len(), "iges pcurve mapped polynomial poles")?;
             for point in points {
                 mapped.push(map_point(point)?);
             }
             PcurveNurbsPoles::Polynomial { points: mapped }
         }
         NurbsPoles3::Rational { points } => {
-            let mut mapped = ctx.collection_vec(
-                points.len(),
-                "iges pcurve mapped rational poles",
-            )?;
+            let mut mapped =
+                ctx.collection_vec(points.len(), "iges pcurve mapped rational poles")?;
             for pole in points {
                 mapped.push(WeightedPole2 {
                     point: map_point(pole.point)?,
@@ -639,11 +635,7 @@ fn source_curve_control_intervals(
         return Ok(None);
     }
     let active_id = curve_id.try_clone_for_decode(ctx, "iges source active curve ID")?;
-    ctx.insert_btree_set(
-        active,
-        active_id,
-        "iges source active curve nodes",
-    )?;
+    ctx.insert_btree_set(active, active_id, "iges source active curve nodes")?;
     let result = (|| -> Result<Option<Vec<[DeclaredInterval; 3]>>, CodecError> {
         let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
             return Ok(None);
@@ -1914,9 +1906,7 @@ pub(super) fn clone_boundary_edge(
         }
     };
     Ok(Edge {
-        id: edge
-            .id
-            .try_clone_for_decode(ctx, "iges selected edge ID")?,
+        id: edge.id.try_clone_for_decode(ctx, "iges selected edge ID")?,
         carrier,
         start: edge
             .start
@@ -2721,10 +2711,8 @@ pub(super) fn project(
                 )?;
                 for item in &items {
                     implicit_boundary_curves.push(
-                        item.model_curve.try_clone_for_decode(
-                            ctx,
-                            "iges implicit boundary curve ID text",
-                        )?,
+                        item.model_curve
+                            .try_clone_for_decode(ctx, "iges implicit boundary curve ID text")?,
                     );
                 }
             }
@@ -2862,20 +2850,12 @@ pub(super) fn project(
                 ) {
                     Ok(carrier) => carrier,
                     Err(error) => {
-                        super::push_entity_loss(
-                            ctx,
-                            &mut losses,
-                            entry,
-                            format_args!("{error}"),
-                        )?;
+                        super::push_entity_loss(ctx, &mut losses, entry, format_args!("{error}"))?;
                         valid = false;
                         break;
                     }
                 };
-                ctx.charge_entities(
-                    1,
-                    "iges_geometry_trimming",
-                )?;
+                ctx.charge_entities(1, "iges_geometry_trimming")?;
                 candidate.model_mut().edges.push(Edge {
                     id: edge_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                     carrier,
@@ -2915,20 +2895,16 @@ pub(super) fn project(
                             1,
                             "iges implicit boundary pcurve IDs",
                         )?;
-                        implicit_boundary_pcurves.push(id.try_clone_for_decode(
-                            ctx,
-                            "iges implicit boundary pcurve ID text",
-                        )?);
+                        implicit_boundary_pcurves.push(
+                            id.try_clone_for_decode(ctx, "iges implicit boundary pcurve ID text")?,
+                        );
                     }
                     ctx.reserve_vec(
                         &mut candidate.model_mut().pcurves,
                         1,
                         "iges trimming pcurve slots",
                     )?;
-                    ctx.charge_entities(
-                        1,
-                        "iges_geometry_trimming",
-                    )?;
+                    ctx.charge_entities(1, "iges_geometry_trimming")?;
                     candidate.model_mut().pcurves.push(Pcurve {
                         id: id.try_clone_for_decode(ctx, "iges trimming pcurve ID copy")?,
                         geometry,
@@ -2946,14 +2922,10 @@ pub(super) fn project(
                 }
                 let coedge_id = coedge_ids[segment_index]
                     .try_clone_for_decode(ctx, "iges trimming identity copy")?;
-                ctx.charge_entities(
-                    1,
-                    "iges_geometry_trimming",
-                )?;
+                ctx.charge_entities(1, "iges_geometry_trimming")?;
                 candidate.model_mut().coedges.push(Coedge {
                     id: coedge_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
-                    owner_loop: loop_id
-                        .try_clone_for_decode(ctx, "iges trimming identity copy")?,
+                    owner_loop: loop_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                     edge: edge_id,
                     radial_next: coedge_id,
                     sense: item.segment.sense,
@@ -2973,10 +2945,7 @@ pub(super) fn project(
                 valid = false;
                 break;
             };
-            ctx.charge_entities(
-                1,
-                "iges_geometry_trimming",
-            )?;
+            ctx.charge_entities(1, "iges_geometry_trimming")?;
             candidate.model_mut().loops.push(Loop {
                 id: loop_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                 face: face_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
@@ -3032,13 +3001,9 @@ pub(super) fn project(
                 ctx,
             )?;
             sequences.record_surface(&derived_surface_id, entry.sequence, ctx)?;
-            ctx.charge_entities(
-                1,
-                "iges_geometry_trimming",
-            )?;
+            ctx.charge_entities(1, "iges_geometry_trimming")?;
             candidate.model_mut().surfaces.push(Surface {
-                id: derived_surface_id
-                    .try_clone_for_decode(ctx, "iges trimming identity copy")?,
+                id: derived_surface_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                 geometry: support_geometry,
                 source_object: Some(match source_object(entry, ctx) {
                     Ok(source) => source,
@@ -3059,12 +3024,7 @@ pub(super) fn project(
             {
                 Ok(record_bounds) => record_bounds,
                 Err(error) => {
-                    super::push_entity_loss(
-                        ctx,
-                        &mut losses,
-                        entry,
-                        format_args!("{error}"),
-                    )?;
+                    super::push_entity_loss(ctx, &mut losses, entry, format_args!("{error}"))?;
                     continue;
                 }
             };
@@ -3073,13 +3033,9 @@ pub(super) fn project(
                 1,
                 "iges procedural surface slots",
             )?;
-            ctx.charge_entities(
-                1,
-                "iges_geometry_trimming",
-            )?;
+            ctx.charge_entities(1, "iges_geometry_trimming")?;
             let _attached = candidate.model_mut().add_procedural_surface(
-                &derived_surface_id
-                    .try_clone_for_decode(ctx, "iges trimming identity copy")?,
+                &derived_surface_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
                 ProceduralSurface::new(
                     crate::ids::procedural_surface_admitted(
                         &crate::ids::Stem::directory(entry.sequence)
@@ -3123,7 +3079,7 @@ pub(super) fn project(
             }
             None => cadmpeg_ir::topology::FaceLoops::unspecified(loop_ids),
         };
-        ctx.charge_entities( 1, "iges_geometry_trimming")?;
+        ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.model_mut().faces.push(Face {
             id: face_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             shell: shell_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
@@ -3136,7 +3092,7 @@ pub(super) fn project(
         });
         let mut shell_faces = ctx.collection_vec(1, "iges trimming shell face IDs")?;
         shell_faces.push(face_id);
-        ctx.charge_entities( 1, "iges_geometry_trimming")?;
+        ctx.charge_entities(1, "iges_geometry_trimming")?;
         let shell = match Shell::new(
             shell_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             region_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
@@ -3155,7 +3111,7 @@ pub(super) fn project(
         candidate.model_mut().shells.push(shell);
         let mut region_shells = ctx.collection_vec(1, "iges trimming region shell IDs")?;
         region_shells.push(shell_id);
-        ctx.charge_entities( 1, "iges_geometry_trimming")?;
+        ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.model_mut().regions.push(Region {
             id: region_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
             body: body_id.try_clone_for_decode(ctx, "iges trimming identity copy")?,
@@ -3163,7 +3119,7 @@ pub(super) fn project(
         });
         let mut body_regions = ctx.collection_vec(1, "iges trimming body region IDs")?;
         body_regions.push(region_id);
-        ctx.charge_entities( 1, "iges_geometry_trimming")?;
+        ctx.charge_entities(1, "iges_geometry_trimming")?;
         candidate.model_mut().bodies.push(Body {
             id: body_id,
             kind: BodyKind::Sheet,

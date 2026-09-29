@@ -502,10 +502,10 @@ fn quarantine(
         .chain(rest.iter().map(|(_, line)| *line))
         .try_fold(0_usize, |total, line| total.checked_add(line.payload.len()))
         .ok_or_else(|| refuse_local_limit("iges quarantined directory bytes", u64::MAX, 1))?;
-        ctx.charge_retained(
-            u64_from_index(bytes_len),
-            "iges quarantined directory bytes",
-        )?;
+    ctx.charge_retained(
+        u64_from_index(bytes_len),
+        "iges quarantined directory bytes",
+    )?;
     let mut bytes = Vec::new();
     bytes.try_reserve_exact(bytes_len).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
@@ -542,33 +542,21 @@ pub(crate) fn parse(
     let mut quarantined = Vec::new();
     let mut pairs = lines.chunks_exact(2);
     for pair in pairs.by_ref() {
-            ctx.charge_entities(1, "iges_directory_entries")?;
+        ctx.charge_entities(1, "iges_directory_entries")?;
         match parse_pair(pair[0].0, pair[0].1, pair[1].1, global_table) {
             Ok(entry) => {
-                ctx.reserve_vec(
-                    &mut entries,
-                    1,
-                    "iges directory entries",
-                )?;
+                ctx.reserve_vec(&mut entries, 1, "iges directory entries")?;
                 entries.push(entry);
             }
             Err(defect) => {
-                ctx.reserve_vec(
-                    &mut quarantined,
-                    1,
-                    "iges quarantined directory entries",
-                )?;
+                ctx.reserve_vec(&mut quarantined, 1, "iges quarantined directory entries")?;
                 quarantined.push(quarantine(pair[0], &pair[1..], defect, ctx)?);
             }
         }
     }
     if let Some(unpaired) = pairs.remainder().first() {
-            ctx.charge_entities(1, "iges_directory_entries")?;
-        ctx.reserve_vec(
-            &mut quarantined,
-            1,
-            "iges quarantined directory entries",
-        )?;
+        ctx.charge_entities(1, "iges_directory_entries")?;
+        ctx.reserve_vec(&mut quarantined, 1, "iges quarantined directory entries")?;
         quarantined.push(quarantine(
             *unpaired,
             &[],

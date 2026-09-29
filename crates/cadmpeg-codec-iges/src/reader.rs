@@ -94,12 +94,7 @@ fn insert_source_attribute(
     let key = ctx.format_retained(format_args!("{key}"), "iges source attribute key")?;
     let key = NonBlankString::new(key)
         .ok_or_else(|| CodecError::malformed("IGES source attribute key is blank"))?;
-    ctx.insert_btree_map(
-        attributes,
-        key,
-        value,
-        "iges source attributes",
-    )?;
+    ctx.insert_btree_map(attributes, key, value, "iges source attributes")?;
     Ok(())
 }
 
@@ -165,11 +160,7 @@ fn attributed_sequences(
         });
     let mut attributed = BTreeSet::new();
     for sequence in sequences {
-        ctx.insert_btree_set(
-            &mut attributed,
-            sequence,
-            "iges attributed loss sequences",
-        )?;
+        ctx.insert_btree_set(&mut attributed, sequence, "iges attributed loss sequences")?;
     }
     Ok(attributed)
 }

@@ -479,10 +479,7 @@ pub(crate) fn layout_global_cards(
         delimiter
     };
 
-    let mut fields = ctx.collection_vec(
-        1,
-        "iges global layout fields",
-    )?;
+    let mut fields = ctx.collection_vec(1, "iges global layout fields")?;
     fields.push(0..cursor);
     while cursor < bytes.len() {
         let start = cursor;
@@ -501,11 +498,7 @@ pub(crate) fn layout_global_cards(
             .ok_or_else(|| malformed("Global record delimiter is missing"))?
             == &record_delimiter;
         end += 1;
-        ctx.reserve_vec(
-            &mut fields,
-            1,
-            "iges global layout fields",
-        )?;
+        ctx.reserve_vec(&mut fields, 1, "iges global layout fields")?;
         fields.push(start..end);
         cursor = end;
         if is_record {
@@ -531,21 +524,13 @@ pub(crate) fn layout_global_cards(
         }
         if card.len() + minimum > 72 {
             card.extend(std::iter::repeat_with(|| b' ').take(72 - card.len()));
-            ctx.reserve_vec(
-                &mut cards,
-                1,
-                "iges global layout cards",
-            )?;
+            ctx.reserve_vec(&mut cards, 1, "iges global layout cards")?;
             cards.push(std::mem::take(&mut card));
             card = layout_global_card(ctx)?;
         }
         for byte in field.iter().copied() {
             if card.len() == 72 {
-                ctx.reserve_vec(
-                    &mut cards,
-                    1,
-                    "iges global layout cards",
-                )?;
+                ctx.reserve_vec(&mut cards, 1, "iges global layout cards")?;
                 cards.push(std::mem::take(&mut card));
                 card = layout_global_card(ctx)?;
             }
@@ -553,11 +538,7 @@ pub(crate) fn layout_global_cards(
         }
     }
     if !card.is_empty() {
-        ctx.reserve_vec(
-            &mut cards,
-            1,
-            "iges global layout cards",
-        )?;
+        ctx.reserve_vec(&mut cards, 1, "iges global layout cards")?;
         cards.push(card);
     }
     Ok(cards)

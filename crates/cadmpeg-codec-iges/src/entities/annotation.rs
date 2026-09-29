@@ -80,11 +80,7 @@ fn sectioned_area_curves_coplanar(
             return Ok(false);
         }
         let active_id = curve_id.try_clone_for_decode(ctx, "iges section active curve id")?;
-        ctx.insert_btree_set(
-            &mut active,
-            active_id,
-            "iges section active curves",
-        )?;
+        ctx.insert_btree_set(&mut active, active_id, "iges section active curves")?;
         let Some(geometry) = curve.geometry.solved() else {
             return Ok(false);
         };

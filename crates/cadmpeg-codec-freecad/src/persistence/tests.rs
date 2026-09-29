@@ -60,12 +60,15 @@ fn persistence_property_identity_refuses_at_retained_limit() {
     policy.limits.max_retained_bytes = expected.len() as u64 - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is within policy");
-    assert!(matches!(crate::native::native_child_id_charged(&ctx, "property", owner, "Shape"),
+    assert!(
+        matches!(crate::native::native_child_id_charged(&ctx, "property", owner, "Shape"),
         Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.operation == "FreeCAD native child identity"));
+            if limit.operation == "FreeCAD native child identity")
+    );
     assert_eq!(
         crate::test_support::with_service_context(&[], |ctx| {
-            crate::native::native_child_id_charged(ctx, "property", owner, "Shape").expect("admitted ID")
+            crate::native::native_child_id_charged(ctx, "property", owner, "Shape")
+                .expect("admitted ID")
         }),
         expected
     );
@@ -1249,8 +1252,9 @@ fn both_xlink_list_property_types_use_xlink_sub_list_carriers() {
         assert_eq!(second.subelements(), ["Face1"]);
         let invalid = markup.replace("XLinkSubList", "XLinkList");
         let xml = roxmltree::Document::parse(&invalid).unwrap();
-        assert!(crate::test_support::with_service_context(invalid.as_bytes(), |ctx| {
-            super::parse_link_targets(xml.root_element(), type_name, ctx).is_err()
-        }));
+        assert!(crate::test_support::with_service_context(
+            invalid.as_bytes(),
+            |ctx| { super::parse_link_targets(xml.root_element(), type_name, ctx).is_err() }
+        ));
     }
 }
