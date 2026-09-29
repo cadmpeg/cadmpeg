@@ -1038,11 +1038,9 @@ impl ScaleProceduralLengths for cadmpeg_ir::geometry::ProceduralSurfaceDefinitio
             ProceduralSurfaceDefinition::LinearSweep(payload) => {
                 let mut direction = payload.direction().get();
                 scale_vector3(&mut direction, scale);
-                *payload =
-                    cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
-                        payload.directrix().clone(),
-                        direction,
-                    )?;
+                let direction = cadmpeg_ir::units::DirectionAboveEpsilon::new(direction)
+                    .ok_or(cadmpeg_ir::geometry::ProceduralGeometryError::Payload("invalid linear-sweep direction"))?;
+                payload.set_direction(direction);
             }
             ProceduralSurfaceDefinition::Revolution(payload) => {
                 let mut axis_origin = payload.axis_origin().get();

@@ -677,9 +677,12 @@ pub(in super::super) fn extruded_nurbs_surface(
         "creo extruded NURBS U knots",
         || directrix.knots().try_clone(),
     )?;
+    let mut v_knots = Vec::new();
+    ctx.try_reserve_items(&mut v_knots, 4, "creo extruded NURBS V knots")?;
+    v_knots.extend([0.0, 0.0, 1.0, 1.0]);
     match NurbsSurface::new_admitted_grid(
         NurbsSurfaceAxis::new(directrix.degree(), u_knots, directrix.periodic()),
-        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, v_knots, false),
         poles,
         false,
     ) {
@@ -847,7 +850,7 @@ pub(in super::super) fn extrusion_brep_side_surface(
         };
         return Ok(Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface))));
     }
-    let section_geometry = match geometry.definition() {
+    let surface = match geometry.definition() {
         SketchGeometryDefinition::Line { .. } => {
             let Ok(line) = SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(start[0], start[1]),
@@ -855,11 +858,11 @@ pub(in super::super) fn extrusion_brep_side_surface(
             }) else {
                 return Ok(None);
             };
-            line
+            extruded_geometry_surface(transform, &line)
         }
-        _ => geometry.clone(),
+        _ => extruded_geometry_surface(transform, geometry),
     };
-    Ok(extruded_geometry_surface(transform, &section_geometry))
+    Ok(surface)
 }
 
 pub(in super::super) fn signed_unit_chart(
@@ -1518,6 +1521,14 @@ mod tests {
             if resource.dimension == ResourceDimension::CollectionItems
                 && resource.operation == "creo extruded NURBS U knots"));
     }
+    #[test]
+    fn extruded_nurbs_v_knots_refuse_collection_limit() {
+        assert!(matches!(extruded_nurbs_refusal_at_limit(13),
+            cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == ResourceDimension::CollectionItems
+                && resource.operation == "creo extruded NURBS V knots"));
+    }
+
     fn planar_or_offset_spline(z: f64) -> crate::feature::definitions::FeatureSavedSpline {
         crate::feature::definitions::FeatureSavedSpline {
             entity_id: Some(11),

@@ -235,9 +235,11 @@ fn solve_section_coordinates_with_derived_constraints(
             solved_coordinates =
                 solve_section_coordinate_equations(ctx, equations, stored_coordinates)?;
         }
-        ctx.charge_collection_items(auxiliary_scalar_values.len() as u64,
-            "creo previous scalar value nodes")?;
-        let previous_scalar_values = auxiliary_scalar_values.clone();
+        let mut previous_scalar_values = BTreeMap::new();
+        for (key, value) in auxiliary_scalar_values.iter() {
+            ctx.charge_collection_items(1, "creo previous scalar value nodes")?;
+            previous_scalar_values.insert(*key, *value);
+        }
         for (variable, value) in
             section_equation_scalar_values_from_coordinates(ctx, definition, &solved_coordinates)?
         {
