@@ -312,6 +312,18 @@ fn annotation_dimension_output_refuses_collection_limit() {
 }
 
 #[test]
+fn annotation_dimension_index_refuses_collection_limit() {
+    assert_native_auxiliary_refusal(true, "f3d annotation dimension index",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn group_dimension_locus_index_refuses_collection_limit() {
+    assert_native_fallback_refusal(true, "f3d group dimension locus index",
+        ResourceDimension::CollectionItems);
+}
+
+#[test]
 fn null_pair_dimension_output_refuses_collection_limit() {
     assert_native_auxiliary_refusal(false, "f3d dimension constraint output",
         ResourceDimension::CollectionItems);

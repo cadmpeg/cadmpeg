@@ -907,11 +907,13 @@ fn project_all_dimension_constraints(
                 return None;
             }
             let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
-            let locus_indices = group
-                .loci
-                .iter()
-                .map(|locus| locus.geometry_record_index)
-                .collect::<Vec<_>>();
+            let mut locus_indices = Vec::new();
+            for locus in &group.loci {
+                if let Err(error) = push_dimension_item(ctx, &mut locus_indices,
+                    locus.geometry_record_index, "f3d group dimension locus index") {
+                    return Some(Err(error));
+                }
+            }
             let sketch = match sketch_for_owner_or_geometry(scope, group.owner_reference,
                 &locus_indices, "f3d dimension group sketch id") {
                 Ok(Some(sketch)) => sketch,
@@ -1063,11 +1065,15 @@ fn project_all_dimension_constraints(
             let scope = native_stream(&frame.id)?;
             let (parameter, parameter_id) =
                 parameter_for(scope, frame.governing_companion_record_index)?;
-            let indices = frame
-                .operands()
-                .iter()
-                .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
-                .collect::<Vec<_>>();
+            let mut indices = Vec::new();
+            for operand in frame.operands() {
+                if let Some(index) = operand.geometry_record_index {
+                    if let Err(error) = push_dimension_item(ctx, &mut indices, index.get(),
+                        "f3d annotation dimension index") {
+                        return Some(Err(error));
+                    }
+                }
+            }
             let sketch = match copy_dimension_sketch_id(ctx,
                 sketches.get(&(scope, frame.owner_reference))?,
                 "f3d dimension annotation sketch id") {
