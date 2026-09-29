@@ -13,6 +13,7 @@ use crate::CreoCodec;
 use super::{
     definition_local_plane_equation,
     generated_cylinder_section_transform as parse_generated_cylinder_section_transform,
+    generated_planar_table_shape,
     generated_planar_section_transform as parse_generated_planar_section_transform,
     plane_equation, resolve as parse_resolve, FeatureSectionTransform,
     PlacementSources, SignedPlaneEquation, EPS_PLACEMENT_GEOMETRY,
@@ -58,6 +59,47 @@ fn generated_planar_section_transform(
         parse_generated_planar_section_transform(ctx, definition, sources, tables)
     })
     .expect("test planar placement")
+}
+
+#[test]
+fn generated_planar_table_entry_nodes_refuse_collection_limit() {
+    let entry = |entity_id, class_id, source_entity_id| FeatureEntityTableEntry {
+        payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
+        entity_id,
+        prefixed: false,
+        offset: usize::try_from(entity_id).expect("small fixture ID"),
+        end_offset: usize::try_from(entity_id).expect("small fixture ID") + 1,
+    };
+    let table = FeatureEntityTable::new(
+        10,
+        79,
+        vec![entry(13, 204, None), entry(18, 203, None), entry(23, 200, Some(4))],
+        &std::collections::BTreeSet::new(),
+        200,
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = generated_planar_table_shape(&ctx, &table)
+        .expect_err("first entry node exceeds collection limit");
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && resource.operation == "creo generated planar table entry nodes"));
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(generated_planar_table_shape(ctx, &table)?);
+        let duplicate = FeatureEntityTable::new(
+            10,
+            79,
+            vec![entry(13, 204, None), entry(18, 203, None), entry(13, 200, Some(4))],
+            &std::collections::BTreeSet::new(),
+            200,
+        );
+        assert!(!generated_planar_table_shape(ctx, &duplicate)?);
+        Ok::<_, cadmpeg_core::CodecError>(())
+    })
+    .expect("service profile admits table shape");
 }
 
 fn resolve(
