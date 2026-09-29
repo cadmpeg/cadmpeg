@@ -1117,15 +1117,13 @@ pub(crate) fn evaluate_parameterized_expression(
                 .len()
                 .checked_add(2)
                 .ok_or_else(|| ctx.refuse_codec_limit("NX expression substitution", 0, u64::MAX))?;
-            reservation.grow(cadmpeg_core::decode::u64_from_index(added))?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut substituted, added, "NX expression substitution")?;
+            ctx.reserve_scoped_string(&mut reservation, &mut substituted, added, "NX expression substitution")?;
             substituted.push('(');
             substituted.push_str(value_text);
             substituted.push(')');
             at = end;
         } else {
-            reservation.grow(1)?;
-            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(&mut substituted, 1, "NX expression substitution")?;
+            ctx.reserve_scoped_string(&mut reservation, &mut substituted, 1, "NX expression substitution")?;
             substituted.push(char::from(bytes[at]));
             at += 1;
         }

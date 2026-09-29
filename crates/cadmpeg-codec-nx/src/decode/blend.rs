@@ -1558,17 +1558,11 @@ struct BlendContactSeed {
 /// Keeping a small nearest-parameter set makes adaptive endpoint and midpoint
 /// sampling local without allowing a model-wide cache to select a branch from
 /// an unrelated intersection.
+#[derive(Default)]
 pub(super) struct BlendContactSeedCache {
     entries: Vec<BlendContactSeed>,
 }
 
-impl Default for BlendContactSeedCache {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-        }
-    }
-}
 
 impl BlendContactSeedCache {
     fn seed_for(

@@ -132,8 +132,10 @@ impl DecodeContext<'_> {
     pub fn collect_retained_texts<'text>(&self, values: impl IntoIterator<Item = &'text str>, operation: &'static str) -> Result<Vec<String>, CodecError> {
         let mut copies = Vec::new();
         for value in values {
-            self.reserve_retained_vec(&mut copies, 1, operation)?;
-            copies.push(self.copy_retained_text(value, operation)?);
+            let bytes = std::mem::size_of::<String>().checked_add(value.len()).ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            self.charge_retained(u64_from_index(bytes), operation)?;
+            self.reserve_vec(&mut copies, 1, operation)?;
+            copies.push(Self::copy_admitted_text(value, operation)?);
         }
         Ok(copies)
     }
@@ -143,8 +145,10 @@ impl DecodeContext<'_> {
         let mut copies = Vec::new();
         let mut reservation = self.reserve_scoped(0, operation)?;
         for value in values {
-            self.reserve_scoped_vec(&mut reservation, &mut copies, 1, operation)?;
-            copies.push(self.copy_scoped_text(value, &mut reservation, operation)?);
+            let bytes = std::mem::size_of::<String>().checked_add(value.len()).ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+            reservation.grow(u64_from_index(bytes))?;
+            self.reserve_vec(&mut copies, 1, operation)?;
+            copies.push(Self::copy_admitted_text(value, operation)?);
         }
         Ok((copies, reservation))
     }
@@ -153,7 +157,9 @@ impl DecodeContext<'_> {
     pub fn format_retained_with_work(&self, args: fmt::Arguments<'_>, operation: &'static str) -> Result<String, CodecError> {
         let length = self.formatted_length(args, operation)?;
         self.charge_work(u64_from_index(length), operation)?;
-        self.format_retained(args, operation)
+        let mut text = self.retained_string(length, operation)?;
+        fmt::write(&mut text, args).map_err(CodecError::malformed)?;
+        Ok(text)
     }
 
     /// Formats text in an existing scope after charging its byte count as work.
@@ -240,6 +246,12 @@ impl DecodeContext<'_> {
         Self::reserve_admitted_vec(values, 1, operation)?;
         values.push(value());
         Ok(())
+    }
+
+    /// Grows a scoped string after admitting its additional byte storage.
+    pub fn reserve_scoped_string(&self, reservation: &mut ScopedReservation<'_>, text: &mut String, additional: usize, operation: &'static str) -> Result<(), CodecError> {
+        reservation.grow(u64_from_index(additional))?;
+        Self::reserve_admitted_string(text, additional, operation)
     }
 
     fn collection_allocation_failed(&self, count: usize, operation: &'static str) -> CodecError {
@@ -2037,6 +2049,28 @@ mod tests {
         ctx.push_scoped_btree_group(&mut reservation, &mut groups, 1u8, || 7u16, 3, "test scoped group").unwrap();
         ctx.push_scoped_btree_group(&mut reservation, &mut groups, 1u8, || 9u16, 3, "test scoped group").unwrap();
         assert_eq!(groups[&1], [7, 9]);
+    }
+
+    #[test]
+    fn scoped_string_refuses_one_below_storage_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 1);
+        let mut reservation = ctx.reserve_scoped(0, "test scoped string").unwrap();
+        let mut text = String::new();
+        let error = ctx.reserve_scoped_string(&mut reservation, &mut text, 2, "test scoped string").unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes));
+        assert_eq!(text.capacity(), 0);
+    }
+
+    #[test]
+    fn scoped_string_keeps_prefix_under_service_profile() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
+        let mut reservation = ctx.reserve_scoped(0, "test scoped string").unwrap();
+        let mut text = String::from("a");
+        ctx.reserve_scoped_string(&mut reservation, &mut text, 2, "test scoped string").unwrap();
+        text.push_str("bc");
+        assert_eq!(text, "abc");
     }
 
 }
