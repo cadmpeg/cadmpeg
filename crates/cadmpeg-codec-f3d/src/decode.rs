@@ -42,38 +42,45 @@ use crate::materials;
 use cadmpeg_asm::{asm_header, sab};
 
 fn container_only_dimension_parameters(
+    ctx: Option<&DecodeContext<'_>>,
     native: &F3dNative,
-) -> std::collections::HashSet<cadmpeg_ir::features::ParameterId> {
+) -> Result<std::collections::HashSet<cadmpeg_ir::features::ParameterId>, CodecError> {
     let container_only = crate::design::dimensions::container_only_dimension_companions(
+        ctx,
         &native.design_dimension_locus_pairs,
         &native.design_dimension_null_locus_pairs,
         &native.design_dimension_annotation_frames,
         &native.design_dimension_locus_groups,
         &native.design_dimension_recipe_records,
-    );
-    native
-        .design_parameter_owners
-        .iter()
-        .filter_map(|owner| {
+    )?;
+    let mut parameters = std::collections::HashSet::new();
+    for owner in &native.design_parameter_owners {
             let stream =
                 crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
-            if !container_only.contains(&(stream.to_owned(), owner.companion_record_index())) {
-                return None;
+            if !container_only.contains(&(stream, owner.companion_record_index())) {
+                continue;
             }
-            let mut parameters = native.design_parameters.iter().filter(|parameter| {
+            let mut matches = native.design_parameters.iter().filter(|parameter| {
                 crate::ids::native_stream(&parameter.id).unwrap_or(crate::ids::DEFAULT_STREAM)
                     == stream
                     && parameter.record_index == owner.parameter_record_index()
                     && parameter.kind()
                         == crate::records::parameters::DesignParameterKind::Dimension
             });
-            let parameter = parameters.next()?;
-            parameters
-                .next()
-                .is_none()
-                .then(|| crate::ids::neutral_parameter_id(parameter))
-        })
-        .collect()
+            let Some(parameter) = matches.next() else { continue };
+            if matches.next().is_some() { continue }
+            let id = crate::ids::neutral_parameter_id(parameter);
+            if !parameters.contains(&id) {
+                if let Some(ctx) = ctx {
+                    ctx.charge_collection_items(1, "f3d container-only dimension parameter")?;
+                    parameters.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                        "f3d container-only dimension parameter", 0, 1))?;
+                }
+                // discarded-value: duplicate parameter owners share one identity.
+                let _ = parameters.insert(id);
+            }
+    }
+    Ok(parameters)
 }
 
 fn unresolved_dimension_companion_count(native: &F3dNative, ir: &CadIr) -> usize {
@@ -1317,7 +1324,7 @@ fn design_projection_gaps(
             .filter(|relation| !projected_constraint_refs.contains(relation.id.as_str()))
             .count(),
         unprojected_dimensions: {
-            let container_only = container_only_dimension_parameters(native);
+            let container_only = container_only_dimension_parameters(ctx, native)?;
             let relation_bearing_companions = native
                 .design_parameter_companions
                 .iter()

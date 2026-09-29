@@ -140,80 +140,60 @@ pub(crate) struct DimensionConstraintInputs<'a> {
     pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
 }
 
-pub(crate) fn container_only_dimension_companions(
-    pairs: &[DesignDimensionLocusPair],
-    null_pairs: &[DesignDimensionLocusPair],
-    annotation_frames: &[DesignDimensionAnnotationFrame],
-    groups: &[DesignDimensionLocusGroup],
-    recipe_records: &[DesignDimensionRecipeRecord],
-) -> HashSet<(String, u32)> {
-    let physical = pairs
-        .iter()
-        .filter_map(|pair| {
-            Some((
-                native_stream(&pair.id)?.to_owned(),
-                pair.companion_record_index,
-            ))
-        })
-        .chain(null_pairs.iter().filter_map(|pair| {
-            Some((
-                native_stream(&pair.id)?.to_owned(),
-                pair.companion_record_index,
-            ))
-        }))
-        .chain(annotation_frames.iter().filter_map(|frame| {
-            Some((
-                native_stream(&frame.id)?.to_owned(),
-                frame.companion_record_index?,
-            ))
-        }))
-        .chain(groups.iter().filter_map(|group| {
-            Some((
-                native_stream(&group.id)?.to_owned(),
-                group.companion_record_index,
-            ))
-        }))
-        .chain(recipe_records.iter().filter_map(|record| {
-            Some((
-                native_stream(&record.id)?.to_owned(),
-                record.companion_record_index,
-            ))
-        }))
-        .collect::<HashSet<_>>();
-    let governed = pairs
-        .iter()
-        .filter_map(|pair| {
-            Some((
-                native_stream(&pair.id)?.to_owned(),
-                pair.governing_companion_record_index,
-            ))
-        })
-        .chain(null_pairs.iter().filter_map(|pair| {
-            Some((
-                native_stream(&pair.id)?.to_owned(),
-                pair.governing_companion_record_index,
-            ))
-        }))
-        .chain(annotation_frames.iter().filter_map(|frame| {
-            Some((
-                native_stream(&frame.id)?.to_owned(),
-                frame.governing_companion_record_index,
-            ))
-        }))
-        .chain(groups.iter().filter_map(|group| {
-            Some((
-                native_stream(&group.id)?.to_owned(),
-                group.companion_record_index,
-            ))
-        }))
-        .chain(recipe_records.iter().filter_map(|record| {
-            Some((
-                native_stream(&record.id)?.to_owned(),
-                record.companion_record_index,
-            ))
-        }))
-        .collect::<HashSet<_>>();
-    physical.difference(&governed).cloned().collect()
+pub(crate) fn container_only_dimension_companions<'a>(
+    ctx: Option<&DecodeContext<'_>>,
+    pairs: &'a [DesignDimensionLocusPair],
+    null_pairs: &'a [DesignDimensionLocusPair],
+    annotation_frames: &'a [DesignDimensionAnnotationFrame],
+    groups: &'a [DesignDimensionLocusGroup],
+    recipe_records: &'a [DesignDimensionRecipeRecord],
+) -> Result<HashSet<(&'a str, u32)>, CodecError> {
+    let physical_entries = pairs.iter().filter_map(|pair| Some((
+        native_stream(&pair.id)?, pair.companion_record_index,
+    )))
+        .chain(null_pairs.iter().filter_map(|pair| Some((
+            native_stream(&pair.id)?, pair.companion_record_index,
+        ))))
+        .chain(annotation_frames.iter().filter_map(|frame| Some((
+            native_stream(&frame.id)?, frame.companion_record_index?,
+        ))))
+        .chain(groups.iter().filter_map(|group| Some((
+            native_stream(&group.id)?, group.companion_record_index,
+        ))))
+        .chain(recipe_records.iter().filter_map(|record| Some((
+            native_stream(&record.id)?, record.companion_record_index,
+        ))));
+    let mut physical = HashSet::new();
+    for entry in physical_entries {
+        insert_dimension_set(ctx, &mut physical, entry,
+            "f3d physical dimension companion")?;
+    }
+    let governed_entries = pairs.iter().filter_map(|pair| Some((
+        native_stream(&pair.id)?, pair.governing_companion_record_index,
+    )))
+        .chain(null_pairs.iter().filter_map(|pair| Some((
+            native_stream(&pair.id)?, pair.governing_companion_record_index,
+        ))))
+        .chain(annotation_frames.iter().filter_map(|frame| Some((
+            native_stream(&frame.id)?, frame.governing_companion_record_index,
+        ))))
+        .chain(groups.iter().filter_map(|group| Some((
+            native_stream(&group.id)?, group.companion_record_index,
+        ))))
+        .chain(recipe_records.iter().filter_map(|record| Some((
+            native_stream(&record.id)?, record.companion_record_index,
+        ))));
+    let mut governed = HashSet::new();
+    for entry in governed_entries {
+        insert_dimension_set(ctx, &mut governed, entry,
+            "f3d governed dimension companion")?;
+    }
+    let mut container_only = HashSet::new();
+    for entry in physical.difference(&governed) {
+        insert_dimension_set(ctx, &mut container_only, *entry,
+            "f3d container-only dimension companion")?;
+    }
+    Ok(container_only)
 }
 
 /// Project dimensional parameter companions into parameter-backed sketch
@@ -1217,12 +1197,13 @@ fn project_all_dimension_constraints(
         .cloned()
         .collect::<HashSet<_>>();
     let container_only_payload_companions = container_only_dimension_companions(
+        ctx,
         pairs,
         null_pairs,
         annotation_frames,
         groups,
         recipe_records,
-    );
+    )?;
     constraints.extend(companions.iter().filter_map(|companion| {
         let scope = native_stream(companion.id())?;
         let key = (scope.to_owned(), companion.record_index());
@@ -1230,7 +1211,7 @@ fn project_all_dimension_constraints(
         let (parameter, parameter_id) = parameter_for(scope, companion.record_index())?;
         if parameter.kind() != DesignParameterKind::Dimension
             || projected_parameters.contains(&parameter_id)
-            || container_only_payload_companions.contains(&key)
+            || container_only_payload_companions.contains(&(scope, companion.record_index()))
         {
             return None;
         }
