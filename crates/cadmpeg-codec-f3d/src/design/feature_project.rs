@@ -3345,7 +3345,7 @@ fn project_draft(
                 && group_has_entity_selection(scope, neutral_plane, entity_selection_operands) =>
         {
             if let Some(neutral_plane) =
-                selected_work_plane(scope, neutral_plane, entity_selection_operands, scopes)
+                selected_work_plane(ctx, scope, neutral_plane, entity_selection_operands, scopes)?
             {
                 let transform = or_none!(neutral_plane.work_plane_transform());
                 let pull_direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
@@ -3411,9 +3411,9 @@ fn project_draft(
             }))
         }
         [first, second] if member_of_scope(first) && member_of_scope(second) => {
-            let first_plane = selected_work_plane(scope, first, entity_selection_operands, scopes);
+            let first_plane = selected_work_plane(ctx, scope, first, entity_selection_operands, scopes)?;
             let second_plane =
-                selected_work_plane(scope, second, entity_selection_operands, scopes);
+                selected_work_plane(ctx, scope, second, entity_selection_operands, scopes)?;
             let (parting_tool, pull_plane) = match (first_plane, second_plane) {
                 (Some(plane), None)
                     if !group_has_entity_selection(scope, second, entity_selection_operands) =>
@@ -3595,38 +3595,42 @@ fn group_has_entity_selection(
 }
 
 fn selected_work_plane<'a>(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &'a [DesignParameterScope],
-) -> Option<&'a DesignParameterScope> {
-    let planes = selected_work_planes(scope, group, entity_selection_operands, scopes)?;
-    let [plane] = planes.as_slice() else {
-        return None;
+) -> Result<Option<&'a DesignParameterScope>, CodecError> {
+    let Some(planes) = selected_work_planes(ctx, scope, group, entity_selection_operands, scopes)? else {
+        return Ok(None);
     };
-    Some(*plane)
+    let [plane] = planes.as_slice() else {
+        return Ok(None);
+    };
+    Ok(Some(*plane))
 }
 
 fn selected_work_planes<'a>(
+    ctx: Option<&DecodeContext<'_>>,
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &'a [DesignParameterScope],
-) -> Option<Vec<&'a DesignParameterScope>> {
-    let stream = native_stream(&scope.id)?;
+) -> Result<Option<Vec<&'a DesignParameterScope>>, CodecError> {
+    let stream = or_none!(native_stream(&scope.id));
     if group.members().is_empty() {
-        return None;
+        return Ok(None);
     }
-    let mut planes = Vec::with_capacity(group.members().len());
-    let mut target_record_indices = HashSet::with_capacity(group.members().len());
+    let mut planes = Vec::new();
+    let mut target_record_indices = HashSet::new();
     for (ordinal, member) in group
         .members()
         .iter()
         .map(|member| &member.value)
         .enumerate()
     {
-        let ordinal = u32::try_from(ordinal).ok()?;
-        let selections = entity_selection_operands
+        let ordinal = or_none!(u32::try_from(ordinal).ok());
+        let selection = unique_feature_match(entity_selection_operands
             .iter()
             .filter(|operand| {
                 native_stream(&operand.id) == Some(stream)
@@ -3634,33 +3638,29 @@ fn selected_work_planes<'a>(
                     && operand.group_record_index == group.record_index
                     && operand.group_member_ordinal == ordinal
                     && operand.record_index() == *member
-            })
-            .collect::<Vec<_>>();
-        let [selection] = selections.as_slice() else {
-            return None;
+            }));
+        let Some(selection) = selection else {
+            return Ok(None);
         };
         if selection.secondary().is_some() {
-            return None;
+            return Ok(None);
         }
-        let target_record_index = u32::try_from(selection.primary_identity)
-            .ok()?
-            .checked_add(1)?;
-        if !target_record_indices.insert(target_record_index) {
-            return None;
+        let target_record_index = or_none!(or_none!(u32::try_from(selection.primary_identity).ok())
+            .checked_add(1));
+        if !insert_feature_set(ctx, &mut target_record_indices, target_record_index,
+            "f3d selected work plane target index")? {
+            return Ok(None);
         }
-        let mut target_scopes = scopes.iter().filter(|candidate| {
+        let target = unique_feature_match(scopes.iter().filter(|candidate| {
             native_stream(&candidate.id) == Some(stream)
                 && candidate.record_index == target_record_index
                 && candidate.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
                 && candidate.work_plane_transform().is_some()
-        });
-        let target = target_scopes.next()?;
-        if target_scopes.next().is_some() {
-            return None;
-        }
-        planes.push(target);
+        }));
+        let Some(target) = target else { return Ok(None); };
+        push_feature_item(ctx, &mut planes, target, "f3d selected work plane")?;
     }
-    Some(planes)
+    Ok(Some(planes))
 }
 
 fn resolved_split_face_path(
@@ -8851,7 +8851,7 @@ fn project_split_face(
     {
         SplitFaceTool::Path(path)
     } else if let Some(planes) =
-        selected_work_planes(scope, tool, entity_selection_operands, scopes)
+        selected_work_planes(ctx, scope, tool, entity_selection_operands, scopes)?
     {
         let mut selected = Vec::new();
         for plane in planes {

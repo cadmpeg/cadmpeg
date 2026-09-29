@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::edge_resolve::feature_input_topology_id;
-use crate::design::feature_project::{project_delete_face, project_split, project_split_face};
+use crate::design::feature_project::{project_delete_face, project_split, project_split_face, selected_work_planes};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::{
@@ -363,6 +363,88 @@ fn split_face_path_tool_group_id_refuses_retained_limit() {
 #[test]
 fn split_face_target_group_id_refuses_retained_limit() {
     assert_split_face_retained_refusal("f3d SplitFace target group id");
+}
+
+fn selected_plane_fixture() -> (
+    DesignParameterScope,
+    DesignConstructionOperandGroup,
+    crate::records::topology::entity_selection::DesignEntitySelectionOperand,
+    DesignParameterScope,
+) {
+    let (scope, groups) = compact_split_face_fixture();
+    let mut plane = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#601",
+        crate::records::feature::scope::DesignFeatureKind::WorkPlane,
+        601,
+    );
+    plane.with_work_plane_transform([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ].try_into().unwrap());
+    let selection = crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+        crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+            id: "f3d:Design/BulkStream.dat:entity-selection#101".into(),
+            scope_record_index: 77,
+            group_record_index: 100,
+            group_member_ordinal: 0,
+            record_index: 101,
+            byte_offset: 0,
+            class_tag: "372".to_owned().try_into().unwrap(),
+            asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned().try_into().unwrap(),
+            asset_id_offset: 0,
+            context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned().try_into().unwrap(),
+            context_id_offset: 0,
+            identity_record_index: 104,
+            identity_record_offset: 0,
+            primary_identity: 600,
+            primary_identity_offset: 21,
+            secondary: None,
+            historical_edge_candidates: Vec::new(),
+            historical_face_candidates: Vec::new(),
+            resolved_edge_slot: None,
+            next_record_index: 105,
+            next_byte_offset: 29,
+        },
+    ).unwrap();
+    (scope, groups[0].clone(), selection, plane)
+}
+
+fn assert_selected_plane_limit(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (scope, group, selection, plane) = selected_plane_fixture();
+    let selected = selected_work_planes(None, &scope, &group,
+        std::slice::from_ref(&selection), std::slice::from_ref(&plane)).unwrap().unwrap();
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].record_index, plane.record_index);
+    for limit in 0..4 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(
+            selected_work_planes(Some(&ctx), &scope, &group,
+                std::slice::from_ref(&selection), std::slice::from_ref(&plane)),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ) {
+            return;
+        }
+    }
+    panic!("no selected work plane refusal at {operation}");
+}
+
+#[test]
+fn selected_work_plane_target_index_refuses_collection_limit() {
+    assert_selected_plane_limit("f3d selected work plane target index");
+}
+
+#[test]
+fn selected_work_plane_refuses_collection_limit() {
+    assert_selected_plane_limit("f3d selected work plane");
 }
 
 #[test]
