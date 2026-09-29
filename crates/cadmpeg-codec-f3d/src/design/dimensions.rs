@@ -25,6 +25,56 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::hash::Hash;
+
+fn insert_dimension_index<K: Eq + Hash, V>(
+    ctx: Option<&DecodeContext<'_>>,
+    index: &mut HashMap<K, V>,
+    key: K,
+    value: V,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !index.contains_key(&key) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+            index.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        }
+    }
+    // discarded-value: duplicate keys keep the last native record.
+    let _ = index.insert(key, value);
+    Ok(())
+}
+
+fn insert_dimension_set<T: Eq + Hash>(
+    ctx: Option<&DecodeContext<'_>>,
+    index: &mut HashSet<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if !index.contains(&value) {
+        if let Some(ctx) = ctx {
+            ctx.charge_collection_items(1, operation)?;
+            index.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        }
+    }
+    // discarded-value: duplicate sketch IDs are one membership entry.
+    let _ = index.insert(value);
+    Ok(())
+}
+
+fn push_dimension_item<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: &mut Vec<T>,
+    value: T,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)?;
+        items.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+    }
+    items.push(value);
+    Ok(())
+}
 
 const EPS_DIMENSIONS_OWNER_SCOPED_PARALLEL_LINE_SET_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
 const EPS_DIMENSIONS_OWNER_SCOPED_LINE_LENGTH_DIMENSION_DEFINITION_E9: f64 = 1.0e-9;
@@ -171,26 +221,13 @@ pub(crate) fn container_only_dimension_companions(
 /// resolution. Two-locus dimensions have neutral semantics; aggregate and
 /// role-dependent forms remain explicit native constraints.
 pub(crate) fn project_dimension_constraints(
+    ctx: Option<&DecodeContext<'_>>,
     inputs: &DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     linear_tolerance: f64,
-) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, cadmpeg_core::decode::ResourceLimit> {
-    let spatial_sketch_ids = spatial_sketches
-        .iter()
-        .map(|sketch| sketch.id.clone())
-        .collect::<HashSet<_>>();
-    let placements = inputs.placements;
-    Ok(project_all_dimension_constraints(inputs, &[], linear_tolerance)?
-        .into_iter()
-        .filter(|constraint| {
-            placements
-                .iter()
-                .find(|placement| neutral_sketch_id(placement) == constraint.sketch)
-                .is_none_or(|placement| {
-                    !spatial_sketch_ids.contains(&neutral_spatial_sketch_id(placement))
-                })
-        })
-        .collect())
+) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {
+    let constraints = project_all_dimension_constraints(ctx, inputs, &[], linear_tolerance)?;
+    retain_planar_dimension_constraints(ctx, inputs.placements, spatial_sketches, constraints)
 }
 
 /// Project planar dimensions with direct Fusion presentation frames. The
@@ -198,34 +235,49 @@ pub(crate) fn project_dimension_constraints(
 /// callers that construct dimension fixtures do not need to synthesize an
 /// unrelated native arena.
 pub(crate) fn project_dimension_constraints_with_presentations(
+    ctx: Option<&DecodeContext<'_>>,
     inputs: &DimensionConstraintInputs<'_>,
     presentation_frames: &[crate::records::dimensions::DesignDimensionPresentationFrame],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     linear_tolerance: f64,
-) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, cadmpeg_core::decode::ResourceLimit> {
-    let spatial_sketch_ids = spatial_sketches
-        .iter()
-        .map(|sketch| sketch.id.clone())
-        .collect::<HashSet<_>>();
-    let placements = inputs.placements;
-    Ok(project_all_dimension_constraints(inputs, presentation_frames, linear_tolerance)?
-        .into_iter()
-        .filter(|constraint| {
-            placements
+) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {
+    let constraints = project_all_dimension_constraints(ctx, inputs, presentation_frames, linear_tolerance)?;
+    retain_planar_dimension_constraints(ctx, inputs.placements, spatial_sketches, constraints)
+}
+
+fn retain_planar_dimension_constraints(
+    ctx: Option<&DecodeContext<'_>>,
+    placements: &[DesignSketchPlacement],
+    spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+    constraints: Vec<cadmpeg_ir::sketches::SketchConstraint>,
+) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {
+    let mut spatial_sketch_ids = HashSet::new();
+    for sketch in spatial_sketches {
+        insert_dimension_set(ctx, &mut spatial_sketch_ids, &sketch.id,
+            "f3d planar spatial sketch index")?;
+    }
+    let mut output = Vec::new();
+    for constraint in constraints {
+        if placements
                 .iter()
                 .find(|placement| neutral_sketch_id(placement) == constraint.sketch)
                 .is_none_or(|placement| {
                     !spatial_sketch_ids.contains(&neutral_spatial_sketch_id(placement))
                 })
-        })
-        .collect())
+        {
+            push_dimension_item(ctx, &mut output, constraint,
+                "f3d planar dimension output")?;
+        }
+    }
+    Ok(output)
 }
 
 fn project_all_dimension_constraints(
+    ctx: Option<&DecodeContext<'_>>,
     inputs: &DimensionConstraintInputs<'_>,
     presentation_frames: &[crate::records::dimensions::DesignDimensionPresentationFrame],
     linear_tolerance: f64,
-) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, CodecError> {
     use cadmpeg_ir::sketches::{
         SketchConstraint, SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
         SketchNativeOperand,
@@ -246,87 +298,74 @@ fn project_all_dimension_constraints(
         entities,
     } = inputs;
 
-    let sketches = placements
-        .iter()
-        .filter_map(|placement| {
-            let scope = native_stream(&placement.id)?;
-            u32::try_from(placement.entity_id.suffix())
-                .ok()
-                .map(|suffix| ((scope, suffix), neutral_sketch_id(placement)))
-        })
-        .collect::<HashMap<_, _>>();
-    let sketches_by_scope = placements
-        .iter()
-        .filter_map(|placement| {
-            Some((
-                (native_stream(&placement.id)?, placement.scope_record_index?),
-                neutral_sketch_id(placement),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let parameters = parameters
-        .iter()
-        .filter_map(|parameter| {
-            Some((
-                (native_stream(&parameter.id)?, parameter.record_index),
-                parameter,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let parameter_by_companion = owners
-        .iter()
-        .filter_map(|owner| {
-            Some((
-                (native_stream(owner.id())?, owner.companion_record_index()),
-                owner.parameter_record_index(),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let native_geometry = points
-        .iter()
-        .filter_map(|point| {
-            Some((
-                (native_stream(&point.id)?, point.record_index),
-                (
-                    cadmpeg_core::nonblank_literal!("point"),
-                    point.owner_reference,
-                    point.id.as_str(),
-                ),
-            ))
-        })
-        .chain(curves.iter().filter_map(|curve| {
-            Some((
-                (native_stream(&curve.id)?, curve.record_index),
-                (
-                    cadmpeg_core::nonblank_literal!("curve"),
-                    curve.owner_reference,
-                    curve.id.as_str(),
-                ),
-            ))
-        }))
-        .collect::<HashMap<_, _>>();
-    let record_indices_by_native_ref = native_geometry
-        .iter()
-        .map(|(key, (_, _, native_ref))| (*native_ref, *key))
-        .collect::<HashMap<_, _>>();
-    let projected = entities
-        .iter()
-        .filter_map(|entity| {
-            let native_ref = entity.native_ref.as_deref()?;
-            record_indices_by_native_ref
-                .get(native_ref)
-                .map(|key| (*key, entity))
-        })
-        .collect::<HashMap<_, _>>();
-    let curve_secondary_ids = curves
-        .iter()
-        .filter_map(|curve| {
-            Some((
-                (native_stream(&curve.id)?, curve.record_index),
-                curve.secondary_id,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let mut sketches = HashMap::new();
+    let mut sketches_by_scope = HashMap::new();
+    for placement in placements {
+        let Some(scope) = native_stream(&placement.id) else { continue; };
+        if let Ok(suffix) = u32::try_from(placement.entity_id.suffix()) {
+            insert_dimension_index(ctx, &mut sketches, (scope, suffix),
+                neutral_sketch_id(placement), "f3d dimension sketch index")?;
+        }
+        if let Some(scope_record_index) = placement.scope_record_index {
+            insert_dimension_index(ctx, &mut sketches_by_scope, (scope, scope_record_index),
+                neutral_sketch_id(placement), "f3d dimension scope sketch index")?;
+        }
+    }
+    let mut parameters_by_record = HashMap::new();
+    for parameter in parameters {
+        if let Some(scope) = native_stream(&parameter.id) {
+            insert_dimension_index(ctx, &mut parameters_by_record,
+                (scope, parameter.record_index), parameter,
+                "f3d dimension parameter index")?;
+        }
+    }
+    let parameters = parameters_by_record;
+    let mut parameter_by_companion = HashMap::new();
+    for owner in owners {
+        if let Some(scope) = native_stream(owner.id()) {
+            insert_dimension_index(ctx, &mut parameter_by_companion,
+                (scope, owner.companion_record_index()), owner.parameter_record_index(),
+                "f3d dimension companion index")?;
+        }
+    }
+    let mut native_geometry = HashMap::new();
+    for point in points {
+        if let Some(scope) = native_stream(&point.id) {
+            insert_dimension_index(ctx, &mut native_geometry,
+                (scope, point.record_index),
+                (cadmpeg_core::nonblank_literal!("point"), point.owner_reference, point.id.as_str()),
+                "f3d dimension native geometry index")?;
+        }
+    }
+    for curve in curves {
+        if let Some(scope) = native_stream(&curve.id) {
+            insert_dimension_index(ctx, &mut native_geometry,
+                (scope, curve.record_index),
+                (cadmpeg_core::nonblank_literal!("curve"), curve.owner_reference, curve.id.as_str()),
+                "f3d dimension native geometry index")?;
+        }
+    }
+    let mut record_indices_by_native_ref = HashMap::new();
+    for (key, (_, _, native_ref)) in &native_geometry {
+        insert_dimension_index(ctx, &mut record_indices_by_native_ref, *native_ref, *key,
+            "f3d dimension native reference index")?;
+    }
+    let mut projected = HashMap::new();
+    for entity in entities {
+        if let Some(key) = entity.native_ref.as_deref()
+            .and_then(|native_ref| record_indices_by_native_ref.get(native_ref).copied()) {
+            insert_dimension_index(ctx, &mut projected, key, entity,
+                "f3d dimension projected entity index")?;
+        }
+    }
+    let mut curve_secondary_ids = HashMap::new();
+    for curve in curves {
+        if let Some(scope) = native_stream(&curve.id) {
+            insert_dimension_index(ctx, &mut curve_secondary_ids,
+                (scope, curve.record_index), curve.secondary_id,
+                "f3d dimension curve secondary index")?;
+        }
+    }
 
     let parameter_for = |scope: &str, companion_record_index: u32| {
         let record_index = *parameter_by_companion.get(&(scope, companion_record_index))?;
@@ -2516,11 +2555,12 @@ pub(crate) fn bind_offset_dimension_parameters(
 /// Project dimensions owned by model-space sketches without assigning them
 /// planar relation semantics.
 pub(crate) fn project_spatial_dimension_constraints(
+    ctx: Option<&DecodeContext<'_>>,
     inputs: &DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     spatial_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     linear_tolerance: f64,
-) -> Result<Vec<cadmpeg_ir::sketches::SpatialSketchConstraint>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Vec<cadmpeg_ir::sketches::SpatialSketchConstraint>, CodecError> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinitionInput, SketchNativeOperand, SpatialSketchConstraint,
         SpatialSketchConstraintDefinitionInput,
@@ -2593,7 +2633,7 @@ pub(crate) fn project_spatial_dimension_constraints(
         .iter()
         .map(|parameter| (neutral_parameter_id(parameter), parameter))
         .collect::<HashMap<_, _>>();
-    let source_constraints = project_all_dimension_constraints(inputs, &[], linear_tolerance)?;
+    let source_constraints = project_all_dimension_constraints(ctx, inputs, &[], linear_tolerance)?;
     let parameter_constraint_counts = source_constraints
         .iter()
         .flat_map(|constraint| constraint_parameters(constraint.definition.kind()))
