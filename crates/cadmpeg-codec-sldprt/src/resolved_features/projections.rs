@@ -1316,222 +1316,318 @@ pub(crate) fn project_compact_surface_selections(
         group.push(selection);
     }
     for feature in features.iter_mut() {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let Some(native_ref) = feature.native_ref.as_deref() else {
-                break 'feature_edit;
-            };
-            let Some(feature_selections) = selections.get(native_ref).map(Vec::as_slice) else {
-                break 'feature_edit;
-            };
-            if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
-                &mut definition
-            {
-                if seeds
-                    .iter()
-                    .any(|seed| matches!(seed, PatternSeed::Feature(_)))
-                {
-                    break 'feature_edit;
-                }
-                for selection in feature_selections {
-                    let native = compact_surface_selection_value(&selection.components);
-                    let generated = component_path_feature(
-                        &selection.components,
-                        &history_features,
-                        &selection.feature_ref,
-                        ComponentPathEnd::Trailing,
-                    )
-                    .and_then(|(component, producer)| {
-                        feature_ids_by_native
-                            .get(producer.id.as_str())
-                            .zip(component.local_id.as_ref())
-                    });
-                    let seed = match generated {
-                        Some((producer, local_id)) => {
-                            let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(
-                                producer.clone(),
-                                local_id.to_string(),
-                            ) else {
-                                let seed = PatternSeed::Faces(
-                                    cadmpeg_ir::features::FaceSelection::Native(native),
-                                );
-                                if !seeds.contains(&seed) {
-                                    seeds.push(seed);
-                                }
-                                continue;
-                            };
-                            if seeds.iter().any(|seed| {
-                                matches!(
-                                    seed,
-                                    PatternSeed::Faces(
-                                        cadmpeg_ir::features::FaceSelection::Generated { faces, .. }
-                                    ) if faces.contains(&face)
-                                )
-                            }) {
-                                continue;
-                            }
-                            if !feature.dependencies.contains(producer) {
-                                feature.dependencies.insert(producer.clone());
-                            }
-                            PatternSeed::Faces(
-                                cadmpeg_ir::features::FaceSelection::generated(
-                                    vec![face],
-                                    native.clone(),
-                                )
-                                .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native)),
-                            )
-                        }
-                        None => {
-                            PatternSeed::Faces(cadmpeg_ir::features::FaceSelection::Native(native))
-                        }
-                    };
-                    if !seeds.contains(&seed) {
-                        seeds.push(seed);
-                    }
-                }
-                break 'feature_edit;
-            }
-            if let FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, .. }) =
-                &mut definition
-            {
-                if !matches!(
-                    targets,
-                    cadmpeg_ir::features::FaceSelection::Unresolved
-                        | cadmpeg_ir::features::FaceSelection::Native(_)
-                ) {
-                    break 'feature_edit;
-                }
-                let native = compact_surface_selection_set_value(feature_selections);
-                let mut faces = Vec::new();
-                let mut complete = true;
-                for selection in feature_selections {
-                    let generated = selection
-                        .terminal_feature_ref
-                        .as_ref()
-                        .and_then(|producer| feature_ids_by_native.get(producer))
-                        .zip(selection.components.last())
-                        .and_then(|(producer, component)| Some((producer, component.local_id?)));
-                    if let Some((producer, local_id)) = generated {
-                        let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(
-                            producer.clone(),
-                            local_id.to_string(),
-                        ) else {
-                            complete = false;
-                            continue;
-                        };
-                        if !faces.contains(&face) {
-                            faces.push(face);
-                        }
-                    } else {
-                        complete = false;
-                    }
-                    for producer in selection
-                        .producer_feature_refs
-                        .iter()
-                        .filter_map(|producer| feature_ids_by_native.get(producer))
-                        .filter(|producer| *producer != &feature.id)
-                    {
-                        if !feature.dependencies.contains(producer) {
-                            feature.dependencies.insert(producer.clone());
-                        }
-                    }
-                }
-                *targets = if complete && !faces.is_empty() {
-                    cadmpeg_ir::features::FaceSelection::generated(faces, native.clone())
-                        .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
-                } else {
-                    cadmpeg_ir::features::FaceSelection::Native(native)
-                };
-                break 'feature_edit;
-            }
-            if let FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
-                targets,
-                tools,
-                ..
-            }) = &mut definition
-            {
-                let Some((target, tool)) = cut_with_surface_selection_pair(feature_selections)
-                else {
-                    break 'feature_edit;
-                };
-                let target_native = compact_surface_selection_value(&target.components);
-                let target_producer = target
-                    .terminal_feature_ref
-                    .as_ref()
-                    .and_then(|producer| feature_ids_by_native.get(producer));
-                if let Some(producer) = target_producer {
-                    let local_id = target
-                        .components
-                        .iter()
-                        .filter_map(|component| component.local_id)
-                        .map(|local_id| local_id.to_string())
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    let Ok(body) =
-                        cadmpeg_ir::features::GeneratedBodyRef::new((*producer).clone(), local_id)
-                    else {
+        let feature_id = &feature.id;
+        let native_ref = feature.native_ref.as_deref();
+        let dependencies = &mut feature.dependencies;
+        let mut edit_result: Result<(), cadmpeg_core::CodecError> = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            edit_result = (|| {
+                'feature_edit: {
+                    let Some(native_ref) = native_ref else {
                         break 'feature_edit;
                     };
-                    *targets = BodySelection::generated(vec![body], target_native.clone())
-                        .unwrap_or(BodySelection::Native(target_native));
-                    if !feature.dependencies.contains(producer) {
-                        feature.dependencies.insert((*producer).clone());
+                    let Some(feature_selections) = selections.get(native_ref).map(Vec::as_slice) else {
+                        break 'feature_edit;
+                    };
+                    if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+                        definition
+                    {
+                        if seeds
+                            .iter()
+                            .any(|seed| matches!(seed, PatternSeed::Feature(_)))
+                        {
+                            break 'feature_edit;
+                        }
+                        for selection in feature_selections {
+                            let native = compact_surface_selection_value(&selection.components);
+                            let generated = component_path_feature(
+                                &selection.components,
+                                &history_features,
+                                &selection.feature_ref,
+                                ComponentPathEnd::Trailing,
+                            )
+                            .and_then(|(component, producer)| {
+                                feature_ids_by_native
+                                    .get(producer.id.as_str())
+                                    .zip(component.local_id.as_ref())
+                            });
+                            let seed = match generated {
+                                Some((producer, local_id)) => {
+                                    let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(
+                                        producer.clone(),
+                                        local_id.to_string(),
+                                    ) else {
+                                        let seed = PatternSeed::Faces(
+                                            cadmpeg_ir::features::FaceSelection::Native(native),
+                                        );
+                                        if !seeds.contains(&seed) {
+                                            seeds.push(seed);
+                                        }
+                                        continue;
+                                    };
+                                    if seeds.iter().any(|seed| {
+                                        matches!(
+                                            seed,
+                                            PatternSeed::Faces(
+                                                cadmpeg_ir::features::FaceSelection::Generated { faces, .. }
+                                            ) if faces.contains(&face)
+                                        )
+                                    }) {
+                                        continue;
+                                    }
+                                    if !dependencies.contains(producer) {
+                                        dependencies.insert(producer.clone());
+                                    }
+                                    PatternSeed::Faces(
+                                        cadmpeg_ir::features::FaceSelection::generated(
+                                            vec![face],
+                                            native.clone(),
+                                        )
+                                        .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native)),
+                                    )
+                                }
+                                None => {
+                                    PatternSeed::Faces(cadmpeg_ir::features::FaceSelection::Native(native))
+                                }
+                            };
+                            if !seeds.contains(&seed) {
+                                seeds.push(seed);
+                            }
+                        }
+                        break 'feature_edit;
                     }
-                }
-                let tool_native = compact_surface_selection_value(&tool.components);
-                let tool_generated = tool
-                    .terminal_feature_ref
-                    .as_ref()
-                    .and_then(|producer| feature_ids_by_native.get(producer))
-                    .zip(tool.components.last())
-                    .and_then(|(producer, component)| {
-                        component.local_id.map(|local_id| (producer, local_id))
-                    });
-                if let Some((producer, local_id)) = tool_generated {
-                    *tools = cadmpeg_ir::features::GeneratedFaceRef::new(
-                        (*producer).clone(),
-                        local_id.to_string(),
-                    )
-                    .and_then(|face| FaceSelection::generated(vec![face], tool_native.clone()))
-                    .unwrap_or(FaceSelection::Native(tool_native));
-                    if !feature.dependencies.contains(producer) {
-                        feature.dependencies.insert((*producer).clone());
+                    if let FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, .. }) =
+                        definition
+                    {
+                        if !matches!(
+                            targets,
+                            cadmpeg_ir::features::FaceSelection::Unresolved
+                                | cadmpeg_ir::features::FaceSelection::Native(_)
+                        ) {
+                            break 'feature_edit;
+                        }
+                        let native = compact_surface_selection_set_value(feature_selections);
+                        let mut faces = Vec::new();
+                        let mut complete = true;
+                        for selection in feature_selections {
+                            let generated = selection
+                                .terminal_feature_ref
+                                .as_ref()
+                                .and_then(|producer| feature_ids_by_native.get(producer))
+                                .zip(selection.components.last())
+                                .and_then(|(producer, component)| Some((producer, component.local_id?)));
+                            if let Some((producer, local_id)) = generated {
+                                let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(
+                                    producer.clone(),
+                                    local_id.to_string(),
+                                ) else {
+                                    complete = false;
+                                    continue;
+                                };
+                                if !faces.contains(&face) {
+                                    faces.push(face);
+                                }
+                            } else {
+                                complete = false;
+                            }
+                            for producer in selection
+                                .producer_feature_refs
+                                .iter()
+                                .filter_map(|producer| feature_ids_by_native.get(producer))
+                                .filter(|producer| *producer != feature_id)
+                            {
+                                if !dependencies.contains(producer) {
+                                    dependencies.insert(producer.clone());
+                                }
+                            }
+                        }
+                        *targets = if complete && !faces.is_empty() {
+                            cadmpeg_ir::features::FaceSelection::generated(faces, native.clone())
+                                .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+                        } else {
+                            cadmpeg_ir::features::FaceSelection::Native(native)
+                        };
+                        break 'feature_edit;
                     }
-                }
-                break 'feature_edit;
-            }
-            let unresolved_full_round = match &definition {
-                FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => matches!(
-                    groups.as_slice(),
-                    [group]
-                        if matches!(group.edges, EdgeSelection::Unresolved)
-                            && group.radius.is_unresolved()
-                ),
-                _ => false,
-            };
-            if unresolved_full_round {
-                let Some([center_faces, side_one_faces, side_two_faces]) =
-                    full_round_fillet_selection_triple(ctx, feature_selections)?
-                else {
-                    break 'feature_edit;
-                };
-                let [center_faces, side_one_faces, side_two_faces] =
-                    [center_faces, side_one_faces, side_two_faces].map(|selection| {
+                    if let FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
+                        targets,
+                        tools,
+                        ..
+                    }) = definition
+                    {
+                        let Some((target, tool)) = cut_with_surface_selection_pair(feature_selections)
+                        else {
+                            break 'feature_edit;
+                        };
+                        let target_native = compact_surface_selection_value(&target.components);
+                        let target_producer = target
+                            .terminal_feature_ref
+                            .as_ref()
+                            .and_then(|producer| feature_ids_by_native.get(producer));
+                        if let Some(producer) = target_producer {
+                            let local_id = target
+                                .components
+                                .iter()
+                                .filter_map(|component| component.local_id)
+                                .map(|local_id| local_id.to_string())
+                                .collect::<Vec<_>>()
+                                .join(",");
+                            let Ok(body) =
+                                cadmpeg_ir::features::GeneratedBodyRef::new((*producer).clone(), local_id)
+                            else {
+                                break 'feature_edit;
+                            };
+                            *targets = BodySelection::generated(vec![body], target_native.clone())
+                                .unwrap_or(BodySelection::Native(target_native));
+                            if !dependencies.contains(producer) {
+                                dependencies.insert((*producer).clone());
+                            }
+                        }
+                        let tool_native = compact_surface_selection_value(&tool.components);
+                        let tool_generated = tool
+                            .terminal_feature_ref
+                            .as_ref()
+                            .and_then(|producer| feature_ids_by_native.get(producer))
+                            .zip(tool.components.last())
+                            .and_then(|(producer, component)| {
+                                component.local_id.map(|local_id| (producer, local_id))
+                            });
+                        if let Some((producer, local_id)) = tool_generated {
+                            *tools = cadmpeg_ir::features::GeneratedFaceRef::new(
+                                (*producer).clone(),
+                                local_id.to_string(),
+                            )
+                            .and_then(|face| FaceSelection::generated(vec![face], tool_native.clone()))
+                            .unwrap_or(FaceSelection::Native(tool_native));
+                            if !dependencies.contains(producer) {
+                                dependencies.insert((*producer).clone());
+                            }
+                        }
+                        break 'feature_edit;
+                    }
+                    let unresolved_full_round = match definition {
+                        FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) => matches!(
+                            groups.as_slice(),
+                            [group]
+                                if matches!(group.edges, EdgeSelection::Unresolved)
+                                    && group.radius.is_unresolved()
+                        ),
+                        _ => false,
+                    };
+                    if unresolved_full_round {
+                        let Some([center_faces, side_one_faces, side_two_faces]) =
+                            full_round_fillet_selection_triple(ctx, feature_selections)?
+                        else {
+                            break 'feature_edit;
+                        };
+                        let [center_faces, side_one_faces, side_two_faces] =
+                            [center_faces, side_one_faces, side_two_faces].map(|selection| {
+                                let native = compact_surface_selection_value(&selection.components);
+                                let generated = selection
+                                    .terminal_feature_ref
+                                    .as_ref()
+                                    .and_then(|producer| feature_ids_by_native.get(producer))
+                                    .zip(selection.components.last())
+                                    .and_then(|(producer, component)| {
+                                        Some((producer, component.local_id?))
+                                    });
+                                let face = match generated {
+                                    Some((producer, local_id)) => {
+                                        if producer != feature_id
+                                            && !dependencies.contains(producer)
+                                        {
+                                            dependencies.insert(producer.clone());
+                                        }
+                                        cadmpeg_ir::features::GeneratedFaceRef::new(
+                                            producer.clone(),
+                                            local_id.to_string(),
+                                        )
+                                        .and_then(|face| {
+                                            cadmpeg_ir::features::FaceSelection::generated(
+                                                vec![face],
+                                                native.clone(),
+                                            )
+                                        })
+                                        .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+                                    }
+                                    None => cadmpeg_ir::features::FaceSelection::Native(native),
+                                };
+                                for producer in selection
+                                    .producer_feature_refs
+                                    .iter()
+                                    .filter_map(|producer| feature_ids_by_native.get(producer))
+                                    .filter(|producer| *producer != feature_id)
+                                {
+                                    if !dependencies.contains(producer) {
+                                        dependencies.insert(producer.clone());
+                                    }
+                                }
+                                face
+                            });
+                        *definition = FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
+                            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                                cadmpeg_ir::features::edge_treatments::FullRoundFilletGroup::new(
+                                    center_faces,
+                                    cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(
+                                        side_one_faces,
+                                    ),
+                                    cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(
+                                        side_two_faces,
+                                    ),
+                                )
+                                .map_err(cadmpeg_core::CodecError::malformed)?,
+                            ),
+                        });
+                        break 'feature_edit;
+                    }
+                    if matches!(
+                        definition,
+                        FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                            family: UnresolvedFamily::DatumPlane
+                        })
+                    ) && feature_selections.len() == 2
+                    {
+                        for selection in feature_selections {
+                            for producer in selection
+                                .producer_feature_refs
+                                .iter()
+                                .filter_map(|producer| feature_ids_by_native.get(producer))
+                                .filter(|producer| *producer != feature_id)
+                            {
+                                if !dependencies.contains(producer) {
+                                    dependencies.insert(producer.clone());
+                                }
+                            }
+                        }
+                        break 'feature_edit;
+                    }
+                    let first_component = matches!(
+                        definition,
+                        FeatureDefinition::Operation(FeatureOperation::CosmeticThread { .. })
+                    );
+                    let Some(selection) = (if first_component {
+                        cosmetic_thread_surface_selection_consensus(feature_selections)
+                    } else {
+                        surface_selection_consensus(feature_selections)
+                    }) else {
+                        break 'feature_edit;
+                    };
+                    if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                        reference,
+                        ..
+                    }) = definition
+                    {
                         let native = compact_surface_selection_value(&selection.components);
                         let generated = selection
                             .terminal_feature_ref
                             .as_ref()
                             .and_then(|producer| feature_ids_by_native.get(producer))
                             .zip(selection.components.last())
-                            .and_then(|(producer, component)| {
-                                Some((producer, component.local_id?))
-                            });
+                            .and_then(|(feature, component)| Some((feature, component.local_id?)));
                         let face = match generated {
                             Some((producer, local_id)) => {
-                                if producer != &feature.id
-                                    && !feature.dependencies.contains(producer)
-                                {
-                                    feature.dependencies.insert(producer.clone());
+                                if !dependencies.contains(producer) {
+                                    dependencies.insert(producer.clone());
                                 }
                                 cadmpeg_ir::features::GeneratedFaceRef::new(
                                     producer.clone(),
@@ -1547,255 +1643,167 @@ pub(crate) fn project_compact_surface_selections(
                             }
                             None => cadmpeg_ir::features::FaceSelection::Native(native),
                         };
-                        for producer in selection
-                            .producer_feature_refs
-                            .iter()
-                            .filter_map(|producer| feature_ids_by_native.get(producer))
-                            .filter(|producer| *producer != &feature.id)
-                        {
-                            if !feature.dependencies.contains(producer) {
-                                feature.dependencies.insert(producer.clone());
+                        match reference {
+                            Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: existing }) => {
+                                *existing = face;
+                            }
+                            reference @ (None
+                            | Some(
+                                cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. },
+                            )) => {
+                                *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face { face });
+                            }
+                            Some(cadmpeg_ir::features::DatumPlaneReference::Feature { .. }) => {}
+                        }
+                        break 'feature_edit;
+                    }
+                    let slot = match definition {
+                        FeatureDefinition::Operation(FeatureOperation::Thicken { faces, .. }) => {
+                            SelectionSlot::Face(faces)
+                        }
+                        FeatureDefinition::Operation(FeatureOperation::Shell { removed_faces, .. }) => {
+                            SelectionSlot::Face(removed_faces)
+                        }
+                        FeatureDefinition::Operation(
+                            FeatureOperation::OffsetSurface { faces, .. }
+                            | FeatureOperation::KnitSurface { faces, .. }
+                            | FeatureOperation::TrimSurface { faces, .. }
+                            | FeatureOperation::ExtendSurface { faces, .. }
+                            | FeatureOperation::Dome { faces, .. },
+                        ) => SelectionSlot::Face(faces),
+                        FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+                            support_faces,
+                            ..
+                        }) => SelectionSlot::Face(support_faces),
+                        FeatureDefinition::Operation(FeatureOperation::Draft { faces, .. }) => {
+                            SelectionSlot::Face(faces)
+                        }
+                        FeatureDefinition::Operation(FeatureOperation::CosmeticThread { face, .. }) => {
+                            SelectionSlot::Face(face)
+                        }
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
+                            extent:
+                                cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                                    side:
+                                        cadmpeg_ir::features::ExtrudeSide {
+                                            termination:
+                                                cadmpeg_ir::features::LinearTermination::ToFace { face, .. }
+                                                | cadmpeg_ir::features::LinearTermination::OffsetFromFace {
+                                                    face,
+                                                    ..
+                                                },
+                                            ..
+                                        },
+                                },
+                            ..
+                        }) => SelectionSlot::Face(face),
+                        FeatureDefinition::Operation(FeatureOperation::Extrude {
+                            extent:
+                                cadmpeg_ir::features::ExtrudeExtent::OneSided {
+                                    side:
+                                        cadmpeg_ir::features::ExtrudeSide {
+                                            termination:
+                                                cadmpeg_ir::features::LinearTermination::ToVertex { vertex },
+                                            ..
+                                        },
+                                },
+                            ..
+                        }) => SelectionSlot::Vertex(vertex),
+                        _ => break 'feature_edit,
+                    };
+                    let native = compact_surface_selection_value(&selection.components);
+                    let producer = if first_component {
+                        selection.producer_feature_refs.first()
+                    } else {
+                        selection.terminal_feature_ref.as_ref()
+                    };
+                    let component = if first_component {
+                        selection.components.first()
+                    } else {
+                        selection.components.last()
+                    };
+                    let generated = producer
+                        .and_then(|producer| feature_ids_by_native.get(producer))
+                        .zip(component)
+                        .and_then(|(feature, component)| Some((feature, component.local_id?)));
+                    match slot {
+                        SelectionSlot::Face(faces) => {
+                            if matches!(
+                                faces,
+                                cadmpeg_ir::features::FaceSelection::Unresolved
+                                    | cadmpeg_ir::features::FaceSelection::Native(_)
+                            ) {
+                                *faces = match generated {
+                                    Some((feature, local_id)) => {
+                                        cadmpeg_ir::features::GeneratedFaceRef::new(
+                                            feature.clone(),
+                                            local_id.to_string(),
+                                        )
+                                        .and_then(|face| {
+                                            cadmpeg_ir::features::FaceSelection::generated(
+                                                vec![face],
+                                                native.clone(),
+                                            )
+                                        })
+                                        .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
+                                    }
+                                    None => cadmpeg_ir::features::FaceSelection::Native(native),
+                                };
                             }
                         }
-                        face
-                    });
-                definition = FeatureDefinition::Operation(FeatureOperation::FullRoundFillet {
-                    groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                        cadmpeg_ir::features::edge_treatments::FullRoundFilletGroup::new(
-                            center_faces,
-                            cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(
-                                side_one_faces,
-                            ),
-                            cadmpeg_ir::features::edge_treatments::FullRoundSideSelection::Explicit(
-                                side_two_faces,
-                            ),
-                        )
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                    ),
-                });
-                break 'feature_edit;
-            }
-            if matches!(
-                &definition,
-                FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                    family: UnresolvedFamily::DatumPlane
-                })
-            ) && feature_selections.len() == 2
-            {
-                for selection in feature_selections {
+                        SelectionSlot::Vertex(vertex) => {
+                            // Edge-endpoint references keep the endpoint selector native.
+                            let retain_native = matches!(
+                                &*vertex,
+                                cadmpeg_ir::features::VertexSelection::Native(value)
+                                    if value.starts_with("sldprt:feature-input:edge-endpoint-ref:")
+                            );
+                            if !retain_native
+                                && matches!(
+                                    vertex,
+                                    cadmpeg_ir::features::VertexSelection::Unresolved
+                                        | cadmpeg_ir::features::VertexSelection::Native(_)
+                                )
+                            {
+                                *vertex = match generated {
+                                    Some((feature, local_id)) => {
+                                        cadmpeg_ir::features::GeneratedVertexRef::new(
+                                            feature.clone(),
+                                            local_id.to_string(),
+                                        )
+                                        .and_then(|vertex| {
+                                            cadmpeg_ir::features::VertexSelection::generated(
+                                                vertex,
+                                                native.clone(),
+                                            )
+                                        })
+                                        .unwrap_or_else(|_| {
+                                            cadmpeg_ir::features::VertexSelection::native(native).unwrap_or(
+                                                cadmpeg_ir::features::VertexSelection::Unresolved,
+                                            )
+                                        })
+                                    }
+                                    None => cadmpeg_ir::features::VertexSelection::native(native)
+                                        .unwrap_or(cadmpeg_ir::features::VertexSelection::Unresolved),
+                                };
+                            }
+                        }
+                    }
                     for producer in selection
                         .producer_feature_refs
                         .iter()
                         .filter_map(|producer| feature_ids_by_native.get(producer))
-                        .filter(|producer| *producer != &feature.id)
+                        .filter(|producer| *producer != feature_id)
                     {
-                        if !feature.dependencies.contains(producer) {
-                            feature.dependencies.insert(producer.clone());
+                        if !dependencies.contains(producer) {
+                            dependencies.insert(producer.clone());
                         }
                     }
                 }
-                break 'feature_edit;
-            }
-            let first_component = matches!(
-                &definition,
-                FeatureDefinition::Operation(FeatureOperation::CosmeticThread { .. })
-            );
-            let Some(selection) = (if first_component {
-                cosmetic_thread_surface_selection_consensus(feature_selections)
-            } else {
-                surface_selection_consensus(feature_selections)
-            }) else {
-                break 'feature_edit;
-            };
-            if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                reference,
-                ..
-            }) = &mut definition
-            {
-                let native = compact_surface_selection_value(&selection.components);
-                let generated = selection
-                    .terminal_feature_ref
-                    .as_ref()
-                    .and_then(|producer| feature_ids_by_native.get(producer))
-                    .zip(selection.components.last())
-                    .and_then(|(feature, component)| Some((feature, component.local_id?)));
-                let face = match generated {
-                    Some((producer, local_id)) => {
-                        if !feature.dependencies.contains(producer) {
-                            feature.dependencies.insert(producer.clone());
-                        }
-                        cadmpeg_ir::features::GeneratedFaceRef::new(
-                            producer.clone(),
-                            local_id.to_string(),
-                        )
-                        .and_then(|face| {
-                            cadmpeg_ir::features::FaceSelection::generated(
-                                vec![face],
-                                native.clone(),
-                            )
-                        })
-                        .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
-                    }
-                    None => cadmpeg_ir::features::FaceSelection::Native(native),
-                };
-                match reference {
-                    Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: existing }) => {
-                        *existing = face;
-                    }
-                    reference @ (None
-                    | Some(
-                        cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { .. },
-                    )) => {
-                        *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face { face });
-                    }
-                    Some(cadmpeg_ir::features::DatumPlaneReference::Feature { .. }) => {}
-                }
-                break 'feature_edit;
-            }
-            let slot = match &mut definition {
-                FeatureDefinition::Operation(FeatureOperation::Thicken { faces, .. }) => {
-                    SelectionSlot::Face(faces)
-                }
-                FeatureDefinition::Operation(FeatureOperation::Shell { removed_faces, .. }) => {
-                    SelectionSlot::Face(removed_faces)
-                }
-                FeatureDefinition::Operation(
-                    FeatureOperation::OffsetSurface { faces, .. }
-                    | FeatureOperation::KnitSurface { faces, .. }
-                    | FeatureOperation::TrimSurface { faces, .. }
-                    | FeatureOperation::ExtendSurface { faces, .. }
-                    | FeatureOperation::Dome { faces, .. },
-                ) => SelectionSlot::Face(faces),
-                FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-                    support_faces,
-                    ..
-                }) => SelectionSlot::Face(support_faces),
-                FeatureDefinition::Operation(FeatureOperation::Draft { faces, .. }) => {
-                    SelectionSlot::Face(faces)
-                }
-                FeatureDefinition::Operation(FeatureOperation::CosmeticThread { face, .. }) => {
-                    SelectionSlot::Face(face)
-                }
-                FeatureDefinition::Operation(FeatureOperation::Extrude {
-                    extent:
-                        cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                            side:
-                                cadmpeg_ir::features::ExtrudeSide {
-                                    termination:
-                                        cadmpeg_ir::features::LinearTermination::ToFace { face, .. }
-                                        | cadmpeg_ir::features::LinearTermination::OffsetFromFace {
-                                            face,
-                                            ..
-                                        },
-                                    ..
-                                },
-                        },
-                    ..
-                }) => SelectionSlot::Face(face),
-                FeatureDefinition::Operation(FeatureOperation::Extrude {
-                    extent:
-                        cadmpeg_ir::features::ExtrudeExtent::OneSided {
-                            side:
-                                cadmpeg_ir::features::ExtrudeSide {
-                                    termination:
-                                        cadmpeg_ir::features::LinearTermination::ToVertex { vertex },
-                                    ..
-                                },
-                        },
-                    ..
-                }) => SelectionSlot::Vertex(vertex),
-                _ => break 'feature_edit,
-            };
-            let native = compact_surface_selection_value(&selection.components);
-            let producer = if first_component {
-                selection.producer_feature_refs.first()
-            } else {
-                selection.terminal_feature_ref.as_ref()
-            };
-            let component = if first_component {
-                selection.components.first()
-            } else {
-                selection.components.last()
-            };
-            let generated = producer
-                .and_then(|producer| feature_ids_by_native.get(producer))
-                .zip(component)
-                .and_then(|(feature, component)| Some((feature, component.local_id?)));
-            match slot {
-                SelectionSlot::Face(faces) => {
-                    if matches!(
-                        faces,
-                        cadmpeg_ir::features::FaceSelection::Unresolved
-                            | cadmpeg_ir::features::FaceSelection::Native(_)
-                    ) {
-                        *faces = match generated {
-                            Some((feature, local_id)) => {
-                                cadmpeg_ir::features::GeneratedFaceRef::new(
-                                    feature.clone(),
-                                    local_id.to_string(),
-                                )
-                                .and_then(|face| {
-                                    cadmpeg_ir::features::FaceSelection::generated(
-                                        vec![face],
-                                        native.clone(),
-                                    )
-                                })
-                                .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
-                            }
-                            None => cadmpeg_ir::features::FaceSelection::Native(native),
-                        };
-                    }
-                }
-                SelectionSlot::Vertex(vertex) => {
-                    // Edge-endpoint references keep the endpoint selector native.
-                    let retain_native = matches!(
-                        &*vertex,
-                        cadmpeg_ir::features::VertexSelection::Native(value)
-                            if value.starts_with("sldprt:feature-input:edge-endpoint-ref:")
-                    );
-                    if !retain_native
-                        && matches!(
-                            vertex,
-                            cadmpeg_ir::features::VertexSelection::Unresolved
-                                | cadmpeg_ir::features::VertexSelection::Native(_)
-                        )
-                    {
-                        *vertex = match generated {
-                            Some((feature, local_id)) => {
-                                cadmpeg_ir::features::GeneratedVertexRef::new(
-                                    feature.clone(),
-                                    local_id.to_string(),
-                                )
-                                .and_then(|vertex| {
-                                    cadmpeg_ir::features::VertexSelection::generated(
-                                        vertex,
-                                        native.clone(),
-                                    )
-                                })
-                                .unwrap_or_else(|_| {
-                                    cadmpeg_ir::features::VertexSelection::native(native).unwrap_or(
-                                        cadmpeg_ir::features::VertexSelection::Unresolved,
-                                    )
-                                })
-                            }
-                            None => cadmpeg_ir::features::VertexSelection::native(native)
-                                .unwrap_or(cadmpeg_ir::features::VertexSelection::Unresolved),
-                        };
-                    }
-                }
-            }
-            for producer in selection
-                .producer_feature_refs
-                .iter()
-                .filter_map(|producer| feature_ids_by_native.get(producer))
-                .filter(|producer| *producer != &feature.id)
-            {
-                if !feature.dependencies.contains(producer) {
-                    feature.dependencies.insert(producer.clone());
-                }
-            }
-        }
-        feature.evaluation.set_definition(definition);
+                Ok(())
+            })();
+        });
+        edit_result?;
     }
     let face_aliases = features
         .iter()
