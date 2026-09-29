@@ -1162,6 +1162,12 @@ impl CompoundPrefixProbe {
         {
             return Self::Malformed("invalid CFB header counts".into());
         }
+        if let Err(error) = ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(fat_count),
+            "probe CFB FAT sectors",
+        ) {
+            return Self::Malformed(error.to_string());
+        }
         let available = (prefix.len() - sector_size) / sector_size;
         let mut fat_sectors = Vec::new();
         let mut header_free_seen = false;
@@ -2054,6 +2060,24 @@ mod tests {
             CompoundPrefixProbe::inspect_with_context(&ctx, &file),
             CompoundPrefixProbe::Malformed(detail)
                 if detail.contains("resource limit on CollectionItems")
+        ));
+    }
+
+    #[test]
+    fn prefix_probe_uses_default_fat_count_limit() {
+        let mut file = fixture();
+        assert!(matches!(
+            CompoundPrefixProbe::inspect(&file),
+            CompoundPrefixProbe::DirectoryEvidence(_)
+        ));
+        let limit = DecodePolicy::default().limits.max_collection_items;
+        let count = u32::try_from(limit + 1).expect("default limit fits FAT count");
+        put_u32(&mut file, 44, count);
+        assert!(matches!(
+            CompoundPrefixProbe::inspect(&file),
+            CompoundPrefixProbe::Malformed(detail)
+                if detail.contains("resource limit on CollectionItems")
+                    && detail.contains(&format!("limit {limit}, used 0, requested {count}"))
         ));
     }
 
