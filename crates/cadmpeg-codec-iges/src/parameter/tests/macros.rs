@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::parameter::{macro_parameter_data, ParameterDefect};
+use crate::parameter::{macro_parameter_data_with_context, MacroDataError, ParameterDefect};
 
 #[test]
 fn macro_statement_spans_refuse_collection_limit_before_growth() {
@@ -12,7 +12,7 @@ fn macro_statement_spans_refuse_collection_limit_before_growth() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let result = crate::parameter::macro_parameter_data_with_context(bytes, b',', b';', Some(&ctx));
+    let result = crate::parameter::macro_parameter_data_with_context(bytes, b',', b';', &ctx);
     assert!(matches!(
         result,
         Err(crate::parameter::MacroDataError::Refusal(
@@ -26,7 +26,7 @@ fn macro_statement_spans_refuse_collection_limit_before_growth() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        crate::parameter::macro_parameter_data_with_context(bytes, b',', b';', Some(&ctx))
+        crate::parameter::macro_parameter_data_with_context(bytes, b',', b';', &ctx)
             .ok()
             .map(|data| data.statement_spans.len()),
         Some(3)
@@ -36,7 +36,10 @@ fn macro_statement_spans_refuse_collection_limit_before_growth() {
 #[test]
 fn macro_parameter_data_keeps_language_delimiters_outside_hollerith_payloads() {
     let bytes = b"306,MACRO,621,X,Y;LET $S=3Ha;b;ENDM;comment bytes";
-    let data = macro_parameter_data(bytes, b',', b';').unwrap();
+    let data = crate::test_support::with_service_context(bytes, |ctx| {
+        macro_parameter_data_with_context(bytes, b',', b';', ctx)
+    })
+    .unwrap();
 
     assert_eq!(data.defined_entity_type, 621);
     assert_eq!(data.statement_spans.len(), 3);
@@ -77,15 +80,23 @@ fn macro_parameter_data_requires_the_assigned_type_and_arguments() {
             ParameterDefect::MacroTerminatorMissing,
         ),
     ] {
-        assert_eq!(
-            macro_parameter_data(bytes, b',', b';').unwrap_err().0,
-            defect
-        );
+        let error = crate::test_support::with_service_context(bytes, |ctx| {
+            macro_parameter_data_with_context(bytes, b',', b';', ctx)
+        })
+        .unwrap_err();
+        assert!(matches!(error, MacroDataError::Defect(found, _) if found == defect));
     }
 }
 
 #[test]
 fn macro_parameter_data_requires_nonempty_language_statements() {
-    let error = macro_parameter_data(b"306,MACRO,621,X;;ENDM;", b',', b';').unwrap_err();
-    assert_eq!(error.0, ParameterDefect::MacroStatementEmpty);
+    let bytes = b"306,MACRO,621,X;;ENDM;";
+    let error = crate::test_support::with_service_context(bytes, |ctx| {
+        macro_parameter_data_with_context(bytes, b',', b';', ctx)
+    })
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        MacroDataError::Defect(ParameterDefect::MacroStatementEmpty, _)
+    ));
 }

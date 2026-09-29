@@ -797,7 +797,7 @@ pub(crate) fn project(
         &cadmpeg_ir::identity_namespace!("rhino", "morph", "feature"),
         key,
     );
-    let ordinal = morph.source_range.start as u64;
+    let ordinal = cadmpeg_core::decode::u64_from_index(morph.source_range.start);
     let mut parameters = BTreeMap::new();
     insert_property(
         ctx,

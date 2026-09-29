@@ -168,7 +168,7 @@ fn subfigure_definition_transform_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<bool, CodecError> {
     match resolve_transform(
         entry.transform,
@@ -211,21 +211,11 @@ fn single_target_cycle(
         ctx.charge_work(1, "iges structure cycle traversal")?;
         if visited.contains(&current) {
             for node in path {
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                    Some(ctx),
-                    visited,
-                    node,
-                    "iges structure visited cycle nodes",
-                )?;
+                ctx.insert_btree_set(visited, node, "iges structure visited cycle nodes")?;
             }
             return Ok(false);
         }
-        if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
-            &mut visiting,
-            current,
-            "iges structure active cycle nodes",
-        )? {
+        if !ctx.insert_btree_set(&mut visiting, current, "iges structure active cycle nodes")? {
             return Ok(true);
         }
         ctx.reserve_vec(&mut path, 1, "iges structure cycle path")?;
@@ -236,12 +226,7 @@ fn single_target_cycle(
             .filter(|target| targets.contains_key(target))
         else {
             for node in path {
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                    Some(ctx),
-                    visited,
-                    node,
-                    "iges structure visited cycle nodes",
-                )?;
+                ctx.insert_btree_set(visited, node, "iges structure visited cycle nodes")?;
             }
             return Ok(false);
         };
@@ -418,12 +403,7 @@ fn array_mask_valid(
         else {
             return Ok(false);
         };
-        if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
-            &mut positions,
-            position,
-            "iges array mask positions",
-        )? {
+        if !ctx.insert_btree_set(&mut positions, position, "iges array mask positions")? {
             return Ok(false);
         }
     }
@@ -1563,12 +1543,10 @@ fn bounded_plane_curve_is_simple(
                 if active.contains(&segment.curve) {
                     return Ok(false);
                 }
-                let active_id = segment.curve.try_clone_for_decode(
-                    Some(context.ctx),
-                    "iges plane boundary child curve ID",
-                )?;
-                cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                    Some(context.ctx),
+                let active_id = segment
+                    .curve
+                    .try_clone_for_decode(context.ctx, "iges plane boundary child curve ID")?;
+                context.ctx.insert_btree_set(
                     active,
                     active_id,
                     "iges plane boundary active curve",
@@ -1739,28 +1717,24 @@ fn plane_boundary_edge(
         .get(&boundary_sequence)
         .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
     let mut active = BTreeSet::new();
-    let active_id =
-        curve_id.try_clone_for_decode(Some(ctx), "iges plane boundary active curve ID")?;
-    if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-        Some(ctx),
-        &mut active,
-        active_id,
-        "iges plane boundary active curve",
-    )? || !bounded_plane_curve_is_simple(
-        geometry,
-        PlaneBoundarySimplicity {
-            index,
-            plane,
-            resolution,
-            transform: Transform::identity(),
-            ctx,
-        },
-        source_is_certified_simple,
-        source_edge
-            .param_range()
-            .map(cadmpeg_ir::units::FiniteVector::get),
-        &mut active,
-    )? {
+    let active_id = curve_id.try_clone_for_decode(ctx, "iges plane boundary active curve ID")?;
+    if !ctx.insert_btree_set(&mut active, active_id, "iges plane boundary active curve")?
+        || !bounded_plane_curve_is_simple(
+            geometry,
+            PlaneBoundarySimplicity {
+                index,
+                plane,
+                resolution,
+                transform: Transform::identity(),
+                ctx,
+            },
+            source_is_certified_simple,
+            source_edge
+                .param_range()
+                .map(cadmpeg_ir::units::FiniteVector::get),
+            &mut active,
+        )?
+    {
         return Err(PlaneBoundaryError::NotSimple);
     }
     if !curve_geometry_coplanar(
@@ -1770,7 +1744,7 @@ fn plane_boundary_edge(
         plane,
         resolution,
         &mut BTreeSet::new(),
-        Some(ctx),
+        ctx,
     )? {
         return Err(PlaneBoundaryError::NotCoplanar);
     }
@@ -1801,23 +1775,23 @@ fn plane_face_draft(
         None
     };
     let body_id = crate::ids::body_admitted(stem, ctx)?;
-    sequences.record_body(&body_id, source_sequence, stem, Some(ctx))?;
+    sequences.record_body(&body_id, source_sequence, stem, ctx)?;
     let region_id = crate::ids::region_admitted(stem, ctx)?;
     let shell_id = crate::ids::shell_admitted(stem, ctx)?;
     let face_id = crate::ids::face_admitted(stem, ctx)?;
-    sequences.record_face(&face_id, source_sequence, Some(ctx))?;
+    sequences.record_face(&face_id, source_sequence, ctx)?;
     let mut candidate = ModelDraft::new();
     let mut loop_ids = ctx.collection_vec(boundary_edges.len(), "iges legacy plane loop IDs")?;
     for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
         let edge_id = edge
             .id
-            .try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
+            .try_clone_for_decode(ctx, "iges structure identity copy")?;
         ctx.reserve_vec(
             &mut candidate.model_mut().edges,
             1,
             "iges legacy plane edge slots",
         )?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
+        ctx.charge_entities(1, "iges_geometry_structure")?;
         candidate.model_mut().edges.push(edge);
         let loop_id = crate::ids::loop_admitted(&stem.slot(boundary_index), ctx)?;
         let coedge_id = crate::ids::coedge_admitted(&stem.slot(boundary_index), ctx)?;
@@ -1826,13 +1800,12 @@ fn plane_face_draft(
             1,
             "iges legacy plane coedge slots",
         )?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
+        ctx.charge_entities(1, "iges_geometry_structure")?;
         candidate.model_mut().coedges.push(Coedge {
-            id: coedge_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
-            owner_loop: loop_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+            id: coedge_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
+            owner_loop: loop_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
             edge: edge_id,
-            radial_next: coedge_id
-                .try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+            radial_next: coedge_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
@@ -1851,10 +1824,10 @@ fn plane_face_draft(
             1,
             "iges legacy plane loop slots",
         )?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
+        ctx.charge_entities(1, "iges_geometry_structure")?;
         candidate.model_mut().loops.push(Loop {
-            id: loop_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
-            face: face_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+            id: loop_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
+            face: face_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
         });
         loop_ids.push(loop_id);
@@ -1870,10 +1843,10 @@ fn plane_face_draft(
         1,
         "iges legacy plane face slots",
     )?;
-    crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
+    ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().faces.push(Face {
-        id: face_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
-        shell: shell_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+        id: face_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
+        shell: shell_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
         surface: crate::ids::surface_admitted(&crate::ids::Stem::directory(surface_sequence), ctx)?,
         sense: Sense::Forward,
         loops: face_loops,
@@ -1884,8 +1857,8 @@ fn plane_face_draft(
     let mut shell_faces = ctx.collection_vec(1, "iges legacy plane shell faces")?;
     shell_faces.push(face_id);
     let shell = Shell::new(
-        shell_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
-        region_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+        shell_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
+        region_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
         shell_faces,
         Vec::new(),
         Vec::new(),
@@ -1896,7 +1869,7 @@ fn plane_face_draft(
         1,
         "iges legacy plane shell slots",
     )?;
-    crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
+    ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().shells.push(shell);
     let mut region_shells = ctx.collection_vec(1, "iges legacy plane region shells")?;
     region_shells.push(shell_id);
@@ -1905,10 +1878,10 @@ fn plane_face_draft(
         1,
         "iges legacy plane region slots",
     )?;
-    crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
+    ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().regions.push(Region {
-        id: region_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
-        body: body_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?,
+        id: region_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
+        body: body_id.try_clone_for_decode(ctx, "iges structure identity copy")?,
         shells: region_shells,
     });
     let mut body_regions = ctx.collection_vec(1, "iges legacy plane body regions")?;
@@ -1918,7 +1891,7 @@ fn plane_face_draft(
         1,
         "iges legacy plane body slots",
     )?;
-    crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_structure")?;
+    ctx.charge_entities(1, "iges_geometry_structure")?;
     candidate.model_mut().bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
@@ -2051,10 +2024,10 @@ fn legacy_single_parent_face(
                 .tail_index(boundary_index),
             ctx,
         )?;
-        edge.id = edge_id.try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
+        edge.id = edge_id.try_clone_for_decode(ctx, "iges structure identity copy")?;
         edge.end = edge
             .start
-            .try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
+            .try_clone_for_decode(ctx, "iges structure identity copy")?;
         boundary_edges.push(edge);
     }
     let stem =
@@ -2352,7 +2325,7 @@ pub(crate) fn placement_affine(
     records: &BTreeMap<u32, &ParameterRecord>,
     length_factor: f64,
     precision: RealPrecision,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(u32, Transform), PlacementAffineError> {
     let definition = u32::try_from(record.integer(1).ok_or(())?).map_err(|_| ())?;
     let translation_component = |index| {
@@ -2437,8 +2410,7 @@ pub(super) fn project(
 ) -> Result<(ProjectionOutcome, BTreeMap<u32, PlacementRejection>), CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
@@ -2447,8 +2419,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -2479,13 +2450,7 @@ pub(super) fn project(
             global.global_table(),
             ctx,
         )? {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                Some(ctx),
-                &mut flows,
-                entry.sequence,
-                flow,
-                "iges flow index nodes",
-            )?;
+            ctx.insert_btree_map(&mut flows, entry.sequence, flow, "iges flow index nodes")?;
         }
     }
 
@@ -2494,8 +2459,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -2698,15 +2663,14 @@ pub(super) fn project(
             _ => true,
         };
         if fields_valid && attachment_valid && reference_designator_valid && owner_kind_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -2722,8 +2686,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -2748,12 +2712,7 @@ pub(super) fn project(
         for _ in 0..attribute_count.unwrap_or_default() {
             let attribute_type_valid = match record.integer(cursor) {
                 Some(value) if (0..=9999).contains(&value) => {
-                    cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                        Some(ctx),
-                        &mut attribute_types,
-                        value,
-                        "iges attribute type nodes",
-                    )?
+                    ctx.insert_btree_set(&mut attribute_types, value, "iges attribute type nodes")?
                 }
                 _ => false,
             };
@@ -2801,15 +2760,13 @@ pub(super) fn project(
             }
         }
         if name_valid && list_type_valid && attributes_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
             if entry.form == 0 {
-                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                    Some(ctx),
+                ctx.insert_btree_map(
                     &mut attribute_shapes,
                     entry.sequence,
                     shape,
@@ -2817,7 +2774,7 @@ pub(super) fn project(
                 )?;
             }
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "attribute-table definition header, value type, value, or display link is invalid"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "attribute-table definition header, value type, value, or display link is invalid"))?;
         }
     }
 
@@ -2826,8 +2783,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -2870,15 +2827,14 @@ pub(super) fn project(
             }
         }
         if values_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -2894,8 +2850,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 316 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -2912,12 +2868,7 @@ pub(super) fn project(
                     record.string(start).zip(record.string(start + 1))
                 {
                     unit_value_valid(unit_type, value)
-                        && cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                            Some(ctx),
-                            &mut types,
-                            unit_type,
-                            "iges unit type nodes",
-                        )?
+                        && ctx.insert_btree_set(&mut types, unit_type, "iges unit type nodes")?
                         && record
                             .number(start + 2)
                             .is_some_and(|scale| scale.is_finite() && scale > 0.0)
@@ -2933,21 +2884,20 @@ pub(super) fn project(
         let directory_valid = entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if units_valid && directory_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "units count, type/value pair, scale factor, uniqueness, or Directory fields are invalid"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "units count, type/value pair, scale factor, uniqueness, or Directory fields are invalid"))?;
         }
     }
 
     for entry in directory.iter().filter(|entry| entry.entity_type == 302) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -2978,14 +2928,13 @@ pub(super) fn project(
             && entry.status.subordinate() == Some(Subordinate::Independent)
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::Definition);
         if directory_valid && classes_valid && cursor == record.parameter_end() {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "associativity form, class count, class flags, item layout, or Directory fields are invalid"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "associativity form, class count, class flags, item layout, or Directory fields are invalid"))?;
         }
     }
 
@@ -2994,8 +2943,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3022,15 +2971,14 @@ pub(super) fn project(
             })
         });
         if members_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3046,8 +2994,8 @@ pub(super) fn project(
             && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3074,8 +3022,7 @@ pub(super) fn project(
                 )
             };
         if valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
@@ -3092,8 +3039,7 @@ pub(super) fn project(
                 ) {
                     Ok(Some((candidate, plane_sequences))) => {
                         for sequence in plane_sequences {
-                            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                                Some(ctx),
+                            ctx.insert_btree_set(
                                 &mut legacy_plane_sequences,
                                 sequence,
                                 "iges legacy plane sequence nodes",
@@ -3107,8 +3053,8 @@ pub(super) fn project(
                         legacy_face_candidates.push((entry, candidate));
                     }
                     Ok(None) => {}
-                    Err(reason) => super::push_optional_entity_loss(
-                        Some(ctx),
+                    Err(reason) => super::push_entity_loss(
+                        ctx,
                         &mut losses,
                         entry,
                         format_args!("{}", reason.non_resource()?),
@@ -3116,7 +3062,7 @@ pub(super) fn project(
                 }
             }
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "predefined associativity counts, class layout, links, back pointers, or structure are invalid"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "predefined associativity counts, class layout, links, back pointers, or structure are invalid"))?;
         }
     }
 
@@ -3156,7 +3102,7 @@ pub(super) fn project(
                     )?;
                     edge.end = edge
                         .start
-                        .try_clone_for_decode(Some(ctx), "iges structure identity copy")?;
+                        .try_clone_for_decode(ctx, "iges structure identity copy")?;
                     let stem = crate::ids::Stem::word_directory(
                         crate::ids::Word::BoundedPlane,
                         entry.sequence,
@@ -3182,16 +3128,16 @@ pub(super) fn project(
                             )?;
                             legacy_face_candidates.push((entry, candidate));
                         }
-                        Err(reason) => super::push_optional_entity_loss(
-                            Some(ctx),
+                        Err(reason) => super::push_entity_loss(
+                            ctx,
                             &mut losses,
                             entry,
                             format_args!("{}", reason.non_resource()?),
                         )?,
                     }
                 }
-                Err(reason) => super::push_optional_entity_loss(
-                    Some(ctx),
+                Err(reason) => super::push_entity_loss(
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", reason.message()?),
@@ -3205,16 +3151,16 @@ pub(super) fn project(
                 global.minimum_resolution_mm(),
                 ctx,
             ) {
-                Ok(_) => super::push_optional_entity_loss(
-                    Some(ctx),
+                Ok(_) => super::push_entity_loss(
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!(
                         "negative bounded plane requires an enclosing positive plane face"
                     ),
                 )?,
-                Err(reason) => super::push_optional_entity_loss(
-                    Some(ctx),
+                Err(reason) => super::push_entity_loss(
+                    ctx,
                     &mut losses,
                     entry,
                     format_args!("{}", reason.message()?),
@@ -3230,8 +3176,8 @@ pub(super) fn project(
             .commit_model_admitted(candidate, ctx)?
             .is_err()
         {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3264,23 +3210,21 @@ pub(super) fn project(
                     })
                 })
         });
-        let cyclic =
-            super::directed_cycle(entry.sequence, &mut visited_flows, Some(ctx), |sequence| {
-                flows
-                    .get(&sequence)
-                    .into_iter()
-                    .flat_map(|flow| flow.continuations.iter().flatten().copied())
-                    .filter(|target| flows.contains_key(target))
-            })?;
+        let cyclic = super::directed_cycle(entry.sequence, &mut visited_flows, ctx, |sequence| {
+            flows
+                .get(&sequence)
+                .into_iter()
+                .flat_map(|flow| flow.continuations.iter().flatten().copied())
+                .filter(|target| flows.contains_key(target))
+        })?;
         if flow_targets_valid && !cyclic {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(Some(ctx), &mut losses, entry, format_args!("{}", "flow class counts, flags, typed links, required back pointers, continuation tree, or directory status is invalid"))?;
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "flow class counts, flags, typed links, required back pointers, continuation tree, or directory status is invalid"))?;
         }
     }
 
@@ -3289,8 +3233,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3304,15 +3248,14 @@ pub(super) fn project(
             _ => false,
         };
         if fields_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3333,8 +3276,7 @@ pub(super) fn project(
             .and_then(|record| record.integer(1))
             .and_then(|value| u32::try_from(value).ok())
         {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                Some(ctx),
+            ctx.insert_btree_map(
                 &mut array_targets,
                 entry.sequence,
                 target,
@@ -3348,8 +3290,8 @@ pub(super) fn project(
         .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3364,7 +3306,7 @@ pub(super) fn project(
         });
         let cyclic = single_target_cycle(entry.sequence, &array_targets, &mut visited_arrays, ctx)?;
         let transform_valid =
-            subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
+            subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?;
         let fields_valid = if entry.entity_type == 412 {
             let scale_valid = record
                 .number_or(2, 1.0)
@@ -3404,15 +3346,14 @@ pub(super) fn project(
                 }
         };
         if target_valid && !cyclic && transform_valid && fields_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3428,8 +3369,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 132 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3476,7 +3417,7 @@ pub(super) fn project(
                 })
         });
         let transform_valid =
-            subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
+            subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?;
         if position_valid
             && optional_pointer_valid(4, None)
             && type_flag_valid
@@ -3491,15 +3432,14 @@ pub(super) fn project(
             && transform_valid
             && entry.status.use_flag(global.global_table()) == Some(UseFlag::LogicalPositional)
         {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges structure decoded sequences",
             )?;
         } else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3516,8 +3456,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3529,16 +3469,15 @@ pub(super) fn project(
             (sequence % 2 == 1).then_some(sequence)
         });
         if let Some(target) = target {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                Some(ctx),
+            ctx.insert_btree_map(
                 &mut solid_instances,
                 entry.sequence,
                 target,
                 "iges solid instance index nodes",
             )?;
         } else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid-instance target pointer is invalid"),
@@ -3560,18 +3499,13 @@ pub(super) fn project(
             }
         });
         let transform_valid =
-            subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
+            subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?;
         let cyclic = single_target_cycle(*sequence, &solid_instances, &mut visited_instances, ctx)?;
         if target_valid && transform_valid && !cyclic {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
-                &mut decoded,
-                *sequence,
-                "iges structure decoded sequences",
-            )?;
+            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3587,8 +3521,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3596,8 +3530,8 @@ pub(super) fn project(
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 0) else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid-assembly item count is not positive"),
@@ -3623,16 +3557,15 @@ pub(super) fn project(
             items.push(item);
         }
         if !items_valid {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "solid-assembly item tuple is invalid"),
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut assemblies,
             entry.sequence,
             SolidAssembly {
@@ -3672,7 +3605,7 @@ pub(super) fn project(
                     global.length_factor_mm(),
                     global.real_precision(),
                     &mut BTreeSet::new(),
-                    Some(ctx),
+                    ctx,
                 ) {
                     Ok(_) => true,
                     Err(error) => {
@@ -3688,7 +3621,7 @@ pub(super) fn project(
                 break;
             }
         }
-        let cyclic = super::directed_cycle(*sequence, &mut visited, Some(ctx), |sequence| {
+        let cyclic = super::directed_cycle(*sequence, &mut visited, ctx, |sequence| {
             assemblies
                 .get(&sequence)
                 .into_iter()
@@ -3696,15 +3629,15 @@ pub(super) fn project(
                 .filter(|item| assemblies.contains_key(item))
         })?;
         let own_transform_valid =
-            subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?;
+            subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?;
         if entry.status.use_flag(global.global_table()) != Some(UseFlag::Definition)
             || (assembly.form == 1) != has_brep
             || !items_valid
             || cyclic
             || !own_transform_valid
         {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3714,12 +3647,7 @@ pub(super) fn project(
             )?;
             continue;
         }
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
-            &mut decoded,
-            *sequence,
-            "iges structure decoded sequences",
-        )?;
+        ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
     }
 
     let mut definitions = BTreeMap::new();
@@ -3729,8 +3657,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 308 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3753,8 +3681,8 @@ pub(super) fn project(
             None => None,
         };
         let (Some(depth), Some(members)) = (depth, members) else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -3764,8 +3692,7 @@ pub(super) fn project(
             )?;
             continue;
         };
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut definitions,
             entry.sequence,
             SubfigureDefinition { depth, members },
@@ -3774,10 +3701,9 @@ pub(super) fn project(
         if name_valid
             && subfigure_definition_directory_fields_valid(entry, global.global_table())
             && subfigure_definition_label_display_valid(entry, &entries)
-            && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?
+            && subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?
         {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut definition_fields_valid,
                 entry.sequence,
                 "iges subfigure valid-definition nodes",
@@ -3792,15 +3718,14 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 408 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                Some(ctx),
+            ctx.insert_btree_map(
                 &mut placement_rejections,
                 entry.sequence,
                 PlacementRejection::MissingRecord,
                 "iges placement rejection nodes",
             )?;
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3818,7 +3743,7 @@ pub(super) fn project(
             &records,
             global.length_factor_mm(),
             global.real_precision(),
-            Some(ctx),
+            ctx,
         ) {
             Ok(_) => true,
             Err(error) => {
@@ -3827,8 +3752,7 @@ pub(super) fn project(
             }
         };
         if !placement_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                Some(ctx),
+            ctx.insert_btree_map(
                 &mut placement_rejections,
                 entry.sequence,
                 PlacementRejection::InvalidPlacement,
@@ -3837,32 +3761,29 @@ pub(super) fn project(
         }
         let Some(definition) = definition else {
             if !placement_rejections.contains_key(&entry.sequence) {
-                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                    Some(ctx),
+                ctx.insert_btree_map(
                     &mut placement_rejections,
                     entry.sequence,
                     PlacementRejection::InvalidDefinition,
                     "iges placement rejection nodes",
                 )?;
             }
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "subfigure-instance definition pointer is invalid"),
             )?;
             continue;
         };
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut instances,
             entry.sequence,
             definition,
             "iges subfigure instance nodes",
         )?;
         if placement_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut instance_fields_valid,
                 entry.sequence,
                 "iges valid subfigure instance nodes",
@@ -3877,8 +3798,8 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 320 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -3905,8 +3826,8 @@ pub(super) fn project(
             .zip(members)
             .map(|((depth, member_count), members)| (depth, member_count, members))
         else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "network definition header or member list is invalid"),
@@ -3935,16 +3856,15 @@ pub(super) fn project(
             "iges network definition connect points",
         )?
         else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "network definition connect-point count is invalid"),
             )?;
             continue;
         };
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut network_definitions,
             entry.sequence,
             NetworkDefinition {
@@ -3960,10 +3880,9 @@ pub(super) fn project(
             && display_valid
             && subfigure_definition_directory_fields_valid(entry, global.global_table())
             && subfigure_definition_label_display_valid(entry, &entries)
-            && subfigure_definition_transform_valid(entry, &entries, &records, global, Some(ctx))?
+            && subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)?
         {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut network_definition_fields_valid,
                 entry.sequence,
                 "iges network valid-definition nodes",
@@ -3978,15 +3897,14 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 420 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                Some(ctx),
+            ctx.insert_btree_map(
                 &mut placement_rejections,
                 entry.sequence,
                 PlacementRejection::MissingRecord,
                 "iges placement rejection nodes",
             )?;
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "Parameter Data record is missing"),
@@ -4027,7 +3945,7 @@ pub(super) fn project(
             &records,
             global.length_factor_mm(),
             global.real_precision(),
-            Some(ctx),
+            ctx,
         ) {
             Ok(_) => true,
             Err(error) => {
@@ -4036,8 +3954,7 @@ pub(super) fn project(
             }
         };
         if !placement_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                Some(ctx),
+            ctx.insert_btree_map(
                 &mut placement_rejections,
                 entry.sequence,
                 PlacementRejection::InvalidPlacement,
@@ -4050,24 +3967,22 @@ pub(super) fn project(
                     Some(definition) => PlacementRejection::InvalidMetadata { definition },
                     None => PlacementRejection::InvalidDefinition,
                 };
-                cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-                    Some(ctx),
+                ctx.insert_btree_map(
                     &mut placement_rejections,
                     entry.sequence,
                     rejection,
                     "iges placement rejection nodes",
                 )?;
             }
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!("{}", "network instance definition or count is invalid"),
             )?;
             continue;
         };
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut network_instances,
             entry.sequence,
             NetworkInstance {
@@ -4077,8 +3992,7 @@ pub(super) fn project(
             "iges network instance nodes",
         )?;
         if placement_valid && type_flag_valid && designator_valid && display_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut network_instance_fields_valid,
                 entry.sequence,
                 "iges valid network instance nodes",
@@ -4114,15 +4028,10 @@ pub(super) fn project(
             }
         });
         if definition_fields_valid.contains(sequence) && nesting_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
-                &mut decoded,
-                *sequence,
-                "iges structure decoded sequences",
-            )?;
+            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -4138,18 +4047,13 @@ pub(super) fn project(
             && definition_fields_valid.contains(definition_sequence)
             && decoded.contains(definition_sequence)
         {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
-                &mut decoded,
-                *sequence,
-                "iges structure decoded sequences",
-            )?;
+            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
             placement_rejections
                 .entry(*sequence)
                 .or_insert(PlacementRejection::InvalidDefinition);
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -4184,15 +4088,10 @@ pub(super) fn project(
             }
         });
         if network_definition_fields_valid.contains(sequence) && nesting_valid {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
-                &mut decoded,
-                *sequence,
-                "iges structure decoded sequences",
-            )?;
+            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(
@@ -4218,12 +4117,7 @@ pub(super) fn project(
             && definition_valid
             && decoded.contains(&instance.definition)
         {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
-                &mut decoded,
-                *sequence,
-                "iges structure decoded sequences",
-            )?;
+            ctx.insert_btree_set(&mut decoded, *sequence, "iges structure decoded sequences")?;
         } else {
             placement_rejections.entry(*sequence).or_insert(
                 if decoded.contains(&instance.definition) {
@@ -4234,8 +4128,8 @@ pub(super) fn project(
                     PlacementRejection::InvalidDefinition
                 },
             );
-            super::push_optional_entity_loss(
-                Some(ctx),
+            super::push_entity_loss(
+                ctx,
                 &mut losses,
                 entry,
                 format_args!(

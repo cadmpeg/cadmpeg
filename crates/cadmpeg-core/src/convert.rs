@@ -1,46 +1,44 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked conversions between numeric representations.
 
-const MAX_EXACT_F64_INTEGER: u64 = 9_007_199_254_740_992;
-const MIN_EXACT_F64_INTEGER: i64 = -9_007_199_254_740_992;
-const MAX_EXACT_SIGNED_F64_INTEGER: i64 = 9_007_199_254_740_992;
-
-/// Converts an index when its integer value is exactly representable in `f64`.
+/// Converts zero or an index with at most 53 significant bits after removing trailing zeros.
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
-    reason = "the bound admits only exactly representable integers"
+    reason = "zero or at most 53 significant bits after removing trailing zeros is exact in f64"
 )]
 pub fn f64_from_index(value: usize) -> Option<f64> {
-    if u64::try_from(value).ok()? <= MAX_EXACT_F64_INTEGER {
+    if value == 0 || usize::BITS - value.leading_zeros() - value.trailing_zeros() <= 53 {
         Some(value as f64)
     } else {
         None
     }
 }
 
-/// Converts an unsigned integer when its value is exactly representable in `f64`.
+/// Converts zero or an unsigned integer with at most 53 significant bits after removing trailing zeros.
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
-    reason = "the bound admits only exactly representable integers"
+    reason = "zero or at most 53 significant bits after removing trailing zeros is exact in f64"
 )]
 pub fn f64_from_u64(value: u64) -> Option<f64> {
-    if value <= MAX_EXACT_F64_INTEGER {
+    if value == 0 || u64::BITS - value.leading_zeros() - value.trailing_zeros() <= 53 {
         Some(value as f64)
     } else {
         None
     }
 }
 
-/// Converts a signed integer when its value is exactly representable in `f64`.
+/// Converts zero or a signed integer whose magnitude has at most 53 significant bits
+/// after removing trailing zeros. This includes `i64::MIN`.
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
-    reason = "both bounds admit only exactly representable integers"
+    reason = "zero or a magnitude with at most 53 significant bits after removing trailing zeros is exact in f64"
 )]
 pub fn f64_from_i64(value: i64) -> Option<f64> {
-    if (MIN_EXACT_F64_INTEGER..=MAX_EXACT_SIGNED_F64_INTEGER).contains(&value) {
+    let magnitude = value.unsigned_abs();
+    if magnitude == 0 || u64::BITS - magnitude.leading_zeros() - magnitude.trailing_zeros() <= 53 {
         Some(value as f64)
     } else {
         None
@@ -203,6 +201,7 @@ mod tests {
 
     #[test]
     fn f64_from_index_checks_exact_boundary() {
+        assert_eq!(f64_from_index(0), Some(0.0));
         #[cfg(target_pointer_width = "64")]
         {
             assert_eq!(
@@ -210,6 +209,15 @@ mod tests {
                 Some(9_007_199_254_740_992.0)
             );
             assert_eq!(f64_from_index(9_007_199_254_740_993), None);
+            assert_eq!(
+                f64_from_index(9_007_199_254_740_994),
+                Some(9_007_199_254_740_994.0)
+            );
+            assert_eq!(f64_from_index(usize::MAX), None);
+            assert_eq!(
+                f64_from_index(1_usize << 63),
+                Some(9_223_372_036_854_775_808.0)
+            );
         }
         #[cfg(target_pointer_width = "32")]
         assert_eq!(f64_from_index(usize::MAX), Some(4_294_967_295.0));
@@ -217,6 +225,13 @@ mod tests {
 
     #[test]
     fn f64_from_u64_checks_exact_boundary() {
+        assert_eq!(f64_from_u64(0), Some(0.0));
+        assert_eq!(f64_from_u64(u64::MAX), None);
+        assert_eq!(f64_from_u64(1_u64 << 63), Some(9_223_372_036_854_775_808.0));
+        assert_eq!(
+            f64_from_u64(9_007_199_254_740_994),
+            Some(9_007_199_254_740_994.0)
+        );
         assert_eq!(
             f64_from_u64(9_007_199_254_740_992),
             Some(9_007_199_254_740_992.0)
@@ -226,6 +241,17 @@ mod tests {
 
     #[test]
     fn f64_from_i64_checks_both_exact_boundaries() {
+        assert_eq!(f64_from_i64(0), Some(0.0));
+        assert_eq!(f64_from_i64(i64::MIN), Some(-9_223_372_036_854_775_808.0));
+        assert_eq!(f64_from_i64(i64::MAX), None);
+        assert_eq!(
+            f64_from_i64(9_007_199_254_740_994),
+            Some(9_007_199_254_740_994.0)
+        );
+        assert_eq!(
+            f64_from_i64(-9_007_199_254_740_994),
+            Some(-9_007_199_254_740_994.0)
+        );
         assert_eq!(
             f64_from_i64(-9_007_199_254_740_992),
             Some(-9_007_199_254_740_992.0)

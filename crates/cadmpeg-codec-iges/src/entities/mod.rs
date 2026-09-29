@@ -35,73 +35,35 @@ fn push_attributed_loss(
     Ok(())
 }
 
-fn push_optional_entity_loss(
-    ctx: Option<&DecodeContext<'_>>,
+fn push_entity_loss(
+    ctx: &DecodeContext<'_>,
     losses: &mut Vec<LossNote>,
     entry: &DirectoryEntry,
     reason: fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    match ctx {
-        Some(ctx) => push_attributed_loss(
-            ctx,
-            losses,
-            entry,
-            IgesLossCode::EntityNotProjected,
-            format_args!(
-                "IGES entity type {} form {} was not projected: {reason}",
-                entry.entity_type, entry.form
-            ),
+    push_attributed_loss(
+        ctx,
+        losses,
+        entry,
+        IgesLossCode::EntityNotProjected,
+        format_args!(
+            "IGES entity type {} form {} was not projected: {reason}",
+            entry.entity_type, entry.form
         ),
-        None => {
-            losses.push(
-                IgesLossCode::EntityNotProjected
-                    .note(format!(
-                        "IGES entity type {} form {} was not projected: {reason}",
-                        entry.entity_type, entry.form
-                    ))
-                    .with_provenance(entry.loss_provenance()),
-            );
-            Ok(())
-        }
-    }
+    )
 }
 
-fn push_optional_attributed_loss(
-    ctx: Option<&DecodeContext<'_>>,
-    losses: &mut Vec<LossNote>,
-    entry: &DirectoryEntry,
-    code: IgesLossCode,
-    message: fmt::Arguments<'_>,
-) -> Result<(), CodecError> {
-    match ctx {
-        Some(ctx) => push_attributed_loss(ctx, losses, entry, code, message),
-        None => {
-            losses.push(
-                code.note(format!("{message}"))
-                    .with_provenance(entry.loss_provenance()),
-            );
-            Ok(())
-        }
-    }
-}
-
-fn non_resource_error(
-    error: CodecError,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<String, CodecError> {
+fn non_resource_error(error: CodecError, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
     match error {
         CodecError::ResourceLimit(_) => Err(error),
-        other => match ctx {
-            Some(ctx) => ctx.format_retained(format_args!("{other}"), "iges diagnostic error text"),
-            None => Ok(other.to_string()),
-        },
+        other => ctx.format_retained(format_args!("{other}"), "iges diagnostic error text"),
     }
 }
 
 fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     sequence: u32,
     visited: &mut BTreeSet<u32>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     successors: impl Fn(u32) -> I,
 ) -> Result<bool, CodecError> {
     if visited.contains(&sequence) {
@@ -109,59 +71,30 @@ fn directed_cycle<I: DoubleEndedIterator<Item = u32>>(
     }
     let mut active = BTreeSet::new();
     let mut stack = Vec::new();
-    cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-        ctx,
-        &mut stack,
-        1,
-        "iges cycle stack",
-    )?;
+    ctx.reserve_vec(&mut stack, 1, "iges cycle stack")?;
     stack.push((sequence, false));
     while let Some((current, expanded)) = stack.pop() {
-        if let Some(ctx) = ctx {
-            ctx.charge_work(1, "iges cycle work")?;
-        }
+        ctx.charge_work(1, "iges cycle work")?;
         if expanded {
             active.remove(&current);
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                ctx,
-                visited,
-                current,
-                "iges cycle visited",
-            )?;
+            ctx.insert_btree_set(visited, current, "iges cycle visited")?;
             continue;
         }
         if visited.contains(&current) {
             continue;
         }
-        if !cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            ctx,
-            &mut active,
-            current,
-            "iges cycle active",
-        )? {
+        if !ctx.insert_btree_set(&mut active, current, "iges cycle active")? {
             return Ok(true);
         }
-        cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-            ctx,
-            &mut stack,
-            1,
-            "iges cycle stack",
-        )?;
+        ctx.reserve_vec(&mut stack, 1, "iges cycle stack")?;
         stack.push((current, true));
         for target in successors(current).rev() {
-            if let Some(ctx) = ctx {
-                ctx.charge_work(1, "iges cycle work")?;
-            }
+            ctx.charge_work(1, "iges cycle work")?;
             if active.contains(&target) {
                 return Ok(true);
             }
             if !visited.contains(&target) {
-                cadmpeg_core::decode::DecodeContext::reserve_vec_optional(
-                    ctx,
-                    &mut stack,
-                    1,
-                    "iges cycle stack",
-                )?;
+                ctx.reserve_vec(&mut stack, 1, "iges cycle stack")?;
                 stack.push((target, false));
             }
         }
@@ -219,7 +152,6 @@ mod csg;
 pub(crate) mod curve_conversion;
 pub(crate) mod drawing;
 pub(crate) mod geometry;
-mod geometry_copy;
 mod offsets;
 mod presentation;
 mod splines;

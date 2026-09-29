@@ -33,7 +33,7 @@ pub(super) fn decode(
                         id,
                         "document identifier",
                         StepLossCode::MetadataStringInvalid,
-                        Some(ctx),
+                        ctx,
                     )
                 })
                 .transpose()?
@@ -49,7 +49,7 @@ pub(super) fn decode(
                         id,
                         "document name",
                         StepLossCode::MetadataStringInvalid,
-                        Some(ctx),
+                        ctx,
                     )
                 })
                 .transpose()?
@@ -99,7 +99,7 @@ pub(super) fn decode(
                         id,
                         "document reference source",
                         StepLossCode::MetadataStringInvalid,
-                        Some(ctx),
+                        ctx,
                     )
                 })
                 .transpose()?
@@ -225,7 +225,7 @@ fn source_text(
             record_id,
             field,
             StepLossCode::MetadataStringInvalid,
-            Some(ctx),
+            ctx,
         ),
         Value::Typed(_, value) => source_text(exchange, value, losses, record_id, field, ctx),
         _ => Ok(None),

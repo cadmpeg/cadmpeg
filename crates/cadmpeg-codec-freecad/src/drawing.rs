@@ -144,13 +144,16 @@ pub(crate) fn transfer_neutral(
     properties: &[PropertyRecord],
 ) -> Result<(), CodecError> {
     let mut neutral_ids = HashMap::new();
-    ctx.charge_collection_items(records.len() as u64, "fcstd drawing neutral identities")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(records.len()),
+        "fcstd drawing neutral identities",
+    )?;
     neutral_ids.try_reserve(records.len()).map_err(|_| {
         cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::CollectionItems,
                 ctx.policy().limits.max_collection_items,
-                records.len() as u64,
+                cadmpeg_core::decode::u64_from_index(records.len()),
                 "fcstd drawing neutral identities",
             ),
         )
@@ -311,7 +314,13 @@ pub(crate) fn transfer_neutral(
             kind: classify(record.kind.as_str()),
             runtime_type: ctx
                 .copy_retained_text(record.kind.as_str(), "fcstd drawing neutral runtime type")?,
-            order: order as u32,
+            order: u32::try_from(order).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "FreeCAD ordinal",
+                    u64::from(u32::MAX),
+                    cadmpeg_core::decode::u64_from_index(order),
+                )
+            })?,
             visible: None,
             relationships: crate::resource::named_entries_charged(
                 ctx,

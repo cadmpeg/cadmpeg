@@ -13,7 +13,7 @@
 
 use crate::kernel_header::RefWidth;
 use crate::stream_error::{StreamError, StreamFailure, StreamFormat};
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use std::sync::Arc;
 
 pub(crate) fn int_le_at(bytes: &[u8], offset: usize, width: RefWidth) -> Option<i64> {
@@ -398,7 +398,7 @@ pub(crate) fn lex(
             p + 8,
         ),
         0x07 => {
-            let len = *bytes.get(p).ok_or_else(truncated)? as usize;
+            let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
             (Lexed::Str(string(p + 1, len)?), p + 1 + len)
         }
         0x08 => {
@@ -420,11 +420,11 @@ pub(crate) fn lex(
             (Lexed::Value(Token::Ref(v)), p + ref_width.bytes())
         }
         0x0d => {
-            let len = *bytes.get(p).ok_or_else(truncated)? as usize;
+            let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
             (Lexed::Ident(string(p + 1, len)?), p + 1 + len)
         }
         0x0e => {
-            let len = *bytes.get(p).ok_or_else(truncated)? as usize;
+            let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
             (Lexed::SubIdent(string(p + 1, len)?), p + 1 + len)
         }
         0x0f => (Lexed::Value(Token::SubtypeOpen), p),
@@ -475,7 +475,7 @@ pub fn frame(
     limit: usize,
     ref_width: RefWidth,
 ) -> Result<Vec<Record>, StreamFailure> {
-    frame_impl(Some(ctx), bytes, start, limit, ref_width, false)
+    frame_impl(ctx, bytes, start, limit, ref_width, false)
 }
 
 /// Frame a history-section slice whose final record ends at the enclosing
@@ -487,28 +487,7 @@ pub fn frame_history(
     limit: usize,
     ref_width: RefWidth,
 ) -> Result<Vec<Record>, StreamFailure> {
-    frame_impl(Some(ctx), bytes, start, limit, ref_width, true)
-}
-
-/// Frame source records for an encoder edit, outside a decode session.
-pub(crate) fn frame_for_edit(
-    bytes: &[u8],
-    start: usize,
-    limit: usize,
-    ref_width: RefWidth,
-) -> Result<Vec<Record>, StreamFailure> {
-    frame_impl(None, bytes, start, limit, ref_width, false)
-}
-
-fn charge_items(
-    ctx: Option<&DecodeContext<'_>>,
-    count: u64,
-    operation: &'static str,
-) -> Result<(), StreamFailure> {
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(count, operation)?;
-    }
-    Ok(())
+    frame_impl(ctx, bytes, start, limit, ref_width, true)
 }
 
 fn reserve_framed_vec<T>(
@@ -527,40 +506,8 @@ fn reserve_framed_vec<T>(
     })
 }
 
-fn charge_retained(
-    ctx: Option<&DecodeContext<'_>>,
-    bytes: u64,
-    operation: &'static str,
-) -> Result<(), StreamFailure> {
-    if let Some(ctx) = ctx {
-        ctx.charge_retained(bytes, operation)?;
-    }
-    Ok(())
-}
-
-fn grow_scratch(
-    scratch: &mut Option<ScopedReservation<'_>>,
-    bytes: u64,
-) -> Result<(), StreamFailure> {
-    if let Some(scratch) = scratch {
-        scratch.grow(bytes)?;
-    }
-    Ok(())
-}
-
-fn refuse_size(ctx: Option<&DecodeContext<'_>>, operation: &'static str) -> StreamFailure {
-    match ctx {
-        Some(ctx) => StreamFailure::Resource(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX)),
-        None => StreamFailure::Parse(StreamError {
-            format: StreamFormat::Binary,
-            offset: 0,
-            reason: format!("{operation} exceeds the address space"),
-        }),
-    }
-}
-
 fn frame_impl(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     limit: usize,
@@ -592,10 +539,7 @@ fn frame_impl(
 
     while pos < limit {
         let rec_start = pos;
-        let mut scratch = match ctx {
-            Some(ctx) => Some(ctx.reserve_scoped(0, "frame SAB record")?),
-            None => None,
-        };
+        let mut scratch = ctx.reserve_scoped(0, "frame SAB record")?;
         let mut name_parts: Vec<String> = Vec::new();
         let mut tokens: Vec<Token> = Vec::new();
         let mut depth_guards = Vec::new();
@@ -613,9 +557,7 @@ fn frame_impl(
                 break;
             }
             let token_offset = pos;
-            if let Some(ctx) = ctx {
-                ctx.charge_work(1, "lex SAB token")?;
-            }
+            ctx.charge_work(1, "lex SAB token")?;
             let (lexed, next) = lex(bytes, pos, ref_width)?;
             pos = next;
             match lexed {
@@ -629,27 +571,23 @@ fn frame_impl(
                     .into());
                 }
                 Lexed::SubIdent(s) if !name_done => {
-                    charge_items(ctx, 1, "frame SAB name part")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<String>() as u64)?;
+                    ctx.charge_collection_items(1, "frame SAB name part")?;
+                    scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        String,
+                    >(
+                    )))?;
                     reserve_framed_vec(&mut name_parts, "frame SAB name part")?;
-                    let part = match (ctx, scratch.as_mut()) {
-                        (Some(ctx), Some(scratch)) => {
-                            ctx.copy_scoped_text(s, scratch, "frame SAB name part")?
-                        }
-                        _ => s.to_owned(),
-                    };
+                    let part = ctx.copy_scoped_text(s, &mut scratch, "frame SAB name part")?;
                     name_parts.push(part);
                 }
                 Lexed::Ident(s) if !name_done => {
-                    charge_items(ctx, 1, "frame SAB name part")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<String>() as u64)?;
+                    ctx.charge_collection_items(1, "frame SAB name part")?;
+                    scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        String,
+                    >(
+                    )))?;
                     reserve_framed_vec(&mut name_parts, "frame SAB name part")?;
-                    let part = match (ctx, scratch.as_mut()) {
-                        (Some(ctx), Some(scratch)) => {
-                            ctx.copy_scoped_text(s, scratch, "frame SAB name part")?
-                        }
-                        _ => s.to_owned(),
-                    };
+                    let part = ctx.copy_scoped_text(s, &mut scratch, "frame SAB name part")?;
                     name_parts.push(part);
                     name_done = true;
                     // The history partition opens with the delta_state record.
@@ -676,58 +614,54 @@ fn frame_impl(
                         embedded_history_edge = true;
                     }
                     payload_start = false;
-                    charge_items(ctx, 1, "frame SAB token")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
+                    ctx.charge_collection_items(1, "frame SAB token")?;
+                    scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        Token,
+                    >(
+                    )))?;
                     reserve_framed_vec(&mut tokens, "frame SAB token")?;
-                    let owned = match ctx {
-                        Some(ctx) => {
-                            ctx.copy_retained_text(identifier, "retain SAB token string")?
-                        }
-                        None => identifier.to_owned(),
-                    };
+                    let owned = ctx.copy_retained_text(identifier, "retain SAB token string")?;
                     tokens.push(Token::Ident(owned));
                 }
                 Lexed::SubIdent(identifier) => {
                     payload_start = false;
-                    charge_items(ctx, 1, "frame SAB token")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
+                    ctx.charge_collection_items(1, "frame SAB token")?;
+                    scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        Token,
+                    >(
+                    )))?;
                     reserve_framed_vec(&mut tokens, "frame SAB token")?;
-                    let owned = match ctx {
-                        Some(ctx) => {
-                            ctx.copy_retained_text(identifier, "retain SAB token string")?
-                        }
-                        None => identifier.to_owned(),
-                    };
+                    let owned = ctx.copy_retained_text(identifier, "retain SAB token string")?;
                     tokens.push(Token::SubIdent(owned));
                 }
                 Lexed::Str(value) => {
                     payload_start = false;
                     name_done = true;
-                    charge_items(ctx, 1, "frame SAB token")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
+                    ctx.charge_collection_items(1, "frame SAB token")?;
+                    scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        Token,
+                    >(
+                    )))?;
                     reserve_framed_vec(&mut tokens, "frame SAB token")?;
-                    let owned = match ctx {
-                        Some(ctx) => ctx.copy_retained_text(value, "retain SAB token string")?,
-                        None => value.to_owned(),
-                    };
+                    let owned = ctx.copy_retained_text(value, "retain SAB token string")?;
                     tokens.push(Token::Str(owned));
                 }
                 Lexed::Value(Token::SubtypeOpen) => {
                     payload_start = false;
-                    let guard = match ctx {
-                        Some(ctx) => Some(ctx.enter_nested("frame SAB subtype")?),
-                        None => None,
-                    };
-                    charge_items(ctx, 1, "frame SAB subtype guards")?;
-                    grow_scratch(
-                        &mut scratch,
-                        std::mem::size_of::<Option<cadmpeg_core::decode::DepthGuard<'_>>>() as u64,
-                    )?;
+                    let guard = ctx.enter_nested("frame SAB subtype")?;
+                    ctx.charge_collection_items(1, "frame SAB subtype guards")?;
+                    scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        cadmpeg_core::decode::DepthGuard<'_>,
+                    >(
+                    )))?;
                     reserve_framed_vec(&mut depth_guards, "frame SAB subtype guards")?;
                     depth_guards.push(guard);
                     name_done = true;
-                    charge_items(ctx, 1, "frame SAB token")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
+                    ctx.charge_collection_items(1, "frame SAB token")?;
+                    scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        Token,
+                    >(
+                    )))?;
                     reserve_framed_vec(&mut tokens, "frame SAB token")?;
                     tokens.push(Token::SubtypeOpen);
                 }
@@ -741,16 +675,22 @@ fn frame_impl(
                         }
                         .into());
                     }
-                    charge_items(ctx, 1, "frame SAB token")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
+                    ctx.charge_collection_items(1, "frame SAB token")?;
+                    scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        Token,
+                    >(
+                    )))?;
                     reserve_framed_vec(&mut tokens, "frame SAB token")?;
                     tokens.push(Token::SubtypeClose);
                 }
                 Lexed::Value(v) => {
                     payload_start = false;
                     name_done = true;
-                    charge_items(ctx, 1, "frame SAB token")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
+                    ctx.charge_collection_items(1, "frame SAB token")?;
+                    scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        Token,
+                    >(
+                    )))?;
                     reserve_framed_vec(&mut tokens, "frame SAB token")?;
                     tokens.push(v);
                 }
@@ -769,13 +709,18 @@ fn frame_impl(
             .iter()
             .try_fold(0usize, |used, part| used.checked_add(part.len()))
             .and_then(|length| length.checked_add(separators))
-            .ok_or_else(|| refuse_size(ctx, "SAB record name"))?;
-        charge_retained(
-            ctx,
+            .ok_or_else(|| {
+                StreamFailure::Resource(ctx.refuse_codec_limit(
+                    "SAB record name",
+                    u64::MAX,
+                    u64::MAX,
+                ))
+            })?;
+        ctx.charge_retained(
             if embedded_history_edge {
                 4
             } else {
-                name_bytes as u64
+                cadmpeg_core::decode::u64_from_index(name_bytes)
             },
             "retain SAB record name",
         )?;
@@ -805,12 +750,19 @@ fn frame_impl(
         let token_bytes = tokens
             .len()
             .checked_mul(std::mem::size_of::<Token>())
-            .ok_or_else(|| refuse_size(ctx, "SAB token bytes"))?;
-        charge_retained(ctx, token_bytes as u64, "retain SAB tokens")?;
-        charge_items(ctx, 1, "frame SAB record")?;
-        if let Some(ctx) = ctx {
-            ctx.charge_entities(1, "admit SAB native record")?;
-        }
+            .ok_or_else(|| {
+                StreamFailure::Resource(ctx.refuse_codec_limit(
+                    "SAB token bytes",
+                    u64::MAX,
+                    u64::MAX,
+                ))
+            })?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(token_bytes),
+            "retain SAB tokens",
+        )?;
+        ctx.charge_collection_items(1, "frame SAB record")?;
+        ctx.charge_entities(1, "admit SAB native record")?;
         reserve_framed_vec(&mut records, "frame SAB record")?;
         records.push(Record {
             index,
@@ -1156,7 +1108,10 @@ mod tests {
             let mut bytes = vec![0x0d, 4];
             bytes.extend_from_slice(b"tspl");
             bytes.push(0x09);
-            bytes.extend_from_slice(&(text.len() as u64).to_le_bytes()[..ref_width.bytes()]);
+            bytes.extend_from_slice(
+                &(cadmpeg_core::decode::u64_from_index(text.len())).to_le_bytes()
+                    [..ref_width.bytes()],
+            );
             bytes.extend_from_slice(text.as_bytes());
             bytes.push(0x04);
             bytes.extend_from_slice(&7i64.to_le_bytes()[..ref_width.bytes()]);

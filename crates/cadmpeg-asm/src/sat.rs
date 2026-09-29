@@ -552,7 +552,9 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 _ => {}
             }
             ctx.charge_collection_items(1, "frame SAT primitive")?;
-            scratch.grow(std::mem::size_of::<Prim>() as u64)?;
+            scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                Prim,
+            >()))?;
             ctx.charge_work(1, "lex SAT primitive")?;
             prims.try_reserve(1).map_err(|_| {
                 cadmpeg_core::CodecError::ResourceLimit(
@@ -572,11 +574,14 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             .len()
             .checked_mul(candidates)
             .ok_or_else(|| ctx.refuse_codec_limit("SAT typed token count", u64::MAX, u64::MAX))?;
-        ctx.charge_work(possible_tokens as u64, "type SAT tokens")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(possible_tokens),
+            "type SAT tokens",
+        )?;
         let token_bytes = possible_tokens
             .checked_mul(std::mem::size_of::<Token>())
             .ok_or_else(|| ctx.refuse_codec_limit("SAT token bytes", u64::MAX, u64::MAX))?;
-        scratch.grow(token_bytes as u64)?;
+        scratch.grow(cadmpeg_core::decode::u64_from_index(token_bytes))?;
         let string_bytes = prims
             .iter()
             .try_fold(0usize, |used, prim| {
@@ -587,7 +592,10 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 used.checked_add(extra)
             })
             .ok_or_else(|| ctx.refuse_codec_limit("SAT token strings", u64::MAX, u64::MAX))?;
-        ctx.charge_retained(string_bytes as u64, "retain SAT typed strings")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(string_bytes),
+            "retain SAT typed strings",
+        )?;
         let tokens = type_record(ctx, head, &prims, scale).map_err(|failure| match failure {
             TypedRecordFailure::Resource(error) => StreamFailure::Resource(error),
             TypedRecordFailure::Type(failure) => {
@@ -603,12 +611,12 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             }
         })?;
         ctx.charge_retained(
-            (tokens.len() * std::mem::size_of::<Token>()) as u64,
+            cadmpeg_core::decode::u64_from_index(tokens.len() * std::mem::size_of::<Token>()),
             "retain SAT typed tokens",
         )?;
         ctx.charge_collection_items(1, "frame SAT record")?;
         ctx.admit_entities(
-            (records.len() + 1) as u64,
+            cadmpeg_core::decode::u64_from_index(records.len() + 1),
             &mut admitted_entities,
             "admit SAT native records",
         )?;
@@ -794,7 +802,7 @@ struct Cur<'a, 'c, 'p> {
     scale: f64,
     failure: Option<TypeFailure>,
     resource: Option<cadmpeg_core::CodecError>,
-    ctx: Option<&'c DecodeContext<'p>>,
+    ctx: &'c DecodeContext<'p>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -841,22 +849,9 @@ impl<'a> Cur<'a, '_, '_> {
         if self.resource.is_some() {
             return;
         }
-        if let Some(ctx) = self.ctx {
-            if let Err(error) = ctx.charge_collection_items(1, "type SAT tokens") {
-                self.resource = Some(error);
-                return;
-            }
-            if out.try_reserve(1).is_err() {
-                self.resource = Some(CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("type SAT tokens"),
-                        0,
-                        1,
-                        "type SAT tokens",
-                    ),
-                ));
-                return;
-            }
+        if let Err(error) = self.ctx.reserve_vec(out, 1, "type SAT tokens") {
+            self.resource = Some(error);
+            return;
         }
         out.push(token);
     }
@@ -865,16 +860,15 @@ impl<'a> Cur<'a, '_, '_> {
         if self.resource.is_some() {
             return;
         }
-        let copy = if let Some(ctx) = self.ctx {
-            match ctx.copy_retained_text(value, "retain SAT typed string") {
-                Ok(copy) => copy,
-                Err(error) => {
-                    self.resource = Some(error);
-                    return;
-                }
+        let copy = match self
+            .ctx
+            .copy_retained_text(value, "retain SAT typed string")
+        {
+            Ok(copy) => copy,
+            Err(error) => {
+                self.resource = Some(error);
+                return;
             }
-        } else {
-            value.to_owned()
         };
         self.push_token(
             out,
@@ -943,7 +937,7 @@ impl<'a> Cur<'a, '_, '_> {
             }
             Prim::Integer(value) => {
                 self.pos += 1;
-                Some(*value as f64)
+                cadmpeg_core::convert::f64_from_i64(*value)
             }
             _ => None,
         }
@@ -1026,25 +1020,13 @@ impl<'a> Cur<'a, '_, '_> {
             self.pos = mark;
             return None;
         }
-        if let Some(ctx) = self.ctx {
-            if let Err(error) = ctx.charge_collection_items(count as u64, "SAT float array values")
-            {
+        let mut values = match self.ctx.collection_vec(count, "SAT float array values") {
+            Ok(values) => values,
+            Err(error) => {
                 self.resource = Some(error);
                 return None;
             }
-        }
-        let mut values = Vec::new();
-        if values.try_reserve_exact(count).is_err() {
-            self.resource = self.ctx.map(|_| {
-                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("SAT float array values"),
-                    0,
-                    cadmpeg_core::decode::u64_from_index(count),
-                    "SAT float array values",
-                ))
-            });
-            return None;
-        }
+        };
         for _ in 0..count {
             let Some(value) = self.num() else {
                 self.pos = mark;
@@ -1053,31 +1035,21 @@ impl<'a> Cur<'a, '_, '_> {
             values.push(value);
         }
         let Some(output_count) = count.checked_add(1) else {
-            self.resource = self
-                .ctx
-                .map(|ctx| ctx.refuse_codec_limit("SAT float array tokens", u64::MAX, u64::MAX));
+            self.resource = Some(self.ctx.refuse_codec_limit(
+                "SAT float array tokens",
+                u64::MAX,
+                u64::MAX,
+            ));
             return None;
         };
-        if let Some(ctx) = self.ctx {
-            if let Err(error) =
-                ctx.charge_collection_items(count as u64, "type SAT float array tokens")
-            {
-                self.resource = Some(error);
-                return None;
-            }
-        }
-        if out.try_reserve(output_count).is_err() {
-            self.resource = self.ctx.map(|_| {
-                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("SAT float array tokens"),
-                    0,
-                    cadmpeg_core::decode::u64_from_index(output_count),
-                    "SAT float array tokens",
-                ))
-            });
+        if let Err(error) = self
+            .ctx
+            .reserve_vec(out, output_count, "type SAT float array tokens")
+        {
+            self.resource = Some(error);
             return None;
         }
-        push_token!(self, out, Token::Long(count as i64));
+        out.push(Token::Long(i64::try_from(count).ok()?));
         out.extend(values.into_iter().map(Token::Double));
         Some(())
     }
@@ -1203,7 +1175,7 @@ fn try_shape(
         scale,
         failure: None,
         resource: None,
-        ctx: Some(ctx),
+        ctx,
     };
     let mut out = Vec::new();
     let matched = run_shape(&mut cur, slots, &mut out).is_some() && cur.done();
@@ -1870,7 +1842,7 @@ fn type_record(
         scale,
         failure: None,
         resource: None,
-        ctx: Some(ctx),
+        ctx,
     };
     let mut tokens = Vec::new();
     for prim in prims {
@@ -1898,7 +1870,7 @@ mod tests {
             scale: 10.0,
             failure: None,
             resource: None,
-            ctx: Some(&ctx),
+            ctx: &ctx,
         };
         let mut output = Vec::new();
         assert_eq!(cur.float_array(&mut output), None);
@@ -1954,18 +1926,21 @@ mod tests {
     #[test]
     fn counted_float_array_refuses_an_unavailable_huge_count_without_allocating() {
         let prims = [Prim::Integer(i64::MAX)];
-        let mut cur = Cur {
-            prims: &prims,
-            pos: 0,
-            scale: 10.0,
-            failure: None,
-            resource: None,
-            ctx: None,
-        };
-        let mut output = Vec::new();
-        assert_eq!(cur.float_array(&mut output), None);
-        assert_eq!(cur.pos, 0);
-        assert!(output.is_empty());
+        crate::test_support::with_service_context(&[], |ctx| {
+            let mut cur = Cur {
+                prims: &prims,
+                pos: 0,
+                scale: 10.0,
+                failure: None,
+                resource: None,
+                ctx,
+            };
+            let mut output = Vec::new();
+            assert_eq!(cur.float_array(&mut output), None);
+            assert_eq!(cur.pos, 0);
+            assert!(output.is_empty());
+        })
+        .expect("fixture fits service profile");
     }
 
     #[test]
@@ -2133,7 +2108,8 @@ mod tests {
             let reason = format!("record `mystery` {description}");
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = 16 + 21 + 24 + 7 + reason.len() as u64 - 1;
+            policy.limits.max_retained_bytes =
+                16 + 21 + 24 + 7 + cadmpeg_core::decode::u64_from_index(reason.len()) - 1;
             let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
                 .expect("source fits input limit");
             let error = super::parse(&ctx, &source).expect_err("error text exceeds retained limit");
@@ -2476,6 +2452,27 @@ mod tests {
     }
 
     #[test]
+    fn numeric_slots_accept_exact_integer_above_contiguous_f64_range() {
+        let source = asm_stream("point $-1 -1 $-1 9007199254740994 0 0 #\n");
+        let stream = parse(&source).expect("exact integer coordinate");
+        assert_eq!(
+            stream.records[0].tokens[3],
+            Token::Position([9_007_199_254_740_994.0 * 0.1, 0.0, 0.0])
+        );
+    }
+
+    #[test]
+    fn numeric_slots_refuse_inexact_integer_coordinates() {
+        let source = asm_stream("point $-1 -1 $-1 9007199254740993 0 0 #\n");
+        let stream = parse(&source).expect("inexact numeric shape keeps lexical tokens");
+        assert_eq!(stream.records[0].tokens.len(), 6);
+        assert_eq!(
+            stream.records[0].tokens[3],
+            Token::Long(9_007_199_254_740_993)
+        );
+    }
+
+    #[test]
     fn position_slots_coalesce_three_numbers_with_unit_conversion() {
         // Header scale 1 (millimetres): centimetre conversion divides by 10.
         let stream = parse(&asm_stream("point $-1 -1 $-1 180 30 20 #\n")).expect("point");
@@ -2640,19 +2637,22 @@ mod tests {
             Prim::Real(1.0),
             Prim::Integer(1),
         ];
-        let mut cur = Cur {
-            prims: &prims,
-            pos: 0,
-            scale: 10.0,
-            failure: None,
-            resource: None,
-            ctx: None,
-        };
-        assert_eq!(
-            bs_curve_block(&mut cur, BsKind::Model, &mut Vec::new()),
-            None
-        );
-        assert_eq!(cur.failure, Some(TypeFailure::InvalidSplineCount));
+        crate::test_support::with_service_context(&[], |ctx| {
+            let mut cur = Cur {
+                prims: &prims,
+                pos: 0,
+                scale: 10.0,
+                failure: None,
+                resource: None,
+                ctx,
+            };
+            assert_eq!(
+                bs_curve_block(&mut cur, BsKind::Model, &mut Vec::new()),
+                None
+            );
+            assert_eq!(cur.failure, Some(TypeFailure::InvalidSplineCount));
+        })
+        .expect("fixture fits service profile");
 
         let text = asm_stream(
             "intcurve-curve $-1 -1 $-1 forward { exact_int_cur 23100 full nubs 1 open 2 0 9223372036854775807 1 1 1 2 3 4 5 6 0 null_surface null_surface nullbs nullbs I I 0 0 0 0 F 1 F 0 UNEXTENDED UNEXTENDED } I I #\n",
@@ -2684,16 +2684,19 @@ mod tests {
             Prim::Real(1.0),
             Prim::Integer(1),
         ];
-        let mut cur = Cur {
-            prims: &prims,
-            pos: 0,
-            scale: 10.0,
-            failure: None,
-            resource: None,
-            ctx: None,
-        };
-        assert_eq!(bs_surface_block(&mut cur, &mut Vec::new()), None);
-        assert_eq!(cur.failure, Some(TypeFailure::InvalidSplineCount));
+        crate::test_support::with_service_context(&[], |ctx| {
+            let mut cur = Cur {
+                prims: &prims,
+                pos: 0,
+                scale: 10.0,
+                failure: None,
+                resource: None,
+                ctx,
+            };
+            assert_eq!(bs_surface_block(&mut cur, &mut Vec::new()), None);
+            assert_eq!(cur.failure, Some(TypeFailure::InvalidSplineCount));
+        })
+        .expect("fixture fits service profile");
     }
 
     #[test]

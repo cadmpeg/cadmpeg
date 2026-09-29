@@ -1833,7 +1833,11 @@ fn revision_loft_section(
 ) -> Option<Result<Vec<EmbeddedLoftSectionEntry>, cadmpeg_core::CodecError>> {
     let count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least one double token for its parameter.
-    let count = bounded_len(count as u64, 1, cur.rest().len())?;
+    let count = bounded_len(
+        cadmpeg_core::decode::u64_from_index(count),
+        1,
+        cur.rest().len(),
+    )?;
     let mut entries = match ctx.collection_vec(count, "ASM loft sections") {
         Ok(entries) => entries,
         Err(error) => return Some(Err(error)),
@@ -1842,7 +1846,11 @@ fn revision_loft_section(
         let parameter = cur.take_f64()?;
         let member_count = usize::try_from(cur.take_long()?).ok()?;
         // Each member consumes at least its type-code token.
-        let member_count = bounded_len(member_count as u64, 1, cur.rest().len())?;
+        let member_count = bounded_len(
+            cadmpeg_core::decode::u64_from_index(member_count),
+            1,
+            cur.rest().len(),
+        )?;
         let mut profile = match ctx.collection_vec(member_count, "ASM loft profile members") {
             Ok(profile) => profile,
             Err(error) => return Some(Err(error)),
@@ -1884,7 +1892,11 @@ fn revision_loft_section(
         };
         let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
         // Each auxiliary consumes at least its curve-block marker token.
-        let auxiliary_count = bounded_len(auxiliary_count as u64, 1, cur.rest().len())?;
+        let auxiliary_count = bounded_len(
+            cadmpeg_core::decode::u64_from_index(auxiliary_count),
+            1,
+            cur.rest().len(),
+        )?;
         let mut auxiliaries = match ctx.collection_vec(auxiliary_count, "ASM loft auxiliary curves")
         {
             Ok(auxiliaries) => auxiliaries,
@@ -1941,7 +1953,11 @@ fn loft_subdata_form(
         .checked_add(columns_to_read)?
         .checked_add(usize::from(revision && type_code != 211))?;
     let tokens_per_row = pairs_per_row.checked_mul(2)?;
-    let rows_to_read = bounded_len(rows_to_read as u64, tokens_per_row, cur.rest().len())?;
+    let rows_to_read = bounded_len(
+        cadmpeg_core::decode::u64_from_index(rows_to_read),
+        tokens_per_row,
+        cur.rest().len(),
+    )?;
     let mut rows = propagate_resource!(ctx.collection_vec(rows_to_read, "ASM loft subdata rows"));
     for _ in 0..rows_to_read {
         let parameters = [cur.take_f64()?, cur.take_f64()?];
@@ -2019,13 +2035,21 @@ fn loft_section(
 ) -> Option<Result<Vec<EmbeddedLoftSectionEntry>, cadmpeg_core::CodecError>> {
     let count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least one double token for its parameter.
-    let count = bounded_len(count as u64, 1, cur.rest().len())?;
+    let count = bounded_len(
+        cadmpeg_core::decode::u64_from_index(count),
+        1,
+        cur.rest().len(),
+    )?;
     let mut entries = propagate_resource!(ctx.collection_vec(count, "ASM legacy loft sections"));
     for _ in 0..count {
         let parameter = cur.take_f64()?;
         let member_count = usize::try_from(cur.take_long()?).ok()?;
         // Each member consumes at least its type-code token.
-        let member_count = bounded_len(member_count as u64, 1, cur.rest().len())?;
+        let member_count = bounded_len(
+            cadmpeg_core::decode::u64_from_index(member_count),
+            1,
+            cur.rest().len(),
+        )?;
         let mut profile = propagate_resource!(
             ctx.collection_vec(member_count, "ASM legacy loft profile members")
         );
@@ -2043,7 +2067,11 @@ fn loft_section(
         cur.set_pos(curve_end);
         let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
         // Each auxiliary consumes at least its curve-block marker token.
-        let auxiliary_count = bounded_len(auxiliary_count as u64, 1, cur.rest().len())?;
+        let auxiliary_count = bounded_len(
+            cadmpeg_core::decode::u64_from_index(auxiliary_count),
+            1,
+            cur.rest().len(),
+        )?;
         let mut auxiliaries = propagate_resource!(
             ctx.collection_vec(auxiliary_count, "ASM legacy loft auxiliary curves")
         );
@@ -2220,7 +2248,11 @@ fn revision_cl_scale(
 ) -> Option<Result<(Vec<EmbeddedLoftProfileMember>, EmbeddedLoftPath), cadmpeg_core::CodecError>> {
     let member_count = usize::try_from(cur.take_long()?).ok()?;
     // Each member consumes at least its type-code token.
-    let member_count = bounded_len(member_count as u64, 1, cur.rest().len())?;
+    let member_count = bounded_len(
+        cadmpeg_core::decode::u64_from_index(member_count),
+        1,
+        cur.rest().len(),
+    )?;
     let mut profile =
         match ctx.collection_vec(member_count, "ASM revision compound loft profile members") {
             Ok(profile) => profile,
@@ -2263,7 +2295,11 @@ fn revision_cl_scale(
     };
     let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
     // Each auxiliary consumes at least its curve-block marker token.
-    let auxiliary_count = bounded_len(auxiliary_count as u64, 1, cur.rest().len())?;
+    let auxiliary_count = bounded_len(
+        cadmpeg_core::decode::u64_from_index(auxiliary_count),
+        1,
+        cur.rest().len(),
+    )?;
     let mut auxiliaries = match ctx.collection_vec(
         auxiliary_count,
         "ASM revision compound loft auxiliary curves",
@@ -2309,7 +2345,11 @@ fn revision_compound_loft(
         };
     let entry_count = usize::try_from(cur.take_long()?).ok()?;
     // Each entry consumes at least its member-count token.
-    let entry_count = bounded_len(entry_count as u64, 1, cur.rest().len())?;
+    let entry_count = bounded_len(
+        cadmpeg_core::decode::u64_from_index(entry_count),
+        1,
+        cur.rest().len(),
+    )?;
     let mut entries = match ctx.collection_vec(entry_count, "ASM revision compound loft sections") {
         Ok(entries) => entries,
         Err(error) => return Some(Err(error)),

@@ -303,7 +303,10 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         }
     }
     let mut product_by_object = HashMap::new();
-    ctx.charge_collection_items(product_nodes.len() as u64, "fcstd product validation index")?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(product_nodes.len()),
+        "fcstd product validation index",
+    )?;
     product_by_object
         .try_reserve(product_nodes.len())
         .map_err(|_| {
@@ -311,7 +314,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::CollectionItems,
                     ctx.policy().limits.max_collection_items,
-                    product_nodes.len() as u64,
+                    cadmpeg_core::decode::u64_from_index(product_nodes.len()),
                     "fcstd product validation index",
                 ),
             )
@@ -871,8 +874,7 @@ impl CodecBackend for FcstdCodec {
                 .ok_or_else(|| {
                     CodecError::Malformed("Document.xml disappeared after scan".into())
                 })?;
-            let graph =
-                persistence::parse_with_context(document_bytes, &scan.schema_version, Some(ctx))?;
+            let graph = persistence::parse_with_context(document_bytes, &scan.schema_version, ctx)?;
             for property in &graph.properties {
                 for side_entry in property.side_entries() {
                     if !scan.data.contains_key(side_entry) {
@@ -986,7 +988,7 @@ impl CodecBackend for FcstdCodec {
             ir.model.assembly_joints =
                 joint::transfer_neutral(ctx, &joint_records, &ir.model.occurrences)?;
             ctx.admit_entities(
-                ir.model.entity_count() as u64,
+                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
@@ -1016,7 +1018,7 @@ impl CodecBackend for FcstdCodec {
             };
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
-                ir.model.entity_count() as u64,
+                cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 &mut admitted_entities,
                 "admit FCStd entities",
             )?;
@@ -1123,7 +1125,7 @@ impl CodecBackend for FcstdCodec {
         )?;
         losses.extend(dialect_losses);
         ctx.admit_entities(
-            ir.model.entity_count() as u64,
+            cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
             &mut admitted_entities,
             "admit FCStd entities",
         )?;

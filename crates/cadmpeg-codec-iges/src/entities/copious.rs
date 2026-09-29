@@ -59,12 +59,7 @@ impl CopiousProjectionOutcome {
         ctx: &DecodeContext<'_>,
     ) -> Result<(), CodecError> {
         for sequence in self.decoded {
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
-                decoded,
-                sequence,
-                "iges merged decoded sequences",
-            )?;
+            ctx.insert_btree_set(decoded, sequence, "iges merged decoded sequences")?;
         }
         ctx.reserve_vec(losses, self.losses.len(), "iges merged loss slots")?;
         losses.extend(self.losses);
@@ -251,8 +246,7 @@ pub(super) fn project(
 ) -> Result<CopiousProjectionOutcome, CodecError> {
     let mut records = BTreeMap::new();
     for record in parameters {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut records,
             record.directory_sequence,
             record,
@@ -261,8 +255,7 @@ pub(super) fn project(
     }
     let mut entries = BTreeMap::new();
     for entry in directory {
-        cadmpeg_core::decode::DecodeContext::insert_btree_map_optional(
-            Some(ctx),
+        ctx.insert_btree_map(
             &mut entries,
             entry.sequence,
             entry,
@@ -399,7 +392,7 @@ pub(super) fn project(
             factor,
             global.real_precision(),
             &mut BTreeSet::new(),
-            Some(ctx),
+            ctx,
         ) {
             Ok(transform) => transform,
             Err(error) => {
@@ -519,39 +512,30 @@ pub(super) fn project(
                 sequences.record_point(
                     &point,
                     &crate::ids::Stem::directory(entry.sequence),
-                    Some(ctx),
+                    ctx,
                 )?;
                 let vertex = crate::ids::vertex_admitted(
                     &crate::ids::Stem::directory(entry.sequence).tail_index(index + 1),
                     ctx,
                 )?;
                 ctx.reserve_vec(&mut ir.model.points, 1, "iges copious neutral points")?;
-                crate::decode_resource::admit_optional_entities(
-                    Some(ctx),
-                    1,
-                    "iges_geometry_copious",
-                )?;
+                ctx.charge_entities(1, "iges_geometry_copious")?;
                 ir.model.points.push(Point::new(
-                    point.try_clone_for_decode(Some(ctx), "iges copious identity copy")?,
+                    point.try_clone_for_decode(ctx, "iges copious identity copy")?,
                     position,
                     None,
                 ));
                 ctx.reserve_vec(&mut ir.model.vertices, 1, "iges copious neutral vertices")?;
-                crate::decode_resource::admit_optional_entities(
-                    Some(ctx),
-                    1,
-                    "iges_geometry_copious",
-                )?;
+                ctx.charge_entities(1, "iges_geometry_copious")?;
                 ir.model.vertices.push(Vertex {
-                    id: vertex.try_clone_for_decode(Some(ctx), "iges copious identity copy")?,
+                    id: vertex.try_clone_for_decode(ctx, "iges copious identity copy")?,
                     point,
                     tolerance: None,
                 });
                 ctx.reserve_vec(&mut free_vertices, 1, "iges copious free vertices")?;
                 free_vertices.push(vertex);
             }
-            cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-                Some(ctx),
+            ctx.insert_btree_set(
                 &mut decoded,
                 entry.sequence,
                 "iges copious decoded sequences",
@@ -622,48 +606,48 @@ pub(super) fn project(
         let end = positions[positions.len() - 1];
         let stem = crate::ids::Stem::directory(entry.sequence);
         let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
-        sequences.record_point(&start_point, &stem, Some(ctx))?;
+        sequences.record_point(&start_point, &stem, ctx)?;
         let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
-        sequences.record_point(&end_point, &stem, Some(ctx))?;
+        sequences.record_point(&end_point, &stem, ctx)?;
         let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
         let end_vertex = if entry.form == 63 {
-            start_vertex.try_clone_for_decode(Some(ctx), "iges copious identity copy")?
+            start_vertex.try_clone_for_decode(ctx, "iges copious identity copy")?
         } else {
             crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?
         };
         let curve = crate::ids::curve_admitted(&stem, ctx)?;
         let edge = crate::ids::edge_admitted(&stem, ctx)?;
         ctx.reserve_vec(&mut ir.model.points, 1, "iges copious neutral points")?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
+        ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.points.push(Point::new(
-            start_point.try_clone_for_decode(Some(ctx), "iges copious identity copy")?,
+            start_point.try_clone_for_decode(ctx, "iges copious identity copy")?,
             start,
             None,
         ));
         ctx.reserve_vec(&mut ir.model.vertices, 1, "iges copious neutral vertices")?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
+        ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.vertices.push(Vertex {
-            id: start_vertex.try_clone_for_decode(Some(ctx), "iges copious identity copy")?,
+            id: start_vertex.try_clone_for_decode(ctx, "iges copious identity copy")?,
             point: start_point,
             tolerance: topology_tolerance,
         });
         if entry.form != 63 {
             ctx.reserve_vec(&mut ir.model.points, 1, "iges copious neutral points")?;
-            crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
+            ctx.charge_entities(1, "iges_geometry_copious")?;
             ir.model.points.push(Point::new(
-                end_point.try_clone_for_decode(Some(ctx), "iges copious identity copy")?,
+                end_point.try_clone_for_decode(ctx, "iges copious identity copy")?,
                 end,
                 None,
             ));
             ctx.reserve_vec(&mut ir.model.vertices, 1, "iges copious neutral vertices")?;
-            crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
+            ctx.charge_entities(1, "iges_geometry_copious")?;
             ir.model.vertices.push(Vertex {
-                id: end_vertex.try_clone_for_decode(Some(ctx), "iges copious identity copy")?,
+                id: end_vertex.try_clone_for_decode(ctx, "iges copious identity copy")?,
                 point: end_point,
                 tolerance: topology_tolerance,
             });
         }
-        sequences.record_curve(&curve, entry.sequence, Some(ctx))?;
+        sequences.record_curve(&curve, entry.sequence, ctx)?;
         let knots = ctx
             .collect_options(
                 knots.into_iter().map(FiniteReal::new),
@@ -677,18 +661,18 @@ pub(super) fn project(
                 .and_then(|poles| NurbsCurve::new(1, knots, poles, false))
         });
         ctx.reserve_vec(&mut ir.model.curves, 1, "iges copious neutral curves")?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
+        ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.curves.push(Curve {
-            id: curve.try_clone_for_decode(Some(ctx), "iges copious identity copy")?,
+            id: curve.try_clone_for_decode(ctx, "iges copious identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs.map_err(
                 |error| CodecError::malformed(format_args!("copious-data curve: {error}")),
             )?)),
-            source_object: Some(source_object(entry, Some(ctx))?),
+            source_object: Some(source_object(entry, ctx)?),
         });
         ctx.reserve_vec(&mut ir.model.edges, 1, "iges copious neutral edges")?;
-        crate::decode_resource::admit_optional_entities(Some(ctx), 1, "iges_geometry_copious")?;
+        ctx.charge_entities(1, "iges_geometry_copious")?;
         ir.model.edges.push(Edge {
-            id: edge.try_clone_for_decode(Some(ctx), "iges copious identity copy")?,
+            id: edge.try_clone_for_decode(ctx, "iges copious identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                 Some(curve),
                 Some([0.0, parameter_end]),
@@ -700,8 +684,7 @@ pub(super) fn project(
         });
         ctx.reserve_vec(&mut wire_edges, 1, "iges copious wire edges")?;
         wire_edges.push(edge);
-        cadmpeg_core::decode::DecodeContext::insert_btree_set_optional(
-            Some(ctx),
+        ctx.insert_btree_set(
             &mut decoded,
             entry.sequence,
             "iges copious decoded sequences",

@@ -238,7 +238,7 @@ fn annotation_settings(
             "rhino:document:annotation_settings#current",
             "Rhino annotation settings ID",
         )?,
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         dimension_scale,
         text_height_mm: length(&mut reader, scale)?,
         extension_line_extension_mm: length(&mut reader, scale)?,
@@ -302,7 +302,7 @@ fn grid_defaults(
             "rhino:document:grid_defaults#current",
             "Rhino grid defaults ID",
         )?,
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         grid_spacing_mm: length(&mut reader, scale)?,
         snap_spacing_mm: length(&mut reader, scale)?,
         grid_line_count: reader.i32()?,
@@ -453,7 +453,7 @@ fn render_settings(
             "rhino:document:render_settings#current",
             "Rhino render settings ID",
         )?,
-        source_offset: source_offset as u64,
+        source_offset: cadmpeg_core::decode::u64_from_index(source_offset),
         image_flags: RenderImageFlags {
             custom_image_size,
             scale_background_to_fit,
@@ -527,7 +527,7 @@ fn render_userdata(
                 offset = chunk.next_offset();
             }
             CLASS_END => {
-                if !chunk.short() || chunk.value() != 0 {
+                if !chunk.short() || chunk.value()? != 0 {
                     return Err(FramingError::structural(
                         chunk.header_start,
                         "render userdata class end must be a short zero chunk",
@@ -613,7 +613,7 @@ pub(crate) fn install(
     if let Some(value) = &properties.revision_history {
         revisions.push(RevisionRecord {
             id: ctx.copy_retained_text("rhino:document:revision#current", "Rhino revision ID")?,
-            source_offset: value.source.range.start as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             created_by: ctx.copy_retained_text(&value.created_by, "Rhino revision creator")?,
             created_utc_fields: value.created.fields,
             last_edited_by: ctx
@@ -629,7 +629,7 @@ pub(crate) fn install(
     if let Some(value) = &properties.notes {
         notes.push(NotesRecord {
             id: ctx.copy_retained_text("rhino:document:notes#current", "Rhino notes ID")?,
-            source_offset: value.source.range.start as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             html: value.html,
             text: ctx.copy_retained_text(&value.text, "Rhino notes text")?,
             visible: value.visible,
@@ -645,7 +645,7 @@ pub(crate) fn install(
         applications.push(ApplicationRecord {
             id: ctx
                 .copy_retained_text("rhino:document:application#writer", "Rhino application ID")?,
-            source_offset: value.source.range.start as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
             name: ctx.copy_retained_text(&value.name, "Rhino application name")?,
             url: ctx.copy_retained_text(&value.url, "Rhino application URL")?,
             details: ctx.copy_retained_text(&value.details, "Rhino application details")?,
@@ -681,8 +681,8 @@ pub(crate) fn install(
     for (index, value) in properties.previews.iter().enumerate() {
         previews.push(PreviewRecord {
             id: retained_numbered_id(ctx, "rhino:document:preview#", index, "Rhino preview ID")?,
-            source_offset: value.source.range.start as u64,
-            byte_len: value.source.range.len() as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
+            byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
             compressed: value.compressed,
             sha256: retained_sha256(
                 ctx,
@@ -698,8 +698,8 @@ pub(crate) fn install(
     for (index, value) in settings.unsupported.iter().enumerate() {
         setting_records.push(SettingRecord {
             id: retained_numbered_id(ctx, "rhino:document:setting#", index, "Rhino setting ID")?,
-            source_offset: value.source.range.start as u64,
-            byte_len: value.source.range.len() as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(value.source.range.start),
+            byte_len: cadmpeg_core::decode::u64_from_index(value.source.range.len()),
             typecode: retained_typecode(ctx, value.typecode)?,
             sha256: retained_sha256(
                 ctx,
@@ -751,8 +751,8 @@ pub(crate) fn install(
                         setting_records.len(),
                         "Rhino retained setting ID",
                     )?,
-                    source_offset: record.range.start as u64,
-                    byte_len: record.range.len() as u64,
+                    source_offset: cadmpeg_core::decode::u64_from_index(record.range.start),
+                    byte_len: cadmpeg_core::decode::u64_from_index(record.range.len()),
                     typecode: retained_typecode(ctx, record.typecode)?,
                     sha256: retained_sha256(
                         ctx,
@@ -856,8 +856,8 @@ pub(crate) fn install(
                         setting_records.len(),
                         "Rhino retained setting ID",
                     )?,
-                    source_offset: record.range.start as u64,
-                    byte_len: record.range.len() as u64,
+                    source_offset: cadmpeg_core::decode::u64_from_index(record.range.start),
+                    byte_len: cadmpeg_core::decode::u64_from_index(record.range.len()),
                     typecode: retained_typecode(ctx, record.typecode)?,
                     sha256: retained_sha256(
                         ctx,
