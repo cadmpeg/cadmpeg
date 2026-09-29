@@ -96,6 +96,38 @@ fn standard_initial_carrier_identity_refuses_retained_limit() {
 }
 
 #[test]
+fn standard_revolution_procedure_copy_refuses_retained_limit() {
+    let directrix = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    ).expect("valid directrix");
+    let procedure = super::super::StandardSurfaceProcedure::Revolution(Box::new(
+        crate::families::b5::transfer::ResolvedRevolutionSurface {
+            directrix,
+            axis_origin: cadmpeg_ir::features::FinitePoint3::new(
+                Point3::new(0.0, 0.0, 0.0)).expect("finite origin"),
+            axis_direction: cadmpeg_ir::units::UnitVector3::new(
+                Vector3::new(0.0, 0.0, 1.0)).expect("unit axis"),
+            angular_interval: [0.0, 1.0],
+            angular_parameter_interval: [0.0, 1.0],
+            parameter_interval: [0.0, 1.0],
+        },
+    ));
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::copy_standard_procedure(ctx, &procedure)
+    });
+    assert!(matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        if limit.operation == "catia_standard_revolution_plan_copy"));
+    let service = crate::test_support::with_service_context(|ctx| {
+        super::super::copy_standard_procedure(ctx, &procedure)
+    }).expect("service budget");
+    assert!(service == procedure);
+}
+
+#[test]
 fn standard_decode_retains_native_surface_carrier_tags() {
     let decoded = CatiaCodec
         .decode(
