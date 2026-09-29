@@ -2529,63 +2529,76 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 ) {
                     return Ok(());
                 }
-                let mut references = lanes
-                    .iter()
-                    .flat_map(|lane| {
-                        let lane_key = lane
-                            .id
-                            .rsplit_once('#')
-                            .map_or(lane.id.as_str(), |(_, key)| key);
-                        lane.surface_selections
-                            .iter()
-                            .filter(move |selection| selection.feature_ref == native_feature.id)
-                            .map(move |selection| {
-                                (
-                                    format!("{lane_key}:{}", selection.offset),
-                                    Some(selection.components.clone()),
-                                    selection.producer_feature_refs.first().cloned(),
-                                )
-                            })
-                    })
-                    .chain(lanes.iter().flat_map(|lane| {
-                        (|| {
-                            let (_, start, end) = feature_object_byte_ranges(histories, lane)
-                                .get(native_feature.id.as_str())
-                                .copied()?;
-                            let cylinder_tokens = lane
-                                .classes
-                                .iter()
-                                .filter(|class| class.name == "moCylinderRef_w")
-                                .filter_map(|class| {
-                                    let body = usize::try_from(class.offset)
-                                        .ok()?
-                                        .checked_add(6 + class.name.len())?;
-                                    let token = View::u16_le_at(&lane.native_payload, body)?;
-                                    is_class_token(token).then_some(token)
-                                })
-                                .collect::<HashSet<_>>();
-                            let lane_key = lane
-                                .id
-                                .rsplit_once('#')
-                                .map_or(lane.id.as_str(), |(_, key)| key);
-                            Some(
-                                cosmetic_thread_cylinder_marker_reference(
-                                    native_feature,
-                                    lane,
-                                    start,
-                                    end,
-                                    &cylinder_tokens,
-                                )
-                                .into_iter()
-                                .map(|(marker, components)| {
-                                    (format!("{lane_key}:{marker}"), components, None)
-                                })
-                                .collect::<Vec<_>>(),
-                            )
-                        })()
-                        .unwrap_or_default()
-                    }))
-                    .collect::<Vec<_>>();
+                const REFERENCE_OPERATION: &str = "collect SLDPRT cosmetic thread references";
+                let format_reference_key = |lane_key: &str, offset: u64| {
+                    let digits = if offset == 0 { 1 } else {
+                        usize::try_from(offset.ilog10())
+                            .ok()
+                            .and_then(|digits| digits.checked_add(1))
+                            .ok_or_else(|| ctx.refuse_codec_limit(REFERENCE_OPERATION, u64::MAX - 1, u64::MAX))?
+                    };
+                    let bytes = lane_key.len().checked_add(1)
+                        .and_then(|size| size.checked_add(digits))
+                        .ok_or_else(|| ctx.refuse_codec_limit(REFERENCE_OPERATION, u64::MAX - 1, u64::MAX))?;
+                    let (mut key, reservation) = ctx.reserve_scoped_string(bytes, REFERENCE_OPERATION)?;
+                    write!(key, "{lane_key}:{offset}")
+                        .map_err(|_| cadmpeg_core::CodecError::malformed("cannot format SLDPRT cylinder reference key"))?;
+                    Ok::<_, cadmpeg_core::CodecError>((key, reservation))
+                };
+                let mut references = Vec::<(
+                    String,
+                    Option<std::borrow::Cow<'_, [crate::records::FeatureInputComponentPathEntry]>>,
+                    Option<&str>,
+                )>::new();
+                let mut key_reservations = Vec::new();
+                for lane in lanes {
+                    let lane_key = lane.id.rsplit_once('#')
+                        .map_or(lane.id.as_str(), |(_, key)| key);
+                    for selection in &lane.surface_selections {
+                        ctx.charge_work(1, REFERENCE_OPERATION)?;
+                        if selection.feature_ref != native_feature.id {
+                            continue;
+                        }
+                        let (key, reservation) = format_reference_key(lane_key, selection.offset)?;
+                        ctx.reserve_collection_vec(&mut key_reservations, 1, REFERENCE_OPERATION)?;
+                        key_reservations.push(reservation);
+                        ctx.reserve_collection_vec(&mut references, 1, REFERENCE_OPERATION)?;
+                        references.push((
+                            key,
+                            Some(std::borrow::Cow::Borrowed(selection.components.as_slice())),
+                            selection.producer_feature_refs.first().map(String::as_str),
+                        ));
+                    }
+                }
+                for lane in lanes {
+                    let Some((_, start, end)) = feature_object_byte_ranges(histories, lane)
+                        .get(native_feature.id.as_str()).copied()
+                    else {
+                        continue;
+                    };
+                    let cylinder_tokens = lane.classes.iter()
+                        .filter(|class| class.name == "moCylinderRef_w")
+                        .filter_map(|class| {
+                            let body = usize::try_from(class.offset).ok()?
+                                .checked_add(6 + class.name.len())?;
+                            let token = View::u16_le_at(&lane.native_payload, body)?;
+                            is_class_token(token).then_some(token)
+                        })
+                        .collect::<HashSet<_>>();
+                    let lane_key = lane.id.rsplit_once('#')
+                        .map_or(lane.id.as_str(), |(_, key)| key);
+                    for (marker, components) in cosmetic_thread_cylinder_marker_reference(
+                        native_feature, lane, start, end, &cylinder_tokens,
+                    ) {
+                        let offset = u64::try_from(marker)
+                            .map_err(|_| ctx.refuse_codec_limit(REFERENCE_OPERATION, u64::MAX - 1, u64::MAX))?;
+                        let (key, reservation) = format_reference_key(lane_key, offset)?;
+                        ctx.reserve_collection_vec(&mut key_reservations, 1, REFERENCE_OPERATION)?;
+                        key_reservations.push(reservation);
+                        ctx.reserve_collection_vec(&mut references, 1, REFERENCE_OPERATION)?;
+                        references.push((key, components.map(std::borrow::Cow::Owned), None));
+                    }
+                }
                 const NATIVE_OPERATION: &str = "format SLDPRT cosmetic thread cylinder references";
                 let count = u64::try_from(references.len())
                     .map_err(|_| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
@@ -2634,7 +2647,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 for (_, components, explicit_producer) in &references {
                     ctx.charge_work(1, GENERATED_OPERATION)?;
                     let candidate = (|| {
-                        let components = components.as_ref()?;
+                        let components = components.as_deref()?;
                         let explicit = explicit_producer.as_deref().and_then(|producer_ref| {
                             let producer = history_features
                                 .iter()
