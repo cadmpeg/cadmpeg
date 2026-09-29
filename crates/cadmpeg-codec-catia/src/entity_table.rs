@@ -390,7 +390,16 @@ impl ReferenceSignatureWire {
         ctx.charge_retained(bytes, "catia_reference_signature_wire_text")?;
         let mut signature = String::new();
         signature.try_reserve(byte_len).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("catia_reference_signature_wire_text"), cadmpeg_core::decode::u64_from_index(signature.capacity()), cadmpeg_core::decode::u64_from_index(byte_len), "catia_reference_signature_wire_text"))
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "catia_reference_signature_wire_text",
+                    ),
+                    cadmpeg_core::decode::u64_from_index(signature.capacity()),
+                    cadmpeg_core::decode::u64_from_index(byte_len),
+                    "catia_reference_signature_wire_text",
+                ),
+            )
         })?;
         for token in &value.tokens {
             match token {
@@ -537,9 +546,7 @@ fn reference_signature_program_charged(
                 "catia_reference_signature_instructions",
             )
         },
-        |digits| {
-            ctx.copy_retained_text(digits, "catia_reference_signature_digits")
-        },
+        |digits| ctx.copy_retained_text(digits, "catia_reference_signature_digits"),
     )
 }
 
@@ -1498,8 +1505,6 @@ fn unique_monotone_run(
     Ok(Some(result))
 }
 
-
-
 fn parse_candidate_variants(
     ctx: &DecodeContext<'_>,
     data: &[u8],
@@ -1819,7 +1824,10 @@ pub(crate) fn parse_reference_signature(
         {
             return None;
         }
-        let signature = admitted!(ctx.copy_retained_text(std::str::from_utf8(signature_bytes).ok()?, "catia_reference_signature_text"));
+        let signature = admitted!(ctx.copy_retained_text(
+            std::str::from_utf8(signature_bytes).ok()?,
+            "catia_reference_signature_text"
+        ));
         let signature_program = admitted!(reference_signature_program_charged(
             ctx,
             &signature,

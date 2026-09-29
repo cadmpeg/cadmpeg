@@ -63,7 +63,14 @@ pub(crate) fn parse(
         if !entry_data.contains_key(entry.name.as_str()) {
             ctx.charge_collection_items(1, "FreeCAD element entry lookup")?;
             entry_data.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FreeCAD element entry lookup"))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "FreeCAD element entry lookup",
+                    ),
+                )
             })?;
         }
         entry_data.insert(entry.name.as_str(), entry.data.as_slice());
@@ -125,7 +132,9 @@ pub(crate) fn parse(
                 save_all,
                 threshold,
                 source_entry
-                    .map(|name| ctx.copy_retained_text(name, "FreeCAD string table side-entry name"))
+                    .map(|name| {
+                        ctx.copy_retained_text(name, "FreeCAD string table side-entry name")
+                    })
                     .transpose()?,
                 entries,
             )
@@ -147,7 +156,10 @@ pub(crate) fn parse(
         let Some((part, carrier)) = direct_element_map(ctx, property_xml.root_element())? else {
             continue;
         };
-        let version = ctx.copy_retained_text(part.attribute("ElementMap").unwrap_or(""), "FreeCAD element map version")?;
+        let version = ctx.copy_retained_text(
+            part.attribute("ElementMap").unwrap_or(""),
+            "FreeCAD element map version",
+        )?;
         let hasher_index = part
             .attribute("HasherIndex")
             .map(|value| parse_usize(ctx, value, "HasherIndex"))
@@ -279,7 +291,10 @@ fn owning_property(
             "StringHasher has multiple enclosing properties".into(),
         ));
     }
-    Ok(Some(ctx.copy_retained_text(&owner.id, "FreeCAD string table owner")?))
+    Ok(Some(ctx.copy_retained_text(
+        &owner.id,
+        "FreeCAD string table owner",
+    )?))
 }
 
 fn validate_string_hasher_framing(
@@ -605,8 +620,14 @@ fn parse_legacy_records<'a>(
     let mut records =
         crate::resource::collection_vec(ctx, count, "FreeCAD legacy element records")?;
     for _ in 0..count {
-        let indexed_name = ctx.copy_retained_text(next_token(ctx, tokens, "legacy element indexed name")?, "FreeCAD legacy indexed name")?;
-        let mapped_name = ctx.copy_retained_text(next_token(ctx, tokens, "legacy mapped name")?, "FreeCAD legacy mapped name")?;
+        let indexed_name = ctx.copy_retained_text(
+            next_token(ctx, tokens, "legacy element indexed name")?,
+            "FreeCAD legacy indexed name",
+        )?;
+        let mapped_name = ctx.copy_retained_text(
+            next_token(ctx, tokens, "legacy mapped name")?,
+            "FreeCAD legacy mapped name",
+        )?;
         let sid_count = parse_usize(
             ctx,
             next_token(ctx, tokens, "legacy string-id count")?,
@@ -654,12 +675,18 @@ fn parse_legacy_elements(
     }
     let mut records = collection_vec(ctx, count, "FreeCAD legacy element records")?;
     for element in elements {
-        let indexed_name = ctx.copy_retained_text(element
+        let indexed_name = ctx.copy_retained_text(
+            element
                 .attribute("value")
-                .ok_or_else(|| CodecError::Malformed("legacy Element has no value".into()))?, "FreeCAD legacy indexed name")?;
-        let mapped_name = ctx.copy_retained_text(element
+                .ok_or_else(|| CodecError::Malformed("legacy Element has no value".into()))?,
+            "FreeCAD legacy indexed name",
+        )?;
+        let mapped_name = ctx.copy_retained_text(
+            element
                 .attribute("key")
-                .ok_or_else(|| CodecError::Malformed("legacy Element has no key".into()))?, "FreeCAD legacy mapped name")?;
+                .ok_or_else(|| CodecError::Malformed("legacy Element has no key".into()))?,
+            "FreeCAD legacy mapped name",
+        )?;
         let string_ids = element
             .attribute("sid")
             .map(|value| parse_legacy_string_ids(ctx, value))
@@ -708,7 +735,14 @@ fn legacy_map_payload(
             let additional = index + 1 - names.len();
             ctx.charge_collection_items(additional as u64, "FreeCAD legacy name slots")?;
             names.try_reserve(additional).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, additional as u64, "FreeCAD legacy name slots"))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        additional as u64,
+                        "FreeCAD legacy name slots",
+                    ),
+                )
             })?;
             names.resize_with(index + 1, Vec::new);
         }
@@ -943,15 +977,22 @@ fn parse_string_table(
             let mut values = Vec::new();
             if !derived_prefix {
                 reserve_vec_items(ctx, &mut values, 1, "FreeCAD string table value words")?;
-                values.push(ctx.copy_retained_text(scanner.token()?, "FreeCAD string table value word")?);
+                values.push(
+                    ctx.copy_retained_text(scanner.token()?, "FreeCAD string table value word")?,
+                );
             }
             if !encoded_postfix {
                 reserve_vec_items(ctx, &mut values, 1, "FreeCAD string table value words")?;
-                values.push(ctx.copy_retained_text(scanner.token()?, "FreeCAD string table value word")?);
+                values.push(
+                    ctx.copy_retained_text(scanner.token()?, "FreeCAD string table value word")?,
+                );
             }
             retained_join(ctx, &values, " ", "FreeCAD string table joined value")?
         };
-        let raw = ctx.copy_retained_text(text[record_start..scanner.position].trim_end_matches(char::is_whitespace), "FreeCAD string table raw record")?;
+        let raw = ctx.copy_retained_text(
+            text[record_start..scanner.position].trim_end_matches(char::is_whitespace),
+            "FreeCAD string table raw record",
+        )?;
         output.push(StringTableEntry {
             string_id,
             flags,
@@ -1038,7 +1079,10 @@ impl<'a> TextScanner<'a> {
             };
             self.position += newline + 1;
         }
-        ctx.copy_retained_text(&self.text[content_start..self.position - 1], "FreeCAD string table encoded text")
+        ctx.copy_retained_text(
+            &self.text[content_start..self.position - 1],
+            "FreeCAD string table encoded text",
+        )
     }
 
     fn is_done(&self) -> bool {
@@ -1069,7 +1113,10 @@ fn parse_element_map(
     let postfix_count = next_count(ctx, &mut tokens, "postfix count", MAX_NAMES)?;
     let mut postfixes = collection_vec(ctx, postfix_count, "FreeCAD element map postfixes")?;
     for _ in 0..postfix_count {
-        postfixes.push(ctx.copy_retained_text(next_token(ctx, &mut tokens, "postfix")?, "FreeCAD element map postfix text")?);
+        postfixes.push(ctx.copy_retained_text(
+            next_token(ctx, &mut tokens, "postfix")?,
+            "FreeCAD element map postfix text",
+        )?);
     }
     expect(ctx, &mut tokens, "MapCount")?;
     let map_count = next_count(ctx, &mut tokens, "map count", MAX_MAP_NODES)?;
@@ -1094,7 +1141,10 @@ fn parse_element_map(
         let mut groups =
             crate::resource::collection_vec(ctx, group_capacity, "FreeCAD element map groups")?;
         for _ in 0..group_count {
-            let indexed_name = ctx.copy_retained_text(next_token(ctx, &mut tokens, "indexed name")?, "FreeCAD indexed element name")?;
+            let indexed_name = ctx.copy_retained_text(
+                next_token(ctx, &mut tokens, "indexed name")?,
+                "FreeCAD indexed element name",
+            )?;
             expect(ctx, &mut tokens, "ChildCount")?;
             let child_count = next_count(ctx, &mut tokens, "child count", MAX_NAMES)?;
             // Each child consumes at least one token, so its count cannot exceed the byte length.

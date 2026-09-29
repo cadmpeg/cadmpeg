@@ -1217,7 +1217,9 @@ fn parse_view(
                             1,
                             "Rhino view parse warnings",
                         )?;
-                        parse_warnings.push(ctx.copy_retained_text(&message, "Rhino view parse warning copy")?);
+                        parse_warnings.push(
+                            ctx.copy_retained_text(&message, "Rhino view parse warning copy")?,
+                        );
                         push_view_loss(
                             ctx,
                             losses,

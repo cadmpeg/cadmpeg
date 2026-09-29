@@ -24,7 +24,12 @@ fn reserve_map<K: Eq + std::hash::Hash, V>(
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
     map.try_reserve(1).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, 1, operation))
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::CollectionItems,
+            u64::MAX,
+            1,
+            operation,
+        ))
     })
 }
 
@@ -159,7 +164,8 @@ fn external_record(
                     "Rhino external definition UUID",
                 )?,
                 full_path: ctx.copy_retained_text(&value.full_path, "Rhino external full path")?,
-                relative_path: ctx.copy_retained_text(&value.relative_path, "Rhino external relative path")?,
+                relative_path: ctx
+                    .copy_retained_text(&value.relative_path, "Rhino external relative path")?,
                 relative_path_preferred: false,
                 byte_count: Some(value.content_hash.byte_count),
                 hash_time: Some(value.content_hash.hash_time),
@@ -294,9 +300,13 @@ pub(crate) fn install(
             )?,
             archive_index: definition.index,
             name: ctx.copy_retained_text(&definition.name, "Rhino product definition name")?,
-            description: ctx.copy_retained_text(&definition.description, "Rhino product definition description")?,
+            description: ctx.copy_retained_text(
+                &definition.description,
+                "Rhino product definition description",
+            )?,
             url: ctx.copy_retained_text(&definition.url, "Rhino product definition URL")?,
-            url_tag: ctx.copy_retained_text(&definition.url_tag, "Rhino product definition URL tag")?,
+            url_tag: ctx
+                .copy_retained_text(&definition.url_tag, "Rhino product definition URL tag")?,
             kind: definition.kind,
             member_object_ids,
             units: &definition.units,
@@ -314,7 +324,12 @@ pub(crate) fn install(
         if !definition_ids.contains(&definition.id()) {
             ctx.charge_collection_items(1, "Rhino product definition keys")?;
             definition_ids.try_reserve(1).map_err(|_| {
-                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, u64::MAX, 1, "Rhino product definition keys"))
+                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    u64::MAX,
+                    1,
+                    "Rhino product definition keys",
+                ))
             })?;
         }
         definition_ids.insert(definition.id());

@@ -218,7 +218,10 @@ fn annotation_settings(
     }
     let dimension_scale = annotation_scale(&mut reader)?;
     let value = AnnotationSettingsRecord {
-        id: ctx.copy_retained_text("rhino:document:annotation_settings#current", "Rhino annotation settings ID")?,
+        id: ctx.copy_retained_text(
+            "rhino:document:annotation_settings#current",
+            "Rhino annotation settings ID",
+        )?,
         source_offset: source_offset as u64,
         dimension_scale,
         text_height_mm: length(&mut reader, scale)?,
@@ -280,7 +283,10 @@ fn grid_defaults(
         ));
     }
     let value = GridDefaultsRecord {
-        id: ctx.copy_retained_text("rhino:document:grid_defaults#current", "Rhino grid defaults ID")?,
+        id: ctx.copy_retained_text(
+            "rhino:document:grid_defaults#current",
+            "Rhino grid defaults ID",
+        )?,
         source_offset: source_offset as u64,
         grid_spacing_mm: length(&mut reader, scale)?,
         snap_spacing_mm: length(&mut reader, scale)?,
@@ -428,7 +434,10 @@ fn render_settings(
     };
     reader.skip_remaining()?;
     Ok(RenderSettingsRecord {
-        id: ctx.copy_retained_text("rhino:document:render_settings#current", "Rhino render settings ID")?,
+        id: ctx.copy_retained_text(
+            "rhino:document:render_settings#current",
+            "Rhino render settings ID",
+        )?,
         source_offset: source_offset as u64,
         custom_image_size,
         image_width_pixels,
@@ -589,7 +598,8 @@ pub(crate) fn install(
             source_offset: value.source.range.start as u64,
             created_by: ctx.copy_retained_text(&value.created_by, "Rhino revision creator")?,
             created_utc_fields: value.created.fields,
-            last_edited_by: ctx.copy_retained_text(&value.last_edited_by, "Rhino revision editor")?,
+            last_edited_by: ctx
+                .copy_retained_text(&value.last_edited_by, "Rhino revision editor")?,
             last_edited_utc_fields: value.last_edited.fields,
             revision_count: value.revision_count,
         });
@@ -617,7 +627,8 @@ pub(crate) fn install(
     )?;
     if let Some(value) = &properties.application {
         applications.push(ApplicationRecord {
-            id: ctx.copy_retained_text("rhino:document:application#writer", "Rhino application ID")?,
+            id: ctx
+                .copy_retained_text("rhino:document:application#writer", "Rhino application ID")?,
             source_offset: value.source.range.start as u64,
             name: ctx.copy_retained_text(&value.name, "Rhino application name")?,
             url: ctx.copy_retained_text(&value.url, "Rhino application URL")?,
@@ -626,7 +637,10 @@ pub(crate) fn install(
     }
     let settings = &scan.metadata.settings;
     let document_settings = [DocumentSettingsRecord {
-        id: ctx.copy_retained_text("rhino:document:settings#current", "Rhino document settings ID")?,
+        id: ctx.copy_retained_text(
+            "rhino:document:settings#current",
+            "Rhino document settings ID",
+        )?,
         writer_version: properties.writer_version,
         archive_file_name: properties
             .as_file_name

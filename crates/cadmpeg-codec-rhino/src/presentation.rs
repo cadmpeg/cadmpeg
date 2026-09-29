@@ -538,8 +538,7 @@ impl DimensionControlEntries {
         match self.0.binary_search_by(|(key, _)| key.as_str().cmp(name)) {
             Ok(index) => self.0[index].1 = value()?,
             Err(index) => {
-                let key =
-                    ctx.copy_retained_text(name, "Rhino dimension control key")?;
+                let key = ctx.copy_retained_text(name, "Rhino dimension control key")?;
                 crate::wire::reserve_collection(ctx, &mut self.0, 1, "Rhino dimension controls")?;
                 self.0.insert(index, (key, value()?));
             }
@@ -1409,10 +1408,8 @@ fn object_attributes_presentation(
         source_offset,
         losses,
     )?;
-    let name =
-        ctx.copy_retained_text(&attributes.name, "Rhino projected object name")?;
-    let url =
-        ctx.copy_retained_text(&attributes.url, "Rhino projected object URL")?;
+    let name = ctx.copy_retained_text(&attributes.name, "Rhino projected object name")?;
+    let url = ctx.copy_retained_text(&attributes.url, "Rhino projected object URL")?;
     let mut group_indexes = crate::wire::admitted_collection(
         ctx,
         attributes.groups.len(),
@@ -4975,7 +4972,8 @@ fn parse_text_style(
         let mut font = FontRecord {
             windows_logfont_name,
             postscript_name,
-            obsolete_description: ctx.copy_retained_text(&description, "Rhino legacy font description")?,
+            obsolete_description: ctx
+                .copy_retained_text(&description, "Rhino legacy font description")?,
             ..FontRecord::default()
         };
         if packed & 0x0f >= 1 {

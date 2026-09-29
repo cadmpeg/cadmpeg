@@ -3,12 +3,12 @@
 
 use super::{
     append_link_to_record, append_record_links, brep_free_vertex_indices, c2_curve_to_nurbs_join,
-    coedge_sense, commit_curve_tree, edge_param_range, edge_vertices,
-    face_components, face_sense, hatch_loop_ids, hatch_plane_transform, hatch_source_links,
-    region_shell_groups, region_shell_groups_without_records, scaled_tolerance, seal_for_test,
-    set_exactness, snapshot_instance_links, snapshot_instance_statuses, stage_brep,
-    stage_curve_tree, stage_extrusion_caps, transform_decoded_curve, transform_surface,
-    with_expand, with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
+    coedge_sense, commit_curve_tree, edge_param_range, edge_vertices, face_components, face_sense,
+    hatch_loop_ids, hatch_plane_transform, hatch_source_links, region_shell_groups,
+    region_shell_groups_without_records, scaled_tolerance, seal_for_test, set_exactness,
+    snapshot_instance_links, snapshot_instance_statuses, stage_brep, stage_curve_tree,
+    stage_extrusion_caps, transform_decoded_curve, transform_surface, with_expand,
+    with_expand_bytes, BrepDraft, BrepTransferInput, BrepTransferKind, CandidateError,
     CommittedExtrusionBoundary, CurveCommitSource, DecodeContext, GeometryOutcome,
     ReferenceFailure, ReportBuckets,
 };
@@ -1642,8 +1642,9 @@ fn unknown_record_link_copy_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 4;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root is admitted");
-    let refusal =
-        ctx.copy_retained_text("curve", "Rhino unknown record link copy").expect_err("five retained bytes exceed the limit");
+    let refusal = ctx
+        .copy_retained_text("curve", "Rhino unknown record link copy")
+        .expect_err("five retained bytes exceed the limit");
     assert!(matches!(
         refusal,
         cadmpeg_core::CodecError::ResourceLimit(ref limit)

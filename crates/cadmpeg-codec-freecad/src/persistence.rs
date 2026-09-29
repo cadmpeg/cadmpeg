@@ -8,8 +8,8 @@ use cadmpeg_core::CodecError;
 
 use crate::dialect::FcstdDialect;
 use crate::native::{
-    DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire, ObjectRecord,
-    PropertyFamily, PropertyRecord, ValueRecord,
+    DynamicPropertyMeta, ExtensionRecord, LinkTarget, LinkTargetWire, ObjectRecord, PropertyFamily,
+    PropertyRecord, ValueRecord,
 };
 use crate::resource::{decode_reserved_vec, reserve_charged_vec_items};
 
@@ -199,7 +199,14 @@ fn parse_document(
         if let Some(ctx) = ctx {
             ctx.charge_collection_items(1, "FCStd dependency lookup")?;
             dependency_map.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd dependency lookup"))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "FCStd dependency lookup",
+                    ),
+                )
             })?;
         }
         dependency_map.insert(
@@ -220,7 +227,14 @@ fn parse_document(
         charge_items(ctx, 1, "FCStd object data lookup")?;
         if let Some(ctx) = ctx {
             data_by_name.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd object data lookup"))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "FCStd object data lookup",
+                    ),
+                )
             })?;
         }
         let name = retained_attr(ctx, node, "name", "FCStd object data name")?;
@@ -284,8 +298,18 @@ fn parse_document(
             .map(|attribute| {
                 charge_items(ctx, 1, "FCStd object attributes")?;
                 Ok((
-                    match ctx { Some(ctx) => ctx.copy_retained_text(attribute.name(), "FCStd object attribute name"), None => Ok((attribute.name()).to_owned()) }?,
-                    match ctx { Some(ctx) => ctx.copy_retained_text(attribute.value(), "FCStd object attribute"), None => Ok((attribute.value()).to_owned()) }?,
+                    match ctx {
+                        Some(ctx) => {
+                            ctx.copy_retained_text(attribute.name(), "FCStd object attribute name")
+                        }
+                        None => Ok((attribute.name()).to_owned()),
+                    }?,
+                    match ctx {
+                        Some(ctx) => {
+                            ctx.copy_retained_text(attribute.value(), "FCStd object attribute")
+                        }
+                        None => Ok((attribute.value()).to_owned()),
+                    }?,
                 ))
             })
             .collect::<Result<_, CodecError>>()?;
@@ -312,7 +336,10 @@ fn parse_document(
             persistent_id: node.attribute("id").and_then(|value| value.parse().ok()),
             view_type: node
                 .attribute("ViewType")
-                .map(|value| match ctx { Some(ctx) => ctx.copy_retained_text(value, "FCStd object view type"), None => Ok((value).to_owned()) })
+                .map(|value| match ctx {
+                    Some(ctx) => ctx.copy_retained_text(value, "FCStd object view type"),
+                    None => Ok((value).to_owned()),
+                })
                 .transpose()?,
             attributes,
             dependencies,
@@ -504,10 +531,20 @@ fn parse_document(
                 charge_items(ctx, 1, "FCStd extension name set")?;
                 if let Some(ctx) = ctx {
                     extension_names.try_reserve(1).map_err(|_| {
-                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd extension name set"))
+                        cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                                ctx.policy().limits.max_collection_items,
+                                1,
+                                "FCStd extension name set",
+                            ),
+                        )
                     })?;
                 }
-                extension_names.insert(match ctx { Some(ctx) => ctx.copy_retained_text(&name, "FCStd extension name copy"), None => Ok((&name).to_owned()) }?);
+                extension_names.insert(match ctx {
+                    Some(ctx) => ctx.copy_retained_text(&name, "FCStd extension name copy"),
+                    None => Ok(name.clone()),
+                }?);
                 if extension_types.contains(&type_name) {
                     return Err(crate::resource::malformed_optional(
                         ctx,
@@ -518,30 +555,58 @@ fn parse_document(
                 charge_items(ctx, 1, "FCStd extension type set")?;
                 if let Some(ctx) = ctx {
                     extension_types.try_reserve(1).map_err(|_| {
-                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd extension type set"))
+                        cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                                ctx.policy().limits.max_collection_items,
+                                1,
+                                "FCStd extension type set",
+                            ),
+                        )
                     })?;
                 }
-                extension_types.insert(match ctx { Some(ctx) => ctx.copy_retained_text(&type_name, "FCStd extension type copy"), None => Ok((&type_name).to_owned()) }?);
+                extension_types.insert(match ctx {
+                    Some(ctx) => ctx.copy_retained_text(&type_name, "FCStd extension type copy"),
+                    None => Ok(type_name.clone()),
+                }?);
                 let id = extension_id(ctx, &object.id, &name, order)?;
                 charge_items(ctx, 1, "FCStd extension identity lookup")?;
                 if let Some(ctx) = ctx {
                     extension_ids_by_start.try_reserve(1).map_err(|_| {
-                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "FCStd extension identity lookup"))
+                        cadmpeg_core::CodecError::ResourceLimit(
+                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                                ctx.policy().limits.max_collection_items,
+                                1,
+                                "FCStd extension identity lookup",
+                            ),
+                        )
                     })?;
                 }
                 extension_ids_by_start.insert(
                     node.range().start,
-                    match ctx { Some(ctx) => ctx.copy_retained_text(&id, "FCStd extension identity copy"), None => Ok((&id).to_owned()) }?,
+                    match ctx {
+                        Some(ctx) => ctx.copy_retained_text(&id, "FCStd extension identity copy"),
+                        None => Ok(id.clone()),
+                    }?,
                 );
                 charge_items(ctx, 1, "FCStd extension records")?;
                 reserve_charged_vec_items(ctx, &mut extensions, 1, "FCStd extension records")?;
                 extensions.push(ExtensionRecord {
                     id,
-                    owner: match ctx { Some(ctx) => ctx.copy_retained_text(&object.id, "FCStd extension owner"), None => Ok((&object.id).to_owned()) }?,
+                    owner: match ctx {
+                        Some(ctx) => ctx.copy_retained_text(&object.id, "FCStd extension owner"),
+                        None => Ok(object.id.clone()),
+                    }?,
                     name,
                     type_name,
                     order,
-                    raw_xml: match ctx { Some(ctx) => ctx.copy_retained_text(&text[node.range()], "FCStd extension XML"), None => Ok((&text[node.range()]).to_owned()) }?,
+                    raw_xml: match ctx {
+                        Some(ctx) => {
+                            ctx.copy_retained_text(&text[node.range()], "FCStd extension XML")
+                        }
+                        None => Ok(text[node.range()].to_owned()),
+                    }?,
                 });
             }
         }
@@ -684,7 +749,10 @@ fn parse_properties(
         reserve_charged_vec_items(ctx, output, 1, "FCStd transient property records")?;
         output.push(PropertyRecord {
             id: property_id(ctx, owner, &name)?,
-            owner: match ctx { Some(ctx) => ctx.copy_retained_text(owner, "FCStd transient property owner"), None => Ok((owner).to_owned()) }?,
+            owner: match ctx {
+                Some(ctx) => ctx.copy_retained_text(owner, "FCStd transient property owner"),
+                None => Ok((owner).to_owned()),
+            }?,
             name,
             family: property_family(&type_name),
             type_name,
@@ -728,23 +796,42 @@ fn parse_properties(
                     )
                 })?;
             values.push(ValueRecord {
-                tag: match ctx { Some(ctx) => ctx.copy_retained_text(value.tag_name().name(), "FCStd value tag"), None => Ok((value.tag_name().name()).to_owned()) }?,
+                tag: match ctx {
+                    Some(ctx) => ctx.copy_retained_text(value.tag_name().name(), "FCStd value tag"),
+                    None => Ok((value.tag_name().name()).to_owned()),
+                }?,
                 order: value_order,
                 attributes: value
                     .attributes()
                     .map(|attribute| {
                         charge_items(ctx, 1, "FCStd value attributes")?;
                         Ok((
-                            match ctx { Some(ctx) => ctx.copy_retained_text(attribute.name(), "FCStd value attribute name"), None => Ok((attribute.name()).to_owned()) }?,
-                            match ctx { Some(ctx) => ctx.copy_retained_text(attribute.value(), "FCStd value attribute"), None => Ok((attribute.value()).to_owned()) }?,
+                            match ctx {
+                                Some(ctx) => ctx.copy_retained_text(
+                                    attribute.name(),
+                                    "FCStd value attribute name",
+                                ),
+                                None => Ok((attribute.name()).to_owned()),
+                            }?,
+                            match ctx {
+                                Some(ctx) => ctx
+                                    .copy_retained_text(attribute.value(), "FCStd value attribute"),
+                                None => Ok((attribute.value()).to_owned()),
+                            }?,
                         ))
                     })
                     .collect::<Result<_, CodecError>>()?,
                 text: value
                     .text()
-                    .map(|text| match ctx { Some(ctx) => ctx.copy_retained_text(text, "FCStd value text"), None => Ok((text).to_owned()) })
+                    .map(|text| match ctx {
+                        Some(ctx) => ctx.copy_retained_text(text, "FCStd value text"),
+                        None => Ok((text).to_owned()),
+                    })
                     .transpose()?,
-                raw_xml: match ctx { Some(ctx) => ctx.copy_retained_text(&text[value.range()], "FCStd value XML"), None => Ok((&text[value.range()]).to_owned()) }?,
+                raw_xml: match ctx {
+                    Some(ctx) => ctx.copy_retained_text(&text[value.range()], "FCStd value XML"),
+                    None => Ok(text[value.range()].to_owned()),
+                }?,
             });
         }
         let links = if link_grammar(&type_name).is_some() {
@@ -767,7 +854,10 @@ fn parse_properties(
                         1,
                         "FCStd side entry references",
                     )?;
-                    side_entries.push(match ctx { Some(ctx) => ctx.copy_retained_text(entry_name, "FCStd side entry name"), None => Ok((entry_name).to_owned()) }?);
+                    side_entries.push(match ctx {
+                        Some(ctx) => ctx.copy_retained_text(entry_name, "FCStd side entry name"),
+                        None => Ok((entry_name).to_owned()),
+                    }?);
                 }
             }
         }
@@ -775,7 +865,10 @@ fn parse_properties(
         reserve_charged_vec_items(ctx, output, 1, "FCStd persisted property records")?;
         output.push(PropertyRecord {
             id: property_id(ctx, owner, &name)?,
-            owner: match ctx { Some(ctx) => ctx.copy_retained_text(owner, "FCStd persisted property owner"), None => Ok((owner).to_owned()) }?,
+            owner: match ctx {
+                Some(ctx) => ctx.copy_retained_text(owner, "FCStd persisted property owner"),
+                None => Ok((owner).to_owned()),
+            }?,
             name,
             family: property_family(&type_name),
             type_name,
@@ -790,11 +883,20 @@ fn parse_properties(
                     .attribute("group")
                     .map(|group| -> Result<DynamicPropertyMeta, CodecError> {
                         Ok(DynamicPropertyMeta {
-                            group: match ctx { Some(ctx) => ctx.copy_retained_text(group, "FCStd dynamic property group"), None => Ok((group).to_owned()) }?,
+                            group: match ctx {
+                                Some(ctx) => {
+                                    ctx.copy_retained_text(group, "FCStd dynamic property group")
+                                }
+                                None => Ok((group).to_owned()),
+                            }?,
                             documentation: node
                                 .attribute("doc")
-                                .map(|doc| {
-                                    match ctx { Some(ctx) => ctx.copy_retained_text(doc, "FCStd dynamic property documentation"), None => Ok((doc).to_owned()) }
+                                .map(|doc| match ctx {
+                                    Some(ctx) => ctx.copy_retained_text(
+                                        doc,
+                                        "FCStd dynamic property documentation",
+                                    ),
+                                    None => Ok((doc).to_owned()),
                                 })
                                 .transpose()?,
                             attributes: node.attribute("attr").and_then(|value| value.parse().ok()),
@@ -1072,7 +1174,10 @@ fn xlink(
     reject_link_aliases(node, &["name", "file", "sub"], ctx)?;
     let file = node
         .attribute("file")
-        .map(|value| match ctx { Some(ctx) => ctx.copy_retained_text(value, "FCStd link document"), None => Ok((value).to_owned()) })
+        .map(|value| match ctx {
+            Some(ctx) => ctx.copy_retained_text(value, "FCStd link document"),
+            None => Ok((value).to_owned()),
+        })
         .transpose()?;
     let child_count = node.children().filter(roxmltree::Node::is_element).count();
     charge_items(ctx, child_count, "FCStd XLink children")?;
@@ -1153,7 +1258,13 @@ fn restored_subelement(
             "FCStd persistence diagnostic",
         )
     })?;
-    match ctx { Some(ctx) => ctx.copy_retained_text(node.attribute("shadowed").unwrap_or(primary), "FCStd link subelement"), None => Ok((node.attribute("shadowed").unwrap_or(primary)).to_owned()) }
+    match ctx {
+        Some(ctx) => ctx.copy_retained_text(
+            node.attribute("shadowed").unwrap_or(primary),
+            "FCStd link subelement",
+        ),
+        None => Ok((node.attribute("shadowed").unwrap_or(primary)).to_owned()),
+    }
 }
 
 fn reject_link_aliases(
@@ -1347,7 +1458,10 @@ fn retained_attr(
             "FCStd persistence diagnostic",
         )
     })?;
-    match ctx { Some(ctx) => ctx.copy_retained_text(value, operation), None => Ok((value).to_owned()) }
+    match ctx {
+        Some(ctx) => ctx.copy_retained_text(value, operation),
+        None => Ok((value).to_owned()),
+    }
 }
 
 fn bool_attr(value: Option<&str>) -> Option<bool> {

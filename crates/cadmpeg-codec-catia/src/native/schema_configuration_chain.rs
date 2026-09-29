@@ -346,9 +346,7 @@ fn copy_reference(
             entity: ctx.copy_retained_text(entity, "catia_configuration_entity_id")?,
             class_name: class_name
                 .as_ref()
-                .map(|name| {
-                    ctx.copy_retained_text(name, "catia_configuration_class_name")
-                })
+                .map(|name| ctx.copy_retained_text(name, "catia_configuration_class_name"))
                 .transpose()?,
         },
     })

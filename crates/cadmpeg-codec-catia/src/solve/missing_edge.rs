@@ -25,8 +25,7 @@ fn charge_collection_items(
     count: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let count =
-        cadmpeg_core::decode::u64_from_index(count);
+    let count = cadmpeg_core::decode::u64_from_index(count);
     ctx.charge_collection_items(count, operation)
 }
 
@@ -2789,7 +2788,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                                             if let Some(points) = transitions[edge].get(point) {
                                                 for &point in points.iter() {
                                                     if !next.contains(&point) {
-                                                        let bytes = cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>(),);
+                                                        let bytes =
+                                                            cadmpeg_core::decode::u64_from_index(
+                                                                std::mem::size_of::<usize>(),
+                                                            );
                                                         self.ctx.charge_retained(
                                                             bytes,
                                                             "catia_gap_transition_points",
@@ -2806,7 +2808,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                                         }
                                     }
                                     let bytes =
-                                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<HashSet<usize>>());
+                                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                                            HashSet<usize>,
+                                        >(
+                                        ));
                                     self.ctx
                                         .charge_retained(bytes, "catia_gap_transition_set")?;
                                     Some(Arc::new(next))

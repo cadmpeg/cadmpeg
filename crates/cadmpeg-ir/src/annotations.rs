@@ -272,8 +272,6 @@ pub struct AnnotationBuilder {
     annotations: Annotations,
 }
 
-
-
 impl AnnotationBuilder {
     /// Copy a speculative annotation set under the active decode budget.
     pub fn copy_charged(
@@ -606,13 +604,17 @@ impl Annotations {
         }
         let mut targets = std::collections::BTreeSet::new();
         let mut remapping = Vec::new();
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(ids.len()),
-            operation,
-        )?;
-        remapping
-            .try_reserve(ids.len())
-            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), u64::MAX, u64::MAX, operation)))?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(ids.len()), operation)?;
+        remapping.try_reserve(ids.len()).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    u64::MAX,
+                    u64::MAX,
+                    operation,
+                ),
+            )
+        })?;
         for id in ids {
             let target = map(id)?;
             if targets.contains(&target) {

@@ -616,11 +616,25 @@ fn revolution_nurbs(
     };
     let mut angular = Vec::new();
     angular.try_reserve_exact(angular_count).map_err(|_| {
-        GeometryError::Codec(CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, u64::MAX, temporary_bytes, "Rhino revolution angular controls")))
+        GeometryError::Codec(CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                u64::MAX,
+                temporary_bytes,
+                "Rhino revolution angular controls",
+            ),
+        ))
     })?;
     let mut knots = Vec::new();
     knots.try_reserve_exact(knot_count).map_err(|_| {
-        GeometryError::Codec(CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, u64::MAX, temporary_bytes, "Rhino revolution angular knots")))
+        GeometryError::Codec(CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                u64::MAX,
+                temporary_bytes,
+                "Rhino revolution angular knots",
+            ),
+        ))
     })?;
     for span in 0..span_count {
         let a0 = angle[0] + angle_step * span as f64;
@@ -652,12 +666,26 @@ fn revolution_nurbs(
     control_points
         .try_reserve_exact(output_count)
         .map_err(|_| {
-            GeometryError::Codec(CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, u64::MAX, temporary_bytes, "Rhino revolution control points")))
+            GeometryError::Codec(CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                    u64::MAX,
+                    temporary_bytes,
+                    "Rhino revolution control points",
+                ),
+            ))
         })?;
     let mut weights = Vec::new();
-    weights
-        .try_reserve_exact(output_count)
-        .map_err(|_| GeometryError::Codec(CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, u64::MAX, temporary_bytes, "Rhino revolution weights"))))?;
+    weights.try_reserve_exact(output_count).map_err(|_| {
+        GeometryError::Codec(CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                u64::MAX,
+                temporary_bytes,
+                "Rhino revolution weights",
+            ),
+        ))
+    })?;
     for (theta, angular_weight) in angular {
         let radial_scale = 1.0 / angular_weight;
         for (profile_point, profile_weight) in
@@ -779,12 +807,26 @@ fn sum_nurbs(
     control_points
         .try_reserve_exact(product_count)
         .map_err(|_| {
-            GeometryError::Codec(CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, u64::MAX, temporary_bytes, "Rhino sum surface control points")))
+            GeometryError::Codec(CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                    u64::MAX,
+                    temporary_bytes,
+                    "Rhino sum surface control points",
+                ),
+            ))
         })?;
     let mut weights = if rational {
         let mut values = Vec::new();
         values.try_reserve_exact(product_count).map_err(|_| {
-            GeometryError::Codec(CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::MaterializedBytes, u64::MAX, temporary_bytes, "Rhino sum surface weights")))
+            GeometryError::Codec(CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
+                    u64::MAX,
+                    temporary_bytes,
+                    "Rhino sum surface weights",
+                ),
+            ))
         })?;
         Some(values)
     } else {
@@ -872,18 +914,31 @@ fn copy_rows<T: Clone>(
         GeometryError::not_implemented("Rhino surface grid bytes exceed address space")
     })?;
     let bytes = cadmpeg_core::decode::u64_from_index(bytes);
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(item_count),
-        operation,
-    )?;
+    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(item_count), operation)?;
     ctx.charge_retained(bytes, operation)?;
     let mut rows = Vec::new();
-    rows.try_reserve_exact(row_count)
-        .map_err(|_| crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, bytes, operation))))?;
+    rows.try_reserve_exact(row_count).map_err(|_| {
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                u64::MAX,
+                bytes,
+                operation,
+            ),
+        ))
+    })?;
     for source in values.chunks(row_len) {
         let mut row = Vec::new();
-        row.try_reserve_exact(source.len())
-            .map_err(|_| crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, bytes, operation))))?;
+        row.try_reserve_exact(source.len()).map_err(|_| {
+            crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    u64::MAX,
+                    bytes,
+                    operation,
+                ),
+            ))
+        })?;
         row.extend_from_slice(source);
         rows.push(row);
     }
@@ -911,9 +966,16 @@ fn copy_axis_knots(
 ) -> Result<Vec<f64>, GeometryError> {
     let bytes = charge_axis_knots(ctx, source.len(), operation)?;
     let mut knots = Vec::new();
-    knots
-        .try_reserve_exact(source.len())
-        .map_err(|_| crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, bytes, operation))))?;
+    knots.try_reserve_exact(source.len()).map_err(|_| {
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                u64::MAX,
+                bytes,
+                operation,
+            ),
+        ))
+    })?;
     knots.extend_from_slice(source);
     Ok(knots)
 }
@@ -924,9 +986,16 @@ fn copy_checked_axis_knots(
     operation: &'static str,
 ) -> Result<KnotVector, GeometryError> {
     let bytes = charge_axis_knots(ctx, source.len(), operation)?;
-    source
-        .try_clone()
-        .map_err(|_| crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, bytes, operation))))
+    source.try_clone().map_err(|_| {
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                u64::MAX,
+                bytes,
+                operation,
+            ),
+        ))
+    })
 }
 
 fn admit_nurbs_pole_conversion(
@@ -1005,7 +1074,14 @@ pub(crate) fn extrusion_nurbs(
     };
     let knot_bytes = charge_axis_knots(ctx, start.knots().len(), "Rhino extrusion surface knots")?;
     let u_knots = start.knots().try_clone().map_err(|_| {
-        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, knot_bytes, "Rhino extrusion surface knots")))
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                u64::MAX,
+                knot_bytes,
+                "Rhino extrusion surface knots",
+            ),
+        ))
     })?;
     let [path_start, path_end] = path_domain.finite_components();
     let path_knots =
@@ -1063,12 +1139,28 @@ fn extrusion_rows<T: Copy>(
     let row_bytes = cadmpeg_core::decode::u64_from_index(row_bytes);
     ctx.charge_retained(row_bytes, operation)?;
     let mut rows = Vec::new();
-    rows.try_reserve_exact(row_count)
-        .map_err(|_| crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, row_bytes, operation))))?;
+    rows.try_reserve_exact(row_count).map_err(|_| {
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                u64::MAX,
+                row_bytes,
+                operation,
+            ),
+        ))
+    })?;
     for (first, second) in start.iter().copied().zip(end.iter().copied()) {
         let mut row = Vec::new();
-        row.try_reserve_exact(2)
-            .map_err(|_| crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, row_bytes, operation))))?;
+        row.try_reserve_exact(2).map_err(|_| {
+            crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    u64::MAX,
+                    row_bytes,
+                    operation,
+                ),
+            ))
+        })?;
         row.push(first);
         row.push(second);
         rows.push(row);
@@ -1372,9 +1464,16 @@ fn read_knots(
     ctx.charge_collection_items(count_u64, "Rhino NURBS knots")?;
     ctx.charge_retained(bytes, "Rhino NURBS knots")?;
     let mut knots = Vec::new();
-    knots
-        .try_reserve_exact(count)
-        .map_err(|_| crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, bytes, "Rhino NURBS knots"))))?;
+    knots.try_reserve_exact(count).map_err(|_| {
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                u64::MAX,
+                bytes,
+                "Rhino NURBS knots",
+            ),
+        ))
+    })?;
     for _ in 0..count {
         let knot_offset = reader.position();
         let value = reader.f64()?;
@@ -1415,16 +1514,23 @@ fn read_poles(
 ) -> Result<(Vec<FinitePoint3>, Option<Vec<NonZeroReal>>), GeometryError> {
     let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     let point_bytes = count_u64
-        .checked_mul(
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Point3>()),
-        )
+        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            Point3,
+        >()))
         .ok_or_else(|| GeometryError::not_implemented("NURBS pole bytes exceed address space"))?;
     ctx.charge_collection_items(count_u64, "Rhino NURBS poles")?;
     ctx.charge_retained(point_bytes, "Rhino NURBS poles")?;
     let mut points = Vec::new();
-    points
-        .try_reserve_exact(count)
-        .map_err(|_| crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, point_bytes, "Rhino NURBS poles"))))?;
+    points.try_reserve_exact(count).map_err(|_| {
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                u64::MAX,
+                point_bytes,
+                "Rhino NURBS poles",
+            ),
+        ))
+    })?;
     let mut weights = if rational {
         let weight_bytes = count_u64.checked_mul(8).ok_or_else(|| {
             GeometryError::not_implemented("NURBS weight bytes exceed address space")
@@ -1432,9 +1538,16 @@ fn read_poles(
         ctx.charge_collection_items(count_u64, "Rhino NURBS weights")?;
         ctx.charge_retained(weight_bytes, "Rhino NURBS weights")?;
         let mut values = Vec::new();
-        values
-            .try_reserve_exact(count)
-            .map_err(|_| crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, weight_bytes, "Rhino NURBS weights"))))?;
+        values.try_reserve_exact(count).map_err(|_| {
+            crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                    u64::MAX,
+                    weight_bytes,
+                    "Rhino NURBS weights",
+                ),
+            ))
+        })?;
         Some(values)
     } else {
         None
@@ -1483,7 +1596,14 @@ pub(crate) fn reconstruct_knots(
         reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index])?;
     let mut result = Vec::new();
     result.try_reserve_exact(capacity).map_err(|_| {
-        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, allocation_bytes, "Rhino NURBS reconstructed knots")))
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                u64::MAX,
+                allocation_bytes,
+                "Rhino NURBS reconstructed knots",
+            ),
+        ))
     })?;
     result.push(start.get());
     result.extend_from_slice(knots);
@@ -1500,7 +1620,14 @@ fn reconstruct_checked_knots(
         reconstructed_endpoints(knots.len(), order, cv_count, |index| knots[index].get())?;
     let mut result = Vec::new();
     result.try_reserve_exact(capacity).map_err(|_| {
-        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::RetainedBytes, u64::MAX, allocation_bytes, "Rhino NURBS reconstructed knots")))
+        crate::curves::GeometryError::Codec(cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                u64::MAX,
+                allocation_bytes,
+                "Rhino NURBS reconstructed knots",
+            ),
+        ))
     })?;
     result.push(start);
     result.extend_from_slice(knots);

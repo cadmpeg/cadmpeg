@@ -307,7 +307,14 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     product_by_object
         .try_reserve(product_nodes.len())
         .map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, product_nodes.len() as u64, "fcstd product validation index"))
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                    ctx.policy().limits.max_collection_items,
+                    product_nodes.len() as u64,
+                    "fcstd product validation index",
+                ),
+            )
         })?;
     for node in &product_nodes {
         product_by_object.insert(node.object.as_str(), node);

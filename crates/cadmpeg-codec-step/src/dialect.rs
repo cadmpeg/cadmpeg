@@ -273,13 +273,23 @@ impl StepDialect {
             charge_declared_entry(ctx)?;
             declared.insert(
                 cadmpeg_core::nonblank_const!(DECLARED_FILE_SCHEMA_IDENTIFIER),
-                match ctx { Some(ctx) => ctx.copy_retained_text(identifier, "step_dialect_declared_text"), None => crate::parse::copy_unmetered_text(identifier, "step_dialect_declared_text") }?,
+                match ctx {
+                    Some(ctx) => ctx.copy_retained_text(identifier, "step_dialect_declared_text"),
+                    None => {
+                        crate::parse::copy_unmetered_text(identifier, "step_dialect_declared_text")
+                    }
+                }?,
             );
             if let Some((_, Some(arcs))) = split_schema_identifier(identifier) {
                 charge_declared_entry(ctx)?;
                 declared.insert(
                     cadmpeg_core::nonblank_const!(DECLARED_LONG_FORM_ARCS),
-                    match ctx { Some(ctx) => ctx.copy_retained_text(arcs, "step_dialect_declared_text"), None => crate::parse::copy_unmetered_text(arcs, "step_dialect_declared_text") }?,
+                    match ctx {
+                        Some(ctx) => ctx.copy_retained_text(arcs, "step_dialect_declared_text"),
+                        None => {
+                            crate::parse::copy_unmetered_text(arcs, "step_dialect_declared_text")
+                        }
+                    }?,
                 );
             }
         }
@@ -293,7 +303,16 @@ impl StepDialect {
         charge_declared_entry(ctx)?;
         declared.insert(
             cadmpeg_core::nonblank_const!(DECLARED_IMPLEMENTATION_LEVEL),
-            match ctx { Some(ctx) => ctx.copy_retained_text(exchange.implementation_level(), "step_dialect_declared_text"), None => crate::parse::copy_unmetered_text(exchange.implementation_level(), "step_dialect_declared_text") }?,
+            match ctx {
+                Some(ctx) => ctx.copy_retained_text(
+                    exchange.implementation_level(),
+                    "step_dialect_declared_text",
+                ),
+                None => crate::parse::copy_unmetered_text(
+                    exchange.implementation_level(),
+                    "step_dialect_declared_text",
+                ),
+            }?,
         );
 
         Ok(if dialect == Self::Unknown {

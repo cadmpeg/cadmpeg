@@ -21,8 +21,7 @@ use crate::native::{
     LogicalSpan, PropertyFamily, PropertyRecord, StringTableRecord,
 };
 use crate::resource::{
-    collection_vec, insert_hash_set, reserve_vec_items, retained_format,
-    retained_suffix,
+    collection_vec, insert_hash_set, reserve_vec_items, retained_format, retained_suffix,
 };
 
 const DETECTION_XML_BYTES: usize = 8 * 1024;
@@ -168,7 +167,8 @@ pub(crate) fn entry_records(
                 1,
                 "FCStd entry referencing properties",
             )?;
-            referenced_by.push(ctx.copy_retained_text(&property.id, "FCStd entry referencing identity")?);
+            referenced_by
+                .push(ctx.copy_retained_text(&property.id, "FCStd entry referencing identity")?);
         }
         records.push(EntryRecord {
             id: crate::native::native_id_charged(ctx, "entry", &entry.name)?,
@@ -199,7 +199,9 @@ pub(crate) fn add_entry_reference(
         1,
         "FCStd GUI entry references",
     )?;
-    entry.referenced_by.push(ctx.copy_retained_text(owner, "FCStd GUI entry reference identity")?);
+    entry
+        .referenced_by
+        .push(ctx.copy_retained_text(owner, "FCStd GUI entry reference identity")?);
     Ok(())
 }
 
@@ -357,7 +359,9 @@ pub(crate) fn canonical_attribute(
         (Some(_), Some(_)) => Err(CodecError::malformed(format_args!(
             "Document element has both {canonical} and {alias} attributes"
         ))),
-        (Some(value), None) => Ok(Some(ctx.copy_retained_text(value, "FCStd document attribute")?)),
+        (Some(value), None) => Ok(Some(
+            ctx.copy_retained_text(value, "FCStd document attribute")?,
+        )),
         (None, Some(_)) => Err(CodecError::malformed(format_args!(
             "Document element uses unsupported {alias}; expected {canonical}"
         ))),
@@ -730,7 +734,8 @@ pub(crate) fn byte_coverage(
         ) && !named_opaque_entries.contains(&span.entry)
         {
             ctx.charge_collection_items(1, "FCStd opaque coverage entries")?;
-            named_opaque_entries.insert(ctx.copy_retained_text(&span.entry, "FCStd opaque entry name")?);
+            named_opaque_entries
+                .insert(ctx.copy_retained_text(&span.entry, "FCStd opaque entry name")?);
         }
     }
     let mut ordered_physical = collection_vec(ctx, physical.len(), "FCStd ordered physical spans")?;

@@ -515,29 +515,30 @@ fn reserve_framed_vec<T>(
     values: &mut Vec<T>,
     operation: &'static str,
 ) -> Result<(), StreamFailure> {
-    values
-        .try_reserve(1)
-        .map_err(|_| StreamFailure::Resource(cadmpeg_core::CodecError::ResourceLimit(
+    values.try_reserve(1).map_err(|_| {
+        StreamFailure::Resource(cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation,
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
             ),
-        )))
+        ))
+    })
 }
 
-fn copy_framed_string(
-    value: &str,
-    operation: &'static str,
-) -> Result<String, StreamFailure> {
+fn copy_framed_string(value: &str, operation: &'static str) -> Result<String, StreamFailure> {
     let mut copy = String::new();
-    copy.try_reserve(value.len())
-        .map_err(|_| StreamFailure::Resource(cadmpeg_core::CodecError::ResourceLimit(
+    copy.try_reserve(value.len()).map_err(|_| {
+        StreamFailure::Resource(cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::Codec(operation),
                 0,
                 cadmpeg_core::decode::u64_from_index(value.len()),
                 operation,
             ),
-        )))?;
+        ))
+    })?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -731,7 +732,8 @@ fn frame_impl(
                     charge_items(ctx, 1, "frame SAB token")?;
                     grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     reserve_framed_vec(&mut tokens, "frame SAB token")?;
-                    tokens.push(Token::Ident(copy_framed_string(identifier,
+                    tokens.push(Token::Ident(copy_framed_string(
+                        identifier,
                         "frame SAB identifier",
                     )?));
                 }
@@ -740,7 +742,8 @@ fn frame_impl(
                     charge_items(ctx, 1, "frame SAB token")?;
                     grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     reserve_framed_vec(&mut tokens, "frame SAB token")?;
-                    tokens.push(Token::SubIdent(copy_framed_string(identifier,
+                    tokens.push(Token::SubIdent(copy_framed_string(
+                        identifier,
                         "frame SAB subidentifier",
                     )?));
                 }
@@ -750,9 +753,7 @@ fn frame_impl(
                     charge_items(ctx, 1, "frame SAB token")?;
                     grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
                     reserve_framed_vec(&mut tokens, "frame SAB token")?;
-                    tokens.push(Token::Str(copy_framed_string(value,
-                        "frame SAB string",
-                    )?));
+                    tokens.push(Token::Str(copy_framed_string(value, "frame SAB string")?));
                 }
                 Lexed::Value(Token::SubtypeOpen) => {
                     payload_start = false;
@@ -825,16 +826,16 @@ fn frame_impl(
             "edge".to_owned()
         } else {
             let mut joined = String::new();
-            joined
-                .try_reserve(name_bytes)
-                .map_err(|_| StreamFailure::Resource(cadmpeg_core::CodecError::ResourceLimit(
+            joined.try_reserve(name_bytes).map_err(|_| {
+                StreamFailure::Resource(cadmpeg_core::CodecError::ResourceLimit(
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
                         cadmpeg_core::decode::ResourceDimension::Codec("SAB record name"),
                         0,
                         cadmpeg_core::decode::u64_from_index(name_bytes),
                         "SAB record name",
                     ),
-                )))?;
+                ))
+            })?;
             for (index, part) in name_parts.iter().enumerate() {
                 if index != 0 {
                     joined.push('-');

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transfer of application-owned mesh and point payloads.
 
-use cadmpeg_core::decode::{
-    BoundedCount, DecodeContext, View,
-};
+use cadmpeg_core::decode::{BoundedCount, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
@@ -17,9 +15,7 @@ use cadmpeg_ir::SourceObjectAssociation;
 use crate::layout::mesh_facet;
 use crate::layout::mesh_kernel_side_entry_header as mesh_hdr;
 use crate::native::{EntryRecord, PropertyRecord};
-use crate::resource::{
-    collection_vec, reserve_vec_items, retained_format, retained_suffix,
-};
+use crate::resource::{collection_vec, reserve_vec_items, retained_format, retained_suffix};
 
 const MAX_ELEMENTS: usize = 1_000_000;
 const MESH_MAGIC: u32 = mesh_hdr::MAGIC_VALUE;
@@ -156,7 +152,9 @@ fn association(
 ) -> Result<SourceObjectAssociation, CodecError> {
     Ok(SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Fcstd,
-        object_id: cadmpeg_core::text::NonBlankString::new(ctx.copy_retained_text(&property.owner, "FreeCAD geometry object identity")?)
+        object_id: cadmpeg_core::text::NonBlankString::new(
+            ctx.copy_retained_text(&property.owner, "FreeCAD geometry object identity")?,
+        )
         .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))?,
         name: Some(ctx.copy_retained_text(&property.name, "FreeCAD geometry property name")?),
         color: None,
@@ -190,7 +188,14 @@ fn parse_mesh(
     ctx.charge_collection_items(facet_capacity as u64, "FreeCAD mesh facets")?;
     let mut triangles = Vec::new();
     triangles.try_reserve_exact(facet_capacity).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, facet_capacity as u64, "FreeCAD mesh facets"))
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                facet_capacity as u64,
+                "FreeCAD mesh facets",
+            ),
+        )
     })?;
     for _ in 0..facet_count {
         let triangle = [

@@ -88,9 +88,16 @@ fn unsupported_message(
     let requested = cadmpeg_core::decode::u64_from_index(length);
     ctx.charge_retained(requested, "ASM stream error text")?;
     let mut message = String::new();
-    message
-        .try_reserve(length)
-        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("ASM stream error text"), 0, requested, "ASM stream error text")))?;
+    message.try_reserve(length).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("ASM stream error text"),
+                0,
+                requested,
+                "ASM stream error text",
+            ),
+        )
+    })?;
     message.push_str(prefix);
     message.push_str(" failed at byte ");
     message.push_str(&offset);

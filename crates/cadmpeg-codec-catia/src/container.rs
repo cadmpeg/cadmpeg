@@ -353,7 +353,8 @@ fn external_references_in_segments(
         for (relative, value) in bytes.windows(STORAGE.len()).enumerate() {
             if value == STORAGE {
                 if let Some((target_offset, target)) = parse_external_reference(bytes, relative) {
-                    let target = ctx.copy_retained_text(target, "catia_external_reference_target")?;
+                    let target =
+                        ctx.copy_retained_text(target, "catia_external_reference_target")?;
                     let reference = ExternalReference {
                         offset: target_offset + segment.range.start,
                         target,
@@ -441,8 +442,7 @@ fn parse_last_save_version(
     let Some((version, release, service_pack, hot_fix, build_date)) = parsed else {
         return Ok(None);
     };
-    let build_date =
-        ctx.copy_retained_text(build_date, "catia_last_save_build_date")?;
+    let build_date = ctx.copy_retained_text(build_date, "catia_last_save_build_date")?;
     Ok(Some(LastSaveVersion {
         version,
         release,
@@ -1505,10 +1505,8 @@ fn parse_outer_container_declarations(
         let Some(ordinal) = View::u32_le_at(data, start + 12) else {
             continue;
         };
-        let class_name =
-            ctx.copy_retained_text(class_name, "catia_container_class_name")?;
-        let base_class =
-            ctx.copy_retained_text(base_class, "catia_container_base_class")?;
+        let class_name = ctx.copy_retained_text(class_name, "catia_container_class_name")?;
+        let base_class = ctx.copy_retained_text(base_class, "catia_container_base_class")?;
         crate::resource::push(
             ctx,
             &mut declarations,
@@ -1955,8 +1953,7 @@ pub(crate) fn summarize(
             reference.target.as_str().into(),
             LENGTH_PREFIXED_ASCII_HEADER,
         );
-        let name =
-            ctx.copy_retained_text(&reference.target, "catia_summary_entry_name")?;
+        let name = ctx.copy_retained_text(&reference.target, "catia_summary_entry_name")?;
         crate::resource::push(
             ctx,
             &mut entries,
@@ -1998,9 +1995,7 @@ pub(crate) fn summarize(
             "catia_summary_attribute",
         )?;
         let name = match &segment.name {
-            Some(name) => {
-                ctx.copy_retained_text(name, "catia_summary_entry_name")?
-            }
+            Some(name) => ctx.copy_retained_text(name, "catia_summary_entry_name")?,
             None => crate::resource::format_retained(
                 ctx,
                 format_args!("FINJPL#{index}"),
@@ -2084,7 +2079,10 @@ pub(crate) fn notes(
             crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
         }
         None => {
-            let note = ctx.copy_retained_text("no nested V5_CFV2 sub-container (outer-preamble record families only)", "catia_container_note")?;
+            let note = ctx.copy_retained_text(
+                "no nested V5_CFV2 sub-container (outer-preamble record families only)",
+                "catia_container_note",
+            )?;
             crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
         }
     }
@@ -2129,8 +2127,11 @@ pub(crate) fn notes(
         )?;
         crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
     }
-    let note = ctx.copy_retained_text("container-level enumeration; `decode` applies the identified storage family's \
-         standard, freeform, E5, zero-entity, or metadata-fallback route", "catia_container_note")?;
+    let note = ctx.copy_retained_text(
+        "container-level enumeration; `decode` applies the identified storage family's \
+         standard, freeform, E5, zero-entity, or metadata-fallback route",
+        "catia_container_note",
+    )?;
     crate::resource::push(ctx, &mut notes, note, "catia_container_notes")?;
     Ok(notes)
 }

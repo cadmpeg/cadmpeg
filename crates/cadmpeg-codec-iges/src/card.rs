@@ -467,9 +467,16 @@ fn physical_lines(
             } else {
                 LineEnding::None
             };
-            lines
-                .try_reserve(1)
-                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges_cards"), u64_from_index(lines.len()), 1, "iges_cards")))?;
+            lines.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec("iges_cards"),
+                        u64_from_index(lines.len()),
+                        1,
+                        "iges_cards",
+                    ),
+                )
+            })?;
             lines.push(UnframedLine {
                 line: PhysicalLine {
                     offset: cadmpeg_core::decode::u64_from_index(card_start),
@@ -486,9 +493,16 @@ fn physical_lines(
         if card_start != payload_end {
             charge_line(ctx)?;
             let payload = copy_card_payload(&source[card_start..payload_end], ctx)?;
-            lines
-                .try_reserve(1)
-                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges_cards"), u64_from_index(lines.len()), 1, "iges_cards")))?;
+            lines.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec("iges_cards"),
+                        u64_from_index(lines.len()),
+                        1,
+                        "iges_cards",
+                    ),
+                )
+            })?;
             lines.push(UnframedLine {
                 line: PhysicalLine {
                     offset: cadmpeg_core::decode::u64_from_index(card_start),
@@ -517,9 +531,16 @@ fn frame_sections(
         ctx.charge_collection_items(count, "iges framed cards")?;
     }
     let mut scanned = Vec::new();
-    scanned
-        .try_reserve_exact(lines.len())
-        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges framed cards"), count, count, "iges framed cards")))?;
+    scanned.try_reserve_exact(lines.len()).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec("iges framed cards"),
+                count,
+                count,
+                "iges framed cards",
+            ),
+        )
+    })?;
     let mut section = None;
     let mut position = 1_usize;
     let mut terminated = false;
@@ -677,7 +698,16 @@ fn copy_card_payload(bytes: &[u8], ctx: Option<&DecodeContext<'_>>) -> Result<Ve
         None => {
             let mut payload = Vec::new();
             payload.try_reserve_exact(bytes.len()).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("iges physical card payload"), u64_from_index(bytes.len()), u64_from_index(bytes.len()), "iges physical card payload"))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "iges physical card payload",
+                        ),
+                        u64_from_index(bytes.len()),
+                        u64_from_index(bytes.len()),
+                        "iges physical card payload",
+                    ),
+                )
             })?;
             payload.extend_from_slice(bytes);
             Ok(payload)

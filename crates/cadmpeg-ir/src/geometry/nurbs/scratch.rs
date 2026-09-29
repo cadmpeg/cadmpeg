@@ -21,17 +21,15 @@ pub(crate) fn reserve_exact<T>(
     additional: usize,
     operation: &'static str,
 ) -> Result<(), ResourceLimit> {
-    output
-        .try_reserve_exact(additional)
-        .map_err(|_| {
-            let requested = cadmpeg_core::decode::u64_from_index(additional);
-            ResourceLimit::allocation_failed(
-                ResourceDimension::Codec(operation),
-                requested,
-                requested,
-                operation,
-            )
-        })
+    output.try_reserve_exact(additional).map_err(|_| {
+        let requested = cadmpeg_core::decode::u64_from_index(additional);
+        ResourceLimit::allocation_failed(
+            ResourceDimension::Codec(operation),
+            requested,
+            requested,
+            operation,
+        )
+    })
 }
 
 #[cfg(test)]

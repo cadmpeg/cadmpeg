@@ -12,9 +12,7 @@ use crate::native::{
 };
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentMetaState};
 
-use super::{
-    admit_native_items, retained_format, retained_hex, retained_sha256,
-};
+use super::{admit_native_items, retained_format, retained_hex, retained_sha256};
 
 pub(super) struct RseNativeProjection {
     pub(super) identity_issues: Vec<StructuralIssueRecord>,
@@ -60,7 +58,8 @@ pub(super) fn project(
                     format_args!("segment:{token}"),
                     "retain Inventor segment identity issue scope",
                 )?,
-                detail: ctx.copy_retained_text(detail, "retain Inventor segment identity issue detail")?,
+                detail: ctx
+                    .copy_retained_text(detail, "retain Inventor segment identity issue detail")?,
             });
         }
         admit_native_items(ctx, 1)?;
@@ -83,10 +82,15 @@ pub(super) fn project(
                         format_args!("inventor:rse:segment-meta#{token}"),
                         "retain Inventor segment metadata id",
                     )?,
-                    token: ctx.copy_retained_text(token, "retain Inventor segment metadata token")?,
+                    token: ctx
+                        .copy_retained_text(token, "retain Inventor segment metadata token")?,
                     version: meta.declared.version,
-                    kind: ctx.copy_retained_text(segment.kind.label(), "retain Inventor segment kind")?,
-                    display_name: ctx.copy_retained_text(&meta.display_name, "retain Inventor segment display name")?,
+                    kind: ctx
+                        .copy_retained_text(segment.kind.label(), "retain Inventor segment kind")?,
+                    display_name: ctx.copy_retained_text(
+                        &meta.display_name,
+                        "retain Inventor segment display name",
+                    )?,
                     segment_id: retained_hex(
                         ctx,
                         &meta.segment_id,
@@ -94,10 +98,18 @@ pub(super) fn project(
                     )?,
                     header_values: meta.header_values,
                     state_words: meta.state_words,
-                    created: ctx.copy_retained_text(&meta.created, "retain Inventor segment creation text")?,
-                    modified: ctx.copy_retained_text(&meta.modified, "retain Inventor segment modification text")?,
+                    created: ctx.copy_retained_text(
+                        &meta.created,
+                        "retain Inventor segment creation text",
+                    )?,
+                    modified: ctx.copy_retained_text(
+                        &meta.modified,
+                        "retain Inventor segment modification text",
+                    )?,
                     body_form: meta.body_form,
-                    expanded_body_len: cadmpeg_core::decode::u64_from_index(meta.body.window().len()),
+                    expanded_body_len: cadmpeg_core::decode::u64_from_index(
+                        meta.body.window().len(),
+                    ),
                     expanded_body_sha256: retained_sha256(
                         ctx,
                         meta.body.window(),
@@ -120,10 +132,13 @@ pub(super) fn project(
                             format_args!("inventor:rse:meta-section#{token}-{}", section.number),
                             "retain Inventor metadata section id",
                         )?,
-                        token: ctx.copy_retained_text(token, "retain Inventor metadata section token")?,
+                        token: ctx
+                            .copy_retained_text(token, "retain Inventor metadata section token")?,
                         number: section.number,
                         discriminator: section.discriminator,
-                        payload_len: cadmpeg_core::decode::u64_from_index(section.payload.window().len()),
+                        payload_len: cadmpeg_core::decode::u64_from_index(
+                            section.payload.window().len(),
+                        ),
                         payload_sha256: retained_sha256(
                             ctx,
                             section.payload.window(),
@@ -139,7 +154,8 @@ pub(super) fn project(
                             format_args!("inventor:rse:meta-type#{token}-{}", descriptor.index),
                             "retain Inventor metadata type id",
                         )?,
-                        token: ctx.copy_retained_text(token, "retain Inventor metadata type token")?,
+                        token: ctx
+                            .copy_retained_text(token, "retain Inventor metadata type token")?,
                         index: descriptor.index,
                         type_id: retained_hex(
                             ctx,
@@ -159,7 +175,8 @@ pub(super) fn project(
                         "retain Inventor metadata issue id",
                     )?,
                     token: ctx.copy_retained_text(token, "retain Inventor metadata issue token")?,
-                    detail: ctx.copy_retained_text(detail, "retain Inventor metadata issue detail")?,
+                    detail: ctx
+                        .copy_retained_text(detail, "retain Inventor metadata issue detail")?,
                 });
             }
         }
@@ -175,7 +192,9 @@ pub(super) fn project(
                         }
                         SegmentBulkFrame::Framed {
                             record_count: cadmpeg_core::decode::u64_from_index(table.records.len()),
-                            stream_trailer_len: cadmpeg_core::decode::u64_from_index(table.stream_trailer.window().len()),
+                            stream_trailer_len: cadmpeg_core::decode::u64_from_index(
+                                table.stream_trailer.window().len(),
+                            ),
                             stream_trailer_sha256: retained_sha256(
                                 ctx,
                                 table.stream_trailer.window(),
@@ -184,7 +203,8 @@ pub(super) fn project(
                         }
                     }
                     RecordFrameState::Unavailable(detail) => SegmentBulkFrame::Unavailable {
-                        detail: ctx.copy_retained_text(detail, "retain Inventor RSe frame issue")?,
+                        detail: ctx
+                            .copy_retained_text(detail, "retain Inventor RSe frame issue")?,
                     },
                 };
                 admit_native_items(ctx, 1)?;
@@ -197,13 +217,17 @@ pub(super) fn project(
                     token: ctx.copy_retained_text(token, "retain Inventor segment bulk token")?,
                     prefix: retained_hex(ctx, &bulk.prefix, "retain Inventor segment bulk prefix")?,
                     form: bulk.form.value(),
-                    compressed_len: cadmpeg_core::decode::u64_from_index(bulk.compressed.window().len()),
+                    compressed_len: cadmpeg_core::decode::u64_from_index(
+                        bulk.compressed.window().len(),
+                    ),
                     compressed_sha256: retained_sha256(
                         ctx,
                         bulk.compressed.window(),
                         "retain Inventor compressed bulk digest",
                     )?,
-                    expanded_len: cadmpeg_core::decode::u64_from_index(bulk.expanded.window().len()),
+                    expanded_len: cadmpeg_core::decode::u64_from_index(
+                        bulk.expanded.window().len(),
+                    ),
                     expanded_sha256: retained_sha256(
                         ctx,
                         bulk.expanded.window(),
@@ -234,7 +258,8 @@ pub(super) fn project(
                 format_args!("inventor:rse:unpaired-metadata#{}", token.as_str()),
                 "retain Inventor unpaired metadata id",
             )?,
-            token: ctx.copy_retained_text(token.as_str(), "retain Inventor unpaired metadata token")?,
+            token: ctx
+                .copy_retained_text(token.as_str(), "retain Inventor unpaired metadata token")?,
             missing_member: UnpairedMember::Bulk,
         });
     }

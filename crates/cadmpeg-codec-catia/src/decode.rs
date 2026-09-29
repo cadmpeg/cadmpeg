@@ -3748,7 +3748,9 @@ fn modeling_graph_scope(
             .is_some_and(|container| container.class_name == "CATPrtCont")
     });
     Ok(match (part_graphs.next(), part_graphs.next()) {
-        (Some(graph), None) => ModelingGraphScope::Scoped(ctx.copy_retained_text(&graph.id, "catia_modeling_scope_graph")?),
+        (Some(graph), None) => ModelingGraphScope::Scoped(
+            ctx.copy_retained_text(&graph.id, "catia_modeling_scope_graph")?,
+        ),
         _ => ModelingGraphScope::Unresolved,
     })
 }

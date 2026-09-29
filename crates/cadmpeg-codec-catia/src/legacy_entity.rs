@@ -451,8 +451,7 @@ fn charge_scan(
     length: usize,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let work =
-        cadmpeg_core::decode::u64_from_index(length);
+    let work = cadmpeg_core::decode::u64_from_index(length);
     ctx.charge_work(work, operation)
 }
 
@@ -808,7 +807,9 @@ fn parse_type_descriptors(
             continue;
         };
         let value = match name {
-            Some(name) => LegacyTypeValue::Name(ctx.copy_retained_text(name, "catia_legacy_type_name")?),
+            Some(name) => {
+                LegacyTypeValue::Name(ctx.copy_retained_text(name, "catia_legacy_type_name")?)
+            }
             None => LegacyTypeValue::Selector(selector),
         };
         crate::resource::push(
@@ -1219,9 +1220,15 @@ fn parse_relations(
                         identities,
                     ),
                     expression_offset: expression.offset,
-                    expression: ctx.copy_retained_text(&expression.value, "catia_legacy_relation_expression")?,
+                    expression: ctx.copy_retained_text(
+                        &expression.value,
+                        "catia_legacy_relation_expression",
+                    )?,
                     signature_offset: type_signature.offset,
-                    type_signature: ctx.copy_retained_text(&type_signature.value, "catia_legacy_relation_signature")?,
+                    type_signature: ctx.copy_retained_text(
+                        &type_signature.value,
+                        "catia_legacy_relation_signature",
+                    )?,
                     signature,
                 };
                 crate::resource::push(ctx, &mut relations, relation, "catia_legacy_relations")?;
@@ -1295,7 +1302,8 @@ pub(crate) fn parse_relation_signature(
             crate::resource::insert_set(ctx, &mut names, parameter, "catia_legacy_relation_names")?;
             let parameter = LegacyRelationParameter {
                 parameter: ctx.copy_retained_text(parameter, "catia_legacy_relation_parameter")?,
-                value_type: ctx.copy_retained_text(value_type, "catia_legacy_relation_value_type")?,
+                value_type: ctx
+                    .copy_retained_text(value_type, "catia_legacy_relation_value_type")?,
             };
             if output_role {
                 if output.replace(parameter).is_some() {
@@ -1312,7 +1320,9 @@ pub(crate) fn parse_relation_signature(
         };
         LegacyRelationResult::Void { output }
     } else if output.is_none() {
-        LegacyRelationResult::Typed(ctx.copy_retained_text(result_type, "catia_legacy_relation_result_type")?)
+        LegacyRelationResult::Typed(
+            ctx.copy_retained_text(result_type, "catia_legacy_relation_result_type")?,
+        )
     } else {
         return Ok(None);
     };

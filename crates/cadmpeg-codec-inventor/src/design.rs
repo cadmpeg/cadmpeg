@@ -767,7 +767,16 @@ fn render_expression<'a>(
         let length = plan.lengths[&ordinal].length;
         let mut text = String::new();
         text.try_reserve_exact(length).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("Inventor expression string allocation"), length as u64, length as u64 + 1, "Inventor expression string allocation"))
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(
+                        "Inventor expression string allocation",
+                    ),
+                    length as u64,
+                    length as u64 + 1,
+                    "Inventor expression string allocation",
+                ),
+            )
         })?;
         let expression = expressions[&(token, ordinal)];
         match &expression.kind {

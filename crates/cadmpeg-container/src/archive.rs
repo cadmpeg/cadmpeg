@@ -685,8 +685,6 @@ fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
         .map(|raw| [raw[0], raw[1], raw[2], raw[3]])
 }
 
-
-
 fn collection_vec<T>(
     ctx: &DecodeContext<'_>,
     count: usize,
@@ -694,9 +692,14 @@ fn collection_vec<T>(
 ) -> Result<Vec<T>, CodecError> {
     ctx.charge_collection_items(count as u64, operation)?;
     let mut values = Vec::new();
-    values
-        .try_reserve_exact(count)
-        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, cadmpeg_core::decode::u64_from_index(count), operation)))?;
+    values.try_reserve_exact(count).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+            ResourceDimension::CollectionItems,
+            ctx.policy().limits.max_collection_items,
+            cadmpeg_core::decode::u64_from_index(count),
+            operation,
+        ))
+    })?;
     Ok(values)
 }
 
@@ -706,12 +709,15 @@ fn reserve_vec_item<T>(
     operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| CodecError::ResourceLimit(ResourceLimit::allocation_failed(ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, cadmpeg_core::decode::u64_from_index(1), operation)))
+    values.try_reserve(1).map_err(|_| {
+        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
+            ResourceDimension::CollectionItems,
+            ctx.policy().limits.max_collection_items,
+            cadmpeg_core::decode::u64_from_index(1),
+            operation,
+        ))
+    })
 }
-
-
 
 fn push_region(
     ctx: &DecodeContext<'_>,
@@ -767,7 +773,9 @@ fn physical_ledger(
             &mut regions,
             entry.header_start,
             entry.header_start + 4,
-            ZipSpanRole::LocalSignature(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::LocalSignature(
+                ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+            ),
         )?;
         push_region(
             ctx,
@@ -795,7 +803,9 @@ fn physical_ledger(
             &mut regions,
             entry.data_start,
             entry.data_end()?,
-            ZipSpanRole::CompressedPayload(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::CompressedPayload(
+                ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+            ),
         )?;
 
         let next = local_order
@@ -816,7 +826,9 @@ fn physical_ledger(
                     &mut regions,
                     entry.data_end()?,
                     descriptor_end,
-                    ZipSpanRole::DataDescriptor(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
+                    ZipSpanRole::DataDescriptor(
+                        ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+                    ),
                 )?;
                 push_region(
                     ctx,
@@ -870,14 +882,18 @@ fn physical_ledger(
             &mut regions,
             entry.central_start,
             entry.central_start + 4,
-            ZipSpanRole::CentralSignature(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::CentralSignature(
+                ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+            ),
         )?;
         push_region(
             ctx,
             &mut regions,
             entry.central_start + 4,
             fixed_end,
-            ZipSpanRole::CentralFields(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::CentralFields(
+                ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+            ),
         )?;
         push_region(
             ctx,
@@ -891,14 +907,18 @@ fn physical_ledger(
             &mut regions,
             name_end,
             extra_end,
-            ZipSpanRole::CentralExtra(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::CentralExtra(
+                ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+            ),
         )?;
         push_region(
             ctx,
             &mut regions,
             extra_end,
             record_end,
-            ZipSpanRole::CentralComment(ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?),
+            ZipSpanRole::CentralComment(
+                ctx.copy_retained_text(&entry.name, "ZIP ledger entry name")?,
+            ),
         )?;
         central_end = central_end.max(record_end);
     }

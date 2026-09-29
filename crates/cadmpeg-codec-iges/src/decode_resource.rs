@@ -25,8 +25,16 @@ pub(crate) fn format_retained(
     let count = u64_from_index(length.0);
     ctx.charge_retained(count, operation)?;
     let mut text = String::new();
-    text.try_reserve_exact(length.0)
-        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), count, count, operation)))?;
+    text.try_reserve_exact(length.0).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                count,
+                count,
+                operation,
+            ),
+        )
+    })?;
     fmt::write(&mut text, args)
         .map_err(|_| CodecError::Malformed("IGES formatted text cannot be rendered".into()))?;
     Ok(text)
@@ -42,7 +50,14 @@ pub(crate) fn copy_optional_identity<T: TryFrom<String>>(
         None => {
             let mut text = String::new();
             text.try_reserve_exact(value.len()).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), u64_from_index(value.len()), u64_from_index(value.len()), operation))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                        u64_from_index(value.len()),
+                        u64_from_index(value.len()),
+                        operation,
+                    ),
+                )
             })?;
             text.push_str(value);
             text
@@ -64,8 +79,16 @@ pub(crate) fn clone_optional_identity<T: fmt::Display + TryFrom<String>>(
         ctx.charge_retained(count, operation)?;
     }
     let mut text = String::new();
-    text.try_reserve_exact(length.0)
-        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), count, count, operation)))?;
+    text.try_reserve_exact(length.0).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                count,
+                count,
+                operation,
+            ),
+        )
+    })?;
     fmt::write(&mut text, format_args!("{value}"))
         .map_err(|_| CodecError::Malformed("IGES identity cannot be rendered".into()))?;
     T::try_from(text).map_err(|_| CodecError::Malformed("IGES identity copy is invalid".into()))
@@ -106,8 +129,16 @@ pub(crate) fn lossy_retained(
     let count = u64_from_index(output_len);
     ctx.charge_retained(count, operation)?;
     let mut text = String::new();
-    text.try_reserve_exact(output_len)
-        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), count, count, operation)))?;
+    text.try_reserve_exact(output_len).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                count,
+                count,
+                operation,
+            ),
+        )
+    })?;
     let mut remaining = bytes;
     loop {
         match std::str::from_utf8(remaining) {
@@ -167,9 +198,16 @@ pub(crate) fn reserve_admitted_vec<T>(
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
     let mut values = Vec::new();
-    values
-        .try_reserve_exact(count)
-        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), u64_from_index(count), u64_from_index(count), operation)))?;
+    values.try_reserve_exact(count).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                u64_from_index(count),
+                u64_from_index(count),
+                operation,
+            ),
+        )
+    })?;
     Ok(values)
 }
 
@@ -181,9 +219,16 @@ pub(crate) fn reserve_vec_growth<T>(
 ) -> Result<(), CodecError> {
     let requested = u64_from_index(additional);
     ctx.charge_collection_items(requested, operation)?;
-    values
-        .try_reserve(additional)
-        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), requested, requested, operation)))
+    values.try_reserve(additional).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                requested,
+                requested,
+                operation,
+            ),
+        )
+    })
 }
 
 pub(crate) fn collect_result_vec<T>(
@@ -208,7 +253,14 @@ pub(crate) fn reserve_optional_vec_growth<T>(
     match ctx {
         Some(ctx) => reserve_vec_growth(ctx, values, additional, operation),
         None => values.try_reserve(additional).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), u64_from_index(additional), u64_from_index(additional), operation))
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    u64_from_index(additional),
+                    u64_from_index(additional),
+                    operation,
+                ),
+            )
         }),
     }
 }
@@ -223,7 +275,14 @@ pub(crate) fn copy_optional_retained(
         None => {
             let mut copy = Vec::new();
             copy.try_reserve_exact(bytes.len()).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), u64_from_index(bytes.len()), u64_from_index(bytes.len()), operation))
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                        u64_from_index(bytes.len()),
+                        u64_from_index(bytes.len()),
+                        operation,
+                    ),
+                )
             })?;
             copy.extend_from_slice(bytes);
             Ok(copy)
@@ -271,9 +330,16 @@ pub(crate) fn collect_optional_vec<T>(
             return Ok(None);
         };
         ctx.charge_collection_items(1, operation)?;
-        collected
-            .try_reserve(1)
-            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 1, 1, operation)))?;
+        collected.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    1,
+                    1,
+                    operation,
+                ),
+            )
+        })?;
         collected.push(value);
     }
     Ok(Some(collected))

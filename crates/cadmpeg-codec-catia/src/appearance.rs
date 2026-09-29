@@ -277,8 +277,7 @@ fn insert_appearance(
             AppearanceId::mint,
             "catia_appearance_asset_id",
         )?;
-        let schema =
-            ctx.copy_retained_text("CATIA V5 display color", "catia_appearance_schema")?;
+        let schema = ctx.copy_retained_text("CATIA V5 display color", "catia_appearance_schema")?;
         resource::push(
             ctx,
             &mut ir.model.appearances,
@@ -346,7 +345,8 @@ fn insert_source_binding(
         ir,
         &appearance,
         AppearanceTarget::Source {
-            source_id: ctx.copy_retained_text(&packet.source_id, "catia_appearance_bound_source")?,
+            source_id: ctx
+                .copy_retained_text(&packet.source_id, "catia_appearance_bound_source")?,
         },
         id,
     )
@@ -366,7 +366,8 @@ fn insert_binding_record(
         AppearanceId::mint,
         "catia_appearance_binding_asset_id",
     )?;
-    let object_type = ctx.copy_retained_text("CATIA V5 display property", "catia_appearance_object_type")?;
+    let object_type =
+        ctx.copy_retained_text("CATIA V5 display property", "catia_appearance_object_type")?;
     resource::push(
         ctx,
         &mut ir.model.appearance_bindings,

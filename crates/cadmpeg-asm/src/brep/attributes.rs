@@ -196,7 +196,9 @@ fn attribute_value(
             Some(value) => value,
             None => return Ok(None),
         },
-        Token::Str(value) => AttributeValue::String(ctx.copy_retained_text(value, "ASM attribute string")?),
+        Token::Str(value) => {
+            AttributeValue::String(ctx.copy_retained_text(value, "ASM attribute string")?)
+        }
         Token::True => AttributeValue::Boolean(true),
         Token::False => AttributeValue::Boolean(false),
         Token::Ref(value) => {
@@ -212,9 +214,9 @@ fn attribute_value(
             Some(value) => value,
             None => return Ok(None),
         },
-        Token::Ident(value) | Token::SubIdent(value) => AttributeValue::String(
-            ctx.copy_retained_text(value, "ASM attribute identifier")?,
-        ),
+        Token::Ident(value) | Token::SubIdent(value) => {
+            AttributeValue::String(ctx.copy_retained_text(value, "ASM attribute identifier")?)
+        }
     }))
 }
 

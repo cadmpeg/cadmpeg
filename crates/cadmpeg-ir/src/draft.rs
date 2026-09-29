@@ -135,20 +135,32 @@ fn insert_admitted_identity<T>(
 ) -> Result<(), CodecError> {
     if !index.contains_key(&hash) {
         ctx.charge_collection_items(1, operation)?;
-        index
-            .try_reserve(1)
-            .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 1, 1, operation)))?;
+        index.try_reserve(1).map_err(|_| {
+            cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                    1,
+                    1,
+                    operation,
+                ),
+            )
+        })?;
     }
     ctx.charge_collection_items(1, operation)?;
     let slots = index.entry(hash).or_default();
-    slots
-        .try_reserve(1)
-        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 1, 1, operation)))?;
+    slots.try_reserve(1).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                1,
+                1,
+                operation,
+            ),
+        )
+    })?;
     slots.push(value);
     Ok(())
 }
-
-
 
 fn index_model_identities_admitted(
     model: &Model,

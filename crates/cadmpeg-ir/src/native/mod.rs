@@ -231,7 +231,9 @@ impl Write for ChargingJsonWriter<'_, '_> {
             {
                 self.refusal = Some(cadmpeg_core::CodecError::ResourceLimit(
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("serialize native record allocation"),
+                        cadmpeg_core::decode::ResourceDimension::Codec(
+                            "serialize native record allocation",
+                        ),
                         u64::MAX - 1,
                         amount,
                         "serialize native record allocation",
@@ -735,7 +737,14 @@ impl NativeNamespace {
                 }
             };
             typed.try_reserve(1).map_err(|_| {
-                NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("load typed native record"), 0, 1, "load typed native record")))
+                NativeConvertError::Resource(cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec("load typed native record"),
+                        0,
+                        1,
+                        "load typed native record",
+                    ),
+                ))
             })?;
             typed.push(value);
         }

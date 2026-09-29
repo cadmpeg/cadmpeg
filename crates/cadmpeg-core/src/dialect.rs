@@ -419,9 +419,14 @@ impl DialectLayers {
         let count = crate::decode::u64_from_index(self.extra.len());
         ctx.charge_collection_items(count, "dialect layer copies")?;
         let mut extra = Vec::new();
-        extra
-            .try_reserve_exact(self.extra.len())
-            .map_err(|_| crate::CodecError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(crate::decode::ResourceDimension::Codec("dialect layer copies"), 0, count, "dialect layer copies")))?;
+        extra.try_reserve_exact(self.extra.len()).map_err(|_| {
+            crate::CodecError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(
+                crate::decode::ResourceDimension::Codec("dialect layer copies"),
+                0,
+                count,
+                "dialect layer copies",
+            ))
+        })?;
         for layer in &self.extra {
             extra.push(layer.try_clone_for_decode(ctx)?);
         }
@@ -472,9 +477,14 @@ impl DialectLayers {
             return Ok(Err(layer));
         }
         ctx.charge_collection_items(1, operation)?;
-        self.extra
-            .try_reserve(1)
-            .map_err(|_| crate::CodecError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(crate::decode::ResourceDimension::Codec(operation), 0, 1, operation)))?;
+        self.extra.try_reserve(1).map_err(|_| {
+            crate::CodecError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(
+                crate::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ))
+        })?;
         self.extra.push(layer);
         Ok(Ok(()))
     }
@@ -612,10 +622,9 @@ impl DialectMatch {
         let mut declared = BTreeMap::new();
         for (key, value) in &self.declared {
             ctx.charge_collection_items(1, "dialect declaration copies")?;
-            let key = NonBlankString::new(ctx.copy_retained_text(
-                key.as_str(),
-                "dialect declaration key",
-            )?)
+            let key = NonBlankString::new(
+                ctx.copy_retained_text(key.as_str(), "dialect declaration key")?,
+            )
             .ok_or_else(|| crate::CodecError::malformed("dialect declaration key is blank"))?;
             declared.insert(
                 key,
@@ -632,10 +641,7 @@ impl DialectMatch {
             Admission::Residual => Admission::Residual,
             Admission::Refused => Admission::Refused,
             Admission::Unverified { using } => Admission::Unverified {
-                using: Grammar(ctx.copy_retained_text(
-                    using.as_str(),
-                    "dialect grammar copy",
-                )?),
+                using: Grammar(ctx.copy_retained_text(using.as_str(), "dialect grammar copy")?),
             },
         };
         Ok(Self {
@@ -763,8 +769,6 @@ impl DialectMatch {
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

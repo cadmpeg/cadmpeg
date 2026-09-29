@@ -44,9 +44,16 @@ pub(super) fn copy_decode_slice<T: Copy>(
 ) -> Result<Vec<T>, CodecError> {
     charge_decode_copy::<T>(values.len(), ctx, operation)?;
     let mut copied = Vec::new();
-    copied
-        .try_reserve_exact(values.len())
-        .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64_from_index(values.len()), operation)))?;
+    copied.try_reserve_exact(values.len()).map_err(|_| {
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                u64_from_index(values.len()),
+                operation,
+            ),
+        )
+    })?;
     copied.extend_from_slice(values);
     Ok(copied)
 }
@@ -442,7 +449,14 @@ impl SolvedCurveGeometry {
                 charge_decode_copy::<CompositeCurveSegment>(segments.len(), ctx, operation)?;
                 let mut copied = Vec::new();
                 copied.try_reserve_exact(segments.len()).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64_from_index(segments.len()), operation))
+                    cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                            0,
+                            u64_from_index(segments.len()),
+                            operation,
+                        ),
+                    )
                 })?;
                 for segment in segments {
                     copied.push(segment.clone());

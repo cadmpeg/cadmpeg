@@ -14,10 +14,7 @@ use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 use crate::native::{
     sole_named_property, DrawingRecord, ObjectRecord, PropertyRecord, TechDrawKind, ValueRecord,
 };
-use crate::resource::{
-    collection_vec, reserve_vec_items,
-    retained_strings,
-};
+use crate::resource::{collection_vec, reserve_vec_items, retained_strings};
 
 fn drawing_malformed(ctx: &DecodeContext<'_>, message: std::fmt::Arguments<'_>) -> CodecError {
     crate::resource::malformed_charged(ctx, message, "fcstd drawing diagnostic")
@@ -32,9 +29,16 @@ pub(crate) fn transfer(
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
             ctx.charge_collection_items(1, "fcstd drawing owner index")?;
-            by_owner
-                .try_reserve(1)
-                .map_err(|_| cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, 1, "fcstd drawing owner index")))?;
+            by_owner.try_reserve(1).map_err(|_| {
+                cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                        ctx.policy().limits.max_collection_items,
+                        1,
+                        "fcstd drawing owner index",
+                    ),
+                )
+            })?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
@@ -146,7 +150,14 @@ pub(crate) fn transfer_neutral(
     let mut neutral_ids = HashMap::new();
     ctx.charge_collection_items(records.len() as u64, "fcstd drawing neutral identities")?;
     neutral_ids.try_reserve(records.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::CollectionItems, ctx.policy().limits.max_collection_items, records.len() as u64, "fcstd drawing neutral identities"))
+        cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::CollectionItems,
+                ctx.policy().limits.max_collection_items,
+                records.len() as u64,
+                "fcstd drawing neutral identities",
+            ),
+        )
     })?;
     for record in records {
         neutral_ids.insert(
@@ -177,13 +188,19 @@ pub(crate) fn transfer_neutral(
             };
             let target = match (link.document_name(), link.object()) {
                 (Some(document), Some(object)) => ReferenceTarget::External {
-                    document: ctx.copy_retained_text(document, "fcstd drawing external document")?,
+                    document: ctx
+                        .copy_retained_text(document, "fcstd drawing external document")?,
                     object: ctx.copy_retained_text(object, "fcstd drawing external object")?,
                 },
                 (None, None) => ReferenceTarget::Null,
-                (None, Some(object)) => ReferenceTarget::Local(ctx.copy_retained_text(neutral_ids
-                        .get(object)
-                        .map_or(object, cadmpeg_ir::drawings::DrawingId::as_str), "fcstd drawing local relationship")?),
+                (None, Some(object)) => ReferenceTarget::Local(
+                    ctx.copy_retained_text(
+                        neutral_ids
+                            .get(object)
+                            .map_or(object, cadmpeg_ir::drawings::DrawingId::as_str),
+                        "fcstd drawing local relationship",
+                    )?,
+                ),
                 _ => {
                     return Err(CodecError::malformed(
                         "drawing relationship has no complete target",
@@ -261,7 +278,9 @@ pub(crate) fn transfer_neutral(
         };
         let template = template_id
             .map(|id| {
-                DrawingId::mint(ctx.copy_retained_text(id.as_str(), "fcstd drawing template identity")?)
+                DrawingId::mint(
+                    ctx.copy_retained_text(id.as_str(), "fcstd drawing template identity")?,
+                )
                 .map_err(CodecError::malformed)
             })
             .transpose()?;
@@ -288,12 +307,15 @@ pub(crate) fn transfer_neutral(
                     )
                 })
                 .and_then(|id| {
-                    DrawingId::mint(ctx.copy_retained_text(id.as_str(), "fcstd drawing neutral identity")?)
+                    DrawingId::mint(
+                        ctx.copy_retained_text(id.as_str(), "fcstd drawing neutral identity")?,
+                    )
                     .map_err(CodecError::malformed)
                 })?,
             object: ctx.copy_retained_text(&record.object, "fcstd neutral drawing object")?,
             kind: classify(record.kind.as_str()),
-            runtime_type: ctx.copy_retained_text(record.kind.as_str(), "fcstd drawing neutral runtime type")?,
+            runtime_type: ctx
+                .copy_retained_text(record.kind.as_str(), "fcstd drawing neutral runtime type")?,
             order: order as u32,
             visible: None,
             relationships: crate::resource::named_entries_charged(

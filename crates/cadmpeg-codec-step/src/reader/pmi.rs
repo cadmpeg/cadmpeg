@@ -121,8 +121,22 @@ fn claim_pmi_typed(
             ctx.charge_collection_items(1, "step_pmi_typed_claims")?;
         }
         typed.try_reserve(1).map_err(|_| match ctx {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_typed_claims"), 0, 1, "step_pmi_typed_claims")),
-            None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_typed_claims"), 0, 1, "step_pmi_typed_claims")),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_typed_claims"),
+                    0,
+                    1,
+                    "step_pmi_typed_claims",
+                ),
+            ),
+            None => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_typed_claims"),
+                    0,
+                    1,
+                    "step_pmi_typed_claims",
+                ),
+            ),
         })?;
         typed.insert(id);
     }
@@ -150,8 +164,22 @@ fn push_pmi_vec<T>(
         ctx.charge_collection_items(1, operation)?;
     }
     values.try_reserve(1).map_err(|_| match ctx {
-        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
-        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, 1, operation)),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        ),
+        None => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(operation),
+                0,
+                1,
+                operation,
+            ),
+        ),
     })?;
     values.push(value);
     Ok(())
@@ -726,7 +754,15 @@ pub(super) fn decode(
                 .first()
                 .and_then(ValueExt::enumeration)
                 .map(|name| {
-                    let mut name = match ctx { Some(ctx) => ctx.copy_retained_text(name, "step_pmi_defined_area_unit_text"), None => crate::parse::copy_unmetered_text(name, "step_pmi_defined_area_unit_text") }?;
+                    let mut name = match ctx {
+                        Some(ctx) => {
+                            ctx.copy_retained_text(name, "step_pmi_defined_area_unit_text")
+                        }
+                        None => crate::parse::copy_unmetered_text(
+                            name,
+                            "step_pmi_defined_area_unit_text",
+                        ),
+                    }?;
                     name.make_ascii_lowercase();
                     Ok::<_, CodecError>(name)
                 })
@@ -1319,8 +1355,22 @@ fn push_source_id<T>(
     }
     let items = values.entry(source).or_default();
     items.try_reserve(1).map_err(|_| match ctx {
-        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(item_operation), 0, 1, item_operation)),
-        None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(item_operation), 0, 1, item_operation)),
+        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(item_operation),
+                0,
+                1,
+                item_operation,
+            ),
+        ),
+        None => cadmpeg_core::CodecError::ResourceLimit(
+            cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::Codec(item_operation),
+                0,
+                1,
+                item_operation,
+            ),
+        ),
     })?;
     items.push(id);
     Ok(())
@@ -1481,7 +1531,10 @@ fn clone_pmi_modifiers(
 ) -> Result<Vec<String>, CodecError> {
     let mut copy = Vec::new();
     for value in values {
-        let text = match ctx { Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy"), None => crate::parse::copy_unmetered_text(value, "step_pmi_datum_modifier_copy") }?;
+        let text = match ctx {
+            Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy"),
+            None => crate::parse::copy_unmetered_text(value, "step_pmi_datum_modifier_copy"),
+        }?;
         push_pmi_vec(&mut copy, text, ctx, "step_pmi_datum_modifier_items")?;
     }
     Ok(copy)
@@ -1569,7 +1622,10 @@ fn modifier_text(
         .transpose()?;
     match value {
         Value::Enumeration(value) => {
-            let mut text = match ctx { Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_modifier_text"), None => crate::parse::copy_unmetered_text(value, "step_pmi_datum_modifier_text") }?;
+            let mut text = match ctx {
+                Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_modifier_text"),
+                None => crate::parse::copy_unmetered_text(value, "step_pmi_datum_modifier_text"),
+            }?;
             text.make_ascii_lowercase();
             Ok(Some(text))
         }
@@ -1850,8 +1906,22 @@ fn targets(
         }
         seen.insert(id);
         targets.try_reserve(1).map_err(|_| match ctx {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_target_items"), 0, 1, "step_pmi_target_items")),
-            None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_target_items"), 0, 1, "step_pmi_target_items")),
+            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_target_items"),
+                    0,
+                    1,
+                    "step_pmi_target_items",
+                ),
+            ),
+            None => cadmpeg_core::CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_target_items"),
+                    0,
+                    1,
+                    "step_pmi_target_items",
+                ),
+            ),
         })?;
         targets.push(PmiTarget::ShapeAspect {
             source_id: super::step_source_id(id),
@@ -1869,7 +1939,10 @@ fn copy_pmi_identity<T: From<Identity>>(
     ctx: Option<&DecodeContext<'_>>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
-    let copy = match ctx { Some(ctx) => ctx.copy_retained_text(value, operation), None => crate::parse::copy_unmetered_text(value, operation) }?;
+    let copy = match ctx {
+        Some(ctx) => ctx.copy_retained_text(value, operation),
+        None => crate::parse::copy_unmetered_text(value, operation),
+    }?;
     let identity = Identity::new(copy)
         .map_err(|_| CodecError::malformed("STEP PMI target has an invalid identity"))?;
     Ok(T::from(identity))
@@ -1906,7 +1979,10 @@ fn copy_pmi_target(
             occurrence: copy_pmi_identity(occurrence.as_str(), ctx, operation)?,
         },
         PmiTarget::ShapeAspect { source_id } => {
-            let copy = match ctx { Some(ctx) => ctx.copy_retained_text(source_id.as_str(), operation), None => crate::parse::copy_unmetered_text(source_id.as_str(), operation) }?;
+            let copy = match ctx {
+                Some(ctx) => ctx.copy_retained_text(source_id.as_str(), operation),
+                None => crate::parse::copy_unmetered_text(source_id.as_str(), operation),
+            }?;
             let source_id = cadmpeg_core::text::NonBlankString::new(copy)
                 .ok_or_else(|| CodecError::malformed("STEP PMI target has a blank source ID"))?;
             PmiTarget::ShapeAspect { source_id }
@@ -1930,7 +2006,10 @@ fn datum_target_form(
     } else if form.eq_ignore_ascii_case("circular curve") {
         Ok(DatumTargetForm::CircularCurve)
     } else {
-        Ok(DatumTargetForm::Other(match ctx { Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_target_form_copy"), None => crate::parse::copy_unmetered_text(value, "step_pmi_datum_target_form_copy") }?))
+        Ok(DatumTargetForm::Other(match ctx {
+            Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_target_form_copy"),
+            None => crate::parse::copy_unmetered_text(value, "step_pmi_datum_target_form_copy"),
+        }?))
     }
 }
 
@@ -2135,7 +2214,10 @@ fn dimension_kind(
         "DIAMETER_SIZE" => Some(DimensionKind::Diameter),
         "RADIUS_SIZE" => Some(DimensionKind::Radius),
         name if name.ends_with("_SIZE") || name.ends_with("_LOCATION") => {
-            let mut name = match ctx { Some(ctx) => ctx.copy_retained_text(name, "step_pmi_other_dimension_name"), None => crate::parse::copy_unmetered_text(name, "step_pmi_other_dimension_name") }?;
+            let mut name = match ctx {
+                Some(ctx) => ctx.copy_retained_text(name, "step_pmi_other_dimension_name"),
+                None => crate::parse::copy_unmetered_text(name, "step_pmi_other_dimension_name"),
+            }?;
             name.make_ascii_lowercase();
             Some(DimensionKind::Other(name))
         }
@@ -2204,7 +2286,10 @@ fn modifier_values(
         .transpose()?;
     match value {
         Value::Enumeration(value) => {
-            let mut text = match ctx { Some(ctx) => ctx.copy_retained_text(value, "step_pmi_modifier_text"), None => crate::parse::copy_unmetered_text(value, "step_pmi_modifier_text") }?;
+            let mut text = match ctx {
+                Some(ctx) => ctx.copy_retained_text(value, "step_pmi_modifier_text"),
+                None => crate::parse::copy_unmetered_text(value, "step_pmi_modifier_text"),
+            }?;
             text.make_ascii_lowercase();
             push_pmi_vec(output, text, ctx, "step_pmi_modifier_items")?;
         }
@@ -2360,8 +2445,22 @@ fn characteristic_measure_values(
                 ctx.charge_collection_items(1, "step_pmi_measure_values")?;
             }
             values.try_reserve(1).map_err(|_| match ctx {
-                Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"), 0, 1, "step_pmi_measure_values")),
-                None => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"), 0, 1, "step_pmi_measure_values")),
+                Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"),
+                        0,
+                        1,
+                        "step_pmi_measure_values",
+                    ),
+                ),
+                None => cadmpeg_core::CodecError::ResourceLimit(
+                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                        cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"),
+                        0,
+                        1,
+                        "step_pmi_measure_values",
+                    ),
+                ),
             })?;
             values.push((name, value));
         }
@@ -2373,10 +2472,26 @@ fn characteristic_measure_values(
                     ctx.charge_collection_items(1, "step_pmi_measure_values")?;
                 }
                 values.try_reserve(1).map_err(|_| match ctx {
-                    Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"), 0, 1, "step_pmi_measure_values")),
-                    None => {
-                        cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"), 0, 1, "step_pmi_measure_values"))
-                    }
+                    Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "step_pmi_measure_values",
+                            ),
+                            0,
+                            1,
+                            "step_pmi_measure_values",
+                        ),
+                    ),
+                    None => cadmpeg_core::CodecError::ResourceLimit(
+                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                            cadmpeg_core::decode::ResourceDimension::Codec(
+                                "step_pmi_measure_values",
+                            ),
+                            0,
+                            1,
+                            "step_pmi_measure_values",
+                        ),
+                    ),
                 })?;
                 values.push((None, value));
             }

@@ -73,12 +73,14 @@ impl Write for ChargedText<'_, '_> {
             return Err(fmt::Error);
         }
         if self.text.try_reserve(text.len()).is_err() {
-            self.refusal = Some(CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(self.operation),
-                0,
-                u64_from_index(text.len()),
-                self.operation,
-            )));
+            self.refusal = Some(CodecError::ResourceLimit(
+                cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                    cadmpeg_core::decode::ResourceDimension::Codec(self.operation),
+                    0,
+                    u64_from_index(text.len()),
+                    self.operation,
+                ),
+            ));
             return Err(fmt::Error);
         }
         self.text.push_str(text);

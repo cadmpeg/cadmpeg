@@ -539,8 +539,14 @@ pub fn alloc_filled<T: Clone>(
     operation: &'static str,
 ) -> Result<Vec<T>, CodecError> {
     let mut out = Vec::new();
-    out.try_reserve_exact(count)
-        .map_err(|_| crate::CodecError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(crate::decode::ResourceDimension::Codec(operation), count as u64, count as u64, operation)))?;
+    out.try_reserve_exact(count).map_err(|_| {
+        crate::CodecError::ResourceLimit(crate::decode::ResourceLimit::allocation_failed(
+            crate::decode::ResourceDimension::Codec(operation),
+            count as u64,
+            count as u64,
+            operation,
+        ))
+    })?;
     out.resize(count, value);
     Ok(out)
 }

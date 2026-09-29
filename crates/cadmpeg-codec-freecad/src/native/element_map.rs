@@ -218,7 +218,8 @@ impl ElementMapNodes {
                         1,
                         "FreeCAD element topology bindings",
                     )?;
-                    name.topology_ids.push(ctx.copy_retained_text(id, "FreeCAD element topology identity")?);
+                    name.topology_ids
+                        .push(ctx.copy_retained_text(id, "FreeCAD element topology identity")?);
                 }
             }
         }
