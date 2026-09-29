@@ -9,6 +9,9 @@ use crate::native::features::feature_point_construction_scalar_lanes;
 use crate::native::features::feature_swp104_leading_branches;
 use crate::native::features::feature_extrude_profile_references;
 use crate::native::features::feature_extrude_payload_headers;
+use crate::native::features::feature_operation_terminal_discriminators;
+use crate::native::features::feature_operation_body_scalar_triples;
+use crate::native::features::feature_operation_body_members;
 use crate::native::features::feature_surface_construction_references;
 use crate::native::features::feature_surface_construction_payloads;
 use crate::native::features::feature_thru_curve_construction_envelopes;
@@ -81,6 +84,97 @@ fn swp104_container() -> crate::container::Container<'static> {
 
 #[derive(Clone, Copy)]
 enum ExtrudeRoute { Profile, Header }
+
+#[derive(Clone, Copy)]
+enum OperationLaneRoute { Terminal, ScalarTriple, BodyMember }
+
+fn operation_lane_refusal(
+    route: OperationLaneRoute,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let (label, bytes, expected) = match route {
+        OperationLaneRoute::Terminal => ("EXTRUDE",
+            b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00".as_slice(), 1),
+        OperationLaneRoute::ScalarTriple => ("TRIM BODY",
+            b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\xaa\x01\x02\x10\x43\xff\x11\x30\x00\x00\x00\x00\x00\x00\x00\x00\x00".as_slice(), 2),
+        OperationLaneRoute::BodyMember => ("SEW",
+            b"\x01\x02\x10\x42\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x03\x2e\x7f\x00\x2e\x80\x01\x00".as_slice(), 2),
+    };
+    let container = reference_container(label, bytes.to_vec());
+    let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        match route {
+            OperationLaneRoute::Terminal => feature_operation_terminal_discriminators(ctx, &container)
+                .map(|rows| rows.len()),
+            OperationLaneRoute::ScalarTriple => feature_operation_body_scalar_triples(ctx, &container)
+                .map(|rows| rows.len()),
+            OperationLaneRoute::BodyMember => feature_operation_body_members(ctx, &container)
+                .map(|rows| rows.len()),
+        }
+    };
+    assert_eq!(crate::test_support::with_decode_context(|ctx| decode(ctx))
+        .expect("admitted operation lane"), expected);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    decode(&ctx).expect_err("operation lane resource limit")
+}
+
+macro_rules! operation_lane_limit_tests {
+    ($collection:ident, $retained:ident, $scoped:ident, $work:ident, $route:expr) => {
+        #[test]
+        fn $collection() {
+            let error = operation_lane_refusal($route,
+                |policy| policy.limits.max_collection_items = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        }
+        #[test]
+        fn $retained() {
+            let error = operation_lane_refusal($route,
+                |policy| policy.limits.max_retained_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        }
+        #[test]
+        fn $scoped() {
+            let error = operation_lane_refusal($route,
+                |policy| policy.limits.max_materialized_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+        }
+        #[test]
+        fn $work() {
+            let error = operation_lane_refusal($route,
+                |policy| policy.limits.max_work_units = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        }
+    };
+}
+
+operation_lane_limit_tests!(
+    operation_terminal_refuses_collection_limit,
+    operation_terminal_refuses_retained_limit,
+    operation_terminal_refuses_scoped_limit,
+    operation_terminal_refuses_work_limit,
+    OperationLaneRoute::Terminal
+);
+operation_lane_limit_tests!(
+    operation_scalar_triple_refuses_collection_limit,
+    operation_scalar_triple_refuses_retained_limit,
+    operation_scalar_triple_refuses_scoped_limit,
+    operation_scalar_triple_refuses_work_limit,
+    OperationLaneRoute::ScalarTriple
+);
+operation_lane_limit_tests!(
+    operation_body_member_refuses_collection_limit,
+    operation_body_member_refuses_retained_limit,
+    operation_body_member_refuses_scoped_limit,
+    operation_body_member_refuses_work_limit,
+    OperationLaneRoute::BodyMember
+);
 
 fn extrude_route_refusal(
     route: ExtrudeRoute,
