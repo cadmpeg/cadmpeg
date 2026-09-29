@@ -2093,8 +2093,8 @@ fn attach_feature_operations(
             continue;
         };
         let boolean_offset_store_resolution = booleans.get(label.id.as_str()).map(|operation| {
-            crate::native::segments::boolean_offset_store_resolution(operation, data_blocks)
-        });
+            crate::native::segments::boolean_offset_store_resolution(ctx, operation, data_blocks)
+        }).transpose()?;
         let boolean_definition = booleans
             .get(label.id.as_str())
             .zip(boolean_offset_store_resolution.as_ref())

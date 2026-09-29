@@ -586,9 +586,15 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
         source_entry: String::new(),
         source_offset: 0,
     };
+    let resolution = |operation: &crate::native::features::FeatureBooleanOperation,
+                      blocks: &[DataBlock]| {
+        crate::test_support::with_decode_context(|ctx| {
+            crate::native::segments::boolean_offset_store_resolution(ctx, operation, blocks)
+        }).expect("admitted Boolean offset-store resolution")
+    };
     let same_store = vec![block(3, 401), block(3, 402), block(3, 403)];
     assert_eq!(
-        crate::native::segments::boolean_offset_store_resolution(&operation, &same_store),
+        resolution(&operation, &same_store),
         crate::native::segments::BooleanOffsetStoreResolution::Complete(BTreeMap::from([
             (401, "nx:om-data-blocks-3:block#401".to_string()),
             (402, "nx:om-data-blocks-3:block#402".to_string()),
@@ -597,11 +603,11 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
     );
     let mixed_store = vec![block(3, 401), block(4, 402), block(4, 403)];
     assert!(matches!(
-        crate::native::segments::boolean_offset_store_resolution(&operation, &mixed_store),
+        resolution(&operation, &mixed_store),
         crate::native::segments::BooleanOffsetStoreResolution::Unresolved
     ));
     assert!(matches!(
-        crate::native::segments::boolean_offset_store_resolution(&operation, &[]),
+        resolution(&operation, &[]),
         crate::native::segments::BooleanOffsetStoreResolution::None
     ));
     let mut control = block(3, 0);
@@ -621,10 +627,68 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
         ..operation.clone()
     };
     assert!(matches!(
-        crate::native::segments::boolean_offset_store_resolution(
+        resolution(
             &control_operation,
             &[control, block(3, 401), block(3, 402)],
         ),
         crate::native::segments::BooleanOffsetStoreResolution::Unresolved
     ));
+}
+
+fn boolean_offset_store_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    use crate::native::features::{FeatureBooleanKind, FeatureBooleanOperation};
+    use crate::native::om::{DataBlock, DataBlockRole};
+    let operation = FeatureBooleanOperation {
+        id: "boolean#resource".to_string(),
+        operation_label: "operation#resource".to_string(),
+        kind: FeatureBooleanKind::Unite,
+        target: crate::test_support::native_references::boolean_reference(1, 0),
+        tools: vec![crate::test_support::native_references::boolean_reference(2, 1)],
+        source_offset: 0,
+    };
+    let blocks = [1, 2].map(|index| DataBlock {
+        id: format!("block#{index}"),
+        section_ordinal: 0,
+        block_ordinal: index,
+        role: DataBlockRole::Column,
+        section_offset: 0,
+        byte_len: 0,
+        sha256: crate::native::hex::Sha256Hex::digest(&[]),
+        stable_identity: None,
+        source_entry: String::new(),
+        source_offset: 0,
+    });
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::segments::boolean_offset_store_resolution(ctx, &operation, &blocks)
+    }).expect("admitted Boolean offset-store participants");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    crate::native::segments::boolean_offset_store_resolution(&ctx, &operation, &blocks)
+        .expect_err("Boolean offset-store resource refusal")
+}
+
+#[test]
+fn boolean_offset_store_refuses_collection_limit() {
+    let error = boolean_offset_store_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn boolean_offset_store_refuses_retained_limit() {
+    let error = boolean_offset_store_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+}
+
+#[test]
+fn boolean_offset_store_refuses_work_limit() {
+    let error = boolean_offset_store_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
