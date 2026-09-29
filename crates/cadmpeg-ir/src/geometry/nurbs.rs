@@ -1634,6 +1634,34 @@ impl NurbsCurve {
         self.poles.reverse();
         self.knots.reverse_negated();
     }
+
+    /// Reverse poles and reflect knots within an admitted parameter range.
+    /// The curve stays unchanged when a reflected knot is not finite or the
+    /// resulting knot lane is decreasing.
+    #[must_use]
+    pub fn reverse_parameterization_in_range(
+        &mut self,
+        start: FiniteReal,
+        end: FiniteReal,
+    ) -> Option<()> {
+        let mut previous = None;
+        for knot in self.knots.0.iter().rev() {
+            let reflected = crate::math::reflect_parameter(FiniteReal::new(*knot)?, start, end)?;
+            if previous.is_some_and(|previous| previous > reflected) {
+                return None;
+            }
+            previous = Some(reflected);
+        }
+        self.poles.reverse();
+        self.knots.0.reverse();
+        for knot in &mut self.knots.0 {
+            // The validation pass reached the same original knot before mutation.
+            let reflected = FiniteReal::new(*knot)
+                .and_then(|knot| crate::math::reflect_parameter(knot, start, end))?;
+            *knot = reflected.get();
+        }
+        Some(())
+    }
 }
 
 impl<'de> Deserialize<'de> for NurbsCurve {
