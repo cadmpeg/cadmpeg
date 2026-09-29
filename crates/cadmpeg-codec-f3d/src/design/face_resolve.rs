@@ -1585,19 +1585,20 @@ fn unique_face_operand_history_candidate(
 }
 
 pub(crate) fn resolve_bounded_face_history_candidates(
+    ctx: Option<&DecodeContext<'_>>,
     operand: &DesignFaceOperand,
-) -> Option<Vec<i64>> {
+) -> Result<Option<Vec<i64>>, CodecError> {
     if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace {
-        return None;
+        return Ok(None);
     }
-    if let Some(candidate) = convergent_effective_face_support(operand) {
-        return Some(candidate);
+    if let Some(candidate) = convergent_effective_face_support(ctx, operand)? {
+        return Ok(Some(candidate));
     }
-    let header_value = complete_counted_face_recipe(operand)?;
-    bounded_face_candidate_by_boundary_cardinality(
+    let Some(header_value) = complete_counted_face_recipe(operand) else { return Ok(None); };
+    Ok(bounded_face_candidate_by_boundary_cardinality(
         header_value,
         &operand.historical_support_contexts,
-    )
+    ))
 }
 
 pub(crate) fn resolve_stable_bounded_face_history_set(
@@ -1727,12 +1728,16 @@ fn stable_face_support_set(
     Ok(Some(result))
 }
 
-fn convergent_effective_face_support(operand: &DesignFaceOperand) -> Option<Vec<i64>> {
-    let active_faces = effective_historical_face_slots(
+fn convergent_effective_face_support(
+    ctx: Option<&DecodeContext<'_>>,
+    operand: &DesignFaceOperand,
+) -> Result<Option<Vec<i64>>, CodecError> {
+    let Some(active_faces) = effective_historical_face_slots(
+        ctx,
         face_operand_candidates(operand),
         &operand.historical_support_contexts,
-    )?;
-    convergent_face_support(&active_faces, &operand.historical_support_contexts)
+    )? else { return Ok(None); };
+    convergent_face_support(ctx, &active_faces, &operand.historical_support_contexts)
 }
 
 /// Return candidate slots that have a complete historical support context.
@@ -1744,57 +1749,71 @@ fn convergent_effective_face_support(operand: &DesignFaceOperand) -> Option<Vec<
 /// the subset admission explicit and reject a context that is not in the
 /// operand's candidate lane.
 fn effective_historical_face_slots(
+    ctx: Option<&DecodeContext<'_>>,
     candidates: &[cadmpeg_ir::ids::FaceId],
     contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
-) -> Option<Vec<i64>> {
-    let mut candidate_slots = candidates
-        .iter()
-        .map(|face| face.as_str().rsplit_once('#')?.1.parse::<i64>().ok())
-        .collect::<Option<Vec<_>>>()?;
+) -> Result<Option<Vec<i64>>, CodecError> {
+    let mut candidate_slots = Vec::new();
+    for face in candidates {
+        let Some(slot) = face.as_str().rsplit_once('#').and_then(|(_, slot)| slot.parse::<i64>().ok()) else { return Ok(None); };
+        push_face_item(ctx, &mut candidate_slots, slot, "f3d effective candidate face slot")?;
+    }
     candidate_slots.sort_unstable();
     candidate_slots.dedup();
 
-    let mut active_faces = contexts
-        .iter()
-        .map(|context| context.active_face_slot)
-        .collect::<Vec<_>>();
+    let mut active_faces = Vec::new();
+    for context in contexts {
+        push_face_item(ctx, &mut active_faces, context.active_face_slot,
+            "f3d effective active face slot")?;
+    }
     active_faces.sort_unstable();
     active_faces.dedup();
-    (!active_faces.is_empty()
+    Ok((!active_faces.is_empty()
         && active_faces
             .iter()
             .all(|slot| candidate_slots.binary_search(slot).is_ok()))
-    .then_some(active_faces)
+    .then_some(active_faces))
 }
 
 fn convergent_face_support(
+    ctx: Option<&DecodeContext<'_>>,
     active_faces: &[i64],
     support_contexts: &[crate::records::topology::historical_context::DesignHistoricalFaceSupportContext],
-) -> Option<Vec<i64>> {
+) -> Result<Option<Vec<i64>>, CodecError> {
     if active_faces.is_empty() {
-        return None;
+        return Ok(None);
     }
     let mut contexts = support_contexts.iter();
-    let first = contexts.next()?;
-    let mut support = first.preceding_face_slots.clone();
+    let Some(first) = contexts.next() else { return Ok(None); };
+    let mut support = Vec::new();
+    for slot in &first.preceding_face_slots {
+        push_face_item(ctx, &mut support, *slot, "f3d convergent support face")?;
+    }
     support.sort_unstable();
     support.dedup();
     if support.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let mut covered = vec![first.active_face_slot];
+    let mut covered = Vec::new();
+    push_face_item(ctx, &mut covered, first.active_face_slot,
+        "f3d convergent covered face")?;
     for context in contexts {
-        let mut candidate = context.preceding_face_slots.clone();
+        let mut candidate = Vec::new();
+        for slot in &context.preceding_face_slots {
+            push_face_item(ctx, &mut candidate, *slot,
+                "f3d convergent candidate support face")?;
+        }
         candidate.sort_unstable();
         candidate.dedup();
         if candidate != support {
-            return None;
+            return Ok(None);
         }
-        covered.push(context.active_face_slot);
+        push_face_item(ctx, &mut covered, context.active_face_slot,
+            "f3d convergent covered face")?;
     }
     covered.sort_unstable();
     covered.dedup();
-    (covered == active_faces).then_some(support)
+    Ok((covered == active_faces).then_some(support))
 }
 
 fn bounded_face_candidate_by_boundary_cardinality(
@@ -3344,13 +3363,13 @@ mod tests {
             support(12, &[(100, 4)]),
         ];
         assert_eq!(
-            convergent_face_support(&[10, 11, 12], &contexts),
+            convergent_face_support(None, &[10, 11, 12], &contexts).unwrap(),
             Some(vec![100])
         );
-        assert_eq!(convergent_face_support(&[10, 11, 12, 13], &contexts), None);
+        assert_eq!(convergent_face_support(None, &[10, 11, 12, 13], &contexts).unwrap(), None);
 
         let conflicting = [support(10, &[(100, 4)]), support(11, &[(101, 4)])];
-        assert_eq!(convergent_face_support(&[10, 11], &conflicting), None);
+        assert_eq!(convergent_face_support(None, &[10, 11], &conflicting).unwrap(), None);
     }
 
     #[test]
@@ -3362,13 +3381,77 @@ mod tests {
         ];
         let candidates = [face(10), face(11), face(12), face(13)];
         assert_eq!(
-            effective_historical_face_slots(&candidates, &contexts),
+            effective_historical_face_slots(None, &candidates, &contexts).unwrap(),
             Some(vec![10, 11, 12])
         );
         assert_eq!(
-            effective_historical_face_slots(&[face(10), face(11)], &contexts),
+            effective_historical_face_slots(None, &[face(10), face(11)], &contexts).unwrap(),
             None
         );
+    }
+
+    fn assert_effective_face_slot_refusal(limit: u64, operation: &'static str) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let contexts = [
+            support(10, &[(100, 4)]),
+            support(11, &[(100, 4)]),
+            support(12, &[(100, 4)]),
+        ];
+        let candidates = [face(10), face(11), face(12), face(13)];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = effective_historical_face_slots(Some(&ctx), &candidates, &contexts);
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == operation), "expected {operation} refusal, got {result:?}");
+    }
+
+    #[test]
+    fn effective_candidate_face_slot_refuses_collection_limit() {
+        assert_effective_face_slot_refusal(0, "f3d effective candidate face slot");
+    }
+
+    #[test]
+    fn effective_active_face_slot_refuses_collection_limit() {
+        assert_effective_face_slot_refusal(4, "f3d effective active face slot");
+    }
+
+    fn assert_convergent_face_refusal(limit: u64, operation: &'static str) {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::CodecError;
+
+        let contexts = [
+            support(10, &[(100, 4)]),
+            support(11, &[(100, 4)]),
+            support(12, &[(100, 4)]),
+        ];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = convergent_face_support(Some(&ctx), &[10, 11, 12], &contexts);
+        assert!(matches!(result, Err(CodecError::ResourceLimit(ref failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == operation), "expected {operation} refusal, got {result:?}");
+    }
+
+    #[test]
+    fn convergent_support_face_refuses_collection_limit() {
+        assert_convergent_face_refusal(0, "f3d convergent support face");
+    }
+
+    #[test]
+    fn convergent_covered_face_refuses_collection_limit() {
+        assert_convergent_face_refusal(1, "f3d convergent covered face");
+    }
+
+    #[test]
+    fn convergent_candidate_support_refuses_collection_limit() {
+        assert_convergent_face_refusal(2, "f3d convergent candidate support face");
     }
 
     #[test]
