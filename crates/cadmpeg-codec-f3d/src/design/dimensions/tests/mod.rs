@@ -85,3 +85,5 @@ mod spatial_reflection_limits;
 mod null_locus_limits;
 
 mod two_locus_limits;
+
+mod nurbs_containment_limits;

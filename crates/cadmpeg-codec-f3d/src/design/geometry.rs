@@ -194,7 +194,7 @@ pub(super) fn arrangement_region_containing_points(
         for point in points {
             let mut on_boundary = false;
             for use_ in &face.boundary {
-                if point_on_profile_boundary_use(*point, use_, entities, tolerance)? {
+                if point_on_profile_boundary_use(ctx, *point, use_, entities, tolerance)? {
                     on_boundary = true;
                     break;
                 }
@@ -224,7 +224,7 @@ pub(super) fn arrangement_region_containing_points(
         for point in points {
             let mut on_boundary = false;
             for use_ in &face.boundary {
-                if point_on_profile_boundary_use(*point, use_, entities, tolerance)? {
+                if point_on_profile_boundary_use(ctx, *point, use_, entities, tolerance)? {
                     on_boundary = true;
                     break;
                 }
@@ -1541,7 +1541,7 @@ fn sketch_geometry_point(
     })
 }
 
-fn nurbs_pcurve_evaluator_lanes(
+pub(super) fn nurbs_pcurve_evaluator_lanes(
     curve: &PcurveNurbs,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Vec<Point2>, Option<Vec<f64>>), CodecError> {
@@ -1557,17 +1557,18 @@ fn nurbs_pcurve_evaluator_lanes(
 }
 
 fn point_on_profile_boundary_use(
+    ctx: Option<&DecodeContext<'_>>,
     point: Point2,
     use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     let Some(entity) = entities.iter().find(|entity| entity.id() == &use_.entity) else {
         return Ok(false);
     };
-    if !point_on_sketch_entity(point, entity, tolerance)? {
+    if !point_on_sketch_entity(ctx, point, entity, tolerance)? {
         return Ok(false);
     }
     Ok(match entity.geometry.definition() {
@@ -1638,7 +1639,7 @@ pub(super) fn region_containing_points(
                 else {
                     continue;
                 };
-                if point_on_sketch_entity(*point, entity, tolerance)? {
+                if point_on_sketch_entity(ctx, *point, entity, tolerance)? {
                     insert_geometry_set(ctx, &mut incident, index,
                         "f3d profile incident boundary")?;
                     break;
@@ -2966,18 +2967,18 @@ pub(super) fn project_to_sketch(
 }
 
 pub(super) fn point_on_sketch_entity(
+    ctx: Option<&DecodeContext<'_>>,
     point: Point2,
     entity: &cadmpeg_ir::sketches::SketchEntity,
     tolerance: f64,
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if let SketchGeometryDefinition::Nurbs { curve } = entity.geometry.definition() {
         if curve.periodic() {
             return Ok(false);
         }
-        let control_points = curve.pole_rows().try_raw_points()?;
-        let weights = curve.pole_rows().try_weights()?;
+        let (control_points, weights) = crate::design::geometry::nurbs_pcurve_evaluator_lanes(curve, ctx)?;
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
             curve.degree(),
             curve.knots(),
@@ -2986,7 +2987,7 @@ pub(super) fn point_on_sketch_entity(
             point,
             tolerance,
         )
-        .map(|contained| contained.unwrap_or(false));
+        .map(|contained| contained.unwrap_or(false)).map_err(CodecError::ResourceLimit);
     }
     Ok((|| match entity.geometry.definition() {
         SketchGeometryDefinition::Line { start, end } => {

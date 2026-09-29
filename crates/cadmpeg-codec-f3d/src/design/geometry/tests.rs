@@ -1085,10 +1085,10 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, 1.0e-6)
+    assert!(point_on_sketch_entity(None, Point2::new(0.0, 2.0), &arc, EPS_CONTAINMENT_LINEAR)
         .expect("resource allocation did not fail"));
     assert!(
-        !point_on_sketch_entity(Point2::new(-2.0, 0.0), &arc, 1.0e-6)
+        !point_on_sketch_entity(None, Point2::new(-2.0, 0.0), &arc, EPS_CONTAINMENT_LINEAR)
             .expect("resource allocation did not fail")
     );
     let clockwise_arc = entity(
@@ -1100,13 +1100,13 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(point_lies_on_sketch_geometry(
+    assert!(point_lies_on_sketch_geometry(None,
         Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
         &clockwise_arc.geometry
     )
     .expect("resource allocation did not fail"));
     assert!(
-        !point_lies_on_sketch_geometry(Point2::new(-2.0, 0.0), &clockwise_arc.geometry)
+        !point_lies_on_sketch_geometry(None, Point2::new(-2.0, 0.0), &clockwise_arc.geometry)
             .expect("resource allocation did not fail")
     );
 
@@ -1126,15 +1126,15 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         .unwrap(),
     );
     assert!(
-        point_on_sketch_entity(Point2::new(-1.0, -1.0), &ellipse, 1.0e-6)
+        point_on_sketch_entity(None, Point2::new(-1.0, -1.0), &ellipse, EPS_CONTAINMENT_LINEAR)
             .expect("resource allocation did not fail")
     );
     assert!(
-        !point_on_sketch_entity(Point2::new(3.0, -1.0), &ellipse, 1.0e-6)
+        !point_on_sketch_entity(None, Point2::new(3.0, -1.0), &ellipse, EPS_CONTAINMENT_LINEAR)
             .expect("resource allocation did not fail")
     );
     assert!(
-        !point_on_sketch_entity(Point2::new(-1.0, -0.9), &ellipse, 1.0e-6)
+        !point_on_sketch_entity(None, Point2::new(-1.0, -0.9), &ellipse, EPS_CONTAINMENT_LINEAR)
             .expect("resource allocation did not fail")
     );
 
@@ -1153,11 +1153,11 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         .unwrap(),
     ));
     assert!(
-        point_on_sketch_entity(Point2::new(3.0, 2.0), &nurbs, 1.0e-6)
+        point_on_sketch_entity(None, Point2::new(3.0, 2.0), &nurbs, EPS_CONTAINMENT_LINEAR)
             .expect("resource allocation did not fail")
     );
     assert!(
-        !point_on_sketch_entity(Point2::new(2.0, 4.0), &nurbs, 1.0e-6)
+        !point_on_sketch_entity(None, Point2::new(2.0, 4.0), &nurbs, EPS_CONTAINMENT_LINEAR)
             .expect("resource allocation did not fail")
     );
     let SketchGeometryDefinition::Nurbs { curve } = nurbs.geometry.definition() else {
@@ -1173,7 +1173,7 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         0.375,
     )
     .unwrap();
-    assert!(point_on_sketch_entity(*interior.as_raw(), &nurbs, 1.0e-9)
+    assert!(point_on_sketch_entity(None, *interior.as_raw(), &nurbs, EPS_CONTAINMENT_DISTANCE)
         .expect("resource allocation did not fail"));
 }
 
@@ -1977,3 +1977,8 @@ fn certified_loop_containment_uses_existing_tube_vertices() {
     assert!(!loop_.contains_point(Point2::new(1.5, 1.5)));
     assert!(!loop_.contains_point(Point2::new(0.0, 0.0)));
 }
+
+const EPS_CONTAINMENT_LINEAR: f64 = 1.0e-6;
+const EPS_CONTAINMENT_DISTANCE: f64 = 1.0e-9;
+
+mod containment_limits;

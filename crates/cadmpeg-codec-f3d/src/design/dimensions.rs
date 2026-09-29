@@ -5792,7 +5792,7 @@ fn exact_counted_dimension_relation(
             let SketchGeometryDefinition::Point { position } = *point.geometry.definition() else {
                 return Ok(false);
             };
-            point_lies_on_sketch_geometry(position.get(), &geometry.geometry).map_err(CodecError::ResourceLimit)
+            point_lies_on_sketch_geometry(ctx, position.get(), &geometry.geometry)
         };
     if point_on_geometry(first, second)? || point_on_geometry(second, first)? {
         return Ok(Some(Definition::Coincident {
@@ -5867,9 +5867,10 @@ fn exact_counted_dimension_relation(
 }
 
 pub(super) fn point_lies_on_sketch_geometry(
+    ctx: Option<&DecodeContext<'_>>,
     point: Point2,
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
-) -> Result<bool, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
     if let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() {
@@ -5878,8 +5879,7 @@ pub(super) fn point_lies_on_sketch_geometry(
         }
         let tolerance = EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
             * (1.0 + point.u.abs().max(point.v.abs()));
-        let control_points = curve.pole_rows().try_raw_points()?;
-        let weights = curve.pole_rows().try_weights()?;
+        let (control_points, weights) = crate::design::geometry::nurbs_pcurve_evaluator_lanes(curve, ctx)?;
         return cadmpeg_ir::eval::nurbs_pcurve_contains_point(
             curve.degree(),
             curve.knots(),
@@ -5888,7 +5888,7 @@ pub(super) fn point_lies_on_sketch_geometry(
             point,
             tolerance,
         )
-        .map(|contained| contained.unwrap_or(false));
+        .map(|contained| contained.unwrap_or(false)).map_err(CodecError::ResourceLimit);
     }
 
     let close = |left: f64, right: f64| {
