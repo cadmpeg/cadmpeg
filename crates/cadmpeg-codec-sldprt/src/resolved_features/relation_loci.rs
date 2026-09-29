@@ -51,21 +51,23 @@ pub(super) fn linked_single_arc_entity(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchEntityId> {
-    let links = marker
+    let mut has_link = false;
+    for link in marker
         .links()
         .iter()
         .filter(|link| !relation_link_identifies_owner(marker, link))
-        .collect::<Vec<_>>();
-    if links.is_empty()
-        || links.iter().any(|link| {
-            !matches!(
-                markers_by_id
-                    .get(link.entity_ref.as_str())
-                    .map(|marker| marker.kind()),
-                Some(SketchInputKind::Arc)
-            )
-        })
     {
+        has_link = true;
+        if !matches!(
+            markers_by_id
+                .get(link.entity_ref.as_str())
+                .map(|marker| marker.kind()),
+            Some(SketchInputKind::Arc)
+        ) {
+            return None;
+        }
+    }
+    if !has_link {
         return None;
     }
     let entities = linked_single_entities(marker, markers_by_id, loci_by_marker)?;
@@ -102,17 +104,16 @@ pub(super) fn linked_midpoint_operands(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<(SketchLocus, SketchEntityId)> {
-    let links = marker
+    let mut links = marker
         .links()
         .iter()
-        .filter(|link| !relation_link_identifies_owner(marker, link))
-        .collect::<Vec<_>>();
-    let [first, second] = links.as_slice() else {
+        .filter(|link| !relation_link_identifies_owner(marker, link));
+    let (Some(first), Some(second), None) = (links.next(), links.next(), links.next()) else {
         return None;
     };
     let mut point = None;
     let mut entity = None;
-    for link in [*first, *second] {
+    for link in [first, second] {
         let linked_marker = markers_by_id.get(link.entity_ref.as_str())?;
         let locus = unique_locus(loci_by_marker.get(&link.entity_ref)?)?;
         match linked_marker.kind() {
