@@ -3034,13 +3034,13 @@ fn build_geometry_ir(
         &histories,
         &all_lanes,
     )?;
-    crate::resolved_features::holes::project_hole_position_sketches(
+    crate::resolved_features::holes::project_hole_position_sketches(ctx,
         &mut ir.model.features,
         &ir.model.sketches,
         &ir.model.sketch_entities,
         &histories,
         &all_lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
         ctx,
         &mut ir.model.features,
@@ -4264,13 +4264,13 @@ fn build_metadata_ir(
         &histories,
         &lanes,
     )?;
-    crate::resolved_features::holes::project_hole_position_sketches(
+    crate::resolved_features::holes::project_hole_position_sketches(ctx,
         &mut ir.model.features,
         &ir.model.sketches,
         &ir.model.sketch_entities,
         &histories,
         &lanes,
-    );
+    )?;
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
         ctx,
         &mut ir.model.features,

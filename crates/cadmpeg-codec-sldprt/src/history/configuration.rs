@@ -719,13 +719,13 @@ pub(crate) fn project_configuration_sketch_states(
             histories,
             scoped_lanes,
         )?;
-        crate::resolved_features::holes::project_hole_position_sketches(
+        crate::resolved_features::holes::project_hole_position_sketches(ctx,
             &mut features,
             &ir.model.sketches,
             &ir.model.sketch_entities,
             histories,
             scoped_lanes,
-        );
+        )?;
         crate::resolved_features::holes::project_spatial_hole_position_sketches(
             ctx,
             &mut features,
