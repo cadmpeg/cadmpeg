@@ -40,157 +40,65 @@ struct MeasureContext<'a> {
 
 fn collect_pmi_set<T: Ord>(
     items: impl IntoIterator<Item = T>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<BTreeSet<T>, CodecError> {
     let mut values = BTreeSet::new();
     for item in items {
-        insert_pmi_set(&mut values, item, ctx, operation)?;
+        ctx.insert_btree_set(&mut values, item, operation).map(|_| ())?;
     }
     Ok(values)
 }
 
 fn collect_pmi_references(
     values: &[Value],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<Vec<u64>, CodecError> {
     let mut ids = Vec::new();
     for value in values {
         for id in references(value) {
-            push_pmi_vec(&mut ids, id, ctx, operation)?;
+            ctx.push_vec(&mut ids, id, operation)?;
         }
     }
     Ok(ids)
 }
 
-fn insert_pmi_set<T: Ord>(
-    values: &mut BTreeSet<T>,
-    item: T,
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains(&item) {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, operation)?;
-        }
-        values.insert(item);
-    }
-    Ok(())
-}
 
-fn insert_pmi_map<K: Ord, V>(
-    values: &mut BTreeMap<K, V>,
-    key: K,
-    value: V,
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains_key(&key) {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, operation)?;
-        }
-    }
-    values.insert(key, value);
-    Ok(())
-}
 
 fn insert_pmi_nested_set<K: Ord, V: Ord>(
     groups: &mut BTreeMap<K, BTreeSet<V>>,
     key: K,
     value: V,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     group_operation: &'static str,
     item_operation: &'static str,
 ) -> Result<(), CodecError> {
     if !groups.contains_key(&key) {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, group_operation)?;
-        }
+        ctx.charge_collection_items(1, group_operation)?;
     }
-    insert_pmi_set(groups.entry(key).or_default(), value, ctx, item_operation)
+    ctx.insert_btree_set(groups.entry(key).or_default(), value, item_operation).map(|_| ())
 }
 
-fn claim_pmi_typed(
-    typed: &mut HashSet<u64>,
-    id: u64,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<(), CodecError> {
-    if !typed.contains(&id) {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_pmi_typed_claims")?;
-        }
-        typed.try_reserve(1).map_err(|_| match ctx {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_typed_claims"),
-                    0,
-                    1,
-                    "step_pmi_typed_claims",
-                ),
-            ),
-            None => cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_typed_claims"),
-                    0,
-                    1,
-                    "step_pmi_typed_claims",
-                ),
-            ),
-        })?;
-        typed.insert(id);
-    }
-    Ok(())
-}
 
 fn claim_pmi_typed_many(
     typed: &mut HashSet<u64>,
     ids: impl IntoIterator<Item = u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     for id in ids {
-        claim_pmi_typed(typed, id, ctx)?;
+        ctx.insert_hash_set(typed, id, "step_pmi_typed_claims").map(|_| ())?;
     }
     Ok(())
 }
 
-fn push_pmi_vec<T>(
-    values: &mut Vec<T>,
-    value: T,
-    ctx: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, operation)?;
-    }
-    values.try_reserve(1).map_err(|_| match ctx {
-        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                1,
-                operation,
-            ),
-        ),
-        None => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                1,
-                operation,
-            ),
-        ),
-    })?;
-    values.push(value);
-    Ok(())
-}
 
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
     topology: &TopologyData,
     ir: &mut CadIr,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
     if !exchange.has_entity_matching(is_pmi_entity_name) {
         return Ok(StageOutcome {
@@ -261,7 +169,7 @@ pub(super) fn decode(
                 definition: PmiDefinition::Datum { identification },
             },
         )?;
-        claim_pmi_typed(&mut typed, id, ctx)?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims").map(|_| ())?;
     }
 
     for id in exchange.matching_entity_ids(is_datum_target_name) {
@@ -326,7 +234,7 @@ pub(super) fn decode(
                 },
             },
         )?;
-        claim_pmi_typed(&mut typed, id, ctx)?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims").map(|_| ())?;
     }
 
     for (id, record) in exchange.entities("DATUM_SYSTEM") {
@@ -352,25 +260,15 @@ pub(super) fn decode(
                 &mut measurements,
                 ctx,
             )? {
-                push_pmi_vec(
-                    &mut datum_references,
-                    reference,
-                    ctx,
-                    "step_pmi_datum_system_references",
-                )?;
+                ctx.push_vec(&mut datum_references, reference, "step_pmi_datum_system_references")?;
             }
         }
         admit_datum_reference_maps(&datum_references, ctx)?;
         let datum_references = match datum_references.try_into() {
             Ok(references) => references,
             Err(error) => {
-                push_pmi_vec(
-                    &mut losses,
-                    StepLossCode::PmiDatumSystemInvalid
-                        .note(format!("DATUM_SYSTEM #{id} omitted: {error}")),
-                    ctx,
-                    "step_pmi_losses",
-                )?;
+                ctx.push_vec(&mut losses, StepLossCode::PmiDatumSystemInvalid
+                        .note(format!("DATUM_SYSTEM #{id} omitted: {error}")), "step_pmi_losses")?;
                 continue;
             }
         };
@@ -407,7 +305,7 @@ pub(super) fn decode(
                 },
             },
         )?;
-        claim_pmi_typed(&mut typed, id, ctx)?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims").map(|_| ())?;
         claim_pmi_typed_many(&mut typed, datum_records, ctx)?;
     }
 
@@ -493,7 +391,7 @@ pub(super) fn decode(
                 definition: PmiDefinition::Dimension(definition),
             },
         )?;
-        claim_pmi_typed(&mut typed, id, ctx)?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims").map(|_| ())?;
     }
 
     for (id, record) in exchange.entities("PLUS_MINUS_TOLERANCE") {
@@ -609,27 +507,17 @@ pub(super) fn decode(
                 .map_err(|error| {
                     CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
                 })? {
-                    claim_pmi_typed(&mut typed, id, ctx)?;
+                    ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims").map(|_| ())?;
                     claim_pmi_typed_many(&mut typed, refs, ctx)?;
                 } else {
-                    push_pmi_vec(
-                        &mut losses,
-                        StepLossCode::DecodeWarning.note(format!(
+                    ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                         "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                    )),
-                        ctx,
-                        "step_pmi_losses",
-                    )?;
+                    )), "step_pmi_losses")?;
                 }
             } else {
-                push_pmi_vec(
-                    &mut losses,
-                    StepLossCode::DecodeWarning.note(format!(
+                ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                         "PLUS_MINUS_TOLERANCE #{id} does not contain both deviation values"
-                    )),
-                    ctx,
-                    "step_pmi_losses",
-                )?;
+                    )), "step_pmi_losses")?;
             }
         } else if let (Some(index), Some((fit_id, fit))) = (dimension, fit) {
             if set_dimension_tolerance(
@@ -641,24 +529,14 @@ pub(super) fn decode(
             })? {
                 claim_pmi_typed_many(&mut typed, [id, fit_id], ctx)?;
             } else {
-                push_pmi_vec(
-                    &mut losses,
-                    StepLossCode::DecodeWarning.note(format!(
+                ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                         "PLUS_MINUS_TOLERANCE #{id} is an additional tolerance for one dimension"
-                    )),
-                    ctx,
-                    "step_pmi_losses",
-                )?;
+                    )), "step_pmi_losses")?;
             }
         } else {
-            push_pmi_vec(
-                &mut losses,
-                StepLossCode::DecodeWarning.note(format!(
+            ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(format!(
                     "PLUS_MINUS_TOLERANCE #{id} has no resolvable dimension and limits"
-                )),
-                ctx,
-                "step_pmi_losses",
-            )?;
+                )), "step_pmi_losses")?;
         }
     }
 
@@ -719,20 +597,12 @@ pub(super) fn decode(
             )?,
         };
         let Some(magnitude) = magnitude.and_then(cadmpeg_ir::pmi::PmiMagnitude::new) else {
-            let display_name = record.display_name(ctx)?;
-            let message = match ctx {
-                Some(ctx) => ctx.format_retained(
+            let display_name = ctx.join_display_retained(record.partials.iter().map(|partial| partial.name.as_str()), "+", "step_record_display_name")?;
+            let message = ctx.format_retained(
                     format_args!("{display_name} #{id} has no numeric magnitude"),
                     "step_pmi_invalid_tolerance_text",
-                )?,
-                None => format!("{display_name} #{id} has no numeric magnitude"),
-            };
-            push_pmi_vec(
-                &mut losses,
-                StepLossCode::DecodeWarning.note(message),
-                ctx,
-                "step_pmi_losses",
-            )?;
+                )?;
+            ctx.push_vec(&mut losses, StepLossCode::DecodeWarning.note(message), "step_pmi_losses")?;
             continue;
         };
         let defined_unit = record
@@ -753,12 +623,7 @@ pub(super) fn decode(
                 .first()
                 .and_then(ValueExt::enumeration)
                 .map(|name| {
-                    let mut name = match ctx {
-                        Some(ctx) => {
-                            ctx.copy_retained_text(name, "step_pmi_defined_area_unit_text")
-                        }
-                        None => Ok::<String, CodecError>(name.to_owned()),
-                    }?;
+                    let mut name = ctx.copy_retained_text(name, "step_pmi_defined_area_unit_text")?;
                     name.make_ascii_lowercase();
                     Ok::<_, CodecError>(name)
                 })
@@ -824,7 +689,7 @@ pub(super) fn decode(
                 },
             },
         )?;
-        claim_pmi_typed(&mut typed, id, ctx)?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims").map(|_| ())?;
         claim_pmi_typed_many(
             &mut typed,
             refs.iter().copied().filter(|reference| {
@@ -871,7 +736,7 @@ pub(super) fn decode(
                     )?;
                 }
             }
-            claim_pmi_typed(&mut typed, id, ctx)?;
+            ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims").map(|_| ())?;
         }
     }
 
@@ -913,11 +778,11 @@ pub(super) fn decode(
             0 => None,
             1 => placement_candidates.values().next().copied(),
             count => {
-                push_pmi_vec(&mut losses, StepLossCode::PresentationAnnotationPlacementAmbiguous.note(
+                ctx.push_vec(&mut losses, StepLossCode::PresentationAnnotationPlacementAmbiguous.note(
                     format!(
                         "presentation annotation #{id} has {count} reachable placement carriers with no unique placement"
                     ),
-                ), ctx, "step_pmi_losses")?;
+                ), "step_pmi_losses")?;
                 None
             }
         };
@@ -925,22 +790,12 @@ pub(super) fn decode(
         for parameter in record_values(record) {
             for reference in references(parameter) {
                 if annotations.get(reference).is_some() {
-                    push_pmi_vec(
-                        &mut semantics,
-                        pmi_id(reference),
-                        ctx,
-                        "step_pmi_presentation_semantics",
-                    )?;
+                    ctx.push_vec(&mut semantics, pmi_id(reference), "step_pmi_presentation_semantics")?;
                 }
             }
         }
         for semantic in presentation_semantics.get(&id).into_iter().flatten() {
-            push_pmi_vec(
-                &mut semantics,
-                pmi_id(*semantic),
-                ctx,
-                "step_pmi_presentation_semantics",
-            )?;
+            ctx.push_vec(&mut semantics, pmi_id(*semantic), "step_pmi_presentation_semantics")?;
         }
         annotations.push(
             ctx,
@@ -974,13 +829,13 @@ pub(super) fn decode(
                 },
             },
         )?;
-        claim_pmi_typed(&mut typed, id, ctx)?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims").map(|_| ())?;
         claim_pmi_typed_many(&mut typed, text_records, ctx)?;
     }
     for (id, _) in
         exchange.entities_any(&["DRAUGHTING_MODEL", "ANNOTATION_PLANE", "DRAUGHTING_CALLOUT"])
     {
-        claim_pmi_typed(&mut typed, id, ctx)?;
+        ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims").map(|_| ())?;
     }
 
     resolve_feature_for_datum_target_relationships(exchange, &annotations, ir, &mut typed, ctx)?;
@@ -1042,7 +897,7 @@ fn mark_characteristic_representations(
     exchange: &Exchange,
     annotations: &Annotations,
     typed: &mut HashSet<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let Some(_) = first_matching(record_values(record), |reference| {
@@ -1050,7 +905,7 @@ fn mark_characteristic_representations(
         }) else {
             continue;
         };
-        claim_pmi_typed(typed, id, ctx)?;
+        ctx.insert_hash_set(typed, id, "step_pmi_typed_claims").map(|_| ())?;
         for parameter in record_values(record) {
             for representation_id in references(parameter) {
                 let Some(representation) = exchange.records().get(&representation_id) else {
@@ -1063,7 +918,7 @@ fn mark_characteristic_representations(
                 {
                     continue;
                 }
-                claim_pmi_typed(typed, representation_id, ctx)?;
+                ctx.insert_hash_set(typed, representation_id, "step_pmi_typed_claims").map(|_| ())?;
                 for parameter in record_values(representation) {
                     for reference in references(parameter) {
                         if exchange
@@ -1071,7 +926,7 @@ fn mark_characteristic_representations(
                             .get(&reference)
                             .is_some_and(is_measure_record)
                         {
-                            claim_pmi_typed(typed, reference, ctx)?;
+                            ctx.insert_hash_set(typed, reference, "step_pmi_typed_claims").map(|_| ())?;
                         }
                     }
                 }
@@ -1086,7 +941,7 @@ fn resolve_feature_for_datum_target_relationships(
     annotations: &Annotations,
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     for (id, record) in exchange.entities("FEATURE_FOR_DATUM_TARGET_RELATIONSHIP") {
         let Some((relating, related)) = relationship_endpoints(record) else {
@@ -1119,7 +974,7 @@ fn resolve_geometric_item_usages(
     (shape_aspects, annotations): (&BTreeSet<u64>, &Annotations),
     ir: &mut CadIr,
     typed: &mut HashSet<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut aspect_annotations = BTreeMap::<u64, BTreeSet<AnnotationIndex>>::new();
     for (&annotation_id, record) in exchange.records() {
@@ -1191,22 +1046,12 @@ fn resolve_geometric_item_usages(
         };
         let mut annotation_indices = BTreeSet::new();
         for &index in aspect_annotations.get(&definition).into_iter().flatten() {
-            insert_pmi_set(
-                &mut annotation_indices,
-                index,
-                ctx,
-                "step_pmi_usage_annotation_indices",
-            )?;
+            ctx.insert_btree_set(&mut annotation_indices, index, "step_pmi_usage_annotation_indices").map(|_| ())?;
         }
         if let Some(aspects) = relationship_aspects.get(&definition) {
             for aspect in aspects {
                 for &index in aspect_annotations.get(aspect).into_iter().flatten() {
-                    insert_pmi_set(
-                        &mut annotation_indices,
-                        index,
-                        ctx,
-                        "step_pmi_usage_annotation_indices",
-                    )?;
+                    ctx.insert_btree_set(&mut annotation_indices, index, "step_pmi_usage_annotation_indices").map(|_| ())?;
                 }
             }
         }
@@ -1228,7 +1073,7 @@ fn resolve_geometric_item_usages(
                 )?;
             }
         }
-        claim_pmi_typed(typed, id, ctx)?;
+        ctx.insert_hash_set(typed, id, "step_pmi_typed_claims").map(|_| ())?;
     }
     Ok(())
 }
@@ -1243,7 +1088,7 @@ fn topology_targets(
     id: u64,
     topology: &TopologyData,
     geometry_sources: GeometrySources<'_>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<PmiTarget>, CodecError> {
     let mut targets = Vec::new();
     for body in topology.body_by_root.get(&id).into_iter().flatten() {
@@ -1306,11 +1151,11 @@ fn topology_targets(
 fn push_target(
     targets: &mut Vec<PmiTarget>,
     target: PmiTarget,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
     if !targets.contains(&target) {
-        push_pmi_vec(targets, target, ctx, operation)?;
+        ctx.push_vec(targets, target, operation)?;
     }
     Ok(())
 }
@@ -1337,44 +1182,30 @@ fn push_source_id<T>(
     values: &mut BTreeMap<u64, Vec<T>>,
     source: u64,
     id: T,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     group_operation: &'static str,
     item_operation: &'static str,
 ) -> Result<(), CodecError> {
     if !values.contains_key(&source) {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, group_operation)?;
-        }
+        ctx.charge_collection_items(1, group_operation)?;
     }
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, item_operation)?;
-    }
+    ctx.charge_collection_items(1, item_operation)?;
     let items = values.entry(source).or_default();
-    items.try_reserve(1).map_err(|_| match ctx {
-        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+    items.try_reserve(1).map_err(|_| cadmpeg_core::CodecError::ResourceLimit(
             cadmpeg_core::decode::ResourceLimit::allocation_failed(
                 cadmpeg_core::decode::ResourceDimension::Codec(item_operation),
                 0,
                 1,
                 item_operation,
             ),
-        ),
-        None => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(item_operation),
-                0,
-                1,
-                item_operation,
-            ),
-        ),
-    })?;
+        ))?;
     items.push(id);
     Ok(())
 }
 
 fn point_sources(
     ir: &CadIr,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<cadmpeg_ir::ids::PointId>>, CodecError> {
     let mut points = BTreeMap::new();
     for point in &ir.model.points {
@@ -1396,7 +1227,7 @@ fn point_sources(
 
 fn curve_sources(
     ir: &CadIr,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, Vec<cadmpeg_ir::ids::CurveId>>, CodecError> {
     let mut curves = BTreeMap::new();
     for curve in &ir.model.curves {
@@ -1423,7 +1254,7 @@ fn datum_references_for_compartment(
     annotations: &Annotations,
     typed: &mut HashSet<u64>,
     measurements: &mut MeasureContext<'_>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<DatumReference>, CodecError> {
     let Some(compartment_id) = value.reference() else {
         return Ok(Vec::new());
@@ -1436,7 +1267,7 @@ fn datum_references_for_compartment(
     {
         return Ok(Vec::new());
     }
-    claim_pmi_typed(typed, compartment_id, ctx)?;
+    ctx.insert_hash_set(typed, compartment_id, "step_pmi_typed_claims").map(|_| ())?;
     let mut compartment_modifiers = Vec::new();
     for modifier in datum_modifiers(compartment)
         .and_then(ValueExt::list)
@@ -1444,12 +1275,7 @@ fn datum_references_for_compartment(
         .flatten()
     {
         if let Some(text) = modifier_text(modifier, exchange, typed, measurements, ctx)? {
-            push_pmi_vec(
-                &mut compartment_modifiers,
-                text,
-                ctx,
-                "step_pmi_datum_modifier_items",
-            )?;
+            ctx.push_vec(&mut compartment_modifiers, text, "step_pmi_datum_modifier_items")?;
         }
     }
     let base = datum_base(compartment);
@@ -1481,21 +1307,16 @@ fn datum_references_for_compartment(
                 .flatten()
             {
                 if let Some(text) = modifier_text(modifier, exchange, typed, measurements, ctx)? {
-                    push_pmi_vec(&mut modifiers, text, ctx, "step_pmi_datum_modifier_items")?;
+                    ctx.push_vec(&mut modifiers, text, "step_pmi_datum_modifier_items")?;
                 }
             }
             claim_pmi_typed_many(typed, [element_id, datum], ctx)?;
-            push_pmi_vec(
-                &mut output,
-                DatumReference {
+            ctx.push_vec(&mut output, DatumReference {
                     datum: pmi_id(datum),
                     precedence,
                     common_group,
                     modifiers,
-                },
-                ctx,
-                "step_pmi_datum_reference_items",
-            )?;
+                }, "step_pmi_datum_reference_items")?;
         }
         return Ok(output);
     }
@@ -1504,18 +1325,13 @@ fn datum_references_for_compartment(
             if annotations.get(datum).is_none() {
                 return Ok(());
             }
-            claim_pmi_typed(typed, datum, ctx)?;
-            push_pmi_vec(
-                &mut output,
-                DatumReference {
+            ctx.insert_hash_set(typed, datum, "step_pmi_typed_claims").map(|_| ())?;
+            ctx.push_vec(&mut output, DatumReference {
                     datum: pmi_id(datum),
                     precedence,
                     common_group: None,
                     modifiers: clone_pmi_modifiers(&compartment_modifiers, ctx)?,
-                },
-                ctx,
-                "step_pmi_datum_reference_items",
-            )
+                }, "step_pmi_datum_reference_items")
         })?;
     }
     Ok(output)
@@ -1523,26 +1339,20 @@ fn datum_references_for_compartment(
 
 fn clone_pmi_modifiers(
     values: &[String],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<String>, CodecError> {
     let mut copy = Vec::new();
     for value in values {
-        let text = match ctx {
-            Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy"),
-            None => Ok::<String, CodecError>(value.to_owned()),
-        }?;
-        push_pmi_vec(&mut copy, text, ctx, "step_pmi_datum_modifier_items")?;
+        let text = ctx.copy_retained_text(value, "step_pmi_datum_modifier_copy")?;
+        ctx.push_vec(&mut copy, text, "step_pmi_datum_modifier_items")?;
     }
     Ok(copy)
 }
 
 fn admit_datum_reference_maps(
     references: &[DatumReference],
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let Some(ctx) = ctx else {
-        return Ok(());
-    };
     for (index, reference) in references.iter().enumerate() {
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(index),
@@ -1588,12 +1398,10 @@ fn is_common_datum_list(value: Option<&Value>) -> bool {
 
 fn visit_datum_ids(
     value: &Value,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     visitor: &mut impl FnMut(u64) -> Result<(), CodecError>,
 ) -> Result<(), CodecError> {
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_pmi_datum_id_walk"))
-        .transpose()?;
+    let _nested = ctx.enter_nested("step_pmi_datum_id_walk")?;
     match value {
         Value::Reference(id) => visitor(*id)?,
         Value::List(values) => {
@@ -1611,17 +1419,12 @@ fn modifier_text(
     exchange: &Exchange,
     typed: &mut HashSet<u64>,
     measurements: &mut MeasureContext<'_>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_pmi_datum_modifier_walk"))
-        .transpose()?;
+    let _nested = ctx.enter_nested("step_pmi_datum_modifier_walk")?;
     match value {
         Value::Enumeration(value) => {
-            let mut text = match ctx {
-                Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_modifier_text"),
-                None => Ok::<String, CodecError>(value.to_owned()),
-            }?;
+            let mut text = ctx.copy_retained_text(value, "step_pmi_datum_modifier_text")?;
             text.make_ascii_lowercase();
             Ok(Some(text))
         }
@@ -1638,7 +1441,7 @@ fn modifier_text(
                 return Ok(None);
             };
             let parameters = parameters.parameters.as_slice();
-            claim_pmi_typed(typed, *id, ctx)?;
+            ctx.insert_hash_set(typed, *id, "step_pmi_typed_claims").map(|_| ())?;
             let Some(kind) = parameters.first().and_then(ValueExt::enumeration) else {
                 return Ok(None);
             };
@@ -1650,14 +1453,11 @@ fn modifier_text(
                 return Ok(None);
             };
             let value = value.value.get();
-            claim_pmi_typed(typed, measure_id, ctx)?;
-            let mut text = match ctx {
-                Some(ctx) => ctx.format_retained(
+            ctx.insert_hash_set(typed, measure_id, "step_pmi_typed_claims").map(|_| ())?;
+            let mut text = ctx.format_retained(
                     format_args!("{kind}:{value}"),
                     "step_pmi_datum_modifier_value_text",
-                )?,
-                None => format!("{kind}:{value}"),
-            };
+                )?;
             text.make_ascii_lowercase();
             Ok(Some(text))
         }
@@ -1689,7 +1489,7 @@ pub(super) fn is_supported_invisibility_target(record: &RawRecord) -> bool {
 
 fn hidden_presentation_annotation_ids(
     exchange: &Exchange,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<BTreeSet<u64>, CodecError> {
     let mut hidden = BTreeSet::new();
     for record in exchange.records().values() {
@@ -1707,7 +1507,7 @@ fn hidden_presentation_annotation_ids(
                 .get(&target)
                 .is_some_and(is_supported_invisibility_target)
             {
-                insert_pmi_set(&mut hidden, target, ctx, "step_pmi_hidden_annotation_ids")?;
+                ctx.insert_btree_set(&mut hidden, target, "step_pmi_hidden_annotation_ids").map(|_| ())?;
             }
         }
     }
@@ -1718,7 +1518,7 @@ fn collect_typed_placement_candidates(
     record: &RawRecord,
     geometry: &GeometryData,
     candidates: &mut BTreeMap<u64, Transform>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let has_annotation_text = record.partials.iter().any(|partial| {
         partial.name == "ANNOTATION_TEXT"
@@ -1744,13 +1544,7 @@ fn collect_typed_placement_candidates(
                 if let Some(transform) =
                     super::geometry::placement_transform((origin, z_axis, x_axis))
                 {
-                    insert_pmi_map(
-                        candidates,
-                        reference,
-                        transform,
-                        ctx,
-                        "step_pmi_placement_candidates",
-                    )?;
+                    ctx.insert_btree_map(candidates, reference, transform, "step_pmi_placement_candidates").map(|_| ())?;
                 }
             }
         }
@@ -1765,7 +1559,7 @@ fn find_annotation_text(
     used: &mut BTreeSet<u64>,
     losses: &mut Vec<LossNote>,
     depth: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
     let mut candidates = BTreeMap::new();
     collect_annotation_text(id, exchange, visited, &mut candidates, losses, depth, ctx)?;
@@ -1774,17 +1568,15 @@ fn find_annotation_text(
     };
     if candidates.is_empty() {
         if !used.contains(&text_id) {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_pmi_annotation_text_used")?;
-            }
+            ctx.charge_collection_items(1, "step_pmi_annotation_text_used")?;
         }
         used.insert(text_id);
         Ok(Some(text))
     } else {
         let count = candidates.len() + 1;
-        push_pmi_vec(losses, StepLossCode::PresentationAnnotationTextUnordered.note(format!(
+        ctx.push_vec(losses, StepLossCode::PresentationAnnotationTextUnordered.note(format!(
                     "presentation annotation #{id} has {count} reachable text carriers with no ordered composition"
-                )), ctx, "step_pmi_losses")?;
+                )), "step_pmi_losses")?;
         Ok(None)
     }
 }
@@ -1796,17 +1588,13 @@ fn collect_annotation_text(
     candidates: &mut BTreeMap<u64, String>,
     losses: &mut Vec<LossNote>,
     depth: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if depth >= 256 || visited.contains(&id) {
         return Ok(());
     }
-    let _depth_guard = ctx
-        .map(|ctx| ctx.enter_nested("step_pmi_annotation_text_walk"))
-        .transpose()?;
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, "step_pmi_annotation_text_visited")?;
-    }
+    let _depth_guard = ctx.enter_nested("step_pmi_annotation_text_walk")?;
+    ctx.charge_collection_items(1, "step_pmi_annotation_text_visited")?;
     visited.insert(id);
     let Some(record) = exchange.records().get(&id) else {
         return Ok(());
@@ -1823,9 +1611,7 @@ fn collect_annotation_text(
             StepLossCode::MetadataStringInvalid,
             ctx,
         )? {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_pmi_annotation_text_candidates")?;
-            }
+            ctx.charge_collection_items(1, "step_pmi_annotation_text_candidates")?;
             candidates.insert(id, text);
         }
     }
@@ -1850,7 +1636,7 @@ fn collect_placement_candidates(
     visited: &mut BTreeMap<u64, usize>,
     candidates: &mut BTreeMap<u64, Transform>,
     depth: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     // Retain the shortest depth so the bounded traversal is independent of
     // aggregate member order when a graph has alternate paths.
@@ -1861,10 +1647,8 @@ fn collect_placement_candidates(
     {
         return Ok(());
     }
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_pmi_placement_walk"))
-        .transpose()?;
-    insert_pmi_map(visited, id, depth, ctx, "step_pmi_placement_visited")?;
+    let _nested = ctx.enter_nested("step_pmi_placement_walk")?;
+    ctx.insert_btree_map(visited, id, depth, "step_pmi_placement_visited").map(|_| ())?;
     if let Some(record) = exchange.records().get(&id) {
         collect_typed_placement_candidates(record, geometry, candidates, ctx)?;
     }
@@ -1887,7 +1671,7 @@ fn collect_placement_candidates(
 
 fn targets(
     ids: impl IntoIterator<Item = u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<PmiTarget>, CodecError> {
     let mut seen = BTreeSet::new();
     let mut targets = Vec::new();
@@ -1895,29 +1679,17 @@ fn targets(
         if seen.contains(&id) {
             continue;
         }
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_pmi_target_ids")?;
-            ctx.charge_collection_items(1, "step_pmi_target_items")?;
-        }
+        ctx.charge_collection_items(1, "step_pmi_target_ids")?;
+        ctx.charge_collection_items(1, "step_pmi_target_items")?;
         seen.insert(id);
-        targets.try_reserve(1).map_err(|_| match ctx {
-            Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+        targets.try_reserve(1).map_err(|_| cadmpeg_core::CodecError::ResourceLimit(
                 cadmpeg_core::decode::ResourceLimit::allocation_failed(
                     cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_target_items"),
                     0,
                     1,
                     "step_pmi_target_items",
                 ),
-            ),
-            None => cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_target_items"),
-                    0,
-                    1,
-                    "step_pmi_target_items",
-                ),
-            ),
-        })?;
+            ))?;
         targets.push(PmiTarget::ShapeAspect {
             source_id: super::step_source_id(id),
         });
@@ -1931,13 +1703,10 @@ fn pmi_id(id: u64) -> PmiId {
 
 fn copy_pmi_identity<T: From<Identity>>(
     value: &str,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<T, CodecError> {
-    let copy = match ctx {
-        Some(ctx) => ctx.copy_retained_text(value, operation),
-        None => Ok::<String, CodecError>(value.to_owned()),
-    }?;
+    let copy = ctx.copy_retained_text(value, operation)?;
     let identity = Identity::new(copy)
         .map_err(|_| CodecError::malformed("STEP PMI target has an invalid identity"))?;
     Ok(T::from(identity))
@@ -1945,7 +1714,7 @@ fn copy_pmi_identity<T: From<Identity>>(
 
 fn copy_pmi_target(
     target: &PmiTarget,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     operation: &'static str,
 ) -> Result<PmiTarget, CodecError> {
     Ok(match target {
@@ -1974,10 +1743,7 @@ fn copy_pmi_target(
             occurrence: copy_pmi_identity(occurrence.as_str(), ctx, operation)?,
         },
         PmiTarget::ShapeAspect { source_id } => {
-            let copy = match ctx {
-                Some(ctx) => ctx.copy_retained_text(source_id.as_str(), operation),
-                None => Ok::<String, CodecError>(source_id.as_str().to_owned()),
-            }?;
+            let copy = ctx.copy_retained_text(source_id.as_str(), operation)?;
             let source_id = cadmpeg_core::text::NonBlankString::new(copy)
                 .ok_or_else(|| CodecError::malformed("STEP PMI target has a blank source ID"))?;
             PmiTarget::ShapeAspect { source_id }
@@ -1987,7 +1753,7 @@ fn copy_pmi_target(
 
 fn datum_target_form(
     value: &str,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<DatumTargetForm, CodecError> {
     let form = value.trim();
     if form.eq_ignore_ascii_case("point") {
@@ -2001,10 +1767,7 @@ fn datum_target_form(
     } else if form.eq_ignore_ascii_case("circular curve") {
         Ok(DatumTargetForm::CircularCurve)
     } else {
-        Ok(DatumTargetForm::Other(match ctx {
-            Some(ctx) => ctx.copy_retained_text(value, "step_pmi_datum_target_form_copy"),
-            None => Ok::<String, CodecError>(value.to_owned()),
-        }?))
+        Ok(DatumTargetForm::Other(ctx.copy_retained_text(value, "step_pmi_datum_target_form_copy")?))
     }
 }
 
@@ -2190,7 +1953,7 @@ fn is_dimension_name(name: &str) -> bool {
 
 fn dimension_kind(
     name: &str,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<DimensionKind>, CodecError> {
     Ok(match name {
         name if name == "DIMENSIONAL_SIZE" || name.starts_with("DIMENSIONAL_SIZE_") => {
@@ -2209,10 +1972,7 @@ fn dimension_kind(
         "DIAMETER_SIZE" => Some(DimensionKind::Diameter),
         "RADIUS_SIZE" => Some(DimensionKind::Radius),
         name if name.ends_with("_SIZE") || name.ends_with("_LOCATION") => {
-            let mut name = match ctx {
-                Some(ctx) => ctx.copy_retained_text(name, "step_pmi_other_dimension_name"),
-                None => Ok::<String, CodecError>(name.to_owned()),
-            }?;
+            let mut name = ctx.copy_retained_text(name, "step_pmi_other_dimension_name")?;
             name.make_ascii_lowercase();
             Some(DimensionKind::Other(name))
         }
@@ -2222,7 +1982,7 @@ fn dimension_kind(
 
 fn dimension_descriptor<'a>(
     record: &'a RawRecord,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<(&'a str, DimensionKind)>, CodecError> {
     for partial in &record.partials {
         if let Some(kind) = dimension_kind(partial.name.as_str(), ctx)? {
@@ -2256,7 +2016,7 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
 
 fn tolerance_modifiers(
     record: &RawRecord,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<String>, CodecError> {
     let mut modifiers = Vec::new();
     if let Some(partial) = record
@@ -2274,19 +2034,14 @@ fn tolerance_modifiers(
 fn modifier_values(
     value: &Value,
     output: &mut Vec<String>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_pmi_modifier_walk"))
-        .transpose()?;
+    let _nested = ctx.enter_nested("step_pmi_modifier_walk")?;
     match value {
         Value::Enumeration(value) => {
-            let mut text = match ctx {
-                Some(ctx) => ctx.copy_retained_text(value, "step_pmi_modifier_text"),
-                None => Ok::<String, CodecError>(value.to_owned()),
-            }?;
+            let mut text = ctx.copy_retained_text(value, "step_pmi_modifier_text")?;
             text.make_ascii_lowercase();
-            push_pmi_vec(output, text, ctx, "step_pmi_modifier_items")?;
+            ctx.push_vec(output, text, "step_pmi_modifier_items")?;
         }
         Value::List(values) => {
             for value in values {
@@ -2304,7 +2059,7 @@ fn characteristic_values(
     geometry: &GeometryData,
     losses: &mut Vec<LossNote>,
     graph_limit: usize,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<BTreeMap<u64, PmiValue>, CodecError> {
     let mut result = BTreeMap::<u64, PmiValue>::new();
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
@@ -2356,26 +2111,24 @@ fn characteristic_values(
         let selected = if named_count == 1 {
             named_first
         } else if named_count > 1 {
-            push_pmi_vec(losses, StepLossCode::DimensionalNominalAmbiguous.note(format!(
+            ctx.push_vec(losses, StepLossCode::DimensionalNominalAmbiguous.note(format!(
                 "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {named_count} nominal value measures; the nominal is ambiguous"
-                )), ctx, "step_pmi_losses")?;
+                )), "step_pmi_losses")?;
             None
         } else if values.len() == 1 {
             values.first().map(|(_, value)| *value)
         } else {
             if values.len() > 1 {
-                push_pmi_vec(losses, StepLossCode::DimensionalUnnamedMeasureAmbiguous.note(format!(
+                ctx.push_vec(losses, StepLossCode::DimensionalUnnamedMeasureAmbiguous.note(format!(
                         "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} unnamed measure values; the nominal is ambiguous",
                         values.len()
-                    )), ctx, "step_pmi_losses")?;
+                    )), "step_pmi_losses")?;
             }
             None
         };
         if let Some(selected) = selected {
             if !result.contains_key(&characteristic) {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "step_pmi_characteristic_values")?;
-                }
+                ctx.charge_collection_items(1, "step_pmi_characteristic_values")?;
             }
             result.insert(characteristic, selected);
         }
@@ -2413,7 +2166,7 @@ fn characteristic_measure_values(
     parameters: &MeasureParameters<'_>,
     exchange: &Exchange,
     measurements: &mut MeasureContext<'_>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Vec<(Option<String>, PmiValue)>, CodecError> {
     let mut measure_ids = BTreeSet::new();
     parameters.visit(|parameter| {
@@ -2436,38 +2189,23 @@ fn characteristic_measure_values(
                 .map(|record| measure_item_name(id, record, exchange, measurements.losses, ctx))
                 .transpose()?
                 .flatten();
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_pmi_measure_values")?;
-            }
-            values.try_reserve(1).map_err(|_| match ctx {
-                Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+            ctx.charge_collection_items(1, "step_pmi_measure_values")?;
+            values.try_reserve(1).map_err(|_| cadmpeg_core::CodecError::ResourceLimit(
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
                         cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"),
                         0,
                         1,
                         "step_pmi_measure_values",
                     ),
-                ),
-                None => cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("step_pmi_measure_values"),
-                        0,
-                        1,
-                        "step_pmi_measure_values",
-                    ),
-                ),
-            })?;
+                ))?;
             values.push((name, value));
         }
     }
     if values.is_empty() {
         parameters.visit(|parameter| {
             if let Some(value) = measure(parameter, exchange, measurements, ctx)? {
-                if let Some(ctx) = ctx {
-                    ctx.charge_collection_items(1, "step_pmi_measure_values")?;
-                }
-                values.try_reserve(1).map_err(|_| match ctx {
-                    Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+                ctx.charge_collection_items(1, "step_pmi_measure_values")?;
+                values.try_reserve(1).map_err(|_| cadmpeg_core::CodecError::ResourceLimit(
                         cadmpeg_core::decode::ResourceLimit::allocation_failed(
                             cadmpeg_core::decode::ResourceDimension::Codec(
                                 "step_pmi_measure_values",
@@ -2476,18 +2214,7 @@ fn characteristic_measure_values(
                             1,
                             "step_pmi_measure_values",
                         ),
-                    ),
-                    None => cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::Codec(
-                                "step_pmi_measure_values",
-                            ),
-                            0,
-                            1,
-                            "step_pmi_measure_values",
-                        ),
-                    ),
-                })?;
+                    ))?;
                 values.push((None, value));
             }
             Ok(())
@@ -2503,23 +2230,21 @@ fn collect_measure_ids(
     depth: usize,
     graph_limit: usize,
     measure_ids: &mut BTreeSet<u64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     if depth >= graph_limit {
         return Ok(());
     }
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_pmi_measure_id_walk"))
-        .transpose()?;
+    let _nested = ctx.enter_nested("step_pmi_measure_id_walk")?;
     match value {
         Value::Reference(id) => {
             if active.contains(id) {
                 return Ok(());
             }
-            insert_pmi_set(active, *id, ctx, "step_pmi_measure_active_ids")?;
+            ctx.insert_btree_set(active, *id, "step_pmi_measure_active_ids").map(|_| ())?;
             if let Some(record) = exchange.records().get(id) {
                 if is_measure_record(record) {
-                    insert_pmi_set(measure_ids, *id, ctx, "step_pmi_measure_ids")?;
+                    ctx.insert_btree_set(measure_ids, *id, "step_pmi_measure_ids").map(|_| ())?;
                 } else {
                     for partial in &record.partials {
                         for parameter in &partial.parameters {
@@ -2572,7 +2297,7 @@ fn measure_item_name(
     record: &RawRecord,
     exchange: &Exchange,
     losses: &mut Vec<LossNote>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
     Ok(record
         .partials
@@ -2620,7 +2345,7 @@ fn first_measure<'a>(
     values: impl IntoIterator<Item = &'a Value>,
     exchange: &Exchange,
     measurements: &mut MeasureContext<'_>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<PmiValue>, CodecError> {
     for value in values {
         if let Some(measured) = measure(value, exchange, measurements, ctx)? {
@@ -2634,7 +2359,7 @@ fn measure(
     value: &Value,
     exchange: &Exchange,
     measurements: &mut MeasureContext<'_>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<PmiValue>, CodecError> {
     measure_inner(value, exchange, &mut BTreeSet::new(), 0, measurements, ctx)
 }
@@ -2645,14 +2370,12 @@ fn measure_inner(
     active: &mut BTreeSet<u64>,
     depth: usize,
     measurements: &mut MeasureContext<'_>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<PmiValue>, CodecError> {
     if depth >= measurements.graph_limit {
         return Ok(None);
     }
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("step_pmi_measure_eval_walk"))
-        .transpose()?;
+    let _nested = ctx.enter_nested("step_pmi_measure_eval_walk")?;
     Ok(match value {
         Value::Integer(value) => cadmpeg_core::convert::f64_from_i64(*value)
             .and_then(|value| PmiValue::new(value, PmiQuantity::Ratio)),
@@ -2679,7 +2402,7 @@ fn measure_inner(
             if active.contains(id) {
                 return Ok(None);
             }
-            insert_pmi_set(active, *id, ctx, "step_pmi_measure_eval_active")?;
+            ctx.insert_btree_set(active, *id, "step_pmi_measure_eval_active").map(|_| ())?;
             let Some(record) = exchange.records().get(id) else {
                 active.remove(id);
                 return Ok(None);
@@ -2738,14 +2461,9 @@ fn measure_inner(
                     if let Some(scale) = resolved {
                         scale.get()
                     } else {
-                        push_pmi_vec(
-                            measurements.losses,
-                            StepLossCode::PmiLengthUnitUnresolved.note(format!(
+                        ctx.push_vec(measurements.losses, StepLossCode::PmiLengthUnitUnresolved.note(format!(
                                 "PMI length measure #{id} unit scale did not resolve; the document length scale was used"
-                            )),
-                            ctx,
-                            "step_pmi_losses",
-                        )?;
+                            )), "step_pmi_losses")?;
                         measurements.length_scale
                     }
                 }
@@ -2762,14 +2480,9 @@ fn measure_inner(
                     if let Some(scale) = resolved {
                         scale.get()
                     } else {
-                        push_pmi_vec(
-                            measurements.losses,
-                            StepLossCode::PmiAngleUnitUnresolved.note(format!(
+                        ctx.push_vec(measurements.losses, StepLossCode::PmiAngleUnitUnresolved.note(format!(
                                 "PMI angle measure #{id} unit scale did not resolve; the document plane-angle scale was used"
-                            )),
-                            ctx,
-                            "step_pmi_losses",
-                        )?;
+                            )), "step_pmi_losses")?;
                         measurements.angle_scale
                     }
                 }
@@ -2810,11 +2523,9 @@ fn measure_inner(
 
 fn measure_quantity(
     value: &Value,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<PmiQuantity>, CodecError> {
-    let _depth = ctx
-        .map(|ctx| ctx.enter_nested("step_pmi_measure_quantity_walk"))
-        .transpose()?;
+    let _depth = ctx.enter_nested("step_pmi_measure_quantity_walk")?;
     Ok(match value {
         Value::Typed(name, value) => {
             if name.contains("LENGTH") {

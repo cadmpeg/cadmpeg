@@ -37,19 +37,17 @@ impl Annotations {
     /// Insert an annotation and return its arena index.
     pub(super) fn push(
         &mut self,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
         ir: &mut CadIr,
         id: u64,
         draft: AnnotationDraft,
     ) -> Result<AnnotationIndex, CodecError> {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "step_pmi_annotation_arena")?;
-            ctx.charge_collection_items(1, "step_pmi_annotation_index")?;
-        }
+        ctx.charge_collection_items(1, "step_pmi_annotation_arena")?;
+        ctx.charge_collection_items(1, "step_pmi_annotation_index")?;
         ir.model
             .pmi
             .try_reserve(1)
-            .map_err(|_| refuse_annotation(ctx, "step_pmi_annotation_arena"))?;
+            .map_err(|_| ctx.refuse_codec_limit("step_pmi_annotation_arena", 0, 1))?;
         let index = AnnotationIndex(ir.model.pmi.len());
         ir.model.pmi.push(PmiAnnotation {
             id: super::pmi_id(id),
@@ -68,12 +66,6 @@ impl Annotations {
     }
 }
 
-fn refuse_annotation(ctx: Option<&DecodeContext<'_>>, operation: &'static str) -> CodecError {
-    match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -92,19 +84,14 @@ mod tests {
             DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
         let mut ir = CadIr::empty();
         Annotations::default()
-            .push(
-                Some(&ctx),
-                &mut ir,
-                1,
-                AnnotationDraft {
+            .push(&ctx, &mut ir, 1, AnnotationDraft {
                     name: None,
                     targets: Vec::new(),
                     visible: None,
                     definition: PmiDefinition::Datum {
                         identification: String::new(),
                     },
-                },
-            )
+                })
             .expect_err("limit must refuse one annotation")
     }
 

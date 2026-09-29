@@ -81,8 +81,8 @@ impl Packaging {
     }
 }
 
-fn record_graph_limit(ctx: Option<&DecodeContext<'_>>) -> usize {
-    ctx.and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
+fn record_graph_limit(ctx: &DecodeContext<'_>) -> usize {
+    usize::try_from(ctx.policy().limits.max_recursion_depth).ok()
         .map_or(MAX_RECORD_GRAPH_DEPTH, |policy| {
             policy.min(MAX_RECORD_GRAPH_DEPTH)
         })
@@ -130,7 +130,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         let mut attributes = BTreeMap::new();
         attributes.insert(
             cadmpeg_core::nonblank_literal!("schema"),
-            exchange.joined_schema_identifiers(Some(ctx))?,
+            exchange.joined_schema_identifiers(ctx)?,
         );
         attributes.insert(
             cadmpeg_core::nonblank_literal!("data_sections"),
@@ -145,8 +145,8 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         }
         // The `schema` attribute above stays: it is the joined identifier list,
         // and retiring the ad-hoc attribute keys is a later phase.
-        let primary = StepDialect::classify(exchange, Some(ctx))?;
-        let dialect_loss = crate::dialect::dialect_loss(&primary, Some(ctx))?;
+        let primary = StepDialect::classify(exchange, ctx)?;
+        let dialect_loss = crate::dialect::dialect_loss(&primary, ctx)?;
         let ir = CadIr::empty();
 
         let mut body = DecodeBody::new(if ctx.container_only() {
@@ -488,7 +488,7 @@ fn decode_exchange_mode(
         &geometry.value,
         &topology.value,
         &mut session.ir,
-        Some(session.ctx),
+        session.ctx,
         &mut session.admitted_ir_entities,
     )?;
     session.charge_stage("step_tessellation_decode")?;
@@ -505,7 +505,7 @@ fn decode_exchange_mode(
         &geometry.value,
         &topology.value,
         &mut session.ir,
-        Some(session.ctx),
+        session.ctx,
     )?;
     session.charge_stage("step_presentation_decode")?;
     let mut presentation = presentation::decode(
@@ -513,7 +513,7 @@ fn decode_exchange_mode(
         &topology.value,
         &mut session.ir,
         &product.value.product_definition_ids_by_source,
-        Some(session.ctx),
+        session.ctx,
     )?;
     session.charge_stage("step_validation_decode")?;
     let mut validation =
@@ -1418,7 +1418,7 @@ fn byte_accounting(
             format_args!("file signature at byte {}", signature.start),
         )?;
     }
-    let mut lexer = crate::lex::Lexer::with_context(input, ctx);
+    let mut lexer = crate::lex::Lexer::new(input, ctx);
     lexer.set_transient_literals();
     let mut cursor = 0;
     loop {
@@ -1558,7 +1558,7 @@ fn decode_text_charged(
     record_id: u64,
     field: &str,
     code: StepLossCode,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<String>, CodecError> {
     let Value::String(bytes) = value else {
         return Ok(None);
@@ -1566,19 +1566,12 @@ fn decode_text_charged(
     match exchange.decode_string_with_context(bytes, ctx) {
         Ok(text) => Ok(Some(text)),
         Err(crate::strings::StringDecodeFailure::Invalid(error)) => {
-            let message = if let Some(ctx) = ctx {
-                ctx.format_retained(
-                    format_args!("STEP record #{record_id} has an invalid {field} string: {error}"),
-                    "step_invalid_string_loss_text",
-                )?
-            } else {
-                format!("STEP record #{record_id} has an invalid {field} string: {error}")
-            };
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "step_invalid_string_losses")?;
-            }
-            losses.try_reserve(1).map_err(|_| match ctx {
-                Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
+            let message = ctx.format_retained(
+                format_args!("STEP record #{record_id} has an invalid {field} string: {error}"),
+                "step_invalid_string_loss_text",
+            )?;
+            ctx.charge_collection_items(1, "step_invalid_string_losses")?;
+            losses.try_reserve(1).map_err(|_| cadmpeg_core::CodecError::ResourceLimit(
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
                         cadmpeg_core::decode::ResourceDimension::Codec(
                             "step_invalid_string_losses",
@@ -1587,18 +1580,7 @@ fn decode_text_charged(
                         1,
                         "step_invalid_string_losses",
                     ),
-                ),
-                None => cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec(
-                            "step_invalid_string_losses",
-                        ),
-                        0,
-                        1,
-                        "step_invalid_string_losses",
-                    ),
-                ),
-            })?;
+                ))?;
             losses.push(code.note(message));
             Ok(None)
         }
@@ -1633,7 +1615,6 @@ fn collect_references(
 /// Record accessors shared by the reader submodules.
 trait RecordExt {
     fn simple_name(&self) -> Option<&str>;
-    fn display_name(&self, ctx: Option<&DecodeContext<'_>>) -> Result<String, CodecError>;
     fn parameters(&self) -> &[Value];
     fn parameter(&self, index: usize) -> Option<&Value>;
     fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
@@ -1642,13 +1623,6 @@ trait RecordExt {
 impl RecordExt for RawRecord {
     fn simple_name(&self) -> Option<&str> {
         (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
-    }
-    fn display_name(&self, ctx: Option<&DecodeContext<'_>>) -> Result<String, CodecError> {
-        let names = self.partials.iter().map(|partial| partial.name.as_str());
-        match ctx {
-            Some(ctx) => ctx.join_display_retained(names, "+", "step_record_display_name"),
-            None => Ok(names.collect::<Vec<_>>().join("+")),
-        }
     }
     fn parameters(&self) -> &[Value] {
         self.partials.first().parameters.as_slice()

@@ -78,7 +78,7 @@ impl AdmittedSchemaIdentifier {
     /// to their assigned number.
     pub(super) fn numeric_object_identifier(
         &self,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<Option<Vec<u64>>, CodecError> {
         let Some((_, Some(object_identifier))) = split_schema_identifier(self.text()) else {
             return Ok(None);
@@ -88,7 +88,7 @@ impl AdmittedSchemaIdentifier {
             return Ok(None);
         };
         let mut numbers = Vec::new();
-        push_object_identifier_component(&mut numbers, u64::from(root), ctx)?;
+        ctx.push_vec(&mut numbers, u64::from(root), "step_schema_object_identifier_components")?;
         for component in components {
             let ComponentForm::Number(number) = schema_oid_component_form(component) else {
                 return Ok(None);
@@ -96,41 +96,10 @@ impl AdmittedSchemaIdentifier {
             let Ok(number) = number.parse() else {
                 return Ok(None);
             };
-            push_object_identifier_component(&mut numbers, number, ctx)?;
+            ctx.push_vec(&mut numbers, number, "step_schema_object_identifier_components")?;
         }
         Ok((numbers.len() >= 2).then_some(numbers))
     }
-}
-
-fn push_object_identifier_component(
-    numbers: &mut Vec<u64>,
-    number: u64,
-    ctx: Option<&DecodeContext<'_>>,
-) -> Result<(), CodecError> {
-    let operation = "step_schema_object_identifier_components";
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, operation)?;
-    }
-    numbers.try_reserve(1).map_err(|_| match ctx {
-        Some(_ctx) => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                1,
-                operation,
-            ),
-        ),
-        None => cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                1,
-                operation,
-            ),
-        ),
-    })?;
-    numbers.push(number);
-    Ok(())
 }
 
 /// The admission form of one schema identifier.

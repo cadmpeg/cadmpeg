@@ -10,7 +10,7 @@ pub fn lex(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)?;
-    let mut lexer = crate::lex::Lexer::with_context(data, &ctx);
+    let mut lexer = crate::lex::Lexer::new(data, &ctx);
     while lexer
         .next_token()
         .map_err(crate::lex::LexError::into_codec_error)?
@@ -55,6 +55,27 @@ mod tests {
         assert!(super::lex(source.as_bytes()).is_ok());
         super::parse(source.as_bytes());
         assert!(super::parse_entity_count(source.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn parse_entry_uses_default_parameter_depth_limit() {
+        fn exchange(depth: usize) -> String {
+            format!(
+                "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM({}1{});ENDSEC;END-ISO-10303-21;",
+                "(".repeat(depth),
+                ")".repeat(depth),
+            )
+        }
+
+        assert_eq!(super::parse_entity_count(exchange(1).as_bytes()).expect("normal input"), 1);
+        let limit = cadmpeg_core::decode::DecodePolicy::default().limits.max_recursion_depth;
+        let depth = usize::try_from(limit).expect("default depth fits usize");
+        assert!(matches!(
+            super::parse_entity_count(exchange(depth).as_bytes()),
+            Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                if refusal.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+                    && refusal.limit == limit
+        ));
     }
 
     #[test]

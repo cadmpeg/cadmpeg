@@ -13,7 +13,7 @@ const TAIL: &str = "ENDSEC;END-ISO-10303-21;";
 
 fn pmi_refuses(records: &str, operation: &str) {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid PMI exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid PMI exchange");
     let arena = DecodeArena::new();
     let (setup_ctx, _) =
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
@@ -32,13 +32,7 @@ fn pmi_refuses(records: &str, operation: &str) {
         let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
             .expect("root fits collection policy");
         matches!(
-            super::super::decode(
-                &exchange,
-                &geometry.value,
-                &topology.value,
-                &mut setup_ir.clone(),
-                Some(&ctx),
-            ),
+            super::super::decode(&exchange, &geometry.value, &topology.value, &mut setup_ir.clone(), &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == operation
@@ -49,7 +43,7 @@ fn pmi_refuses(records: &str, operation: &str) {
 
 fn pmi_retained_refuses(records: &str, operation: &str) {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid PMI exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid PMI exchange");
     let arena = DecodeArena::new();
     let (setup_ctx, _) =
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
@@ -68,13 +62,7 @@ fn pmi_retained_refuses(records: &str, operation: &str) {
         let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
             .expect("root fits retained policy");
         matches!(
-            super::super::decode(
-                &exchange,
-                &geometry.value,
-                &topology.value,
-                &mut setup_ir.clone(),
-                Some(&ctx),
-            ),
+            super::super::decode(&exchange, &geometry.value, &topology.value, &mut setup_ir.clone(), &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == operation
@@ -138,7 +126,7 @@ fn target_refusal(limit: u64) -> CodecError {
     policy.limits.max_collection_items = limit;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits collection policy");
-    super::super::targets([1, 2], Some(&ctx)).expect_err("two target IDs exceed the limit")
+    super::super::targets([1, 2], &ctx).expect_err("two target IDs exceed the limit")
 }
 
 #[test]
@@ -176,7 +164,7 @@ fn source_index_refusal(
         &mut groups,
         1,
         1u64,
-        Some(&ctx),
+        &ctx,
         group_operation,
         item_operation,
     )
@@ -190,7 +178,7 @@ fn source_identity_refusal(operation: &'static str) -> CodecError {
     policy.limits.max_retained_bytes = u64::try_from(id.as_str().len() - 1).expect("ID fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits retained policy");
-    super::super::copy_pmi_identity::<cadmpeg_ir::ids::PointId>(id.as_str(), Some(&ctx), operation)
+    super::super::copy_pmi_identity::<cadmpeg_ir::ids::PointId>(id.as_str(), &ctx, operation)
         .expect_err("source identity copy exceeds retained limit")
 }
 
@@ -225,7 +213,7 @@ fn pmi_topology_identity_refuses_retained_limit() {
     assert!(matches!(
         super::super::copy_pmi_identity::<cadmpeg_ir::ids::PointId>(
             id.as_str(),
-            Some(&ctx),
+            &ctx,
             "step_pmi_topology_identity"
         ),
         Err(CodecError::ResourceLimit(refusal))
@@ -246,7 +234,7 @@ fn pmi_geometric_usage_identity_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits retained policy");
     assert!(matches!(
-        super::super::copy_pmi_target(&target, Some(&ctx), "step_pmi_geometric_usage_identity"),
+        super::super::copy_pmi_target(&target, &ctx, "step_pmi_geometric_usage_identity"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_pmi_geometric_usage_identity"
@@ -329,12 +317,7 @@ fn pmi_presentation_semantics_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits collection policy");
     assert!(matches!(
-        super::super::push_pmi_vec(
-            &mut Vec::new(),
-            1u64,
-            Some(&ctx),
-            "step_pmi_presentation_semantics",
-        ),
+        ctx.push_vec(&mut Vec::new(), 1u64, "step_pmi_presentation_semantics"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_pmi_presentation_semantics"
@@ -349,7 +332,7 @@ fn pmi_other_datum_target_form_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits retained policy");
     assert!(matches!(
-        super::super::datum_target_form("custom form", Some(&ctx)),
+        super::super::datum_target_form("custom form", &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_pmi_datum_target_form_copy"
@@ -364,7 +347,7 @@ fn pmi_other_dimension_name_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits retained policy");
     assert!(matches!(
-        super::super::dimension_kind("CUSTOM_SIZE", Some(&ctx)),
+        super::super::dimension_kind("CUSTOM_SIZE", &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_pmi_other_dimension_name"
@@ -380,7 +363,7 @@ fn pmi_modifier_text_refuses_retained_limit() {
         .expect("empty root fits retained policy");
     let value = crate::parse::Value::Enumeration("ABC".into());
     assert!(matches!(
-        super::super::modifier_values(&value, &mut Vec::new(), Some(&ctx)),
+        super::super::modifier_values(&value, &mut Vec::new(), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_pmi_modifier_text"
@@ -396,7 +379,7 @@ fn pmi_modifier_items_refuse_collection_limit() {
         .expect("empty root fits collection policy");
     let value = crate::parse::Value::Enumeration("ABC".into());
     assert!(matches!(
-        super::super::modifier_values(&value, &mut Vec::new(), Some(&ctx)),
+        super::super::modifier_values(&value, &mut Vec::new(), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_pmi_modifier_items"
@@ -412,7 +395,7 @@ fn pmi_modifier_walk_refuses_depth_limit() {
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits depth policy");
     let value = crate::parse::Value::List(vec![crate::parse::Value::Enumeration("ABC".into())]);
     assert!(matches!(
-        super::super::modifier_values(&value, &mut Vec::new(), Some(&ctx)),
+        super::super::modifier_values(&value, &mut Vec::new(), &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_pmi_modifier_walk"
@@ -428,7 +411,7 @@ fn pmi_datum_id_walk_refuses_depth_limit() {
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits depth policy");
     let value = crate::parse::Value::List(vec![crate::parse::Value::Reference(1)]);
     assert!(matches!(
-        super::super::visit_datum_ids(&value, Some(&ctx), &mut |_| Ok(())),
+        super::super::visit_datum_ids(&value, &ctx, &mut |_| Ok(())),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_pmi_datum_id_walk"
@@ -443,7 +426,7 @@ fn pmi_datum_modifier_copy_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits retained policy");
     assert!(matches!(
-        super::super::clone_pmi_modifiers(&["ABC".into()], Some(&ctx)),
+        super::super::clone_pmi_modifiers(&["ABC".into()], &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_pmi_datum_modifier_copy"
@@ -453,7 +436,7 @@ fn pmi_datum_modifier_copy_refuses_retained_limit() {
 #[test]
 fn pmi_datum_modifier_text_refuses_retained_limit() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;
@@ -468,13 +451,7 @@ fn pmi_datum_modifier_text_refuses_retained_limit() {
     };
     let value = crate::parse::Value::Enumeration("ABC".into());
     assert!(matches!(
-        super::super::modifier_text(
-            &value,
-            &exchange,
-            &mut HashSet::new(),
-            &mut measurements,
-            Some(&ctx),
-        ),
+        super::super::modifier_text(&value, &exchange, &mut HashSet::new(), &mut measurements, &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_pmi_datum_modifier_text"
@@ -483,24 +460,21 @@ fn pmi_datum_modifier_text_refuses_retained_limit() {
 
 fn datum_reference_refuses(records: &str, operation: &str) {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid datum exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid datum exchange");
     let mut annotations = super::super::Annotations::default();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
+    crate::test_support::with_service_context(source.as_bytes(), |_, ctx| {
     annotations
-        .push(
-            None,
-            &mut ir,
-            2,
-            super::super::annotations::AnnotationDraft {
+        .push(ctx, &mut ir, 2, super::super::annotations::AnnotationDraft {
                 name: None,
                 targets: Vec::new(),
                 visible: None,
                 definition: cadmpeg_ir::pmi::PmiDefinition::Datum {
                     identification: "A".into(),
                 },
-            },
-        )
+            })
         .expect("datum annotation setup");
+    });
     let refused = (0..=8).any(|limit| {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -515,15 +489,7 @@ fn datum_reference_refuses(records: &str, operation: &str) {
             losses: &mut losses,
         };
         matches!(
-            super::super::datum_references_for_compartment(
-                &crate::parse::Value::Reference(1),
-                NonZeroU32::new(1).expect("positive precedence"),
-                &exchange,
-                &annotations,
-                &mut HashSet::new(),
-                &mut measurements,
-                Some(&ctx),
-            ),
+            super::super::datum_references_for_compartment(&crate::parse::Value::Reference(1), NonZeroU32::new(1).expect("positive precedence"), &exchange, &annotations, &mut HashSet::new(), &mut measurements, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == operation
@@ -576,7 +542,7 @@ fn placement_refuses(operation: &str) {
     let source = format!(
         "{HEADER}#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(0.,0.,1.));#3=DIRECTION('',(1.,0.,0.));#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);#5=TEXT_LITERAL('note',#4,'left',.RIGHT.,$);{TAIL}"
     );
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid placement exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid placement exchange");
     let arena = DecodeArena::new();
     let (setup_ctx, _) =
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
@@ -591,15 +557,7 @@ fn placement_refuses(operation: &str) {
         let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
             .expect("empty root fits collection policy");
         matches!(
-            super::super::collect_placement_candidates(
-                5,
-                &exchange,
-                &geometry.value,
-                &mut BTreeMap::new(),
-                &mut BTreeMap::new(),
-                0,
-                Some(&ctx),
-            ),
+            super::super::collect_placement_candidates(5, &exchange, &geometry.value, &mut BTreeMap::new(), &mut BTreeMap::new(), 0, &ctx),
             Err(CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::CollectionItems
                     && refusal.operation == operation
@@ -621,7 +579,7 @@ fn pmi_placement_candidates_refuse_collection_limit() {
 #[test]
 fn pmi_placement_walk_refuses_depth_limit() {
     let source = format!("{HEADER}#1=ITEM();{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid exchange");
     let arena = DecodeArena::new();
     let (setup_ctx, _) =
         DecodeContext::from_root_bytes(source.as_bytes(), &arena, &DecodePolicy::default())
@@ -635,15 +593,7 @@ fn pmi_placement_walk_refuses_depth_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits depth policy");
     assert!(matches!(
-        super::super::collect_placement_candidates(
-            1,
-            &exchange,
-            &geometry.value,
-            &mut BTreeMap::new(),
-            &mut BTreeMap::new(),
-            0,
-            Some(&ctx),
-        ),
+        super::super::collect_placement_candidates(1, &exchange, &geometry.value, &mut BTreeMap::new(), &mut BTreeMap::new(), 0, &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RecursionDepth
                 && refusal.operation == "step_pmi_placement_walk"
@@ -664,7 +614,7 @@ fn nested_set_refusal(
         &mut BTreeMap::new(),
         1u64,
         2u64,
-        Some(&ctx),
+        &ctx,
         group_operation,
         item_operation,
     )
@@ -717,14 +667,9 @@ fn target_slot_refusal(operation: &'static str) -> CodecError {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits collection policy");
-    super::super::push_target(
-        &mut Vec::new(),
-        cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
+    super::super::push_target(&mut Vec::new(), cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
             source_id: crate::reader::step_source_id(1),
-        },
-        Some(&ctx),
-        operation,
-    )
+        }, &ctx, operation)
     .expect_err("target slot exceeds collection limit")
 }
 
@@ -766,12 +711,7 @@ fn pmi_usage_annotation_indices_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)
         .expect("empty root fits collection policy");
     assert!(matches!(
-        super::super::insert_pmi_set(
-            &mut std::collections::BTreeSet::new(),
-            1u64,
-            Some(&ctx),
-            "step_pmi_usage_annotation_indices",
-        ),
+        ctx.insert_btree_set(&mut std::collections::BTreeSet::new(), 1u64, "step_pmi_usage_annotation_indices").map(|_| ()),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::CollectionItems
                 && refusal.operation == "step_pmi_usage_annotation_indices"
@@ -780,7 +720,7 @@ fn pmi_usage_annotation_indices_refuse_collection_limit() {
 
 fn measure_id_refusal(limit: u64, depth_limit: Option<u64>) -> CodecError {
     let source = format!("{HEADER}#1=MEASURE_REPRESENTATION_ITEM();{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid measure exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid measure exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
@@ -789,15 +729,7 @@ fn measure_id_refusal(limit: u64, depth_limit: Option<u64>) -> CodecError {
     }
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
-    super::super::collect_measure_ids(
-        &crate::parse::Value::Reference(1),
-        &exchange,
-        &mut std::collections::BTreeSet::new(),
-        0,
-        64,
-        &mut std::collections::BTreeSet::new(),
-        Some(&ctx),
-    )
+    super::super::collect_measure_ids(&crate::parse::Value::Reference(1), &exchange, &mut std::collections::BTreeSet::new(), 0, 64, &mut std::collections::BTreeSet::new(), &ctx)
     .expect_err("measure ID walk exceeds the limit")
 }
 
@@ -833,7 +765,7 @@ fn pmi_measure_id_walk_refuses_depth_limit() {
 
 fn measure_eval_refusal(limit: u64, depth_limit: Option<u64>, record: &str) -> CodecError {
     let source = format!("{HEADER}{record}{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid measure exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid measure exchange");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = limit;
@@ -849,12 +781,7 @@ fn measure_eval_refusal(limit: u64, depth_limit: Option<u64>, record: &str) -> C
         graph_limit: 64,
         losses: &mut losses,
     };
-    super::super::measure(
-        &crate::parse::Value::Reference(1),
-        &exchange,
-        &mut measurements,
-        Some(&ctx),
-    )
+    super::super::measure(&crate::parse::Value::Reference(1), &exchange, &mut measurements, &ctx)
     .expect_err("measure evaluation exceeds the limit")
 }
 

@@ -70,15 +70,7 @@ pub(super) fn decode(
             .parameters
             .first()
             .map(|value| {
-                decode_text_charged(
-                    exchange,
-                    value,
-                    &mut losses,
-                    id,
-                    "validation property name",
-                    StepLossCode::MetadataStringInvalid,
-                    Some(ctx),
-                )
+                decode_text_charged(exchange, value, &mut losses, id, "validation property name", StepLossCode::MetadataStringInvalid, ctx)
             })
             .transpose()?
             .flatten();
@@ -90,15 +82,7 @@ pub(super) fn decode(
                 .parameters
                 .get(1)
                 .map(|value| {
-                    decode_text_charged(
-                        exchange,
-                        value,
-                        &mut losses,
-                        id,
-                        "validation property description",
-                        StepLossCode::MetadataStringInvalid,
-                        Some(ctx),
-                    )
+                    decode_text_charged(exchange, value, &mut losses, id, "validation property description", StepLossCode::MetadataStringInvalid, ctx)
                 })
                 .transpose()?
                 .flatten()
@@ -312,7 +296,7 @@ fn measure_scale(
                 break;
             };
             let Some(base) =
-                super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), Some(ctx))?
+                super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new(), ctx)?
             else {
                 scale = None;
                 break;

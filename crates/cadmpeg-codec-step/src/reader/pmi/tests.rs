@@ -1202,7 +1202,7 @@ pub(crate) fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     assert!(!text.contains(" = GEOMETRIC_TOLERANCE("));
     assert!(text.contains(",'diameter')"));
     assert!(text.contains(",'radius')"));
-    let (exchange, diagnostics) = crate::parse::parse(&output).unwrap();
+    let (exchange, diagnostics) = crate::test_support::with_service_context(&output, crate::parse::parse_inner).unwrap();
     assert!(diagnostics.is_empty());
     let location = exchange
         .records()

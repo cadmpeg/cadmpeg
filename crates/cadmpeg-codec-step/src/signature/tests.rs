@@ -19,7 +19,7 @@ fn signature_compact_refuses_collection_limit() {
     policy.limits.max_collection_items = 3;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
         .expect("root fits selected policy");
-    let error = super::decode_payload(input, &(0..input.len()), Some(&ctx))
+    let error = super::decode_payload(input, &(0..input.len()), &ctx)
         .expect_err("four compact bytes exceed three collection items");
     assert!(matches!(
         error,
@@ -37,7 +37,7 @@ fn signature_decoded_bytes_refuse_collection_limit() {
     policy.limits.max_collection_items = 6;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(input, &arena, &policy)
         .expect("root fits selected policy");
-    let error = super::decode_payload(input, &(0..input.len()), Some(&ctx))
+    let error = super::decode_payload(input, &(0..input.len()), &ctx)
         .expect_err("four compact bytes and three decoded bytes exceed six items");
     assert!(matches!(
         error,
@@ -69,7 +69,7 @@ impl SignatureView {
 
 fn sections(exchange: &crate::parse::Exchange, input: impl AsRef<[u8]>) -> Vec<SignatureView> {
     let input = input.as_ref();
-    let tokens = crate::lex::lex(input).expect("signature tokens");
+    let tokens = crate::test_support::with_service_context(input, crate::lex::lex_with_context).expect("signature tokens");
     let exchange_start = tokens[0].span.start;
     exchange
         .signatures()
@@ -83,7 +83,7 @@ fn sections(exchange: &crate::parse::Exchange, input: impl AsRef<[u8]>) -> Vec<S
             SignatureView {
                 span: span.clone(),
                 signed: exchange_start..span.start,
-                cms: super::decode_payload(input, &payload, None).expect("admitted CMS payload"),
+                cms: crate::test_support::with_service_context(input, |_, ctx| super::decode_payload(input, &payload, ctx)).expect("admitted CMS payload"),
                 payload,
             }
         })
@@ -137,7 +137,7 @@ fn parser_retains_base64_encoded_ber_cms() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('BER CMS'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;{payload}\nENDSEC;"
     );
-    let (exchange, diagnostics) = crate::parse::parse(source.as_bytes()).expect("BER CMS witness");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("BER CMS witness");
 
     assert!(diagnostics.is_empty());
     assert_eq!(sections(&exchange, &source)[0].cms, BER_CMS_INDEFINITE);
@@ -160,7 +160,7 @@ fn rejects_embedded_content() {
 #[test]
 fn parser_retains_multiple_signature_sections_after_exchange_terminator() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signatures'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nENDSEC;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nENDSEC;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("multiple signatures");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("multiple signatures");
 
     assert!(diagnostics.is_empty());
     assert_eq!(exchange.signatures().len(), 2);
@@ -188,7 +188,7 @@ fn parser_accepts_signature_edge_separators_and_keeps_each_boundary() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('signatures'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;/* decoy ENDSEC; */\\N\\{payload}\\F\\/* trailing ENDSEC; */EN\nDSEC;SIGNATURE;\\F\\{payload}\\N\\ENDSEC;"
     );
-    let (exchange, diagnostics) = crate::parse::parse(source.as_bytes()).expect("edge separators");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("edge separators");
 
     assert!(diagnostics.is_empty());
     assert_eq!(sections(&exchange, &source).len(), 2);
@@ -217,7 +217,7 @@ fn parser_does_not_treat_unseparated_endsec_text_as_a_signature_boundary() {
     let source = format!(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;{payload}ENDSEC;AAAA\nENDSEC;"
     );
-    let error = crate::parse::parse(source.as_bytes()).expect_err("unseparated ENDSEC text");
+    let error = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect_err("unseparated ENDSEC text");
 
     assert!(matches!(
         error,
@@ -229,7 +229,7 @@ fn parser_does_not_treat_unseparated_endsec_text_as_a_signature_boundary() {
 #[test]
 fn parser_exposes_the_detached_signature_contract() {
     let source = b" /* leading trivia */ ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nENDSEC;";
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("signature contract");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("signature contract");
 
     assert!(diagnostics.is_empty());
     let section = &sections(&exchange, source)[0];
@@ -255,7 +255,7 @@ fn parser_exposes_the_detached_signature_contract() {
 #[test]
 fn parser_does_not_verify_detached_content_during_structural_admission() {
     let source = include_bytes!("tests/data/sg01_signature_method_selection.p21");
-    let (original, original_diagnostics) = crate::parse::parse(source).expect("original signature");
+    let (original, original_diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("original signature");
     let mut tampered_source = source.to_vec();
     let marker = b"SG-01 CMS method witness";
     let marker_start = tampered_source
@@ -264,7 +264,7 @@ fn parser_does_not_verify_detached_content_during_structural_admission() {
         .expect("signature witness marker");
     tampered_source[marker_start] = b'T';
     let (tampered, tampered_diagnostics) =
-        crate::parse::parse(&tampered_source).expect("structural signature admission");
+        crate::test_support::with_service_context(&tampered_source, crate::parse::parse_inner).expect("structural signature admission");
 
     assert!(original_diagnostics.is_empty());
     assert!(tampered_diagnostics.is_empty());
@@ -285,7 +285,7 @@ fn parser_does_not_verify_detached_content_during_structural_admission() {
 #[test]
 fn real_detached_cms_witness_remains_structural_after_source_tampering() {
     let source = include_bytes!("tests/data/sg04_openssl_detached.p21");
-    let (original, original_diagnostics) = crate::parse::parse(source).expect("real CMS witness");
+    let (original, original_diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("real CMS witness");
     let mut tampered_source = source.to_vec();
     let marker = b"SG-04 OpenSSL detached CMS witness";
     let marker_start = tampered_source
@@ -294,7 +294,7 @@ fn real_detached_cms_witness_remains_structural_after_source_tampering() {
         .expect("real CMS witness marker");
     tampered_source[marker_start] = b'X';
     let (tampered, tampered_diagnostics) =
-        crate::parse::parse(&tampered_source).expect("tampered CMS structure");
+        crate::test_support::with_service_context(&tampered_source, crate::parse::parse_inner).expect("tampered CMS structure");
 
     assert!(original_diagnostics.is_empty());
     assert!(tampered_diagnostics.is_empty());
@@ -320,7 +320,7 @@ fn real_detached_cms_witness_remains_structural_after_source_tampering() {
 #[test]
 fn signature_method_and_parameters_are_inside_cms_payload() {
     let source = include_bytes!("tests/data/sg01_signature_method_selection.p21");
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("signature method witness");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("signature method witness");
 
     assert!(diagnostics.is_empty());
     assert_eq!(sections(&exchange, source).len(), 1);
@@ -340,7 +340,7 @@ fn signature_method_and_parameters_are_inside_cms_payload() {
 #[test]
 fn parser_projects_each_signature_to_preceding_alphabet_bytes() {
     let source = include_bytes!("tests/data/sg02_signed_byte_sequence.p21");
-    let (exchange, diagnostics) = crate::parse::parse(source).expect("signed byte witness");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("signed byte witness");
 
     assert!(diagnostics.is_empty());
     assert_eq!(sections(&exchange, source).len(), 2);
@@ -376,7 +376,7 @@ fn parser_projects_each_signature_to_preceding_alphabet_bytes() {
 #[test]
 fn parser_ignores_controls_inside_signature_terminators() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;MFoGCSqGSIb3DQEHAqBNMEsCAQExDTALBglghkgBZQMEAgEwCwYJKoZIhvcNAQcBMSowKAIBATAFMAACAQEwCwYJYIZIAWUDBAIBMA0GCSqGSIb3DQEBAQUABAA=\nEN\nDSEC;";
-    let (exchange, _) = crate::parse::parse(source).expect("split signature terminator");
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("split signature terminator");
     assert_eq!(exchange.signatures().len(), 1);
 }
 
@@ -391,7 +391,7 @@ fn parser_rejects_invalid_signature_base64() {
         let source = format!(
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;{payload}\nENDSEC;"
         );
-        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid signature");
+        let error = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect_err("invalid signature");
         assert!(matches!(
             error,
             crate::parse::ParseError::Lex(crate::lex::LexError { message, .. })

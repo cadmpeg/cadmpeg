@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use cadmpeg_core::decode::{alloc_filled, u64_from_index, DecodeContext, ScopedReservation};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 
 /// The entity or value occurrence class.
@@ -84,37 +84,10 @@ pub(crate) struct BinaryValue {
 impl BinaryValue {
     pub(crate) fn try_clone_for_decode(
         &self,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(u64_from_index(self.data.len()), operation)?;
-        }
-        let mut data = Vec::new();
-        data.try_reserve_exact(self.data.len()).map_err(|_| {
-            ctx.map_or_else(
-                || {
-                    cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                            0,
-                            u64_from_index(self.data.len()),
-                            operation,
-                        ),
-                    )
-                },
-                |_ctx| {
-                    cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                            0,
-                            u64_from_index(self.data.len()),
-                            operation,
-                        ),
-                    )
-                },
-            )
-        })?;
+        let mut data = ctx.collection_vec(self.data.len(), operation)?;
         data.extend_from_slice(&self.data);
         Ok(Self {
             unused_bits: self.unused_bits,
@@ -157,8 +130,11 @@ impl LexError {
 
 /// Tokenize one complete clear-text exchange structure.
 #[cfg(test)]
-pub(crate) fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
-    let mut lexer = Lexer::new(input);
+pub(crate) fn lex_with_context(
+    input: &[u8],
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<Token>, LexError> {
+    let mut lexer = Lexer::new(input, ctx);
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token()? {
         tokens.push(token);
@@ -174,7 +150,7 @@ enum LiteralStorage {
 
 pub(crate) struct Lexer<'a, 'ctx, 'arena> {
     input: &'a [u8],
-    budget: Option<&'ctx DecodeContext<'arena>>,
+    budget: &'ctx DecodeContext<'arena>,
     literal_storage: LiteralStorage,
     at: usize,
     allow_print_controls: bool,
@@ -190,22 +166,16 @@ pub(crate) fn print_control_end(input: &[u8], at: usize) -> Option<usize> {
 }
 
 impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
-    pub(crate) fn new(input: &'a [u8]) -> Self {
+    pub(crate) fn new(input: &'a [u8], ctx: &'ctx DecodeContext<'arena>) -> Self {
         Self {
             input,
-            budget: None,
+            budget: ctx,
             literal_storage: LiteralStorage::Retained,
             at: 0,
             allow_print_controls: true,
             previous_was_signature: false,
             tag_name_expected: false,
         }
-    }
-
-    pub(crate) fn with_context(input: &'a [u8], ctx: &'ctx DecodeContext<'arena>) -> Self {
-        let mut lexer = Self::new(input);
-        lexer.budget = Some(ctx);
-        lexer
     }
 
     pub(crate) fn set_transient_literals(&mut self) {
@@ -725,14 +695,9 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }
         let _temporary = self
             .budget
-            .map(|ctx| ctx.reserve_scoped(u64_from_index(digit_count), "step_binary_lexeme_temp"))
-            .transpose()
+            .reserve_scoped(u64_from_index(digit_count), "step_binary_lexeme_temp")
             .map_err(|error| Self::resource_error(start, error))?;
-        let mut raw = if let Some(ctx) = self.budget {
-            ctx.alloc_filled(digit_count, HexDigit(0), "step_binary_hex_digits")
-        } else {
-            alloc_filled(digit_count, HexDigit(0), "step_binary_hex_digits")
-        }
+        let mut raw = self.budget.alloc_filled(digit_count, HexDigit(0), "step_binary_hex_digits")
         .map_err(|error| Self::resource_error(start, error))?;
         let mut cursor = content;
         let mut written = 0usize;
@@ -778,24 +743,18 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }
         let packed_len = digits.len().div_ceil(2);
         let _packed_temporary = if matches!(self.literal_storage, LiteralStorage::Transient) {
-            self.budget
-                .map(|ctx| {
-                    ctx.reserve_scoped(u64_from_index(packed_len), "step_binary_packed_temp")
-                })
-                .transpose()
-                .map_err(|error| Self::resource_error(start, error))?
+            Some(
+                self.budget
+                    .reserve_scoped(u64_from_index(packed_len), "step_binary_packed_temp")
+                    .map_err(|error| Self::resource_error(start, error))?,
+            )
         } else {
-            if let Some(ctx) = self.budget {
-                ctx.charge_retained(u64_from_index(packed_len), "step_binary_lexeme_retained")
-                    .map_err(|error| Self::resource_error(start, error))?;
-            }
+            self.budget
+                .charge_retained(u64_from_index(packed_len), "step_binary_lexeme_retained")
+                .map_err(|error| Self::resource_error(start, error))?;
             None
         };
-        let mut data = if let Some(ctx) = self.budget {
-            ctx.alloc_filled(packed_len, 0_u8, "step_binary_packed_bytes")
-        } else {
-            alloc_filled(packed_len, 0_u8, "step_binary_packed_bytes")
-        }
+        let mut data = self.budget.alloc_filled(packed_len, 0_u8, "step_binary_packed_bytes")
         .map_err(|error| Self::resource_error(start, error))?;
         let mut output = 0usize;
         let mut pairs = digits.chunks_exact(2);
@@ -839,20 +798,14 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         }
         let _temporary = self
             .budget
-            .map(|ctx| ctx.reserve_scoped(u64_from_index(value_len), "step_uri_lexeme_temp"))
-            .transpose()
+            .reserve_scoped(u64_from_index(value_len), "step_uri_lexeme_temp")
             .map_err(|error| Self::resource_error(start, error))?;
         if matches!(self.literal_storage, LiteralStorage::Retained) {
-            if let Some(ctx) = self.budget {
-                ctx.charge_retained(u64_from_index(value_len), "step_uri_lexeme_retained")
-                    .map_err(|error| Self::resource_error(start, error))?;
-            }
+            self.budget
+                .charge_retained(u64_from_index(value_len), "step_uri_lexeme_retained")
+                .map_err(|error| Self::resource_error(start, error))?;
         }
-        let mut value = if let Some(ctx) = self.budget {
-            ctx.alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
-        } else {
-            alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
-        }
+        let mut value = self.budget.alloc_filled(value_len, 0_u8, "step_uri_lexeme_bytes")
         .map_err(|error| Self::resource_error(start, error))?;
         let mut written = 0usize;
         for &byte in &self.input[content..self.at] {
@@ -895,24 +848,22 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             LiteralStorage::Retained => "step_lex_normalized_retained",
             LiteralStorage::Transient => "step_lex_normalized_temp",
         };
-        let reservation = if let Some(ctx) = self.budget {
-            match storage {
-                LiteralStorage::Retained => {
-                    ctx.charge_retained(u64_from_index(byte_count), operation)
-                        .map_err(|error| Self::resource_error(start, error))?;
-                    None
-                }
-                LiteralStorage::Transient => Some(
-                    ctx.reserve_scoped(u64_from_index(byte_count), operation)
-                        .map_err(|error| Self::resource_error(start, error))?,
-                ),
+        let reservation = match storage {
+            LiteralStorage::Retained => {
+                self.budget
+                    .charge_retained(u64_from_index(byte_count), operation)
+                    .map_err(|error| Self::resource_error(start, error))?;
+                None
             }
-        } else {
-            None
+            LiteralStorage::Transient => Some(
+                self.budget
+                    .reserve_scoped(u64_from_index(byte_count), operation)
+                    .map_err(|error| Self::resource_error(start, error))?,
+            ),
         };
         let mut output = String::new();
         output.try_reserve_exact(byte_count).map_err(|_| {
-            Self::resource_error(start, self.allocation_refusal(operation, byte_count))
+            Self::resource_error(start, self.budget.refuse_codec_limit(operation, 0, u64_from_index(byte_count)))
         })?;
         for &byte in &self.input[start..end] {
             if !byte.is_ascii_control() {
@@ -928,30 +879,22 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         bytes: &[u8],
         start: usize,
     ) -> Result<(), LexError> {
-        if let Some(ctx) = self.budget {
-            ctx.charge_collection_items(u64_from_index(bytes.len()), "step_string_lexeme_items")
-                .map_err(|error| Self::resource_error(start, error))?;
-            ctx.charge_retained(u64_from_index(bytes.len()), "step_string_lexeme_retained")
-                .map_err(|error| Self::resource_error(start, error))?;
-        }
+        self.budget
+            .charge_collection_items(u64_from_index(bytes.len()), "step_string_lexeme_items")
+            .map_err(|error| Self::resource_error(start, error))?;
+        self.budget
+            .charge_retained(u64_from_index(bytes.len()), "step_string_lexeme_retained")
+            .map_err(|error| Self::resource_error(start, error))?;
         output.try_reserve(bytes.len()).map_err(|_| {
             Self::resource_error(
                 start,
-                self.allocation_refusal("step_string_lexeme_items", bytes.len()),
+                self.budget.refuse_codec_limit("step_string_lexeme_items", 0, u64_from_index(bytes.len())),
             )
         })?;
         output.extend_from_slice(bytes);
         Ok(())
     }
 
-    fn allocation_refusal(&self, operation: &'static str, requested: usize) -> CodecError {
-        match self.budget {
-            Some(ctx) => ctx.refuse_codec_limit(operation, 0, u64_from_index(requested)),
-            None => {
-                cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(requested))
-            }
-        }
-    }
 
     fn print_control_end(&self, at: usize) -> Option<usize> {
         print_control_end(self.input, at)

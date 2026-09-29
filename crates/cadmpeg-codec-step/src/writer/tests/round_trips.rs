@@ -1592,7 +1592,7 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
     )
     .expect("export salvaged IR");
 
-    let (exchange, diagnostics) = crate::parse::parse(&output).expect("parse repaired output");
+    let (exchange, diagnostics) = crate::test_support::with_service_context(&output, crate::parse::parse_inner).expect("parse repaired output");
     assert!(diagnostics.is_empty());
     let unit = exchange
         .records()

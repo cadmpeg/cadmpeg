@@ -24,7 +24,7 @@ fn representation_body_vector_refuses_before_two_item_copy() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(b"bodies", &arena, &policy)
         .expect("root fits selected profile");
-    let error = admitted_body_clone(&bodies, Some(&ctx), "step_representation_body_test_copy")
+    let error = admitted_body_clone(&bodies, &ctx, "step_representation_body_test_copy")
         .expect_err("two body slots exceed one collection item");
     assert!(matches!(
         error,
@@ -59,22 +59,14 @@ fn assert_walk_limit(
     calls: usize,
 ) {
     let source = source(records);
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("test exchange parses");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("test exchange parses");
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &service)
         .expect("service root admission");
     let mut cache = BTreeMap::new();
     for _ in 0..calls {
-        let bodies = representation_bodies(
-            20,
-            &exchange,
-            topology,
-            &mut cache,
-            &mut BTreeSet::new(),
-            0,
-            Some(&ctx),
-        )
+        let bodies = representation_bodies(20, &exchange, topology, &mut cache, &mut BTreeSet::new(), &ctx)
         .expect("service admits representation bodies");
         assert_eq!(bodies.len(), 1);
     }
@@ -85,15 +77,7 @@ fn assert_walk_limit(
     let mut cache = BTreeMap::new();
     let mut error = None;
     for _ in 0..calls {
-        match representation_bodies(
-            20,
-            &exchange,
-            topology,
-            &mut cache,
-            &mut BTreeSet::new(),
-            0,
-            Some(&ctx),
-        ) {
+        match representation_bodies(20, &exchange, topology, &mut cache, &mut BTreeSet::new(), &ctx) {
             Ok(_) => {}
             Err(refusal) => {
                 error = Some(refusal);
@@ -155,21 +139,13 @@ fn representation_cached_bodies_charge_before_clone() {
 #[test]
 fn representation_root_bodies_reserve_temporary_bytes_before_clone() {
     let source = source("#20=SHAPE_REPRESENTATION('',(),$);");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("test exchange parses");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("test exchange parses");
     let topology = topology_with_body_at(20);
     let arena = DecodeArena::new();
     let service = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &service)
         .expect("service root admission");
-    representation_bodies(
-        20,
-        &exchange,
-        &topology,
-        &mut BTreeMap::new(),
-        &mut BTreeSet::new(),
-        0,
-        Some(&ctx),
-    )
+    representation_bodies(20, &exchange, &topology, &mut BTreeMap::new(), &mut BTreeSet::new(), &ctx)
     .expect("service admits root body bytes");
     let mut limited = service;
     limited.limits.max_materialized_bytes =
@@ -177,15 +153,7 @@ fn representation_root_bodies_reserve_temporary_bytes_before_clone() {
             .expect("test body byte count fits u64");
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &limited)
         .expect("limited root admission");
-    let error = representation_bodies(
-        20,
-        &exchange,
-        &topology,
-        &mut BTreeMap::new(),
-        &mut BTreeSet::new(),
-        0,
-        Some(&ctx),
-    )
+    let error = representation_bodies(20, &exchange, &topology, &mut BTreeMap::new(), &mut BTreeSet::new(), &ctx)
     .expect_err("root body bytes exceed the selected temporary allowance");
     assert!(
         matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes && limit.operation == "step_representation_body_root_copy")

@@ -14,7 +14,7 @@ const TAIL: &str = "ENDSEC;END-ISO-10303-21;";
 
 fn exchange(records: &str) -> (String, crate::parse::Exchange) {
     let source = format!("{HEADER}{records}{TAIL}");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("valid drawing exchange");
+    let (exchange, _) = crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner).expect("valid drawing exchange");
     (source, exchange)
 }
 
@@ -26,7 +26,7 @@ fn value_refusal(value: &Value, limit: u64, operation: &str) {
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("root fits retained policy");
     assert!(matches!(
-        super::super::value_text(&exchange, value, &mut Vec::new(), 1, "value", Some(&ctx)),
+        super::super::value_text(&exchange, value, &mut Vec::new(), 1, "value", &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == operation
@@ -78,7 +78,7 @@ fn drawing_binary_text_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
         .expect("root fits retained policy");
     assert!(matches!(
-        super::super::value_text(&exchange, value, &mut Vec::new(), 1, "binary", Some(&ctx)),
+        super::super::value_text(&exchange, value, &mut Vec::new(), 1, "binary", &ctx),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_drawing_value_text"

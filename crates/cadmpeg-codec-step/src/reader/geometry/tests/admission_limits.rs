@@ -238,7 +238,7 @@ fn uncertainty_note_text_refuses_retained_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
-        &ctx.format_retained(format_args!("ambiguous uncertainty values ({})", "0.1, 0.2"), "step_uncertainty_note_text"),
+        ctx.format_retained(format_args!("ambiguous uncertainty values ({})", "0.1, 0.2"), "step_uncertainty_note_text"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_uncertainty_note_text"
@@ -363,7 +363,7 @@ deferred_ids_refusal_test!(
 
 fn pcurve_geometry_refusal(collection_limit: u64, depth_limit: u64) -> CodecError {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_CURVE();ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(source).expect("valid curve record");
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid curve record");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -575,7 +575,7 @@ association_name_refusal_test!(
 );
 
 fn line_scale_refusal(source: &[u8], collection_limit: u64, depth_limit: u64) -> CodecError {
-    let (exchange, _) = crate::parse::parse(source).expect("valid curve record");
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid curve record");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = collection_limit;
@@ -815,7 +815,7 @@ fn deferred_surface_queue_refuses_collection_limit() {
 #[test]
 fn curve_coordinate_rows_refuse_collection_limit() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.)));ENDSEC;END-ISO-10303-21;";
-    let (exchange, _) = crate::parse::parse(source).expect("valid coordinate list");
+    let (exchange, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner).expect("valid coordinate list");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
@@ -876,7 +876,7 @@ fn curve_strip_source_name_refuses_retained_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
-        &ctx.format_retained(format_args!("{}", "curve"), "step_curve_strip_source_name"),
+        ctx.format_retained(format_args!("{}", "curve"), "step_curve_strip_source_name"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_curve_strip_source_name"
