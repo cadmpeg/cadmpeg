@@ -51,3 +51,18 @@ fn feature_object_ranges_refuse_work_limit() {
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "index SLDPRT feature object byte ranges"));
 }
+
+#[test]
+fn feature_object_ranges_preserve_equal_offset_history_order() {
+    let mut history = native_history();
+    let mut second = history.features[0].clone();
+    second.id = "second-hole".into();
+    history.features.push(second);
+    let lane = lane_with_position_reference(7);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&lane.native_payload, &arena, &DecodePolicy::service()).unwrap();
+    let histories = [history];
+    let ranges = feature_object_byte_ranges(&ctx, &histories, &lane).unwrap();
+    assert_eq!(ranges.get("native-hole"), Some(&(0, 0, 0)));
+    assert_eq!(ranges.get("second-hole"), Some(&(0, 0, lane.native_payload.len())));
+}

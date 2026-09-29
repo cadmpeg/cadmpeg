@@ -1744,9 +1744,10 @@ pub(crate) fn project_spatial_hole_position_sketches(
                             support_axes.push(canonical_axis(axis));
                         }
                     }
-                    ctx.charge_work(u64_from_index(support_axes.len()), "sort SLDPRT spatial support axes")?;
+                    charge_hole_sort_work(ctx, support_axes.len(), "sort SLDPRT spatial support axes")?;
                     support_axes
-                        .sort_by_key(|axis| [axis.x.to_bits(), axis.y.to_bits(), axis.z.to_bits()]);
+                        .sort_unstable_by_key(|axis| [axis.x.to_bits(), axis.y.to_bits(), axis.z.to_bits()]);
+                    ctx.charge_work(u64_from_index(support_axes.len()), "deduplicate SLDPRT spatial support axes")?;
                     support_axes
                         .dedup_by(|left, right| left.dot(*right) >= 1.0 - EPS_HOLE_GEOMETRY);
                     if let [axis] = support_axes.as_slice() {
@@ -1784,8 +1785,8 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     resolved = inferred;
                 }
             }
-            ctx.charge_work(u64_from_index(resolved.len()), "sort SLDPRT spatial hole placements")?;
-            resolved.sort_by_key(|placement| match placement {
+            charge_hole_sort_work(ctx, resolved.len(), "sort SLDPRT spatial hole placements")?;
+            resolved.sort_unstable_by_key(|placement| match placement {
                 HolePlacement::Axis { origin, axis } => [
                     origin.x.to_bits(),
                     origin.y.to_bits(),
@@ -1796,6 +1797,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 ],
                 HolePlacement::Directed { .. } => [0; 6],
             });
+            ctx.charge_work(u64_from_index(resolved.len()), "deduplicate SLDPRT spatial hole placements")?;
             resolved.dedup();
             if !ambiguous && !resolved.is_empty() {
                 features[index].evaluation.edit(|definition, _| {
@@ -1814,10 +1816,12 @@ fn coplanar_spatial_position_placements(
 ) -> Result<Option<Vec<HolePlacement>>, CodecError> {
     let mut sorted_points = Vec::new();
     ctx.reserve_collection_vec(&mut sorted_points, points.len(), "sort SLDPRT spatial position points")?;
+    ctx.charge_work(u64_from_index(points.len()), "copy SLDPRT spatial position points")?;
     sorted_points.extend_from_slice(points);
     let mut points = sorted_points;
-    ctx.charge_work(u64_from_index(points.len()), "sort SLDPRT spatial position points")?;
-    points.sort_by_key(|point| [point.x.to_bits(), point.y.to_bits(), point.z.to_bits()]);
+    charge_hole_sort_work(ctx, points.len(), "sort SLDPRT spatial position points")?;
+    points.sort_unstable_by_key(|point| [point.x.to_bits(), point.y.to_bits(), point.z.to_bits()]);
+    ctx.charge_work(u64_from_index(points.len()), "deduplicate SLDPRT spatial position points")?;
     points.dedup();
     if points.len() < 3 || points.iter().any(|point| !point.is_finite()) {
         return Ok(None);
@@ -2055,13 +2059,14 @@ pub(crate) fn project_generated_hole_axes(
                 let mut solution = Vec::new();
                 ctx.reserve_collection_vec(&mut solution, axes.len(), "sort SLDPRT generated hole axes")?;
                 solution.extend(axes);
-                ctx.charge_work(u64_from_index(solution.len()), "sort SLDPRT generated hole axes")?;
-                solution.sort_by_key(|(key, _)| *key);
+                charge_hole_sort_work(ctx, solution.len(), "sort SLDPRT generated hole axes")?;
+                solution.sort_unstable_by_key(|(key, _)| *key);
                 let mut placements = Vec::new();
                 ctx.reserve_collection_vec(&mut placements, solution.len(), "collect SLDPRT generated hole placements")?;
                 placements.extend(solution.into_iter().map(|(_, placement)| placement));
                 ctx.reserve_collection_vec(&mut lane_solutions, 1, "collect SLDPRT generated hole lanes")?;
-                lane_solutions.push(placements);
+                let input_index = lane_solutions.len();
+                lane_solutions.push((input_index, placements));
             }
             let placement_key = |placement: &HolePlacement| match placement {
                 HolePlacement::Axis { origin, axis } => [
@@ -2070,16 +2075,26 @@ pub(crate) fn project_generated_hole_axes(
                 ],
                 HolePlacement::Directed { .. } => [GridCoordinate::Cell(0); 6],
             };
-            ctx.charge_work(u64_from_index(lane_solutions.len()), "sort SLDPRT generated hole lanes")?;
-            lane_solutions.sort_by(|left, right| {
-                left
-                    .iter()
-                    .map(placement_key)
-                    .cmp(right.iter().map(placement_key))
+            const OPERATION: &str = "sort SLDPRT generated hole lanes";
+            ctx.charge_work(u64_from_index(lane_solutions.len()), OPERATION)?;
+            let maximum_length = lane_solutions.iter().map(|(_, placements)| placements.len()).max().unwrap_or(0);
+            let count = u64_from_index(lane_solutions.len());
+            let levels = if lane_solutions.len() > 1 { lane_solutions.len().ilog2() + 1 } else { 1 };
+            let comparison_work = count.checked_mul(u64::from(levels))
+                .and_then(|count| count.checked_mul(u64_from_index(maximum_length).checked_add(1)?))
+                .and_then(|count| count.checked_mul(2))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(comparison_work, OPERATION)?;
+            lane_solutions.sort_unstable_by(|(left_index, left), (right_index, right)| {
+                left.iter().map(placement_key).cmp(right.iter().map(placement_key))
+                    .then_with(|| left_index.cmp(right_index))
             });
-            lane_solutions.dedup();
+            ctx.charge_work(count.checked_mul(u64_from_index(maximum_length).checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            lane_solutions.dedup_by(|left, right| left.1 == right.1);
             if lane_solutions.len() == 1 {
-                return Ok(lane_solutions.pop());
+                return Ok(lane_solutions.pop().map(|(_, placements)| placements));
             }
             Ok(None)
         })()?;
@@ -4047,22 +4062,23 @@ pub(super) fn feature_object_byte_ranges<'a>(
 ) -> Result<HashMap<&'a str, (usize, usize, usize)>, CodecError> {
     const OPERATION: &str = "index SLDPRT feature object byte ranges";
     let mut objects = Vec::new();
-    for feature in histories.iter().flat_map(|history| &history.features) {
-        ctx.charge_work(1, OPERATION)?;
+    for (input_index, feature) in histories.iter().flat_map(|history| &history.features).enumerate() {
+        ctx.charge_work(u64_from_index(lane.names.len()).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         let Some(name) = feature_object_name(feature, lane) else {
             continue;
         };
         ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
-        objects.push((name.offset, feature));
+        objects.push((name.offset, input_index, feature));
     }
     let count = u64::try_from(objects.len())
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     let levels = if objects.len() > 1 { objects.len().ilog2() + 1 } else { 1 };
     ctx.charge_work(count.checked_mul(u64::from(levels))
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-    objects.sort_by_key(|(offset, _)| *offset);
+    objects.sort_unstable_by_key(|(offset, input_index, _)| (*offset, *input_index));
     let mut ranges = HashMap::new();
-    for (index, (offset, feature)) in objects.iter().enumerate() {
+    for (index, (offset, _, feature)) in objects.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
             let Some(start) = usize::try_from(*offset).ok() else {
                 continue;
@@ -4070,11 +4086,11 @@ pub(super) fn feature_object_byte_ranges<'a>(
             let context_start = index
                 .checked_sub(1)
                 .and_then(|index| objects.get(index))
-                .and_then(|(offset, _)| usize::try_from(*offset).ok())
+                .and_then(|(offset, _, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
             let end = objects
                 .get(index + 1)
-                .and_then(|(offset, _)| usize::try_from(*offset).ok())
+                .and_then(|(offset, _, _)| usize::try_from(*offset).ok())
                 .unwrap_or(lane.native_payload.len());
             if !ranges.contains_key(feature.id.as_str()) {
                 ctx.charge_collection_items(1, OPERATION)?;
