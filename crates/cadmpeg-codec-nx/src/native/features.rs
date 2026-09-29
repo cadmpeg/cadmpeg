@@ -5852,24 +5852,55 @@ pub(super) fn feature_datum_plane_payloads(
         {
             continue;
         }
-        let data_blocks = header
-            .resolved_data_blocks(DatumPlaneBlockLane::Object)
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut data_blocks = Vec::new();
+        let mut reservation = ctx.reserve_scoped(0, "copy NX datum plane source blocks")?;
+        for block in header.resolved_data_blocks(DatumPlaneBlockLane::Object) {
+            reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<String>().checked_add(block.len()).ok_or_else(||
+                    ctx.refuse_codec_limit("copy NX datum plane source blocks", 0, 1))?))?;
+            ctx.charge_collection_items(1, "NX datum plane source blocks")?;
+            data_blocks.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX datum plane source blocks", 0, 1))?;
+            let mut id = String::new();
+            id.try_reserve_exact(block.len()).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX datum plane source block identity", 0, 1))?;
+            id.push_str(block);
+            data_blocks.push(id);
+        }
         let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)?
         else {
             continue;
         };
+        drop(reservation);
         let Some(joined) = JoinedPayload::from_source(ctx, content.block_ids(), &blocks)? else {
             continue;
         };
         let lanes = crate::om::datum_index::scan(ctx, joined.bytes())?;
         let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
         let key = header.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let prefix = "nx:feature-history:datum-plane-payload#";
+        let id_len = prefix.len().checked_add(key.len()).ok_or_else(||
+            ctx.refuse_codec_limit("NX datum plane payload identity", 0, 1))?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(id_len),
+            "NX datum plane payload identity")?;
+        let mut id = String::new();
+        id.try_reserve_exact(id_len).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX datum plane payload identity", 0, 1))?;
+        id.push_str(prefix);
+        id.push_str(key);
+        let operation_label = copy_operation_text(ctx, &header.operation_label,
+            "NX datum plane payload operation label")?;
+        let datum_plane_header = copy_operation_text(ctx, &header.id,
+            "NX datum plane payload header identity")?;
+        ctx.charge_collection_items(1, "NX datum plane payloads")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureDatumPlanePayload>()), "NX datum plane payloads")?;
+        output.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX datum plane payloads", 0, 1))?;
         output.push(FeatureDatumPlanePayload {
-            id: format!("nx:feature-history:datum-plane-payload#{key}"),
-            operation_label: header.operation_label.clone(),
-            datum_plane_header: header.id.clone(),
+            id,
+            operation_label,
+            datum_plane_header,
             content,
             index_lane: lane.map(crate::om::datum_index::DatumIndexLane::into_u64),
         });
@@ -5884,28 +5915,42 @@ pub(super) fn feature_datum_csys_payloads(
     constructions: &[FeatureDatumCsysConstruction],
 ) -> Result<Vec<FeatureDatumCsysPayload>, cadmpeg_core::CodecError> {
     let blocks = offset_data_block_bytes(ctx, container)?;
-    Ok(constructions
-        .iter()
-        .filter_map(|construction| {
-            let data_blocks = [
-                construction.frame.members()[0].1.clone(),
-                construction.frame.members()[1].1.clone(),
-            ];
-            let content = match FeaturePayloadContent::from_source(ctx, data_blocks, &blocks) {
-                Ok(Some(content)) => content,
-                Ok(None) => return None,
-                Err(error) => return Some(Err(error)),
-            };
-            Some(Ok(FeatureDatumCsysPayload {
-                id: construction
-                    .id
-                    .replacen("datum-csys-construction", "datum-csys-payload", 1),
-                operation_label: construction.operation_label.clone(),
-                construction: construction.id.clone(),
-                content,
-            }))
-        })
-        .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?)
+    let mut output = Vec::new();
+    for construction in constructions {
+        let first = &construction.frame.members()[0].1;
+        let second = &construction.frame.members()[1].1;
+        let string_bytes = first.len().checked_add(second.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("copy NX datum CSYS source blocks", 0, 1))?;
+        let reservation = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(string_bytes),
+            "copy NX datum CSYS source blocks")?;
+        let copy = |value: &str| -> Result<String, CodecError> {
+            let mut id = String::new();
+            id.try_reserve_exact(value.len()).map_err(|_| ctx.refuse_codec_limit(
+                "allocate NX datum CSYS source block identity", 0, 1))?;
+            id.push_str(value);
+            Ok(id)
+        };
+        let data_blocks = [copy(first)?, copy(second)?];
+        let Some(content) = FeaturePayloadContent::from_source(ctx, data_blocks, &blocks)?
+        else { continue; };
+        drop(reservation);
+        let id = replace_operation_text(ctx, &construction.id,
+            "datum-csys-construction", "datum-csys-payload",
+            "NX datum CSYS payload identity")?;
+        let operation_label = copy_operation_text(ctx, &construction.operation_label,
+            "NX datum CSYS payload operation label")?;
+        let construction_id = copy_operation_text(ctx, &construction.id,
+            "NX datum CSYS payload construction identity")?;
+        ctx.charge_collection_items(1, "NX datum CSYS payloads")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<FeatureDatumCsysPayload>()), "NX datum CSYS payloads")?;
+        output.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
+            "allocate NX datum CSYS payloads", 0, 1))?;
+        output.push(FeatureDatumCsysPayload {
+            id, operation_label, construction: construction_id, content,
+        });
+    }
+    Ok(output)
 }
 
 /// Shared body for construction-payload frame extractors. Reconstruct each
