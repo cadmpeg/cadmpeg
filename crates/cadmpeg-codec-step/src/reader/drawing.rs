@@ -110,24 +110,6 @@ fn clone_drawing_identities(
     Ok(copy)
 }
 
-fn push_drawing_relationship(
-    relationships: &mut BTreeMap<NonBlankString, Vec<ReferenceSelection>>,
-    role: NonBlankString,
-    target: ReferenceSelection,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    let targets = match relationships.entry(role) {
-        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-        std::collections::btree_map::Entry::Vacant(entry) => {
-            ctx.charge_collection_items(1, "step_drawing_relationship_groups")?;
-            entry.insert(Vec::new())
-        }
-    };
-    ctx.reserve_vec(targets, 1, "step_drawing_relationship_members")?;
-    targets.push(target);
-    Ok(())
-}
-
 fn visit_drawing_references(
     value: &Value,
     ctx: &DecodeContext<'_>,
@@ -647,12 +629,7 @@ fn add_reference_fields(
         visit_drawing_references(value, target_context.ctx, &mut |target_id| {
             match target_context.resolve(target_id)? {
                 TargetResolution::Resolved(target) => {
-                    push_drawing_relationship(
-                        relationships,
-                        role.clone(),
-                        target,
-                        target_context.ctx,
-                    )?;
+                    (target_context.ctx).push_btree_group(relationships, role.clone(), target, "step_drawing_relationship_groups", "step_drawing_relationship_members")?;
                 }
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
@@ -715,12 +692,7 @@ fn add_sheet_revision_usages(
         let revision_target = target_context.resolve(sheet_id)?;
         if let Some(sheet) = drawings.get_mut(&sheet_id) {
             match sheet_target {
-                TargetResolution::Resolved(target) => push_drawing_relationship(
-                    &mut sheet.relationships,
-                    cadmpeg_core::nonblank_literal!("drawing_revision"),
-                    target,
-                    target_context.ctx,
-                )?,
+                TargetResolution::Resolved(target) => (target_context.ctx).push_btree_group(&mut sheet.relationships, cadmpeg_core::nonblank_literal!("drawing_revision"), target, "step_drawing_relationship_groups", "step_drawing_relationship_members")?,
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
                     &format!("drawing sheet #{sheet_id} usage #{usage_id}"),
@@ -764,12 +736,7 @@ fn add_sheet_revision_usages(
         }
         if let Some(revision) = drawings.get_mut(&revision_id) {
             match revision_target {
-                TargetResolution::Resolved(target) => push_drawing_relationship(
-                    &mut revision.relationships,
-                    cadmpeg_core::nonblank_literal!("sheet_revision"),
-                    target,
-                    target_context.ctx,
-                )?,
+                TargetResolution::Resolved(target) => (target_context.ctx).push_btree_group(&mut revision.relationships, cadmpeg_core::nonblank_literal!("sheet_revision"), target, "step_drawing_relationship_groups", "step_drawing_relationship_members")?,
                 TargetResolution::Ambiguous(identities) => note_ambiguous_target(
                     losses,
                     &format!("drawing revision #{revision_id} usage #{usage_id}"),
@@ -862,12 +829,7 @@ fn add_draughting_model_associations(
             visit_drawing_references(items, target_context.ctx, &mut |item_id| {
                 has_items = true;
                 match target_context.resolve(item_id)? {
-                    TargetResolution::Resolved(item) => push_drawing_relationship(
-                        &mut model.relationships,
-                        cadmpeg_core::nonblank_literal!("associated_items"),
-                        item,
-                        target_context.ctx,
-                    )?,
+                    TargetResolution::Resolved(item) => (target_context.ctx).push_btree_group(&mut model.relationships, cadmpeg_core::nonblank_literal!("associated_items"), item, "step_drawing_relationship_groups", "step_drawing_relationship_members")?,
                     TargetResolution::Ambiguous(identities) => {
                         note_ambiguous_target(
                             losses,
@@ -939,20 +901,10 @@ fn add_draughting_model_associations(
         };
 
         if let Some(definition) = definition_target {
-            push_drawing_relationship(
-                &mut model.relationships,
-                cadmpeg_core::nonblank_literal!("semantic_definition"),
-                definition,
-                target_context.ctx,
-            )?;
+            (target_context.ctx).push_btree_group(&mut model.relationships, cadmpeg_core::nonblank_literal!("semantic_definition"), definition, "step_drawing_relationship_groups", "step_drawing_relationship_members")?;
         }
         if let Some(placeholder) = placeholder_target {
-            push_drawing_relationship(
-                &mut model.relationships,
-                cadmpeg_core::nonblank_literal!("annotation_placeholder"),
-                placeholder,
-                target_context.ctx,
-            )?;
+            (target_context.ctx).push_btree_group(&mut model.relationships, cadmpeg_core::nonblank_literal!("annotation_placeholder"), placeholder, "step_drawing_relationship_groups", "step_drawing_relationship_members")?;
         }
         if complete {
             target_context

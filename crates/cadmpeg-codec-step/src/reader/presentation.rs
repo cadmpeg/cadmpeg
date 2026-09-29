@@ -52,47 +52,15 @@ pub(super) fn decode(
         bodies: &body_indices,
     };
     let entity_ids = EntityIds {
-        edges: collect_borrowed_identity_set(
-            ir.model.edges.iter().map(|item| item.id.as_str()),
-            ctx,
-            "step_presentation_edge_ids",
-        )?,
-        vertices: collect_borrowed_identity_set(
-            ir.model.vertices.iter().map(|item| item.id.as_str()),
-            ctx,
-            "step_presentation_vertex_ids",
-        )?,
-        points: collect_borrowed_identity_set(
-            ir.model.points.iter().map(|item| item.id.as_str()),
-            ctx,
-            "step_presentation_point_ids",
-        )?,
-        curves: collect_borrowed_identity_set(
-            ir.model.curves.iter().map(|item| item.id.as_str()),
-            ctx,
-            "step_presentation_curve_ids",
-        )?,
-        surfaces: collect_borrowed_identity_set(
-            ir.model.surfaces.iter().map(|item| item.id.as_str()),
-            ctx,
-            "step_presentation_surface_ids",
-        )?,
+        edges: ctx.collect_btree_set(ir.model.edges.iter().map(|item| item.id.as_str()), "step_presentation_edge_ids")?,
+        vertices: ctx.collect_btree_set(ir.model.vertices.iter().map(|item| item.id.as_str()), "step_presentation_vertex_ids")?,
+        points: ctx.collect_btree_set(ir.model.points.iter().map(|item| item.id.as_str()), "step_presentation_point_ids")?,
+        curves: ctx.collect_btree_set(ir.model.curves.iter().map(|item| item.id.as_str()), "step_presentation_curve_ids")?,
+        surfaces: ctx.collect_btree_set(ir.model.surfaces.iter().map(|item| item.id.as_str()), "step_presentation_surface_ids")?,
         products: product_definition_ids_by_source,
-        occurrences: collect_borrowed_identity_set(
-            ir.model.occurrences.iter().map(|item| item.id.as_str()),
-            ctx,
-            "step_presentation_occurrence_ids",
-        )?,
-        pmi: collect_borrowed_identity_set(
-            ir.model.pmi.iter().map(|item| item.id.as_str()),
-            ctx,
-            "step_presentation_pmi_ids",
-        )?,
-        tessellations: collect_borrowed_identity_set(
-            ir.model.tessellations.iter().map(|item| item.id.as_str()),
-            ctx,
-            "step_presentation_tessellation_ids",
-        )?,
+        occurrences: ctx.collect_btree_set(ir.model.occurrences.iter().map(|item| item.id.as_str()), "step_presentation_occurrence_ids")?,
+        pmi: ctx.collect_btree_set(ir.model.pmi.iter().map(|item| item.id.as_str()), "step_presentation_pmi_ids")?,
+        tessellations: ctx.collect_btree_set(ir.model.tessellations.iter().map(|item| item.id.as_str()), "step_presentation_tessellation_ids")?,
     };
     let mut appearance_ids = BTreeMap::<(u64, u32), AppearanceId>::new();
     let mut hidden_style_ids = BTreeSet::new();
@@ -1099,19 +1067,6 @@ struct EntityIds<'a> {
 struct PresentationIndices<'a> {
     faces: &'a BTreeMap<String, usize>,
     bodies: &'a BTreeMap<String, usize>,
-}
-
-fn collect_borrowed_identity_set<'a>(
-    identities: impl IntoIterator<Item = &'a str>,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<BTreeSet<&'a str>, CodecError> {
-    let mut result = BTreeSet::new();
-    for identity in identities {
-        ctx.insert_btree_set(&mut result, identity, operation)
-            ?;
-    }
-    Ok(result)
 }
 
 fn push_scalar_candidate(

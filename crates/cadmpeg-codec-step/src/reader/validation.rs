@@ -48,12 +48,7 @@ pub(super) fn decode(
         };
         let mut items = BTreeSet::new();
         for item in representation_items {
-            insert_tree(
-                &mut items,
-                item,
-                ctx,
-                "step_validation_representation_items",
-            )?;
+            ctx.insert_btree_set(&mut items, item, "step_validation_representation_items")?;
         }
         if !items.is_empty() {
             ctx.charge_collection_items(1, "step_validation_representations")?;
@@ -129,12 +124,7 @@ pub(super) fn decode(
         let Some(item_ids) = representations.get(&representation_id) else {
             continue;
         };
-        insert_tree(
-            &mut validation_representations,
-            representation_id,
-            ctx,
-            "step_validation_used_representations",
-        )?;
+        ctx.insert_btree_set(&mut validation_representations, representation_id, "step_validation_used_representations")?;
         for &item_id in item_ids {
             let Some(item) = exchange.records().get(&item_id) else {
                 continue;
@@ -153,12 +143,7 @@ pub(super) fn decode(
                 continue;
             };
             if matches!(expected, Expected::Centroid(_)) {
-                insert_tree(
-                    &mut validation_points,
-                    item_id,
-                    ctx,
-                    "step_validation_points",
-                )?;
+                ctx.insert_btree_set(&mut validation_points, item_id, "step_validation_points")?;
             }
             for id in [property_id, relation_id, representation_id, item_id] {
                 ctx.insert_hash_set(&mut typed, id, "step_validation_claims")?;
@@ -184,21 +169,13 @@ pub(super) fn decode(
                     Expected::Centroid(_) => format!("distance {actual}"),
                     _ => actual.to_string(),
                 };
-                push_validation_note(
-                    &mut notes,
-                    format_args!(
+                ctx.push_formatted_retained(&mut notes, format_args!(
                         "geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"
-                    ),
-                    ctx,
-                )?;
+                    ), "step_validation_notes", "step_validation_note_text")?;
             } else {
-                push_validation_note(
-                    &mut notes,
-                    format_args!(
+                ctx.push_formatted_retained(&mut notes, format_args!(
                         "geometric validation {kind} {description}: expected {expected_text}"
-                    ),
-                    ctx,
-                )?;
+                    ), "step_validation_notes", "step_validation_note_text")?;
             }
         }
     }
@@ -346,17 +323,6 @@ fn push_validation_loss(
 ) -> Result<(), CodecError> {
     ctx.reserve_vec(losses, 1, "step_validation_losses")?;
     losses.push(code.note(message));
-    Ok(())
-}
-
-fn push_validation_note(
-    notes: &mut Vec<String>,
-    arguments: std::fmt::Arguments<'_>,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    let note = ctx.format_retained(arguments, "step_validation_note_text")?;
-    ctx.reserve_vec(notes, 1, "step_validation_notes")?;
-    notes.push(note);
     Ok(())
 }
 
@@ -614,7 +580,7 @@ fn collect_validation_references(
     let _nested = ctx.enter_nested("step_validation_reference_walk")?;
     match value {
         Value::Reference(id) if validation_points.contains(id) => {
-            insert_tree(referenced, *id, ctx, "step_validation_referenced_points")?;
+            ctx.insert_btree_set(referenced, *id, "step_validation_referenced_points")?;
         }
         Value::List(values) => {
             for value in values {
@@ -625,19 +591,6 @@ fn collect_validation_references(
             collect_validation_references(value, validation_points, referenced, ctx)?;
         }
         _ => {}
-    }
-    Ok(())
-}
-
-fn insert_tree(
-    values: &mut BTreeSet<u64>,
-    id: u64,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains(&id) {
-        ctx.charge_collection_items(1, operation)?;
-        values.insert(id);
     }
     Ok(())
 }

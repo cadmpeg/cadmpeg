@@ -38,19 +38,6 @@ struct MeasureContext<'a> {
     losses: &'a mut Vec<LossNote>,
 }
 
-fn collect_pmi_set<T: Ord>(
-    items: impl IntoIterator<Item = T>,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<BTreeSet<T>, CodecError> {
-    let mut values = BTreeSet::new();
-    for item in items {
-        ctx.insert_btree_set(&mut values, item, operation)
-            ?;
-    }
-    Ok(values)
-}
-
 fn collect_pmi_references(
     values: &[Value],
     ctx: &DecodeContext<'_>,
@@ -63,21 +50,6 @@ fn collect_pmi_references(
         }
     }
     Ok(ids)
-}
-
-fn insert_pmi_nested_set<K: Ord, V: Ord>(
-    groups: &mut BTreeMap<K, BTreeSet<V>>,
-    key: K,
-    value: V,
-    ctx: &DecodeContext<'_>,
-    group_operation: &'static str,
-    item_operation: &'static str,
-) -> Result<(), CodecError> {
-    if !groups.contains_key(&key) {
-        ctx.charge_collection_items(1, group_operation)?;
-    }
-    ctx.insert_btree_set(groups.entry(key).or_default(), value, item_operation)
-        .map(|_| ())
 }
 
 fn claim_pmi_typed_many(
@@ -107,18 +79,10 @@ pub(super) fn decode(
             notes: Vec::new(),
         });
     }
-    let base_aspects = collect_pmi_set(
-        exchange
+    let base_aspects = ctx.collect_btree_set(exchange
             .entities_any(&["SHAPE_ASPECT", "DATUM_FEATURE", "DATUM"])
-            .map(|(id, _)| id),
-        ctx,
-        "step_pmi_base_aspects",
-    )?;
-    let shape_aspects = collect_pmi_set(
-        exchange.matching_entity_ids(is_shape_aspect_name),
-        ctx,
-        "step_pmi_shape_aspects",
-    )?;
+            .map(|(id, _)| id), "step_pmi_base_aspects")?;
+    let shape_aspects = ctx.collect_btree_set(exchange.matching_entity_ids(is_shape_aspect_name), "step_pmi_shape_aspects")?;
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
     let mut annotations = Annotations::default();
@@ -764,14 +728,7 @@ pub(super) fn decode(
         if annotations.get(definition).is_some() {
             if let Some(items) = named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4) {
                 for item in references(items) {
-                    push_source_id(
-                        &mut presentation_semantics,
-                        item,
-                        definition,
-                        ctx,
-                        "step_pmi_presentation_semantic_groups",
-                        "step_pmi_presentation_semantic_members",
-                    )?;
+                    ctx.push_btree_group(&mut presentation_semantics, item, definition, "step_pmi_presentation_semantic_groups", "step_pmi_presentation_semantic_members")?;
                 }
             }
             ctx.insert_hash_set(&mut typed, id, "step_pmi_typed_claims")
@@ -904,8 +861,7 @@ pub(super) fn decode(
         ctx,
     )?;
 
-    let targeted_aspects = collect_pmi_set(
-        ir.model
+    let targeted_aspects = ctx.collect_btree_set(ir.model
             .pmi
             .iter()
             .flat_map(|annotation| &annotation.targets)
@@ -914,10 +870,7 @@ pub(super) fn decode(
                     source_id.as_str().strip_prefix('#')?.parse().ok()
                 }
                 _ => None,
-            }),
-        ctx,
-        "step_pmi_targeted_aspects",
-    )?;
+            }), "step_pmi_targeted_aspects")?;
     claim_pmi_typed_many(
         &mut typed,
         shape_aspects.intersection(&targeted_aspects).copied(),
@@ -1034,26 +987,12 @@ fn resolve_geometric_item_usages(
             continue;
         };
         if shape_aspects.contains(&annotation_id) {
-            insert_pmi_nested_set(
-                &mut aspect_annotations,
-                annotation_id,
-                annotation_index,
-                ctx,
-                "step_pmi_aspect_annotation_groups",
-                "step_pmi_aspect_annotation_members",
-            )?;
+            ctx.insert_btree_group_set(&mut aspect_annotations, annotation_id, annotation_index, "step_pmi_aspect_annotation_groups", "step_pmi_aspect_annotation_members")?;
         }
         for parameter in record_values(record) {
             for reference in references(parameter) {
                 if shape_aspects.contains(&reference) {
-                    insert_pmi_nested_set(
-                        &mut aspect_annotations,
-                        reference,
-                        annotation_index,
-                        ctx,
-                        "step_pmi_aspect_annotation_groups",
-                        "step_pmi_aspect_annotation_members",
-                    )?;
+                    ctx.insert_btree_group_set(&mut aspect_annotations, reference, annotation_index, "step_pmi_aspect_annotation_groups", "step_pmi_aspect_annotation_members")?;
                 }
             }
         }
@@ -1064,22 +1003,8 @@ fn resolve_geometric_item_usages(
         let Some((relating, related)) = relationship_endpoints(record) else {
             continue;
         };
-        insert_pmi_nested_set(
-            &mut relationship_aspects,
-            relating,
-            related,
-            ctx,
-            "step_pmi_relationship_aspect_groups",
-            "step_pmi_relationship_aspect_members",
-        )?;
-        insert_pmi_nested_set(
-            &mut relationship_aspects,
-            related,
-            relating,
-            ctx,
-            "step_pmi_relationship_aspect_groups",
-            "step_pmi_relationship_aspect_members",
-        )?;
+        ctx.insert_btree_group_set(&mut relationship_aspects, relating, related, "step_pmi_relationship_aspect_groups", "step_pmi_relationship_aspect_members")?;
+        ctx.insert_btree_group_set(&mut relationship_aspects, related, relating, "step_pmi_relationship_aspect_groups", "step_pmi_relationship_aspect_members")?;
     }
 
     for (&id, record) in exchange.records() {
@@ -1241,25 +1166,6 @@ fn relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
     ))
 }
 
-fn push_source_id<T>(
-    values: &mut BTreeMap<u64, Vec<T>>,
-    source: u64,
-    id: T,
-    ctx: &DecodeContext<'_>,
-    group_operation: &'static str,
-    item_operation: &'static str,
-) -> Result<(), CodecError> {
-    if !values.contains_key(&source) {
-        ctx.charge_collection_items(1, group_operation)?;
-    }
-
-    let items = values.entry(source).or_default();
-
-    ctx.reserve_vec(items, 1, item_operation)?;
-    items.push(id);
-    Ok(())
-}
-
 fn point_sources(
     ir: &CadIr,
     ctx: &DecodeContext<'_>,
@@ -1270,14 +1176,7 @@ fn point_sources(
             continue;
         };
         let id = point.id.try_clone_for_decode(ctx, "step_pmi_point_source_identity")?;
-        push_source_id(
-            &mut points,
-            source,
-            id,
-            ctx,
-            "step_pmi_point_source_groups",
-            "step_pmi_point_source_items",
-        )?;
+        ctx.push_btree_group(&mut points, source, id, "step_pmi_point_source_groups", "step_pmi_point_source_items")?;
     }
     Ok(points)
 }
@@ -1292,14 +1191,7 @@ fn curve_sources(
             continue;
         };
         let id = curve.id.try_clone_for_decode(ctx, "step_pmi_curve_source_identity")?;
-        push_source_id(
-            &mut curves,
-            source,
-            id,
-            ctx,
-            "step_pmi_curve_source_groups",
-            "step_pmi_curve_source_items",
-        )?;
+        ctx.push_btree_group(&mut curves, source, id, "step_pmi_curve_source_groups", "step_pmi_curve_source_items")?;
     }
     Ok(curves)
 }
