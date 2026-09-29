@@ -57,8 +57,15 @@ fn write_seekable(
             CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
         })?;
     let document_xml = patch_document(&source_document.data, &properties)?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &document_xml,
+        &arena,
+        &policy,
+    )?;
     let written_graph =
-        crate::persistence::parse_with_context(&document_xml, schema_version, None)?;
+        crate::persistence::parse_with_context(&document_xml, schema_version, &ctx)?;
     validate_declarations(
         &objects,
         &extensions,

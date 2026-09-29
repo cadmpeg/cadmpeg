@@ -872,7 +872,7 @@ impl CodecBackend for FcstdCodec {
                     CodecError::Malformed("Document.xml disappeared after scan".into())
                 })?;
             let graph =
-                persistence::parse_with_context(document_bytes, &scan.schema_version, Some(ctx))?;
+                persistence::parse_with_context(document_bytes, &scan.schema_version, ctx)?;
             for property in &graph.properties {
                 for side_entry in property.side_entries() {
                     if !scan.data.contains_key(side_entry) {
