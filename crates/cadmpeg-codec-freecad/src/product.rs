@@ -35,17 +35,7 @@ pub(crate) fn transfer(
     let mut by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !by_owner.contains_key(property.owner.as_str()) {
-            ctx.charge_collection_items(1, "fcstd product owner index")?;
-            by_owner.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "fcstd product owner index",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut by_owner, 1, "fcstd product owner index")?;
             by_owner.insert(&property.owner, Vec::new());
         }
         if let Some(owned) = by_owner.get_mut(property.owner.as_str()) {
@@ -223,20 +213,7 @@ fn product_record_index<'a>(
     records: &'a [ProductNodeRecord],
 ) -> Result<HashMap<&'a str, &'a ProductNodeRecord>, CodecError> {
     let mut index = HashMap::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(records.len()),
-        "fcstd product record index",
-    )?;
-    index.try_reserve(records.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                cadmpeg_core::decode::u64_from_index(records.len()),
-                "fcstd product record index",
-            ),
-        )
-    })?;
+    ctx.reserve_map(&mut index, records.len(), "fcstd product record index")?;
     for record in records {
         if index.insert(record.object.as_str(), record).is_some() {
             return Err(CodecError::Malformed(ctx.format_retained(
@@ -329,17 +306,7 @@ pub(crate) fn transfer_neutral(
     let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
     for property in properties {
         if !properties_by_owner.contains_key(property.owner.as_str()) {
-            ctx.charge_collection_items(1, "fcstd product neutral owner index")?;
-            properties_by_owner.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "fcstd product neutral owner index",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut properties_by_owner, 1, "fcstd product neutral owner index")?;
             properties_by_owner.insert(property.owner.as_str(), Vec::new());
         }
         if let Some(owned) = properties_by_owner.get_mut(property.owner.as_str()) {
@@ -351,17 +318,7 @@ pub(crate) fn transfer_neutral(
     for (&owner, owned) in &properties_by_owner {
         if let Some(property) = selected_placement(ctx, owned)? {
             if let Some(placement) = placement_matrix(ctx, property)? {
-                ctx.charge_collection_items(1, "fcstd product placements")?;
-                placements_by_object.try_reserve(1).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                            ctx.policy().limits.max_collection_items,
-                            1,
-                            "fcstd product placements",
-                        ),
-                    )
-                })?;
+                ctx.reserve_map(&mut placements_by_object, 1, "fcstd product placements")?;
                 placements_by_object.insert(owner, placement.transform());
             }
         }
@@ -394,17 +351,7 @@ pub(crate) fn transfer_neutral(
             let member = member.as_str();
             match parent_by_object.get(member) {
                 None => {
-                    ctx.charge_collection_items(1, "fcstd product parent index")?;
-                    parent_by_object.try_reserve(1).map_err(|_| {
-                        cadmpeg_core::CodecError::ResourceLimit(
-                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                                ctx.policy().limits.max_collection_items,
-                                1,
-                                "fcstd product parent index",
-                            ),
-                        )
-                    })?;
+                    ctx.reserve_map(&mut parent_by_object, 1, "fcstd product parent index")?;
                     parent_by_object.insert(member, record.object.as_str());
                 }
                 Some(previous) if *previous != record.object.as_str() => {
@@ -562,38 +509,12 @@ pub(crate) fn transfer_neutral(
     }
 
     let mut object_by_id = HashMap::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(objects.len()),
-        "fcstd product object index",
-    )?;
-    object_by_id.try_reserve(objects.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                cadmpeg_core::decode::u64_from_index(objects.len()),
-                "fcstd product object index",
-            ),
-        )
-    })?;
+    ctx.reserve_map(&mut object_by_id, objects.len(), "fcstd product object index")?;
     for object in objects {
         object_by_id.insert(object.id.as_str(), object);
     }
     let mut property_owner = HashMap::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(properties.len()),
-        "fcstd product property owners",
-    )?;
-    property_owner.try_reserve(properties.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                cadmpeg_core::decode::u64_from_index(properties.len()),
-                "fcstd product property owners",
-            ),
-        )
-    })?;
+    ctx.reserve_map(&mut property_owner, properties.len(), "fcstd product property owners")?;
     for property in properties {
         property_owner.insert(property.id.as_str(), property.owner.as_str());
     }
@@ -718,17 +639,7 @@ pub(crate) fn transfer_neutral(
             }
         };
         if !next_ordinal.contains_key(&parent) {
-            ctx.charge_collection_items(1, "fcstd product ordinal index")?;
-            next_ordinal.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "fcstd product ordinal index",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut next_ordinal, 1, "fcstd product ordinal index")?;
         }
         let ordinal = next_ordinal.entry(parent).or_default();
         occurrence.ordinal = *ordinal;
@@ -1460,20 +1371,7 @@ pub(crate) fn product_cycle_nodes<'a>(
         Ok(targets)
     };
     let mut reverse = HashMap::<&str, Vec<&str>>::new();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(nodes.len()),
-        "fcstd product reverse graph",
-    )?;
-    reverse.try_reserve(nodes.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                cadmpeg_core::decode::u64_from_index(nodes.len()),
-                "fcstd product reverse graph",
-            ),
-        )
-    })?;
+    ctx.reserve_map(&mut reverse, nodes.len(), "fcstd product reverse graph")?;
     for &source in nodes.keys() {
         reverse.insert(source, Vec::new());
     }
