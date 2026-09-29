@@ -66,10 +66,18 @@ fn copy_parser_text(
     budget: Option<&DecodeContext<'_>>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
+    if let Some(ctx) = budget {
+        return ctx.copy_retained_text(value, operation);
+    }
     let mut copied = String::new();
-    copied
-        .try_reserve_exact(value.len())
-        .map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
+    copied.try_reserve_exact(value.len()).map_err(|_| {
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::Codec(operation),
+            0,
+            u64_from_index(value.len()),
+            operation,
+        ))
+    })?;
     copied.push_str(value);
     Ok(copied)
 }
@@ -85,21 +93,12 @@ fn copy_parser_bytes(
     let mut copied = Vec::new();
     copied
         .try_reserve_exact(value.len())
-        .map_err(|_| parser_copy_refusal(budget, operation, value.len()))?;
+        .map_err(|_| CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64_from_index(value.len()), operation)))?;
     copied.extend_from_slice(value);
     Ok(copied)
 }
 
-fn parser_copy_refusal(
-    budget: Option<&DecodeContext<'_>>,
-    operation: &'static str,
-    requested: usize,
-) -> CodecError {
-    budget.map_or_else(
-        || cadmpeg_core::decode::refuse_local_limit(operation, 0, u64_from_index(requested)),
-        |ctx| ctx.refuse_codec_limit(operation, 0, u64_from_index(requested)),
-    )
-}
+
 
 fn try_clone_value(
     value: &Value,
@@ -133,7 +132,7 @@ fn try_clone_value(
             let mut copied = Vec::new();
             copied
                 .try_reserve_exact(values.len())
-                .map_err(|_| parser_copy_refusal(budget, operation, values.len()))?;
+                .map_err(|_| CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(cadmpeg_core::decode::ResourceDimension::Codec(operation), 0, u64_from_index(values.len()), operation)))?;
             for value in values {
                 copied.push(try_clone_value(value, budget, operation)?);
             }

@@ -104,7 +104,7 @@ pub(super) fn decode(
             "step_tessellation_body_candidates",
             candidates
                 .iter()
-                .map(|body| clone_body_id(body, ctx, "step_tessellation_body_candidates")),
+                .map(|body| body.try_clone_for_decode(ctx, "step_tessellation_body_candidates")),
         )?;
         let mut associator = TessellationItemAssociator {
             bodies: &body_candidates,
@@ -1106,11 +1106,7 @@ fn associate_bodies(
                     )
                 })?;
             bytes.grow(body_bytes)?;
-            associated.insert(clone_body_id(
-                body,
-                ctx,
-                "step_tessellation_item_body_links",
-            )?);
+            associated.insert(body.try_clone_for_decode(ctx, "step_tessellation_item_body_links")?);
         }
     }
     Ok(())
@@ -1374,7 +1370,7 @@ fn linked_bodies<'a>(
             }
             let mut linked = BTreeSet::new();
             for body in bodies.into_iter().flatten() {
-                linked.insert(clone_body_id(body, ctx, "step_tessellation_linked_bodies")?);
+                linked.insert(body.try_clone_for_decode(ctx, "step_tessellation_linked_bodies")?);
             }
             Ok((linked, bytes))
         }
@@ -1389,7 +1385,7 @@ fn linked_bodies<'a>(
             let mut linked = BTreeSet::new();
             if let Some(bodies) = bodies {
                 for body in bodies {
-                    linked.insert(clone_body_id(body, ctx, "step_tessellation_linked_bodies")?);
+                    linked.insert(body.try_clone_for_decode(ctx, "step_tessellation_linked_bodies")?);
                 }
             }
             Ok((linked, bytes))
@@ -1589,28 +1585,14 @@ fn admitted_surface_id<'a>(
 }
 
 /// Copy a body identity after its caller has charged the destination storage.
-fn clone_body_id(
-    body: &BodyId,
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-) -> Result<BodyId, CodecError> {
-    let mut text = String::new();
-    text.try_reserve_exact(body.as_str().len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64_from_index(body.as_str().len())))?;
-    text.push_str(body.as_str());
-    BodyId::mint(text).map_err(|_| CodecError::malformed("invalid admitted STEP body identity"))
-}
+
 
 fn admitted_mesh_body(
     body: Option<&BodyId>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<BodyId>, CodecError> {
     body.map(|body| {
-        ctx.charge_retained(
-            u64_from_index(body.as_str().len()),
-            "step_tessellation_mesh_body",
-        )?;
-        clone_body_id(body, ctx, "step_tessellation_mesh_body")
+        body.try_clone_for_decode(ctx, "step_tessellation_mesh_body")
     })
     .transpose()
 }

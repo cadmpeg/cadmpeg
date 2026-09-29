@@ -1870,12 +1870,16 @@ fn clone_pmi_text(
     operation: &'static str,
 ) -> Result<String, CodecError> {
     if let Some(ctx) = ctx {
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(value.len()), operation)?;
+        return ctx.copy_retained_text(value, operation);
     }
     let mut copy = String::new();
-    copy.try_reserve_exact(value.len()).map_err(|_| match ctx {
-        Some(ctx) => ctx.refuse_codec_limit(operation, 0, 1),
-        None => cadmpeg_core::decode::refuse_local_limit(operation, 0, 1),
+    copy.try_reserve_exact(value.len()).map_err(|_| {
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+            cadmpeg_core::decode::ResourceDimension::Codec(operation),
+            0,
+            cadmpeg_core::decode::u64_from_index(value.len()),
+            operation,
+        ))
     })?;
     copy.push_str(value);
     Ok(copy)

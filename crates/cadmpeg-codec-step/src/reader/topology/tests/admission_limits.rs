@@ -176,7 +176,7 @@ fn topology_body_id_copy_refuses_retained_limit() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     assert!(matches!(
-        super::super::copy_topology_body_id(&body_id(), &ctx, "step_topology_root_bodies"),
+        body_id().try_clone_for_decode(&ctx, "step_topology_root_bodies"),
         Err(CodecError::ResourceLimit(refusal))
             if refusal.dimension == ResourceDimension::RetainedBytes
                 && refusal.operation == "step_topology_root_bodies"
