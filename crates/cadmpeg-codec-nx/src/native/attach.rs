@@ -3229,13 +3229,15 @@ fn attach_feature_operations(
                 block_use.id.clone(),
             );
         }
-        source_properties.extend(simple_hole_native_properties(
+        simple_hole_native_properties(
+            ctx,
+            &mut source_properties,
             &label.id,
             simple_hole_templates,
             simple_hole_repeated_scalar_lanes,
             simple_hole_repeated_scalar_lane_block_references,
             simple_hole_construction_groups,
-        ));
+        )?;
         for lane in hole_package_construction_group_lanes
             .iter()
             .filter(|lane| lane.operation_label == label.id)
@@ -6283,36 +6285,46 @@ pub(super) fn feature_source_content(
 }
 
 fn simple_hole_native_properties(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
     operation_label: &str,
     templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
     repeated_lanes: &[crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane],
     block_references: &[crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
     construction_groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
-) -> BTreeMap<String, String> {
-    let mut properties = BTreeMap::new();
+) -> Result<(), CodecError> {
+    fn insert_property(
+        ctx: &DecodeContext<'_>,
+        properties: &mut BTreeMap<String, String>,
+        key: &'static str,
+        value: &str,
+    ) -> Result<(), CodecError> {
+        let bytes = std::mem::size_of::<(String, String)>()
+            .checked_add(key.len())
+            .and_then(|bytes| bytes.checked_add(value.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit("NX simple hole native property", 0, cadmpeg_core::decode::u64_from_index(value.len())))?;
+        ctx.charge_collection_items(1, "NX simple hole native property")?;
+        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(bytes), "NX simple hole native property")?;
+        properties.insert(key.to_owned(), value.to_owned());
+        Ok(())
+    }
     if let Some(template) = templates
         .iter()
         .find(|template| template.operation_label == operation_label)
     {
-        properties.insert("simple_hole_template".to_string(), template.id.clone());
+        insert_property(ctx, properties, "simple_hole_template", &template.id)?;
     }
     if let Some(pair) = repeated_lanes
         .iter()
         .find(|pair| pair.operation_label == operation_label)
     {
-        properties.insert(
-            "simple_hole_repeated_scalar_lane".to_string(),
-            pair.id.clone(),
-        );
+        insert_property(ctx, properties, "simple_hole_repeated_scalar_lane", &pair.id)?;
     }
     if let Some(references) = block_references
         .iter()
         .find(|references| references.operation_label == operation_label)
     {
-        properties.insert(
-            "simple_hole_repeated_scalar_lane_block_references".to_string(),
-            references.id.clone(),
-        );
+        insert_property(ctx, properties, "simple_hole_repeated_scalar_lane_block_references", &references.id)?;
     }
     if let Some(group) = construction_groups.iter().find(|group| {
         group
@@ -6321,12 +6333,9 @@ fn simple_hole_native_properties(
             .map(|member| &member.operation_label)
             .any(|label| label == operation_label)
     }) {
-        properties.insert(
-            "simple_hole_construction_group".to_string(),
-            group.id.clone(),
-        );
+        insert_property(ctx, properties, "simple_hole_construction_group", &group.id)?;
     }
-    properties
+    Ok(())
 }
 
 fn block_placement(
