@@ -279,7 +279,7 @@ pub(crate) fn install(
         ctx.reserve_vec(&mut definitions, 1, "Rhino product definitions")?;
         definitions.push(DefinitionRecord {
             id: definition_id(ctx, definition.id())?,
-            source_offset: definition.source_range.start as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(definition.source_range.start),
             source_uuid: ctx.format_retained(
                 format_args!("{}", definition.id()),
                 "Rhino definition source UUID",
@@ -368,7 +368,7 @@ pub(crate) fn install(
                     "Rhino product occurrence loss tag",
                 )?;
                 losses.push(loss.with_provenance(
-                    SourceProvenance::root("rhino", object.range.start as u64).with_tag(tag),
+                    SourceProvenance::root("rhino", cadmpeg_core::decode::u64_from_index(object.range.start)).with_tag(tag),
                 ));
                 continue;
             }
@@ -419,7 +419,7 @@ pub(crate) fn install(
                 format_args!("rhino:product:occurrence#{key}"),
                 "Rhino product occurrence ID",
             )?,
-            source_offset: object.range.start as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(object.range.start),
             source_uuid: ctx.format_retained(
                 format_args!("{}", identity.object_id),
                 "Rhino occurrence source UUID",

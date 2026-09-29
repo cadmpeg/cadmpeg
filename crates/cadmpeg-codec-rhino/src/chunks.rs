@@ -448,14 +448,14 @@ pub(crate) fn checked_count_bytes(
     if count < 0 {
         return Err(FramingError::InvalidLength {
             offset,
-            value: count as i128,
+            value: i128::from(count),
         });
     }
     let count = usize::try_from(count).map_err(|_| FramingError::Overflow { offset })?;
     if count > allocation_limit {
         return Err(FramingError::InvalidLength {
             offset,
-            value: count as i128,
+            value: i128::from(cadmpeg_core::decode::u64_from_index(count)),
         });
     }
     let bytes = count
@@ -552,12 +552,12 @@ impl Chunk {
     }
 
     /// Returns the short value, or the declared long-body length.
-    pub(crate) fn value(&self) -> i64 {
+    pub(crate) fn value(&self) -> Result<i64, FramingError> {
         match &self.form {
-            ChunkBody::Short { value, .. } => *value,
+            ChunkBody::Short { value, .. } => Ok(*value),
             ChunkBody::Long { body, checksum } => {
                 // chunk_at derives this span from a nonnegative i64 length.
-                (body.len() + checksum.map_or(0, ChecksumKind::width)) as i64
+                i64::try_from(body.len() + checksum.map_or(0, ChecksumKind::width)).map_err(|_| FramingError::structural(self.header_start, "chunk length exceeds i64"))
             }
         }
     }
@@ -639,7 +639,7 @@ pub(crate) fn chunk_at(
     if typecode == TCODE_ENDOFFILE && declared_length < width {
         return Err(FramingError::InvalidLength {
             offset,
-            value: value as i128,
+            value: i128::from(value),
         });
     }
     let kind = checksum_kind(archive, typecode, class_uuid);
@@ -914,14 +914,14 @@ pub(crate) fn checksum_children_through_class_end(
         if children.len() >= CHECKSUM_CHILD_CAP {
             return Err(FramingError::InvalidLength {
                 offset: start,
-                value: children.len() as i128,
+                value: i128::from(cadmpeg_core::decode::u64_from_index(children.len())),
             });
         }
         reserve_admitted_vec(ctx, &mut children, 1, "Rhino class-end checksum children")?;
         children.push(child.range());
         reader.skip(child.next_offset() - start)?;
         if child.typecode == TCODE_CLASS_END {
-            if !child.short() || child.value() != 0 {
+            if !child.short() || child.value()? != 0 {
                 return Err(FramingError::structural(
                     start,
                     format!("{context} class end must be a short zero chunk"),

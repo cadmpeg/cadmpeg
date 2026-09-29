@@ -762,7 +762,7 @@ fn read_faces(
                 ));
             };
             *index = value;
-            if (*index as usize) >= vertices {
+            if (usize::try_from(*index).map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?) >= vertices {
                 return Err(error(reader.position(), "mesh face index out of range"));
             }
         }
@@ -800,9 +800,9 @@ pub(crate) fn triangulate_faces<P: Copy>(
             triangles.push([unique[0], unique[1], unique[2]]);
         } else if unique_face_vertices(face) == 4 {
             let diagonal_02 =
-                point(vertices[face[0] as usize]).distance(point(vertices[face[2] as usize]));
+                point(vertices[usize::try_from(face[0]).map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?]).distance(point(vertices[usize::try_from(face[2]).map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?]));
             let diagonal_13 =
-                point(vertices[face[1] as usize]).distance(point(vertices[face[3] as usize]));
+                point(vertices[usize::try_from(face[1]).map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?]).distance(point(vertices[usize::try_from(face[3]).map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?]));
             if diagonal_02 <= diagonal_13 {
                 triangles.extend([[face[0], face[1], face[2]], [face[0], face[2], face[3]]]);
             } else {
@@ -954,7 +954,7 @@ fn read_compressed_channels(
             expand,
             reader,
             MeshBufferSpec {
-                expected: vertices * spec.item_size as usize,
+                expected: vertices * usize::try_from(spec.item_size).map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?,
                 name: spec.name,
             },
             &mut decoded.warnings,
@@ -1007,11 +1007,11 @@ fn read_counted_raw<'a>(
     if count == 0 {
         return Ok(None);
     }
-    let bytes = (count as usize)
+    let bytes = (usize::try_from(count).map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?)
         .checked_mul(item_size)
         .ok_or_else(|| error(reader.position(), "mesh channel byte count overflow"))?;
     let data = reader.take(bytes)?;
-    if count as usize != vertices {
+    if usize::try_from(count).map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))? != vertices {
         warnings.push_coded_admitted(
             ctx,
             crate::loss::RhinoLossCode::RedundantFieldRepaired,
@@ -1038,7 +1038,7 @@ fn read_buffer<'a>(
     archive: ArchiveVersion,
 ) -> Result<Option<Cow<'a, [u8]>>, GeometryError> {
     let MeshBufferSpec { expected, name } = spec;
-    let declared = reader.u32()? as usize;
+    let declared = usize::try_from(reader.u32()?).map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?;
     if declared == 0 {
         return Ok(None);
     }
@@ -1209,7 +1209,7 @@ fn inflate<'a>(
     cadmpeg_container::compression::inflate_zlib_member(
         expand.ctx(),
         source,
-        ExpandSpec::Exact(expected as u64),
+        ExpandSpec::Exact(cadmpeg_core::decode::u64_from_index(expected)),
     )
     .map_err(|refusal| expansion_refused(base, refusal))
 }
@@ -1639,10 +1639,10 @@ fn parse_f64_points(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<[f64; 3
 
 fn synchronization_ok(double: &[[f64; 3]], float: &[[FiniteBinary32; 3]]) -> bool {
     double.iter().zip(float).all(|(a, b)| {
-        let scale = b
+        let scale = f64::from(b
             .iter()
             .map(|value| value.get().abs())
-            .fold(0.0_f32, f32::max) as f64;
+            .fold(0.0_f32, f32::max));
         a.iter().zip(b).all(|(left, right)| {
             (*left - f64::from(right.get())).abs() <= scale * EPS_MESH_SYNCHRONIZATION_OK_E6
         })
@@ -1652,7 +1652,7 @@ fn synchronization_ok(double: &[[f64; 3]], float: &[[FiniteBinary32; 3]]) -> boo
 fn v5_synchronization_ok(double: &[[f64; 3]], float: &[[FiniteBinary32; 3]]) -> bool {
     double.iter().zip(float).all(|(double, float)| {
         double.iter().zip(float).all(|(double, float)| {
-            double.abs() <= f64::from(f32::MAX) && *double as f32 == float.get()
+            cadmpeg_core::convert::f32_from_f64(*double) == Some(float.get())
         })
     })
 }
@@ -1687,17 +1687,17 @@ fn interval(reader: &mut BoundedReader<'_>) -> Result<(), FramingError> {
 /// consumption by `reader.take(bytes)` in `read_faces`.
 fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
     let value = reader.i32()?;
-    if value < 0 || value as usize > cap {
+    if value < 0 || usize::try_from(value).map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))? > cap {
         return Err(error(reader.position() - 4, "mesh count exceeds cap"));
     }
-    Ok(value as usize)
+    Ok(usize::try_from(value).map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?)
 }
 
 /// Reads an unsigned mesh count bounded by `cap`, without a remaining-bytes
 /// floor (see [`count`]). Callers must consume it through a budget-charged
 /// allocator.
 fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
-    let value = reader.u32()? as usize;
+    let value = usize::try_from(reader.u32()?).map_err(|_| GeometryError::unpositioned("mesh count or index exceeds address space"))?;
     if value > cap {
         return Err(error(reader.position() - 4, "mesh count exceeds cap"));
     }

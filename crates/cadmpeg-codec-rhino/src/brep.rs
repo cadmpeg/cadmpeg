@@ -1154,8 +1154,8 @@ impl LegacyVertex {
 /// endpoints that were read, and it is refused. A non-finite coordinate
 /// carries through to the point, where the Brep validator owns it.
 fn scaled_mean(sum: f64, count: usize) -> Option<f64> {
-    let mean = sum / count as f64;
-    if mean.abs() > 1.0 + 2.0 * count as f64 * f64::EPSILON {
+    let mean = sum / cadmpeg_core::convert::f64_from_index(count)?;
+    if mean.abs() > 1.0 + 2.0 * cadmpeg_core::convert::f64_from_index(count)? * f64::EPSILON {
         return None;
     }
     if mean < -1.0 {
