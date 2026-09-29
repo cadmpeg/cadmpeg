@@ -6537,11 +6537,12 @@ fn validate_edge_treatment_vertex_operands<'a>(
         &native.asm_histories,
     )?;
     history::bind_edge_treatment_vertex_history(
+        decode,
         &mut expected,
         &native.design_parameter_scopes,
         &native.asm_histories,
         &scope_histories,
-    );
+    )?;
     let expected = collect_index(decode,
         expected.iter().map(|operand| (operand.id.as_str(), operand)),
         "index F3D expected edge treatment vertex operands")?;

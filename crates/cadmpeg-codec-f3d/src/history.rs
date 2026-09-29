@@ -3780,11 +3780,12 @@ pub(crate) fn bind_vertex_recipe_history(
 
 /// Resolve edge-treatment corner recipes in their bound feature-input state.
 pub(crate) fn bind_edge_treatment_vertex_history(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     operands: &mut [crate::records::feature::work_geometry::DesignEdgeTreatmentVertexOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     for operand in operands {
         operand.recipe.resolution = None;
         let stream = crate::ids::native_stream(&operand.id);
@@ -3817,7 +3818,7 @@ pub(crate) fn bind_edge_treatment_vertex_history(
             continue;
         };
         for reference in &mut operand.recipe.recipe_references {
-            bind_historical_recipe_reference_candidates(reference, topology);
+            bind_historical_recipe_reference_candidates(decode, reference, topology)?;
         }
         let Some(vertex) = recipe_reference_common_vertex(&operand.recipe, topology) else {
             continue;
@@ -3828,6 +3829,7 @@ pub(crate) fn bind_edge_treatment_vertex_history(
                 vertex,
             );
     }
+    Ok(())
 }
 
 fn vertex_recipe_candidate(
@@ -4636,28 +4638,39 @@ fn exact_face_selection_group<'a>(
 /// Bind one recipe reference to every live face or edge fragment carrying its
 /// token and Design reference in the recipe-state topology.
 fn bind_historical_recipe_reference_candidates(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     reference: &mut crate::records::dimensions::DesignRecipeReference,
     topology: &AsmHistoricalTopology,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
     reference.candidate_faces.clear();
     reference.candidate_edges.clear();
     reference.alternate_selector_faces.clear();
     reference.alternate_selector_edges.clear();
-    let live_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
-    let live_edges = topology.edges.iter().copied().collect::<HashSet<_>>();
+    let mut live_faces = HashSet::new();
+    for face in &topology.faces {
+        history_hash_set_insert(decode, &mut live_faces, *face, "index F3D live recipe faces")?;
+    }
+    let mut live_edges = HashSet::new();
+    for edge in &topology.edges {
+        history_hash_set_insert(decode, &mut live_edges, *edge, "index F3D live recipe edges")?;
+    }
     for tag in topology.persistent_subentity_tags.iter().filter(|tag| {
         tag.token == reference.token && tag.design_references.contains(&reference.design_reference)
     }) {
         match tag.entity_kind {
             AsmHistoricalEntityKind::Face if live_faces.contains(&tag.entity_ref) => {
-                reference
-                    .candidate_faces
-                    .push(crate::ids::brep_face_id(tag.entity_ref));
+                charge_history_item(decode, "collect F3D recipe reference faces")?;
+                reference.candidate_faces.try_reserve(1).map_err(|_| {
+                    history_reserve_error(decode, "collect F3D recipe reference faces")
+                })?;
+                reference.candidate_faces.push(historical_face_id(decode, tag.entity_ref)?);
             }
             AsmHistoricalEntityKind::Edge if live_edges.contains(&tag.entity_ref) => {
-                reference
-                    .candidate_edges
-                    .push(crate::ids::brep_edge_id(tag.entity_ref));
+                charge_history_item(decode, "collect F3D recipe reference edges")?;
+                reference.candidate_edges.try_reserve(1).map_err(|_| {
+                    history_reserve_error(decode, "collect F3D recipe reference edges")
+                })?;
+                reference.candidate_edges.push(historical_edge_id(decode, tag.entity_ref)?);
             }
             _ => {}
         }
@@ -4670,45 +4683,115 @@ fn bind_historical_recipe_reference_candidates(
         .candidate_edges
         .sort_by(|left, right| left.as_str().cmp(right.as_str()));
     reference.candidate_edges.dedup();
+    Ok(())
 }
 
 fn historical_recipe_faces(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     design_reference: i64,
     topology: &AsmHistoricalTopology,
-) -> Vec<cadmpeg_ir::ids::FaceId> {
-    let live_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
-    let mut faces = topology
-        .persistent_subentity_tags
-        .iter()
-        .filter(|tag| {
-            tag.entity_kind == AsmHistoricalEntityKind::Face
-                && live_faces.contains(&tag.entity_ref)
-                && tag.design_references.contains(&design_reference)
-        })
-        .map(|tag| crate::ids::brep_face_id(tag.entity_ref))
-        .collect::<Vec<_>>();
+) -> Result<Vec<cadmpeg_ir::ids::FaceId>, cadmpeg_core::CodecError> {
+    let mut live_faces = HashSet::new();
+    for face in &topology.faces {
+        history_hash_set_insert(decode, &mut live_faces, *face, "index F3D historical recipe faces")?;
+    }
+    let mut faces = Vec::new();
+    for tag in &topology.persistent_subentity_tags {
+        if tag.entity_kind == AsmHistoricalEntityKind::Face
+            && live_faces.contains(&tag.entity_ref)
+            && tag.design_references.contains(&design_reference)
+        {
+            charge_history_item(decode, "collect F3D historical recipe faces")?;
+            faces.try_reserve(1).map_err(|_| {
+                history_reserve_error(decode, "collect F3D historical recipe faces")
+            })?;
+            faces.push(historical_face_id(decode, tag.entity_ref)?);
+        }
+    }
     faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     faces.dedup();
-    faces
+    Ok(faces)
 }
 
 fn direct_face_recipe_candidates(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
     recipe_kind: crate::records::recipes::ConstructionRecipeKind,
     references: &[crate::records::dimensions::DesignRecipeReference],
     recipe_record_index: i32,
-) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
+) -> Result<Option<Vec<cadmpeg_ir::ids::FaceId>>, cadmpeg_core::CodecError> {
     if recipe_kind != crate::records::recipes::ConstructionRecipeKind::Face {
-        return None;
+        return Ok(None);
     }
-    let mut faces = references
+    let mut faces = Vec::new();
+    for face in references
         .iter()
         .filter(|reference| reference.design_reference == i64::from(recipe_record_index))
         .flat_map(|reference| &reference.candidate_faces)
-        .cloned()
-        .collect::<Vec<_>>();
+    {
+        charge_history_item(decode, "collect F3D direct face recipe candidates")?;
+        faces.try_reserve(1).map_err(|_| {
+            history_reserve_error(decode, "collect F3D direct face recipe candidates")
+        })?;
+        faces.push(copy_historical_face_id(decode, face)?);
+    }
     faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     faces.dedup();
-    (!faces.is_empty()).then_some(faces)
+    Ok((!faces.is_empty()).then_some(faces))
+}
+
+fn historical_face_id(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    slot: i64,
+) -> Result<cadmpeg_ir::ids::FaceId, cadmpeg_core::CodecError> {
+    let Some(ctx) = decode else {
+        return Ok(crate::ids::brep_face_id(slot));
+    };
+    let text = crate::container::format_retained(
+        ctx,
+        "retain F3D historical face identity",
+        format_args!("f3d:brep:entity#{slot}"),
+    )?;
+    cadmpeg_ir::ids::FaceId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
+}
+
+fn historical_edge_id(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    slot: i64,
+) -> Result<cadmpeg_ir::ids::EdgeId, cadmpeg_core::CodecError> {
+    let Some(ctx) = decode else {
+        return Ok(crate::ids::brep_edge_id(slot));
+    };
+    let text = crate::container::format_retained(
+        ctx,
+        "retain F3D historical edge identity",
+        format_args!("f3d:brep:entity#{slot}"),
+    )?;
+    cadmpeg_ir::ids::EdgeId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
+}
+
+fn copy_historical_face_id(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    source: &cadmpeg_ir::ids::FaceId,
+) -> Result<cadmpeg_ir::ids::FaceId, cadmpeg_core::CodecError> {
+    let Some(ctx) = decode else {
+        return Ok(source.clone());
+    };
+    let text = copy_history_string(ctx, source.as_str(), "copy F3D historical face identity")?;
+    cadmpeg_ir::ids::FaceId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
+}
+
+fn collect_historical_face_ids<'a>(
+    decode: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    faces: impl IntoIterator<Item = &'a cadmpeg_ir::ids::FaceId>,
+    operation: &'static str,
+) -> Result<Vec<cadmpeg_ir::ids::FaceId>, cadmpeg_core::CodecError> {
+    let mut collected = Vec::new();
+    for face in faces {
+        charge_history_item(decode, operation)?;
+        collected.try_reserve(1).map_err(|_| history_reserve_error(decode, operation))?;
+        collected.push(copy_historical_face_id(decode, face)?);
+    }
+    Ok(collected)
 }
 
 pub(crate) fn bind_face_operand_history_candidates(
@@ -4779,23 +4862,22 @@ pub(crate) fn bind_face_operand_history_candidates(
             continue;
         };
         for reference in &mut operand.recipe_references {
-            bind_historical_recipe_reference_candidates(reference, topology);
+            bind_historical_recipe_reference_candidates(decode, reference, topology)?;
         }
         if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
             operand.candidate_faces =
-                historical_recipe_faces(i64::from(*recipe_record_index), topology);
-            operand.unreferenced_candidate_faces = operand
-                .candidate_faces
-                .iter()
-                .filter(|face| {
+                historical_recipe_faces(decode, i64::from(*recipe_record_index), topology)?;
+            operand.unreferenced_candidate_faces = collect_historical_face_ids(
+                decode,
+                operand.candidate_faces.iter().filter(|face| {
                     !operand
                         .recipe_references
                         .iter()
                         .flat_map(|reference| &reference.candidate_faces)
                         .any(|candidate| candidate == *face)
-                })
-                .cloned()
-                .collect();
+                }),
+                "collect F3D unreferenced candidate faces",
+            )?;
             operand.alternate_selector_candidate_faces.clear();
         }
         let Some(changed_faces) =
@@ -4803,24 +4885,38 @@ pub(crate) fn bind_face_operand_history_candidates(
         else {
             continue;
         };
-        let direct_face_candidates = recipe_record_indices
-            .get(operand.recipe_id.as_str())
-            .and_then(|record_index| {
+        let direct_face_candidates = if let Some(record_index) =
+            recipe_record_indices.get(operand.recipe_id.as_str())
+        {
                 direct_face_recipe_candidates(
+                    decode,
                     operand.recipe_kind,
                     &operand.recipe_references,
                     *record_index,
-                )
-            });
+                )?
+        } else {
+            None
+        };
         let feature_family = crate::design::design_feature_family(&scope.kind());
-        let thread_face_candidates = (feature_family
-            == Some(crate::design::DesignFeatureFamily::Thread))
-        .then(|| {
-            exact_face_selection_group(operand, scope, operand_groups)?;
-            let candidates = effective_faces(operand.recipe_references.first()?);
-            (!candidates.is_empty()).then(|| candidates.to_vec())
-        })
-        .flatten();
+        let thread_face_candidates = if feature_family
+            == Some(crate::design::DesignFeatureFamily::Thread)
+            && exact_face_selection_group(operand, scope, operand_groups).is_some()
+        {
+            operand.recipe_references.first().and_then(|reference| {
+                let candidates = effective_faces(reference);
+                (!candidates.is_empty()).then_some(candidates)
+            })
+            .map(|candidates| {
+                collect_historical_face_ids(
+                    decode,
+                    candidates,
+                    "copy F3D thread face candidates",
+                )
+            })
+            .transpose()?
+        } else {
+            None
+        };
         let nested_split_face_candidates = (scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::SplitFace)
             .then(|| {
@@ -6750,11 +6846,11 @@ pub(crate) fn bind_edge_operand_history_candidates(
             continue;
         };
         for reference in &mut operand.recipe_references {
-            bind_historical_recipe_reference_candidates(reference, topology);
+            bind_historical_recipe_reference_candidates(decode, reference, topology)?;
         }
         if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
             operand.candidate_faces =
-                historical_recipe_faces(i64::from(*recipe_record_index), topology);
+                historical_recipe_faces(decode, i64::from(*recipe_record_index), topology)?;
         }
         let states = history_state_index(decode, history)?;
         let Some(changed_faces) =
