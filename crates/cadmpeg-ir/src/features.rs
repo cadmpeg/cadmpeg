@@ -6112,6 +6112,118 @@ pub enum FaceSelection {
     Native(String),
 }
 
+impl FaceSelection {
+    /// Copy a decoded face selection after admitting each retained member and text field.
+    pub fn try_clone_charged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        use cadmpeg_core::CodecError;
+        match self {
+            Self::Unresolved => Ok(Self::Unresolved),
+            Self::Faces(faces) => {
+                let mut copied = Vec::new();
+                for face in faces {
+                    ctx.charge_work(1, operation)?;
+                    let text = ctx.format_retained(format_args!("{}", face.as_str()), operation)?;
+                    let id = FaceId::mint(text)
+                        .map_err(|_| CodecError::malformed("invalid decoded face ID"))?;
+                    ctx.reserve_collection_vec(&mut copied, 1, operation)?;
+                    copied.push(id);
+                }
+                Ok(Self::Faces(copied))
+            }
+            Self::Resolved { faces, native } => {
+                let mut copied = Vec::new();
+                for face in faces {
+                    ctx.charge_work(1, operation)?;
+                    let text = ctx.format_retained(format_args!("{}", face.as_str()), operation)?;
+                    let id = FaceId::mint(text)
+                        .map_err(|_| CodecError::malformed("invalid decoded face ID"))?;
+                    ctx.reserve_collection_vec(&mut copied, 1, operation)?;
+                    copied.push(id);
+                }
+                let native = ctx.format_retained(format_args!("{native}"), operation)?;
+                Ok(Self::Resolved { faces: copied, native })
+            }
+            Self::Historical { state, faces, native } => {
+                let state_text = ctx.format_retained(format_args!("{}", state.as_str()), operation)?;
+                let state = FeatureInputTopologyId::mint(state_text)
+                    .map_err(|_| CodecError::malformed("invalid decoded topology state ID"))?;
+                let mut copied = Vec::new();
+                for face in faces.as_slice() {
+                    ctx.charge_work(1, operation)?;
+                    let text = ctx.format_retained(format_args!("{}", face.as_str()), operation)?;
+                    let id = HistoricalFaceId::mint(text)
+                        .map_err(|_| CodecError::malformed("invalid decoded historical face ID"))?;
+                    ctx.reserve_collection_vec(&mut copied, 1, operation)?;
+                    copied.push(id);
+                }
+                let native_text = ctx.format_retained(format_args!("{}", native.as_str()), operation)?;
+                let native = NonBlankString::new(native_text)
+                    .ok_or_else(|| CodecError::malformed("blank decoded face selection"))?;
+                Ok(Self::Historical { state, faces: SelectionMembers(copied), native })
+            }
+            Self::HistoricalPartial { state, faces, unresolved, native } => {
+                let state_text = ctx.format_retained(format_args!("{}", state.as_str()), operation)?;
+                let state = FeatureInputTopologyId::mint(state_text)
+                    .map_err(|_| CodecError::malformed("invalid decoded topology state ID"))?;
+                let mut copied_faces = Vec::new();
+                for face in faces.as_slice() {
+                    ctx.charge_work(1, operation)?;
+                    let text = ctx.format_retained(format_args!("{}", face.as_str()), operation)?;
+                    let id = HistoricalFaceId::mint(text)
+                        .map_err(|_| CodecError::malformed("invalid decoded historical face ID"))?;
+                    ctx.reserve_collection_vec(&mut copied_faces, 1, operation)?;
+                    copied_faces.push(id);
+                }
+                let mut copied_unresolved = Vec::new();
+                for name in unresolved.as_slice() {
+                    ctx.charge_work(1, operation)?;
+                    let text = ctx.format_retained(format_args!("{name}"), operation)?;
+                    ctx.reserve_collection_vec(&mut copied_unresolved, 1, operation)?;
+                    copied_unresolved.push(text);
+                }
+                let native_text = ctx.format_retained(format_args!("{}", native.as_str()), operation)?;
+                let native = NonBlankString::new(native_text)
+                    .ok_or_else(|| CodecError::malformed("blank decoded face selection"))?;
+                Ok(Self::HistoricalPartial {
+                    state,
+                    faces: DistinctMembers(copied_faces),
+                    unresolved: NativeSelections(copied_unresolved),
+                    native,
+                })
+            }
+            Self::Generated { faces, native } => {
+                let mut copied = Vec::new();
+                for face in faces.as_slice() {
+                    ctx.charge_work(1, operation)?;
+                    let feature_text = ctx.format_retained(
+                        format_args!("{}", face.feature.as_str()), operation,
+                    )?;
+                    let feature = FeatureId::mint(feature_text)
+                        .map_err(|_| CodecError::malformed("invalid decoded feature ID"))?;
+                    let local = ctx.format_retained(
+                        format_args!("{}", face.local_id.as_str()), operation,
+                    )?;
+                    let face = GeneratedFaceRef::new(feature, local)
+                        .map_err(|_| CodecError::malformed("invalid decoded generated face"))?;
+                    ctx.reserve_collection_vec(&mut copied, 1, operation)?;
+                    copied.push(face);
+                }
+                let native_text = ctx.format_retained(format_args!("{}", native.as_str()), operation)?;
+                let native = SelectionReference::try_from(native_text)
+                    .map_err(|_| CodecError::malformed("invalid decoded face selection"))?;
+                Ok(Self::Generated { faces: NonEmptyMembers(copied), native })
+            }
+            Self::Native(native) => Ok(Self::Native(
+                ctx.format_retained(format_args!("{native}"), operation)?,
+            )),
+        }
+    }
+}
+
 /// A nonempty sequence of members in source order.
 ///
 /// The members stay contiguous: the sequence is read through slice patterns

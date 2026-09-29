@@ -2128,60 +2128,68 @@ pub(crate) fn project_compact_surface_selections(
         });
         edit_result?;
     }
-    let face_aliases = features
-        .iter()
-        .filter_map(|feature| {
-            let native = feature.native_ref.as_deref()?;
-            let FeatureDefinition::Operation(FeatureOperation::CosmeticThread { face, .. }) =
-                feature.evaluation.definition()
-            else {
-                return None;
-            };
-            (!matches!(
-                face,
-                cadmpeg_ir::features::FaceSelection::Unresolved
-                    | cadmpeg_ir::features::FaceSelection::Native(_)
-            ))
-            .then_some((native.to_string(), face.clone()))
-        })
-        .collect::<HashMap<_, _>>();
+    const ALIAS_OPERATION: &str = "project SLDPRT face aliases";
+    let mut face_aliases = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, ALIAS_OPERATION)?;
+        let Some(native) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let FeatureDefinition::Operation(FeatureOperation::CosmeticThread { face, .. }) =
+            feature.evaluation.definition()
+        else {
+            continue;
+        };
+        if matches!(face, FaceSelection::Unresolved | FaceSelection::Native(_)) {
+            continue;
+        }
+        let native_key = ctx.format_retained(format_args!("{native}"), ALIAS_OPERATION)?;
+        let face_copy = face.try_clone_charged(ctx, ALIAS_OPERATION)?;
+        if !face_aliases.contains_key(native) {
+            ctx.charge_collection_items(1, ALIAS_OPERATION)?;
+            face_aliases.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(ALIAS_OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        face_aliases.insert(native_key, face_copy);
+    }
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let Some(target) = feature.source_properties.get("ReferenceFaceFeature") else {
-                break 'feature_edit;
-            };
-            let Some(face) = face_aliases.get(target.as_str()).cloned() else {
-                break 'feature_edit;
-            };
-            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                reference, ..
-            }) = &mut definition
-            else {
-                break 'feature_edit;
-            };
-            if let cadmpeg_ir::features::FaceSelection::Generated { faces, .. } = &face {
-                for producer in faces.iter().map(|face| &face.feature) {
-                    if producer != &feature.id && !feature.dependencies.contains(producer) {
-                        feature.dependencies.insert(producer.clone());
-                    }
+        ctx.charge_work(1, ALIAS_OPERATION)?;
+        let Some(target) = feature.source_properties.get("ReferenceFaceFeature") else {
+            continue;
+        };
+        if !matches!(feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })) {
+            continue;
+        }
+        let Some(face) = face_aliases.get(target.as_str()) else {
+            continue;
+        };
+        let face = face.try_clone_charged(ctx, ALIAS_OPERATION)?;
+        if let FaceSelection::Generated { faces, .. } = &face {
+            for producer in faces.iter().map(|face| &face.feature) {
+                ctx.charge_work(1, ALIAS_OPERATION)?;
+                if producer != &feature.id && !feature.dependencies.contains(producer) {
+                    let copy = copy_projection_feature_id(ctx, producer, ALIAS_OPERATION)?;
+                    feature.dependencies.try_insert_charged(copy, ctx, ALIAS_OPERATION)?;
                 }
             }
-            if let Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: existing }) =
-                reference
-            {
+        }
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference, .. }) =
+                definition
+            else {
+                return;
+            };
+            if let Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: existing }) = reference {
                 *existing = face;
-                break 'feature_edit;
-            }
-            if matches!(
+            } else if !matches!(
                 reference,
                 Some(cadmpeg_ir::features::DatumPlaneReference::Feature { .. })
             ) {
-                break 'feature_edit;
+                *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face { face });
             }
-            *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face { face });
-        }
-        feature.evaluation.set_definition(definition);
+        });
     }
 
     Ok(())

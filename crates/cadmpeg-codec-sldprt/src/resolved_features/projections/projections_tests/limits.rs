@@ -248,6 +248,57 @@ fn display_relation_synthesis_refuses_work_limit() {
             if limit.dimension == ResourceDimension::WorkUnits));
 }
 
+#[test]
+fn compact_surface_projection_binds_generated_thread_face_alias() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::features::{DatumPlaneReference, FaceSelection, GeneratedFaceRef};
+    use cadmpeg_ir::scalar::Length;
+
+    let mut thread = compact_edge_projection_feature();
+    thread.native_ref = Some("native-thread".into());
+    let producer = thread.id.clone();
+    let generated = GeneratedFaceRef::new(producer.clone(), "face-1".into())
+        .expect("generated face identity");
+    thread.evaluation.set_definition(FeatureDefinition::Operation(
+        FeatureOperation::CosmeticThread {
+            face: FaceSelection::generated(vec![generated], "native-face".into())
+                .expect("generated face selection"),
+            diameter: None,
+            extent: None,
+        },
+    ));
+    let mut plane = compact_edge_projection_feature();
+    plane.id = FeatureId::mint("synthetic:test:id#face-alias-plane")
+        .expect("identity grammar");
+    plane.native_ref = Some("native-plane".into());
+    plane.source_properties.insert(
+        cadmpeg_core::nonblank_literal!("ReferenceFaceFeature"),
+        "native-thread".into(),
+    );
+    plane.evaluation.set_definition(FeatureDefinition::Operation(
+        FeatureOperation::DatumOffsetPlane {
+            reference: None,
+            distance: Length::new(2.0).expect("offset distance"),
+        },
+    ));
+    let mut features = [thread, plane];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("test context");
+    project_compact_surface_selections(&ctx, &mut features, &[], &[])
+        .expect("charged face alias projection");
+    assert!(matches!(features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Generated { faces, native }
+            }), ..
+        }) if faces.len() == 1
+            && faces[0].feature == producer
+            && faces[0].local_id.as_str() == "face-1"
+            && native.as_str() == "native-face"));
+    assert!(features[1].dependencies.contains(&producer));
+}
+
 fn offset_plane_fixture() -> (
     Vec<cadmpeg_ir::features::Feature>,
     Vec<cadmpeg_ir::topology::Face>,
