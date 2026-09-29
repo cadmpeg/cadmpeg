@@ -2472,6 +2472,7 @@ fn expand_seeded_drilled_hole_topology_axes(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut visited = HashSet::new();
     for index in 0..features.len() {
+        ctx.charge_work(1, "scan SLDPRT seeded drilled holes")?;
         if visited.contains(&index) || features[index].suppressed == Some(true) {
             continue;
         }
@@ -2514,21 +2515,29 @@ fn expand_seeded_drilled_hole_topology_axes(
         {
             continue;
         }
-        ctx.charge_collection_items(features.len() as u64, "SLDPRT seeded hole siblings")?;
-        let siblings = features
-            .iter()
-            .enumerate()
-            .filter(|(_, feature)| feature.suppressed != Some(true))
-            .filter(|(_, feature)| {
-                same_hole_construction(
+        let mut siblings = Vec::new();
+        for (sibling, feature) in features.iter().enumerate() {
+            ctx.charge_work(1, "scan SLDPRT seeded hole siblings")?;
+            if feature.suppressed == Some(true)
+                || !same_hole_construction(
                     features[index].evaluation.definition(),
                     feature.evaluation.definition(),
                 )
-            })
-            .map(|(sibling, _)| sibling)
-            .collect::<Vec<_>>();
-        ctx.charge_collection_items(siblings.len() as u64, "SLDPRT visited seeded holes")?;
-        visited.extend(siblings.iter().copied());
+            {
+                continue;
+            }
+            ctx.reserve_collection_vec(&mut siblings, 1, "collect SLDPRT seeded hole siblings")?;
+            siblings.push(sibling);
+        }
+        for &sibling in &siblings {
+            if !visited.contains(&sibling) {
+                ctx.charge_collection_items(1, "index SLDPRT visited seeded holes")?;
+                visited.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT visited seeded holes", u64::MAX - 1, u64::MAX)
+                })?;
+                visited.insert(sibling);
+            }
+        }
         if siblings.len() < 2
             || siblings.iter().any(|&sibling| {
                 matches!(
