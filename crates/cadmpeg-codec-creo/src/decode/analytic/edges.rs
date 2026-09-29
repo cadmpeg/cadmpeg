@@ -332,7 +332,7 @@ fn degree_one_nurbs_point_parameter(
     tolerance: f64,
 ) -> Option<f64> {
     let parameter_tolerance = (EPS_AGREE * range[1] - EPS_AGREE * range[0]).abs();
-    let mut candidates = Vec::<f64>::new();
+    let mut candidate: Option<f64> = None;
     for span in 1..nurbs.control_points().len() {
         let lower = nurbs.knots()[span];
         let upper = nurbs.knots()[span + 1];
@@ -390,18 +390,17 @@ fn degree_one_nurbs_point_parameter(
             mapped.y - point[1],
             mapped.z - point[2],
         ];
-        if dot(mismatch, mismatch).sqrt() <= tolerance
-            && !candidates
-                .iter()
-                .any(|known| (parameter - known).abs() <= parameter_tolerance)
-        {
-            candidates.push(parameter);
+        if dot(mismatch, mismatch).sqrt() <= tolerance {
+            if let Some(first) = candidate {
+                if !((parameter - first).abs() <= parameter_tolerance) {
+                    return None;
+                }
+            } else {
+                candidate = Some(parameter);
+            }
         }
     }
-    let [parameter] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*parameter)
+    candidate
 }
 
 #[derive(Clone, Copy)]
