@@ -2456,15 +2456,21 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
     faces: &[Face],
     surfaces: &[Surface],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let native_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
-    let history_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .collect::<Vec<_>>();
+    const OPERATION: &str = "index SLDPRT cosmetic thread history features";
+    let mut native_features = HashMap::new();
+    let mut history_features = Vec::new();
+    for native_feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, OPERATION)?;
+        if !native_features.contains_key(native_feature.id.as_str()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            native_features.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
+            })?;
+        }
+        native_features.insert(native_feature.id.as_str(), native_feature);
+        ctx.reserve_collection_vec(&mut history_features, 1, OPERATION)?;
+        history_features.push(native_feature);
+    }
     let feature_ids_by_native = features
         .iter()
         .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
