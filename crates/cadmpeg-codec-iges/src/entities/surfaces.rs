@@ -558,17 +558,13 @@ fn homogeneous_bezier_spans(
                 .ok_or_else(|| CodecError::malformed("surface closure pole is missing"))?,
         );
     }
-    {
         ctx.charge_collection_items(u64_from_index(count), "iges_surface_closure_controls")?;
-    }
     let Some(controls) = positive_controls(&points, weights.as_deref())? else {
         return Ok(None);
     };
-    {
-            homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
-                ctx.charge_collection_items(u64_from_index(count), operation)
-            })
-        }
+    homogeneous_spans_with_charge(degree, curve.knots(), controls, |count, operation| {
+        ctx.charge_collection_items(u64_from_index(count), operation)
+    })
 }
 
 fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
@@ -2101,9 +2097,7 @@ pub(super) fn project(
                 .then(|| directrix_solved.try_clone_for_decode(ctx, "iges solved curve copy"))
                 .transpose()?;
             let procedural_directrix = if let Some(placed_solved) = placed_solved {
-                {
                     ctx.charge_collection_items(1, "iges exact placed curve box")?;
-                }
                 let placed_id = crate::ids::curve_admitted(
                     &crate::ids::Stem::directory(entry.sequence)
                         .tail(crate::ids::Word::PlacedDirectrix),
@@ -2620,9 +2614,7 @@ pub(super) fn project(
                 .then(|| directrix_solved.try_clone_for_decode(ctx, "iges solved curve copy"))
                 .transpose()?;
             if let Some(placed_solved) = placed_solved {
-                {
                     ctx.charge_collection_items(1, "iges exact placed curve box")?;
-                }
                 let Some(orientation) = similarity_orientation(transform) else {
                     super::push_entity_loss(
                         ctx,

@@ -273,9 +273,7 @@ impl<'a> BitReader<'a> {
             if count > remaining {
                 return Err(malformed("a Binary string payload is truncated"));
             }
-            {
                 ctx.charge_retained(u64_from_index(count), "iges binary string payload")?;
-            }
             output.try_reserve(count).map_err(|_| {
                 cadmpeg_core::CodecError::ResourceLimit(
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(

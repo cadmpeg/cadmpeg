@@ -759,9 +759,7 @@ pub(crate) fn resolve_transform(
     if path.contains(&sequence) {
         return Err("transformation chain is cyclic".into());
     }
-    {
         ctx.charge_collection_items(1, "iges transform chain path")?;
-    }
     path.insert(sequence);
     let result: Result<Transform, TransformResolutionError> = (|| {
         let entry = entries
@@ -906,9 +904,7 @@ pub(crate) fn enforce_transform_depth(
                     requested,
                 ));
             }
-            {
                 ctx.charge_work(1, "iges transform preflight walk")?;
-            }
             if !ctx.insert_btree_set(
                 &mut path,
                 sequence,
@@ -1272,9 +1268,7 @@ pub(super) fn curve_geometry_coplanar(
         SolvedCurveGeometry::Composite { segments, .. } => {
             let mut valid = true;
             for segment in segments {
-                {
                     ctx.charge_work(1, "iges coplanar composite segments")?;
-                }
                 let Some(curve) = index.curves(segment.curve.as_str()) else {
                     valid = false;
                     break;
@@ -1386,9 +1380,7 @@ impl SourceSequences {
             *existing = sequence;
             return Ok(());
         }
-        {
             ctx.charge_collection_items(1, operation)?;
-        }
         let key = copy(id, ctx)?;
         values.insert(key, sequence);
         Ok(())

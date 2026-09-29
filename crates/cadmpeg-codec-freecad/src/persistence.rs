@@ -39,12 +39,10 @@ pub(crate) fn parse_with_context(
 ) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
-    {
         ctx.charge_work(
             bytes.len() as u64,
             "FCStd persistence XML lexical admission",
         )?;
-    }
     if let Some((nodes, _)) = crate::container::xml_envelope_counts(bytes) {
         ctx.charge_collection_items(nodes, "FCStd persistence XML node tree")?;
     }
@@ -183,7 +181,6 @@ fn parse_document(
                 "FCStd persistence diagnostic",
             ));
         }
-        {
             ctx.charge_collection_items(1, "FCStd dependency lookup")?;
             dependency_map.try_reserve(1).map_err(|_| {
                 cadmpeg_core::CodecError::ResourceLimit(
@@ -195,7 +192,6 @@ fn parse_document(
                     ),
                 )
             })?;
-        }
         dependency_map.insert(
             name,
             DependencyInfo {
@@ -212,7 +208,6 @@ fn parse_document(
         .filter(|node| node.has_tag_name(record_tag))
     {
         ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(1), "FCStd object data lookup")?;
-        {
             data_by_name.try_reserve(1).map_err(|_| {
                 cadmpeg_core::CodecError::ResourceLimit(
                     cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -223,7 +218,6 @@ fn parse_document(
                     ),
                 )
             })?;
-        }
         let name = retained_attr(ctx, node, "name", "FCStd object data name")?;
         if data_by_name.contains_key(&name) {
             return Err(crate::resource::malformed_charged(
@@ -268,9 +262,7 @@ fn parse_document(
     {
         let name = retained_attr(ctx, node, "name", "FCStd object name")?;
         for prior in &objects {
-            {
                 ctx.charge_work(1, "FCStd duplicate object names")?;
-            }
             if prior.name == name {
                 return Err(crate::resource::malformed_charged(
                     ctx,
@@ -288,12 +280,8 @@ fn parse_document(
             .map(|attribute| {
                 ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(1), "FCStd object attributes")?;
                 Ok((
-                    {
-                            ctx.copy_retained_text(attribute.name(), "FCStd object attribute name")
-                        }?,
-                    {
-                            ctx.copy_retained_text(attribute.value(), "FCStd object attribute")
-                        }?,
+                    ctx.copy_retained_text(attribute.name(), "FCStd object attribute name")?,
+                    ctx.copy_retained_text(attribute.value(), "FCStd object attribute")?,
                 ))
             })
             .collect::<Result<_, CodecError>>()?;
@@ -512,7 +500,6 @@ fn parse_document(
                     ));
                 }
                 ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(1), "FCStd extension name set")?;
-                {
                     extension_names.try_reserve(1).map_err(|_| {
                         cadmpeg_core::CodecError::ResourceLimit(
                             cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -523,7 +510,6 @@ fn parse_document(
                             ),
                         )
                     })?;
-                }
                 extension_names.insert(ctx.copy_retained_text(&name, "FCStd extension name copy")?);
                 if extension_types.contains(&type_name) {
                     return Err(crate::resource::malformed_charged(
@@ -533,7 +519,6 @@ fn parse_document(
                     ));
                 }
                 ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(1), "FCStd extension type set")?;
-                {
                     extension_types.try_reserve(1).map_err(|_| {
                         cadmpeg_core::CodecError::ResourceLimit(
                             cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -544,11 +529,9 @@ fn parse_document(
                             ),
                         )
                     })?;
-                }
                 extension_types.insert(ctx.copy_retained_text(&type_name, "FCStd extension type copy")?);
                 let id = extension_id(ctx, &object.id, &name, order)?;
                 ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(1), "FCStd extension identity lookup")?;
-                {
                     extension_ids_by_start.try_reserve(1).map_err(|_| {
                         cadmpeg_core::CodecError::ResourceLimit(
                             cadmpeg_core::decode::ResourceLimit::allocation_failed(
@@ -559,7 +542,6 @@ fn parse_document(
                             ),
                         )
                     })?;
-                }
                 extension_ids_by_start.insert(
                     node.range().start,
                     ctx.copy_retained_text(&id, "FCStd extension identity copy")?,
@@ -679,9 +661,7 @@ fn parse_properties(
             )
         })?;
         for prior in all_nodes.clone().take(index) {
-            {
                 ctx.charge_work(1, "FCStd duplicate property names")?;
-            }
             if prior.attribute("name") == Some(name) {
                 return Err(crate::resource::malformed_charged(
                     ctx,
