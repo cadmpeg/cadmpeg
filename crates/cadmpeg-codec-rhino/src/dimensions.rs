@@ -6,7 +6,7 @@ use std::fmt;
 use std::ops::Range;
 
 use crate::chunks::{
-    admitted_vec, checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError,
+    checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError,
 };
 use crate::objects::{parse_class_wrapper, UserdataDescriptor};
 use crate::settings::{plane, utf16_retained, CoordinateLane, MillimeterScale, Plane};
@@ -435,7 +435,7 @@ fn legacy_annotation_fields(
         .ok_or_else(|| {
             FramingError::structural(point_count_offset, "invalid legacy annotation point count")
         })?;
-    let mut points = admitted_vec(ctx, point_count, "Rhino legacy annotation points")?;
+    let mut points = ctx.collection_vec(point_count, "Rhino legacy annotation points").map_err(crate::chunks::FramingError::from)?;
     for _ in 0..point_count {
         let offset = annotation.position();
         points.push(scaled_point(point2(annotation)?, scale, offset)?);
@@ -617,7 +617,7 @@ pub(crate) fn v2_annotation_direct(
         1 << 20,
         point_count_offset,
     )?;
-    let mut points = admitted_vec(ctx, point_bytes / 16, "Rhino V2 annotation points")?;
+    let mut points = ctx.collection_vec(point_bytes / 16, "Rhino V2 annotation points").map_err(crate::chunks::FramingError::from)?;
     for _ in 0..point_bytes / 16 {
         let point_offset = reader.position();
         let raw_point = point2(reader)?;

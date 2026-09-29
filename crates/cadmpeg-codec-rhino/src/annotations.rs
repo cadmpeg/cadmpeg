@@ -367,7 +367,7 @@ fn decode_annotation(
             outer.position(),
         )?;
         points =
-            crate::chunks::admitted_vec(ctx, bytes / 16, "Rhino modern annotation leader points")?;
+            ctx.collection_vec(bytes / 16, "Rhino modern annotation leader points").map_err(crate::chunks::FramingError::from)?;
         for _ in 0..bytes / 16 {
             let point = [outer.f64()?, outer.f64()?];
             let point = cadmpeg_ir::units::FiniteVector::new(point).ok_or_else(|| {
@@ -619,8 +619,7 @@ fn record_identity(
     source_order: usize,
     admitted_key: Option<String>,
 ) -> Result<(Vec<String>, String, String), CodecError> {
-    let mut links = Vec::new();
-    reserve_record_slot(ctx, &mut links, "Rhino annotation links")?;
+    let mut links = ctx.collection_vec(1, "Rhino annotation links")?;
     let key = match admitted_key {
         Some(key) => key,
         None => source_key(ctx, identity, source_order)?,
@@ -647,7 +646,7 @@ fn annotation_record_dropped(
     class_uuid: Uuid,
     error: impl std::fmt::Display,
 ) -> Result<(), CodecError> {
-    reserve_record_slot(ctx, losses, "Rhino annotation loss notes")?;
+    ctx.reserve_vec(losses, 1, "Rhino annotation loss notes")?;
     let loss = crate::wire::admitted_loss(
         ctx,
         RhinoLossCode::AnnotationRecordDropped,
@@ -665,31 +664,6 @@ fn annotation_record_dropped(
         ),
     );
     Ok(())
-}
-
-fn reserve_record_slot<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    records: &mut Vec<T>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    reserve_record_count(ctx, records, 1, operation)
-}
-
-fn reserve_record_count<T>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    records: &mut Vec<T>,
-    count: usize,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(count), operation)?;
-    records.try_reserve(count).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            u64::MAX,
-            cadmpeg_core::decode::u64_from_index(count),
-            operation,
-        ))
-    })
 }
 
 /// Projects every supported general annotation into stable native records.
@@ -746,7 +720,7 @@ pub(crate) fn install(
                         return Err(CodecError::ResourceLimit(limit))
                     }
                     Err(error) => {
-                        reserve_record_slot(ctx, &mut losses, "Rhino annotation loss notes")?;
+                        ctx.reserve_vec(&mut losses, 1, "Rhino annotation loss notes")?;
                         losses.push(crate::wire::admitted_loss(
                             ctx,
                             RhinoLossCode::AnnotationUserdataDropped,
@@ -786,7 +760,7 @@ pub(crate) fn install(
                         continue;
                     }
                 };
-                reserve_record_slot(ctx, &mut annotations, "Rhino native annotations")?;
+                ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations")?;
                 let (links, key, source_uuid) =
                     record_identity(ctx, identity, source_order, v2_key.take())?;
                 annotations.push(AnnotationRecord {
@@ -860,20 +834,14 @@ pub(crate) fn install(
                         continue;
                     }
                 };
-                let mut leader_points = Vec::new();
-                reserve_record_count(
-                    ctx,
-                    &mut leader_points,
-                    value.points.len(),
-                    "Rhino legacy leader projection points",
-                )?;
+                let mut leader_points = ctx.collection_vec(value.points.len(), "Rhino legacy leader projection points")?;
                 leader_points.extend(
                     value
                         .points
                         .into_iter()
                         .map(cadmpeg_ir::units::FiniteVector::finite_components),
                 );
-                reserve_record_slot(ctx, &mut annotations, "Rhino native annotations")?;
+                ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations")?;
                 let (links, key, source_uuid) =
                     record_identity(ctx, identity, source_order, v2_key.take())?;
                 annotations.push(AnnotationRecord {
@@ -955,13 +923,7 @@ pub(crate) fn install(
                 };
                 let rich_text = crate::dimensions::v2_effective_text(ctx, &value.base)?;
                 let leader_points = if is_leader {
-                    let mut points = Vec::new();
-                    reserve_record_count(
-                        ctx,
-                        &mut points,
-                        value.base.points.len(),
-                        "Rhino V2 leader projection points",
-                    )?;
+                    let mut points = ctx.collection_vec(value.base.points.len(), "Rhino V2 leader projection points")?;
                     points.extend(
                         value
                             .base
@@ -973,7 +935,7 @@ pub(crate) fn install(
                 } else {
                     Vec::new()
                 };
-                reserve_record_slot(ctx, &mut annotations, "Rhino native annotations")?;
+                ctx.reserve_vec(&mut annotations, 1, "Rhino native annotations")?;
                 let (links, key, source_uuid) =
                     record_identity(ctx, identity, source_order, v2_key.take())?;
                 annotations.push(AnnotationRecord {
@@ -1035,7 +997,7 @@ pub(crate) fn install(
                         continue;
                     }
                 };
-                reserve_record_slot(ctx, &mut dots, "Rhino native text dots")?;
+                ctx.reserve_vec(&mut dots, 1, "Rhino native text dots")?;
                 let (links, key, source_uuid) =
                     record_identity(ctx, identity, source_order, v2_key.take())?;
                 dots.push(TextDotRecord {
@@ -1068,7 +1030,7 @@ pub(crate) fn install(
                         continue;
                     }
                 };
-                reserve_record_slot(ctx, &mut arrows, "Rhino native annotation arrows")?;
+                ctx.reserve_vec(&mut arrows, 1, "Rhino native annotation arrows")?;
                 let (links, key, source_uuid) =
                     record_identity(ctx, identity, source_order, v2_key.take())?;
                 arrows.push(AnnotationArrowRecord {
