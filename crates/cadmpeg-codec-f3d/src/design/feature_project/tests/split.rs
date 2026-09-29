@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::edge_resolve::feature_input_topology_id;
-use crate::design::feature_project::{project_split, project_split_face};
+use crate::design::feature_project::{project_delete_face, project_split, project_split_face};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::{
@@ -217,6 +217,51 @@ fn split_body_historical_face_tool_id_refuses_retained_limit() {
         &scope, &groups, std::slice::from_ref(&tool),
         "f3d SplitBody historical face tool id",
     );
+}
+
+#[test]
+fn delete_face_fallback_group_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#77",
+        crate::records::feature::scope::DesignFeatureKind::DeleteFace,
+        77,
+    );
+    scope.try_edit(|draft| {
+        draft.frame_length = 258;
+        draft.kind_offset = draft.byte_offset + 161;
+        draft.reference_members =
+            crate::records::identity::ReferenceRun::unlocated(vec![100, 200]);
+        draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+        draft.reference_count_offset = draft.kind_offset - 34;
+        draft.layout_fixture_references();
+        draft.layout_fixture_tail();
+    }).unwrap();
+    let selected = group(77, 0, 100, vec![200], DesignOperandRole::ROLE_0X10);
+    let definition = project_delete_face(None, &scope, std::slice::from_ref(&selected), &[])
+        .unwrap().unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+            faces: FaceSelection::Native(ref native), ..
+        }) if native == &selected.id
+    ));
+    for limit in 0..128 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(
+            project_delete_face(Some(&ctx), &scope, std::slice::from_ref(&selected), &[]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d DeleteFace fallback group id"
+        ) {
+            return;
+        }
+    }
+    panic!("no DeleteFace fallback group ID refusal");
 }
 
 fn compact_split_face_fixture() -> (DesignParameterScope, [DesignConstructionOperandGroup; 2]) {
