@@ -9465,11 +9465,11 @@ fn project_extrude(
 
 fn spatial_sketch_entity_endpoints(
     entity: &cadmpeg_ir::sketches::SpatialSketchEntity,
-) -> Option<[Point3; 2]> {
+) -> Result<Option<[Point3; 2]>, CodecError> {
     use cadmpeg_ir::sketches::SpatialSketchGeometryDefinition;
 
     match entity.geometry.definition() {
-        SpatialSketchGeometryDefinition::Line { start, end } => Some([start.get(), end.get()]),
+        SpatialSketchGeometryDefinition::Line { start, end } => Ok(Some([start.get(), end.get()])),
         SpatialSketchGeometryDefinition::Arc {
             center,
             normal,
@@ -9487,94 +9487,112 @@ fn spatial_sketch_entity_endpoints(
                     radius.get(),
                 )
             };
-            Some([at(start_angle.get()), at(end_angle.get())])
+            Ok(Some([at(start_angle.get()), at(end_angle.get())]))
         }
         SpatialSketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
-            let start = curve.knots()[curve.degree() as usize];
+            let Ok(degree) = usize::try_from(curve.degree()) else { return Ok(None); };
+            let start = curve.knots()[degree];
             let end = curve.knots()[curve.pole_count()];
-            Some([
-                cadmpeg_ir::eval::nurbs_curve_point_at(curve, start)
-                    .ok()?
-                    .get(),
-                cadmpeg_ir::eval::nurbs_curve_point_at(curve, end)
-                    .ok()?
-                    .get(),
-            ])
+            let Some(first) = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::nurbs_curve_point_at(curve, start))? else { return Ok(None); };
+            let Some(last) = cadmpeg_ir::eval::finite_or_refusal(
+                cadmpeg_ir::eval::nurbs_curve_point_at(curve, end))? else { return Ok(None); };
+            Ok(Some([first.get(), last.get()]))
         }
-        _ => None,
+        _ => Ok(None),
     }
 }
 
 pub(super) fn closed_spatial_sketch_profiles(
+    ctx: Option<&DecodeContext<'_>>,
     sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     tolerance: f64,
-) -> Vec<cadmpeg_ir::sketches::SpatialSketchProfile> {
+) -> Result<Vec<cadmpeg_ir::sketches::SpatialSketchProfile>, CodecError> {
     use cadmpeg_ir::sketches::{
         SpatialSketchEntityUse, SpatialSketchGeometryDefinition, SpatialSketchProfile,
     };
 
     if !tolerance.is_finite() || tolerance <= 0.0 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let mut profiles = entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch && !entity.construction)
-        .filter_map(|entity| match entity.geometry.definition() {
+    let mut profiles = Vec::new();
+    let mut edges = Vec::new();
+    for entity in entities.iter().filter(|entity| entity.sketch == *sketch && !entity.construction) {
+        match entity.geometry.definition() {
             SpatialSketchGeometryDefinition::Circle {
                 center,
                 normal,
                 reference_direction,
                 ..
-            } => Some(
-                SpatialSketchProfile::from_parts(
-                    *center,
-                    *normal,
-                    *reference_direction,
-                    vec![SpatialSketchEntityUse {
-                        entity: entity.id().clone(),
-                        reversed: false,
-                    }],
-                )
-                .ok()?,
-            ),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let edges = entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch && !entity.construction)
-        .filter_map(|entity| spatial_sketch_entity_endpoints(entity).map(|ends| (entity, ends)))
-        .collect::<Vec<_>>();
+            } => {
+                let mut boundary = Vec::new();
+                push_feature_item(ctx, &mut boundary, SpatialSketchEntityUse {
+                    entity: copy_feature_identity(ctx, entity.id().as_str(),
+                        "f3d spatial profile circle id")?,
+                    reversed: false,
+                }, "f3d spatial profile boundary use")?;
+                let profile = match ctx {
+                    Some(ctx) => SpatialSketchProfile::try_new_charged(
+                        center.get(), *normal.as_raw(), *reference_direction.as_raw(),
+                        boundary, ctx, "f3d spatial profile boundary uniqueness")?,
+                    None => SpatialSketchProfile::from_parts(*center, *normal,
+                        *reference_direction, boundary),
+                };
+                if let Ok(profile) = profile {
+                    push_feature_item(ctx, &mut profiles, profile, "f3d spatial profile")?;
+                }
+            }
+            _ => {
+                if let Some(ends) = spatial_sketch_entity_endpoints(entity)? {
+                    push_feature_item(ctx, &mut edges, (entity, ends),
+                        "f3d spatial profile edge")?;
+                }
+            }
+        }
+    }
     let close = |a: Point3, b: Point3| (a.x - b.x).hypot(a.y - b.y).hypot(a.z - b.z) <= tolerance;
-    let mut unused = (0..edges.len()).collect::<HashSet<_>>();
+    let mut unused = HashSet::new();
+    for index in 0..edges.len() {
+        insert_feature_set(ctx, &mut unused, index, "f3d spatial profile unused edge")?;
+    }
     while let Some(&first) = unused
         .iter()
-        .min_by_key(|index| edges[**index].0.id().clone())
+        .min_by(|a, b| edges[**a].0.id().cmp(edges[**b].0.id()))
     {
         unused.remove(&first);
-        let mut uses = vec![(first, false)];
+        let mut uses = Vec::new();
+        push_feature_item(ctx, &mut uses, (first, false), "f3d spatial profile use")?;
         let start = edges[first].1[0];
         let mut end = edges[first].1[1];
         while !close(end, start) {
-            let candidates = unused
-                .iter()
-                .filter_map(|index| {
-                    let [candidate_start, candidate_end] = edges[*index].1;
-                    if close(end, candidate_start) {
-                        Some((*index, false))
-                    } else if close(end, candidate_end) {
-                        Some((*index, true))
-                    } else {
-                        None
+            let mut candidate = None;
+            let mut ambiguous = false;
+            for &index in &unused {
+                if let Some(ctx) = ctx {
+                    ctx.charge_work(1, "f3d spatial profile candidate scan")?;
+                }
+                let [candidate_start, candidate_end] = edges[index].1;
+                let match_ = if close(end, candidate_start) {
+                    Some((index, false))
+                } else if close(end, candidate_end) {
+                    Some((index, true))
+                } else {
+                    None
+                };
+                if let Some(match_) = match_ {
+                    if candidate.replace(match_).is_some() {
+                        ambiguous = true;
+                        break;
                     }
-                })
-                .collect::<Vec<_>>();
-            let [next] = candidates.as_slice() else {
+                }
+            }
+            if ambiguous { break; }
+            let Some(next) = candidate else {
                 break;
             };
             unused.remove(&next.0);
-            uses.push(*next);
+            push_feature_item(ctx, &mut uses, next, "f3d spatial profile use")?;
             end = if next.1 {
                 edges[next.0].1[0]
             } else {
@@ -9590,15 +9608,14 @@ pub(super) fn closed_spatial_sketch_profiles(
         if !close(end, start) || uses.len() < 3 || start_degree != 2 {
             continue;
         }
-        let points = uses
-            .iter()
-            .map(|(index, reversed)| edges[*index].1[usize::from(*reversed)])
-            .collect::<Vec<_>>();
-        let origin = points[0];
+        let point_for = |(index, reversed): &(usize, bool)| {
+            edges[*index].1[usize::from(*reversed)]
+        };
+        let origin = point_for(&uses[0]);
         let mut normal = Vector3::new(0.0, 0.0, 0.0);
-        for pair in points[1..].windows(2) {
-            let a = pair[0].vector_from(origin);
-            let b = pair[1].vector_from(origin);
+        for pair in uses[1..].windows(2) {
+            let a = point_for(&pair[0]).vector_from(origin);
+            let b = point_for(&pair[1]).vector_from(origin);
             normal = normal + a.cross(b);
         }
         let normal_length = normal.norm();
@@ -9610,29 +9627,31 @@ pub(super) fn closed_spatial_sketch_profiles(
         }
         normal = normal.scale(1.0 / normal_length);
         let u_axis = u.scale(1.0 / u_length);
-        if points
+        if uses
             .iter()
-            .any(|point| point.vector_from(origin).dot(normal).abs() > tolerance)
+            .any(|use_| point_for(use_).vector_from(origin).dot(normal).abs() > tolerance)
         {
             continue;
         }
-        profiles.extend(
-            SpatialSketchProfile::try_new(
-                origin,
-                normal,
-                u_axis,
-                uses.into_iter()
-                    .map(|(index, reversed)| SpatialSketchEntityUse {
-                        entity: edges[index].0.id().clone(),
-                        reversed,
-                    })
-                    .collect(),
-            )
-            .ok(),
-        );
+        let mut boundary = Vec::new();
+        for (index, reversed) in uses {
+            push_feature_item(ctx, &mut boundary, SpatialSketchEntityUse {
+                entity: copy_feature_identity(ctx, edges[index].0.id().as_str(),
+                    "f3d spatial profile boundary id")?,
+                reversed,
+            }, "f3d spatial profile boundary use")?;
+        }
+        let profile = match ctx {
+            Some(ctx) => SpatialSketchProfile::try_new_charged(origin, normal, u_axis,
+                boundary, ctx, "f3d spatial profile boundary uniqueness")?,
+            None => SpatialSketchProfile::try_new(origin, normal, u_axis, boundary),
+        };
+        if let Ok(profile) = profile {
+            push_feature_item(ctx, &mut profiles, profile, "f3d spatial profile")?;
+        }
     }
     profiles.sort_by(|a, b| a.boundary()[0].entity.cmp(&b.boundary()[0].entity));
-    profiles
+    Ok(profiles)
 }
 
 fn project_coil(

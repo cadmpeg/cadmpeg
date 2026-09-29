@@ -13,6 +13,32 @@ fn length(value: f64) -> Length {
 }
 
 #[test]
+fn spatial_profile_uniqueness_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let boundary = vec![SpatialSketchEntityUse {
+        entity: SpatialSketchEntityId::mint("test:model:entity#profile-edge").unwrap(),
+        reversed: false,
+    }];
+    let result = SpatialSketchProfile::try_new_charged(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        boundary,
+        &ctx,
+        "test spatial profile uniqueness",
+    );
+    assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "test spatial profile uniqueness"));
+}
+
+#[test]
 fn planar_offset_parameter_setter_preserves_admitted_pairs() {
     use crate::features::ParameterId;
     use crate::sketches::{
