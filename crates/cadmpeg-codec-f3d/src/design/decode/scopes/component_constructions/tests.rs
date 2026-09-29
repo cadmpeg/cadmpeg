@@ -1205,3 +1205,21 @@ fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
         Some((transform.try_into().unwrap(), Some(50), occurrence_identity))
     );
 }
+
+#[test]
+fn component_insert_scanned_role_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let probe = |bytes: &[u8], scope: &DesignParameterScope, stage: &'static str| {
+        if stage != "simple" { return; }
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = 35;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        assert!(matches!(exact_component_insert_construction(&ctx, bytes, &records, scope),
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == "f3d Design UTF-16 text"));
+    };
+    run_component_insert_scope_fixture(Some(probe));
+}
