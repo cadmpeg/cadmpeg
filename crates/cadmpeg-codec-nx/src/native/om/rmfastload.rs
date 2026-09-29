@@ -24,7 +24,7 @@ fn value_identity_ignores_member_order() {
                 ordinal: ordinal as u32,
                 value: *value,
                 stable_identity: None,
-                source_offset: ordinal as u64,
+                source_offset: cadmpeg_core::decode::u64_from_index(ordinal),
             })
             .collect::<Vec<_>>()
     };

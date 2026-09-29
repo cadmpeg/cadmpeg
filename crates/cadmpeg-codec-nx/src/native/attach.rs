@@ -198,7 +198,7 @@ fn attach_indexed_om_unknowns(
                         cadmpeg_ir::identity_component!("om-section-").then(section_index),
                     )
                     .id(&cadmpeg_ir::identity_component!("record"), record_index);
-                    let offset = entry_offset + record.offset as u64;
+                    let offset = entry_offset + cadmpeg_core::decode::u64_from_index(record.offset);
                     annotations
                         .note(&id, &annotation_stream, offset)
                         .tag("OM_ENTITY_RECORD");
@@ -228,7 +228,7 @@ fn attach_indexed_om_unknowns(
                         cadmpeg_ir::identity_component!("om-section-").then(section_index),
                     )
                     .id(&cadmpeg_ir::identity_component!("block"), record_index);
-                    let offset = entry_offset + record.offset as u64;
+                    let offset = entry_offset + cadmpeg_core::decode::u64_from_index(record.offset);
                     annotations
                         .note(&id, &annotation_stream, offset)
                         .tag("OM_DATA_BLOCK");
@@ -2257,7 +2257,7 @@ fn attach_feature_operations(
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let initial_body_id =
         attach_initial_segment_bodies(ctx, ir, body_bindings, annotations, &stream)?;
-    let base_ordinal = ir.model.features.len() as u64;
+    let base_ordinal = cadmpeg_core::decode::u64_from_index(ir.model.features.len());
     let (booleans, _booleans_reservation) = ctx.collect_scoped_btree_map(
         booleans
             .iter()
@@ -5651,7 +5651,7 @@ fn attach_feature_operations(
         )?;
         ir.model.features.push(Feature {
             id: id.clone(),
-            ordinal: base_ordinal + ordinal as u64,
+            ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(label.value.clone()),
             suppressed: None,
             dependencies: DistinctMembers::try_from_unique_vec(dependencies)
@@ -6945,7 +6945,7 @@ fn segment_binding_body_indexes<'a, 'ctx>(
     let mut by_binding = BTreeMap::<&str, Vec<BodyId>>::new();
     let mut reservation = ctx.reserve_scoped(0, "NX segment binding body indexes")?;
     for binding in bindings {
-        let (prefix, prefix_len) = stream_prefix(binding.stream_ordinal, false);
+        let (prefix, prefix_len) = stream_prefix(binding.stream_ordinal, false)?;
         let mut stream_bodies = Vec::new();
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()),
@@ -7023,12 +7023,12 @@ fn segment_binding_body_indexes<'a, 'ctx>(
     })
 }
 
-fn stream_prefix(ordinal: u32, body_marker: bool) -> ([u8; 20], usize) {
+fn stream_prefix(ordinal: u32, body_marker: bool) -> Result<([u8; 20], usize), CodecError> {
     let mut decimal = [0u8; 10];
     let mut digit_count = 0;
     let mut ordinal = ordinal;
     loop {
-        decimal[digit_count] = b'0' + (ordinal % 10) as u8;
+        decimal[digit_count] = b'0' + u8::try_from(ordinal % 10).map_err(|_| CodecError::malformed("NX stream ordinal decimal digit exceeds u8"))?;
         digit_count += 1;
         ordinal /= 10;
         if ordinal == 0 {
@@ -7048,7 +7048,7 @@ fn stream_prefix(ordinal: u32, body_marker: bool) -> ([u8; 20], usize) {
     let suffix_start = 4 + digit_count;
     let prefix_len = suffix_start + suffix.len();
     prefix[suffix_start..prefix_len].copy_from_slice(suffix);
-    (prefix, prefix_len)
+    Ok((prefix, prefix_len))
 }
 
 fn operation_source_properties(
@@ -7514,7 +7514,7 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                     .and_then(|names| {
                         names
                             .fields
-                            .get(field_use.position.field_ordinal() as usize)
+                            .get(cadmpeg_core::decode::index_from_u32(field_use.position.field_ordinal()))
                     })
                     .map(|field| field.name.as_str())
                 else {
@@ -9565,7 +9565,7 @@ fn operation_body_group_partition_outputs_by_write<'a, 'ctx>(
         let Some(partition) = partition else {
             continue;
         };
-        let (prefix, prefix_len) = stream_prefix(partition, true);
+        let (prefix, prefix_len) = stream_prefix(partition, true)?;
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(bodies.len()),
             "NX body partition prefix scan",

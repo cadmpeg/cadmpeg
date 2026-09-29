@@ -140,14 +140,14 @@ impl TryFrom<SurfaceBranchWire> for FeatureSurfaceConstructionBranch {
             .into_iter()
             .zip(references.member_offsets().enumerate())
         {
-            if ordinal != expected_ordinal as u32 {
+            if ordinal != u32::try_from(expected_ordinal).map_err(|_| "members: count exceeds u32")? {
                 return Err("members.ordinal must follow serialized order".to_owned());
             }
             if source_offset != expected_offset {
                 return Err("members.source_offset must follow the branch frame".to_owned());
             }
         }
-        if terminal_position.0 != references.members().len() as u32 {
+        if terminal_position.0 != u32::try_from(references.members().len()).map_err(|_| "members: count exceeds u32")? {
             return Err("terminal.ordinal must equal members length".to_owned());
         }
         if terminal_position.1 != references.terminal_offset() {

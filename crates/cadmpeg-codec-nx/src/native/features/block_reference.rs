@@ -39,7 +39,7 @@ impl BlockReferencePosition {
         if ordinal > 18 {
             return Err("ordinal: block reference position must be within 0..=18");
         }
-        Ok(Self(ordinal as u8))
+        Ok(Self(u8::try_from(ordinal).map_err(|_| "ordinal: block reference position must be within 0..=18")?))
     }
     pub(super) fn ordinal(self) -> u32 {
         u32::from(self.0)
@@ -50,8 +50,8 @@ impl BlockReferencePosition {
     pub(super) fn enumerate<T>(references: [T; 19]) -> impl Iterator<Item = (Self, T)> {
         references
             .into_iter()
-            .enumerate()
-            .map(|(ordinal, reference)| (Self(ordinal as u8), reference))
+            .zip(0_u8..19)
+            .map(|(reference, ordinal)| (Self(ordinal), reference))
     }
 }
 

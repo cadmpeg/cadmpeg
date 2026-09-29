@@ -65,7 +65,7 @@ impl FeatureSwp104LeadingBranch {
         resolve: impl Fn(PayloadIndexToken) -> Result<Option<String>, cadmpeg_core::CodecError>,
     ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
         if source_offset
-            .checked_add(branch.byte_len() as u64)
+            .checked_add(cadmpeg_core::decode::u64_from_index(branch.byte_len()))
             .is_none()
         {
             return Ok(None);
@@ -96,7 +96,7 @@ impl FeatureSwp104LeadingBranch {
         40 + u64::from(self.leading_zero)
     }
     fn state_len(&self) -> u64 {
-        self.state_lane.byte_len() as u64
+        cadmpeg_core::decode::u64_from_index(self.state_lane.byte_len())
     }
     fn byte_len(&self) -> u64 {
         self.members_offset()
@@ -104,11 +104,11 @@ impl FeatureSwp104LeadingBranch {
                 .members
                 .as_slice()
                 .iter()
-                .map(|item| item.token.raw().len() as u64)
+                .map(|item| cadmpeg_core::decode::u64_from_index(item.token.raw().len()))
                 .sum::<u64>()
             + self.state_len()
             + 3
-            + self.terminal.token.raw().len() as u64
+            + cadmpeg_core::decode::u64_from_index(self.terminal.token.raw().len())
             + 1
     }
 }
@@ -194,27 +194,27 @@ impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
             .checked_add(40 + u64::from(wire.leading_zero))
             .ok_or("source_offset overflow")?;
         for (ordinal, item) in wire.members.as_slice().iter().enumerate() {
-            if item.ordinal != ordinal as u32 {
+            if item.ordinal != u32::try_from(ordinal).map_err(|_| "members: count exceeds u32")? {
                 return Err("members ordinal does not match serialized order".to_owned());
             }
             if item.source_offset != at {
                 return Err("members source_offset does not match serialized position".to_owned());
             }
             at = at
-                .checked_add(item.token.raw().len() as u64)
+                .checked_add(cadmpeg_core::decode::u64_from_index(item.token.raw().len()))
                 .ok_or("source_offset overflow")?;
         }
         at = at
-            .checked_add(state_lane.byte_len() as u64 + 3)
+            .checked_add(cadmpeg_core::decode::u64_from_index(state_lane.byte_len()) + 3)
             .ok_or("source_offset overflow")?;
-        if wire.terminal.ordinal != wire.members.len() as u32 {
+        if wire.terminal.ordinal != u32::try_from(wire.members.len()).map_err(|_| "members: count exceeds u32")? {
             return Err("terminal ordinal does not match serialized order".to_owned());
         }
         if wire.terminal.source_offset != at {
             return Err("terminal source_offset does not match serialized position".to_owned());
         }
         let end = at
-            .checked_add(wire.terminal.token.raw().len() as u64 + 1)
+            .checked_add(cadmpeg_core::decode::u64_from_index(wire.terminal.token.raw().len()) + 1)
             .ok_or("source_offset overflow")?;
         if wire.byte_len != end - wire.source_offset {
             return Err("byte_len does not match serialized frame length".to_owned());

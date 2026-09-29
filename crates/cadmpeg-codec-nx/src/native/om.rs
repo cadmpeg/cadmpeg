@@ -113,7 +113,7 @@ impl OmAuditTrailRow {
         source_entry: String,
         source_offset: u64,
     ) -> Option<Self> {
-        source_offset.checked_add(record.byte_len() as u64)?;
+        source_offset.checked_add(cadmpeg_core::decode::u64_from_index(record.byte_len()))?;
         Some(Self {
             id,
             section_link,
@@ -130,7 +130,7 @@ impl OmAuditTrailRow {
         self.source_offset
     }
     fn end_offset(&self) -> u64 {
-        self.source_offset + self.record.byte_len() as u64
+        self.source_offset + cadmpeg_core::decode::u64_from_index(self.record.byte_len())
     }
 }
 
@@ -180,8 +180,8 @@ pub(super) fn om_record_areas(
         let Some((_, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()
-                .map_or(section.offset as u64, |(offset, _)| {
-                    offset + section.offset as u64
+                .map_or(cadmpeg_core::decode::u64_from_index(section.offset), |(offset, _)| {
+                    offset + cadmpeg_core::decode::u64_from_index(section.offset)
                 })
                 == link.location.section_offset()
         }) else {
@@ -197,7 +197,7 @@ pub(super) fn om_record_areas(
         let Some(entry_offset) = link
             .location
             .section_offset()
-            .checked_sub(section.offset as u64)
+            .checked_sub(cadmpeg_core::decode::u64_from_index(section.offset))
         else {
             continue;
         };
@@ -209,7 +209,7 @@ pub(super) fn om_record_areas(
         let digits = header
             .offset
             .checked_ilog10()
-            .map_or(1, |count| count as usize + 1);
+            .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1);
         let id_len = prefix
             .len()
             .checked_add(section_key.len())
@@ -248,7 +248,7 @@ fn retained_om_padded_state_id(
 ) -> Result<String, CodecError> {
     let section_digits = section_ordinal
         .checked_ilog10()
-        .map_or(1, |count| count as usize + 1)
+        .map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1)
         .max(10);
     let length = prefix
         .len()
@@ -281,8 +281,8 @@ pub(super) fn audit_trail_rows(
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()
-                .map_or(section.offset as u64, |(offset, _)| {
-                    offset + section.offset as u64
+                .map_or(cadmpeg_core::decode::u64_from_index(section.offset), |(offset, _)| {
+                    offset + cadmpeg_core::decode::u64_from_index(section.offset)
                 })
                 == link.location.section_offset()
         }) else {
@@ -349,8 +349,8 @@ pub(super) fn operation_state_counters(
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()
-                .map_or(section.offset as u64, |(offset, _)| {
-                    offset + section.offset as u64
+                .map_or(cadmpeg_core::decode::u64_from_index(section.offset), |(offset, _)| {
+                    offset + cadmpeg_core::decode::u64_from_index(section.offset)
                 })
                 == link.location.section_offset()
         }) else {
@@ -408,8 +408,8 @@ pub(super) fn operation_state_journal_groups(
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()
-                .map_or(section.offset as u64, |(offset, _)| {
-                    offset + section.offset as u64
+                .map_or(cadmpeg_core::decode::u64_from_index(section.offset), |(offset, _)| {
+                    offset + cadmpeg_core::decode::u64_from_index(section.offset)
                 })
                 == link.location.section_offset()
         }) else {
@@ -467,8 +467,8 @@ pub(super) fn operation_state_groups(
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()
-                .map_or(section.offset as u64, |(offset, _)| {
-                    offset + section.offset as u64
+                .map_or(cadmpeg_core::decode::u64_from_index(section.offset), |(offset, _)| {
+                    offset + cadmpeg_core::decode::u64_from_index(section.offset)
                 })
                 == link.location.section_offset()
         }) else {
@@ -478,7 +478,7 @@ pub(super) fn operation_state_groups(
             continue;
         };
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        let table_end_offset = entry_offset + table.end_offset() as u64;
+        let table_end_offset = entry_offset + cadmpeg_core::decode::u64_from_index(table.end_offset());
         let table_footer = table.footer();
         let frames = table
             .into_groups()
@@ -520,8 +520,8 @@ pub(super) fn operation_state_messages(
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()
-                .map_or(section.offset as u64, |(offset, _)| {
-                    offset + section.offset as u64
+                .map_or(cadmpeg_core::decode::u64_from_index(section.offset), |(offset, _)| {
+                    offset + cadmpeg_core::decode::u64_from_index(section.offset)
                 })
                 == link.location.section_offset()
         }) else {
@@ -581,8 +581,8 @@ pub(super) fn operation_state_statuses(
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()
-                .map_or(section.offset as u64, |(offset, _)| {
-                    offset + section.offset as u64
+                .map_or(cadmpeg_core::decode::u64_from_index(section.offset), |(offset, _)| {
+                    offset + cadmpeg_core::decode::u64_from_index(section.offset)
                 })
                 == link.location.section_offset()
         }) else {
@@ -659,8 +659,8 @@ pub(super) fn operation_state_slot_lanes(
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
             entry
                 .file_span()
-                .map_or(section.offset as u64, |(offset, _)| {
-                    offset + section.offset as u64
+                .map_or(cadmpeg_core::decode::u64_from_index(section.offset), |(offset, _)| {
+                    offset + cadmpeg_core::decode::u64_from_index(section.offset)
                 })
                 == link.location.section_offset()
         }) else {
@@ -3277,7 +3277,7 @@ pub(super) fn external_references(
             ordinal: current,
             path,
             source_entry,
-            source_offset: entry_offset + relative as u64,
+            source_offset: entry_offset + cadmpeg_core::decode::u64_from_index(relative),
         });
     }
     Ok(references)
@@ -3477,7 +3477,7 @@ pub(super) fn external_reference_tail_reference_pairs(
     for record in records {
         let Some(source_offset) = record
             .source_offset
-            .checked_add(record.handles.prefix_byte_len() as u64)
+            .checked_add(cadmpeg_core::decode::u64_from_index(record.handles.prefix_byte_len()))
         else {
             continue;
         };
@@ -4649,14 +4649,14 @@ pub(super) fn data_blocks(
                 .checked_add(
                     section_ordinal
                         .checked_ilog10()
-                        .map_or(1, |digits| digits as usize + 1),
+                        .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
                 )
                 .and_then(|length| length.checked_add(":block#".len()))
                 .and_then(|length| {
                     length.checked_add(
                         block_ordinal
                             .checked_ilog10()
-                            .map_or(1, |digits| digits as usize + 1),
+                            .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
                     )
                 })
                 .ok_or_else(|| ctx.refuse_codec_limit("retain NX data block id", 0, 1))?;
@@ -4731,7 +4731,7 @@ pub(super) fn data_block_control_forms(
                 else {
                     continue;
                 };
-                let Some(byte_len) = std::num::NonZeroU64::new(control.bytes.len() as u64) else {
+                let Some(byte_len) = std::num::NonZeroU64::new(cadmpeg_core::decode::u64_from_index(control.bytes.len())) else {
                     continue;
                 };
                 DataBlockControlFormKind::ProductAnchored {
@@ -4790,7 +4790,7 @@ fn retained_om_number_id(
         .checked_add(
             number
                 .checked_ilog10()
-                .map_or(1, |digits| digits as usize + 1),
+                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
         )
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(length), operation)?;
@@ -4814,14 +4814,14 @@ fn scoped_om_index_id<'a>(
         .checked_add(
             section_ordinal
                 .checked_ilog10()
-                .map_or(1, |digits| digits as usize + 1),
+                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
         )
         .and_then(|length| length.checked_add(marker.len()))
         .and_then(|length| {
             length.checked_add(
                 ordinal
                     .checked_ilog10()
-                    .map_or(1, |digits| digits as usize + 1),
+                    .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
             )
         })
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
@@ -4853,14 +4853,14 @@ fn retained_om_index_id(
         .checked_add(
             section_ordinal
                 .checked_ilog10()
-                .map_or(1, |digits| digits as usize + 1),
+                .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
         )
         .and_then(|length| length.checked_add(marker.len()))
         .and_then(|length| {
             length.checked_add(
                 ordinal
                     .checked_ilog10()
-                    .map_or(1, |digits| digits as usize + 1),
+                    .map_or(1, |digits| cadmpeg_core::decode::index_from_u32(digits) + 1),
             )
         })
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
@@ -4878,7 +4878,7 @@ fn retained_om_three_number_id(
 ) -> Result<String, CodecError> {
     use std::fmt::Write;
 
-    let digits = |value: usize| value.checked_ilog10().map_or(1, |count| count as usize + 1);
+    let digits = |value: usize| value.checked_ilog10().map_or(1, |count| cadmpeg_core::decode::index_from_u32(count) + 1);
     let length = segments
         .into_iter()
         .try_fold(0usize, |length, (text, number)| {

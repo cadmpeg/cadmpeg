@@ -57,7 +57,7 @@ impl Serialize for MembersView<'_> {
             .enumerate()
         {
             sequence.serialize_element(&ReferenceView {
-                ordinal: ordinal as u32,
+                ordinal: u32::try_from(ordinal).map_err(serde::ser::Error::custom)?,
                 token,
                 data_block: data_block.as_deref(),
                 source_offset: self.offset + position,
@@ -90,7 +90,7 @@ impl Serialize for BranchView<'_> {
         wire.serialize_entry(
             "terminal",
             &ReferenceView {
-                ordinal: self.branch.members.len() as u32,
+                ordinal: u32::try_from(self.branch.members.len()).map_err(serde::ser::Error::custom)?,
                 token: &self.branch.terminal.0,
                 data_block: self.branch.terminal.1.as_deref(),
                 source_offset: self.offset + self.branch.terminal_position(),
@@ -114,7 +114,7 @@ impl Serialize for BranchesView<'_> {
             .enumerate()
         {
             sequence.serialize_element(&BranchView {
-                ordinal: ordinal as u32,
+                ordinal: u32::try_from(ordinal).map_err(serde::ser::Error::custom)?,
                 branch,
                 offset,
             })?;

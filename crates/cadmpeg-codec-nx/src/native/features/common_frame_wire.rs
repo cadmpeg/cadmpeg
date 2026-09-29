@@ -140,7 +140,7 @@ impl Serialize for FeatureOperationCommonFrame {
         if let Some(value) = suffix.target().and_then(Option::as_deref) {
             wire.serialize_entry("data_block", value)?;
         }
-        wire.serialize_entry("byte_len", &(frame.byte_len() as u64))?;
+        wire.serialize_entry("byte_len", &(cadmpeg_core::decode::u64_from_index(frame.byte_len())))?;
         wire.serialize_entry("source_offset", &frame.offset())?;
         wire.serialize_entry("index_source_offsets", &frame.index_offsets())?;
         wire.serialize_entry("state_source_offset", &frame.state_offset())?;
@@ -221,7 +221,7 @@ impl TryFrom<CommonFrameWire> for FeatureOperationCommonFrame {
             wire.source_offset,
         )
         .ok_or("source_offset: common-frame end overflows")?;
-        if wire.byte_len != frame.byte_len() as u64 {
+        if wire.byte_len != cadmpeg_core::decode::u64_from_index(frame.byte_len()) {
             return Err("byte_len disagrees with common frame");
         }
         if wire.index_source_offsets != frame.index_offsets() {
