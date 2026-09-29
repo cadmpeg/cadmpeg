@@ -495,10 +495,10 @@ fn project_all_dimension_constraints(
     let native_operand = |scope: &str,
                           field: cadmpeg_core::text::NonBlankString,
                           role: Option<u32>,
-                          record_index: u32| {
-        let geometry = native_geometry.get(&(scope, record_index)).cloned();
-        SketchNativeOperand {
-            native_kind: geometry.as_ref().map_or_else(
+                          record_index: u32| -> Result<SketchNativeOperand, CodecError> {
+        let geometry = native_geometry.get(&(scope, record_index));
+        Ok(SketchNativeOperand {
+            native_kind: geometry.map_or_else(
                 || cadmpeg_core::nonblank_literal!("record"),
                 |(kind, _, _)| kind.clone(),
             ),
@@ -506,35 +506,38 @@ fn project_all_dimension_constraints(
             object_index: Some(record_index),
             native_ref: geometry
                 .filter(|_| !projected.contains_key(&(scope, record_index)))
-                .map(|(_, _, native_ref)| native_ref.to_owned()),
-        }
+                .map(|(_, _, native_ref)| copy_dimension_text(ctx, native_ref,
+                    "f3d dimension native operand reference"))
+                .transpose()?,
+        })
     };
     let native_definition =
         |scope: &str,
          source_kind: cadmpeg_core::text::NonBlankString,
          state: Option<u64>,
          operands: &[(cadmpeg_core::text::NonBlankString, Option<u32>, u32)],
-         parameter| {
-            Some(Definition::Native {
+         parameter| -> Result<Definition, CodecError> {
+            let mut entity_ids = Vec::new();
+            let mut native_operands = Vec::new();
+            for (field, role, record_index) in operands {
+                if let Some(entity) = projected.get(&(scope, *record_index)) {
+                    let id = copy_dimension_entity_id(ctx, entity.id(),
+                        "f3d native dimension entity id")?;
+                    push_dimension_item(ctx, &mut entity_ids, id,
+                        "f3d native dimension entity")?;
+                }
+                let operand = native_operand(scope, field.clone(), *role, *record_index)?;
+                push_dimension_item(ctx, &mut native_operands, operand,
+                    "f3d native dimension operand")?;
+            }
+            Ok(Definition::Native {
                 native_kind: source_kind,
                 native_state: state,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
-                entities: operands
-                    .iter()
-                    .filter_map(|(_, _, record_index)| {
-                        projected
-                            .get(&(scope, *record_index))
-                            .map(|entity| entity.id().clone())
-                    })
-                    .collect(),
+                entities: entity_ids,
                 parameter: Some(parameter),
-                operands: operands
-                    .iter()
-                    .map(|(field, role, record_index)| {
-                        native_operand(scope, field.clone(), *role, *record_index)
-                    })
-                    .collect(),
+                operands: native_operands,
             })
         };
     let exact_definition = |scope: &str,
@@ -883,34 +886,34 @@ fn project_all_dimension_constraints(
                 .get(&(scope, group.owner_reference))
                 .cloned()
                 .or_else(|| sketch_for_geometry(scope, &locus_indices))?;
-            let definition = match exact_group_definition(scope, group, parameter, parameter_id.clone()).transpose() {
+            let exact = match exact_group_definition(scope, group, parameter, parameter_id.clone()).transpose() {
                 Ok(definition) => definition,
-                Err(error) => return Some(Err(error)),
-            }
-                .or_else(|| {
-                    let mut operands = group
-                        .loci
-                        .iter()
-                        .map(|locus| {
-                            (
-                                cadmpeg_core::nonblank_literal!("locus"),
-                                Some(locus.role),
-                                locus.geometry_record_index,
-                            )
-                        })
-                        .collect::<Vec<_>>();
-                    operands.push((
+                Err(error) => return Some(Err(CodecError::ResourceLimit(error))),
+            };
+            let definition = if let Some(definition) = exact {
+                definition
+            } else {
+                let fallback = (|| -> Result<Definition, CodecError> {
+                    let mut operands = Vec::new();
+                    for locus in &group.loci {
+                        push_dimension_item(ctx, &mut operands, (
+                            cadmpeg_core::nonblank_literal!("locus"),
+                            Some(locus.role),
+                            locus.geometry_record_index,
+                        ), "f3d native group locus operand")?;
+                    }
+                    push_dimension_item(ctx, &mut operands, (
                         cadmpeg_core::nonblank_literal!("owner"),
                         Some(group.owner_role),
                         group.owner_reference,
-                    ));
-                    operands.extend(group.loci.iter().map(|locus| {
-                        (
+                    ), "f3d native group owner operand")?;
+                    for locus in &group.loci {
+                        push_dimension_item(ctx, &mut operands, (
                             cadmpeg_core::nonblank_literal!("return"),
                             None,
                             locus.returned.value,
-                        )
-                    }));
+                        ), "f3d native group return operand")?;
+                    }
                     native_definition(
                         scope,
                         parameter.source_kind_name(),
@@ -918,7 +921,12 @@ fn project_all_dimension_constraints(
                         &operands,
                         parameter_id,
                     )
-                })?;
+                })();
+                match fallback {
+                    Ok(definition) => definition,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
             Some(Ok(SketchConstraint {
                 id: neutral_sketch_constraint_id(&group.id, group.record_index),
                 sketch,
@@ -936,17 +944,16 @@ fn project_all_dimension_constraints(
                 native_ref: Some(group.id.clone()),
             }))
     }).collect::<Result<Vec<_>, _>>()?;
-    let mut constraints = pairs
-        .iter()
-        .filter_map(|pair| {
-            let scope = native_stream(&pair.id)?;
-            let (parameter, parameter_id) =
-                parameter_for(scope, pair.governing_companion_record_index)?;
+    let mut pair_constraints = Vec::new();
+    for pair in pairs {
+            let Some(scope) = native_stream(&pair.id) else { continue; };
+            let Some((parameter, parameter_id)) =
+                parameter_for(scope, pair.governing_companion_record_index) else { continue; };
             let indices = [
                 pair.loci()[0].geometry_index(),
                 pair.loci()[1].geometry_index(),
             ];
-            let sketch = sketch_for_geometry(scope, &indices)?;
+            let Some(sketch) = sketch_for_geometry(scope, &indices) else { continue; };
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "pair");
             let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
                 .or_else(|| {
@@ -962,9 +969,11 @@ fn project_all_dimension_constraints(
                         parameter_id.clone(),
                         linear_tolerance,
                     )
-                })
-                .or_else(|| {
-                    native_definition(
+                });
+            let definition = if let Some(definition) = definition {
+                definition
+            } else {
+                native_definition(
                         scope,
                         parameter.source_kind_name(),
                         None,
@@ -981,13 +990,15 @@ fn project_all_dimension_constraints(
                             ),
                         ],
                         parameter_id,
-                    )
-                })?;
-            Some(SketchConstraint {
+                    )?
+            };
+            let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition) else {
+                continue;
+            };
+            push_dimension_item(ctx, &mut pair_constraints, SketchConstraint {
                 id: constraint_id,
                 sketch,
-                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
-                    .ok()?,
+                definition,
                 name: None,
                 driving: None,
                 active: None,
@@ -998,9 +1009,11 @@ fn project_all_dimension_constraints(
                 label_position: None,
                 metadata: None,
                 native_ref: Some(pair.id.clone()),
-            })
-        })
+            }, "f3d pair dimension constraint")?;
+    }
+    let mut constraints = pair_constraints.into_iter()
         .chain(group_constraints)
+        .map(Ok)
         .chain(annotation_frames.iter().filter_map(|frame| {
             let scope = native_stream(&frame.id)?;
             let (parameter, parameter_id) =
@@ -1012,7 +1025,7 @@ fn project_all_dimension_constraints(
                 .collect::<Vec<_>>();
             let sketch = sketches.get(&(scope, frame.owner_reference))?.clone();
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "annotation");
-            let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
+            let exact = exact_definition(scope, parameter, &indices, parameter_id.clone())
                 .or_else(|| {
                     annotation_offset_dimension_definition(
                         frame,
@@ -1023,12 +1036,14 @@ fn project_all_dimension_constraints(
                         &projected,
                         linear_tolerance,
                     )
-                })
-                .or_else(|| {
-                    let operands = frame
-                        .operands()
-                        .iter()
-                        .map(|operand| match operand.geometry_record_index {
+                });
+            let definition = if let Some(definition) = exact {
+                definition
+            } else {
+                let fallback = (|| -> Result<Definition, CodecError> {
+                    let mut operands = Vec::new();
+                    for operand in frame.operands() {
+                        let native = match operand.geometry_record_index {
                             None => SketchNativeOperand {
                                 native_kind: cadmpeg_core::nonblank_literal!("null_locus"),
                                 field: Some(NativeOperandField {
@@ -1043,31 +1058,42 @@ fn project_all_dimension_constraints(
                                 cadmpeg_core::nonblank_literal!("locus"),
                                 Some(operand.role),
                                 index.get(),
-                            ),
-                        })
-                        .collect();
-                    Some(Definition::Native {
+                            )?,
+                        };
+                        push_dimension_item(ctx, &mut operands, native,
+                            "f3d annotation native operand")?;
+                    }
+                    let mut entity_ids = Vec::new();
+                    for record_index in &indices {
+                        if let Some(entity) = projected.get(&(scope, *record_index)) {
+                            let id = copy_dimension_entity_id(ctx, entity.id(),
+                                "f3d annotation native entity id")?;
+                            push_dimension_item(ctx, &mut entity_ids, id,
+                                "f3d annotation native entity")?;
+                        }
+                    }
+                    Ok(Definition::Native {
                         native_kind: parameter.source_kind_name(),
                         native_state: None,
                         native_flags: None,
                         native_properties: std::collections::BTreeMap::new(),
-                        entities: indices
-                            .iter()
-                            .filter_map(|record_index| {
-                                projected
-                                    .get(&(scope, *record_index))
-                                    .map(|entity| entity.id().clone())
-                            })
-                            .collect(),
+                        entities: entity_ids,
                         parameter: Some(parameter_id),
                         operands,
                     })
-                })?;
-            Some(SketchConstraint {
+                })();
+                match fallback {
+                    Ok(definition) => definition,
+                    Err(error) => return Some(Err(error)),
+                }
+            };
+            let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition) else {
+                return None;
+            };
+            Some(Ok(SketchConstraint {
                 id: constraint_id,
                 sketch,
-                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
-                    .ok()?,
+                definition,
                 name: None,
                 driving: None,
                 active: None,
@@ -1078,7 +1104,7 @@ fn project_all_dimension_constraints(
                 label_position: None,
                 metadata: None,
                 native_ref: Some(frame.id.clone()),
-            })
+            }))
         }))
         .chain(null_pairs.iter().filter_map(|pair| {
             let scope = native_stream(&pair.id)?;
@@ -1102,7 +1128,7 @@ fn project_all_dimension_constraints(
                         parameter_id.clone(),
                         linear_tolerance,
                     ) {
-                        return Some(SketchConstraint {
+                        return Some(Ok(SketchConstraint {
                             id: constraint_id,
                             sketch,
                             definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
@@ -1119,12 +1145,13 @@ fn project_all_dimension_constraints(
                             label_position: None,
                             metadata: None,
                             native_ref: Some(pair.id.clone()),
-                        });
+                        }));
                     }
                 }
             }
-            let operands = vec![
-                SketchNativeOperand {
+            let fallback = (|| -> Result<Option<SketchConstraint>, CodecError> {
+                let mut operands = Vec::new();
+                push_dimension_item(ctx, &mut operands, SketchNativeOperand {
                     native_kind: cadmpeg_core::nonblank_literal!("null_locus"),
                     field: Some(NativeOperandField {
                         name: cadmpeg_core::nonblank_literal!("locus"),
@@ -1132,36 +1159,39 @@ fn project_all_dimension_constraints(
                     }),
                     object_index: None,
                     native_ref: None,
-                },
-                native_operand(
+                }, "f3d null pair native operand")?;
+                let native = native_operand(
                     scope,
                     cadmpeg_core::nonblank_literal!("locus"),
                     Some(pair.loci()[1].role),
                     pair.loci()[1].geometry_index(),
-                ),
-            ];
-            Some(SketchConstraint {
-                id: constraint_id,
-                sketch,
-                definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
+                )?;
+                push_dimension_item(ctx, &mut operands, native,
+                    "f3d null pair native operand")?;
+                let mut entity_ids = Vec::new();
+                for record_index in &indices {
+                    if let Some(entity) = projected.get(&(scope, *record_index)) {
+                        let id = copy_dimension_entity_id(ctx, entity.id(),
+                            "f3d null pair native entity id")?;
+                        push_dimension_item(ctx, &mut entity_ids, id,
+                            "f3d null pair native entity")?;
+                    }
+                }
+                let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
                     Definition::Native {
                         native_kind: parameter.source_kind_name(),
                         native_state: None,
                         native_flags: None,
                         native_properties: std::collections::BTreeMap::new(),
-                        entities: indices
-                            .iter()
-                            .filter_map(|record_index| {
-                                projected
-                                    .get(&(scope, *record_index))
-                                    .map(|entity| entity.id().clone())
-                            })
-                            .collect(),
+                        entities: entity_ids,
                         parameter: Some(parameter_id),
                         operands,
                     },
-                )
-                .ok()?,
+                ) else { return Ok(None); };
+                Ok(Some(SketchConstraint {
+                id: constraint_id,
+                sketch,
+                definition,
                 name: None,
                 driving: None,
                 active: None,
@@ -1172,9 +1202,15 @@ fn project_all_dimension_constraints(
                 label_position: None,
                 metadata: None,
                 native_ref: Some(pair.id.clone()),
-            })
+                }))
+            })();
+            match fallback {
+                Ok(Some(constraint)) => Some(Ok(constraint)),
+                Ok(None) => None,
+                Err(error) => Some(Err(error)),
+            }
         }))
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, CodecError>>()?;
     let companions_by_key = companions
         .iter()
         .filter_map(|companion| {
