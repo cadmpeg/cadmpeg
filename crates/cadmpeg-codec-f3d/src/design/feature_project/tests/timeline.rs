@@ -40,7 +40,7 @@ fn work_point_history_state_keys_are_history_qualified() {
         scopes_by_state: HashMap::new(),
     };
 
-    assert_ne!(graph.state_key(&scope_a, 7), graph.state_key(&scope_b, 7));
+    assert_ne!(graph.state_key(None, &scope_a, 7).unwrap(), graph.state_key(None, &scope_b, 7).unwrap());
 }
 
 #[test]
@@ -96,10 +96,10 @@ fn history_state_predecessors_are_component_qualified() {
         naming_space(10, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"),
         naming_space(20, "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"),
     ];
-    let graph = ScopeHistoryGraph::new(&scopes, &[], &[], &naming_spaces, &[]);
+    let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &naming_spaces, &[]).unwrap();
 
     let predecessor = graph
-        .predecessor(&second, |_| true)
+        .predecessor(None, &second, |_| true)
         .expect("component-qualified state chain");
     let crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor) = predecessor
     else {
@@ -1136,7 +1136,8 @@ fn assert_feature_dependency_index_refusal(operation: &'static str) {
         match super::super::ensure_feature_dependencies_precede(Some(&ctx), std::slice::from_ref(&feature)) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {},
-            other => panic!("expected {operation} refusal: {other:?}"),
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
         }
     }
     panic!("no {operation} refusal");
@@ -1246,4 +1247,127 @@ fn authored_stream_timeline_refuses_collection_limit() {
 #[test]
 fn authored_timeline_item_ordinal_refuses_collection_limit() {
     assert_authored_ordinal_refusal("f3d authored timeline item ordinal", true, false);
+}
+
+fn history_graph_limit_fixture() -> Vec<DesignParameterScope> {
+    let mut first = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        10,
+    );
+    first.try_edit(|draft| draft.history_state_id = Some(7)).unwrap();
+    let mut second = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#11",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        11,
+    );
+    second.try_edit(|draft| {
+        draft.history_state_id = Some(8);
+        draft.previous_history_state_id = Some(7);
+        draft.layout_fixture_tail();
+    }).unwrap();
+    vec![first, second]
+}
+
+fn assert_history_graph_refusal(operation: &'static str, retained: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let scopes = history_graph_limit_fixture();
+    let max_limit = if retained { 512 } else { 24 };
+    for limit in 0..max_limit {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if retained { policy.limits.max_retained_bytes = limit; }
+        else { policy.limits.max_collection_items = limit; }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match ScopeHistoryGraph::new(Some(&ctx), &scopes, &[], &[], &[], &[]) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension == (if retained { ResourceDimension::RetainedBytes }
+                        else { ResourceDimension::CollectionItems }) => return,
+            Err(CodecError::ResourceLimit(_)) => {},
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn component_history_scope_id_refuses_retained_limit() {
+    assert_history_graph_refusal("f3d component history scope id", true);
+}
+
+#[test]
+fn component_history_namespace_refuses_collection_limit() {
+    assert_history_graph_refusal("f3d component history namespace", false);
+}
+
+#[test]
+fn history_state_stream_refuses_retained_limit() {
+    assert_history_graph_refusal("f3d history state stream", true);
+}
+
+#[test]
+fn history_state_index_refuses_collection_limit() {
+    assert_history_graph_refusal("f3d history state index", false);
+}
+
+#[test]
+fn history_state_scope_refuses_collection_limit() {
+    assert_history_graph_refusal("f3d history state scope", false);
+}
+
+#[test]
+fn history_lookup_stream_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let scopes = history_graph_limit_fixture();
+    let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &[], &[]).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = graph.state_key(Some(&ctx), &scopes[1], 8).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::RetainedBytes
+            && failure.operation == "f3d history lookup stream"));
+}
+
+#[test]
+fn predecessor_stream_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let scopes = history_graph_limit_fixture();
+    let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &[], &[]).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = match graph.predecessor(Some(&ctx), &scopes[1], |_| true) {
+        Err(error) => error,
+        Ok(_) => panic!("expected predecessor stream refusal"),
+    };
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::RetainedBytes
+            && failure.operation == "f3d predecessor stream"));
+}
+
+#[test]
+fn predecessor_visited_scope_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let scopes = history_graph_limit_fixture();
+    let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &[], &[]).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = match graph.predecessor(Some(&ctx), &scopes[1], |_| false) {
+        Err(error) => error,
+        Ok(_) => panic!("expected predecessor visited-scope refusal"),
+    };
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d predecessor visited scope"));
 }
