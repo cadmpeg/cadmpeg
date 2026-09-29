@@ -1842,14 +1842,14 @@ fn attach_feature_operations(
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let initial_body_id = attach_initial_segment_bodies(ctx, ir, body_bindings, annotations, &stream)?;
     let base_ordinal = ir.model.features.len() as u64;
-    let booleans = booleans
+    let booleans = last_record_index(ctx, booleans
         .iter()
         .map(|operation| (operation.operation_label.as_str(), operation))
-        .collect::<BTreeMap<_, _>>();
-    let body_references_by_id = body_references
+        )?;
+    let body_references_by_id = last_record_index(ctx, body_references
         .iter()
         .map(|reference| (reference.id.as_str(), reference))
-        .collect::<BTreeMap<_, _>>();
+        )?;
     let mut group_reservation = ctx.reserve_scoped(0, "NX feature operation group indexes")?;
     let mut body_segment_uses_by_reference =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodySegmentUse>>::new();
@@ -1896,7 +1896,7 @@ fn attach_feature_operations(
         records_by_operation(ctx, input_column_row_uses, |use_| &use_.operation_label)?;
     let input_column_targets_by_operation =
         records_by_operation(ctx, input_column_targets, |target| &target.operation_label)?;
-    let input_block_identity_group_by_input = input_block_identity_groups
+    let input_block_identity_group_by_input = last_record_index(ctx, input_block_identity_groups
         .iter()
         .flat_map(|group| {
             group
@@ -1904,11 +1904,11 @@ fn attach_feature_operations(
                 .iter()
                 .map(move |member| (member.input_block.as_str(), group.id.as_str()))
         })
-        .collect::<BTreeMap<_, _>>();
-    let datum_csys_constructions_by_operation = datum_csys_constructions
+        )?;
+    let datum_csys_constructions_by_operation = last_record_index(ctx, datum_csys_constructions
         .iter()
         .map(|construction| (construction.operation_label.as_str(), construction))
-        .collect::<BTreeMap<_, _>>();
+        )?;
     let datum_csys_payloads_by_operation =
         records_by_operation(ctx, datum_csys_payloads, |payload| &payload.operation_label)?;
     let datum_csys_payload_scalar_pairs_by_operation =
@@ -1930,14 +1930,14 @@ fn attach_feature_operations(
     for block_use in datum_csys_block_uses {
         push_grouped_operation(ctx, &mut group_reservation, &mut datum_csys_uses_by_input_operation, block_use.input_operation_label.as_str(), || block_use, 0)?;
     }
-    let datum_plane_headers_by_operation = datum_plane_headers
+    let datum_plane_headers_by_operation = last_record_index(ctx, datum_plane_headers
         .iter()
         .map(|header| (header.operation_label.as_str(), header))
-        .collect::<BTreeMap<_, _>>();
-    let datum_plane_payloads_by_operation = datum_plane_payloads
+        )?;
+    let datum_plane_payloads_by_operation = last_record_index(ctx, datum_plane_payloads
         .iter()
         .map(|payload| (payload.operation_label.as_str(), payload))
-        .collect::<BTreeMap<_, _>>();
+        )?;
     let datum_plane_payload_scalar_pairs_by_operation =
         records_by_operation(ctx, datum_plane_payload_scalar_pairs, |pair| {
             &pair.operation_label
@@ -1953,15 +1953,15 @@ fn attach_feature_operations(
     }
     let chronological_labels =
         crate::native::features::feature_operation_chronological_labels(ctx, labels)?;
-    let operation_positions = chronological_labels
+    let operation_positions = last_record_index(ctx, chronological_labels
         .iter()
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
-        .collect::<BTreeMap<_, _>>();
-    let sketch_datum_csys_dependencies = sketch_datum_csys_dependencies
+        )?;
+    let sketch_datum_csys_dependencies = last_record_index(ctx, sketch_datum_csys_dependencies
         .iter()
         .map(|dependency| (dependency.datum_csys_operation_label.as_str(), dependency))
-        .collect::<BTreeMap<_, _>>();
+        )?;
     let mut datum_identity_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneCsysIdentityUse>>::new();
     for identity_use in datum_plane_csys_identity_uses {
@@ -2021,14 +2021,14 @@ fn attach_feature_operations(
         records_by_operation(ctx, identical_instance_output_lanes, |lane| {
             &lane.operation_label
         })?;
-    let point_construction_headers_by_operation = point_construction_headers
+    let point_construction_headers_by_operation = last_record_index(ctx, point_construction_headers
         .iter()
         .map(|header| (header.operation_label.as_str(), header))
-        .collect::<BTreeMap<_, _>>();
-    let point_construction_scalar_lanes_by_operation = point_construction_scalar_lanes
+        )?;
+    let point_construction_scalar_lanes_by_operation = last_record_index(ctx, point_construction_scalar_lanes
         .iter()
         .map(|lane| (lane.operation_label.as_str(), lane))
-        .collect::<BTreeMap<_, _>>();
+        )?;
     let draft_construction_references_by_operation =
         records_by_operation(ctx, draft_construction_references, |reference| {
             &reference.operation_label
@@ -2104,10 +2104,10 @@ fn attach_feature_operations(
     for reference in extrude_profile_references {
         push_grouped_operation(ctx, &mut group_reservation, &mut extrude_profile_references_by_operation, reference.operation_label.as_str(), || reference, 0)?;
     }
-    let extrude_construction_profiles_by_operation = extrude_construction_profiles
+    let extrude_construction_profiles_by_operation = last_record_index(ctx, extrude_construction_profiles
         .iter()
         .map(|profile| (profile.operation_label.as_str(), profile))
-        .collect::<BTreeMap<_, _>>();
+        )?;
     let mut operation_body_operands_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyOperand>>::new();
     for operand in operation_body_operands {
@@ -2121,10 +2121,10 @@ fn attach_feature_operations(
     {
         push_grouped_operation(ctx, &mut group_reservation, &mut segment_body_operands_by_operation, operand.operation_label.as_str(), || operand, 0)?;
     }
-    let sketch_construction_inputs_by_operation = sketch_construction_inputs
+    let sketch_construction_inputs_by_operation = last_record_index(ctx, sketch_construction_inputs
         .iter()
         .map(|inputs| (inputs.operation_label.as_str(), inputs))
-        .collect::<BTreeMap<_, _>>();
+        )?;
     let sketch_records_by_operation =
         records_by_operation(ctx, sketch_records, |record| &record.operation_label)?;
     let sketch_construction_payloads_by_operation =
@@ -2156,18 +2156,18 @@ fn attach_feature_operations(
     for point in sketch_fixed_points {
         push_grouped_operation(ctx, &mut group_reservation, &mut sketch_fixed_points_by_operation, point.operation_label.as_str(), || point, 0)?;
     }
-    let block_constructions_by_operation = block_constructions
+    let block_constructions_by_operation = last_record_index(ctx, block_constructions
         .iter()
         .map(|construction| (construction.operation_label.as_str(), construction))
-        .collect::<BTreeMap<_, _>>();
+        )?;
     let block_construction_payloads_by_operation =
         records_by_operation(ctx, block_construction_payloads, |payload| {
             &payload.operation_label
         })?;
-    let block_dimensions_by_operation = block_dimensions
+    let block_dimensions_by_operation = last_record_index(ctx, block_dimensions
         .iter()
         .map(|dimensions| (dimensions.operation_label.as_str(), dimensions))
-        .collect::<BTreeMap<_, _>>();
+        )?;
     let mut block_payload_points_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBlockPayloadPoint>>::new();
     for point in block_payload_points {
@@ -2178,18 +2178,18 @@ fn attach_feature_operations(
     for group in block_payload_point_groups {
         push_grouped_operation(ctx, &mut group_reservation, &mut block_payload_point_groups_by_operation, group.operation_label.as_str(), || group, 0)?;
     }
-    let extrude_32_constructions_by_operation = extrude_32_constructions
+    let extrude_32_constructions_by_operation = last_record_index(ctx, extrude_32_constructions
         .iter()
         .map(|construction| (construction.operation_label.as_str(), construction))
-        .collect::<BTreeMap<_, _>>();
-    let extrude_payload_headers_by_operation = extrude_payload_headers
+        )?;
+    let extrude_payload_headers_by_operation = last_record_index(ctx, extrude_payload_headers
         .iter()
         .map(|header| (header.operation_label.as_str(), header))
-        .collect::<BTreeMap<_, _>>();
-    let operation_terminal_discriminators_by_operation = operation_terminal_discriminators
+        )?;
+    let operation_terminal_discriminators_by_operation = last_record_index(ctx, operation_terminal_discriminators
         .iter()
         .map(|lane| (lane.operation_label.as_str(), lane))
-        .collect::<BTreeMap<_, _>>();
+        )?;
     let extrude_payload_32_branches_by_operation =
         records_by_operation(ctx, extrude_payload_32_branches, |branch| {
             &branch.operation_label
@@ -4781,6 +4781,36 @@ fn native_fixed_point_entities(
 struct OperationRecords<'a, 'ctx, T> {
     grouped: BTreeMap<&'a str, Vec<&'a T>>,
     _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+struct ScopedIndex<'ctx, K, V> {
+    entries: BTreeMap<K, V>,
+    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+impl<K: Ord, V> std::ops::Deref for ScopedIndex<'_, K, V> {
+    type Target = BTreeMap<K, V>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entries
+    }
+}
+
+fn last_record_index<'ctx, K: Ord + Copy, V: Copy>(
+    ctx: &'ctx DecodeContext<'_>,
+    records: impl IntoIterator<Item = (K, V)>,
+) -> Result<ScopedIndex<'ctx, K, V>, CodecError> {
+    let mut entries = BTreeMap::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX last-record index")?;
+    for (key, value) in records {
+        ctx.charge_work(1, "NX last-record index")?;
+        if !entries.contains_key(&key) {
+            ctx.charge_collection_items(1, "NX last-record index")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(K, V)>()))?;
+        }
+        entries.insert(key, value);
+    }
+    Ok(ScopedIndex { entries, _reservation: reservation })
 }
 
 fn push_grouped_operation<K: Ord, V>(

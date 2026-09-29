@@ -2,6 +2,41 @@
 
 use crate::native::attach::records_by_operation;
 use crate::native::attach::push_grouped_operation;
+use crate::native::attach::last_record_index;
+
+fn last_record_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let records = [("operation", 1u32), ("operation", 2u32)];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let index = last_record_index(&ctx, records)?;
+    assert_eq!(index["operation"], 2);
+    Ok(())
+}
+
+#[test]
+fn last_record_index_refuses_collection_limit() {
+    let error = last_record_with_limit(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+}
+
+#[test]
+fn last_record_index_refuses_scoped_limit() {
+    let error = last_record_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn last_record_index_refuses_work_limit() {
+    let error = last_record_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
 
 fn manual_group_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
