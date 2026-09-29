@@ -11,6 +11,42 @@ use crate::native::attach::tests::simple_hole_diameters;
 use crate::native::attach::SolvedSurfaceGeometry;
 use crate::native::attach::SurfaceGeometry;
 
+fn chamfer_selection_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    use crate::native::features::holes::{FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm};
+    let template = FeatureSimpleHoleTemplate {
+        id: "template".into(),
+        operation_label: "operation".into(),
+        payload_string: "payload".into(),
+        family: SimpleHoleFamily::GeneralHole,
+        form: SimpleHoleForm::Simple,
+        extent: SimpleHoleExtent::Through,
+        start_treatment: SimpleHoleEndTreatment::Chamfer,
+        end_treatment: SimpleHoleEndTreatment::Chamfer,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _ = simple_hole_chamfers(&ctx, &cadmpeg_ir::document::CadIr::empty(), &[template], &std::collections::BTreeMap::new())?;
+    Ok(())
+}
+
+#[test]
+fn chamfer_selection_refuses_scoped_limit() {
+    let error = chamfer_selection_with_limit(|policy| policy.limits.max_materialized_bytes = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+}
+
+#[test]
+fn chamfer_selection_refuses_work_limit() {
+    let error = chamfer_selection_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}
+
 fn primary_hole_output_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
