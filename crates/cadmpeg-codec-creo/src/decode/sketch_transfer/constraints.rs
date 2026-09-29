@@ -55,44 +55,67 @@ use std::collections::{BTreeMap, BTreeSet};
 const EPS_POLAR_ZERO: f64 = 1.0e-12;
 
 pub(in super::super) fn section_segment_verhor_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     segment: &crate::feature::definitions::FeatureSegment,
     sketch: &SketchId,
     entity: SketchEntityId,
-) -> Option<SketchConstraintDefinitionInput> {
-    let verhor = segment.vertical_horizontal?;
-    match (segment.kind, verhor) {
+) -> Result<Option<SketchConstraintDefinitionInput>, cadmpeg_core::CodecError> {
+    let Some(verhor) = segment.vertical_horizontal else {
+        return Ok(None);
+    };
+    Ok(Some(match (segment.kind, verhor) {
         (crate::feature::definitions::FeatureSegmentKind::Line(_), 0) => {
-            Some(SketchConstraintDefinitionInput::Vertical { entity })
+            SketchConstraintDefinitionInput::Vertical { entity }
         }
         (crate::feature::definitions::FeatureSegmentKind::Line(_), 1) => {
-            Some(SketchConstraintDefinitionInput::Horizontal { entity })
+            SketchConstraintDefinitionInput::Horizontal { entity }
         }
-        _ => native_section_segment_verhor_definition(sketch, entity, segment.external_id, verhor),
-    }
+        _ => native_section_segment_verhor_definition(ctx, sketch, entity, segment.external_id, verhor)?,
+    }))
 }
 
 pub(super) fn native_section_segment_verhor_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     sketch: &SketchId,
     entity: SketchEntityId,
     external_id: u32,
     verhor: u32,
-) -> Option<SketchConstraintDefinitionInput> {
-    Some(SketchConstraintDefinitionInput::Native {
-        native_kind: cadmpeg_core::text::NonBlankString::new("creo:segtab:verhor")?,
+) -> Result<SketchConstraintDefinitionInput, cadmpeg_core::CodecError> {
+    let native_kind = ctx.copy_retained_text("creo:segtab:verhor", "creo verhor native kind")?;
+    let native_kind = cadmpeg_core::text::NonBlankString::new(native_kind)
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("native kind must not be empty"))?;
+    let key = ctx.copy_retained_text("verhor", "creo verhor property key")?;
+    let value = ctx.format_retained(verhor, "creo verhor property value")?;
+    let mut native_properties = BTreeMap::new();
+    ctx.charge_collection_items(1, "creo verhor property nodes")?;
+    native_properties.insert(key, value);
+    let mut entities = Vec::new();
+    ctx.try_reserve_items(&mut entities, 1, "creo verhor entity references")?;
+    entities.push(entity);
+    let operand_kind = ctx.copy_retained_text("segtab_ptr", "creo verhor operand kind")?;
+    let field = ctx.copy_retained_text("ext_id", "creo verhor operand field")?;
+    let native_ref = sketch_native_ref_admitted(ctx, sketch)?;
+    let mut operands = Vec::new();
+    ctx.try_reserve_items(&mut operands, 1, "creo verhor operands")?;
+    operands.push(SketchNativeOperand {
+        native_kind: cadmpeg_core::text::NonBlankString::new(operand_kind)
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("operand kind must not be empty"))?,
+        field: Some(NativeOperandField {
+            name: cadmpeg_core::text::NonBlankString::new(field)
+                .ok_or_else(|| cadmpeg_core::CodecError::malformed("operand field must not be empty"))?,
+            role: None,
+        }),
+        object_index: Some(external_id),
+        native_ref: Some(native_ref),
+    });
+    Ok(SketchConstraintDefinitionInput::Native {
+        native_kind,
         native_state: None,
         native_flags: None,
-        native_properties: BTreeMap::from([("verhor".to_string(), verhor.to_string())]),
-        entities: vec![entity],
+        native_properties,
+        entities,
         parameter: None,
-        operands: vec![SketchNativeOperand {
-            native_kind: cadmpeg_core::text::NonBlankString::new("segtab_ptr")?,
-            field: Some(NativeOperandField {
-                name: cadmpeg_core::text::NonBlankString::new("ext_id")?,
-                role: None,
-            }),
-            object_index: Some(external_id),
-            native_ref: Some(sketch_native_ref(sketch)),
-        }],
+        operands,
     })
 }
 
@@ -2326,6 +2349,59 @@ mod tests {
     use cadmpeg_ir::features::ParameterId;
     use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntityId, SketchId};
     use std::collections::BTreeSet;
+
+    #[test]
+    fn native_verhor_refuses_each_nested_text_and_collection() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        let sketch = SketchId::mint("creo:model:sketch#5").expect("valid sketch ID");
+        let entity = SketchEntityId::mint("creo:featdefs:sketch_entity#5:42")
+            .expect("valid entity ID");
+        let fields = [
+            ("creo:segtab:verhor", "creo verhor native kind"),
+            ("verhor", "creo verhor property key"),
+            ("2", "creo verhor property value"),
+            ("segtab_ptr", "creo verhor operand kind"),
+            ("ext_id", "creo verhor operand field"),
+            ("creo:featdefs:sketch#5", "creo sketch native reference"),
+        ];
+        let mut total = 0u64;
+        for (field, operation) in fields {
+            total += field.len() as u64;
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = total - 1;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            assert!(matches!(super::native_section_segment_verhor_definition(&ctx, &sketch, entity.clone(), 42, 2),
+                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::RetainedBytes
+                        && refusal.operation == operation));
+        }
+        for (limit, operation) in [
+            (0, "creo verhor property nodes"),
+            (1, "creo verhor entity references"),
+            (2, "creo verhor operands"),
+        ] {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+            assert!(matches!(super::native_section_segment_verhor_definition(&ctx, &sketch, entity.clone(), 42, 2),
+                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.dimension == ResourceDimension::CollectionItems
+                        && refusal.operation == operation));
+        }
+        let arena = DecodeArena::new();
+        let service = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
+        let admitted = super::native_section_segment_verhor_definition(&ctx, &sketch, entity.clone(), 42, 2)
+            .expect("service verhor admission");
+        let SketchConstraintDefinitionInput::Native { native_properties, entities, operands, .. } = admitted else {
+            panic!("native verhor definition");
+        };
+        assert_eq!(native_properties["verhor"], "2");
+        assert_eq!(entities, [entity]);
+        assert_eq!(operands[0].object_index, Some(42));
+    }
 
     #[test]
     fn native_relation_property_refuses_value_key_and_tree_node() {
