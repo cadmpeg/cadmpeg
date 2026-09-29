@@ -89,7 +89,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let [profile] = profiles.as_mut_slice() else {
             continue;
         };
-        let Some(area) = extrusion_profile_signed_area(profile) else {
+    let Some(area) = extrusion_profile_signed_area(ctx, profile)? else {
             continue;
         };
         let vertex_curves = crate::decode::collect_items(
@@ -103,7 +103,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let mut surfaces = Vec::new();
         let mut complete = true;
         for (index, entity) in profile.iter().enumerate() {
-            let Some(geometry) = entity.geometry().to_sketch() else {
+        let Some(geometry) = entity.geometry().to_sketch(ctx)? else {
                 complete = false;
                 break;
             };

@@ -103,6 +103,10 @@ fn finite_local_system(values: [f64; 12]) -> cadmpeg_ir::units::FiniteVector<12>
 // These checked constructors must accept the explicit test fixtures.
 #[allow(clippy::unwrap_used)]
 fn interpolation_spline_remains_a_closed_extrusion_profile() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
     let sketch_id = SketchId::mint("creo:model:sketch#spline".to_string()).unwrap();
     let spline_id = SketchEntityId::mint("creo:model:sketch_entity#spline".to_string()).unwrap();
     let first_line_id =
@@ -179,7 +183,9 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
     .expect("spline profile");
     assert_eq!(profiles[0][0].start(), [1.0, 0.0]);
     assert_eq!(profiles[0][0].end(), [0.0, 1.0]);
-    let ordered = ordered_extrusion_profiles(profiles.clone()).expect("closed spline");
+    let ordered = ordered_extrusion_profiles(&ctx, profiles.clone())
+        .expect("service ordering resources")
+        .expect("closed spline");
     let area = ordered[0].area();
     assert_eq!(
         ordered
@@ -189,9 +195,10 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         profiles
     );
     assert!(area > 0.0);
-    assert!(profile_strictly_contains(&profiles[0], [0.2, 0.2]));
-    assert!(!profile_strictly_contains(&profiles[0], [2.0, 2.0]));
+    assert!(profile_strictly_contains(&ctx, &profiles[0], [0.2, 0.2]).expect("service containment"));
+    assert!(!profile_strictly_contains(&ctx, &profiles[0], [2.0, 2.0]).expect("service containment"));
     let diagonal = ProfileEntity::new(
+        &ctx,
         SketchGeometry::nurbs(
             cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                 1,
@@ -204,8 +211,10 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         ),
         false,
     )
+    .expect("service profile resources")
     .expect("valid profile entity");
     let crossing_line = ProfileEntity::new(
+        &ctx,
         SketchGeometry::try_from(SketchGeometryDefinition::Line {
             start: Point2::new(0.0, 1.0),
             end: Point2::new(1.0, 0.0),
@@ -213,12 +222,14 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         .unwrap(),
         false,
     )
+    .expect("service profile resources")
     .expect("valid profile entity");
     assert!(profile_segments_intersect(
+        &ctx,
         &diagonal,
         &crossing_line,
         1.0e-9
-    ));
+    ).expect("service intersection resources"));
 
     for reversed in [false, true] {
         let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
@@ -325,6 +336,10 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
 
 #[test]
 fn extrusion_profiles_require_one_oppositely_oriented_hole() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root admitted");
     let rectangle = |minimum: [f64; 2], maximum: [f64; 2], clockwise: bool| {
         let mut points = [
             minimum,
@@ -340,6 +355,7 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
                 let start = points[index];
                 let end = points[(index + 1) % 4];
                 ProfileEntity::new(
+                    &ctx,
                     SketchGeometry::try_from(SketchGeometryDefinition::Line {
                         start: Point2::new(start[0], start[1]),
                         end: Point2::new(end[0], end[1]),
@@ -347,29 +363,31 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
                     .expect("valid test fixture"),
                     false,
                 )
+                .expect("service profile resources")
                 .expect("valid profile entity")
             })
             .collect::<ExtrusionProfile>()
     };
     let outer = rectangle([-2.0, -2.0], [2.0, 2.0], false);
     let hole = rectangle([-1.0, -1.0], [1.0, 1.0], true);
-    let profiles = ordered_extrusion_profiles(vec![hole.clone(), outer.clone()])
+    let profiles = ordered_extrusion_profiles(&ctx, vec![hole.clone(), outer.clone()])
+        .expect("service ordering resources")
         .expect("strict outer and hole");
     let outer_area = profiles[0].area();
     assert_eq!(profiles[0].entities(), &outer);
     assert!(outer_area > 0.0);
     assert!(profiles[1].area() < 0.0);
 
-    assert!(ordered_extrusion_profiles(vec![
+    assert!(ordered_extrusion_profiles(&ctx, vec![
         rectangle([-2.0, -2.0], [2.0, 2.0], false),
         rectangle([-1.0, -1.0], [1.0, 1.0], false),
     ])
-    .is_none());
-    assert!(ordered_extrusion_profiles(vec![
+    .expect("service ordering resources").is_none());
+    assert!(ordered_extrusion_profiles(&ctx, vec![
         rectangle([-2.0, -2.0], [2.0, 2.0], false),
         rectangle([1.0, -1.0], [3.0, 1.0], true),
     ])
-    .is_none());
+    .expect("service ordering resources").is_none());
 
     let circular_hole = [
         (std::f64::consts::PI, 0.0, [-0.5, 0.0], [0.5, 0.0]),
@@ -383,6 +401,7 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
     .into_iter()
     .map(|(end_angle, start_angle, _, _)| {
         ProfileEntity::new(
+            &ctx,
             SketchGeometry::try_from(SketchGeometryDefinition::Arc {
                 center: Point2::new(0.0, 0.0),
                 radius: Length::new(0.5).expect("finite length fixture"),
@@ -392,13 +411,15 @@ fn extrusion_profiles_require_one_oppositely_oriented_hole() {
             .expect("valid test fixture"),
             true,
         )
+        .expect("service profile resources")
         .expect("valid profile entity")
     })
     .collect::<ExtrusionProfile>();
-    let profiles = ordered_extrusion_profiles(vec![
+    let profiles = ordered_extrusion_profiles(&ctx, vec![
         circular_hole,
         rectangle([-2.0, -2.0], [2.0, 2.0], false),
     ])
+    .expect("service ordering resources")
     .expect("arc-bounded hole");
     assert!(matches!(
         profiles[1].entities()[0].geometry(),
