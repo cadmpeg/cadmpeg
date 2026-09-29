@@ -477,34 +477,31 @@ pub(super) fn transfer_fc05_cap_circles(
     source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for circle in &scan.curves.fc05_circles {
-        let topology = scan
+        let Some(topology) = crate::decode::uniqueness::exactly_one(scan
             .curves
             .topology_rows
             .iter()
             .filter(|row| row.id == circle.curve_id)
-            .collect::<Vec<_>>();
-        let [topology] = topology.as_slice() else {
+        ) else {
             continue;
         };
-        let cap_planes = topology
+        let cap_plane = crate::decode::uniqueness::exactly_one(topology
             .bounded_face_ids()
             .filter_map(|face| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, face)
                     .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)?;
                 crate::surface::unique_outline_plane(&scan.planes.outlines, face)
             })
-            .collect::<Vec<_>>();
-        let cylinders = topology
+        );
+        let cylinder = crate::decode::uniqueness::exactly_one(topology
             .bounded_face_ids()
             .filter(|face| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
             })
-            .collect::<Vec<_>>();
-        let ([cap], [cylinder_id], Some(_)) = (
-            cap_planes.as_slice(),
-            cylinders.as_slice(),
-            circle.cap_ordinate_row_frame,
+        );
+        let (Some(cap), Some(cylinder_id), Some(_)) = (
+            cap_plane, cylinder, circle.cap_ordinate_row_frame,
         ) else {
             continue;
         };
@@ -519,7 +516,7 @@ pub(super) fn transfer_fc05_cap_circles(
             .curves
             .fc05_cylinder_cap_pairs
             .iter()
-            .find(|pair| pair.surface_id == *cylinder_id)
+            .find(|pair| pair.surface_id == cylinder_id)
             .and_then(|pair| fc05_cap_pair_model_frame(scan, pair));
         let (reference, circle_axis_sign) = match circle.angle_parameter {
             crate::curve::Fc05AngleParameterRelation::Inconsistent => (
@@ -542,7 +539,7 @@ pub(super) fn transfer_fc05_cap_circles(
         let witness = crate::decode::analytic::planes::fc05_cylinder_model_witness(
             ctx,
             scan,
-            *cylinder_id,
+            cylinder_id,
             crate::decode::analytic::equations::CylinderEquation {
                 origin: legacy_frame.0,
                 axis: legacy_frame.1,
@@ -555,7 +552,10 @@ pub(super) fn transfer_fc05_cap_circles(
             surface_origin[axis_index.index()] = frame.origin[axis_index.index()];
         }
         let (center, axis, ref_direction) = (witness.origin, witness.axis, witness.ref_direction);
-        let id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, circle.curve_id);
+        let id = crate::identity::compose_checked::<CurveId>(
+            ctx, &crate::identity::VISIBGEOM_CURVE, circle.curve_id,
+            "creo FC05 cap circle identity",
+        )?;
         if !ir.model.curves.iter().any(|curve| curve.id == id) {
             let Ok(circle_curve) = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::from(center),
@@ -582,10 +582,10 @@ pub(super) fn transfer_fc05_cap_circles(
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                            "VisibGeom:{}",
-                            circle.curve_id
-                        ))
+                        object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                            format_args!("VisibGeom:{}", circle.curve_id),
+                            "creo FC05 cap circle source object ID",
+                        )?)
                         .ok_or_else(|| {
                             cadmpeg_core::CodecError::malformed(
                                 "source object_id must not be empty",
@@ -600,7 +600,10 @@ pub(super) fn transfer_fc05_cap_circles(
                 },
             )?;
         }
-        let surface_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, cylinder_id);
+        let surface_id = crate::identity::compose_checked::<SurfaceId>(
+            ctx, &crate::identity::VISIBGEOM_SURFACE, cylinder_id,
+            "creo FC05 axis cylinder identity",
+        )?;
         if ir
             .model
             .surfaces
@@ -636,9 +639,10 @@ pub(super) fn transfer_fc05_cap_circles(
                 )),
                 source_object: Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Creo,
-                    object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                        "VisibGeom:{cylinder_id}"
-                    ))
+                    object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
+                        format_args!("VisibGeom:{cylinder_id}"),
+                        "creo FC05 axis cylinder source object ID",
+                    )?)
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("source object_id must not be empty")
                     })?,
@@ -653,3 +657,6 @@ pub(super) fn transfer_fc05_cap_circles(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod fc05_tests;
