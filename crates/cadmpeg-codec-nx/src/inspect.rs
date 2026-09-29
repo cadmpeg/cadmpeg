@@ -67,12 +67,7 @@ pub(super) fn summarize(
             }
         };
         entries.push(ContainerEntry {
-            name: render_summary_text(
-                ctx,
-                "nx summary directory name",
-                entry.name.len(),
-                format_args!("{}", entry.name),
-            )?,
+            name: ctx.format_retained(format_args!("{}", entry.name), "nx summary directory name")?,
             role: entry.content().role(),
             storage,
             attributes,
@@ -288,47 +283,20 @@ pub(super) fn summarize(
                 match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
                     Ok(storage) => storage,
                     Err(message) => {
-                        let note_len = [
-                            "parasolid#".len(),
-                            decimal_len(cadmpeg_core::decode::u64_from_index(si)),
-                            ": ".len(),
-                            message.len(),
-                            ": ".len(),
-                            decimal_len(stream.consumed),
-                            "/".len(),
-                            decimal_len(inflated_len),
-                        ]
-                        .into_iter()
-                        .try_fold(0usize, usize::checked_add)
-                        .ok_or_else(|| {
-                            ctx.refuse_codec_limit("nx summary storage note", 0, u64::MAX)
-                        })?;
+
                         ctx.reserve_vec(&mut storage_notes, 1, "nx summary storage notes")?;
-                        storage_notes.push(render_summary_text(
-                            ctx,
-                            "nx summary storage note",
-                            note_len,
-                            format_args!(
+                        storage_notes.push(ctx.format_retained(format_args!(
                                 "parasolid#{si}: {message}: {}/{inflated_len}",
                                 stream.consumed
-                            ),
-                        )?);
+                            ), "nx summary storage note")?);
                         EntryStorage::payload_only(VerbatimLabel::Stored, inflated_len)
                     }
                 }
             }
         };
-        let name_len = "parasolid#"
-            .len()
-            .checked_add(decimal_len(cadmpeg_core::decode::u64_from_index(si)))
-            .ok_or_else(|| ctx.refuse_codec_limit("nx summary stream name", 0, u64::MAX))?;
+
         entries.push(ContainerEntry {
-            name: render_summary_text(
-                ctx,
-                "nx summary stream name",
-                name_len,
-                format_args!("parasolid#{si}"),
-            )?,
+            name: ctx.format_retained(format_args!("parasolid#{si}"), "nx summary stream name")?,
             role: if stream.kind().is_parasolid() {
                 ContainerRole::ParasolidStream
             } else {
@@ -365,21 +333,6 @@ fn decimal_len(number: u64) -> usize {
     } else {
         cadmpeg_core::decode::index_from_u32(number.ilog10() + 1)
     }
-}
-
-fn render_summary_text(
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-    len: usize,
-    args: std::fmt::Arguments<'_>,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(len), operation)?;
-    let mut text = String::new();
-    text.try_reserve_exact(len)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    text.write_fmt(args)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    Ok(text)
 }
 
 fn insert_summary_attribute(

@@ -67,20 +67,6 @@ fn uuid_record_id(
     Ok(id)
 }
 
-fn retained_text(
-    ctx: &DecodeContext<'_>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(text.len()), operation)?;
-    let mut owned = String::new();
-    owned
-        .try_reserve_exact(text.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    owned.push_str(text);
-    Ok(owned)
-}
-
 /// Canonical UUID text spanning one or more contiguous bounded OM records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(in crate::native) struct ObjectUuidValue {
@@ -193,13 +179,9 @@ pub(in crate::native) fn object_uuid_values(
             };
             ctx.reserve_retained_vec(&mut values, 1, "NX OM UUID values")?;
             let id = uuid_value_id(ctx, section_ordinal, value.offset)?;
-            let uuid = crate::canonical_uuid::CanonicalUuid::new(retained_text(
-                ctx,
-                value.value.as_str(),
-                "retain NX OM UUID text",
-            )?)
+            let uuid = crate::canonical_uuid::CanonicalUuid::new(ctx.copy_retained_text(value.value.as_str(), "retain NX OM UUID text")?)
             .map_err(|error| CodecError::InvalidInput(error.to_owned()))?;
-            let source_entry = retained_text(ctx, &entry.name, "retain NX OM UUID source entry")?;
+            let source_entry = ctx.copy_retained_text(&entry.name, "retain NX OM UUID source entry")?;
             values.push(ObjectUuidValue {
                 id,
                 section_ordinal: section_ordinal_u32,

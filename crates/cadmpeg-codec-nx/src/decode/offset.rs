@@ -453,8 +453,8 @@ impl HomogeneousSurfaceNet {
         Ok(Some(Self {
             u_degree,
             v_degree,
-            u_knots: copy_offset_knots(surface.u_knots(), geometry_budget)?,
-            v_knots: copy_offset_knots(surface.v_knots(), geometry_budget)?,
+            u_knots: cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, surface.u_knots(), "nx offset net knots").map(|(copy, _reservation)| copy)?,
+            v_knots: cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, surface.v_knots(), "nx offset net knots").map(|(copy, _reservation)| copy)?,
             u_count,
             v_count,
             controls,
@@ -513,14 +513,14 @@ impl HomogeneousSurfaceNet {
             u_degree: self.u_degree - usize::from(u_axis),
             v_degree: self.v_degree - usize::from(!u_axis),
             u_knots: if u_axis {
-                copy_offset_knots(&self.u_knots[1..self.u_knots.len() - 1], geometry_budget)?
+                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, &self.u_knots[1..self.u_knots.len() - 1], "nx offset net knots").map(|(copy, _reservation)| copy)?
             } else {
-                copy_offset_knots(&self.u_knots, geometry_budget)?
+                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, &self.u_knots, "nx offset net knots").map(|(copy, _reservation)| copy)?
             },
             v_knots: if u_axis {
-                copy_offset_knots(&self.v_knots, geometry_budget)?
+                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, &self.v_knots, "nx offset net knots").map(|(copy, _reservation)| copy)?
             } else {
-                copy_offset_knots(&self.v_knots[1..self.v_knots.len() - 1], geometry_budget)?
+                cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, &self.v_knots[1..self.v_knots.len() - 1], "nx offset net knots").map(|(copy, _reservation)| copy)?
             },
             u_count: next_u_count,
             v_count: next_v_count,
@@ -560,17 +560,6 @@ impl HomogeneousSurfaceNet {
         }
         Some(bounds)
     }
-}
-
-fn copy_offset_knots(
-    knots: &[f64],
-    geometry_budget: &GeometryWorkBudget<'_>,
-) -> Result<Vec<f64>, cadmpeg_core::decode::ResourceLimit> {
-    let mut copied = Vec::new();
-    let _reservation =
-        cadmpeg_core::decode::DecodeContext::reserve_temporary_vec_optional_limit(geometry_budget.charges, &mut copied, knots.len(), "nx offset net knots")?;
-    copied.extend_from_slice(knots);
-    Ok(copied)
 }
 
 #[derive(Clone, Copy)]
@@ -656,10 +645,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
             None => None,
         };
 
-        let mut u_breaks = match copy_offset_knots(
-            &support_net.u_knots[support_net.u_degree..=support_net.u_count],
-            geometry_budget,
-        ) {
+        let mut u_breaks = match cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, &support_net.u_knots[support_net.u_degree..=support_net.u_count], "nx offset net knots").map(|(copy, _reservation)| copy) {
             Ok(breaks) => breaks,
             Err(limit) => return Some(Err(limit)),
         };
@@ -671,10 +657,7 @@ pub(super) fn certified_curved_offset_cache_fit_with_budget(
         u_breaks.extend(candidate_u_breaks);
         u_breaks.sort_by(f64::total_cmp);
         u_breaks.dedup();
-        let mut v_breaks = match copy_offset_knots(
-            &support_net.v_knots[support_net.v_degree..=support_net.v_count],
-            geometry_budget,
-        ) {
+        let mut v_breaks = match cadmpeg_core::decode::DecodeContext::copy_temporary_slice_optional_limit(geometry_budget.charges, &support_net.v_knots[support_net.v_degree..=support_net.v_count], "nx offset net knots").map(|(copy, _reservation)| copy) {
             Ok(breaks) => breaks,
             Err(limit) => return Some(Err(limit)),
         };

@@ -632,19 +632,6 @@ pub(crate) fn composite_curves(
     Graph::parse(ctx, stream)?.composite_curves(ctx)
 }
 
-fn collect_graph_records<T>(
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-    records: impl Iterator<Item = T>,
-) -> Result<Vec<T>, CodecError> {
-    let mut out = Vec::new();
-    for record in records {
-        ctx.reserve_retained_vec(&mut out, 1, operation)?;
-        out.push(record);
-    }
-    Ok(out)
-}
-
 fn insert_reference(
     ctx: &DecodeContext<'_>,
     references: &mut BTreeSet<u32>,
@@ -662,10 +649,7 @@ impl Graph {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<CompositeCurve>, CodecError> {
-        collect_graph_records(
-            ctx,
-            "NX composite curves",
-            self.of_kind(NodeKind::Intersection).filter_map(|node| {
+        ctx.collect_retained_vec(self.of_kind(NodeKind::Intersection).filter_map(|node| {
                 let mut at = 8 + node.shift;
                 let header = read_sequence_at(&node.bytes, &mut at, 5)?;
                 let sense = match node.bytes.get(at) {
@@ -692,8 +676,7 @@ impl Graph {
                         delta_twin: false,
                         pos: node.pos,
                     })
-            }),
-        )
+            }), "NX composite curves")
     }
 }
 
@@ -795,10 +778,7 @@ impl Graph {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<BlendSurface>, CodecError> {
-        collect_graph_records(
-            ctx,
-            "NX blend surfaces",
-            self.of_kind(NodeKind::BlendSurface).filter_map(|node| {
+        ctx.collect_retained_vec(self.of_kind(NodeKind::BlendSurface).filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 (*node.bytes.get(at)? == b'R').then_some(())?;
                 at += 1;
@@ -821,8 +801,7 @@ impl Graph {
                     .ok()?,
                     pos: node.pos,
                 })
-            }),
-        )
+            }), "NX blend surfaces")
     }
 }
 
@@ -839,10 +818,7 @@ impl Graph {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<OffsetSurface>, CodecError> {
-        collect_graph_records(
-            ctx,
-            "NX offset surfaces",
-            self.of_kind(NodeKind::OffsetSurface).filter_map(|node| {
+        ctx.collect_retained_vec(self.of_kind(NodeKind::OffsetSurface).filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let discriminator =
                     OffsetSurfaceDiscriminator::try_from(char::from(*node.bytes.get(at)?)).ok()?;
@@ -863,8 +839,7 @@ impl Graph {
                     state: OffsetSurfaceState::new(support, distance).ok()?,
                     pos: node.pos,
                 })
-            }),
-        )
+            }), "NX offset surfaces")
     }
 }
 
@@ -881,10 +856,7 @@ impl Graph {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<SurfaceCurve>, CodecError> {
-        collect_graph_records(
-            ctx,
-            "NX surface curves",
-            self.of_kind(NodeKind::SpCurve).filter_map(|node| {
+        ctx.collect_retained_vec(self.of_kind(NodeKind::SpCurve).filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
                 let tolerance = View::f64_be_at(&node.bytes, at)?;
@@ -893,8 +865,7 @@ impl Graph {
                     state: SurfaceCurveState::new(refs[0], refs[1], refs[2], tolerance).ok()?,
                     pos: node.pos,
                 })
-            }),
-        )
+            }), "NX surface curves")
     }
 }
 
@@ -914,10 +885,7 @@ impl Graph {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<TrimmedCurve>, CodecError> {
-        collect_graph_records(
-            ctx,
-            "NX trimmed curves",
-            self.of_kind(NodeKind::TrimmedCurve).filter_map(|node| {
+        ctx.collect_retained_vec(self.of_kind(NodeKind::TrimmedCurve).filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let basis = read_and_advance(&node.bytes, &mut at)?;
                 let point_0 = vec3_be_at(&node.bytes, at)?;
@@ -930,8 +898,7 @@ impl Graph {
                         .ok()?,
                     pos: node.pos,
                 })
-            }),
-        )
+            }), "NX trimmed curves")
     }
 }
 

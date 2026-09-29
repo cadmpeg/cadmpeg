@@ -362,22 +362,6 @@ pub(crate) struct CurveScan {
 
 impl CurveScan {
     pub(crate) fn try_clone_for_decode(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
-        fn copy_records<T: Copy>(
-            ctx: &DecodeContext<'_>,
-            records: &[T],
-            operation: &'static str,
-        ) -> Result<Vec<T>, CodecError> {
-            let count = cadmpeg_core::decode::u64_from_index(records.len());
-            ctx.charge_collection_items(count, operation)?;
-            ctx.charge_work(count, operation)?;
-            let mut copied = Vec::new();
-            copied
-                .try_reserve_exact(records.len())
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
-            copied.extend_from_slice(records);
-            Ok(copied)
-        }
-
         let mut curves = Vec::new();
         let count = cadmpeg_core::decode::u64_from_index(self.curves.len());
         ctx.charge_collection_items(count, "NX intersection curve copy")?;
@@ -411,18 +395,10 @@ impl CurveScan {
             });
         }
         Ok(Self {
-            source_constructions: copy_records(
-                ctx,
-                &self.source_constructions,
-                "NX source intersection copy",
-            )?,
-            constructions: copy_records(
-                ctx,
-                &self.constructions,
-                "NX intersection construction copy",
-            )?,
+            source_constructions: ctx.copy_slice_with_work(&self.source_constructions, "NX source intersection copy")?,
+            constructions: ctx.copy_slice_with_work(&self.constructions, "NX intersection construction copy")?,
             curves,
-            uncharted: copy_records(ctx, &self.uncharted, "NX uncharted intersection copy")?,
+            uncharted: ctx.copy_slice_with_work(&self.uncharted, "NX uncharted intersection copy")?,
             rejected: self.rejected,
         })
     }
